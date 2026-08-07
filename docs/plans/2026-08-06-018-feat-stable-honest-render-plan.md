@@ -371,6 +371,88 @@ design against: a drag that dies mid-gesture must not leave the guest
 holding a mouse-down, and the primitive must not fight a human's own
 input at the machine.
 
+### Slice 10.5 — Drag targeting and provisional presentation (added 2026-08-07)
+
+Michelle broadened slice 10 the same day it was written. The primitive
+alone is not the deliverable; **targeting and presentation are**.
+
+**Targets, within the mirrored guest:** a Finder window, the desktop, an
+application window, an application icon. **Same-app drags rearrange** —
+dragging within a Finder window or on the desktop moves the item the
+ordinary Mac way rather than becoming a no-op. Cross-machine file
+transfer remains held for its own plan.
+
+**The presentation contract, stated exactly as Michelle gave it:**
+
+1. Do not wait for confirmation to begin showing the drag — the item
+   moves with the pointer immediately.
+2. Until the select is confirmed, the item is shown as **provisional** —
+   a different style, or an alert glyph. Visible at a glance as not yet
+   real.
+3. Releasing before confirmation **snaps the item back home**.
+4. A failed select response **also snaps it back home**.
+
+This is the arc's governing rule one plane over: **show provisional
+state marked as provisional**, rather than hiding it (feels dead) or
+asserting it (a plausible wrong answer about what the guest did). A
+provisional drag is never silently promoted to confirmed — the
+confirmation must be a real response, which is the same honesty problem
+slice 8 exists to fix.
+
+**The visual language is not invented from scratch.** `UnknownVisual` is
+already the single definition for "we do not know this yet", chosen to
+read as unresolved rather than blank. Provisional-drag is its sibling:
+extend it or place the style beside it in one definition. Two seams for
+one decision is the defect slices 2 and 5 already had to merge away.
+
+**Snap-back depends on geometry being repaired in this same arc.**
+"Home" is only knowable if the item's position is trustworthy — slice 4
+fixed desktop items reporting screen coordinates, and list rows were
+still reporting saved icon-grid positions. Where home is not
+trustworthy, **refuse the drag rather than guess a snap-back target**: an
+item returned to the wrong place is worse than a drag that never began.
+
+### Slice 11 — Procedures, not assets (added 2026-08-07)
+
+A strategy call from Michelle:
+
+> os9 does a lot of procedural runtime drawing. rather than trying to
+> import these assets, we need to figure out what that procedure is,
+> either through inference or when necessary re'ing, and implement it
+> host side
+
+Well-founded: Lane C's census of `Apple platinum` found **no tab bitmap
+of any kind**. The theme file carries `tvar`/`tthm`/`scen`/`clut`
+**parameters** that `DrawThemeTab`/`DrawThemeTabPane` draw from at run
+time. There is nothing to extract, so "extract harder" is a dead end for
+a whole class of chrome.
+
+**Relationship to [016](2026-08-06-016-feat-platinum-from-the-source-plan.md),
+which must be resolved rather than left ambiguous.** 016's thesis is
+that Appearance *answers* — `GetThemeMetric`, theme colours, `DrawTheme*`
+on the guest. This directive says derive the procedure and implement it
+**host-side**. The likely synthesis: **ask the guest for the PARAMETERS**
+(authoritative, small, cacheable) and **implement the PROCEDURE
+host-side** (no per-draw round trip, works when the guest is quiet,
+native speed). Whether 016 is amended, superseded or left alone is part
+of this slice's deliverable.
+
+**Scope: one procedure, proven end to end — the tab.** Sweep A confirmed
+missing tab edges on Appearance and Energy Saver in both passes, Lane C
+proved they are procedural, and it is small enough to finish. Inference
+from parameters and observed pixels first; RE where necessary, saying
+which route produced each conclusion. Validated against guest pixels
+with deltas reported honestly, not by looking right.
+
+**The durable output is the METHOD** — the procedure for deriving
+procedures — as much as the tab itself. Deliberately NOT sprawling into
+title bars, buttons and scroll bars: chrome is the best-scoring axis in
+the sweep while other things render as one hatch.
+
+Drawing code slots into the ladder as **rung 3, art addressed by
+identity** — not as a new arbitration path. Where a thing cannot be
+drawn faithfully, it renders the marked unknown.
+
 ### Not taken: window chrome — VETOED to plan 016 (2026-08-07)
 
 Michelle proposed polishing title bars and their buttons. Declined as a
@@ -390,6 +472,12 @@ grounds:
   view sit at 0 on PLACEMENT and REGIONS, and the Finder's entire
   interior renders as one hatch. Title bars are the most visible thing
   that is not broken.
+
+**Amended the same day:** Michelle's answer to this veto was not to
+insist on title bars but to name the deeper problem — procedural runtime
+drawing — which became **slice 11**. Title bars remain out of scope
+here; when slice 11's method is proven on the tab, they are the natural
+next application of it, in 016 or its successor.
 
 ### Slice 6 — Sweep B and the verdict
 
