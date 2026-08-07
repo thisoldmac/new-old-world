@@ -155,6 +155,15 @@ APP="$RUN/build/now-guest-68k.bin"
 # --- 2. a disposable disk with the app and its settings on it -------------
 DISK="$RUN/session.img"
 rm -f "$DISK"
+# SAY WHICH IMAGE THIS IS, AND WHETHER ITS VOLUME IS CLEAN, before the
+# clone. This was the OTHER file no gate ever looked at: ext-bake-gate
+# asks `volumeClean` of the baked oracle, spin-up-ppc's base got the same
+# question on 2026-08-07, and this one — a shared 68K base named only by
+# .env.lab — had nobody asking it at all. A dirty base here costs a
+# System 7 disk-check pass on every clone, and the guest dials out on its
+# own, so the delay looks exactly like a wire that would not come up.
+# A warning, not a refusal: it is a slower boot, not a wrong result.
+"$REPO/tools/image-provenance" "$BASE" --label "q800-68k base" || true
 clone_disk "$BASE" "$DISK" >/dev/null
 
 # NOW-68K has no preferences; the dev settings file is how a build under

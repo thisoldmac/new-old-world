@@ -43,6 +43,64 @@ so the cure is volume, not care.** Every run now prints a provenance block
 and writes `provenance.json` and `provenance.md` into its run directory.
 Copy the file; do not remember which image you used.
 
+## The gate asked the oracle; the script cloned a different file
+
+The same split had a second, longer-lived consequence, found on
+2026-08-07 by a person seeing a dialog rather than by any gate.
+
+`ext-bake-gate` requires `volumeClean` in a receipt, and **a receipt
+describes the baked oracle.** `os91-runner.qcow2` is never baked and so
+had no receipt to require anything of — and it had been dirty since
+**19 July**. Every `spin-up-ppc` clone for nineteen days booted into
+"Your computer did not shut down properly", a modal that sits on the
+desktop until something dismisses it. Nothing measured it, nothing
+reported it, and every gate over staged images was green throughout.
+
+The gate and the script **named different files**. So the check moved to
+where the file is: `tools/image-provenance` now asks the *volume* of
+whatever image it is describing — every image, including the plain
+unbaked bases no receipt covers — and prints the verdict in its block and
+its rig table. `spin-up-ppc` and `bake-ext-image` already ran it on their
+base; `q800-68k` now does too, which was the third clone site nobody was
+inspecting.
+
+**It warns; it does not refuse**, for the reason `verify-image` warns:
+whether a shared base is clean is not a property of the run about to
+start and is not in that caller's power to fix. It is not even a wrong
+result — only a slower boot and a dialog. Refusing would strand a
+contributor over something they cannot act on, which in this repository
+is the more expensive failure.
+
+`unknown` is kept as its own state. An image that could not be read — a
+running VM holds a write lock, the format is unfamiliar — is **not
+clean**. Folding the two together is precisely how `qemu-img check` came
+to stand in for a question it cannot answer.
+
+### Repairing a base image
+
+Only a Macintosh can clear the bit, and the applet route is the only one
+this rig has: QMP keyboard events never reach the guest (`Ctrl-F2` menu
+access was tried on 2026-08-07 and the modifier is dropped), and the
+Finder's own Shut Down needs NOW's act plane, which a plain base does not
+carry. So:
+
+1. `cp -c` the base to a work copy. **Never boot the shared file.**
+2. Boot the copy in place and wait for the anchor. The Disk First Aid
+   pass runs and repairs during that boot; dismiss its modal with the
+   worker's `key` verb (`{"key": "return"}`).
+3. Push `NowShutDown.bin` to `Macintosh HD:TimBotTu:now-dev:NOW Shut
+   Down` and run `tools/shutdown-guest.py`. **Never a QMP `quit`** — that
+   is the power cut that sets the bit in the first place.
+4. `tools/volclean.py` the copy, then `qemu-img check` it. Both, and in
+   that order: the second answers a different question.
+5. Back up the original as `.bak-YYYYMMDD` and install by atomic `mv`,
+   removing the stale `.sha256` and `.volclean.json` sidecars.
+
+A repaired base keeps the shutdown applet at that path, and that is
+deliberate: `tools/stage-ext.py` puts the same file there on every clone
+anyway, and its presence makes the base repairable next time without a
+68K build.
+
 `docs/fidelity-sweep-2026-08-07-a.md` is the standard the generated table
 is trying to reach — it named the base, its sha256, the resident's
 `sourceManifest` and `buildFingerprint`, and said in words that the stage
@@ -105,7 +163,7 @@ more than the gates themselves.
 | the staged-receipt check | a receipt being *written* is true when written | **yes, in one case** — see below |
 | `ext-bake-gate merge-check` | a merge did not silently combine two branches' claims | **yes** — via `pre-merge-commit` |
 | `merge-check` on **main** | the resident source being landed is covered by a bake | **yes** — `TBT_DEFER_EXT_BAKE=1` with a reason still overrides |
-| `tools/image-provenance` | these bytes are (or are not) claimed by a receipt | nothing; it only speaks |
+| `tools/image-provenance` | these bytes are (or are not) claimed by a receipt, **and whether the volume inside them is cleanly unmounted** | nothing; it only speaks |
 
 The staged-receipt case is the subtle one, and it was found by its own
 test. A receipt whose `imageSha256` does not match the file it names has
@@ -210,7 +268,7 @@ its final line stops saying they passed.
 
 ## Run it
 
-    tools/image-discipline-tests     # fourteen mutations, ~3 seconds
+    tools/image-discipline-tests     # every mutation, ~3 seconds
     tools/gate-impact-sweep --all-matching 'claude/018-'
 
 The second is the one to run before tightening any gate here: it stages
