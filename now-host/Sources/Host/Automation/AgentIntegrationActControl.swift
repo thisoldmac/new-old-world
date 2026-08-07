@@ -209,6 +209,12 @@ final class AgentIntegrationActControl {
             .init(menu: request.menu,
                   item: request.item,
                   titleLeft: request.titleLeft,
+                  /* The guest's own sentence, forwarded rather than
+                     re-derived here: this side cannot see a menu bar and
+                     has nothing to decide it from. Absent is absent — a
+                     guest too old to answer the row must not read as a
+                     checked press. */
+                  identity: claim.rows["Identity"],
                   dispatch: claim.dispatch,
                   dispatchedAt: claim.at, correlation: claim.correlation,
                   settlement: claim.settlement)
@@ -420,6 +426,14 @@ final class AgentIntegrationActControl {
         let at: Date
         let correlation: String?
         let settlement: String
+        /// Every row the guest answered with, so an act that says
+        /// something the other three do not can read it WITHOUT a second
+        /// dispatch path to read it on. `menuact` is the one that does:
+        /// its `Identity` row says whether the coordinate that is its
+        /// safety check was verified against the machine or trusted, and
+        /// a receipt that omitted the difference would let a trusted
+        /// press read as a verified one.
+        let rows: [String: String]
     }
 
     /// The four dispatching acts, as one path.
@@ -506,7 +520,8 @@ final class AgentIntegrationActControl {
                       + " (dispatch is not guest-visible effect)")
             return .completed(make(
                 .init(dispatch: dispatch, at: clock(),
-                      correlation: correlation, settlement: settlement)))
+                      correlation: correlation, settlement: settlement,
+                      rows: rows)))
         }
     }
 
