@@ -617,22 +617,85 @@ bookkeeping rather than from an inference about window counts. And the
 guest walk already traverses that menu: slice 4 was fixing the
 app-switcher menu's own title the same day.
 
-Used as a **second** signal beside `modeOnlyBackground`, not a
-replacement. Where they agree, two independent sources corroborate — the
-process's `SIZE` declaration and the OS's live UI bookkeeping. **Where
-they disagree, that is a FINDING**, reported rather than averaged; the
-same day already produced one case of two walks honestly disagreeing
-because they described different moments.
+**But hook the SOURCE, not the menu.** Michelle, correcting the above
+within the hour:
 
-One case is in the data already: **Application Switcher is itself a
-process**, and it was among the eight reporting `ax_oracle_not_found` on
-the bad boot. A classifier resting on the switcher's menu must say
-honestly what it does when the switcher is the thing that cannot be read
-— a state-3 answer about the instrument itself, degrading to
-"unclassified, with a reason", never to a guess.
+> idk about deriving them *from* app switcher, but whatever is
+> populating app switcher on the carbon/toolkit end might be a good hook
+
+The menu is a *rendering* of an underlying truth. Deriving from it means
+depending on a UI artifact we must walk, with every failure mode that
+implies — and one is already in the data: **Application Switcher is
+itself a process**, and it was among the eight reporting
+`ax_oracle_not_found` on the bad boot. Reading a menu to learn what a
+process *is* puts an instrument in the path that can break independently
+of the thing measured.
+
+So find what populates it on the Toolbox end — most likely the Process
+Manager's `GetNextProcess`/`GetProcessInformation` enumeration filtered
+on `processMode` — and hook that.
+
+**An open question that must be answered before any "corroboration"
+claim is made:** is the switcher's population rule the **same bit** as
+`modeOnlyBackground`, or a different one? If the same, the two are **not
+independent signals** — one truth observed at two removes — and any
+claim of independent confirmation here is false. A manufactured
+confidence is worse than a single honest source. If the rule is wider
+(there are other mode bits, and OS 8.5+ has both the Application menu
+and the Switcher palette, which may not agree), the second signal is
+real and the rule itself is the finding. Either answer is good; carrying
+"two signals agree" forward without establishing whether they *could*
+disagree is not.
 
 Rendering anything for headless processes is explicitly out of scope;
 so is any change to the ladder.
+
+### Slice 14 — Scene control caps, then lazy delivery (added 2026-08-07)
+
+Appearance scored DRIVABILITY 0 in Sweep A, and slice 8 found the cause
+is **ours, not the machine's**: its control chain is **73 controls long
+and `kNowSceneWalkMaxControls` is 48**, so the plane is correctly dropped
+rather than shipped as a prefix. Nothing said so — `controls: []` read
+identically for a dropped plane and an empty window. Slice 8 fixed the
+silence (windows now carry a `walk_verdict`; `meta.errors` distinguishes
+our bound from a chain that left the readable zones) and left the sizing
+decision, correctly, because the budget is shared by every lane's
+windows.
+
+Measured: `sizeof(NowSceneControl)` 320 B; `NowScene` 147 KB today;
++10 KB per 32 pool slots; per-window cap must clear 73; the scene-wide
+pool (96) wants ~133.
+
+**Raise the caps** — ~147 → 170 KB to make a core control panel drivable
+is a good trade under Michelle's framing, and it is reversible. Sized
+from measurements across **several** panels, not fitted to Appearance's
+73, with an honest statement about the **PowerBook 1400c** and not just a
+512 MB emulator.
+
+**Then, optionally but preferably, send lazily.** Michelle: *"can we
+raise the cap and (optionally) send lazily?"* The cap exists only
+because the scene is a **fixed-size struct shipped whole**; every
+window's controls occupy the pool whether or not anyone looks. Lazy
+delivery decouples how many controls a window has from how big every
+scene is — a raised cap is a bigger number that will be too small again;
+lazy delivery stops the argument.
+
+Two constraints decide whether it works, both already paid for in this
+arc:
+
+1. **Unfetched is NOT empty.** A window whose controls have not been
+   fetched reports **"not fetched"**, never `controls: []` — otherwise
+   the defect slice 8 just fixed is recreated one level down. Same
+   *absence known / absence unknown* distinction as slice 13, and the
+   two must share vocabulary rather than each inventing a good word.
+2. **A lazily-fetched list carries the generation it was captured
+   under.** Otherwise the two-clocks defect slice 1 fixed in the content
+   path returns in the control path — fresh structure paired with stale
+   detail. `displayEpoch` is the precedent.
+
+And it must not slow the common case: most windows are small, so an
+eager-up-to-N, lazy-beyond-N shape is likely right, with N measured
+rather than assumed.
 
 ### Not taken: window chrome — VETOED to plan 016 (2026-08-07)
 
