@@ -784,8 +784,29 @@ enum {
                                       REPORTED as a distinct route so a
                                       machine falling back is not read as
                                       a machine that worked. */
-    kNowPeekCursorRouteYielded = 3 /* declined: somebody else is driving
-                                      this pointer */
+    kNowPeekCursorRouteYielded = 3, /* declined: somebody else is driving
+                                       this pointer */
+    /* HideCursor/ShowCursor, from the target application's own context.
+       The only route measured to actually move the picture on Mac OS 9;
+       the other two set state the drawing path does not consult. It
+       needs a real context and so is unreachable from interrupt time,
+       which is why there is still a device route and why a DRAG is
+       expected to report `device` and stay invisible. */
+    kNowPeekCursorRouteQuickDraw = 4
+};
+
+/* What the caller knows about the context it is calling from. Both facts
+   are the CALLER's and neither can be worked out here, which is why they
+   are passed rather than inferred - the first version inferred the
+   second from the first, because the drag happened to be the only
+   interrupt-time caller, and an accidental coupling like that is a
+   defect waiting for the second one. */
+enum {
+    /* The caller holds the pointer for the length of a gesture and must
+       never yield to another mover - mid-drag, the plane IS the mover. */
+    kNowCursorPlaceOwned = 1u << 0,
+    /* No Toolbox beyond low-memory accessors may be called. */
+    kNowCursorPlaceInterrupt = 1u << 1
 };
 
 enum {

@@ -66,6 +66,7 @@
 #include <MacTypes.h>
 #include <LowMem.h>
 #include <Traps.h>
+#include <Quickdraw.h>
 
 #include "peek_table.h"
 #include "now_cursor_logic.h"
@@ -106,7 +107,7 @@ static unsigned long gForeignTicks = 0;
 static Boolean gBooted = false;
 
 void now_ext_cursor_boot(NowPeekTable *table);
-int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned);
+int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
 NowPeekCursorCell *now_ext_cursor_cell(NowPeekTable *table);
 
 /* The cursor cell, or NULL when this table is too short to hold one.
@@ -158,7 +159,7 @@ static Boolean cursor_manager_present(void)
  * allocates, blocks or moves memory - the low-memory accessors are
  * absolute moves, and CursorDeviceMoveTo is the call the ADB driver
  * makes from its own interrupt handler. */
-int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned)
+int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
 {
     NowPeekCursorCell *cell = now_ext_cursor_cell(gTable);
     Point pt;
@@ -196,11 +197,43 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned)
     }
 
     if (now_cursor_should_yield((NowPeekU32)now, (NowPeekU32)gForeignTicks,
-                                owned,
+                                (flags & kNowCursorPlaceOwned) ? 1 : 0,
                                 (NowPeekU32)kNowPeekCursorYieldTicks)) {
         route = kNowPeekCursorRouteYielded;
         if (cell != NULL) {
             cell->yielded++;
+        }
+    } else if (!(flags & kNowCursorPlaceInterrupt)) {
+        /* THE ONLY ROUTE THAT MOVES THE PICTURE, and it is the crudest
+           of the three.
+
+           Everything upstream is already correct by the time we get
+           here: the low-memory globals hold the point, and the Cursor
+           Device Manager's own record does too - CursorDeviceMoveTo
+           answers noErr and `where` reads back exactly right, verified
+           from outside the guest. What none of that does is DRAW. On
+           Mac OS 9 the blit happens somewhere in the pointing device's
+           own interrupt path, and neither CrsrNew nor a direct call
+           through JCrsrTask reaches it; both were tried and both left
+           the arrow where the emulated device had last put it.
+
+           HideCursor erases the sprite from wherever it is actually
+           drawn; ShowCursor draws it at the current mouse position,
+           which is the one we just wrote. The SHAPE is preserved -
+           this pair is a nesting counter, not a cursor setter - so an
+           application's own SetCursor still decides what is drawn.
+
+           It needs a real context: HideCursor and ShowCursor are
+           QuickDraw and are not interrupt-safe. The act plane has one,
+           because it runs inside the target application's jGNE filter.
+           The drag vehicle does not, which is why the flag exists and
+           why a drag still reports `device` and is still invisible. */
+        (void)now_cdm_move_to(gDevice, (long)h, (long)v);
+        HideCursor();
+        ShowCursor();
+        route = kNowPeekCursorRouteQuickDraw;
+        if (cell != NULL) {
+            cell->by_device++;
         }
     } else if (gDevice != NULL) {
         long err = now_cdm_move_to(gDevice, (long)h, (long)v);

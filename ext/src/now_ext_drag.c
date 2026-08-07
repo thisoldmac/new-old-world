@@ -85,7 +85,7 @@
    The two addresses went with it. Two files spelling 0x08CE is exactly
    how a pair drifts, and the one that was left behind would have been
    the one still being read. */
-extern int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned);
+extern int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
 
 typedef struct {
     TMTask task;                /* first: the Time Manager owns this */
@@ -137,7 +137,9 @@ NowPeekDragCell *now_ext_drag_cell(NowPeekTable *table)
    the application is already tracking. */
 static void drag_place(NowPeekI32 h, NowPeekI32 v)
 {
-    (void)now_ext_cursor_place(h, v, 1);
+    (void)now_ext_cursor_place(h, v,
+                               kNowCursorPlaceOwned
+                                   | kNowCursorPlaceInterrupt);
 }
 
 /* The two writes that are the button, and nothing else. Separated from

@@ -227,6 +227,42 @@ def main():
     print(f"    P8 says: {cursor_rows()}")
     del before
 
+    print("\n== C. an ACT, which is the case the ask was about ==")
+    print("  The drag vehicle above runs at INTERRUPT time and cannot")
+    print("  call QuickDraw; the act plane runs inside the target's own")
+    print("  jGNE filter and can. So this is the phase that exercises the")
+    print("  route that actually draws, and A/B above are its controls.")
+    controls = []
+    doc = link.scene(full=True, timeout=120)[0]
+    for win in doc.get("windows") or []:
+        for c in win.get("controls") or []:
+            rr = c.get("rect")
+            if c.get("ref") and isinstance(rr, dict) \
+                    and rr.get("r", 0) > rr.get("l", 0):
+                controls.append((c, rr))
+    if len(controls) < 2:
+        print("  only %d usable control(s); skipping" % len(controls))
+    else:
+        prev = q.screendump(os.path.join(args.shots, "C0-before-acts.ppm"))
+        for i, (c, rr) in enumerate(controls[:4], 1):
+            mid = ((rr["l"] + rr["r"]) // 2, (rr["t"] + rr["b"]) // 2)
+            try:
+                link.command("ctlact", {"element": c["ref"], "part": 10},
+                             timeout=120)
+            except nowwire.GuestError as exc:
+                print(f"  act {i} at {mid}: refused ({exc})")
+            # Longer than kNowPeekCursorYieldTicks (60 ticks, 1 s), on
+            # purpose: inside that window the plane is SUPPOSED to
+            # decline, and a run that acted faster than its own courtesy
+            # would report `yielded` and read as a broken plane.
+            time.sleep(1.6)
+            cur = q.screendump(
+                os.path.join(args.shots, f"C{i}-act.ppm"))
+            n3, box3, _ = diff_pixels(prev, cur)
+            print(f"  act {i} at {mid}: {n3} px changed, box {box3}")
+            print(f"    P8 says: {cursor_rows()}")
+            prev = cur
+
     print("\n== the two numbers, side by side ==")
     print(f"  resident move  {n} px  box {box}")
     print(f"  device move    {n2} px  box {box2}")

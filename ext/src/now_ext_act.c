@@ -104,7 +104,7 @@ extern void now_act_trackgoaway_patch(void);
 /* P8, the cursor plane. Declared rather than included for the same
    reason the core declares the planes it boots: this file knows one
    entry point and nothing about how the sprite is moved. */
-extern int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned);
+extern int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
 
 /* Documented trap numbers, from the ONEWORDINLINE on each declaration
    (Universal Interfaces 3.4) - not from memory and not from a
@@ -629,7 +629,7 @@ static int act_post_click(NowPeekActCell *cell)
        while these three writes still happen so the click lands exactly
        where the act says it does. The act never yields; only the picture
        does. */
-    (void)now_ext_cursor_place((NowPeekI32)pt.h, (NowPeekI32)pt.v, 0);
+    (void)now_ext_cursor_place((NowPeekI32)pt.h, (NowPeekI32)pt.v, 0u);
 
     LMSetMouseButtonState(0x00);              /* button down */
     if (PPostEvent(mouseDown, 0, &down) != noErr || down == NULL) {
