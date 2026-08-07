@@ -425,7 +425,12 @@ extension MirrorModuleLayoutRenderTests {
         }
     }
 
-    private func makeRig() throws -> Rig {
+    /// The same rig, for the panel test in this file.
+    static func sharedRig() throws -> Rig {
+        try MirrorModuleLayoutRenderTests().makeRig()
+    }
+
+    fileprivate func makeRig() throws -> Rig {
         let key = GuestKey.synthetic("layout-\(UUID().uuidString)")
         let harness = MirrorCycleHarness(activeKey: key)
         let listener = GuestListener(
@@ -582,5 +587,89 @@ extension MirrorModuleLayoutRenderTests {
                        version: "0.7", build: "now-2026-08-07",
                        operatingSystem: "Mac OS 9.2.2",
                        connectedAt: Date(), isActive: true)
+    }
+}
+
+/// **Each piece of content, alone, proved to draw.**
+///
+/// `assertHasContent` on a whole candidate is weaker than it sounds: a
+/// frame containing a Macintosh and an empty 260-point column is not one
+/// colour, so a swallowed inspector passes it. That is exactly the defect
+/// round one shipped — and it would have shipped again.
+///
+/// So every panel is also rendered on its own, at the width it actually
+/// gets, where "blank" and "one colour" are the same thing. Watched
+/// failing by mutation on 2026-08-07: making `MirrorScrollBox` return a
+/// `ScrollView` under review too fails all three of these and passes the
+/// whole-module test, which is the asymmetry this exists for.
+@MainActor
+final class MirrorPanelRenderTests: XCTestCase {
+
+    private func colours(_ view: some View, _ size: CGSize) throws -> Int {
+        let renderer = ImageRenderer(
+            content: AnyView(view
+                .frame(width: size.width, height: size.height)
+                .background(Color.white)
+                .environment(\.mirrorRenderingForReview, true)))
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        let rep = NSBitmapImageRep(cgImage: image)
+        var seen = Set<UInt32>()
+        for x in stride(from: 0, to: image.width, by: 2) {
+            for y in stride(from: 0, to: image.height, by: 2) {
+                guard let c = rep.colorAt(x: x, y: y) else { continue }
+                seen.insert(UInt32(c.redComponent * 255) << 16
+                            | UInt32(c.greenComponent * 255) << 8
+                            | UInt32(c.blueComponent * 255))
+            }
+        }
+        return seen.count
+    }
+
+    func testEveryMirrorPanelDrawsSomething() throws {
+        let rig = try MirrorModuleLayoutRenderTests.sharedRig()
+        var filter = MirrorEventFilter()
+        let binding = Binding(get: { filter }, set: { filter = $0 })
+        let column = CGSize(width: 260, height: 600)
+
+        /* **Differential, not a magic number.** A swallowed list still
+           draws the panel's header strip, so "more than a few colours"
+           passes it — measured 84 with the rows gone against 223 with
+           them. The honest guard is the same panel with nothing in it:
+           whatever the header costs, six rows must cost visibly more,
+           and that survives a font or a padding change in a way a
+           threshold of 150 would not. */
+        let bare = MirrorActTimeline(log: { _ in })
+        let bareCycles = MirrorCycleTimeline(log: { _ in })
+        let empty = try colours(
+            MirrorEventStreamView(timeline: bare, cycles: bareCycles,
+                                  filter: binding), column)
+        let events = try colours(
+            MirrorEventStreamView(timeline: rig.source.actTimeline,
+                                  cycles: rig.source.cycleTimeline,
+                                  filter: binding), column)
+        XCTAssertGreaterThan(events, empty + 40,
+            "the event stream drew \(events) colours at 260×600 against "
+            + "\(empty) for the same panel with no events in it — six "
+            + "rows cannot cost that little, so its container is "
+            + "swallowing them")
+
+        let cards = try colours(
+            MirrorScrollBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    MirrorLifecycleCard(model: rig.model)
+                    MirrorPlanesCard(model: rig.model, showsPolicy: false)
+                    MirrorSceneFactsCard(source: rig.source)
+                }
+                .padding(12)
+            }, column)
+        XCTAssertGreaterThan(cards, 8,
+            "the diagnostics cards drew \(cards) colours at 260×600")
+
+        let settings = try colours(
+            MirrorSettingsView(model: rig.model, dismiss: {}),
+            CGSize(width: 460, height: 460))
+        XCTAssertGreaterThan(settings, 8,
+            "the settings sheet drew \(settings) colours at 460×460")
     }
 }
