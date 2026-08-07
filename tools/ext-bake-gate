@@ -505,25 +505,65 @@ def staged_receipt_claims(root: str) -> int:
             (entry.get("image") or "").replace("~", os.path.expanduser("~"))))
         if p is None or not p.get("imageSha256"):
             continue
-        if p["imageSha256"] != entry.get("imageSha256"):
-            problems.append(
-                f"a bake receipt is being committed that does not describe "
-                f"the file it names:")
-            problems.append(f"    receipt  {entry.get('imageSha256')}")
-            problems.append(f"    {entry.get('image')}")
-            problems.append(f"    on disk  {p['imageSha256']}")
-            problems.append(
-                "  It was true when the bake finished and it is not true "
-                "now, so somebody")
-            problems.append(
-                "  baked over it in between. Committing it would put a "
-                "false claim about")
-            problems.append(
-                "  a shared file into git, where the next reader has no way "
-                "to tell. Re-bake,")
-            problems.append(
-                "  or drop the receipt and say in the commit message that "
-                "the oracle is theirs.")
+        if p["imageSha256"] == entry.get("imageSha256"):
+            continue
+        # A mismatch has TWO causes and only one of them is a lie. The
+        # file's ctime separates them, and getting this wrong in either
+        # direction is expensive:
+        #
+        #   ctime AFTER the receipt's time  — somebody installed over your
+        #     image between your bake and this commit. Your receipt is an
+        #     honest record of a bake that happened; it is merely no longer
+        #     true of the file. Refusing here would strand correct work for
+        #     a reason its author cannot act on (re-baking would stomp the
+        #     other lane straight back, which is an escalation, not a fix).
+        #     WARN.
+        #   ctime BEFORE it — the file at that path has not been written
+        #     since before this bake claims to have installed it, so this
+        #     bake did not install it. That claim was never true and no
+        #     amount of time makes it so. REFUSE.
+        #
+        # This case was found by its own test: the first version refused
+        # both, and the "another lane baked over it" test — the exact
+        # scenario six concurrent lanes make likely — went red.
+        superseded = False
+        try:
+            from datetime import datetime
+            fmt = "%Y-%m-%dT%H:%M:%S%z"
+            superseded = (datetime.strptime(p["imageCtime"], fmt)
+                          > datetime.strptime(entry["at"], fmt))
+        except Exception:
+            superseded = True     # cannot tell → do not refuse
+        if superseded:
+            print(f"[ext-bake-gate] NOTE: the image named by the receipt you are "
+                  f"committing has\n  been replaced since your bake "
+                  f"({p['imageCtime']} > {entry.get('at')}).\n"
+                  f"    receipt  {entry.get('imageSha256')}\n"
+                  f"    on disk  {p['imageSha256']}\n"
+                  f"  Your receipt is still an honest record of a bake and is "
+                  f"not refused.\n  The ORACLE, however, is now somebody "
+                  f"else's — say so wherever you quote a\n  result from it, "
+                  f"and see `tools/ext-bake-gate verify-image`.")
+            continue
+        problems.append(
+            "a bake receipt is being committed that CANNOT be true:")
+        problems.append(f"    receipt  {entry.get('imageSha256')}"
+                        f"   claimed installed {entry.get('at')}")
+        problems.append(f"    {entry.get('image')}")
+        problems.append(f"    on disk  {p['imageSha256']}"
+                        f"   last written {p.get('imageCtime')}")
+        problems.append(
+            "  The file has not been written since BEFORE this bake says it "
+            "installed it,")
+        problems.append(
+            "  so this bake did not install it. That is not a receipt "
+            "somebody overtook —")
+        problems.append(
+            "  it is a claim about a shared file that was never true, and "
+            "committing it")
+        problems.append(
+            "  puts it where the next reader has no way to check. Re-bake, "
+            "or drop it.")
     if not problems:
         return 0
     print("", file=sys.stderr)
@@ -551,17 +591,24 @@ def merge_check(root: str) -> int:
     per-clone git config, and a clone that never ran tools/setup-hooks has
     none.
     """
-    doc = load(root)
+    # The text FIRST, and json.load only if the text is plausible: a file
+    # full of conflict markers is the single most likely thing to be sitting
+    # here, and a gate that dies with a JSONDecodeError traceback instead of
+    # saying "there are conflict markers in it" has answered nothing.
     problems = []
+    doc: dict = {"receipts": []}
     try:
         with open(os.path.join(root, RECEIPTS)) as fh:
             raw = fh.read()
-        if "<<<<<<<" in raw or ">>>>>>>" in raw:
-            problems.append(f"{RECEIPTS} still has conflict markers in it.")
     except FileNotFoundError:
         return 0
-    except Exception as exc:
-        problems.append(f"{RECEIPTS} does not parse: {exc}")
+    if "<<<<<<<" in raw or ">>>>>>>" in raw:
+        problems.append(f"{RECEIPTS} still has conflict markers in it.")
+    else:
+        try:
+            doc = json.loads(raw)
+        except Exception as exc:
+            problems.append(f"{RECEIPTS} does not parse: {exc}")
 
     entry = latest_bake(doc)
     if entry:
