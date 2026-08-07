@@ -14,6 +14,120 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: the drive loop's own instrument armed every plane except the one that draws interiors (2026-08-07, `claude/019-instrument-arms-content`)
+
+**Verification level: EMULATOR-VERIFIED, by mutation.** Own VM, lane block
+520 (anchor 16160 / wire 16161), plain-base clone of `os91-runner.qcow2`
+carrying this checkout's build — the guest that dialled reported
+`113f1b176035`, which is this tree's `NOW_SRC_HASH`. Nothing here ran on
+the PowerBook. Evidence:
+`~/Lab/Assets/now-mirror-assets/019-instrument-arms-content/`.
+
+`tools/local-pair-capture.py` never issued `qdtrace start`, and its
+warm-up comment said the planes arm "as a RESULT" of a scene walk. That
+is true of **three** planes. P1, P2 and P4 echo the resident's arm
+request unconditionally (`ext/src/now_ext.c:294,299,323`); **P3 appears
+nowhere in that function**. Its bit is set in exactly one place
+(`ext/src/now_content.c:1843`), reachable only under a verdict over
+`arm_window` / `arm_psn` / `arm_generation`. Content is not a plane at
+all — it is a per-window, per-A5, TTL-bounded **spotlight**, and the only
+thing in the PPC app that claims it is `qdtrace start`
+(`now-guest-ppc/src/content/qdtrace_cmd.c:311`), released at `:354`.
+
+### The part that makes arming necessary but not sufficient
+
+`SceneBuilder.normalizeWindows` sets `display: nil` **unconditionally**
+(`mirror/host/MirrorKit/Sources/MirrorKit/SceneBuilder.swift:285`). So no
+scene envelope from any capture has ever carried content ops, armed or
+not. The interior arrives on a **second artifact** — a `qdtrace` drain,
+composed by `NOWMirrorContentPlane.apply(drain, to:)` — which this tool
+did not write. Arming alone would have changed nothing on disk; the tool
+had to start emitting a drain as well.
+
+Sweep B said this in its own words on 2026-08-07
+(`docs/fidelity-sweep-2026-08-07-b.md:414-417`): *"a rig that reports
+empty interiors is reporting its drain, and the drain is a different
+channel."* It was written about other rigs and nothing checked this one
+against it.
+
+### The mutation, and what the control reproduces
+
+One target — Date & Time — captured twice on the same machine minutes
+apart, once armed and once with the arm disabled by `--no-content`:
+
+| | armed | control (`--no-content`) |
+|---|---|---|
+| drain records | **3917** | **0** |
+| op families | state 1793, line 519, rect 510, text 313, bits 220, rrect 146, worldborn/worlddied 139 each, blitsrc 138 | none |
+| distinct strings | 48, including `1:19 PM`, `2026`, `Apple Americas/…` | 0 |
+| the plane's own sentence | "784 new draw ops; 139 offscreen worlds hooked at creation; … joined 138 composites" | "waiting for the guest to draw" |
+
+Rendered through `LiveShapedRenderTests.testRenderASweepAsTheAppWouldDrawIt`
+onto its own scene, the armed render draws the panel — both date and time
+values, the Time Zone and Network Time Server sentences, the group box
+titles. **The control renders the same window with the field values empty,
+the static text absent and the group box titles unpainted.**
+
+That control picture is worth more than the fix. It is, close enough to
+identical, what round 3's LOOK recorded as a render defect
+(`## BROKEN: the integrated render at round 3`, above: "Date & Time —
+**unchanged** — Still no group boxes at all … Text fields are empty grey
+slabs"). The defect is reproducible on demand by disabling one arm, on a
+tree where the renderer draws that panel correctly.
+
+### Why it survived: the quiet hatch and the loud one
+
+An unarmed capture and a genuinely empty window produced the *same*
+artifact, and there was no way to tell them apart afterwards — which is
+why nobody noticed for a day. The asymmetry `claude/019-sweep-c` found
+in the same pass is the other half of this: **"Bitmap unavailable" can
+only come from a drain, so its presence is positive proof P3 was armed.**
+The loud hatch carries its own provenance; the quiet one carries none.
+
+So the fix is not only "arm it" — it is to make the arm **legible in the
+artifact**, the way the loud hatch already is:
+
+- `contentArm` in `manifest.json` per target: `requested`, `ok`, `reason`,
+  `window`, `psn`, `ttlTicks`, `records`.
+- `<slug>-drain.json` in the fixture shape the content plane accepts,
+  whose `provenance.run` reads `NOT ARMED: <reason>` when it was not —
+  so the statement survives being copied into `Fixtures/`.
+- `LIMITS.md` via `tools/sweeplimits`, and the same limits stamped inside
+  `manifest.json`.
+- stdout names every unarmed target at the end of the run.
+
+`--no-content` is the control, implemented as a subclass that refuses
+rather than as flags threaded through the capture: a control made of
+scattered `if`s is not a control.
+
+### The sweep of every other instrument in `tools/`
+
+| tool | has the hole? |
+|---|---|
+| `local-pair-capture.py` | **yes — fixed here** |
+| `fidelity-sweep.py` | no. Arms per target at line 220, releases at 298. |
+| `fidelity-live.py` | no, but it does not check. It reads the **live host** over the agent socket, and the host arms P3 itself (`NOWMirrorContentPlane.swift:298`). A run against a host that never armed would report every window stably empty and read as a stability result; nothing in the run says which. Worth a guard, not a defect today. |
+| `mirror-corpus` | same shape as `fidelity-live`: its `ir` read comes through the host. It records `contentGeneration`, which is a partial signal, and does not assert the arm. |
+| `fidelity-pair.py` | no — a post-processor over a sweep directory; captures nothing. |
+| `local-arm-latency.py` | no — arming is its subject. |
+| `local-observe-plane.py`, `local-plane-lapse.py`, `scene-delta-bench.py`, `local-scene-bench.py`, `local-control-drive.py`, `local-act-pump.py` | no — plane binding, wire bytes, walk timing, control classification, act latency. None claims anything about interiors. |
+| `mirror-gate`, `shot` | no — a rules ledger and a screenshot. |
+
+### Two things noticed in passing, not chased
+
+- **The attribution fingerprint in circulation is unsound.**
+  `<label>-guest.ppm` is written by **both** tools — `fidelity-sweep.py:293`
+  and `local-pair-capture.py:217` — so it cannot tell them apart. The
+  discriminators that hold are `manifest.json` and a surviving
+  `-guest.png` (pair capture only) versus `sweep-summary.json`,
+  `LIMITS.md` and `<label>.json` (sweep only). Anyone re-deriving an
+  attribution table should use those.
+- **`local-pair-capture.py` still has no `--expect-build`.** Every QEMU
+  guest on this Mac sees the host as `10.0.2.2`, and this tool believes
+  whoever dials. The build was checked by hand for this run; it is not
+  checked by the tool. `fidelity-sweep.py`'s `--expect-build auto` is the
+  pattern.
+
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
 Emulator-capture-verified, on the lane's own VM (block 591, anchor 16728 /
@@ -1382,6 +1496,19 @@ if you forget which planes you armed.
   render, from the defect above. `requested`/`active` went 0/0 → 7/7
   across one request and the body grew 25701 → 42621 bytes. A capture
   rig needs a warm-up scene it throws away.
+
+  **2026-08-07, `claude/019-instrument-arms-content`: "the planes" is
+  three planes, not four.** P1, P2 and P4 echo the resident's arm request
+  unconditionally (`ext/src/now_ext.c:294,299,323`). P3 — content —
+  appears nowhere in that function; its bit is set in exactly one place
+  (`ext/src/now_content.c:1843`), under a verdict over `arm_window` /
+  `arm_psn` / `arm_generation`. That is what the **7** above is: seven
+  requested with content dark. `qdtrace start` takes it to **15** and
+  `qdtrace stop` returns it to **7**. So the sentence is right about what
+  it measured and wrong about what it implies, and the same sentence sat
+  in `tools/local-pair-capture.py`'s warm-up comment, where it read as
+  permission not to arm anything else. Both are now corrected; the entry
+  below has the rest.
 - **`cycle` restores the previously-front application when it finishes**
   (`restored: true`), which is correct and is not what a walk of one
   target wants. Front the target with `script`, then `cycle`, then walk.
