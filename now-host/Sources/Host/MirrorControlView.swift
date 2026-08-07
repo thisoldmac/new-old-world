@@ -125,7 +125,7 @@ struct MirrorControlView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            ScrollView {
+            MirrorScrollBox {
                 VStack(alignment: .leading, spacing: 14) {
                     MirrorActsCard(timeline: timeline)
                     MirrorCyclesCard(cycles: cycles)

@@ -108,14 +108,36 @@ struct MirrorEvent: Identifiable, Equatable {
     }
 }
 
-/// Which kinds the stream is showing. A struct rather than two `Bool`s in
-/// a view so the default — acts on, cycles off — is stated once, where
-/// the reason for it can be written down.
+/// Which kinds the stream is showing. A closed set rather than two
+/// independent `Bool`s, because two booleans have four states and only
+/// three of them are a thing anybody wants: "cycles only" is a view of
+/// the poll with the person's own actions hidden.
 struct MirrorEventFilter: Equatable {
-    var showsActs: Bool = true
-    /// **Off.** See `MirrorEvent`: a cycle every half second buries the
-    /// handful of acts a person is actually looking for.
-    var showsCycles: Bool = false
+    enum Kinds: String, CaseIterable, Identifiable, Equatable {
+        /// **The default.** See `MirrorEvent`: a cycle every half second
+        /// buries the handful of acts a person is actually looking for.
+        case acts
+        case actsAndCycles
+        case everything
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            /* Short enough for a 260-point column's header strip beside
+               the lane depth. The long form is the help text; a pop-up
+               whose widest item sets the control's width is how the
+               lane depth came to render as "1 in…". */
+            case .acts: return "Acts"
+            case .actsAndCycles: return "Acts + cycles"
+            case .everything: return "All"
+            }
+        }
+    }
+
+    var kinds: Kinds = .acts
+    var showsActs: Bool { true }
+    var showsCycles: Bool { kinds != .acts }
 }
 
 extension MirrorOperationOutcome {
@@ -165,7 +187,7 @@ struct MirrorEventStreamView: View {
             if events.isEmpty {
                 empty
             } else {
-                ScrollView {
+                MirrorScrollBox {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(events) { event in
                             MirrorEventRow(
@@ -186,17 +208,25 @@ struct MirrorEventStreamView: View {
                 .font(.callout.weight(.medium))
                 .foregroundStyle(timeline.depth > 1 ? .primary : .secondary)
                 .lineLimit(1)
+                .layoutPriority(1)
             Spacer(minLength: 4)
-            /* A menu, not two toggles in the strip. The kinds are a
-               filter over one list and will gain a third; a menu grows
-               and a row of checkboxes does not. */
-            Menu {
-                Toggle("Acts", isOn: $filter.showsActs)
-                Toggle("Scene cycles", isOn: $filter.showsCycles)
-            } label: {
-                Label("Filter", systemImage: "line.3.horizontal.decrease")
+            /* A pop-up over the closed set of kinds, rather than a
+               `Menu` of toggles. Two reasons and the second is the
+               deciding one: the kinds are mutually informative rather
+               than independent — a person wants acts, or acts and
+               cycles, not cycles alone often enough to be worth a
+               checkbox each — and a bordered `Menu` returns the
+               prohibited placeholder in the offscreen renderer, so
+               choosing one would mean this drawer could never be
+               reviewed again without a person at the machine.
+               (`MirrorReviewRendering` carries the measurements.) */
+            Picker("", selection: $filter.kinds) {
+                ForEach(MirrorEventFilter.Kinds.allCases) { kinds in
+                    Text(kinds.label).tag(kinds)
+                }
             }
-            .menuStyle(.borderlessButton)
+            .pickerStyle(.menu)
+            .labelsHidden()
             .fixedSize()
             .help("Which kinds of event this list shows. Scene cycles are "
                   + "off by default: the Mirror publishes one about twice a "
@@ -208,13 +238,8 @@ struct MirrorEventStreamView: View {
 
     private var empty: some View {
         VStack(spacing: 6) {
-            Text(filter.showsActs || filter.showsCycles
-                 ? "Nothing has happened yet."
-                 : "Every kind is filtered out.")
-                .font(.callout)
-            Text(filter.showsActs || filter.showsCycles
-                 ? "Clicking on the Macintosh puts an act here."
-                 : "Turn one back on in the filter menu.")
+            Text("Nothing has happened yet.").font(.callout)
+            Text("Clicking on the Macintosh puts an act here.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

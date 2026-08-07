@@ -29,7 +29,7 @@ struct MirrorSettingsView: View {
                 header
                 Divider()
             }
-            ScrollView {
+            MirrorScrollBox {
                 VStack(alignment: .leading, spacing: 16) {
                     machine
                     planes
