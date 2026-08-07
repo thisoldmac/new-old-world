@@ -148,7 +148,7 @@ public enum UnknownVisual {
                 CGImageAlphaInfo.premultipliedLast.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false,
             intent: .defaultIntent)!
-        return Image(decorative: cg, scale: 1)
+        return Image(decorative: cg, scale: 1).interpolation(.none)
     }()
 
     /// Where the caption's baseline goes, or nil if the rectangle is too

@@ -92,14 +92,32 @@ public final class BitmapFont {
     /// any Platinum gray comes from the same black strike.
     public func draw(_ string: String, in ctx: GraphicsContext,
                      x: CGFloat, baselineY: CGFloat, color: Color) {
-        var pen = x
+        /* **THE PEN LANDS ON A WHOLE PIXEL, and that is faithful rather
+           than tidy.** QuickDraw has no sub-pixel pen: a bitmap strike on
+           the real machine is blitted at an integer position, and every
+           glyph offset in this type is already an integer. Only the
+           caller's origin could be fractional — a centred window title is
+           `(l + r)/2 - width/2` and lands on a half pixel whenever the
+           two parities differ.
+
+           It did not visibly matter while the sheet was drawn smoothed,
+           because a half-pixel offset merely blurred. Under
+           nearest-neighbour it CORRUPTS: the clip sits at the fractional
+           box while the sample snaps to whichever source pixel is
+           nearest, so a glyph picks up a column of the sheet cell BESIDE
+           it. Watched on 2026-08-07 as a "c" in a centred window title
+           growing a stray dot, in one render of a pair whose other half
+           was pixel-identical — and `IslandRenderTests` caught it,
+           because that pair is compared byte for byte. */
+        var pen = x.rounded()
+        let top = baselineY.rounded() - CGFloat(ascent)
         var boxes: [(dst: CGRect, g: Glyph)] = []
         for ch in string {
             let g = glyphs[ch] ?? space
             if g.w > 0, g.h > 0 {
                 // The sheet cell's top sits (ascent) above the baseline.
                 let dst = CGRect(x: pen + CGFloat(g.left),
-                                 y: baselineY - CGFloat(ascent),
+                                 y: top,
                                  width: CGFloat(g.w), height: CGFloat(g.h))
                 boxes.append((dst, g))
             }
@@ -113,7 +131,8 @@ public final class BitmapFont {
                 var gg = inner
                 gg.clip(to: Path(dst))
                 // Position the whole sheet so this glyph's (x,y) lands at dst.
-                gg.draw(Image(decorative: sheet, scale: 1),
+                gg.draw(Image(decorative: sheet, scale: 1)
+                            .interpolation(.none),
                         in: CGRect(x: dst.minX - CGFloat(g.x),
                                    y: dst.minY - CGFloat(g.y),
                                    width: sheetW, height: sheetH))
