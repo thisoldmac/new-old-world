@@ -38,11 +38,13 @@ public enum AppList {
         /// whether a row belongs in a switcher.
         public var background: Bool
         /// What this process is, and what we know about what it has —
-        /// `headless` / `windowed` / `idle` / `unobserved` / `unclassified`.
+        /// `headless` (a kind), `windowed`, `empty` (we looked, there are
+    /// none) or `unknown` (we could not establish it, and why).
         /// See `ProcessPresence` for why one word for three states was a
         /// permanently-false health signal.
         public var presence: ProcessPresence
-        /// The guest's own token for an `unobserved` or `unclassified` row.
+        /// Why, for an `unknown` row — the guest's own token where there is
+        /// one. Never a word invented here.
         public var presenceReason: String?
         /// Windows the scene attributes to this psn. Explains the row's
         /// classification directly (`windows > 0 || front` is exactly the
@@ -55,7 +57,7 @@ public enum AppList {
 
         public init(psn: String, name: String, front: Bool,
                     background: Bool, windows: Int, error: String? = nil,
-                    presence: ProcessPresence = .unclassified,
+                    presence: ProcessPresence = .unknown,
                     presenceReason: String? = nil) {
             self.psn = psn
             self.name = name

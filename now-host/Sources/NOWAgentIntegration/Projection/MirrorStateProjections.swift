@@ -259,7 +259,7 @@ public enum MirrorSnapshotProjection: HostProjection {
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
             title: "New Old World Mirror Snapshot",
-            description: "Returns the immutable state projection the native Mirror reads: snapshot and session identity, digest, coverage, freshness, stable process/window entities (each process carrying `presence`: `headless` for a process that declares it has no user interface, `windowed`, `idle` for one with a face and nothing open right now, `unobserved` when the walk failed, `unclassified` when neither signal was available), guest-provided menubar rows, and per-window surfaces — geometry, controls, dialog items, Finder items, and the content plane's QuickDraw draw ops for replay. Bounded lists always report their true total (itemTotal, displayTotal, contentTotal) beside what was returned.",
+            description: "Returns the immutable state projection the native Mirror reads: snapshot and session identity, digest, coverage, freshness, stable process/window entities (each process carrying `presence`: `headless` for a process that declares it has no user interface, `windowed`, `empty` when we looked and it has no windows open right now, and `unknown` — with `presenceReason` — when we did not or could not establish it), guest-provided menubar rows, and per-window surfaces — geometry, controls, dialog items, Finder items, and the content plane's QuickDraw draw ops for replay. Bounded lists always report their true total (itemTotal, displayTotal, contentTotal) beside what was returned.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,

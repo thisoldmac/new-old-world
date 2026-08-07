@@ -484,16 +484,19 @@ operations:
       longer send it for a process that declared backgroundOnly: for such
       a process there was never an anchor to find, so its absence is the
       machine working.
-      THE WORD FOR "WE DID NOT LOOK" IS `unavailable`, everywhere. A
-      coverage claim of status `unavailable` says the producer did not
-      enumerate this scope, and its `reason` says why - `no-ui` when the
+      EMPTY AND UNKNOWN ARE DIFFERENT WORDS FOR DIFFERENT FACTS, and
+      every plane in this IR says the difference the same way. EMPTY - we
+      looked, there are none - is a fact about the MACHINE, and it is a
+      coverage claim of status `complete` over a list with nothing in it.
+      UNKNOWN - we did not, or could not, establish it - is a fact about
+      US, and it is status `unavailable` with a `reason`: `no-ui` when the
       owning process declared backgroundOnly and there was nothing there
-      to enumerate, `not-observed` when we simply did not. A claim of
-      `complete` over an empty list is the opposite statement: we looked,
-      and there is nothing. Absence-known and absence-unknown are the
-      distinction the whole IR turns on, and any plane that can be
-      delivered late says it the same way rather than inventing a second
-      vocabulary.
+      to enumerate, `not-observed` when we simply did not look. A plane
+      that can be delivered late is UNKNOWN until it arrives, not empty,
+      and it says so with these same two words rather than a third that
+      names its own mechanism. HEADLESS IS NEITHER: it is a KIND, what the
+      process is, and it is carried by backgroundOnly rather than by a
+      coverage claim.
       IR V2 COLLECTION AUTHORITY. meta.coverage[] carries a typed scope,
       optional process-incarnation owner, status, and optional reason.
       Status is complete, partial, retracted, failed, stale, or unavailable.

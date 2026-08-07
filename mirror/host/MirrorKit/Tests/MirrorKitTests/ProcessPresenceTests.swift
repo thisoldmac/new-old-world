@@ -36,23 +36,23 @@ final class ProcessPresenceTests: XCTestCase {
 
     /// State 2. Enumerated — no error — and nothing open. The guest said so;
     /// this side did not guess it from a window count it could not interpret.
-    func testAFaceWithNothingOpenIsIdle() {
+    func testAFaceWithNothingOpenIsEmpty() {
         let verdict = ProcessPresence.classify(
             app("SimpleText", backgroundOnly: false), windowCount: 0)
-        XCTAssertEqual(verdict.presence, .idle)
+        XCTAssertEqual(verdict.presence, .empty)
         XCTAssertFalse(verdict.presence.hasNothingToCover,
-                       "an idle application HAS a visibility answer to give")
+                       "an application with a face HAS a visibility answer to give")
     }
 
     /// State 3. The only failure of the three, and it keeps its token.
-    func testAFaceWeCouldNotReadIsUnobservedWithTheGuestsOwnReason() {
+    func testAFaceWeCouldNotReadIsUnknownWithTheGuestsOwnReason() {
         for token in ["ax_oracle_not_found", "ax_oracle_ambiguous",
                       "ax_oracle_mismatch", "ax_read", "now_no_plane",
                       "now_not_walked", "now_unknown_verdict"] {
             let verdict = ProcessPresence.classify(
                 app("SimpleText", backgroundOnly: false, error: token),
                 windowCount: 0)
-            XCTAssertEqual(verdict.presence, .unobserved, token)
+            XCTAssertEqual(verdict.presence, .unknown, token)
             XCTAssertEqual(verdict.reason, token,
                            "the guest's own word, never a word of ours")
         }
@@ -78,19 +78,19 @@ final class ProcessPresenceTests: XCTestCase {
             ProcessPresence.classify(
                 app("Finder", backgroundOnly: false, error: "ax_oracle_stale"),
                 windowCount: 0).presence,
-            .unobserved)
+            .unknown)
     }
 
     // MARK: - What we do not know, we say
 
     /// A scene from a guest that predates the declaration, with nothing open
-    /// and no error, is genuinely ambiguous between `headless` and `idle`.
-    /// Reported as unclassified rather than given the comfortable answer:
+    /// and no error, is genuinely ambiguous between `headless` and `empty`.
+    /// Reported as unknown rather than given the comfortable answer:
     /// inventing a classification for something we could not read is the
     /// plausible-wrong-answer this work exists to kill.
-    func testNoDeclarationAndNothingOpenIsUnclassified() {
+    func testNoDeclarationAndNothingOpenIsUnknown() {
         let verdict = ProcessPresence.classify(app("Mystery"), windowCount: 0)
-        XCTAssertEqual(verdict.presence, .unclassified)
+        XCTAssertEqual(verdict.presence, .unknown)
         XCTAssertEqual(verdict.reason, ProcessPresence.noDeclarationReason)
     }
 
@@ -113,10 +113,42 @@ final class ProcessPresenceTests: XCTestCase {
         let faceless = ProcessPresence.classify(
             app("Control Strip Extension", backgroundOnly: true),
             windowCount: 0)
-        let idle = ProcessPresence.classify(
+        let empty = ProcessPresence.classify(
             app("SimpleText", backgroundOnly: false), windowCount: 0)
         XCTAssertEqual(faceless.presence, .headless)
-        XCTAssertEqual(idle.presence, .idle)
+        XCTAssertEqual(empty.presence, .empty)
+    }
+
+    /// THE FOURTH CONDITION, and the one that looks exactly like state 2.
+    ///
+    /// An application acquires an anchor slot only after it has been
+    /// frontmost at least once since NOW armed — 451 armed passes produced
+    /// ONE slot scan, because `capture_anchor`'s A5 fast path skips the
+    /// scan unless the context changed. A process that has never come
+    /// forward is not failing to be observed; the filter has never run
+    /// inside it. In the scene it arrives as `ax_oracle_not_found` with no
+    /// windows, which is observationally identical to an application with
+    /// nothing open — and calling it `empty` would be a confident claim
+    /// about a machine we have never looked at.
+    ///
+    /// `empty` is EARNED by a successful enumeration, never assumed from a
+    /// zero count. This is the assertion that keeps it that way.
+    func testAProcessWeHaveNeverBeenAbleToInspectIsUnknownNotEmpty() {
+        let neverFront = ProcessPresence.classify(
+            app("Apple System Profiler", backgroundOnly: false,
+                error: "ax_oracle_not_found"),
+            windowCount: 0)
+        XCTAssertEqual(neverFront.presence, .unknown,
+                       "no windows AND no anchor is a fact about us, not "
+                       + "about the machine")
+        XCTAssertEqual(neverFront.reason, "ax_oracle_not_found")
+
+        // The difference between them is the ERROR, not the count: same
+        // zero, opposite answers.
+        XCTAssertEqual(
+            ProcessPresence.classify(app("SimpleText", backgroundOnly: false),
+                                     windowCount: 0).presence,
+            .empty)
     }
 
     // MARK: - Over a whole scene
@@ -144,7 +176,7 @@ final class ProcessPresenceTests: XCTestCase {
                              plane: nil))
         let byPsn = ProcessPresence.classify(scene)
         XCTAssertEqual(byPsn["0.1"]?.presence, .windowed)
-        XCTAssertEqual(byPsn["0.2"]?.presence, .idle)
+        XCTAssertEqual(byPsn["0.2"]?.presence, .empty)
         XCTAssertEqual(byPsn["0.3"]?.presence, .headless)
     }
 }

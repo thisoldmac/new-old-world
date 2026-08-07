@@ -166,7 +166,7 @@ final class AppListTests: XCTestCase {
     ///
     /// The declaration decides now. Same observable shape — no windows, not
     /// frontmost — and opposite answers.
-    func testAnIdleApplicationIsNotFiledAsFaceless() {
+    func testAnApplicationWithNothingOpenIsNotFiledAsFaceless() {
         let s = scene(apps: [
             Scene.AppRef(psn: "0.1", name: "Finder", front: true,
                          backgroundOnly: false),
@@ -180,7 +180,7 @@ final class AppListTests: XCTestCase {
         XCTAssertEqual(rows.map(\.name), ["Finder", "SimpleText"],
                        "an application with nothing open is still an "
                        + "application an agent can talk to")
-        XCTAssertEqual(rows.first { $0.name == "SimpleText" }?.presence, .idle)
+        XCTAssertEqual(rows.first { $0.name == "SimpleText" }?.presence, .empty)
         XCTAssertEqual(rows.first { $0.name == "Finder" }?.presence, .windowed)
 
         let all = AppList.rows(s, includeBackground: true)
@@ -195,7 +195,7 @@ final class AppListTests: XCTestCase {
         let rows = AppList.rows(realisticScene(), includeBackground: true)
         XCTAssertEqual(rows.first { $0.name == "tbt-worker" }?.background, true)
         XCTAssertEqual(rows.first { $0.name == "tbt-worker" }?.presence,
-                       .unclassified,
+                       .unknown,
                        "without a declaration we say we do not know, rather "
                        + "than dressing the guess up as an answer")
         XCTAssertEqual(rows.first { $0.name == "tbt-worker" }?.presenceReason,

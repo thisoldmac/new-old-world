@@ -114,7 +114,10 @@ public struct AgentIntegrationMirrorEntity:
     /// guest observation, not something the structural roster implies.
     public let visible: Bool?
     /// For a `process` entity: what it is, and what we know about what it
-    /// has — `headless`, `windowed`, `idle`, `unobserved`, `unclassified`.
+    /// has. `headless` is a KIND — the process declared it has no user
+    /// interface. `windowed` and `empty` are facts about the MACHINE: we
+    /// looked, and it has windows, or it has none open right now.
+    /// `unknown` is a fact about US, and `presenceReason` says which.
     ///
     /// An agent driving the machine needs "this process has no UI by
     /// design" as much as a renderer does. Without it, a faceless
@@ -124,8 +127,8 @@ public struct AgentIntegrationMirrorEntity:
     ///
     /// nil on a `window` entity: the question is not asked of windows.
     public let presence: String?
-    /// The guest's own token behind an `unobserved` or `unclassified`
-    /// presence (`ax_oracle_*`, `now_*`). Never a word invented here.
+    /// Why a presence is `unknown` — the guest's own token where there is
+    /// one (`ax_oracle_*`, `now_*`). Never a word invented here.
     public let presenceReason: String?
     public let freshness: String
     public let actionable: Bool
