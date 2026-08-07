@@ -53,6 +53,47 @@ mechanism each traces to:
 | 6 | Some scrollbars render the blank-page icon, not arrows | Policy error: size-based blit classification asserts "document icon" for any icon-sized blit. A confident wrong answer. |
 | 7 | Unknown-creator / open-with modal renders nothing at all | Likely a window class that never enters the scene. Capture gap, not render gap — confirm before touching the renderer. |
 
+### Amendments from Sweep A (2026-08-07, appended not edited)
+
+Sweep A ran against the unmodified tree and corrected four of the seven
+rows above. The table stays as written — it is what was believed when
+the plan was drawn — and these are the corrections:
+
+- **Row 3 is far bigger than stated.** Pointer titles are not a Memory
+  quirk: Date & Time 6, General Controls 7, Monitors 13, Mouse 12,
+  Memory 21, Set Time Zone 5, plus the app-switcher **menu's own
+  title**. And nothing inside a Finder window is addressable at all —
+  ten list rows with **no refs**, still carrying icon-view grid rects of
+  zero width and height; the desktop's 19 items report **screen**
+  coordinates while every other surface is content-local.
+- **Row 4's "not dismissible" is REFUTED.** The Mail modal dismissed on
+  the first attempt via `dialogItem` in 7.6 s, no manual override used.
+  What is actually wrong: the window has **no title**, so `open "Mail"`
+  reports `timedOut` after 18 s having succeeded; and its buttons are
+  reported **twice with contradictory titles on the same refs**
+  (control walk `Yes/No/Set Up Now` correct, dialog-item walk
+  `OK/Cancel/Don't Save` wrong).
+- **Row 6 is aimed correctly but described wrongly.** There is no page
+  icon in any scroll bar in fifteen windows — arrows are simply absent.
+  The page icon fires where icon-sized **art** belongs: Mouse's tracking
+  pictures, Sherlock's channel buttons, both alert icons. Size-based
+  blit classification is still the defect; scroll bars are not its
+  symptom.
+- **Row 7 could not be reproduced.** No unknown-creator modal could be
+  forced. Slice 3 must first build a repeatable way to raise one.
+- **A defect no row predicted, and the largest in the set:** the
+  Finder's entire window interior renders as one "Bitmap unavailable"
+  hatch — no icons, no names, not even the item-count header — while
+  the machine draws ten items. Neither 2026-08-06 sweep scored a Finder
+  window, which is why this was invisible until now.
+- **Stability was already good where it could be measured.** Zero
+  differing pixels across two passes on eight panels. But the instrument
+  renders a *settled capture twice* and never draws two consecutive live
+  frames, so it **cannot see** the flicker Michelle reported. The live
+  signal that does exist: `baseComplete` false in every snapshot across
+  ten minutes, scene-gen 1→7 against content-gen 2→7. Slice 1 is still
+  justified; its evidence is that, not the two-pass diff.
+
 ## Slices
 
 Ordered so each leaves the tree green and the app usable. Per
@@ -275,7 +316,7 @@ finding.
 
 Per target, the five-axis 0–3 rubric from
 [fidelity-sweep-2026-08-06.md](../fidelity-sweep-2026-08-06.md)
-(STRUCTURE / TEXT / CONTROLS / ART / CHROME), **plus**:
+(TEXT / PLACEMENT / CONTROLS / REGIONS / CHROME), **plus**:
 
 - **STABILITY** (new, 0–3): open/act/close the target twice; do the two
   renders agree with each other? 3 = pixel-stable, 0 = different gaps
