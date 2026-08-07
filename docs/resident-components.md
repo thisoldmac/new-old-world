@@ -334,6 +334,38 @@ gets at least one deliberate boot before "verified" is claimed.
   first plane that can *write* into another process rather than only
   read low memory in its context.
 
+- **P7 — drag** (2026-08-07): a mouse button that stays **down** across a
+  gesture, and a resident that lets go whether or not anybody asks.
+
+  Its own plane, and not a ninth op on P4, for a structural reason worth
+  restating here because it constrains anything else that wants to act
+  while an application is busy: **P4 serves everything from the jGNE
+  filter, and the filter is not entered during a tracking loop.** The
+  moment the button goes down the application is inside `DragGrayRgn` or
+  `TrackControl` and has stopped calling `GetNextEvent`, so motion and
+  release cannot be delivered the way every other act is. P7 is therefore
+  a **Time Manager task** — the same vehicle P6 uses, for the same
+  reason: it fires regardless of who is being scheduled.
+
+  It installs **no trap patches at all**, which makes its blast radius
+  much smaller than P4's six; everything it does is four low-memory mouse
+  globals and a deadline.
+
+  **The dead-man is the charter-relevant part.** This is the first plane
+  that can leave the machine in a state the host cannot undo — a guest
+  holding the button sits in a tracking loop forever, and the host's only
+  channel is the cell the wedged application has stopped reading. So the
+  release is not something the host is trusted to send: the resident
+  carries two deadlines, clamps both itself so a caller cannot switch
+  them off, and releases whether or not asked. That generalises past
+  drag: **a resident capability whose failure mode is unreachable from
+  the host must carry its own undo**, and must clamp any parameter of it
+  that a caller could get wrong.
+
+  *Unverified.* Cross-compiles; the decision layer is tested and was
+  watched failing by mutation; the vehicle has never fired on a machine.
+  Attend its first boot the way P4's was attended.
+
 ## Charter amendment
 
 AGENTS.md's "what this is" grows one sentence, and this note is its
