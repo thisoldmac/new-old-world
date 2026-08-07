@@ -124,6 +124,18 @@ def main():
         d = {r[0]: r[1] for r in rows if isinstance(r, list) and len(r) == 2}
         return int(d.get("x", -1)), int(d.get("y", -1))
 
+    def cursor_rows():
+        """P8's own account of itself, when the resident has one.
+
+        Printed beside the pixels because `route` is the row that decides
+        what a zero-pixel result MEANS: a plane that took the low-memory
+        route and one that has no device at all both fail to move the
+        sprite, and only one of them is a defect."""
+        rows = link.command("mouseloc", timeout=60).get("mouseloc") or []
+        return {r[0]: r[1] for r in rows
+                if isinstance(r, list) and len(r) == 2
+                and r[0].startswith("cursor")}
+
     def any_control():
         for _ in range(12):
             doc = link.scene(full=True, timeout=120)[0]
@@ -135,6 +147,24 @@ def main():
                         return ctl, r
             time.sleep(2)
         return None, None
+
+    ext = (link.command("mirror", timeout=60).get("mirror") or {}) \
+        .get("extension") or {}
+    caps = ext.get("capabilities") or 0
+    print(f"resident {ext.get('lifecycle')}  caps={caps} ({bin(caps)})")
+    # AGENTS.md's requireTheBuildUnderTest(): every QEMU guest on this Mac
+    # sees the host as 10.0.2.2, so any session's VM can answer this
+    # listener. Bit 8 is kNowPeekTableCapCursor and no build before today
+    # can set it.
+    if not caps & 0x100:
+        print("  NOTE: bit 8 (cursor plane) is CLEAR - either this is not "
+              "the build under test, or the Cursor Device Manager gave "
+              "this machine no device. Everything below still runs and "
+              "the sprite is expected NOT to follow.")
+    else:
+        print("  bit 8 set: the Cursor Device Manager answered with a "
+              "device.")
+    print(f"  P8 says: {cursor_rows()}")
 
     ctl, r = any_control()
     if ctl is None:
@@ -175,6 +205,7 @@ def main():
     n, box, err = diff_pixels(a, b)
     print(f"  RESIDENT move 617,443 -> 180,160: {n} pixels changed, "
           f"box {box}{'  ' + err if err else ''}")
+    print(f"    P8 says: {cursor_rows()}")
     link.command("dragrelease", {"session": session}, timeout=60)
 
     print("\n== B. the EMULATED DEVICE moves the pointer (positive "
@@ -193,6 +224,7 @@ def main():
     print(f"    {'':22} guest mouseloc {mouseloc()}")
     n2, box2, _ = diff_pixels(c, d)
     print(f"  DEVICE move (+200,+150): {n2} pixels changed, box {box2}")
+    print(f"    P8 says: {cursor_rows()}")
     del before
 
     print("\n== the two numbers, side by side ==")

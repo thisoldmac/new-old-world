@@ -255,14 +255,26 @@ void now_ext_cursor_boot(NowPeekTable *table)
     gLastPlaced.h = 0;
     gLastPlaced.v = 0;
 
-    table->cursor_format = (NowPeekU32)kNowPeekCursorFormatV1;
-    cell = now_ext_cursor_cell(table);
-    if (cell == NULL) {
-        /* Too short a table to hold the cell: an older application's
-           block. The plane stays off rather than writing past it. */
-        table->cursor_format = 0;
+    /* THE CELL IS REACHED DIRECTLY HERE, and only here.
+       now_ext_cursor_cell() checks `magic`, and at boot MAGIC HAS NOT
+       COMMITTED YET - the core writes it last, deliberately, so that a
+       reader which sees the table the instant it becomes valid finds
+       every plane already advertised. So the accessor answers NULL for
+       the resident's own table during its own boot, and the first build
+       of this plane used it: cursor_format was zeroed, the capability
+       bit was never published, `mouseloc` reported no rows, and the
+       whole plane read exactly like a machine whose Cursor Device
+       Manager had no device. Watched 2026-08-07, caps=255.
+
+       P7's boot writes `table->drag.state` directly for the same reason.
+       The LENGTH check is kept, because that one is about the block this
+       binary allocated and is meaningful now. */
+    if (table->length < (NowPeekU32)(offsetof(NowPeekTable, cursor)
+                                     + sizeof(NowPeekCursorCell))) {
         return;
     }
+    table->cursor_format = (NowPeekU32)kNowPeekCursorFormatV1;
+    cell = &table->cursor;
     cell->seq = 0;
     cell->route = (NowPeekU32)kNowPeekCursorRouteNone;
     cell->asked = 0;
