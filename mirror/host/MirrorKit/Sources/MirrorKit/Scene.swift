@@ -11,10 +11,11 @@ import Foundation
 /// fields are additive within v1 (record them in `IRSchema.v1Additions`);
 /// removing or renaming one moves `IR.version`. See `IRVersion.swift`.
 ///
-/// One property is deliberately **outside** the frozen IR and is excluded
-/// from `Codable` — `Window.island`. Reason at its declaration.
-/// (`Window.items` was excluded with it and re-entered as an additive v1
-/// field on 2026-07-31; it encodes. This sentence used to name both.)
+/// Two properties are deliberately **outside** the frozen IR and excluded
+/// from `Codable` — `Window.displayEpoch` and `Window.contentPlane`. Reasons
+/// at their declarations. (`Window.island` was the first of that family and
+/// was removed outright on 2026-08-07; `Window.items` was excluded with it and
+/// re-entered as an additive v1 field on 2026-07-31, so it encodes.)
 public struct Scene: Codable, Equatable, Sendable {
     /// IR version stamp — the body's self-stamp, the same number the service
     /// puts in `result["irVersion"]`. Always `IR.version`; the fixture corpus
@@ -476,33 +477,32 @@ public struct Scene: Codable, Equatable, Sendable {
         /// this window has NO content stream, which is the common healthy
         /// case and renders semantics-only rather than waiting.
         ///
-        /// **Not in the frozen IR (v1/v2)**, for the same reason `island`
-        /// is not: it is host-internal render state that happens to live on
-        /// this struct. Every number in it already crosses the wire on the
-        /// drain records themselves.
+        /// **Not in the frozen IR (v1/v2)**: it is host-internal render state
+        /// that happens to live on this struct. Every number in it already
+        /// crosses the wire on the drain records themselves.
         public var displayEpoch: DisplayEpoch? = nil
-        /// M3 pixel island: this window's content area as the guest's REAL
-        /// pixels, for content with no semantics to read — the Finder
-        /// composites its icon views offscreen and blits them in, so their
-        /// icons exist only as pixels (finding
-        /// `finder-window-icons-are-offscreen-blits`). When set it IS the
-        /// content: the renderer draws it instead of the op replay, and the
-        /// chrome around it stays semantic. Fetched on change, cached between.
-        ///
-        /// **Not in the frozen IR (v1).** It has never been on the wire:
-        /// `Serve.sceneMethod` nils every island before encoding, because
-        /// island pixels ride their own pager, not the scene. This is
-        /// host-internal render state that happens to live on the same
-        /// struct — freezing it would put a base64 RGBA blob in an
-        /// interchange contract no consumer has ever received.
-        public var island: PixelIsland? = nil
+        /* REMOVED 2026-08-07: `island: PixelIsland?`.
+           It held this window's content area as the guest's REAL pixels,
+           fetched over the wire by `ScenePoller` and composited into the
+           render. NOW gates over-the-wire pixels as a post-stability
+           enrichment; the feature arrived as a passenger inside the
+           1 August wholesale vendoring of this subproject, and nobody
+           decided to cross the gate.
+
+           Why it had to go rather than be left switched off: wherever an
+           island covered a window, comparing "our render" against "the
+           guest's pixels" compared the guest's pixels against themselves.
+           The measurement and its subject were the same bytes.
+
+           Prior art, kept whole for a later deliberate re-implementation:
+           `archive/pixel-islands-2026-08-07/`. */
         /// **Whether the content plane was ever ASKED about this window** —
         /// see ``ContentPlaneAttention``. nil when the host has no content
         /// plane at all (no P3, or a guest that does not serve `qdtrace`),
         /// which is the case where neither answer would be true.
         ///
-        /// **Not in the frozen IR**, for the same reason `displayEpoch` and
-        /// `island` are not: host-internal render state that happens to live
+        /// **Not in the frozen IR**, for the same reason `displayEpoch` is
+        /// not: host-internal render state that happens to live
         /// on this struct. It describes what THIS host did, not what the
         /// machine is, so there is nothing for a guest to send.
         public var contentPlane: ContentPlaneAttention? = nil

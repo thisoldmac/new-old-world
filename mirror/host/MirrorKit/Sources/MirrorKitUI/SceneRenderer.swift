@@ -1006,32 +1006,28 @@ public struct SceneRenderer {
             || win.text != nil
             || win.dialogItems != nil
             || win.items != nil
-            || win.island != nil
         if !hasReportedContent {
             drawUnavailableVisual(contentCtx, content,
                                   Self.absentContentCaption(win))
         }
 
-        // M3 pixel island: when we hold the guest's real pixels for this
-        // content, they ARE the content — the app composited it offscreen and
-        // blitted it, so there are no ops to replay and no controls to place
-        // (the island already shows the real ones). The chrome around it stays
-        // semantic. See PixelIsland.swift / finder-window-icons-are-offscreen-blits.
-        // …unless we have the semantics after all. A Finder folder window with
-        // named items is the one case where the offscreen-blit story stopped
-        // being true: the Finder tells us what is in the window and where, so
-        // the mirror draws a MODEL, not a photograph. This is the last pixel
-        // island the mirror shows, and it is now the fallback rather than the
-        // answer.
-        if win.items == nil,
-           let island = win.island, let image = Self.cgImage(island) {
-            contentCtx.draw(Image(decorative: image, scale: 1)
-                                .interpolation(.none),
-                            in: CGRect(x: content.minX, y: content.minY,
-                                       width: CGFloat(island.width),
-                                       height: CGFloat(island.height)))
-            return
-        }
+        /* THE PIXEL ISLAND USED TO DRAW HERE, and it is gone (2026-08-07).
+           When the poller held the guest's real framebuffer bytes for this
+           window, they were drawn in place of everything below — so this
+           branch decided the whole content area for any window without a
+           named item roster.
+
+           That is why it had to go rather than be left switched off: a
+           window that looked right here looked right because it was a
+           PHOTOGRAPH of the guest, and comparing it against the guest
+           compared the guest's pixels with themselves. Every render score
+           taken over such a window measured nothing.
+
+           The rule it broke: guest-originated pixels may only reach the
+           screen through the asset pack (`IconAtlas`), never off the wire.
+           The display replay below already obeys it — it carries geometry
+           and identity, and draws the pack's art or an honest "unavailable"
+           hatch. Prior art: `archive/pixel-islands-2026-08-07/`. */
 
         // P3 owns unstructured content, while P2 owns concrete drawing wholly
         // contained by an exact semantic control/dialog rectangle. The replay
@@ -2694,22 +2690,6 @@ public struct SceneRenderer {
     }
 
     // MARK: - Helpers
-
-    /// A pixel island's RGBA8 as a drawable image.
-    static func cgImage(_ island: MirrorKit.PixelIsland) -> CGImage? {
-        guard island.width > 0, island.height > 0,
-              island.rgba.count >= island.width * island.height * 4,
-              let provider = CGDataProvider(data: island.rgba as CFData)
-        else { return nil }
-        return CGImage(width: island.width, height: island.height,
-                       bitsPerComponent: 8, bitsPerPixel: 32,
-                       bytesPerRow: island.width * 4,
-                       space: CGColorSpaceCreateDeviceRGB(),
-                       bitmapInfo: CGBitmapInfo(
-                        rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
-                       provider: provider, decode: nil,
-                       shouldInterpolate: false, intent: .defaultIntent)
-    }
 
     private func rect(_ r: MirrorKit.Rect) -> CGRect {
         CGRect(x: CGFloat(r.l), y: CGFloat(r.t),

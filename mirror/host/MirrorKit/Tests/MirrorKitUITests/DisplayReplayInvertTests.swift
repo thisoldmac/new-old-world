@@ -22,7 +22,7 @@ final class DisplayReplayInvertTests: XCTestCase {
         Scene.Window(id: "1.0/Invert#0", app: "Invert", psn: "1.0",
                      title: "Invert", kind: 0, rect: rect, front: true, z: 0,
                      visible: true, controls: [], text: nil, items: nil,
-                     display: display, island: nil)
+                     display: display)
     }
 
     private func scene(_ windows: [Scene.Window]) -> Scene {

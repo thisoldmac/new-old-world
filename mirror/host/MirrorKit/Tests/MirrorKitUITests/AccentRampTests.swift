@@ -105,7 +105,7 @@ final class AccentHighlightRenderTests: XCTestCase {
         var w = Scene.Window(id: "1.0/List#0", app: "Finder", psn: "1.0",
                              title: "List", kind: 0, rect: r, front: true,
                              z: 0, visible: true, controls: [], text: nil,
-                             items: nil, display: nil, island: nil)
+                             items: nil, display: nil)
         w.controls = [.init(
             ref: "list", role: "control", title: "",
             rect: Rect(l: 20, t: 40, r: 380, b: 240),

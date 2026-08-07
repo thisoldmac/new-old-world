@@ -24,7 +24,7 @@ final class SceneStackingRenderTests: XCTestCase {
                              psn: "1.\(name.count)", title: name, kind: kind,
                              rect: r, front: front, z: 0, visible: true,
                              controls: [], text: nil, items: nil,
-                             display: nil, island: nil)
+                             display: nil)
         /* PROVEN EMPTY, not unreported. A window that reports nothing at
            all is drawn as the "Guest content not reported" hatch, which
            covers the face this test reads - so the fixture would answer

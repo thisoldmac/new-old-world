@@ -21,13 +21,12 @@ public final class LiveMirrorController: MirrorSceneSource {
 
     public init(target: MirrorTarget,
                 qmpSocket: String? = nil,
-                display: Bool = false, islands: Bool = false) {
+                display: Bool = false) {
         self.target = target
         let wire = WireClient(target: target)
         var poller = ScenePoller(target: target, wire: wire)
         poller.includeDesktopItems = true
         poller.includeDisplay = display
-        poller.includeIslands = islands
         screen = poller.detectScreen()
         self.poller = poller
         dispatcher = ActionDispatcher(target: target, qmpSocket: qmpSocket,

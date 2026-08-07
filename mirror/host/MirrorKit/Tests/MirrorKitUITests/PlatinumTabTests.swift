@@ -301,7 +301,7 @@ final class PlatinumTabTests: XCTestCase {
             id: "0.1/\(panel.name)#0", app: panel.name, psn: "0.1",
             title: panel.name, kind: 2000,
             rect: rect, front: true, z: 0, visible: true, controls: [],
-            text: nil, items: nil, display: ops(panel), island: nil)
+            text: nil, items: nil, display: ops(panel))
         return Scene(version: 0, seq: 1, source: "fixture", capturedAt: 0,
                      screen: .init(w: 800, h: 600), apps: [], processes: nil,
                      menubar: nil, windows: [window], desktopItems: nil,

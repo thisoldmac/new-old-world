@@ -306,7 +306,6 @@ final class MirrorService {
             "session": session?.id ?? NSNull(),
             "worker": ["healthy": alive],
             "pollLatencyMs": (ms * 10).rounded() / 10,
-            "islandBytesFetched": poller.islandBytesFetched,
             "actAvailability": [
                 "semantic": true,
                 "tracking": qmpSocket != nil,
@@ -333,10 +332,8 @@ final class MirrorService {
         }
     }
 
-    private func pollScene(content: Bool = false,
-                           islands: Bool = false) -> Scene? {
-        poller.includeDisplay = content || islands
-        poller.includeIslands = islands
+    private func pollScene(content: Bool = false) -> Scene? {
+        poller.includeDisplay = content
         guard let s = try? poller.poll() else { return nil }
         lastScene = s
         return s
@@ -350,28 +347,20 @@ final class MirrorService {
            Date().timeIntervalSince1970 - cached.capturedAt < maxAge / 1000 {
             scene = cached
         } else {
-            scene = pollScene(content: include.contains("content"),
-                              islands: include.contains("islandMeta"))
+            scene = pollScene(content: include.contains("content"))
         }
         guard var s = scene else {
             return err("worker_unreachable", "poll failed")
-        }
-        // Island pixels never ride the scene — metadata only.
-        for i in s.windows.indices {
-            s.windows[i].island = nil
         }
         guard let data = try? JSONEncoder().encode(s),
               var obj = try? JSONSerialization.jsonObject(with: data)
                 as? [String: Any] else {
             return err("act_failed", "scene encode failed")
         }
-        if include.contains("islandMeta"), let cached = lastScene {
-            obj["islands"] = cached.windows.compactMap { w -> [String: Any]? in
-                guard let island = w.island else { return nil }
-                return ["window": w.id, "width": island.width,
-                        "height": island.height]
-            }
-        }
+        /* `include: ["islandMeta"]` used to report the held pixel islands
+           here. Removed 2026-08-07 with the pixel path itself; a request
+           naming it now simply gets no `islands` key, which is honest —
+           there are none. */
         if !include.contains("desktop") {
             obj["desktopItems"] = nil
         }
@@ -496,7 +485,7 @@ final class MirrorService {
     }
 
     private func shot(_ p: [String: Any]) -> [String: Any] {
-        guard let s = pollScene(content: true, islands: true) else {
+        guard let s = pollScene(content: true) else {
             return err("worker_unreachable", "poll failed")
         }
         let openMenu = (p["openMenu"] as? NSNumber)?.intValue

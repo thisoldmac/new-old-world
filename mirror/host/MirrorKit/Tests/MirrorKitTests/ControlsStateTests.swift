@@ -22,7 +22,7 @@ final class ControlsStateTests: XCTestCase {
             id: "0.1/W#0", app: "A", psn: "0.1", title: "W", kind: 2,
             rect: Rect(l: 0, t: 0, r: 10, b: 10), front: true, z: 0,
             visible: true, controls: controls,
-            text: nil, items: nil, display: nil, island: nil)
+            text: nil, items: nil, display: nil)
         w.controlsState = state
         return w
     }
