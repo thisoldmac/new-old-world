@@ -153,3 +153,22 @@ by sha256, against a copy taken first:
 
 1,154 files, 0 missing, 0 mismatched, 0 extra. Nothing left git that
 does not demonstrably exist somewhere durable with hashes.
+
+### It has been superseded — read the newest `pack-`, not this one
+
+    ~/Lab/Assets/now-mirror-assets/pack-2026-08-07/Resources/
+    ~/Lab/Assets/now-mirror-assets/pack-2026-08-07.sha256   (1,210 lines)
+
+Regenerated 2026-08-07 by plan 018's slice 5, from the same stage image
+by the same read-only route. The 56-file difference is entirely the two
+asset classes that run added — **fonts** (9 NFNT sheets, 3 verbatim
+TrueType faces) and the **desktop** (44 named Appearance patterns, the
+current picture, and the `desktop` manifest key). Everything the older
+pack held came out byte-identical except two app icons whose names
+differ only in case (`ddsk__dimg` → `ddsk__dImg`), which a
+case-insensitive volume had folded together.
+
+`AssetPack` resolves the newest `pack-` directory first, so a machine
+with both picks this one up with no configuration. **The older list is
+kept rather than replaced** — it is the receipt for the removal from
+git, and a receipt for one thing is not a description of another.
