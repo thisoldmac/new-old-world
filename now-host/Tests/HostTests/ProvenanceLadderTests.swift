@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import SwiftUI
 import MirrorKit
 import MirrorKitUI
 @testable import Host
@@ -278,5 +279,62 @@ final class DesktopProvenanceTests: XCTestCase {
             XCTFail("resolved to a tiled pattern on a pack whose manifest "
                     + "records a picture — this is the ppat 16 guess back")
         }
+    }
+}
+
+/// **The owner map — the seam the sweep instrument needs.**
+///
+/// "The render was stable" and "the render was stable AND every rectangle
+/// had the same owner both times" are different claims, and only the second
+/// is what plan 018 promised. `DisplayReplay.Coverage` now records the
+/// ladder's decision per rectangle, in draw order, so a sweep can compare
+/// owners rather than pixels — two passes that agree on pixels while
+/// disagreeing on provenance is a defect nobody could previously see.
+@MainActor
+final class OwnerMapTests: XCTestCase {
+
+    func testTheReplayRecordsWhoOwnedEachRectangle() throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "qdtrace-drain-sweep18a-finder-icon",
+            withExtension: "json", subdirectory: "Fixtures"))
+        let sceneURL = try XCTUnwrap(Bundle.module.url(
+            forResource: "now-scene-sweep18a-finder-icon",
+            withExtension: "json", subdirectory: "Fixtures"))
+        let scene = try NOWMirrorSceneDecoder.decode(
+            irVersion: 2, document: Data(contentsOf: sceneURL))
+        let drain = try XCTUnwrap(QDTraceDecode.drain(
+            try XCTUnwrap(JSONSerialization.jsonObject(
+                with: Data(contentsOf: url)) as? [String: Any])))
+        let plane = NOWMirrorContentPlane(listener: GuestListener(
+            identity: .init(version: "test", name: "Test Host")))
+        let composed = plane.apply(drain, to: scene).scene
+        let window = try XCTUnwrap(composed.windows.first(where: \.front))
+
+        let coverage = DisplayReplay.Coverage()
+        let content = CGRect(x: 0, y: 0, width: 404, height: 218)
+        let ops = try XCTUnwrap(window.display)
+        let ladder = SceneRenderer.ladder(for: window, content: content,
+                                          owning: [])
+        /* A real GraphicsContext, because there is no way to make one
+           without drawing — which is the point: the map must be the
+           by-product of the render, never a second traversal that could
+           reach a different answer. */
+        let renderer = ImageRenderer(content: Canvas { ctx, _ in
+            DisplayReplay.draw(ops, in: ctx, content: content,
+                               ladder: ladder, coverage: coverage)
+        }.frame(width: content.width, height: content.height))
+        _ = renderer.nsImage
+
+        XCTAssertFalse(coverage.owners.isEmpty,
+                       "the ladder decided nothing, so nothing can be "
+                       + "compared between two passes")
+        XCTAssertEqual(coverage.owners.count, coverage.inked.count,
+                       "every inked rectangle must carry its owner; a gap "
+                       + "here is a rectangle the map cannot explain")
+        // The Finder's interior composite did not join in this capture, so
+        // its own rectangle is an unknown and the map says so by name.
+        XCTAssertEqual(coverage.owner(of: CGRect(x: 2, y: 2,
+                                                 width: 4, height: 4)),
+                       .unknown)
     }
 }

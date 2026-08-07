@@ -54,11 +54,42 @@ public enum DisplayReplay {
     /// second hatch on top of it states nothing new.
     public final class Coverage {
         public private(set) var inked: [CGRect] = []
+
+        /// **The per-rectangle owner map, in the order it was decided.**
+        ///
+        /// The ladder resolves every rectangle it is asked about; this is
+        /// simply the resolution written down instead of thrown away. It
+        /// costs one append per drawing operation and only exists when a
+        /// caller passes a `Coverage` at all, which the live render does
+        /// and nothing else has to.
+        ///
+        /// It is here rather than in a new type because the alternative is
+        /// a second traversal of the same ops reaching the same answers by
+        /// a parallel route — which is how two halves of one rule drift
+        /// apart, and this file's own history is the argument.
+        ///
+        /// Sweep-shaped readers want it because "the render was stable"
+        /// and "the render was stable AND every rectangle had the same
+        /// owner both times" are different claims, and only the second one
+        /// is what plan 018 promised.
+        public private(set) var owners: [(rect: CGRect,
+                                          rung: ProvenanceLadder.Rung)] = []
         public init() {}
 
         func add(_ rect: CGRect) {
             guard rect.width > 0, rect.height > 0 else { return }
             inked.append(rect)
+        }
+
+        func attribute(_ rect: CGRect, _ rung: ProvenanceLadder.Rung) {
+            guard rect.width > 0, rect.height > 0 else { return }
+            owners.append((rect, rung))
+        }
+
+        /// Who owns a rectangle, last decision wins — the render draws in
+        /// order, so the last claim on a rectangle is the one visible.
+        public func owner(of frame: CGRect) -> ProvenanceLadder.Rung? {
+            owners.last { $0.rect.intersects(frame) }?.rung
         }
 
         /// Whether the replay drew anything inside `frame`.
@@ -204,6 +235,7 @@ public enum DisplayReplay {
                 if ladder.owner(ofUnjoinedBlit: frame) == .unknown {
                     drawUnavailableBits(in: draw, frame: frame)
                     coverage?.add(frame)
+                    coverage?.attribute(frame, .unknown)
                     drew = true
                 }
                 continue
@@ -251,6 +283,11 @@ public enum DisplayReplay {
                         y: where0.y - CGFloat(font.ascent),
                         width: CGFloat(font.width(shown)),
                         height: CGFloat(font.ascent + font.descent)))
+                    coverage?.attribute(CGRect(
+                        x: where0.x,
+                        y: where0.y - CGFloat(font.ascent),
+                        width: CGFloat(font.width(shown)),
+                        height: CGFloat(font.ascent + font.descent)), .ink)
                 } else {
                     draw.draw(draw.resolve(Text(shown)
                         .font(.system(size: CGFloat(op.size ?? 12)))
@@ -261,6 +298,11 @@ public enum DisplayReplay {
                         y: where0.y - CGFloat(op.size ?? 12),
                         width: CGFloat(shown.count * (op.size ?? 12)) / 2,
                         height: CGFloat(op.size ?? 12)))
+                    coverage?.attribute(CGRect(
+                        x: where0.x,
+                        y: where0.y - CGFloat(op.size ?? 12),
+                        width: CGFloat(shown.count * (op.size ?? 12)) / 2,
+                        height: CGFloat(op.size ?? 12)), .ink)
                 }
                 drew = true
             case "line":
@@ -272,6 +314,7 @@ public enum DisplayReplay {
                 let draw = drawingContext()
                 draw.stroke(path, with: .color(fg), lineWidth: 1)
                 coverage?.add(path.boundingRect.insetBy(dx: -0.5, dy: -0.5))
+                coverage?.attribute(path.boundingRect.insetBy(dx: -0.5, dy: -0.5), .ink)
                 drew = true
             case "bits":
                 /* RUNG 3, AND IT IS ADDRESSED BY IDENTITY. An unjoined
@@ -300,10 +343,12 @@ public enum DisplayReplay {
                     let draw = drawingContext()
                     draw.draw(Image(decorative: icon, scale: 1), in: frame)
                     coverage?.add(frame)
+                    coverage?.attribute(frame, .namedArt)
                     drew = true
                 case .control:
                     drawControlPlate(in: drawingContext(), frame: frame)
                     coverage?.add(frame)
+                    coverage?.attribute(frame, .namedArt)
                     drew = true
                 case nil:
                     /* Rung 4, in stream order. A window-scale unknown was
@@ -313,6 +358,7 @@ public enum DisplayReplay {
                     guard Self.answeredInStreamOrder(frame) else { break }
                     drawUnavailableBits(in: drawingContext(), frame: frame)
                     coverage?.add(frame)
+                    coverage?.attribute(frame, .unknown)
                     drew = true
                 }
             case "rect", "rrect", "oval", "rgn":
@@ -349,6 +395,7 @@ public enum DisplayReplay {
                 case 0:   // frame
                     draw.stroke(Path(rect), with: .color(fg), lineWidth: 1)
                     coverage?.add(rect)
+                    coverage?.attribute(rect, .ink)
                     drew = true
                 case 1, 4:  // paint / fill
                     draw.fill(Path(rect), with: .color(fg))
@@ -359,6 +406,7 @@ public enum DisplayReplay {
                        has had every chance to be covered. */
                     lastFill = (rect, fg)
                     coverage?.add(rect)
+                    coverage?.attribute(rect, .ink)
                     drew = true
                 case 2:   // erase uses the port's current background colour
                     draw.fill(Path(rect), with: .color(bg))
@@ -366,6 +414,7 @@ public enum DisplayReplay {
                 case 3:
                     invert(rect, in: draw)
                     coverage?.add(rect)
+                    coverage?.attribute(rect, .ink)
                     drew = true
                 default:
                     break
