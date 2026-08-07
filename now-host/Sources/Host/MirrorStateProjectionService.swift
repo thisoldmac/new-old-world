@@ -243,10 +243,7 @@ final class MirrorStateProjectionService {
            — and if it cannot fit at all, the transport's
            `response-too-large` refusal is the floor beneath it, which is
            an honest answer where the old silent close was not. */
-        /* What the containers cost, learned by overshooting once rather
-           than predicted. Every pass that does not fit adds the miss to
-           this and rebuilds. */
-        var reserve = 0
+        var reserve = 0        // what the containers cost, once measured
         var entityBytes = Self.entityBudgetBytes
         var menuBytes = Self.menuBudgetBytes
         var built = AgentIntegrationMirrorSnapshot(
