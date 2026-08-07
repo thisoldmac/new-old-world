@@ -269,6 +269,24 @@ offscreen render of the same captured document.
   fidelity check. *(Done 2026-08-06, elsewhere:
   [fidelity-sweep-2026-08-06.md](fidelity-sweep-2026-08-06.md) is
   nothing but side-by-side checks, eleven of them, with a red list.)*
+- **The pointer.** No render draws a cursor at all, and until 2026-08-07
+  there was nothing honest to draw: the guest's own sprite sat wherever
+  it had last really been drawn while every act happened somewhere else.
+  Both halves of that are now settled and **the remaining work is on this
+  side**:
+  - *where* — the resident places the drawn cursor on the point it acts
+    on, watched in a screendump pair
+    ([cursor-follow.md](cursor-follow.md));
+  - *what* — the SHAPE already tracks that position with no guest work at
+    all. SimpleText, placed at 311,100 inside its text area, drew an
+    **I-beam**: it read `GetMouse`, was told the resident's point, and
+    chose the cursor for it. Nothing in the resident knows what an I-beam
+    is.
+
+  So the contract change this was once deferred behind — "the guest would
+  have to report its cursor" — **was never needed**. What a render still
+  lacks is a host that reads the current `Cursor` and draws it, and that
+  is a renderer errand, not a guest one.
 
 Two things these nine still show that nothing has superseded: they
 predate the measured Platinum asset pack and the accent ramps read from
