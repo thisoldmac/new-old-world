@@ -659,6 +659,190 @@ Four things this table says that sweep C's did not:
 | `ctlact` on an evicted reference | refused in **5 ms** | 5 ms | — |
 | `scene.request` (full document) | ~120/120 | 20–900 ms | — |
 
+### SEQ-R, refusals — five clean, one unposeable, one needing a re-pose
+
+Posed against Date & Time, whose front window at the time was the
+`Set Time Zone` modal (10 controls, 10 with refs).
+
+| # | case posed | act said | verdict |
+|---|---|---|---|
+| 1 | press a control whose position cannot be established | — | **could not be posed**: this window has no degenerate-rect control. Sweeps A and B found the `{0,-21,0,0}` and `16xxx` families elsewhere; the case needs a named target rather than "whatever is front" |
+| 2 | press a point outside the control the ref names | `bad-request: that point is outside the control this reference names. Send a point inside its rect, in the same global coordinates the observation reported` — 377 ms; window IDENTICAL | **✓** |
+| 3 | act on a reference into a window just closed | **`ok`** — 1,491 ms | **needs re-posing, see below** |
+| 4 | `winact close` on the window just closed | `act-not-armed: the target served the request and did not arm` — 1,295 ms | **✓** |
+| 5 | `dragpress` at a point owned by no window | `bad-request: dragpress requires element or window: one opaque reference minted by an observation` — 100 ms | **✓ refusal, but the case is UNPOSEABLE — see below** |
+| 6 | `dragmove` with no press outstanding | `bad-request: dragmove requires session, h and v: the nonce dragpress returned, and a global point` — 612 ms | **✓** |
+| 7 | `ditemact` with a `now-window-` reference (sweep B's S5) | `bad-request: that is not a well-formed now-element- reference` — 191 ms | **✓ — S5 reproduced a third time** |
+
+**Case 3 is reported as unproven, not as a defect, and the distinction is
+the point.** `ctlact part 11` answered `ok` on a reference into a window
+the sequence had just asked to close — but the precondition was never
+established: Date & Time has two windows, so "is a Date & Time window
+still in the scene" cannot tell you whether *that* window closed, and
+nothing looked at the machine afterwards. The evidence leans one way —
+case 4's `winact` on the same reference refused, which is what a closed
+window should produce — and it is not enough. **A case whose precondition
+is not proven cannot score a defect**, and sweep C's own case 3 shows the
+standard: it proved `window gone: true` first.
+
+**Case 5 is unposeable, and the harness that judged it has a defect of its
+own.** `dragpress` refuses for a missing `element`/`window` argument
+*before* the point is ever considered, so "a drag whose start cannot be
+attributed to a rectangle" has no reachable case through this verb —
+**the same shape as sweep B's struck menu check**, and it should be
+recorded the same way. Meanwhile the harness scored it a false negative
+because 8,592 pixels changed in the window rect during the 2.5 s
+observation. **That window is the Date & Time panel and it contains a
+running clock.** The movement detector cannot tell a drag from a second
+passing, and sweep C ran the same detector against the same panel. That
+is an instrument finding, and it is why this report's one real false
+negative (SEQ-A step 4) is argued from a whole-screen screendump showing
+an application that was not running before, rather than from a pixel
+count.
+
+## The standing checks
+
+Take each where the target affords it.
+
+| Check | Verdict | Evidence |
+|---|---|---|
+| A scrollbar scrolls — content, not just the thumb | **not taken** | budget went to the two capture passes; sweep C's ✓ (SEQ-B.3) is the most recent word |
+| A tab switches — **pane, not just the strip** | **✗** | SEQ-A.3: value 1→1, strip 0 of 11,648 px, pane 0 of 120,960 px. Sweep C's ✗, unfixed |
+| A list row selects | **not taken** | |
+| A menu item lands where it was named | **not taken** | sweep B's ✓ is the most recent word |
+| ~~a press at a menu of unknown position is refused~~ | **struck** (sweep B) | and this run adds a second unposeable case, SEQ-R.5 |
+| An interaction SEQUENCE completes, or names the step it broke at | **✓ (instrument)** | SEQ-A names step 3 and step 5 |
+| **A refusal names its reason** | **✓ 5/5 reachable cases** | SEQ-R; every message is specific enough to argue with |
+| **An act that landed is never reported refused** | **✗** | **SEQ-A step 4 — the headline. `act-not-taken` + `timed-out` over an act that opened Mac Help** |
+| A window opens, closes, and the one behind redraws | **partial** | windows opened and closed all run; the redraw half was not isolated |
+| Fronting a process makes it OBSERVABLE | **✓** | `front` answered 8/8; `controlsState: empty` read as a pass, `notFetched` as a fact about us |
+| The desktop shows its icons | **✗ (this rig)** | `scene.desktop` absent in all 18 scene files; the corner plate says so on every render |
+| Text is what the machine drew | **✓, with the two known caps** | nine targets; 31-char control titles and the 64-byte text cap both still present, the second marked honestly |
+| An icon renders what the machine drew | **✗** | Finder 9/9 plates, Extensions Manager every row, most of NOW's own sidebar. Legible as unknown, which is the honest half |
+| No hatching where the machine drew | **✓ apart from the icons** | no whole-interior "Guest content not reported" caption anywhere in eighteen renders |
+| Panel faces are the guest's grey | **✓** | all nine |
+| Window stacking matches the guest | **✓** | every pair |
+| The Mirror opens from the menu item / agent verb / guest's button | **not taken** | no host app was run this sweep |
+| An act that cannot verify its effect says so | **✓ and ✗** | `ctlact part 0` now says `dispatched-but-unconfirmed` — landed, and exemplary. `ctlact part 11` says `act-not-taken` over an act that landed |
+
+## The seams
+
+- **S-D1. `act-not-taken` is one mechanism's evidence worn as a
+  conclusion.** The headline. `ctlact part 11` watches for `TrackControl`
+  and reports the machine's state from its absence.
+- **S-D2. The settlement loop evicts the reference it is waiting on.**
+  96 reference slots, and every `scene.request` mints a fresh set, so
+  polling for settlement destroys the thing you are about to act on.
+  SEQ-A step 5.
+- **S-D3. Two producers of one window's control list disagree across
+  scenes.** Date & Time's panel carries 21 controls in its own capture,
+  `controlsState: notFetched` with 0 in a later one, and `dialogItems`
+  present in some scenes and absent in others for the same window. The
+  `notFetched` word makes the first honest; nothing explains the second.
+- **S-D4. `WindowChrome` uses two different discriminators for one
+  question.** `hasTitleBar` was corrected off `kind != 2`; `growBox` was
+  not, and it fabricates a grow box on Appearance.
+- **S-D5. `launch` refuses `cdev` AND `APPD`; the anchor opens both.**
+  Sweep C's S4, wider, still undeclared in `docs/command-parity.md`.
+- **S-D6. `quit` on a control panel neither quit it nor left it alone.**
+  See the rotated-target section.
+- **S-D7. A window the render is stable across and the machine is not.**
+  Extensions Manager, 1,064 guest pixels to 0 render pixels.
+
+## The scores
+
+Nine targets, rendered onto their own scenes through the app's composition
+path, judged against the screendump of the same instant. 0–3.
+
+| # | Target | T | P | C | R | Ch | **STAB** | **DRIVE** | **INTER** | comparable with C? |
+|---|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---|
+| 1 | Appearance (6 tabs) | 3 | 3 | 2 | 1 | **3** | **3** | 3 | **0** | **no** — Ch rose on the chrome fix; STAB is new |
+| 2 | Date & Time | 3 | 3 | 3 | 2 | **3** | **n/a** | 2 | – | **no** — Ch rose; STAB voided by contamination |
+| 3 | Memory | 3 | 3 | 1 | 1 | **3** | **3** | 1 | – | **no** — Ch rose |
+| 4 | General Controls | 3 | 3 | 1 | 1 | **3** | **3** | 2 | – | **no** — Ch rose |
+| 5 | Extensions Manager | 3 | 3 | 2 | 1 | **2** | **1** | – | – | **no** — Ch is 2 not 3: the machine's zoom box is not drawn |
+| 6 | SimpleText | 3 | 3 | – | 3 | **2** | **3** | 1 | – | **no** — Ch 2 for the missing zoom box |
+| 7 | **Apple System Profiler** (new) | **3** | 3 | **1** | 2 | **2** | **3** | 2 | – | never swept |
+| 8 | Finder — `Macintosh HD` | 3 | 3 | 2 | **0** | **2** | **3** | 1 | – | **no** — different window from C's `Desktop` |
+| 9 | NOW's own Workshop | 3 | 3 | 3 | 2 | **2** | **3** | 2 | – | **no** — Ch 2 for the missing zoom box |
+
+**CHROME moved for two opposite reasons at once and the column would lie
+if it did not say so.** Every window's title-bar band, close box, collapse
+box and content frame went from disagreeing on 22 of 24 rows to agreeing
+on all of them — that is a large rise. And five of nine windows lost a
+widget the machine draws. So the four control panels score **3** (their
+chrome is now exact, zoom included, because they have none) and the five
+windows with a real zoom box score **2**.
+
+**STABILITY is a real column for the first time.** `3` means
+pixel-identical in both the guest and the render across two independent
+captures; Appearance is `3` on the guest and carries the one-pixel render
+difference in its callout; Extensions Manager is `1` because the guest
+moved 1,064 pixels and the render did not move at all; Date & Time is
+`n/a` because the two passes captured different windows.
+
+**REGIONS is 0 for the Finder row**: nine of nine icons are hatched
+plates. It is an honest unknown and it is still the whole of the content.
+
+### Free-text callouts, per the mandatory field
+
+- **The help "?" button is a blank plate** in Appearance, Date & Time,
+  General Controls and Extensions Manager — **four for four, and four
+  sweeps running.** It is also the button SEQ-A pressed, which means the
+  one control this sweep proved is actuatable-but-misreported is also the
+  one nobody can see.
+- **Check-box and radio marks: Date & Time draws them, Memory and General
+  Controls do not**, on one build in one run. The CDEF reclassification
+  did not change it (Date & Time is down to one `pushButton`), so sweep
+  C's conclusion stands: the briefed explanation is not the cause.
+- **Slider thumbs are still not drawn** — General Controls' two, Memory's
+  one — with the values present in the scene.
+- **Disclosure triangles are not drawn** in Apple System Profiler (12 of
+  them, values present, three open) but ARE drawn in NOW's own Workshop.
+  A new family, and it is not uniformly missing.
+- **Stepper arrows are still not drawn** beside Date & Time's and
+  Memory's fields.
+- **Scroll arrows are still at the wrong end** — the machine groups both
+  at one end, the render splits them. Seen twice: Appearance's horizontal
+  bar, NOW's own sidebar. Sweep B's finding, third sweep unfixed.
+- **Theme preview thumbnails still lost**, "Lime Horizon" still losing
+  its green. Sweep C's finding, unfixed.
+- **Icons**: every Finder item, every Extensions Manager row, most of
+  NOW's own sidebar. All render as one generic or hatched plate.
+- **The 64-byte text cap still shows**, still marked honestly with an
+  ellipsis.
+- **A fabricated grow box on Appearance** — new this sweep, in pixels.
+- **No hatching anywhere except the icon plates.** No whole-interior
+  "Guest content not reported" caption in any of the nine renders, which
+  is the caption an absent drain produces — so no capture in this run was
+  taken over an envelope alone.
+
+## State cells: visited, and the ones that could not be reached
+
+| Cell | Reached | Note |
+|---|---|---|
+| Front | ✓ | all nine |
+| Behind | ✓ | NOW's Workshop behind every panel; up to six background windows by the last target |
+| **Two windows of ONE process, both visible** | **✓ (new)** | Date & Time's panel + `Set Time Zone`; sweep C could not reach this |
+| **An INVISIBLE window with a full control walk** | **✓ (new)** | Apple System Profiler's five, 41 controls, all with refs |
+| **A modal over a window** | **✓ (new, unintended)** | `Set Time Zone` over the Date & Time panel, from target 3 onward |
+| A control at min / max | ✓ / ✗ | scroll bars at 0 and at 17,880 present in ASP's scene; none driven to max this run |
+| A full / scrolling list | ✓ | Extensions Manager, ~10 visible rows of many |
+| An empty list | ✓ | SimpleText's empty document; the Finder `Desktop` window with `controlsState: empty` |
+| A stale / evicted reference | **✓** | SEQ-A step 5, proven by the successful use of the same ref two steps earlier |
+| A degenerate-rect control | ✗ | not posed — the front Date & Time window in the refusal pass was the modal, which has none |
+| A tab on a non-front pane | ✗ | the tab never switched |
+| Resized, or narrow enough to truncate a label | ✗ | not taken |
+| A very long / high-MacRoman / empty filename | ✗ | not set up — the same gap as sweeps B and C |
+| **Undriven, past the lease (REST)** | ✗ | **not taken this run** — see below |
+
+**REST was not measured and that is a gap, not a result.** Sweep C's REST
+row depended on the host app being up with its agent socket; this run put
+its budget into two capture passes and the interaction axis instead.
+Sweep C's finding — no decay at the document level in 120 s, with the
+explicit caveat that it read metadata and not pixels — remains the most
+recent word.
+
 ## Rotated new target
 
 **Apple System Profiler**, at
