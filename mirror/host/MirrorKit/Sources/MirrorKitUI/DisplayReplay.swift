@@ -54,6 +54,13 @@ public enum DisplayReplay {
     /// second hatch on top of it states nothing new.
     public final class Coverage {
         public private(set) var inked: [CGRect] = []
+        /// The subset of ``inked`` that is a replayed TEXT RUN.
+        ///
+        /// Kept apart because the question a label asks is not the
+        /// question a check box's mark box asks, and answering both with
+        /// one geometry test is what shipped sweep B's R1. See
+        /// ``textCovers(_:)``.
+        public private(set) var inkedText: [CGRect] = []
 
         /// **The per-rectangle owner map, in the order it was decided.**
         ///
@@ -79,6 +86,12 @@ public enum DisplayReplay {
         func add(_ rect: CGRect) {
             guard rect.width > 0, rect.height > 0 else { return }
             inked.append(rect)
+        }
+
+        func addText(_ rect: CGRect) {
+            guard rect.width > 0, rect.height > 0 else { return }
+            inked.append(rect)
+            inkedText.append(rect)
         }
 
         func attribute(_ rect: CGRect, _ rung: ProvenanceLadder.Rung) {
@@ -137,6 +150,44 @@ public enum DisplayReplay {
                 let hit = $0.intersection(frame)
                 guard !hit.isNull else { return false }
                 return hit.width * hit.height >= area / 2
+            }
+        }
+
+        /// **Did the machine already draw WORDS in this rectangle?**
+        ///
+        /// The question a semantic label must ask before drawing its own
+        /// string, and it is not ``mostlyCovers(_:)``. That one asks
+        /// whether the ink fills half of the RECTANGLE, which is the
+        /// rectangle's question rather than the text's: a DITL row is a
+        /// slack box sized by whoever wrote the resource, and the run
+        /// inside it is as wide as the words. Memory's "Disk Cache" is a
+        /// 102-point row holding a 48-point run — 47% — so the row drew
+        /// its own copy four points off the machine's and the panel
+        /// became unreadable (sweep B, R1). A multi-line row is worse
+        /// still: the paragraph is covered by three runs and no single
+        /// one of them reaches half.
+        ///
+        /// So this asks whether a replayed run and the rectangle
+        /// SUBSTANTIALLY COINCIDE — half the area of whichever is
+        /// smaller. A run that fills its slack box passes; a run on the
+        /// line above, overlapping by a pixel, does not, because a
+        /// pixel is 1/12 of that run.
+        ///
+        /// TEXT ink only, and that is the half that keeps Date & Time's
+        /// check boxes. Their mark box has a group-box frame line
+        /// running past it and the panel's own face painted under it,
+        /// and neither is a word; the LABEL beside the box is covered by
+        /// a real run and rightly yields. `mostlyCovers` stays the test
+        /// for the pieces this one is not about.
+        public func textCovers(_ frame: CGRect) -> Bool {
+            let area = frame.width * frame.height
+            guard area > 0 else { return false }
+            return inkedText.contains {
+                let mine = $0.width * $0.height
+                guard mine > 0 else { return false }
+                let hit = $0.intersection(frame)
+                guard !hit.isNull else { return false }
+                return hit.width * hit.height >= Swift.min(mine, area) / 2
             }
         }
     }
@@ -336,7 +387,7 @@ public enum DisplayReplay {
                 if let font {
                     font.draw(shown, in: draw, x: where0.x,
                               baselineY: where0.y, color: ink)
-                    coverage?.add(CGRect(
+                    coverage?.addText(CGRect(
                         x: where0.x,
                         y: where0.y - CGFloat(font.ascent),
                         width: CGFloat(font.width(shown)),
@@ -351,7 +402,7 @@ public enum DisplayReplay {
                         .font(.system(size: CGFloat(op.size ?? 12)))
                         .foregroundColor(ink)),
                         at: CGPoint(x: where0.x, y: where0.y), anchor: .bottomLeading)
-                    coverage?.add(CGRect(
+                    coverage?.addText(CGRect(
                         x: where0.x,
                         y: where0.y - CGFloat(op.size ?? 12),
                         width: CGFloat(shown.count * (op.size ?? 12)) / 2,
