@@ -79,6 +79,36 @@ public enum PlatinumTitleBar {
     /// renderer drew widget outlines in pure black.
     public static let widgetInk: UInt32 = 0x222222
 
+    // MARK: - Inactive
+
+    /* AN INACTIVE TITLE BAR IS A DIFFERENT DRAWING, NOT A DIMMED ONE, and
+       until 2026-08-07 nothing in this project had ever seen one.
+
+       Every background window in all fourteen sweep captures is fully
+       occluded, and a scan of every screendump in the asset store for the
+       title-bar signature returned the front window and nothing else. So
+       these three constants were photographed on purpose: a lane-private
+       QEMU guest off the stage image, two control panels opened through the
+       anchor worker so that one went behind the other, one screendump.
+       `titlebar-inactive-2026-08-07/PROVENANCE.md` in the private asset
+       store carries the rig and the run.
+
+       What it settled, and the shape of the answer is the useful part:
+       **the geometry does not change at all.** Outer frame at `t-2`, content
+       frame at `t+19`, content at `t+20`, a six-pixel border on the other
+       three sides, the title's baseline still `t+13`. Only the colours move,
+       and the widgets and stripes are simply absent — so an inactive bar is
+       the active procedure with three substitutions and two omissions, which
+       is why it lives here beside them rather than in a drawer of its own. */
+
+    /// The frame, inside and out, on an inactive window. `000000` when active.
+    public static let inactiveFrame: UInt32 = 0x555555
+    /// The whole band between the two frames — flat, where an active window
+    /// carries a lit edge, a face, twelve stripe rows and a shadowed edge.
+    public static let inactiveFace: UInt32 = 0xDDDDDD
+    /// The title's ink. `000000` when active.
+    public static let inactiveTitle: UInt32 = 0x777777
+
     /// The anti-diagonal ramp inside every widget, lightest at the
     /// bottom-right. Seven steps, and the machine steps once every TWO
     /// diagonals — see `widgetRampIndex`.

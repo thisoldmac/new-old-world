@@ -791,25 +791,36 @@ public struct SceneRenderer {
                              width: frame.width - 12,
                              height: max(0, frame.height - 12))
         } else {
+            /* THE INACTIVE FRAME IS THE SAME SHAPE IN DIFFERENT COLOURS —
+               measured, not guessed, on 2026-08-07. See PlatinumTitleBar's
+               "Inactive" section: the geometry is identical to a pixel and
+               only the inks move. */
+            let edge = Color(rgb: active ? PlatinumTitleBar.frame
+                                         : PlatinumTitleBar.inactiveFrame)
             let outer = CGRect(
                 x: frame.minX - 6,
                 y: frame.minY + CGFloat(PlatinumTitleBar.Row.outerFrame),
                 width: frame.width + 12,
                 height: frame.height + 6
                         - CGFloat(PlatinumTitleBar.Row.outerFrame))
-            // The drop shadow: one black pixel, right and bottom, offset one.
+            // The drop shadow: one pixel, right and bottom, offset one.
             ctx.fill(Path(CGRect(x: outer.maxX, y: outer.minY + 1,
                                  width: 1, height: outer.height)),
-                     with: .color(Platinum.g6))
+                     with: .color(edge))
             ctx.fill(Path(CGRect(x: outer.minX + 1, y: outer.maxY,
                                  width: outer.width, height: 1)),
-                     with: .color(Platinum.g6))
-            ctx.fill(Path(outer), with: .color(Platinum.g6))
+                     with: .color(edge))
+            ctx.fill(Path(outer), with: .color(edge))
             let band = outer.insetBy(dx: 1, dy: 1)
-            ctx.fill(Path(band), with: .color(Color(rgb: PlatinumTitleBar.face)))
-            bevel(ctx, band,
-                  light: Color(rgb: PlatinumTitleBar.lit),
-                  shadow: Color(rgb: PlatinumTitleBar.bandShadow))
+            ctx.fill(Path(band),
+                     with: .color(Color(rgb: active
+                                        ? PlatinumTitleBar.face
+                                        : PlatinumTitleBar.inactiveFace)))
+            if active {
+                bevel(ctx, band,
+                      light: Color(rgb: PlatinumTitleBar.lit),
+                      shadow: Color(rgb: PlatinumTitleBar.bandShadow))
+            }
             content = CGRect(
                 x: frame.minX,
                 y: frame.minY + CGFloat(PlatinumTitleBar.Row.contentTop),
@@ -819,7 +830,7 @@ public struct SceneRenderer {
             ctx.fill(Path(CGRect(x: content.minX - 1, y: content.minY - 1,
                                  width: content.width + 2,
                                  height: content.height + 2)),
-                     with: .color(Platinum.g6))
+                     with: .color(edge))
             drawTitlebar(ctx, win, active: active)
         }
         /* The content face, and NOTHING on top of it. There used to be a
@@ -1092,39 +1103,43 @@ public struct SceneRenderer {
                           width: R - L,
                           height: CGFloat(PlatinumTitleBar.Row.contentTop
                                           - PlatinumTitleBar.Row.outerFrame))
-        ctx.fill(Path(band), with: .color(Color(rgb: PlatinumTitleBar.face)))
-        row(ctx, band, PlatinumTitleBar.Row.outerFrame, T,
-            PlatinumTitleBar.frame)
-        row(ctx, band, PlatinumTitleBar.Row.litEdge, T, PlatinumTitleBar.lit)
-        row(ctx, band, PlatinumTitleBar.Row.bandShadow, T,
-            PlatinumTitleBar.bandShadow)
-        row(ctx, band, PlatinumTitleBar.Row.contentFrame, T,
-            PlatinumTitleBar.frame)
+        ctx.fill(Path(band),
+                 with: .color(Color(rgb: active ? PlatinumTitleBar.face
+                                                : PlatinumTitleBar.inactiveFace)))
+        let edge = active ? PlatinumTitleBar.frame
+                          : PlatinumTitleBar.inactiveFrame
+        row(ctx, band, PlatinumTitleBar.Row.outerFrame, T, edge)
+        row(ctx, band, PlatinumTitleBar.Row.contentFrame, T, edge)
+        if active {
+            row(ctx, band, PlatinumTitleBar.Row.litEdge, T, PlatinumTitleBar.lit)
+            row(ctx, band, PlatinumTitleBar.Row.bandShadow, T,
+                PlatinumTitleBar.bandShadow)
+        }
 
         let title = win.title.isEmpty ? "untitled" : win.title
         let titleWidth = Int(sysWidth(title).rounded())
 
-        /* AN INACTIVE TITLE BAR IS A DIFFERENT DRAWING, not a dimmed one: no
-           stripes, no widgets, no patch — a plain face with the title in grey.
-           Stated as MEASURED only for the active half. Nothing in the entire
-           private capture store contains a visible inactive title bar: every
-           background window in all fourteen captures is fully occluded, and a
-           scan of every screendump for the signature found not one. So the
-           inactive rendering below is INFERENCE from the Appearance Manager's
-           own vocabulary (`kThemeBrushDocumentWindowTitleInactive`,
-           `kThemeTextColorWindowHeaderInactive`) plus the one thing the pixels
-           do settle — that the widgets are absent, because a background
-           window's widgets are absent on every machine this era shipped on.
-           It is the highest-value thing still unphotographed here and it is
-           written up in docs/open-issues.md. */
+        /* AN INACTIVE TITLE BAR IS A DIFFERENT DRAWING, not a dimmed one —
+           and this is now MEASURED rather than inferred. Nothing in the
+           private asset store had ever contained one: every background window
+           in all fourteen sweep captures is fully occluded. So one was
+           photographed on 2026-08-07 on a lane-private guest, two control
+           panels deep, and it says the geometry is unchanged to a pixel while
+           three colours move and two things vanish. `PlatinumTitleBar`'s
+           "Inactive" section and the capture's own PROVENANCE.md carry it.
+
+           No stripes, no widgets, and no title PATCH: with the band flat there
+           is nothing to punch the title out of, and the machine punches
+           nothing. The title's baseline does not move. */
         guard active else {
+            var titleCtx = ctx
+            titleCtx.clip(to: Path(band))
             let patch = PlatinumTitleBar.titlePatch(r, titleWidth: titleWidth,
                                                     dark: false)
-            var titleCtx = ctx
-            titleCtx.clip(to: Path(rect(patch)))
-            sysText(title, titleCtx, x: CGFloat(patch.l + PlatinumTitleBar.patchPad),
+            sysText(title, titleCtx,
+                    x: CGFloat(patch.l + PlatinumTitleBar.patchPad),
                     baselineY: T + CGFloat(PlatinumTitleBar.titleBaseline),
-                    color: Color(rgb: PlatinumTitleBar.bandShadow))
+                    color: Color(rgb: PlatinumTitleBar.inactiveTitle))
             return
         }
 
