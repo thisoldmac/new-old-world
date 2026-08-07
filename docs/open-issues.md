@@ -14,44 +14,87 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
-## ANSWERED: the provenance ladder held live — zero rect owner flips, taken twice (2026-08-07, `claude/019-flicker-bc`)
+## OPEN: the Finder item roster reverts to the PRE-SWITCH geometry for ~0.8 s, seconds after the view has changed (2026-08-07, `claude/019-flicker-bc`)
 
 **Verification level: TESTED** (emulator; nothing here touched metal).
+**Found by `tools/fidelity-live.py`'s second-ever run** — the measurement
+nobody had managed to take twice.
+
+Driving Finder ▸ View ▸ as List over the live agent socket and tracing
+consecutive scene documents, the `Macintosh HD` window's item roster
+switches from the icon grid (13 items, 13 owner rects) to list geometry
+(23 items, 21 owner rects) at **+1.81 s** — and then, at **+7.48 s**,
+with `itemTotal` and the owner-rect COUNT both unchanged, the *identities*
+of the rects revert to the icon grid for **0.83 s** before returning to
+list geometry.
+
+    BEFORE  (-8.06s)  13 rects  162,25,194,69   162,89,194,133  …   (icon boxes, 32x44)
+    AFTER   (+6.86s)  21 rects  22,100,38,116   22,119,38,135   …   (list rows, 16x16 at 19px pitch)
+    BOUNCE  (+7.48s)  21 rects  162,25,194,69   162,89,194,133  …   ICON boxes, back, inside a list window
+    SETTLED (+8.31s)  21 rects  22,100,38,116   …                    list rows again
+
+All **20** flipping rects are icon-grid boxes; they contribute all 40
+`rectOwnerFlips` in the run, every one of them `semantic → absent →
+semantic` or its mirror. **The count staying at 21 is what makes this a
+SWAP rather than an addition**: the list rows were gone from the same
+frames the icon boxes were in.
+
+In the render that is a second of Finder items drawn at the wrong
+positions inside a list-view window — Michelle's complaint #1
+("content draws over, under, or absent across redraws") caught in a
+trace for the first time, with the window, the rectangles and the
+instant all named.
+
+**Not yet diagnosed, and the hypothesis is stated as a hypothesis.**
+`Scene.Window.items` is the Finder's own live `position of` via
+`FinderItems`; a cached roster re-attached one cycle late would produce
+exactly this shape. Nobody has looked yet.
+
+Its A-side counterpart scored **zero**, so this is either a regression
+introduced since, or a bounce the A-side trace happened to miss — its
+`view-list-a` run missed 6 snapshots and every count in this family is a
+**floor**. Deciding between those two is the next step and it is cheap:
+`fidelity-live.py --gesture menuItem --menu 259 --item 3` on a tree
+before the ladder landed.
+
+## ANSWERED: the `ink → unknown → ink` signature is still ZERO, live, on both sides (2026-08-07, `claude/019-flicker-bc`)
+
+**Verification level: TESTED** (emulator).
 
 `tools/fidelity-live.py` was built to see flicker a settled capture
 structurally cannot, and **it had never produced a second measurement**:
-sweep B did not run it and said so, sweep C could not because
+sweep B did not run it and said so; sweep C could not, because
 `mirror_read --intention snapshot` closed the connection without
-replying. With that transport defect fixed, the B side is taken.
+replying. That transport defect is fixed, and the B side is taken.
 
-**The number that matters: `rectOwnerFlips` is still ZERO.** The A side
-scored zero `ink → unknown → ink` returns before the provenance-ladder
-work had been exercised outside fixtures. It is zero again on a tree
-that has since gained the ladder, `displayEpoch` coherent pairs, the
-content plane's renewal carry-forward, `contentPlane`/`controlsState`
-not-attempted-vs-empty, `Platinum.contentTop` 22→20 and a render path
-that no longer depends on `ImageRenderer.cgImage`'s backing store.
+The signature the provenance-ladder work was aimed at — a rectangle
+losing its ink and getting it back — **does not occur in any of the four
+traces**, on a tree that has since gained the ladder, `displayEpoch`
+coherent pairs, the content plane's renewal carry-forward,
+`contentPlane`/`controlsState` not-attempted-vs-empty,
+`Platinum.contentTop` 22→20 and a render path that no longer depends on
+`ImageRenderer.cgImage`'s backing store. Every `rectOwnerFlip` measured
+is the `semantic ↔ absent` roster swap in the entry above, which is a
+different defect in a different half of the system.
 
-FIGURES (first trace; the rest of the table is in
-[docs/fidelity-live-2026-08-07-b.md](fidelity-live-2026-08-07-b.md)):
+| Run | Frames | **Missed** | Flicker | coverage | rectOwner | hatch / dropout / presence | Drain in artifact |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `idle-b` (nothing provoked, 90 s) | 951 | **5** | 51 | 51 | **0** | 0 / 0 / 0 | yes |
+| `finder-open-b` | 514 | **4** | 25 | 25 | **0** | 0 / 0 / 0 | yes |
+| `view-list-b` | 515 | **4** | 67 | 27 | **40** | 0 / 0 / 0 | yes |
+| `reselect-b` (×4; every `select` REFUSED "already front", so this is a second idle trace) | 854 | **17** | 45 | 45 | **0** | 0 / 0 / 0 | yes |
 
-| Run | Frames | **Missed** | Flicker | rectOwnerFlips | Drain in artifact |
-|---|---:|---:|---:|---:|---|
-| `idle-b` (nothing provoked, 90 s) | 951 | **5** | 51 | **0** | yes — 2 windows traced, both carrying ops, all 951 frames, max 235 |
-
-`snapshotsMissed` is quoted beside the count deliberately: **a flicker
-count is a floor, never a total**, and five snapshots existed in this
-trace that were never read.
+`snapshotsMissed` is quoted beside every count deliberately: **a flicker
+count is a floor, never a total.**
 
 Three A-side findings reproduce unchanged:
 
-- **All 51 events are one oscillation.** `coverageStatusFlips` = the
-  total; hatch flips, content dropouts, rect owner flips and presence
-  flips are **0** each. The oscillating claim is `process-visibility`,
-  `stale ↔ partial`, median return **3.396 s** (A side: 3.28 s) — the
-  same ~0.3 Hz square wave, running with nothing asked of the machine.
+- **The oscillation is one claim, still.** `process-visibility` flips
+  `stale ↔ partial` with a median return of **3.396 s** (A side: 3.28 s)
+  — the same ~0.3 Hz square wave, running with nothing asked of the
+  machine, and it accounts for every coverage event in every run.
 - **The render never settles**, at a five-second threshold, even idle.
-- **`baseComplete` is `false` in every frame.**
+- **`baseComplete` is `false` in every frame** of every trace.
 
 **And the instrument gained the assertion AGENTS.md requires of it.**
 `fidelity-live.py` reads the live host, which arms P3 itself — so a run
@@ -60,9 +103,10 @@ against a host that never armed reports every window stably empty and
 one field that already carries the distinction (`displayTotal`: None =
 never traced, 0 = traced and proven empty, >0 = a drain reached the
 artifact) and REFUSES (exit 3) without a drain unless `--allow-no-drain`
-says absence is what was meant. It also asserts **which guest answered**
-(`--expect-build auto` against `session_health`), because there is one
-agent socket per user and this tool binds nothing.
+says absence is what was meant. Every run above carries a drain in every
+frame (2 windows traced, both with ops, max 845). It also asserts
+**which guest answered** (`--expect-build auto` against `session_health`),
+because there is one agent socket per user and this tool binds nothing.
 
 ## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
 
