@@ -180,6 +180,34 @@ matches neither side, the honest resolution is to re-bake or to land saying
 plainly that the oracle is unaccounted for. Picking a side to make the
 conflict go away writes a claim nobody checked.
 
+## First: are the gates even wired?
+
+    tools/hooks-doctor
+
+On 2026-08-06 the answer was **no, and never had been**. `core.hooksPath`
+was the absolute path `now/.githooks` — the worktree *container*, parked on
+a commit from before `.githooks/` existed — so no pre-commit hook had ever
+run in any NOW worktree. Eighteen worktrees carried their own copy of the
+same broken value, shadowing the shared one.
+
+An absolute `core.hooksPath` is wrong by construction in a multi-worktree
+repository: it aims every worktree at one checkout's hooks. Only the
+relative `.githooks` resolves to the hooks the worktree has checked out.
+`tools/setup-hooks` has always set the relative form; something else did
+not. `tools/hooks-doctor --fix` removes the per-worktree overrides and puts
+the relative value in the shared config.
+
+The consequence worth remembering is not the config, it is what a dead gate
+did to an honest decision. A lane deferred a bake twice with written
+reasons — and **nothing was written**, because the mechanism that records a
+deferral is the gate that never ran. `tools/ext-bake-gate defer --reason
+"…"` now records one directly, and this is why the merge gate keys on the
+digest of the resident source rather than on a deferral being present: a
+missing record must not read as nothing to do.
+
+`scripts/test-all` runs the doctor first and, when the gates are not armed,
+its final line stops saying they passed.
+
 ## Run it
 
     tools/image-discipline-tests     # fourteen mutations, ~3 seconds
