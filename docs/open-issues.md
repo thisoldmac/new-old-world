@@ -12273,3 +12273,81 @@ Two smaller things found on the way, both closed:
   that made it and the row that inherited it. Sweep A lost Date & Time's
   whole stability row to exactly this, and `--quit-after` read as success
   the entire time, because an application holding a modal ignores a quit.
+## BROKEN: the anchor plane arms, and captures an anchor for NOW alone (2026-08-07)
+
+**Found while diagnosing plan 018 slice 3, and it is bigger than that
+slice.** On this tree (`91a5e754`, guest `59dce8562ad4`, ext from the same
+commit), on a **pristine cold boot with nothing touched**, every foreign
+process reports `ax_oracle_not_found` and the scene carries NOW's own
+window and nothing else — no Finder, no desktop, no panels:
+
+    scene.request x8 over 32 s, immediately after boot
+      windows = 1  (New Old World)
+      meta.errors = Application Switcher, Control Strip Extension,
+                    DVD AutoLauncher, FBC Indexing Scheduler,
+                    Folder Actions, tbt-appe, Finder, tbt-worker
+                    — all `ax_oracle_not_found`
+      mirror -> lifecycle active, capabilities 127, requested 7, active 7
+
+**It is not the ten-second lease** (the 2026-08-06 entry above). Scenes
+were asked every 4–5 s, well inside `kNowPeekOwnerLeaseTicks`, and the
+verdict word is different: that defect produced `now_no_plane`, this one
+produces `ax_oracle_not_found` — the plane IS armed and no slot claims the
+partition. It is also not the first-scene claim-before-echo lag: it does
+not clear over 95 s and twenty scenes.
+
+**Measured through both faces, so it is not the instrument.**
+`tools/gwprobe.py` and the shipped host app (built from this tree,
+`NOW_PREFS_SUFFIX`, Mirror window opened) agree: the app's own
+`mirror_read snapshot` reports `windows: unavailable / not-observed` for
+all eight foreign processes and `complete` for NOW alone. `axtree` binds
+NOW `ok`.
+
+**Why it matters beyond one slice.** Plan 018's whole subject — Finder
+views, control panels, modals — is invisible on a rig in this state, and
+so is sweep B. Sweep A, on the *same commit and the same base image*,
+reported ten windows and 182 elements, so either something on that VM
+differed or this is intermittent; neither is established, and that
+uncertainty is the finding. Anyone quoting a window count should check
+this first, because the failure looks exactly like "the machine has no
+windows".
+
+**The instrument that does not exist.** `ext/src/now_ext.c` counts
+`anchor_event_passes`, `anchor_full_publishes`, `anchor_slot_scans` and
+`anchor_count` on every armed jGNE pass, and **nothing on either side can
+read them** — no guest verb, no host field. So "the plane is armed and
+captures nothing" cannot be told from "the filter never ran in a foreign
+context" without adding a reader first. That is the next step and it is
+small.
+
+## Slice 3's own findings, and the modal it can now raise (2026-08-07)
+
+Plan 018 defect #7 (unknown-creator modal) is **reproducible on demand**
+for the first time — [raising-the-unknown-creator-modal.md](raising-the-unknown-creator-modal.md)
+is the procedure and `tools/stage-orphan-doc.py` is the one command.
+Verified twice by QMP screendump on two boots. It is a titleless Finder
+`dBoxProc` alert with one OK button, and when the Finder is not front the
+Notification Manager puts up a second window beside it.
+
+**Whether it enters the scene is NOT settled**, and the entry above is
+why: on this rig no Finder window enters the scene at all, so the modal
+is not a special case and nothing about its window CLASS was measured.
+Scenes taken with the alert visibly on screen carry NOW's window only —
+which is the same answer they give with no alert up. Sweep B should
+re-ask this the moment the anchor plane is seeing foreign processes.
+
+Two smaller things measured on the way:
+
+- **The guest's `script` verb reports `timeout` on SUCCESS** when the
+  script raises a modal, because the Finder stops answering Apple Events
+  inside `ModalDialog`. A driver that reads that refusal as a failure
+  will retry an act that already worked.
+- **QMP `send-key` reaches this machine.** `scripts/spin-up-ppc` states
+  that QMP keyboard events do not arrive on mac99 (`has-adb=false`); that
+  is true of the ADB keyboard, and the profile also attaches
+  `-device usb-kbd`. A Return through it dismissed the alert on the first
+  try, twice. Worth knowing: it is the cheapest manual override there is,
+  and the notes said it did not exist.
+- **A modal in a FRONTMOST Finder starves NOW badly enough to drop the
+  wire** — the guest's Connection panel fell back to "Retry in 4 s" and a
+  `scene.request` timed out at 45 s. Raise modals with NOW frontmost.

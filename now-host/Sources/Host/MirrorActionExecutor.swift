@@ -46,8 +46,18 @@ enum MirrorActionExecutor {
     }
 
     /// Whether opening this item raises its OWN application rather than a
-    /// Finder window — and **nil when the scene cannot say**, which is the
-    /// answer far more often than it looks.
+    /// Finder window. Convenience over `ownApplicationName`, for the
+    /// callers that only need the yes/no.
+    static func opensAsItsOwnApplication(
+        _ item: String,
+        in container: InteractionPlan.FinderContainer,
+        scene: MirrorKit.Scene) -> Bool? {
+        ownApplicationName(item, in: container, scene: scene).map { _ in true }
+    }
+
+    /// The name of the process opening this item will raise, or **nil when
+    /// the scene cannot say** — which is the answer far more often than it
+    /// looks.
     ///
     /// Only a positive signal moves the prediction, because the cost of
     /// being wrong is symmetric (a 15 s timeout either way) and the cost
@@ -62,25 +72,78 @@ enum MirrorActionExecutor {
     ///   panel. Those three, and the Finder calling something an
     ///   application in its own words, are the whole positive set.
     /// - **An alias reports its own kind and never its target's**, so an
-    ///   alias to a folder and an alias to a control panel are
-    ///   indistinguishable here. Unknown, deliberately.
+    ///   alias to a folder and an alias to a control panel cannot be told
+    ///   apart from the alias file alone. They are told apart from
+    ///   `aliasTarget`, when the producer resolved one: the target is
+    ///   classified by the SAME two rules, and the name that comes back
+    ///   is the target's, because a process is named after the
+    ///   application and not after whatever the alias was renamed to.
+    ///   An unresolved alias stays unknown, exactly as before.
     /// - Everything else — documents, the Trash, an item this scene never
     ///   read — stays unknown and keeps the Finder-window prediction it
     ///   has always had. For a document that prediction is still wrong;
     ///   it is not wrong in a NEW way, and nothing measured says what the
     ///   right one is.
-    static func opensAsItsOwnApplication(
+    ///
+    /// The alias leg is what closes the false negative sweep A priced:
+    /// `open "Mail"` reported **timedOut after 18 s having worked**,
+    /// because the desktop's `Mail` is an alias, an alias was
+    /// unclassifiable, and unclassifiable predicted a Finder window
+    /// titled `Mail` that no Finder ever makes. (The window Mail raises
+    /// having no title is a second, separate defect: the prediction named
+    /// the wrong OWNER, so a titled window would not have matched it
+    /// either.) Measured on the emulator 2026-08-07: the alias's original
+    /// is an `APPL` named `Mail`, and opening it puts a process named
+    /// `Mail` at the front.
+    static func ownApplicationName(
         _ item: String,
         in container: InteractionPlan.FinderContainer,
-        scene: MirrorKit.Scene) -> Bool? {
+        scene: MirrorKit.Scene) -> String? {
         guard let entry = publishedItems(of: container, in: scene)?
-            .first(where: { $0.name == item }), !entry.alias else {
+            .first(where: { $0.name == item }) else {
             return nil
         }
-        if entry.kind == "application" { return true }
-        switch entry.type {
+        if entry.alias {
+            guard let target = entry.aliasTarget else { return nil }
+            return isApplication(kind: target.kind, type: target.type)
+                ? target.name : nil
+        }
+        return isApplication(kind: entry.kind, type: entry.type)
+            ? item : nil
+    }
+
+    /// What the Finder will call the window it opens, when it opens one.
+    ///
+    /// Almost always the item's own name — except for an alias, where the
+    /// Finder titles the window after the TARGET. An alias named `Docs`
+    /// pointing at `Documents` opens a window called `Documents`, so
+    /// predicting `Docs` is a postcondition that can never match. Only a
+    /// RESOLVED alias moves this; an unresolved one keeps the item's name,
+    /// which is the answer it has always had.
+    static func finderWindowTitle(
+        for item: String,
+        in container: InteractionPlan.FinderContainer,
+        scene: MirrorKit.Scene) -> String {
+        guard let entry = publishedItems(of: container, in: scene)?
+            .first(where: { $0.name == item }), entry.alias,
+              let target = entry.aliasTarget else {
+            return item
+        }
+        return target.name
+    }
+
+    /// The whole positive set, in one place because the alias leg and the
+    /// plain leg must not drift into two answers for one question.
+    ///
+    /// - The Finder's own `kind` reaches us reduced to four words, and
+    ///   `application` is the only one of them that settles this.
+    /// - `type` settles the rest: `APPL` and `appe` are an application
+    ///   and a background-only one, `cdev` is a control panel.
+    private static func isApplication(kind: String, type: String?) -> Bool {
+        if kind == "application" { return true }
+        switch type {
         case "APPL", "appe", "cdev": return true
-        default: return nil
+        default: return false
         }
     }
 
@@ -200,12 +263,15 @@ enum MirrorActionExecutor {
                the Apple menu's Control Panels is the same event as opening
                it from a Finder window. This case was the outlier. */
             guard let finder = namedProcess("Finder") else { return nil }
-            if opensAsItsOwnApplication(item, in: container,
-                                        scene: snapshot.scene) == true {
+            if let process = ownApplicationName(item, in: container,
+                                                scene: snapshot.scene) {
                 return make(target: .process(finder),
-                            postcondition: .processNamedPresent(item))
+                            postcondition: .processNamedPresent(process))
             }
-            return presentOrCreated(owner: finder, title: item)
+            return presentOrCreated(
+                owner: finder,
+                title: finderWindowTitle(for: item, in: container,
+                                         scene: snapshot.scene))
         case .menuCommand:
             guard case .menuItem(let item) = interaction.object,
                   item.title == "Workshop",

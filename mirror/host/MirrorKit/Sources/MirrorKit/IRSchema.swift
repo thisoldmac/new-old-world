@@ -268,6 +268,19 @@ public enum IRSchema {
         "windows[].controls[].semantic.definition",
         "windows[].controls[].semantic.action",
         "windows[].controls[].semantic.state",
+        /* 2026-08-07. See Scene.DesktopItem.aliasTarget below: the target
+           an alias resolves to, on both the desktop's items and a
+           window's, because a container's items are the same shape. */
+        "desktopItems[].aliasTarget",
+        "desktopItems[].aliasTarget.name",
+        "desktopItems[].aliasTarget.kind",
+        "desktopItems[].aliasTarget.type",
+        "desktopItems[].aliasTarget.creator",
+        "windows[].items[].aliasTarget",
+        "windows[].items[].aliasTarget.name",
+        "windows[].items[].aliasTarget.kind",
+        "windows[].items[].aliasTarget.type",
+        "windows[].items[].aliasTarget.creator",
         "windows[].controls[].semantic.value",
         "windows[].controls[].semantic.listCells",
         "windows[].controls[].semantic.listCells[].row",
@@ -341,6 +354,19 @@ public enum IRSchema {
            already crosses on the drain records; no contract field was
            added for any of it. */
         "Scene.Window.displayEpoch",
+        /* 2026-08-07. What an alias POINTS AT. Additive in the ordinary
+           sense — absent when the producer did not ask, and a consumer
+           that has never heard of it keeps the answer it had. It exists
+           because an alias file's own kind and type describe the alias
+           and never its target, so every alias was unclassifiable and
+           opening one predicted a Finder window that no Finder makes:
+           `open "Mail"` reported timedOut after 18 s having worked
+           (fidelity sweep A). */
+        "Scene.DesktopItem.aliasTarget",
+        "Scene.DesktopItem.AliasTarget.name",
+        "Scene.DesktopItem.AliasTarget.kind",
+        "Scene.DesktopItem.AliasTarget.type",
+        "Scene.DesktopItem.AliasTarget.creator",
     ]
 
     // MARK: - What the gate compares against

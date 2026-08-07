@@ -1152,20 +1152,100 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            either side of it. */
         let typesByName = Dictionary(uniqueKeysWithValues:
             Self.parseIconTypes(art.truncated ? "" : (art.value ?? "")))
-        return Self.applyingArt(roster, types: typesByName)
+
+        /* THE THIRD PASS, and its own script for the second pass's reason.
+           An alias whose original is on an unmounted volume raises, and
+           AppleScript fails a script whole - fused with the type pass, one
+           stale alias on the desktop would cost every item its icon art.
+           Each resolution is also wrapped individually, so one bad alias
+           costs only itself. */
+        let aliases = roster.filter(\.alias).map(\.name)
+        var targetsByName: [String: MirrorKit.Scene.DesktopItem.AliasTarget] = [:]
+        if !aliases.isEmpty {
+            let read = await readingOutput(
+                "script",
+                ["source": .text(Self.aliasTargetsScript(container: container))])
+            if read.value == nil || read.truncated {
+                note("\(container): \(aliases.count) alias(es) read, but not "
+                     + "what they point at - "
+                     + "\(read.truncated ? "guest result truncated" : "\(read.error ?? "no reason given")")")
+            }
+            targetsByName = Dictionary(
+                Self.parseAliasTargets(read.truncated ? ""
+                                       : (read.value ?? "")),
+                uniquingKeysWith: { first, _ in first })
+        }
+        return Self.applyingArt(roster, types: typesByName,
+                                aliasTargets: targetsByName)
+    }
+
+    /// What every alias in a container points at.
+    ///
+    /// `original item` is the Finder's own resolution, so it follows a
+    /// renamed or moved target the way a double-click does. It raises for
+    /// a broken alias and for one whose volume is not mounted, which is
+    /// why every row is wrapped: a missing row means "unresolved", and
+    /// unresolved keeps the old prediction rather than inventing one.
+    static func aliasTargetsScript(container: String) -> String {
+        """
+        tell application "Finder"
+        set out to ""
+        repeat with a in (every alias file of \(container))
+        try
+        set t to original item of a
+        set out to out & "A" & tab & (name of a) & tab & (name of t) & tab & \
+        (file type of t as string) & tab & (creator type of t as string) & \
+        tab & (kind of t) & return
+        end try
+        end repeat
+        end tell
+        return out
+        """
+    }
+
+    /// The alias pass, parsed from its OWN blob for `parseIconTypes`'
+    /// reason: each script answers in source form and carries its own
+    /// quotes.
+    static func parseAliasTargets(_ raw: String)
+        -> [(String, MirrorKit.Scene.DesktopItem.AliasTarget)] {
+        let text = unquote(raw)
+        return text.components(separatedBy: CharacterSet.newlines)
+            .compactMap { line in
+                let f = line.components(separatedBy: "\t")
+                guard f.count >= 6, f[0] == "A", !f[1].isEmpty else {
+                    return nil
+                }
+                let kind = f[5].lowercased()
+                return (f[1], .init(
+                    name: f[2],
+                    kind: kind.contains("folder") ? "folder"
+                        : kind.contains("disk") ? "disk"
+                        : kind.contains("application") ? "application"
+                        : "file",
+                    type: osType(fromAppleScript: f[3]),
+                    creator: osType(fromAppleScript: f[4])))
+            }
     }
 
     /// The item roster and the type pass, joined by name — the one place a
     /// file's type and creator are attached to the icon that will be drawn
     /// with them.
-    static func applyingArt(_ items: [MirrorKit.Scene.DesktopItem],
-                            types: [String: (String, String)])
+    static func applyingArt(
+        _ items: [MirrorKit.Scene.DesktopItem],
+        types: [String: (String, String)],
+        aliasTargets: [String: MirrorKit.Scene.DesktopItem.AliasTarget] = [:])
         -> [MirrorKit.Scene.DesktopItem] {
         items.map { item in
-            guard let pair = types[item.name] else { return item }
             var out = item
-            out.type = osType(fromAppleScript: pair.0)
-            out.creator = osType(fromAppleScript: pair.1)
+            if let pair = types[item.name] {
+                out.type = osType(fromAppleScript: pair.0)
+                out.creator = osType(fromAppleScript: pair.1)
+            }
+            /* Only onto an item the ROSTER called an alias. The alias pass
+               asks the Finder for `every alias file`, and joining its rows
+               onto anything else would let a name collision give a plain
+               document a target it does not have. */
+            if item.alias { out.aliasTarget = aliasTargets[item.name] }
             return out
         }
     }

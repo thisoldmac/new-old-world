@@ -32,9 +32,15 @@ final class IRFreezeTests: XCTestCase {
         op.kind = "origin"; op.origin = [0, 0]; op.rgb = [0, 0, 0]
         op.src = [1, 2, 3, 4]; op.dst = [1, 2, 3, 4]
 
+        /* `alias: true` with a resolved target, because the freeze is
+           taken off a MAXIMAL scene: an item with no alias target
+           encodes no `aliasTarget` key and would freeze the field out of
+           the wire shape it is supposed to pin. */
         let item = Scene.DesktopItem(
             name: "n", kind: "file", type: "TEXT", creator: "ttxt",
-            x: 10, y: 20, placed: true, alias: false, invisible: false)
+            x: 10, y: 20, placed: true, alias: true, invisible: false,
+            aliasTarget: .init(name: "t", kind: "application",
+                               type: "APPL", creator: "aplt"))
 
         let control = Scene.Control(
             ref: "r", role: "scrollbar", title: "t", rect: rect,
