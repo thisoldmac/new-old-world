@@ -298,6 +298,32 @@ public struct Scene: Codable, Equatable, Sendable {
         public var cmd: String
     }
 
+    /// **Which kind of empty an empty `controls` array is.**
+    ///
+    /// `controls` is required by the IR, so `[]` has carried three
+    /// different facts since the plane was written and there was nowhere
+    /// beside it to say which. The producer's own verdict prose named two
+    /// of them in a sentence in `meta.errors`, keyed on a window title —
+    /// readable by a person and by nothing else.
+    ///
+    /// `notFetched` is the one that had no name at all. The guest's
+    /// control pool is shared across every window in a scene; a window
+    /// walked after it filled is refused a slot and retracts, so a panel
+    /// with twenty controls arrives as `[]` for a reason that has nothing
+    /// to do with that panel.
+    ///
+    /// - `empty` is a fact about the MACHINE and the only one of the four
+    ///   that licenses drawing a bare window.
+    /// - `unknown` is the machine being unreadable where we may look.
+    /// - `notFetched` is a fact about US, and the only one asking again
+    ///   could answer.
+    public enum ControlsState: String, Codable, Equatable, Sendable {
+        case complete
+        case empty
+        case unknown
+        case notFetched
+    }
+
     public struct Window: Codable, Equatable, Sendable {
         /// Stable-ish: psn + title + occurrence index.
         public var id: String
@@ -315,6 +341,14 @@ public struct Scene: Codable, Equatable, Sendable {
         /// and action models decide what to do with an invisible window.
         public var visible: Bool
         public var controls: [Control]
+        /// **Which kind of empty `controls` is** — see ``ControlsState``.
+        ///
+        /// The producer sends it only where the array cannot speak for
+        /// itself, so `nil` beside a NON-empty array means `complete` and
+        /// `nil` beside an empty one means `unknown`. Read it through
+        /// ``controlsKnowledge``, never directly; the raw optional exists
+        /// to keep an unrecognised future word decodable.
+        public var controlsState: String? = nil
         /// Live Dialog Manager items, distinct from the structural Control
         /// Manager chain because edit/static items do not share its identity
         /// or actuation path. nil means not reported; [] means proven empty.
@@ -402,11 +436,42 @@ public struct Scene: Codable, Equatable, Sendable {
         /// pass the freeze gate.
         enum CodingKeys: String, CodingKey {
             case id, app, psn, title, kind, rect, front, z, visible
-            case controls, dialogItems, text, display
+            case controls, controlsState, dialogItems, text, display
             case items          // additive in v1 — see the declaration
             case ref            // additive in v1 — see the declaration
             case addr           // additive in v1 — see the declaration
             case incarnation    // IR v2 durable reducer identity
+        }
+
+        /// **What is known about this window's controls**, with the
+        /// producer's economy undone in one place.
+        ///
+        /// The word rides only where the array is empty, so this applies
+        /// the three rules that make absence unambiguous:
+        ///
+        /// 1. A non-empty `controls` is `complete`. No other state can
+        ///    produce one, so the producer does not spend 28 bytes per
+        ///    window saying so — measured at 900 bytes against a 64 KB
+        ///    scene ceiling the guest already touches.
+        /// 2. An empty `controls` WITH the word means the word.
+        /// 3. An empty `controls` WITHOUT it is `unknown`, because it came
+        ///    from a producer that does not report this and therefore
+        ///    could not tell us. Reading it as `empty` would be the
+        ///    conflation the field exists to end, one layer up.
+        ///
+        /// A word this build has never heard of is also `unknown` — a
+        /// newer guest saying something we cannot interpret is precisely
+        /// the case for admitting we do not know.
+        public var controlsKnowledge: ControlsState {
+            if !controls.isEmpty { return .complete }
+            guard let raw = controlsState,
+                  let state = ControlsState(rawValue: raw) else {
+                return .unknown
+            }
+            /* `complete` beside an empty array is not a state this
+               producer can be in; taking it at its word would assert
+               "walked, and here they are" over nothing. */
+            return state == .complete ? .unknown : state
         }
     }
 

@@ -865,8 +865,21 @@ public struct SceneRenderer {
             || win.items != nil
             || win.island != nil
         if !hasReportedContent {
-            drawUnavailableVisual(contentCtx, content,
-                                  "Guest content not reported")
+            /* AND SAY WHICH SILENCE THIS IS. The hatch has always meant
+               "content the Mirror cannot express"; when the control plane
+               is one of the things missing, the guest now knows WHY and
+               the caption is where a person meets it. `notFetched` is
+               worth naming above all the others because it is the only
+               one that is not about this window: the guest's control pool
+               is shared across the scene, and asking again with room
+               would answer it. */
+            let why: String
+            switch win.controlsKnowledge {
+            case .notFetched: why = "Controls not fetched"
+            case .unknown:    why = "Controls unknown"
+            case .empty, .complete: why = "Guest content not reported"
+            }
+            drawUnavailableVisual(contentCtx, content, why)
         }
 
         // M3 pixel island: when we hold the guest's real pixels for this

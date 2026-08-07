@@ -72,7 +72,13 @@ final class IRFreezeTests: XCTestCase {
         let window = Scene.Window(
             id: "0.1/W#0", app: "A", psn: "0.1", title: "W", kind: 2,
             rect: rect, front: true, z: 0, visible: true,
-            controls: [control], dialogItems: [dialogItem],
+            controls: [control],
+            /* MAXIMAL, even though a real producer omits this beside a
+               populated array — the freeze pins the SHAPE a consumer must
+               keep decoding, and a key the fixture never sets is a key the
+               gate cannot notice being removed. */
+            controlsState: "complete",
+            dialogItems: [dialogItem],
             ref: "now-window-probe",
             addr: 0x1EA2D3E0,
             incarnation: "process-12345678/window-1ea2d3e0",

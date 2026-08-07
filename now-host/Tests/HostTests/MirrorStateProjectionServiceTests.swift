@@ -509,7 +509,8 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
             "id":"0.9/Untraced#0","app":"SimpleText","psn":"0.9",
             "title":"Untraced","kind":8,
             "rect":{"l":0,"t":0,"r":100,"b":100},
-            "front":false,"z":1,"visible":true,"controls":[],
+            "front":false,"z":1,"visible":true,
+            "controlsState":"notFetched","controls":[],
             "ref":"win-untraced",
             "incarnation":"process-st/window-untraced"\(second)
           }],
@@ -1029,7 +1030,8 @@ extension MirrorStateProjectionServiceTests {
             "id":"0.9/Plain#0","app":"SimpleText","psn":"0.9",
             "title":"Plain","kind":8,
             "rect":{"l":0,"t":0,"r":120,"b":90},
-            "front":false,"z":1,"visible":true,"controls":[],
+            "front":false,"z":1,"visible":true,
+            "controlsState":"notFetched","controls":[],
             "items":[
               {"name":"Read Me","kind":"file","type":"TEXT",
                "creator":"ttxt","x":12,"y":20,"placed":true,
@@ -1078,6 +1080,15 @@ extension MirrorStateProjectionServiceTests {
                     $0.source == "control" && $0.title == "Save"
                 } == true
             },
+            /* The word that says whether an empty control list is an
+               ANSWER. Checked on the `Plain` window because that is the
+               one with none — and checked for `notFetched` specifically,
+               so a roster entry that merely reported "some word arrived"
+               could not pass: an emptied window resolves to `unknown`,
+               which is what testTheRosterReadsContentRatherThanMerePresence
+               requires it to fail on. */
+            "controlsState": .carried { plain($0)?.controlsState
+                                            == "notFetched" },
             "dialogItems": .carried { snapshot in
                 full(snapshot)?.items.contains {
                     $0.source == "dialogItem" && $0.number == 3

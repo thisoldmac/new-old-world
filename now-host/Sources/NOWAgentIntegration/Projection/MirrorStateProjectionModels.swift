@@ -425,6 +425,23 @@ public struct AgentIntegrationMirrorSurface:
     public let ref: String?
     /// Dialog TextEdit content, for the windows that have it.
     public let text: AgentIntegrationMirrorWindowText?
+    /// **Whether this window's controls are missing, or merely absent.**
+    ///
+    /// `complete` | `empty` | `unknown` | `notFetched`. An agent deciding
+    /// what a panel offers reads a window with no control items, and until
+    /// this key that reading had no way to be wrong: the guest emits `[]`
+    /// for a window proven to have none AND for one it never walked. The
+    /// third case is the one that had no name at all — the guest's control
+    /// pool is shared across the scene, so a window walked after it filled
+    /// arrives empty for a reason that is not about that window.
+    ///
+    /// Only `empty` licenses "this panel has no controls". `notFetched`
+    /// is the only one asking again could answer, and it is the state an
+    /// agent must not read as a dead end.
+    ///
+    /// Always present: this side resolves the producer's economy (the word
+    /// rides only beside an empty array) rather than passing the gap on.
+    public let controlsState: String
 
     public init(entityID: String, title: String,
                 rect: AgentIntegrationMirrorRect?, z: Int, front: Bool,
@@ -433,7 +450,8 @@ public struct AgentIntegrationMirrorSurface:
                 display: [AgentIntegrationMirrorDisplayOp]? = nil,
                 displayTotal: Int? = nil, kind: Int? = nil,
                 ref: String? = nil,
-                text: AgentIntegrationMirrorWindowText? = nil) {
+                text: AgentIntegrationMirrorWindowText? = nil,
+                controlsState: String = "unknown") {
         self.entityID = entityID
         self.title = title
         self.rect = rect
@@ -447,6 +465,7 @@ public struct AgentIntegrationMirrorSurface:
         self.kind = kind
         self.ref = ref
         self.text = text
+        self.controlsState = controlsState
     }
 }
 

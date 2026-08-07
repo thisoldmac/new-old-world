@@ -393,6 +393,15 @@ public enum IRSchema {
         "meta.desktop.patternName",
         "meta.desktop.pictureName",
 
+        /* 2026-08-07. Which kind of empty an empty `controls` is.
+           Additive, and emitted only where the array cannot speak for
+           itself — a reader that has never heard of it sees exactly the
+           `[]` it saw before. The one it exists for is `notFetched`: the
+           guest's control pool is shared across the scene, so a window
+           walked after it filled arrives empty for a reason that is not
+           about that window and that asking again would answer. */
+        "windows[].controlsState",
+
         "meta.coverage[].evicted",
     ]
 
@@ -417,6 +426,8 @@ public enum IRSchema {
         "Scene.AppRef.incarnation",
         "Scene.ProcessRef.incarnation",
         "Scene.Window.incarnation",
+        // See windows[].controlsState in v2Additions.
+        "Scene.Window.controlsState",
         "Scene.Meta.coverage",
         "Scene.CoverageClaim.scope", "Scene.CoverageClaim.owner",
         "Scene.CoverageClaim.status", "Scene.CoverageClaim.reason",
