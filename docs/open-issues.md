@@ -68,7 +68,11 @@ to over-retract:**
   item — not from a picture. Only its closing sentence *"this is why the
   panel has had no group boxes … in both rounds"* is the void
   attribution.
-- **Sweep A's Finder hatch stands.** Sweep A is a sweep, it has drains,
+- **Sweep A's Finder hatch stands** — sweep A meaning
+  [fidelity-sweep-2026-08-07-a.md](fidelity-sweep-2026-08-07-a.md), not
+  the 2026-08-06 A-side baseline quoted below; the two share a letter
+  and this correction is a poor place to be sloppy about which. It is a
+  sweep, it has drains,
   and *"Bitmap unavailable"* is emitted inside `DisplayReplay`
   (`DisplayReplay.swift:835`), which cannot run without a drain — so
   that caption is positive proof the capture had one.
