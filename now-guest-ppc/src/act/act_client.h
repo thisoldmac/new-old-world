@@ -124,6 +124,29 @@ unsigned long now_act_inflight_refused(void);
 NowActStatus now_act_submit(const NowActTarget *target,
                             NowPeekActCell *snapshot);
 
+/* HOW LONG THE LAST SUBMIT TOOK, AND HOW OFTEN IT GOT TO LOOK.
+   ------------------------------------------------------------------
+   A silent observer of the one thing this plane could not otherwise
+   distinguish: a request the resident was slow to serve from a request
+   the resident served instantly while THIS APPLICATION WAS NOT BEING
+   SCHEDULED. Both read as "submit took four seconds" and the repairs are
+   opposite - the first is a resident bug, the second is cooperative
+   multitasking working exactly as designed and no amount of protocol
+   will fix it.
+
+   The pair is what separates them. Ticks are the wall clock; yields are
+   how many times the spin above actually ran. Many yields over four
+   seconds means we were running and the resident was slow. Near-zero
+   yields over four seconds means the processor was somewhere else, and
+   the reply had probably been sitting in the cell the whole time.
+
+   It counts what already happens rather than adding a poll, which is the
+   distinction finding `instrument-feeds-the-clock` was written about:
+   an instrument that yielded in order to measure yielding would be
+   measuring itself. */
+unsigned long now_act_last_submit_ticks(void);
+unsigned long now_act_last_submit_yields(void);
+
 /* The latest normal-context scene generation available when a request is
    created. It is correlation evidence, not a resident safety authority. */
 void now_act_note_scene_generation(unsigned long generation);

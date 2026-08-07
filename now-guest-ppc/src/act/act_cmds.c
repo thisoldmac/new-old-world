@@ -1541,7 +1541,10 @@ void now_act_run_dragpress(const char *request_json, long id,
     long             gcap = 0;
     long             h = 0;
     long             v = 0;
+    long             to_h = 0;
+    long             to_v = 0;
     int              have_point;
+    int              have_to;
     int              by_window;
     char             probe[kNowObsTokenMax];
 
@@ -1549,16 +1552,35 @@ void now_act_run_dragpress(const char *request_json, long id,
     if (arg_int_malformed(request_json, "idle")
         || arg_int_malformed(request_json, "cap")
         || arg_int_malformed(request_json, "h")
-        || arg_int_malformed(request_json, "v")) {
+        || arg_int_malformed(request_json, "v")
+        || arg_int_malformed(request_json, "toH")
+        || arg_int_malformed(request_json, "toV")) {
         reply_error(out, cap, id, "bad-request",
-                    "dragpress's idle, cap, h and v are present but are "
-                    "not JSON numbers");
+                    "dragpress's idle, cap, h, v, toH and toV are present "
+                    "but are not JSON numbers");
         return;
     }
     (void)arg_int(request_json, "idle", &idle);
     (void)arg_int(request_json, "cap", &gcap);
     have_point = arg_int(request_json, "h", &h)
               && arg_int(request_json, "v", &v);
+    /* THE DESTINATION, AND WHY IT IS ON THE PRESS.
+       Once this returns the target is inside its own tracking loop and
+       this application stops being scheduled, so a dragmove sent after
+       the press cannot be read until the gesture is already over
+       (docs/open-issues.md, break 4). A caller that wants an item to
+       MOVE has exactly this one chance to say where. */
+    have_to = arg_int(request_json, "toH", &to_h);
+    if (have_to != arg_int(request_json, "toV", &to_v)) {
+        /* The same rule ctlact's h/v pair has, for the same reason: a
+           half-specified destination would silently mean "stay where you
+           are" in one axis, which is a drag to somewhere nobody asked
+           for. */
+        reply_error(out, cap, id, "bad-request",
+                    "toH and toV go together: a destination with one axis "
+                    "missing is a drag to a point nobody named");
+        return;
+    }
 
     /* EXACTLY ONE NAME FOR THE TARGET, and the second one exists because
        the first cannot reach a Finder icon.
@@ -1700,6 +1722,13 @@ void now_act_run_dragpress(const char *request_json, long id,
     cell->win_v = (NowPeekI32)gcap;
     cell->click_h = (NowPeekI32)h;
     cell->click_v = (NowPeekI32)v;
+    /* The destination in the menu guard's point pair, flagged by
+       zoom_part - three more fields with no meaning for this op, which
+       is what the accretive rule asks for. peek_table.h states the
+       reuse where both compilers read it. */
+    cell->zoom_part = have_to ? 1 : 0;
+    cell->arm_point_h = (NowPeekI32)to_h;
+    cell->arm_point_v = (NowPeekI32)to_v;
 
     st = now_act_submit(&g_target, &g_snap);
     if (st == kNowActRefused) {
@@ -1726,6 +1755,21 @@ void now_act_run_dragpress(const char *request_json, long id,
     row_add(&rows, by_window ? "Window" : "Element", ref);
     row_add(&rows, "Dispatch", "pressed");
     row_add(&rows, "Point from", have_point ? "the caller" : "the resolver");
+    if (have_to) {
+        row_addf(&rows, "To h", "%ld", to_h);
+        row_addf(&rows, "To v", "%ld", to_v);
+    } else {
+        row_add(&rows, "To", "nowhere - no toH/toV, so no item moves");
+    }
+    /* THE PAIR THAT SEPARATES A SLOW RESIDENT FROM A STARVED
+       APPLICATION. Both look like "the press took four seconds" and the
+       repairs are opposite ones. Reported on every press rather than
+       behind a flag, because the number that matters is the one from the
+       run somebody is already looking at. */
+    row_addf(&rows, "Submit ticks", "%ld",
+             (long)now_act_last_submit_ticks());
+    row_addf(&rows, "Submit yields", "%ld",
+             (long)now_act_last_submit_yields());
     drag_state_rows(&rows, drag);
     now_log(kLogInfo, "act", "#%ld dragpress session %ld", id,
             (long)session);

@@ -48,8 +48,10 @@ answer this listener (AGENTS.md). `auto` reads the local build stamp.
 """
 
 import argparse
+import json
 import os
 import re
+import socket
 import sys
 import time
 
@@ -58,6 +60,43 @@ sys.path.insert(0, os.path.join(ROOT, "scripts", "probes"))
 import nowwire  # noqa: E402
 
 ICON = 32
+
+
+def screendump(qmp_path, out_png):
+    """The GUEST'S OWN PIXELS, straight out of QEMU.
+
+    A screendump is for LOOKING, never for deciding: the pass/fail in this
+    script is the Finder's own `bounds of`, and a picture is what a person
+    asked for beside it. QMP `screendump` writes a PPM, so the file is
+    converted only if a converter is at hand and left as a PPM otherwise -
+    an unconverted image is still the machine's pixels."""
+    ppm = os.path.splitext(out_png)[0] + ".ppm"
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(30)
+    s.connect(qmp_path)
+    f = s.makefile("rwb")
+    f.readline()                                  # the greeting
+    for cmd in ({"execute": "qmp_capabilities"},
+                {"execute": "screendump",
+                 "arguments": {"filename": ppm}}):
+        f.write((json.dumps(cmd) + "\n").encode())
+        f.flush()
+        while True:
+            line = f.readline()
+            if not line:
+                raise RuntimeError("QMP closed")
+            msg = json.loads(line)
+            if "return" in msg or "error" in msg:
+                if "error" in msg:
+                    raise RuntimeError(str(msg["error"]))
+                break
+    f.close()
+    s.close()
+    if os.system(f"sips -s format png {ppm} --out {out_png} "
+                 ">/dev/null 2>&1") == 0:
+        os.unlink(ppm)
+        return out_png
+    return ppm
 
 
 def rows(reply, key):
@@ -144,12 +183,22 @@ def finder_windows(link, psn):
     return out
 
 
-def clear_spot(items, avoid, w, h, bounds):
+def clear_spot(items, avoid, w, h, bounds, obstacles=()):
     """A destination box that overlaps nothing the Finder reported.
 
     Refused rather than guessed: if the desktop is too full to find one,
     this returns None and the run stops. A drag aimed at a spot we did
-    not check is a drag that could drop a file INTO something."""
+    not check is a drag that could drop a file INTO something.
+
+    `obstacles` is the half that was missing and it is not a detail. The
+    first version avoided desktop ICONS only, and the first destination it
+    picked on this desk was (56,76) — a 32-pixel box whose bottom five
+    rows lay inside the open `Macintosh HD` WINDOW at top=103. Dropping
+    there is not a rearrangement at all: it FILES the item into that
+    folder, which is precisely the destructive outcome the rule about
+    guessed drop targets exists to prevent, arriving through the one gap
+    an icon-only check leaves. Every open window on the desk is an
+    obstacle here, the desktop's own excepted."""
     for y in range(bounds["t"] + 40, bounds["b"] - h - 40, 24):
         for x in range(bounds["l"] + 40, bounds["r"] - w - 40, 24):
             box = (x, y, x + w, y + h)
@@ -157,6 +206,10 @@ def clear_spot(items, avoid, w, h, bounds):
                    and not (box[2] <= it["l"] or box[0] >= it["r"]
                             or box[3] <= it["t"] or box[1] >= it["b"])
                    for it in items):
+                continue
+            if any(not (box[2] <= o["l"] or box[0] >= o["r"]
+                        or box[3] <= o["t"] or box[1] >= o["b"])
+                   for o in obstacles):
                 continue
             return box
     return None
@@ -176,6 +229,11 @@ def main():
     ap.add_argument("--port", type=int, required=True)
     ap.add_argument("--wait", type=int, default=240)
     ap.add_argument("--expect-build", default="auto")
+    ap.add_argument("--item", default=None,
+                    help="drag this desktop item by name, rather than the "
+                         "first document the Finder lists")
+    ap.add_argument("--qmp", default=None,
+                    help="QMP unix socket, for before/after screendumps")
     ap.add_argument("--shot", default=None,
                     help="directory for before/after screendumps, if the "
                          "lab's tools/shot is reachable")
@@ -225,10 +283,35 @@ def main():
     b = desktop["bounds"]
     frame = {"l": b["left"], "t": b["top"], "r": b["right"], "b": b["bottom"]}
 
-    subject = items[0]
+    # Every OPEN Finder window is somewhere an icon must not be dropped -
+    # a drop inside one files the item into that folder. The desktop's own
+    # window is the container of the whole gesture and is not an obstacle.
+    obstacles = []
+    for w_ in wins:
+        if w_ is desktop:
+            continue
+        wb = w_.get("bounds") or {}
+        if not wb:
+            continue
+        # Generous at the top: a window's title bar is above its content
+        # rectangle and is just as much a place not to drop something.
+        obstacles.append({"l": wb["left"] - 8, "t": wb["top"] - 28,
+                          "r": wb["right"] + 8, "b": wb["bottom"] + 8})
+
+    # A document rather than whatever the Finder happened to list first,
+    # which on this desk was the Trash. Nothing is at stake either way -
+    # the gesture is a rearrangement - but a run somebody reads later
+    # should be about an ordinary file.
+    subject = next((it for it in items if it["name"].endswith(".txt")),
+                   items[0])
+    if args.item:
+        subject = next((it for it in items if it["name"] == args.item), None)
+        if subject is None:
+            print(f"  INCONCLUSIVE: no desktop item named {args.item!r}.")
+            return 2
     sw = subject["r"] - subject["l"]
     sh = subject["b"] - subject["t"]
-    spot = clear_spot(items, subject, sw, sh, frame)
+    spot = clear_spot(items, subject, sw, sh, frame, obstacles)
     if spot is None:
         print("  INCONCLUSIVE: no empty spot on this desktop that overlaps "
               "nothing. Refusing to drop an icon on something.")
@@ -273,38 +356,71 @@ def main():
     # it means nothing. Everything above this line (a scene, an element
     # walk) can change what is frontmost, so this is re-asserted here
     # rather than once at the top.
+    # NOW's own window is over the desktop until it is hidden, and a press
+    # that lands on it is a press on the wrong application. `hide` rather
+    # than `front Finder` for that reason: fronting reorders, hiding
+    # exposes.
+    link.command("hide", {"target": "New Old World"}, timeout=60)
+    time.sleep(1)
     link.command("front", {"target": "Finder"}, timeout=60)
     time.sleep(1)
+
+    # THE DESTINATION GOES IN WITH THE PRESS, and this is the whole change
+    # this run exists to measure. dragmove cannot carry it: once the
+    # Finder is inside DragGrayRgn this Macintosh stops scheduling NOW at
+    # all, so a move sent afterwards is not read until the gesture is over
+    # (docs/open-issues.md, break 4 one layer deeper). The reply's own
+    # Submit ticks / Submit yields pair is what says which of those two
+    # worlds we are in, and it is printed whatever happens.
+    if args.qmp and args.shot:
+        os.makedirs(args.shot, exist_ok=True)
+        print("   before:", screendump(args.qmp,
+                                       os.path.join(args.shot,
+                                                    "drag-before.png")))
     r = link.command("dragpress",
                      {"window": ref, "h": start[0], "v": start[1],
-                      "idle": 300, "cap": 600}, timeout=120)
+                      "toH": end[0], "toV": end[1],
+                      "cap": 600}, timeout=180)
     d = rows(r, "dragpress")
     print("   press:", {k: d[k] for k in
-                        ("Window", "Point from", "State", "Button",
+                        ("Window", "Point from", "To h", "To v", "To",
                          "Session") if k in d})
-    if d.get("Button") != "down":
-        print("  FAIL: the button is not down.")
+    print("   the gesture, as the resident ran it:",
+          {k: d[k] for k in ("State", "Button", "At h", "At v",
+                             "Vehicle ticks", "Moves applied", "Ended")
+           if k in d})
+    print("   WAS NOW SCHEDULED WHILE IT RAN:",
+          {k: d[k] for k in ("Submit ticks", "Submit yields") if k in d})
+    try:
+        st, sy = int(d.get("Submit ticks", -1)), int(d.get("Submit yields",
+                                                          -1))
+    except ValueError:
+        st, sy = -1, -1
+    if st >= 0 and sy >= 0:
+        # Not a pass/fail: it is the reading that tells a slow resident
+        # from a starved application, and both are legal outcomes of this
+        # probe. Stated in words because a bare pair of numbers is exactly
+        # what a later reader cannot interpret.
+        if st > 60 and sy <= 2:
+            print("   -> STARVED: the wall clock ran and this application "
+                  "did not. The reply was written before the drag started "
+                  "and nothing was running to read it.")
+        elif sy > 2:
+            print(f"   -> SCHEDULED: {sy} yields over {st} ticks, so NOW "
+                  "kept running through the gesture and the block is "
+                  "something other than starvation.")
+    if int(d.get("Moves applied", "0") or 0) < 1:
+        print("  FAIL: the vehicle consumed no want, so the destination "
+              "never reached it. That is this change's own seam, not the "
+              "Finder's.")
         return 1
-    session = int(d["Session"])
-
-    steps = 6
-    for i in range(1, steps + 1):
-        h = start[0] + (end[0] - start[0]) * i // steps
-        v = start[1] + (end[1] - start[1]) * i // steps
-        d = rows(link.command("dragmove",
-                              {"session": session, "h": h, "v": v},
-                              timeout=60), "dragmove")
-        time.sleep(0.25)
-    print("   after the moves:", {k: d[k] for k in
-                                  ("State", "At h", "At v", "Vehicle ticks",
-                                   "Moves applied") if k in d})
-
-    d = rows(link.command("dragrelease", {"session": session}, timeout=60),
-             "dragrelease")
-    print("   release:", {k: d[k] for k in ("State", "Ended") if k in d})
 
     print("\n== 4. THE ORACLE: what the Finder says now ==")
     time.sleep(2)
+    if args.qmp and args.shot:
+        print("   after: ", screendump(args.qmp,
+                                       os.path.join(args.shot,
+                                                    "drag-after.png")))
     after = {it["name"]: it for it in desktop_items(link)}
     now = after.get(subject["name"])
     if now is None:

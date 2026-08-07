@@ -540,7 +540,17 @@ typedef struct {
                                    Negative means unguarded, which only
                                    the selftest uses - it rides no user
                                    click at all. It is a diagnostic
-                                   lever, not a mode anything ships in. */
+                                   lever, not a mode anything ships in.
+
+                                   P7 REUSES THIS PAIR as a drag press's
+                                   DESTINATION, global, valid only when
+                                   zoom_part is non-zero. The accretive
+                                   rule asks for a field with no meaning
+                                   for the op over a new one, and a menu
+                                   guard point is meaningless to a drag.
+                                   The pair is read once, at
+                                   kNowPeekActOpDragPress, and nowhere
+                                   else. */
     NowPeekI32 arm_point_v;
 
     /* control */
@@ -557,7 +567,16 @@ typedef struct {
     NowPeekI32 window_op;       /* kNowPeekActWin*                       */
     NowPeekI32 win_h;           /* MOVE: global left. RESIZE: width      */
     NowPeekI32 win_v;           /* MOVE: global top.  RESIZE: height     */
-    NowPeekI32 zoom_part;       /* ZOOM: kNowPeekActInZoomIn/Out         */
+    NowPeekI32 zoom_part;       /* ZOOM: kNowPeekActInZoomIn/Out.
+                                   P7 DRAG PRESS: non-zero means
+                                   arm_point_h/v carry a destination.
+                                   A separate flag rather than a
+                                   sentinel coordinate, because every
+                                   coordinate on a Macintosh screen is
+                                   a legal destination and 0,0 most of
+                                   all - the corner an unpopulated
+                                   rectangle already silently pressed at
+                                   once. */
     NowPeekI32 click_h;         /* the exact point the caller posted     */
     NowPeekI32 click_v;
     NowPeekU32 find_window_fired;

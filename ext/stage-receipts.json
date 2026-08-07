@@ -67,6 +67,28 @@
         "ext/src/now_liveness.c"
       ],
       "reason": "Round-6 integration merge of claude/019-ext-rests-when-unused. The bake is OWED and scheduled in this same session's phase 5, after the guest prune frees the Mac (scripts/bake-ext-image --shared refuses while other guests run). Baking before the merge would have baked a pre-merge resident; the peek table's U11/U13 append collision was resolved here (P7 drag + P8 cursor keep their offsets, the rest-state trio re-sequenced to the tail) and the static asserts + peek_table native test pass against the merged header."
+    },
+    {
+      "at": "2026-08-07T16:16:54-0400",
+      "branch": "claude/019-drag-break-4",
+      "extDigest": "4393b610c1ad14697e7231c9ced3244ce7f06070",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_act.c",
+        "ext/src/now_ext_drag.c"
+      ],
+      "reason": "Unverified checkpoint banked against session loss, not a landing. The resident change (now_drag_begin_to's destination seed) has not been driven on any guest yet; baking the shared oracle from source nothing has run would install a resident whose only evidence is that it compiles. This lane stages into its own throwaway clone first and bakes before it asks to land."
+    },
+    {
+      "at": "2026-08-07T16:26:42-0400",
+      "branch": "claude/019-drag-break-4",
+      "extDigest": "8cf3e0e258a189c8681cad9b880de4a7751355ce",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_act.c"
+      ],
+      "reason": "Still not driven on a guest. This lane stages into its own throwaway clone and bakes before it asks to land; baking the shared oracle from source nothing has run would install a resident whose only evidence is that it compiles."
     }
   ]
 }
