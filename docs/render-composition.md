@@ -257,20 +257,27 @@ count one.
   Charcoal.
 - **A window's `z` is a per-application index, not a stacking order.**
   `scene_build.c :: w->z = p->window_count` — the window's position in
-  its OWN process's list. Every application's front window therefore
-  reports 0, and the scene carries no cross-application depth at all.
-  The renderer draws `scene.windows.reversed()`, so array order (front
-  app first, from the process walk) is the only ordering in the picture.
-  It is right often enough to look right and cannot be right in general.
-  **Capture-side**: nothing on this side can sort by a number that was
-  never sent, and dressing array order up as a stacking order would be a
-  confident wrong answer about what the person is looking at.
-- **A control panel's content face renders white.** `Platinum.g0` for a
-  non-dialog window, against the guest's 0xDDDDDD, so everything the
-  captured pass did not repaint shows white rather than face grey — and
-  a group-box title's erased band, which IS repainted, then reads as a
-  grey plate on white. Chrome-lane, not the ladder, and named here
-  because it is what makes the panels look unfinished in every pair.
+  its OWN process's list, and it still means that. There is no other
+  kind of window order to read on this machine: `WindowList` is a
+  per-process low-memory global, so no application's chain reaches
+  another's. The cross-application order rides in the array's sequence,
+  which the renderer honours by drawing `scene.windows.reversed()`
+  (`SceneStackingRenderTests`).
+  **FIXED capture-side 2026-08-07** — the producer's order after the
+  front process was Process Manager enumeration, i.e. launch order, and
+  is now the order applications were last watched coming to the front
+  (`now-guest-ppc/src/scene/front_order.h`). Unranked processes go last
+  and the scene's `depth` coverage claim reads `partial`.
+- **A control panel's content face rendered white. FIXED 2026-08-07, at
+  the measured level.** `Platinum.g0` for a non-dialog window, against
+  the guest's 0xDDDDDD, so everything the captured pass did not repaint
+  showed white rather than face grey. Two decisions had been one flag:
+  `isDialog` decides the CHROME and is rightly keyed on the title, while
+  the FACE follows the window's owner — `kind == 2`, the Dialog
+  Manager's own answer. The colour is `Platinum.dialogFace`, COUNTED off
+  the guest's screendump rather than asked of the machine;
+  `GetThemeBrushAsColor` can answer it and there is nowhere on the wire
+  to put the answer yet. See docs/open-issues.md.
 - **The Finder's interior is still a gap when its world is not hooked.** The
   Finder composites offscreen and blits the whole interior in one op. When
   the world is hooked at birth the blit joins and the interior renders —

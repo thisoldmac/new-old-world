@@ -2925,5 +2925,15 @@
    "visible": true,
    "z": 0
   }
- ]
+ ],
+ "provenance": {
+  "source": "peek",
+  "capturedAt": 1786068495.0,
+  "version": 2,
+  "build": "caf2b0e157b9",
+  "vm": "019-pair-capture",
+  "run": "019 integration pair, target date-and-time",
+  "guest": "Power Mac G4 / OS 9 emulated",
+  "note": "the guest screendump taken in the same connection is 019-integration/date-and-time-guest.png; the panel face measurement in PanelFaceRenderTests was counted off it"
+ }
 }

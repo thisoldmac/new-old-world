@@ -350,8 +350,15 @@ scheme of its own.
 
 Two more stated approximations, both hypotheses upstream never closed:
 
-- **Cross-app z-order is reconstructed**, not read: front app first, then
-  process order. True global order needs the window list's cross-links.
+- **Cross-app z-order is reconstructed**, not read — and there are no
+  cross-links to find. `WindowList` is a per-process low-memory global,
+  so no application's chain reaches another's. Since 2026-08-07 the
+  reconstruction is the order applications were last watched coming to
+  the front (`now-guest-ppc/src/scene/front_order.h`), which on a machine
+  that layers by application IS the layer order, rather than Process
+  Manager enumeration, which is launch order. A process never watched
+  coming forward has no rank and the scene's `depth` coverage claim says
+  so.
 - **Default button** — the wire does not carry defaultness, so the first
   button in a dialog is assumed to be it.
 

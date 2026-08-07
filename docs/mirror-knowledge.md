@@ -138,7 +138,7 @@ work.
 | **Finder list and column views** | Nothing detects the view type; live positions there were never measured |
 | **An application's own document text** | The door exists; discovering a private text handle is not implemented, and no documented route to it was found |
 | **Precise control kind** | Button versus checkbox versus radio — the definition procedure's id is not in the record |
-| **True cross-app z-order** | Reconstructed, not read |
+| **True cross-app z-order** | Reconstructed, not read, and there is nothing to read: `WindowList` is a per-process low-memory global, so no application's chain reaches another's. Since 2026-08-07 the reconstruction is the order applications were last WATCHED coming to the front (`front_order.h`) rather than Process Manager enumeration, which is launch order |
 | **Scale** | All folder-item trials used one folder, in one window, with fifteen items |
 | **Content-plane record mode** | Only counting was built; the ring and the text records were never reached |
 | **A fixture for the content plane** | Its contract was frozen on design and live use, not on captured evidence |

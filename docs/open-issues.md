@@ -544,18 +544,86 @@ metal-verified**; nothing here ran on the PowerBook.
   at its reported bounds, never as a triangle.
 
 **Handed back, capture-side: a window's `z` is a per-application index.**
-`now-guest-ppc/src/scene/scene_build.c:396` sets `w->z = p->window_count`,
-so every application's front window reports 0 and the scene carries no
-cross-application depth. The renderer draws `scene.windows.reversed()`;
-array order (front app first) is the only ordering in the picture. Right
-often enough to look right, never right in general, and not fixable on
-this side.
+CLOSED 2026-08-07, `claude/019-depth-and-face` — and `z` was left
+meaning exactly what it meant. See "cross-application depth" below.
 
 **Named while measuring, not chased:** a control panel's content face
-renders white (`Platinum.g0`) against the guest's 0xDDDDDD, so everything
-the captured pass did not repaint shows white. It is what makes the
-panels look unfinished in every pair, and it is chrome-lane rather than
-ladder.
+renders white. CLOSED 2026-08-07, at the *measured* level — see "the
+panel face is measured, not asked" below.
+
+## UNVERIFIED: cross-application depth is watched, not read (2026-08-07, `claude/019-depth-and-face`)
+
+**The Window Manager cannot answer across applications, and that is
+settled rather than suspected.** `WindowList` is a low-memory global at
+0x9D6 that the Process Manager swaps on every context switch, so each
+application has its own front-to-back chain and none links to another's
+(`LowMem.h:2149`; `contract/peek_table.h`'s `NowPeekAnchor` comment;
+finding `observe-process-local-ui`). NOW's whole anchor plane exists
+because of it. There is nothing to read.
+
+The fallback after the front process was Process Manager enumeration
+order, which is **launch** order — measured, not assumed: four captures
+of the 019 run put the same four background applications in the same
+order regardless of which had just been fronted.
+
+**What replaced it.** Classic Mac OS layers by application: fronting one
+brings its whole layer with it, so cross-application order IS the order
+applications were last brought forward. That is not readable but it is
+*watchable*, and `now-guest-ppc/src/scene/front_order.h` watches it —
+one `GetFrontProcess` per pass of the event loop, sampled there rather
+than at scene time because a scene sees only where the machine ended up.
+`z` is unchanged and still means position within a process; the
+cross-process order rides where it always did, in the array's sequence.
+
+**What is still unknown, and now says so.** A process the ledger has
+never seen fronted has no rank — it was running before NOW started, or
+has not been forward since. Those go behind everything ranked and the
+scene carries a new `depth` coverage claim reading `partial`. Faceless
+background applications are excluded from that count, or every scene on
+every machine would read partial forever.
+
+- **Not verified on a Macintosh.** `scripts/build-guests` compiles it and
+  `front_order_test.c` replays the 019 run's real fronting sequence
+  against the layering that run's own screendump shows. Nothing has
+  watched the guest emit a corrected order.
+- **The ledger is bounded at 32 and counts its evictions**, but nothing
+  puts that count on the wire. A machine that has run more than 32
+  applications since NOW started has forgotten somebody, and the scene
+  reports that process as never-observed rather than as evicted.
+- **Nothing shows a person the `depth` claim.** It reaches an agent
+  through the state projection, which passes coverage through
+  generically. The renderer draws the order either way and says nothing
+  about how much of it is known.
+
+## UNVERIFIED: the panel face is measured, not asked (2026-08-07, `claude/019-depth-and-face`)
+
+The renderer filled every non-modal window's content with `Platinum.g0`.
+Against the guest's own screendump for the same scene, the Date & Time
+control panel's interior is 10149-of-11724 pixels at 0xDDDDDD — the
+Appearance Manager's `kThemeBrushDialogBackgroundActive`. Everything the
+semantic pass did not draw over therefore read as unfinished paper.
+
+Fixed by separating two decisions that had been one flag: `isDialog`
+answers "does this window have a title bar" and is rightly keyed on the
+title; the FACE follows the window's owner, so `kind == 2` decides it.
+
+**It is a measured constant, which is not an answer.**
+`GetThemeBrushAsColor(kThemeBrushDialogBackgroundActive, 32, true, &rgb)`
+is CarbonLib 1.0 (`Appearance.h:2826`) and the guest already calls it
+(`census_module.c:615`). What is missing is a field to put the answer
+in — the ask is `meta.theme.dialogBackground`, and until it exists the
+number is right for the shipped Platinum theme and silently wrong for
+any other. That is the same shape as `ppat` 16 on the desktop.
+
+- **`kind == 2` is the Dialog Manager's answer and does not cover every
+  panel.** The Appearance control panel is windowKind 2000 — application
+  defined — so it keeps a white face. Its walk is retracted anyway, so it
+  renders as the unavailable hatch and the face does not show; a
+  window-kind-2000 panel whose walk succeeded would show it.
+- **Untitled alerts changed colour too**, from `g1` (0xEEEEEE, which came
+  from a CSS port and had no measurement behind it) to the same dialog
+  brush. Argued from the brush's name, not measured; no committed capture
+  of an alert has a screendump beside it.
 
 ## BROKEN: the first watch of the INTEGRATED render, and what it shows (2026-08-07, `claude/018-integration`)
 
