@@ -304,6 +304,17 @@ a lie neither author wrote. It has happened here at least three times —
 including one where a "named together" prose list became **two** lists,
 one naming `desktop`, the other `cycle`, neither naming both.
 
+**There is now a machine half, and it is not armed.**
+`tools/derived-doc-gate` reads a `derived-doc` block that each derived
+document carries next to its own commands, re-runs them, and refuses a
+merge commit whose derivations were not re-run —
+`tools/derived-doc-gate rederive` is the cure and writes what moved (or
+`unchanged`, with the sha) into the file. It sits behind
+`NOW_DERIVED_DOC_GATE=1` in both merge hooks; arming it is a change to
+every branch at once and waits for a quiet fleet and `.githooks` on
+`main`. Until then an integrator runs `rederive` by hand, which is the
+same command the gate would run.
+
 And check the shape after any conflicted merge: a keep-both once produced
 **six duplicate Python function definitions that still parsed**. Brace
 depth for Swift, duplicate `def` for Python, and remember only

@@ -14,6 +14,36 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BUILT AND NOT ARMED: the derived-document merge gate (2026-08-07)
+
+`tools/derived-doc-gate` exists, is tested by mutation
+(`tools/derived-doc-gate-selftest`, 28 assertions including a real
+two-lane merge and the hooks driven through `git commit`), and is wired
+into both merge paths — `.githooks/pre-commit` for a conflicted merge and
+`.githooks/pre-merge-commit` for an automatic one. **It is inert.** It
+runs only with `NOW_DERIVED_DOC_GATE=1`, because arming a gate into a
+live fleet is a change to every branch at once, `.githooks` does not
+exist on `main`, and one lane of the 019 arc was still running when this
+landed.
+
+`tools/gate-impact-sweep` (generalised in the same commit to answer for a
+gate a branch does not carry at all) was run over all 44 live
+`claude/01*` branches: **none is refused**, and none of them touches any
+declared source, so arming it strands nothing that exists today. That
+claim has a date on it and nothing else.
+
+What is unverified: it has never refused a real merge in this repository,
+because no merge here has yet been run with it armed. Its refusals have
+only been watched in the selftest's throwaway repositories. And it is
+**not in `scripts/test-all`** — deliberately, because adding a stage is
+also a fleet-wide change, but that means the selftest is a gate nobody
+runs, which is the exact hole `scripts/test-mirrorkit` was added to
+close. Step 4 of arming is to add it.
+
+What it cannot check, and the cure is a person rather than a flag: it
+cannot tell a re-derivation from a convincing hand edit, and it cannot
+know that a derivation asks the right question.
+
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 
 Reported against a running session: the Mirror "looks largely regressed"
