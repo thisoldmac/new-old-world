@@ -291,8 +291,14 @@ int now_gestalt_gather(GestaltRow *rows, int max)
     if (Gestalt(gestaltFPUType, &v) == noErr) {
         add_row(rows, &n, max, "cpu", "FPU", fpu_name(v));
     }
+    /* The selector answers a bit field and this row used to discard it, then
+       state "32-bit" — a census that asked the machine and reported the
+       developer's machine instead. 24-bit is not hypothetical here: the lab's
+       PowerBook 180c has dead PRAM and comes up in 24-bit mode every boot,
+       which is exactly the configuration the wrong answer hides. */
     if (Gestalt(gestaltAddressingModeAttr, &v) == noErr) {
-        add_row(rows, &n, max, "cpu", "Addressing", "32-bit");
+        add_row(rows, &n, max, "cpu", "Addressing",
+                (v & (1L << gestalt32BitAddressing)) ? "32-bit" : "24-bit");
     }
 
     /* memory */

@@ -79,7 +79,13 @@ from lab_root import find_lab, import_harness  # noqa: E402
 LAB = find_lab() or NOW
 Harness, HarnessError = import_harness("have anything staged onto it")
 
-EXTENSIONS = "Macintosh HD:System Folder:Extensions"
+# Both of these name a volume, and "Macintosh HD" is this lab's guest disks
+# rather than a fact about anybody's Macintosh. DEV already accepted an
+# override and EXTENSIONS did not, which made the volume name look
+# negotiable in one line and structural in the one above it. It is the same
+# assumption twice, so it is overridable twice.
+EXTENSIONS = os.environ.get("NOW_GUEST_EXTENSIONS",
+                            "Macintosh HD:System Folder:Extensions")
 DEV = os.environ.get("NOW_GUEST_DIR", "Macintosh HD:TimBotTu:now-dev")
 EXT_NAME = os.environ.get("NOW_EXT_NAME", "NOW Extension")
 APP_NAME = os.environ.get("NOW_APP_NAME", "New Old World")

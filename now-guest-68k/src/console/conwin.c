@@ -79,7 +79,15 @@
 
 /* Offset from the main window (40,60 at 512x300) so both are reachable
  * without dragging either: this one sits below and right of it and still
- * fits the 180c's 640x480 panel (60+268 = 328 bottom, 60+460 = 520 right). */
+ * fits the 180c's 640x480 panel — right 60+460 = 520, bottom 92+268 = 360.
+ *
+ * The bottom figure used to read "60+268 = 328", adding the height to the
+ * LEFT instead of the top. The conclusion survived (360 is still inside 480)
+ * but the check did not, and a comment that shows its arithmetic is one a
+ * reader trusts without redoing it.
+ *
+ * Like window.c, this is unclamped and assumes 640x480. It does not fit a
+ * 512x342 compact screen. See window.c's note and docs/open-issues.md. */
 #define kCWinLeft    60
 #define kCWinTop     92
 #define kCWinWidth   460

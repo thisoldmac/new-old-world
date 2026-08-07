@@ -324,7 +324,14 @@ class Sweep:
                                         "; repaint forced by hide/reveal"
                                         if forced else ""),
                 "capturedAt": self.args.date,
-                "guest": "mac99/OS 9.1 emulated",
+                # Every other field in this block was measured or passed in;
+                # this one is the rig we believe we are on. Nobody asked the
+                # guest, and a receipt is exactly where an unasked constant
+                # gets quoted later as a measurement, so it says so itself.
+                # `gestalt` would answer it properly and should, once the
+                # sweep has somewhere to put a guest's own answer.
+                "guest": "assumed mac99/OS 9.1 emulated (not read from "
+                         "the guest)",
             },
         }
         # `indent=1` here once cost 700,000 lines of git history: a

@@ -174,6 +174,14 @@ static void set_defaults(NowPrefs *prefs)
     memset(prefs, 0, sizeof *prefs);
     strcpy(prefs->host, "10.0.2.2");
     prefs->port = kNowDefaultHostPort;
+    /* A capture POLICY, not a reading of this screen: 8-bit is the depth
+       worth sending over this wire, whatever the panel happens to be. The
+       neighbouring defaults each say why they are what they are and this
+       one did not, which left it looking like an assumption that the
+       machine is 8-bit — it is not, and a deeper screen is down-sampled on
+       purpose. The real depth is read where it matters
+       (cloud_preview_well.c :: screen_depth, census_probes.c), and the
+       Depth popup is how a person overrides the policy. */
     prefs->shot_depth = 8;
     prefs->shot_pack = true;
     prefs->chunk_kb = 8;
