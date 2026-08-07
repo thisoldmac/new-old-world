@@ -283,7 +283,7 @@ number here has been found wrong by re-deriving it.
 | `menuact` | perform one menu command | ✅ | ❌ |
 | `activate` | bring one process forward, by serial number | ✅ | ❌ |
 | `actselftest` | prove the act plane's trap ABI in one process | ✅ | ❌ |
-| `mouseloc` | where the pointer actually is | ✅ | ❌ |
+| `mouseloc` | where the pointer actually is, and where its PICTURE was last put | ✅ | ❌ |
 | `script` | run one AppleScript | ✅ | ❌ |
 | `aesend` | send one of four core Apple Events | ✅ | ❌ |
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
