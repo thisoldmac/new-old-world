@@ -258,6 +258,64 @@ Not the fidelity-polish arc — just the gaps the sweep proves are cheap:
 Exit: tabs either have edges or have stable marked gaps; the desktop
 shows the guest's pattern or an honest one, never a guess.
 
+### Slice 7 — The instrument must be able to see the defect (added 2026-08-07)
+
+Not in the plan as drawn. Sweep A stated its own blind spot:
+
+> this instrument renders a *settled capture*, twice. It never draws two
+> consecutive live frames, so it cannot see the flicker Michelle saw.
+
+Michelle's complaint #1 was flicker. Sweep A scored STABILITY **3** on
+eight panels **because it only ever looked at settled state**. So Sweep
+B, run as originally specified, would report "stable" whether or not
+slice 1 fixed anything — the A/B this entire arc is bracketed by would
+be hollow. **This slice blocks slice 6.**
+
+- Capture **consecutive live frames** during a redraw-provoking action,
+  and report instability quantitatively: frames until settled, distinct
+  intermediate states, and — the flicker's real signature — whether a
+  rectangle's OWNER changed between frames (P3 ink → unknown →
+  semantic). Slice 2's ladder produces that owner map; it is the
+  natural seam.
+- It must run against **both** the current tree and the post-fix tree.
+  A measurement that only exists after the fix proves nothing.
+- **State hygiene.** Sweep A VOIDED Date & Time's entire row because
+  pass 1 left its "Set Time Zone" modal open. Each target starts clean,
+  and a target that cannot be returned to a clean state is reported as
+  such rather than silently poisoning the next row.
+- **Opening the Mirror is not reachable from the agent socket** — Sweep
+  A had to use macOS accessibility scripting to click the button. A
+  product gap wearing a rig costume: an agent can drive the guest but
+  cannot open the window that shows it. Close it if small; document it
+  precisely if not.
+- **The three views are three phases on one boot**, not one instant,
+  because the sweep tool and host app cannot share the wire. Fix or
+  state inline in every report the tool writes. A limitation named in
+  conversation and not in the artifact is one that will be forgotten.
+
+### Slice 8 — Drivability: silent success and the unaddressable (added 2026-08-07)
+
+Not in the plan as drawn. Sweep A surfaced a failure class the plan had
+no row for, and it is the same disease as the render's plausible-wrong
+answers, one plane over.
+
+- **A command that succeeds and does nothing.** `as Buttons` dispatched
+  cleanly **twice** and never produced button view. Silent success is
+  the worst outcome for a driving agent — worse than an error, because
+  nothing retries and nothing reports. A verb that cannot verify its own
+  effect must say so rather than claim success.
+- **The false negative, the same disease reversed:** `open "Mail"`
+  reported `timedOut` after 18 s **having actually succeeded**.
+- **Two targets are wholly unaddressable** — Appearance and Mouse both
+  scored DRIVABILITY 0. (The Finder's DRIVE 0 belongs to slice 4, which
+  owns item refs and coordinate spaces.)
+
+Rule 1 generalises past pixels: **a refusal with a reason beats a
+success that did not happen.** Verified by driving and watching the
+guest change, never by a return code — the Mirror is tested by driving
+it, and a green unit test for an act verb proves the wire, not the
+effect.
+
 ### Slice 6 — Sweep B and the verdict
 
 Re-run the sweep, same spec, same targets, same machine-shape. Output:
@@ -368,11 +426,30 @@ Slice 0 (Sweep A) ─── alone, first, nothing else running
         │
         ├── Lane A (host render):   Slice 1 ──► Slice 2
         ├── Lane B (guest walk):    Slice 4 ──► Slice 3 guest fixes
-        ├── Lane C (assets, offline): Slice 5 extractor probe
+        ├── Lane C (assets, offline): Slice 5 extractor probe   [DONE]
+        ├── Lane D (act plane):     Slice 8                     [added]
+        ├── Lane E (the instrument): Slice 7                    [added]
         └── Slice 3 DIAGNOSIS (read-only driving) — parallel with all
         │
 Slice 6 (Sweep B) ─── alone, last, after integration + green gate
+                      BLOCKED BY slice 7: without it, Sweep B
+                      cannot see the defect slice 1 targets
 ```
+
+Lanes D and E were added on 2026-08-07 from Sweep A's findings, not from
+the original plan. Both are parallel with everything: D touches the act
+plane, E touches the harness. E's one point of contact with lane A is a
+small additive compositor hook for per-frame owner maps — kept cheap and
+off by default, sequenced at integration.
+
+Lane C completed first and handed lane A two things: the chosen
+`UnknownVisual` definition for rung 4, and the desktop-picture manifest
+contract (`ppat` 16 is a shipped default that Appearance never updates;
+the real desktop is an 800×600 picture drawn once at origin, so the
+current render is wrong twice — wrong art AND tiled). It also removed
+tab art from this arc's scope entirely: there is no tab bitmap in
+`Apple platinum` at all, so missing tab edges belong to plan 016's
+Appearance-answers route.
 
 - **Sweep A and Sweep B run alone.** A sweep taken while another agent
   is editing the tree or driving the guest measures nothing.
