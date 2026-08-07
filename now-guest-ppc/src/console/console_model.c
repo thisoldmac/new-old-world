@@ -1205,6 +1205,25 @@ static void console_model_dispatch(const char *input)
                  rep.complete ? "Complete." : "PARTIAL -",
                  rep.restored ? "restored." : "NOT restored.");
         console_model_append(line);
+        if (rep.unreached_count > 0 || rep.unreached_omitted > 0) {
+            int ui;
+
+            /* NAMED, not just counted. These read UNKNOWN to whoever
+               consumes the scene next - never empty - and a person
+               deciding whether to trust what the Mirror shows needs the
+               names rather than the number. */
+            console_model_append("Could not reach (their state is UNKNOWN, "
+                                 "not empty):");
+            for (ui = 0; ui < (int)rep.unreached_count; ++ui) {
+                snprintf(line, sizeof line, "  %.40s", rep.unreached[ui]);
+                console_model_append(line);
+            }
+            if (rep.unreached_omitted > 0) {
+                snprintf(line, sizeof line, "  ...and %d more",
+                         (int)rep.unreached_omitted);
+                console_model_append(line);
+            }
+        }
         if (rep.note[0] != '\0') {
             snprintf(line, sizeof line, "  %.70s", rep.note);
             console_model_append(line);

@@ -5,7 +5,6 @@
 
 #include "confirm.h"
 #include "peek.h"
-#include "anchor_acquire.h"
 #include "peek_read.h"
 #include "prefs.h"
 #include "proc_actions.h"
@@ -1366,14 +1365,6 @@ static void procs_idle(void)
     }
     if (TickCount() >= g_next_walk) {
         g_next_walk = TickCount() + kWalkIntervalTicks;
-        /* The console face of what serve_scene does on the wire: wake the
-           processes the plane has not captured, so this page lists a
-           machine rather than this application (anchor_acquire.h). It
-           does NOT wait - this is an idle, the page re-walks on a
-           cadence anyway, and a yield loop inside an idle is a nested
-           event loop nobody asked for. The capture lands before the next
-           walk. */
-        now_peek_anchor_acquire(0);
         refresh();
         refresh_selected_windows();   /* the foreign read, throttled */
         update_selected_stats();      /* per-line stat repaints */

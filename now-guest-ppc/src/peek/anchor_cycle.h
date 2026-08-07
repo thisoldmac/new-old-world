@@ -47,7 +47,17 @@
  * cycle refuses before it has fronted anything — the machine is left
  * exactly as it was and the Mirror behaves exactly as it does today. */
 
-enum { kNowAnchorCycleNoteMax = 96 };
+enum {
+    kNowAnchorCycleNoteMax = 96,
+    /* How many un-reached processes are NAMED rather than merely counted.
+       A count says a cycle was incomplete; a name says WHICH machine a
+       person is being shown less than all of, and that is the difference
+       between a caveat and something actionable. Bounded because this
+       report is a wire reply and a list nobody sized is how a reply comes
+       back truncated while claiming to be whole. */
+    kNowAnchorCycleNamedMax = 8,
+    kNowAnchorCycleNameMax = 32
+};
 
 typedef struct {
     /* The instrument, before and after, because a cycle that reports its
@@ -75,6 +85,18 @@ typedef struct {
     int armed;             /* the plane was armed for the cycle           */
     int complete;          /* every candidate got its turn                */
     int restored;          /* the previous frontmost is front again       */
+
+    /* THE PROCESSES THIS CYCLE COULD NOT REACH, by name - the faced ones
+       only. A background-only process is not listed: it is out of scope
+       by declaration rather than by failing, which is the whole reason
+       the roster reads `modeOnlyBackground` up front the way
+       `process.list` does. Anything named here has no anchor after a
+       cycle that tried, and a consumer must read it as UNKNOWN rather
+       than as empty. */
+    char unreached[kNowAnchorCycleNamedMax][kNowAnchorCycleNameMax];
+    short unreached_count;   /* names filled, <= kNowAnchorCycleNamedMax */
+    short unreached_omitted; /* more that did not fit, counted not dropped */
+
     char note[kNowAnchorCycleNoteMax];
 } NowAnchorCycleReport;
 

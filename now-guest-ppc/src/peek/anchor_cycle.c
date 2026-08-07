@@ -97,7 +97,8 @@ static void cycle_yield(void)
 
 /* Still there? A process that quit between enumeration and its turn is a
    vanished target, not a refusal, and the two want different words. */
-static int process_alive(const ProcessSerialNumber *psn, Boolean *background)
+static int process_alive(const ProcessSerialNumber *psn, Boolean *background,
+                         char *name_out, long name_cap)
 {
     ProcessInfoRec info;
     Str31 name;
@@ -110,9 +111,47 @@ static int process_alive(const ProcessSerialNumber *psn, Boolean *background)
         return 0;
     }
     if (background != NULL) {
+        /* THE SAME BIT `process.list` READS (wire.c), deliberately: the
+           processes surface has been ahead of the scene plane on this
+           distinction, and a second opinion about what is faceless is
+           how two faces come to disagree about the same machine. */
         *background = (info.processMode & modeOnlyBackground) != 0;
     }
+    if (name_out != NULL && name_cap > 0) {
+        long n = (long)name[0];
+
+        if (n > name_cap - 1) {
+            n = name_cap - 1;
+        }
+        BlockMoveData(&name[1], name_out, n);
+        name_out[n] = '\0';
+    }
     return 1;
+}
+
+/* Name a process this cycle could not reach. Full means full and the
+   remainder is COUNTED - a short list presented as a whole one is the
+   error this project keeps paying for. */
+static void name_unreached(NowAnchorCycleReport *out,
+                           const ProcessSerialNumber *psn)
+{
+    char name[kNowAnchorCycleNameMax];
+    Boolean background = false;
+
+    if (out->unreached_count >= (short)kNowAnchorCycleNamedMax) {
+        out->unreached_omitted++;
+        return;
+    }
+    name[0] = '\0';
+    (void)process_alive(psn, &background, name, (long)sizeof name);
+    if (name[0] == '\0') {
+        strncpy(name, "(unnamed)", sizeof name - 1);
+        name[sizeof name - 1] = '\0';
+    }
+    strncpy(out->unreached[out->unreached_count], name,
+            (size_t)kNowAnchorCycleNameMax - 1);
+    out->unreached[out->unreached_count][kNowAnchorCycleNameMax - 1] = '\0';
+    out->unreached_count++;
 }
 
 int now_peek_anchor_cycle(NowAnchorCycleReport *out)
@@ -183,7 +222,7 @@ int now_peek_anchor_cycle(NowAnchorCycleReport *out)
             out->already++;
             continue;
         }
-        if (!process_alive(&psn, &background)) {
+        if (!process_alive(&psn, &background, NULL, 0)) {
             out->vanished++;
             continue;
         }
@@ -220,12 +259,13 @@ int now_peek_anchor_cycle(NowAnchorCycleReport *out)
             out->complete = 0;
             break;
         }
-        if (!process_alive(&targets[i], &background)) {
+        if (!process_alive(&targets[i], &background, NULL, 0)) {
             out->vanished++;          /* quit while we were elsewhere */
             continue;
         }
         if (SetFrontProcess(&targets[i]) != noErr) {
             out->refused++;
+            name_unreached(out, &targets[i]);
             continue;
         }
         out->fronted++;
@@ -248,13 +288,20 @@ int now_peek_anchor_cycle(NowAnchorCycleReport *out)
                loop is wedged. Named as a refusal, because from here the
                two are the same fact: it would not answer. */
             out->refused++;
+            name_unreached(out, &targets[i]);
         }
+    }
+    /* An interrupted cycle left targets it never reached at all. They are
+       unreached in exactly the sense the field means, and leaving them
+       out would make a partial cycle's list read as a complete one. */
+    for (; i < target_count; ++i) {
+        name_unreached(out, &targets[i]);
     }
 
     /* RESTORE, ON EVERY PATH OUT. This is below the loop and the loop's
        only exits are `break`s, so there is one way out of this function
        once anything has been fronted. */
-    if (had_front && process_alive(&was_front, NULL)) {
+    if (had_front && process_alive(&was_front, NULL, NULL, 0)) {
         out->restored = SetFrontProcess(&was_front) == noErr;
         if (!out->restored) {
             note(out, "the application that was front would not come back");

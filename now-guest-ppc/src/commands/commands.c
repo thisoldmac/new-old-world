@@ -831,6 +831,7 @@ static void run_cycle(long id, char *out, long cap)
              "\"eventPasses\":%lu},"
              "\"after\":{\"count\":%lu,\"slotScans\":%lu,"
              "\"eventPasses\":%lu},"
+             "\"unreachedOmitted\":%d,"
              "\"note\":\"%s\"}}}",
              id,
              rep.armed ? "true" : "false",
@@ -841,7 +842,27 @@ static void run_cycle(long id, char *out, long cap)
              (int)rep.vanished, (int)rep.background_only,
              rep.before_count, rep.before_slot_scans, rep.before_event_passes,
              rep.after_count, rep.after_slot_scans, rep.after_event_passes,
+             (int)rep.unreached_omitted,
              rep.note);
+    /* The names, appended rather than interpolated, because the list is
+       variable-length and one snprintf that both counts and writes it is
+       how a reply comes back truncated mid-array. Written only while it
+       fits; anything that does not is already counted in
+       `unreachedOmitted`, which the object above carries. */
+    {
+        long n = (long)strlen(out);
+        long i;
+        const char *sep = "";
+
+        n -= 3;                       /* reopen "}}}" */
+        n += snprintf(out + n, cap - n, ",\"unreached\":[");
+        for (i = 0; i < (long)rep.unreached_count && n < cap - 8; ++i) {
+            n += snprintf(out + n, cap - n, "%s\"%s\"", sep,
+                          rep.unreached[i]);
+            sep = ",";
+        }
+        (void)snprintf(out + n, cap - n, "]}}}");
+    }
 }
 
 static void run_mirror(long id, char *out, long cap)
