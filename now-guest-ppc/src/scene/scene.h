@@ -310,6 +310,25 @@ enum {
     kNowSceneSemanticSeparator = 13
 };
 
+/* A window's walk verdict. Only the ones a reader can act on differently
+   are separate values: "the record would not validate" sends someone to
+   the anchor plane, "the control chain broke" sends them to the control
+   walk, and they are not the same errand. */
+enum {
+    kNowSceneWalkOk = 0,
+    kNowSceneWalkRecordUnreadable = 1,  /* the WindowRecord failed validation */
+    kNowSceneWalkControlsRetracted = 2, /* the chain broke or hit its bound */
+    kNowSceneWalkDialogItemsRetracted = 3,
+    kNowSceneWalkControlsAndItemsRetracted = 4,
+    /* The two causes of a control retraction, kept apart because they
+       are different errands: a chain longer than the scene carries is
+       OUR bound, and a chain that failed validation is the machine
+       being unreadable where we looked. Lumping them sends whoever
+       reads the note to raise a cap that was never the problem. */
+    kNowSceneWalkControlsBound = 5,
+    kNowSceneWalkControlsInvalid = 6
+};
+
 typedef struct {
     short number;
     short kind;
@@ -363,6 +382,22 @@ typedef struct {
     int dialog_items_present;
     short first_dialog_item;
     short dialog_item_count;
+
+    /* WHY THIS WINDOW IS SILENT, per window rather than per scene.
+     *
+     * `controls: []` is emitted for a window whose controls were never
+     * read as well as for one that genuinely has none, because the IR
+     * declares the key required. The distinction used to live only in a
+     * scene-wide `controls omitted` sentence in meta.errors - true, and
+     * it names no window, so a driving agent meeting an empty list could
+     * not tell "this panel has no controls" from "this panel's controls
+     * failed to read". Measured 2026-08-07: the Appearance control panel
+     * publishes zero controls and zero dialog items, its walk having
+     * been retracted, and nothing in the scene said which window that
+     * sentence was about. That is the same disease as an act reporting
+     * success it cannot verify - a confident answer where the honest one
+     * is "unknown". */
+    short walk_verdict;           /* kNowSceneWalk*; 0 = nothing to report */
 
     short text;                   /* index into NowScene.texts; -1 = absent */
 
@@ -607,6 +642,15 @@ int now_scene_add_dialog_item(NowScene *s, int window, short number,
 void now_scene_set_dialog_item_provenance(NowScene *s, int window, int index,
                                           const char *provenance);
 void now_scene_retract_dialog_items(NowScene *s, int window);
+
+/* The window's own record would not validate, so NO sub-plane was even
+   attempted. Distinct from a retraction: nothing was walked, rather than
+   walked and dropped, and the two send a reader to different places. */
+void now_scene_note_window_unreadable(NowScene *s, int window);
+
+/* Refine a verdict a retraction has already set. Only ever narrows -
+   the retraction says a plane was dropped, this says why. */
+void now_scene_set_walk_verdict(NowScene *s, int window, short verdict);
 
 /* A window's TextEdit content. `truncated` says the TERec was longer
    than what is carried. No-op for an out-of-range row; sets

@@ -20,6 +20,14 @@ static NowPeekU32 g_last_correlation_hi;
 static NowPeekU32 g_last_correlation_lo;
 static int g_last_correlation_valid;
 static NowActInflight g_inflight;
+/* A menu act's postcondition, handed down by the verb that read the menu
+   rather than re-derived here. act_client has the cell and no idea what
+   the menu looks like; menuact has walked it. One in-flight act at a
+   time (now_act_inflight_claim) is what makes a single slot safe, and it
+   is cleared as it is consumed so a later act cannot inherit it. */
+static int g_menu_post_armed;
+static NowPeekI32 g_menu_post_menu;
+static NowPeekI32 g_menu_post_item;
 
 static NowPeekTable *act_table(void);
 
@@ -342,7 +350,11 @@ static void act_v2_describe(NowPeekTable *table, const NowActTarget *target,
     spec.object = v2->operation_object;
     spec.post_object = v2->operation_object;
     spec.aux = v2->operation_aux;
-    if (cell->op == kNowPeekActOpWindow) {
+    if (cell->op == kNowPeekActOpMenu && g_menu_post_armed) {
+        spec.postcondition = kNowActPostMenuMark;
+        spec.post_object = (NowPeekU32)g_menu_post_menu;
+        spec.expected_a = g_menu_post_item;
+    } else if (cell->op == kNowPeekActOpWindow) {
         spec.postcondition = (cell->window_op == kNowPeekActWinZoom)
                            ? kNowActPostNone : kNowActPostWindow;
         spec.expected_a = cell->win_h;
@@ -361,6 +373,19 @@ static void act_v2_describe(NowPeekTable *table, const NowActTarget *target,
     g_last_correlation_hi = spec.correlation_hi;
     g_last_correlation_lo = spec.correlation_lo;
     g_last_correlation_valid = 1;
+    g_menu_post_armed = 0;            /* consumed; never inherited */
+}
+
+void now_act_arm_menu_postcondition(long menu, long item)
+{
+    g_menu_post_armed = 1;
+    g_menu_post_menu = (NowPeekI32)menu;
+    g_menu_post_item = (NowPeekI32)item;
+}
+
+void now_act_clear_menu_postcondition(void)
+{
+    g_menu_post_armed = 0;
 }
 
 NowActStatus now_act_submit(const NowActTarget *target,

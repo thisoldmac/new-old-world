@@ -186,8 +186,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                             }
                         }
                 } else {
+                    /* Decoration, and it must not take the pointer. A
+                       SwiftUI Text installs a TEXT CURSOR RECT through
+                       its hosting view, and this one is full-frame - so
+                       the I-beam a person sees over the mirror is the
+                       host OS answering a question we never asked. Every
+                       purely-informational overlay in this stack is
+                       marked the same way, so that `cursor(for:)` above
+                       is the only thing deciding. */
                     Text("waiting for the first scene…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
                 }
                 /* The Platinum asset pack is a dependency, not repository
                    content (docs/asset-pack.md), and without it the icons,
@@ -206,6 +215,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Color.yellow.opacity(0.25))
+                        .allowsHitTesting(false)
                 }
                 /* The hover names what a click WOULD do; the status says
                    what one DID. The second is the answer to a question a
@@ -216,6 +226,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                          : "\(controller.status)   ·   over \(hovered)")
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .allowsHitTesting(false)
                     /* The way out of a wait. A stuck act used to be
                        unabandonnable — the 87-second queue of 2026-08-05
                        had a person watching with nothing to do — so
@@ -350,23 +361,38 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         return Point(x: g.x, y: g.y)
     }
 
-    /// The pointer says what a press would DO, which is the cheapest
-    /// honest feedback a mirror can give: a resize corner, a thing that
-    /// can be opened, a thing that is only a picture.
+    /// THE POINTER IS A CLAIM, so it is made deliberately and only where
+    /// the guest's own scene supports it.
+    ///
+    /// This used to shape the cursor to whatever the resolver named — a
+    /// pointing hand over every control, an open hand over a title bar —
+    /// on the reasoning that saying what a press would do is what makes a
+    /// mirror feel driveable. The trouble is that a mirror is a picture
+    /// of another machine, and a cursor that promises "this is a button"
+    /// over an element whose kind we have not proven is the same
+    /// confident wrong answer plan 018 is about everywhere else. 62% of
+    /// elements carry no determined kind (docs/mirror-element-coverage.md).
+    ///
+    /// So: the ARROW is the default and the honest one, and there is
+    /// exactly one exception — an I-beam over a dialog item the GUEST
+    /// says is editable text. That claim comes from `semanticKind`, the
+    /// same v2 evidence the renderer and the hit tester read, rather than
+    /// from a second traversal of the same truth.
+    ///
+    /// Michelle, 2026-08-07: "use the normal pointer everywhere and just
+    /// focus on getting the text cursor over editable text areas."
+    ///
+    /// NOT YET DONE, and it is the direction rather than a gap here: the
+    /// guest has its own cursor and does not report it. Mirroring that
+    /// (Lane C's asset pack already carries 43 extracted `CURS`
+    /// resources) needs a capture-side verb and a contract field, and
+    /// belongs to its own slice.
     static func cursor(for object: MirrorObject) -> NSCursor {
-        switch object {
-        case .window(let w):
-            switch w.part {
-            case .growBox: return .resizeUpDown
-            case .titleBar: return .openHand
-            default: return .arrow
-            }
-        case .control, .dialogItem, .menu, .menuItem,
-             .applicationMenuAction, .app, .finderItem:
-            return .pointingHand
-        case .desktop:
-            return .arrow
+        if case .dialogItem(let item) = object,
+           item.semanticKind == "editText" {
+            return .iBeam
         }
+        return .arrow
     }
 
     /// Hand one interaction to the driver. Every gesture in this view
