@@ -24,6 +24,115 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## BROKEN: what a human's own drive found, correlated against her logs (2026-08-07)
+
+Michelle drove the round-9 stack for ~32 minutes and reported fourteen
+symptoms. This entry records what her logs say about them, because a
+report is not a durable artifact and hers was the first sustained
+human drive of this arc.
+
+Sources: `~/Library/Logs/now-logs/2026-08-07 183049.log` (her session,
+91 lines) and `~/Library/Logs/NewOldWorld/acts.log` windowed to her guest
+build `2af13c079980`. **Beware the second one: it spans days.** A first
+pass read decodes of 75–109 s from it and attributed them to her; those
+belong to an earlier session. Window it by build, not by clock time —
+the lines carry no date.
+
+### The act plane has ONE request cell, and it is most of the sluggishness
+
+Her log, repeatedly, while she worked a scroll bar:
+
+> `ctlact part 20 … refused: another act is already in flight — this
+> Mac's act plane has one request cell and it is taken. Nothing was
+> written.`
+
+Nine refusals in ninety seconds. **Interaction does not queue, it
+refuses.** This is the mechanism behind "closing some finder windows
+takes way longer than it should" and the long wait to front SimpleText —
+neither is a render problem.
+
+A third outcome also appears ~25 times, distinct from success and from
+refusal: **`the guest answered without a dispatch row`**, on parts 10,
+20 and 21.
+
+### The scrollbar thumb was never dispatched at all
+
+Parts **20 and 21** (the arrows) appear ~25 times. Part **129**, the
+indicator, appears **zero times**. `ctlact` is a click verb and a thumb
+needs press-move-release. "Arrows work, slider doesn't" is not a broken
+slider — **nothing was ever sent for it.** That belongs to the drag
+vehicle, which has only ever been aimed at Finder icons.
+
+### Nothing confirmed, for the whole session
+
+Every `winact` reads `settlement=dispatched-but-unconfirmed (dispatch is
+not guest-visible effect)`. **Zero confirmations in 32 minutes.** That is
+the KW-06 honesty fix working as designed — and it means the host never
+learns an act landed, so a press has nothing to settle *on*. The likely
+reason the pressed state never resolves: its state machine's exit from
+*waiting* has no input on this path.
+
+### The render tail, measured on her session only
+
+| | median | p99 | max |
+|---|--:|--:|--:|
+| host decode | 23 ms | 3,152 ms | **7,527 ms** |
+| guest round-trip | 16 ms | 2,100 ms | **14,743 ms** |
+
+~22 s worst case combined, matching her "10–30 s to render the new scroll
+position". The structurally wrong number is **7.5 s to decode 3 windows
+and 49 elements** while the guest's own phase counters are in
+microseconds. The host is the bottleneck, not the wire and not the guest.
+
+### The Finder item roster does not arbitrate against the machine's ink
+
+**This is the highest-value finding and it was Michelle's own read.**
+
+`SceneRenderer` arbitrates the display list against **controls**
+(`semanticOwnsDisplay`) and against **dialog items**
+(`dialogItemOwnsDisplay`), and carries the comment *"P3 owns
+unstructured content, while P2 owns concrete drawing wholly."*
+
+**There is no equivalent for `win.items`.** The only exclusion involving
+`items` is against the pixel island (`if win.items == nil, let island
+= …`). So a window holding both the machine's drawn ink and our icon
+roster **draws both**.
+
+One mechanism, four symptoms: icons drawn twice, labels drawn twice,
+icons appearing over list-view rows, and the cost — a 49-element window
+finding 7.5 seconds because the work is done twice.
+
+Corroborated independently by the live flicker trace earlier the same
+day: the Finder's icon-grid boxes flipping `semantic ↔ absent` with a
+**0.83 s bounce nothing asked for**, and an **8.4 s lag** before the
+content plane followed a view switch.
+
+### Understood already, restated so the drive's list is complete
+
+- **Extensions Manager's empty list** — its rows live inside a
+  `userItem` the application draws itself. No ControlRecord, no DITL row,
+  so no state exists to report by any current route.
+- **Set Time Zone, Sherlock's components, control-panel icons** all show
+  *"Bitmap unavailable"* — the **loud** hatch, which is positive proof a
+  drain happened and the bitmap was not in it. Asset resolution, not the
+  plane.
+- **"Icon drag fails — nothing said where it is"** is the
+  `homeIsTrustworthy` refusal behaving correctly; the fix is upstream in
+  what makes a home trustworthy.
+- **No I-beam over Sherlock's text field** — the cursor rule keys on
+  `semanticKind == "editText"`, and that field is almost certainly
+  unclassified, which is the CDEF wall.
+
+### And the coordinator repeated the arc's own worst process defect
+
+The shared worktree `keen-clarke-4988fc` was checked out by the
+asset-packs lane while the coordinating session was using it. Its reflog
+holds `fe4d8179` — **the silent revert round 7 caught** — and from 14:50
+onward the coordinator committed nine documentation commits **onto that
+lane's branch** without noticing. Nothing was lost, because round 9
+merged it. **Sixth firing of one-worktree-per-lane, and the first where
+the coordinator was the one who did it.**
+
 ## LOOK: round 9 landed four lanes, and the two things that would have gone wrong were both caught by reading (2026-08-07, `claude/019-integration-9`)
 
 **Verification level: TESTED, and the gates were NOT armed.**
