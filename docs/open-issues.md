@@ -132,6 +132,70 @@ that is worth saying plainly: **a green run of that probe says nothing
 whatever about the product**, and the probe now says so in its own output
 rather than leaving a reader to infer it.
 
+### How a Finder icon gets named, and the fact that decided it (2026-08-07, `claude/019-drag-element-refs`)
+
+Break 2 says a Finder icon has no element reference. The obvious repair —
+mint one — was written up, costed, and **rejected**, and the reason is
+worth more than the design that replaced it.
+
+**Candidate A: teach the element walk to see Finder icons.** The walk
+reads foreign memory along two documented chains, the Window Manager's
+window list and each window's control list (`axwalk.h`). A desktop or
+folder icon is in neither: the Finder lays them out in its own private
+structures, which have no published layout and no stability guarantee
+across 8.6–9.2.2. Seeing them means reverse-engineering the Finder's
+heap, and the failure mode of getting it subtly wrong on a system version
+nobody tested is *a file moving*. Rejected.
+
+**Candidate B: `FinderItems` mints the reference.** `FinderItems` is host
+code, and the registry's first anti-forgery property is that the token is
+*not derived from anything a caller knows* (`obsref.h`). A host-minted
+token is by construction a caller-supplied token. Rejected as stated.
+
+**Candidate C: the guest asks the Finder and mints there.** Honest in
+principle — the Finder is the only observer that can see its own icons,
+and the guest already reaches it through `script`/`OSADoScript`. The cost
+is where it fails: the registry re-proves a reference from foreign memory
+— window address, ControlHandle, node fingerprint — and a Finder item has
+none of the three. Its revalidation could only re-prove the process, so a
+Finder-item reference would be **weaker than every other reference while
+spelled identically on the wire**. Uniform spelling over non-uniform
+strength is the convincing-lie shape this repository keeps paying for.
+
+**And then the fact that settles it, read out of the resident rather
+than reasoned about.** For `dragpress` — unlike `ctlact` — *the reference
+does not bound the act.* `ext/src/now_ext_act.c:829` serves the press as
+`now_ext_drag_press(table, cell->control_handle, a5, cell->click_h,
+cell->click_v, …)`: the button goes down at the **caller's point**, and
+`control_handle` is repurposed to carry the session nonce, so no
+ControlHandle is checked and no trap patch answers for one. The element
+therefore buys exactly two things — the PSN whose context the press runs
+in, and a fallback rectangle for a caller that sends no point. A drag
+always sends a point.
+
+So the element's whole job in `dragpress` is **to name the process**, and
+candidate C would have built a weak new species of reference to name the
+Finder, which a Finder *window* reference already names with far more
+re-proving behind it.
+
+**Chosen — candidate D: `dragpress` names its container.** It accepts a
+`now-window-` reference as an alternative to `element`; in that form
+`h`/`v` are REQUIRED, because there is no rectangle to fall back on and
+the rule against pressing at a guessed point stands unchanged. And the
+reference is made to do real work rather than sit there as provenance:
+**the press point must lie inside the resolved window**, which the guest
+checks from the resolver's own global content rectangle
+(`NowAxWindow`). A window reference plus an arbitrary global point would
+have been "a coordinate is a reference" arriving by the back door;
+a window reference plus a point *inside that window* is a bound the
+guest can check and does.
+
+What this does **not** close is the desktop, and that is stated here
+rather than discovered later: a desktop icon is inside no window, so this
+form cannot carry it unless the Finder's desktop is itself a window in
+the window list. That is an empirical question about this Macintosh, not
+a design choice, and it is measured below.
+
 ### A gate, so the next conformer is not silently absent
 
 Nothing failed when `itemDragDriver` went unimplemented, because a
