@@ -273,7 +273,7 @@ public enum MirrorOpenProjection: HostProjection {
     public static let acceptedArguments: Set<String> = []
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "MainMenu.swift",
-                         symbol: "item(\"Mirror\", actions.showMirror"),
+                         symbol: "item(\"Show Mirror\", actions.showMirror"),
         .mcp: .reachedByRegistry,
         .appIntents: .appIntentsFaceNotBuiltYet,
     ]

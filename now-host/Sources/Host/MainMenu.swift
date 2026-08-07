@@ -277,7 +277,8 @@ enum MainMenu {
                running host meant finding the Mirror page's button or
                relaunching with --open-mirror. Already open is not a
                no-op: the item raises it. */
-            item("Mirror", actions.showMirror, "1", target: target),
+            item("Show Mirror", actions.showMirror, "m", target: target,
+                 modifiers: [.command, .shift]),
             .separator(),
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
             item("Zoom", #selector(NSWindow.performZoom(_:)), ""),
