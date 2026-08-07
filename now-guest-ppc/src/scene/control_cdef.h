@@ -42,7 +42,52 @@
  *   the family is known. CDEF 0 and CDEF 23 are the button FAMILY:
  *   variant 0 is a push button, 1 a check box, 2 a radio button, and
  *   returning "button" for all three would put a press on a control
- *   whose state a caller would then read wrong. */
+ *   whose state a caller would then read wrong.
+ *
+ * THE VARIATION CODE IS NOT READABLE FOR A FOREIGN CONTROL, and that is
+ * a measurement rather than a caution. On the emulator, 2026-08-07, over
+ * Memory's 44 controls and Date & Time's 21:
+ *
+ * - Every button-family control - push buttons, check boxes and radio
+ *   buttons alike - reported `contrlDefProc` = 0x00002EC8, high byte
+ *   ZERO. Memory's "Save contents to" (a check box) and its three On/Off
+ *   pairs (radio buttons) are byte-identical in that field to "Use
+ *   Defaults" (a push button). The classic packing of the variation code
+ *   into that byte, which the resolver's mask path exists to undo, is
+ *   simply not what Mac OS 9 does with these.
+ * - `GetControlVariant` - the Control Manager's own accessor, CarbonLib
+ *   1.0 and later - answered 0 for all 65 of them.
+ *
+ * That second line would say nothing on its own, because 0 is also what
+ * a declined call returns. So it was asked of controls THIS APPLICATION
+ * CREATED, whose variants are in this repository's own source: NOW's two
+ * `checkBoxProc` boxes answered 1, its `kControlScrollBarLiveProc` bar
+ * and its auto-toggle triangle answered 2, its push buttons and popup 0.
+ * The accessor works on this runtime and is right every time about a
+ * control we own. It is foreign controls it cannot answer for.
+ *
+ * SO CDEF 0 AND CDEF 23 ATTRIBUTE NOTHING AT ALL, not even variant 0.
+ * Reading zero from a field that is zero for all three kinds is not
+ * evidence of a push button; it is the absence of evidence, wearing the
+ * push button's number. The rule this file already states - an
+ * approximate role would authorise an approximate act - does not have an
+ * exception for the most common control on the screen.
+ *
+ * THE COST IS REAL AND IS STATED HERE RATHER THAN DISCOVERED LATER. Those
+ * controls fall back to `unknown`, and `Semantics.authorizesAction`
+ * requires `known` or `derived`, so a driver that honours it will now
+ * DECLINE them where it used to press them. `ctlact` with an explicit
+ * point still reaches them - the guest checks the point against the rect
+ * the resolver proved and never consults the kind - so what is lost is
+ * the semantic authority, not the mechanism.
+ *
+ * That is the trade this project has already decided twice, and it is
+ * worth naming which way: a check box pressed as a push button is not a
+ * near miss. Its `state` is never reported, so a caller cannot read what
+ * it did, and a radio button in a group of three is reported as three
+ * independent buttons with no exclusivity between them. An `unknown` a
+ * driver declines is a gap someone can close. A `pushButton` that is
+ * really a check box is a gap nobody will ever look for. */
 
 /* Whether the Resource Manager could name a control's definition
    function - a fact about the LOOKUP, kept separate from what the answer
