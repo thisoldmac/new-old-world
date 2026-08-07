@@ -17,6 +17,7 @@
 #include "wire.h"
 #include "observe.h"
 #include "peek.h"
+#include "scene_collect.h"
 #include "act_cmds.h"
 #include "workshop_layout.h"
 #include "workshop_window.h"
@@ -510,6 +511,16 @@ int main(void)
     }
 
     while (g_running) {
+        /* WATCHED, NOT READ. Cross-application stacking order exists
+           nowhere to be asked for on this machine - each application has
+           its own WindowList - so it is reconstructed from the order
+           applications came to the front, and that is only observable by
+           an application that was running at the time. One trap per
+           pass, here rather than at scene time, because a scene collected
+           after the fact sees only where the machine ended up.
+           front_order.h carries the argument; scene_collect.c does the
+           ordering. */
+        now_scene_note_front_process();
         conn_service();
         dispatch_pending_menu_choice();
         workshop_idle();

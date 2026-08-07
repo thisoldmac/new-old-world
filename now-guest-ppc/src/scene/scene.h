@@ -525,6 +525,29 @@ typedef struct {
        beside the data rather than being guessed from it. */
     NowSceneCoverage process_kind_coverage;
 
+    /* DOES THE WINDOW ORDER IN THIS SCENE MEAN ANYTHING ACROSS
+       APPLICATIONS?
+       The array's order IS the stacking order - front first - and within
+       a process it is exact, because the process's own WindowList chain
+       is exactly that and `z` says so. Across processes there is no
+       chain to read: WindowList is a per-process low-memory global, so
+       no application's chain reaches another's, and the Process
+       Manager's enumeration is launch order rather than layer order
+       (measured: four captures of one run put the same four background
+       applications in the same order regardless of which had just been
+       fronted). See front_order.h.
+       So this claim says which it is. `complete` - every application
+       contributing a window had been watched coming to the front, and
+       the order across them is a fact. `partial` - at least one had not,
+       and its position among the others is a fallback rather than a
+       claim. `unavailable`, the value a producer that never sets this
+       leaves behind, means the question was not asked at all, and a
+       consumer must read the cross-application order as unknown.
+       A renderer that draws this array back-to-front is right to; what
+       it has never been able to do is tell a known order from a guessed
+       one, and this is that bit. */
+    NowSceneCoverage depth_coverage;
+
     NowSceneWindow windows[kNowSceneMaxWindows];
     short window_count;
     int windows_truncated;
@@ -632,6 +655,10 @@ void now_scene_set_process_background_only(NowScene *s, int proc,
    `backgroundOnly` keys mean unknown rather than "has a face". */
 void now_scene_set_process_kind_coverage(NowScene *s,
                                          NowSceneCoverage coverage);
+
+/* Records whether the cross-application order of `windows` is a claim or
+   a fallback. See NowScene.depth_coverage. */
+void now_scene_set_depth_coverage(NowScene *s, NowSceneCoverage coverage);
 
 /* Adds a window to a process already added. Returns 1 on success, 0 when
    the scene is full (sets windows_truncated) or when `proc` is out of

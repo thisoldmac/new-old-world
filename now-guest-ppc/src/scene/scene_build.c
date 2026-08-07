@@ -336,6 +336,13 @@ void now_scene_set_process_kind_coverage(NowScene *s,
     }
 }
 
+void now_scene_set_depth_coverage(NowScene *s, NowSceneCoverage coverage)
+{
+    if (s != NULL) {
+        s->depth_coverage = coverage;
+    }
+}
+
 void now_scene_set_process_background_only(NowScene *s, int proc,
                                            int background_only)
 {
