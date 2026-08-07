@@ -27,6 +27,12 @@ public struct SceneRenderer {
     /// Mac dotted-gray tracking rectangle. nil = not dragging.
     public let dragOutline: Rect?
 
+    /// The colours the guest said it draws with, resolved against this
+    /// side's fallbacks. Derived from the scene, so nothing has to remember
+    /// to pass it — and `theme.provenance` says per colour which of the two
+    /// each one came from.
+    public var theme: SceneTheme { SceneTheme(scene) }
+
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
                 dragOutline: Rect? = nil) {
@@ -616,6 +622,19 @@ public struct SceneRenderer {
 
         /* TWO DECISIONS, NOT ONE, and collapsing them was a defect.
          *
+           THIRD REVISION, 2026-08-07: the COLOUR is no longer decided
+           here at all. `theme.face(forWindowKind:)` answers it from what
+           the guest's own Appearance Manager reported in `meta.theme`,
+           falling back to the Platinum constants for a scene that
+           carries none. What stays here is the kind→brush MAPPING, which
+           is a fact about the Window Manager rather than about a theme.
+         *
+           It also fixed a case the comment below could not: a
+           kind-2000 (application-defined) panel such as Appearance's own
+           was hardcoded to literal white, so no theme could ever move
+           it. It now gets kThemeBrushDocumentWindowBackground, which is
+           the brush that actually names that face.
+         *
            `isDialog` above answers "does this window have a title bar",
            and it is right to key that on the title. It was ALSO being
            used to answer "what colour is the content face", and those two
@@ -633,9 +652,7 @@ public struct SceneRenderer {
            `kind` is the WindowRecord's own `windowKind`, read out of the
            machine - not something this side inferred. Anything else keeps
            white, which is what a document window's content really is. */
-        let facesDialogBackground = win.kind == 2
-        let windowFace = facesDialogBackground ? Platinum.dialogFace
-                                               : Platinum.g0
+        let windowFace = theme.face(forWindowKind: win.kind)
 
         // Drop shadow, frame, face, raised bevel.
         ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
@@ -1721,12 +1738,15 @@ public struct SceneRenderer {
             let rowFrame = CGRect(x: body.minX,
                                   y: body.minY + CGFloat(rowIndex) * rowHeight,
                                   width: body.width, height: rowHeight)
-            /* The selected row is filled with the MEASURED highlight, not
-               with the chrome grey it used to borrow. 0xCCCCCC was the
-               Gray Space theme's answer; this machine's default scene
-               writes 0xCCCCFF. */
+            /* The selected row is filled with the highlight the GUEST
+               reported, not with the chrome grey it used to borrow.
+               0xCCCCCC was the Gray Space theme's answer; the extracted
+               Platinum constant that replaced it was 0xCCCCFF, read once
+               out of a theme FILE. `theme.highlight` is the live
+               low-memory colour, so a theme switched while this guest
+               runs moves it. The constant remains the fallback. */
             if rowCells.contains(where: \.selected) {
-                clipped.fill(Path(rowFrame), with: .color(Platinum.highlight))
+                clipped.fill(Path(rowFrame), with: .color(theme.highlight))
             }
             for column in 0..<columnCount {
                 let cellWidth = body.width / CGFloat(columnCount)

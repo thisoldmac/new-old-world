@@ -558,6 +558,47 @@ public struct Scene: Codable, Equatable, Sendable {
         }
     }
 
+    /// The colours the GUEST'S OWN Appearance Manager hands out, asked
+    /// once per scene rather than assumed here.
+    ///
+    /// Every field is optional and an absent one means the ask failed —
+    /// never "black". A nil `Theme` altogether means the producer did not
+    /// ask, which is a different fact: the first says that machine would
+    /// not name the brush, the second that nobody looked. A renderer
+    /// meeting either falls back to its own constant and should say so.
+    ///
+    /// This is not the theme's palette and must not become one. These are
+    /// fills the machine makes on request; a renderer's bevel greys have
+    /// no producer on the machine to ask and would arrive here as guesses
+    /// wearing a wire format. See `contract/asyncapi.yaml`, "WHAT COLOUR
+    /// THE MACHINE DRAWS WITH".
+    public struct Theme: Codable, Equatable, Sendable {
+        /// `#RRGGBB` — kThemeBrushDialogBackgroundActive.
+        public var dialogBackground: String?
+        /// `#RRGGBB` — kThemeBrushAlertBackgroundActive.
+        public var alertBackground: String?
+        /// `#RRGGBB` — kThemeBrushDocumentWindowBackground.
+        public var documentBackground: String?
+        /// `#RRGGBB` — the low-memory selection colour.
+        public var highlight: String?
+        /// The screen depth the brushes were ASKED AT. A brush answers
+        /// differently at 8 bits than at 32, so a colour with no depth
+        /// beside it cannot be checked against a screendump.
+        public var depth: Int?
+
+        public init(dialogBackground: String? = nil,
+                    alertBackground: String? = nil,
+                    documentBackground: String? = nil,
+                    highlight: String? = nil,
+                    depth: Int? = nil) {
+            self.dialogBackground = dialogBackground
+            self.alertBackground = alertBackground
+            self.documentBackground = documentBackground
+            self.highlight = highlight
+            self.depth = depth
+        }
+    }
+
     public struct Meta: Codable, Equatable, Sendable {
         public var latencyMs: Double?
         public var bytes: Int?
@@ -567,6 +608,8 @@ public struct Scene: Codable, Equatable, Sendable {
         /// Typed collection authority. Human-readable `errors` remains for
         /// diagnostics; reducers make replacement/deletion decisions here.
         public var coverage: [CoverageClaim]? = nil
+        /// What the guest's Appearance Manager actually draws with.
+        public var theme: Theme? = nil
     }
 }
 

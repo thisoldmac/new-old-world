@@ -29,16 +29,33 @@ public enum Platinum {
     /// the semantic pass did not draw over read as unfinished paper. One
     /// wrong constant, and it is most of why a panel pair looks unfinished.
     ///
-    /// A MEASURED CONSTANT IS NOT AN ANSWER, it is a stand-in for one. The
-    /// machine can be asked: `GetThemeBrushAsColor(
-    /// kThemeBrushDialogBackgroundActive, 32, true, &rgb)` is CarbonLib 1.0
-    /// (Appearance.h:2826) and the guest already calls it in
-    /// `census_module.c:615`. What is missing is somewhere on the wire to
-    /// put the answer — see docs/open-issues.md, "the panel face is
-    /// measured, not asked". Until that field exists this number is right
-    /// for the shipped Platinum theme and silently wrong for any other,
-    /// which is exactly the failure mode `ppat` 16 had on the desktop.
+    /// A MEASURED CONSTANT IS NOT AN ANSWER, it is a stand-in for one —
+    /// and since 2026-08-07 the answer exists. `meta.theme.dialogBackground`
+    /// carries what `GetThemeBrushAsColor(kThemeBrushDialogBackgroundActive,
+    /// …)` returned on the guest at capture time, and `SceneTheme` prefers
+    /// it. **This constant is now the FALLBACK ONLY**: a scene from a
+    /// producer too old to ask, or a machine that refused the brush.
+    ///
+    /// It stays 0xDDDDDD because that is what was counted, and the value is
+    /// confirmed by the machine — see docs/theme-colours.md for the ask
+    /// beside the count.
     public static let dialogFace = Color(hex: 0xDDDDDD)
+
+    /// Fallback for `meta.theme.alertBackground`
+    /// (kThemeBrushAlertBackgroundActive).
+    ///
+    /// **It is a SEPARATE constant from `dialogFace` because it is a
+    /// separate brush**, whatever the two happen to evaluate to under
+    /// Platinum. Collapsing them would make the theme's ability to
+    /// distinguish them unrepresentable here, which is the shape of every
+    /// defect this field exists to end.
+    public static let alertFace = Color(hex: 0xDDDDDD)
+
+    /// Fallback for `meta.theme.documentBackground`
+    /// (kThemeBrushDocumentWindowBackground). A document window's content
+    /// really is white under Platinum; another theme may disagree, and now
+    /// gets to.
+    public static let documentFace = Color(hex: 0xFFFFFF)
 
     /* The two accent colours below are MEASURED — read out of the guest's
        own `Apple platinum` theme file rather than chosen (see
