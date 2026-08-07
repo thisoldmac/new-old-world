@@ -146,15 +146,19 @@ underneath you" without stalling anything.
 *while it is running*. **None of them make it run.**
 
 A coordinator acts when something arrives: a message, or an agent
-finishing. So the state that ends an overnight is not a missed
-finding — it is **an empty agent pool with no alarm set.** The last lane
-reports, its findings get written up, and then nothing arrives, ever.
-That happened on 2026-08-07: the last report landed at 04:34, the
-handoff was written, and **seven and a half hours passed with the machine
-idle and three merge triggers lit.**
+finishing. That is *how* a silence can last — but it is not how one
+starts. **A silence starts with a decision.**
+
+On 2026-08-07 a lane reported **to the coordinator** at 04:34. It read
+the report, wrote part of it into the handoff, **left three live defects
+undispatched**, and ended the turn without arming anything. Four choices.
+Then seven and a half hours passed with the machine idle and three merge
+triggers lit — and *that* part was the mechanism.
 
 Michelle had stayed up specifically to put the guardrails in place. The
-guardrails were fine. Nothing was turning the crank.
+guardrails were fine. **Describing your own inaction as a system state is
+the first thing to catch yourself doing**, because "the pool went to
+zero" sounds like weather and "I stopped" does not.
 
 **So, before ending any turn:**
 
