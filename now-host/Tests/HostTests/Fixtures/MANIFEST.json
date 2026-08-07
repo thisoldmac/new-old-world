@@ -18,6 +18,18 @@
    }
   },
   {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-019-date-and-time.json",
+   "sha256": "290aab25eae458d809d5e556ecb8aebc51d30a5dea284386adc81bc52d56e461",
+   "bytes": 58529,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786068495.0,
+    "version": 2
+   }
+  },
+  {
    "path": "now-host/Tests/HostTests/Fixtures/now-scene-desktop-bare.json",
    "sha256": "ce5e55bc003db96cf2a7520a87b7db232a43478e74c7a6de157974c48c0989d5",
    "bytes": 38081,
