@@ -282,8 +282,93 @@ static void test_menu_mark_needs_the_resident_to_have_fired(void)
           "a matching mark alone never confirms an act that did not fire");
 }
 
+/* An act with NO scene postcondition can still be settled, because the
+   application looked.
+   ---------------------------------------------------------------------
+   A control act carries kNowActPostNone: nothing in a scene names the
+   control it aimed at, so now_act_settlement_observe_scene skips it
+   forever and its resident stage never reaches Fired when no patch was
+   asked to answer. Before now_act_note_observed() that meant a `ctlact`
+   could ONLY ever read `dispatched-but-unconfirmed` or `timed-out` - and
+   on 2026-08-07 it read `timed-out` on a press confirmed in the guest's
+   own pixels.
+
+   act_settlement.h has always allowed the other route ("or an explicit
+   application observation"). This is the gate that it works, and that a
+   scene pass afterwards cannot undo it. */
+static void test_an_application_observation_settles_a_control_act(void)
+{
+    NowActSettlementStore store;
+    NowActSettlementSpec spec;
+    NowActSettlementRecord *r;
+    NowScene scene;
+
+    now_act_settlement_reset(&store, 3);
+    memset(&spec, 0, sizeof spec);
+    spec.correlation_hi = 7;
+    spec.correlation_lo = 1;
+    spec.writer_epoch = 3;
+    spec.target_psn_low = 42;
+    spec.request_scene = 10;
+    spec.kind = kNowPeekActKindControl;
+    spec.operation = kNowPeekActOpControl;
+    spec.object = 0xC0DE;
+    spec.postcondition = kNowActPostNone;      /* no scene can name it */
+
+    r = now_act_settlement_begin(&store, &spec, 100);
+    now_act_settlement_note(&store, 7, 1, kNowActSettleDispatchedUnconfirmed,
+                            110);
+    observed_window(&scene, 11, 0, 0, 0);
+    now_act_settlement_observe_scene(&store, &scene, 3);
+    CHECK(r->status == kNowActSettleDispatchedUnconfirmed,
+          "a scene cannot settle a control act, and must not pretend to");
+
+    /* What the verb does when its own re-read shows the control moved. */
+    now_act_settlement_note(&store, 7, 1, kNowActSettleConfirmed, 120);
+    CHECK(r->status == kNowActSettleConfirmed,
+          "the application's own observation settles what no scene can");
+
+    observed_window(&scene, 12, 0, 0, 0);
+    now_act_settlement_observe_scene(&store, &scene, 3);
+    CHECK(r->status == kNowActSettleConfirmed,
+          "a later scene must not walk a confirmed act back");
+}
+
+/* And the same store must NOT be talked into confirming a control act
+   the application could not observe: an unmoved control notes
+   dispatched-but-unconfirmed, and that is where it stays. */
+static void test_an_unobserved_control_act_stays_unconfirmed(void)
+{
+    NowActSettlementStore store;
+    NowActSettlementSpec spec;
+    NowActSettlementRecord *r;
+    NowScene scene;
+
+    now_act_settlement_reset(&store, 3);
+    memset(&spec, 0, sizeof spec);
+    spec.correlation_hi = 7;
+    spec.correlation_lo = 2;
+    spec.writer_epoch = 3;
+    spec.target_psn_low = 42;
+    spec.request_scene = 10;
+    spec.kind = kNowPeekActKindControl;
+    spec.operation = kNowPeekActOpControl;
+    spec.postcondition = kNowActPostNone;
+
+    r = now_act_settlement_begin(&store, &spec, 100);
+    now_act_settlement_note(&store, 7, 2, kNowActSettleDispatchedUnconfirmed,
+                            110);
+    now_act_settlement_note_resident(&store, 7, 2, kNowPeekActStageArmed);
+    observed_window(&scene, 11, 1, 40, 50);
+    now_act_settlement_observe_scene(&store, &scene, 3);
+    CHECK(r->status == kNowActSettleDispatchedUnconfirmed,
+          "an unobserved control act is never confirmed by anything else");
+}
+
 int main(void)
 {
+    test_an_application_observation_settles_a_control_act();
+    test_an_unobserved_control_act_stays_unconfirmed();
     test_late_success_and_reuse();
     test_postconditions_and_session();
     test_text_uses_postcondition_window();

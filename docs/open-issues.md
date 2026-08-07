@@ -14,6 +14,87 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: an act longer than three seconds switched off the instrument that was to report on it (2026-08-07, `claude/019-ctlact-settle`)
+
+Sweep C briefed this as a regression — `ctlact part 0` on Appearance's
+tab accepted, `click posted`, **zero pixels** — and the regression was
+not real. Driven on a live guest, the tab switches. The two things that
+made it look otherwise were both the instrument, and both were caught by
+**re-posing** rather than by inspecting harder, which is now the third
+time that has been the cheaper route:
+
+- **The twenty points.** `scene.windows[].rect` is the STRUCTURE box and
+  `elements`' `bounds` is the CONTENT box; Appearance reports `t=70` and
+  `top=90`. A point built from a content-relative control rect and a
+  structure origin aims one title bar high — a tall control absorbs it,
+  a short one does not. (Found independently by
+  `claude/019-list-selection`.)
+- **The covering window.** A posted click carries only a POINT, and the
+  TARGET resolves it with its own `FindWindow` against the machine's
+  window list. At 800×600 NOW's own Workshop window covers Appearance's
+  panel completely, so a press aimed through it belongs to NOW and the
+  panel does nothing with it — *accepted, `click posted`, zero pixels*,
+  which is the briefed symptom exactly. `tools/local-tab-settlement.py`
+  now refuses to press a covered point rather than reporting one.
+
+**What was underneath was worse than the briefed defect**, and it is two
+things:
+
+1. **An act that outlives the writer lease disarms every plane beneath
+   itself.** Three clocks govern an armed plane — writer lease 180 ticks,
+   owner lease 600, act deadline 300 — and `act_yield` renewed the
+   owner's (by pumping the wire) and not the writer's. Nothing else
+   renews the writer heartbeat during an act: the main loop is not
+   reached, and the wire's renewal rides an INBOUND message, of which
+   there are none while the host waits for the reply. At t=3 s the
+   resident reads a lapsed writer and sets `request = 0`. Measured: a
+   5.1 s `ctlact part 0` that **genuinely switched the tab** came back
+   `Re-read value: the anchor plane is absent or not armed`. This is the
+   2026-08-06 owner-lease finding one lease over, and the shorter clock
+   was the one nobody had looked at.
+2. **`part 0` was judged by a patch it never asked for.** It posts a real
+   click and consults no patch on an Appearance-era tab — but it waited
+   the full 300-tick deadline for one anyway, which is where the 5.1 s
+   came from (a hundred times a `part 23` scroll, and the very thing that
+   outran the lease above), and then reported `Settlement: timed-out`
+   regardless. **The reply was word for word identical for a tab that
+   switched and a tab that did not.** Not a verb claiming success it did
+   not have — a verb that could not tell its two outcomes apart, which is
+   the same defect wearing a milder face.
+
+Both fixed. `part 0` now watches THE CONTROL, stopping the moment it
+moves, and reports the settlement vocabulary — `confirmed - the control
+moved` or `dispatched-but-unconfirmed` — never `click posted`.
+
+### STILL OPEN, from the same audit
+
+- **`part 0` arms a patch that would suppress the click it posts.**
+  `now_act_control_answer` returns the armed `part_code`, so an
+  application that *does* call `TrackControl` on that control is answered
+  **0** — "released outside the control" — and does nothing. `part 0` is
+  self-defeating on exactly the controls a named part serves, and correct
+  on the ones it does not. The arming lives in the resident, so changing
+  it is a bake; it is at least reported honestly now. Table in
+  [mirror-act-plane.md](mirror-act-plane.md) > "Which part codes can
+  verify their own effect".
+- **A push button cannot be verified by this guest at all.** It has no
+  value range, so `part 10` has only the patch firing — which proves the
+  application was *asked*, not what it did. That is now said out loud
+  (`dispatched-but-unconfirmed`) rather than reported as `dispatched`.
+- **The part code was never the axis.** `ctlact` branches on `part`
+  exactly once (0 or not); what decides verifiability is the CONTROL and
+  the APPLICATION. A per-part hunt for missing settlement checks will
+  find one difference and miss the two that matter.
+
+### An aside worth someone's time
+
+`spin-up-ppc`'s rule 1 states that "QMP keyboard events never reach this
+guest". On this run they did: `send-key ret` dismissed the Disk First Aid
+dialog on the dirty `os91-runner` base and the boot continued. Either the
+rule has aged out (mac99 + `usb-kbd`) or it was always narrower than
+written. Worth a measurement, because a great deal of rig design rests on
+it.
+
 ## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
 
 Michelle, driving the integrated build: *"a lot of controls (such as
