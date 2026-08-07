@@ -228,7 +228,32 @@ void now_liveness_tick(TMTaskPtr task)
     if (now_ext_liveness_should_run(table, (NowPeekU32)LMGetTicks())) {
         PrimeTime((QElemPtr)task, kLivenessTickMs);
     } else {
+        /* Only the flag, never `rest_state`. That word is read-modify-
+           written by the filter for the content plane's bits, and this
+           runs at INTERRUPT TIME - so a clear issued here could land
+           inside the filter's own read-modify-write and be lost. The bit
+           that would survive is `LivenessTicking` set on a vehicle that
+           has stopped, which is the one lie this word exists to prevent.
+           The filter reflects the flag instead; see
+           now_liveness_rest_reflect. */
         gTaskPriming = false;
+    }
+}
+
+/* Publish the vehicle's state into `rest_state`, from the FILTER.
+ *
+ * Single-writer by construction: every bit in this word is written from
+ * non-interrupt filter context and nowhere else, so the read-modify-write
+ * the content plane does one file over cannot race a clear issued from a
+ * Time Manager tick. The tick owns a plain Boolean; this owns the word. */
+void now_liveness_rest_reflect(NowPeekTable *table)
+{
+    if (table == NULL) {
+        return;
+    }
+    if (gTaskPriming) {
+        table->rest_state |= (NowPeekU16)kNowPeekRestLivenessTicking;
+    } else {
         table->rest_state &= (NowPeekU16)~kNowPeekRestLivenessTicking;
     }
 }
@@ -249,7 +274,6 @@ static void liveness_prime_if_wanted(NowPeekTable *table, NowPeekU32 ticks)
         return;
     }
     gTaskPriming = true;
-    table->rest_state |= (NowPeekU16)kNowPeekRestLivenessTicking;
     PrimeTime((QElemPtr)&gLivenessTask.task, kLivenessTickMs);
 }
 
@@ -290,6 +314,10 @@ void now_liveness_probe_transport(NowPeekTable *table)
     static const unsigned char kIPPName[5] = { 4, '.', 'I', 'P', 'P' };
 
     if (table == NULL) return;
+    /* Before the gate, because the state has to be reported on the passes
+       where the answer is "not running" — which are exactly the passes
+       that return below. */
+    now_liveness_rest_reflect(table);
     /* NOTHING HAPPENS UNTIL AN APPLICATION ASKS, and this line is the
        landing blocker's actual fix.
        ------------------------------------------------------------------
