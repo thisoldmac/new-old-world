@@ -14,6 +14,56 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## ANSWERED: the provenance ladder held live — zero rect owner flips, taken twice (2026-08-07, `claude/019-flicker-bc`)
+
+**Verification level: TESTED** (emulator; nothing here touched metal).
+
+`tools/fidelity-live.py` was built to see flicker a settled capture
+structurally cannot, and **it had never produced a second measurement**:
+sweep B did not run it and said so, sweep C could not because
+`mirror_read --intention snapshot` closed the connection without
+replying. With that transport defect fixed, the B side is taken.
+
+**The number that matters: `rectOwnerFlips` is still ZERO.** The A side
+scored zero `ink → unknown → ink` returns before the provenance-ladder
+work had been exercised outside fixtures. It is zero again on a tree
+that has since gained the ladder, `displayEpoch` coherent pairs, the
+content plane's renewal carry-forward, `contentPlane`/`controlsState`
+not-attempted-vs-empty, `Platinum.contentTop` 22→20 and a render path
+that no longer depends on `ImageRenderer.cgImage`'s backing store.
+
+FIGURES (first trace; the rest of the table is in
+[docs/fidelity-live-2026-08-07-b.md](fidelity-live-2026-08-07-b.md)):
+
+| Run | Frames | **Missed** | Flicker | rectOwnerFlips | Drain in artifact |
+|---|---:|---:|---:|---:|---|
+| `idle-b` (nothing provoked, 90 s) | 951 | **5** | 51 | **0** | yes — 2 windows traced, both carrying ops, all 951 frames, max 235 |
+
+`snapshotsMissed` is quoted beside the count deliberately: **a flicker
+count is a floor, never a total**, and five snapshots existed in this
+trace that were never read.
+
+Three A-side findings reproduce unchanged:
+
+- **All 51 events are one oscillation.** `coverageStatusFlips` = the
+  total; hatch flips, content dropouts, rect owner flips and presence
+  flips are **0** each. The oscillating claim is `process-visibility`,
+  `stale ↔ partial`, median return **3.396 s** (A side: 3.28 s) — the
+  same ~0.3 Hz square wave, running with nothing asked of the machine.
+- **The render never settles**, at a five-second threshold, even idle.
+- **`baseComplete` is `false` in every frame.**
+
+**And the instrument gained the assertion AGENTS.md requires of it.**
+`fidelity-live.py` reads the live host, which arms P3 itself — so a run
+against a host that never armed reports every window stably empty and
+**reads as a stability result**. It now derives `planeEvidence` from the
+one field that already carries the distinction (`displayTotal`: None =
+never traced, 0 = traced and proven empty, >0 = a drain reached the
+artifact) and REFUSES (exit 3) without a drain unless `--allow-no-drain`
+says absence is what was meant. It also asserts **which guest answered**
+(`--expect-build auto` against `session_health`), because there is one
+agent socket per user and this tool binds nothing.
+
 ## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
 
 **Verification level: TESTED.** Found by reading a merge, not by any gate,

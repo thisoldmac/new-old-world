@@ -223,7 +223,8 @@ def assert_build(live, expect):
     guest = health.get("guest") or {}
     seen = {"state": health.get("state"), "guest": guest.get("name"),
             "build": guest.get("build"), "version": guest.get("version"),
-            "session": (guest.get("reference") or {}).get("session")}
+            "session": (guest.get("reference") or {}).get("sessionID"),
+            "listeningPort": health.get("listeningPort")}
     if expect in (None, "-"):
         seen["buildCheck"] = "skipped"
         return seen
