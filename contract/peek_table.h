@@ -728,6 +728,11 @@ typedef struct {
        count, not a timestamp, because a stopped clock and a stopped task
        look identical in a timestamp. */
     NowPeekU32 ticks_served;
+    /* The LAST want this vehicle consumed, not a count of them - and the
+       difference is the useful part. A host that moves the pointer
+       faster than the vehicle fires will see this skip values, which is
+       exactly the fact "3 moves applied" would hide: the gesture is
+       being sampled, not replayed. */
     NowPeekU32 moves_applied;
     /* The button has been written up and a mouseUp EVENT is still owed.
        The two halves are separated on purpose. Writing the low-memory

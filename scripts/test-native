@@ -166,6 +166,14 @@ run_c now-guest-shared now_act_guard_test.c \
 # check. The compiled test plays the interleaving; the source test says
 # the application actually routes through it, because a latch nothing
 # calls passes its own test while the plane is unguarded.
+# P7's dead-man. It is here rather than under a guest because the rule
+# belongs to the RESIDENT, and it is a native test rather than a driven
+# one because you cannot watch a dead-man work by driving a guest: to see
+# it fire you must not release, and "did not release" and "the test hung"
+# are the same observation until something separates them. Every case in
+# it names the mutation that makes it fail.
+run_c now-guest-shared now_drag_logic_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/now_drag_logic.c
 run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c
 run_py now-guest-shared act_inflight_wiring_source_test.py
 # The six trap trampolines' result-slot ABI, read out of the assembly.
