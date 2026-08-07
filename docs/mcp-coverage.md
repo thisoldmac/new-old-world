@@ -144,7 +144,7 @@ The test compares both against the code literally.
 | `now_machine_facts` | `gestalt` | `gestalt` | command |
 | `now_list_processes` | `process.list` | `process.list` | message family |
 | `now_observe_elements` | `elements` | `elements` | command |
-| `now_mirror_open` | — | — | none; opens the host's own Mirror window and asks the Mac nothing. The row every other `now_mirror_*` assumed away: they read a state engine that only runs while that window is open, and until this landed the only ways to open one in a running host were a click on the host's own screen and `--open-mirror` at launch |
+| `now_mirror_open` | — | — | none; starts the host's own Mirror and brings it into view, asking the Mac nothing. The row every other `now_mirror_*` assumed away: they read a state engine that only runs while the Mirror is RUNNING, and until this landed the only ways to start one in a running host were a click on the host's own screen and `--open-mirror` at launch. Since 019 running and where-it-is-shown are separate axes, so this starts the poll first and then shows it — in the Mirror module's pane, or in the detached window if that is where the person left it |
 | `now_mirror_status` | — | — | none; reads the native Mirror state engine without another guest request |
 | `now_mirror_snapshot` | — | — | none; reads the native Mirror state engine without another guest request |
 | `now_mirror_find` | — | — | none; queries the native Mirror state engine without another guest request |

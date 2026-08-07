@@ -44,10 +44,36 @@ def socket_path() -> str:
     Derived, never guessed: a hard-coded /tmp path would silently talk to a
     different host than the one under test on any Mac whose TMPDIR is the
     usual per-user one.
+
+    `NOW_AGENT_SOCKET_SUFFIX` is honoured here for the same reason the
+    host reads it inside `AgentIntegrationEndpoint.currentUser` rather
+    than at each call site: a client that does not know about the suffix
+    reaches whichever unsuffixed host happens to be up, which is exactly
+    the collision the suffix exists to prevent, arriving from the other
+    end. The sanitisation is the SAME RULE — short, plain identifier,
+    refused rather than escaped — because two spellings of one rule is
+    two places for a host and its client to disagree about where the
+    socket is.
     """
     tmp = os.environ.get("TMPDIR", "/tmp")
-    return os.path.join(tmp, f"dev.newoldworld.now-agent-{os.geteuid()}",
+    return os.path.join(tmp,
+                        f"dev.newoldworld.now-agent-{os.geteuid()}"
+                        f"{sanitised_suffix(os.environ.get(
+                            'NOW_AGENT_SOCKET_SUFFIX'))}",
                         "host.sock")
+
+
+def sanitised_suffix(raw: str | None) -> str:
+    """Empty for anything that is not a short, plain identifier.
+
+    The Swift half's `sanitisedSuffix`, kept deliberately identical: a
+    suffix that had to be rewritten to be safe is one whose author meant
+    something this cannot give them.
+    """
+    if not raw or len(raw) > 24:
+        return ""
+    ok = all(c.isalnum() or c in "-_" for c in raw)
+    return f"-{raw}" if ok else ""
 
 
 def call(request: dict, timeout: float) -> dict:

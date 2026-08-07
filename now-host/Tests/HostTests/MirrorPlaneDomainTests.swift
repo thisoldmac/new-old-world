@@ -318,10 +318,10 @@ final class MirrorPlaneDomainTests: XCTestCase {
            both "run the poll" and "put a window on screen". Splitting
            them is the point of the 019 change; asserting all four here
            keeps the page from quietly collapsing back to one. */
-        XCTAssertTrue(active.contains("Start Mirror"))
-        XCTAssertTrue(active.contains("Stop Mirror"))
-        XCTAssertTrue(active.contains("Detach"))
-        XCTAssertTrue(active.contains("Attach"))
+        XCTAssertTrue(active.contains("\"Stop\" : \"Start\""),
+                      "the running axis has a control of its own")
+        XCTAssertTrue(active.contains("\"Attach\" : \"Detach\""),
+                      "and so does the where-it-is-shown axis")
     }
 
     func testCloseReleasesContentAndInteractionOffRefusesBeforeDispatch() throws {

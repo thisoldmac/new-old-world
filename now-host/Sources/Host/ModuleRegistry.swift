@@ -114,16 +114,23 @@ struct ModuleRegistry: Sendable {
            running, Mirror is what those programs have on screen — and it
            sits above Console for the same reason Screen does: both are
            ways of LOOKING at the machine, and the pages that DO things to
-           it come after. What the page itself is has changed: Mirror is a
-           separate application with its own wire, so this page owns
-           whether that machine is ready for it and one instance's
-           lifecycle, not the drawing. */
+           it come after.
+
+           **This page DRAWS the other Macintosh.** It used to own only
+           whether that machine was ready and one instance's lifecycle,
+           explicitly "not the drawing" — the drawing lived in a window
+           this page had a button for. It is the pane now, with the window
+           kept as the detached container, so a person on this page is
+           looking at the machine rather than at a button that opens it
+           somewhere else. It is also the only module that owns a live
+           poll, and that poll deliberately keeps running while another
+           module is showing. */
         ModuleDescriptor(
             id: "mirror",
             title: "Mirror",
             symbol: "macwindow.on.rectangle",
-            summary: "Run Mirror against \(MachineNaming.simpleReference), "
-                + "and see if it is ready"
+            summary: "See and drive \(MachineNaming.simpleReference), "
+                + "here or in its own window"
         ),
         ModuleDescriptor(
             id: "console",
