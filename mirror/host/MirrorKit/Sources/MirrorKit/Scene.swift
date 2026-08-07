@@ -145,6 +145,23 @@ public struct Scene: Codable, Equatable, Sendable {
         /// control is a producer gap worth closing, an application-defined
         /// one is a control whose only evidence will ever be its drawing.
         public var definition: String?
+        /// The resource id of the control definition function the guest's
+        /// Resource Manager named, when `kind` could not be determined
+        /// anyway. Present only beside `knowledge == .unknown`, and it
+        /// separates two very different gaps: no id at all means the guest
+        /// could not even ask, while an id means the lookup worked and the
+        /// id was not enough.
+        ///
+        /// Ids 0 and 23 are the overwhelming case and are the classic and
+        /// Appearance button FAMILIES — push button, check box and radio
+        /// button behind one id, told apart only by a variation code that
+        /// cannot be read from outside the owning process. So most of an
+        /// OS 9 control panel's controls are `unknown` with `cdef: 0`.
+        ///
+        /// NEVER MAP THIS TO A KIND. `cdef: 0` is not a push button; it is
+        /// three possible controls with one number, and treating it as the
+        /// first of them is the exact defect this field records.
+        public var cdef: Int?
         public var action: String?
         public var state: String?
         public var value: String?
@@ -158,6 +175,7 @@ public struct Scene: Codable, Equatable, Sendable {
 
         public init(knowledge: Knowledge, kind: String? = nil,
                     definition: String? = nil,
+                    cdef: Int? = nil,
                     action: String? = nil, state: String? = nil,
                     value: String? = nil,
                     listCells: [ListCell]? = nil,
@@ -169,6 +187,7 @@ public struct Scene: Codable, Equatable, Sendable {
             self.knowledge = knowledge
             self.kind = kind
             self.definition = definition
+            self.cdef = cdef
             self.action = action
             self.state = state
             self.value = value
