@@ -351,6 +351,59 @@ scenes.
 | SimpleText | ✓ | ✓ | |
 | Finder — `Macintosh HD` folder | ✓ | ✓ | **not the Desktop**: `find_window` took the front Finder window and a folder window was open, so this row is not comparable with sweep C's Finder row |
 
+## STABILITY — a column sweeps B and C both left as `–`, now measured
+
+Method: **two full capture passes on one boot**, then each target compared
+**inside its own window rect only**. The whole screen is not the unit —
+the world behind a target legitimately differs between passes — and the
+guest and the render are reported separately, because a difference in the
+guest is the machine's and a difference the render has and the guest does
+not is ours.
+
+| target | guest, p1 vs p2 | render, r1 vs r2 |
+|---|---|---|
+| new-old-world | **0** / 373,500 | **0** |
+| appearance | **0** / 155,044 | **1**, worst 22/255, at (453, 297) |
+| memory | **0** / 113,600 | **0** |
+| extensions-manager | **1,064** / 162,450, worst 221 | **0** |
+| general-controls | **0** / 160,056 | **0** |
+| apple-system-profiler | **0** / 337,960 | **0** |
+| simpletext | 16 / 347,934, worst 255, at (8, 44)–(8, 59) | **16, the same 16** |
+| finder | **0** / 97,680 | **0** |
+| date-and-time | — | — (see below) |
+
+Six of nine are **pixel-identical in both halves** across two independent
+captures. That is a real result and it is the first time this project has
+one.
+
+Three rows carry information:
+
+- **appearance: the guest is identical and the render differs by exactly
+  ONE pixel.** Two captures of a window the machine drew identically,
+  composed to two different pictures. This is the unmerged `ImageRenderer`
+  fix again, and it is precisely the failure mode the spec's
+  "per rectangle, never a whole-window score" rule exists for — a
+  one-pixel difference in 155,044 is 99.9994% similar and completely
+  invisible to any similarity score.
+- **simpletext: the guest moved 16 pixels and the render moved the SAME
+  16 pixels**, a 16-row column at x=8 flipping full-swing. That is the
+  insertion caret blinking, and **the render tracked it exactly.** Scored
+  as a pass, and worth recording because it is the only case in the run
+  where the machine changed and the render followed.
+- **extensions-manager: the guest moved 1,064 pixels and the two renders
+  are byte-identical.** The machine's own list drew differently between
+  the passes and the composed render did not change at all. That is the
+  opposite of the appearance row and it is the more worrying direction:
+  **a render that is stable while the machine is not is not showing
+  something the machine did.** Not diagnosed here; posed as a finding.
+
+**date-and-time has no stability row, and why is the finding.** In pass 2
+the front `Date & Time` window is `Set Time Zone` at a different rect —
+the modal left open by pass 1 (see "the guest's `quit` is not a quit").
+So the two passes captured **two different windows under one label**, and
+the instrument said so rather than diffing them. A contaminated row that
+names its contamination is what sweep B's void was supposed to buy.
+
 ## Every target's pair, actually looked at
 
 Nine of nine, side by side, `pairs/<label>-pair.png` (guest cropped to the
