@@ -39,8 +39,14 @@ public enum Platinum {
     /// the *Gray Space* theme, one blue channel short for this one.
     public static let highlight = Color(rgb: PlatinumAccent.activeHighlight)
 
-    // Logical surface (the guest screen); scenes carry rects in this space.
-    public static let logicalSize = CGSize(width: 1024, height: 768)
+    /* NO logicalSize HERE. The logical surface IS the guest screen, and
+       the guest is the only thing that knows how big that is — it
+       measures `gdRect` and sends `scene.screen.w/h`. A theme constant
+       (this one said 1024×768 while the poller beside it said 800×600)
+       is a fourth opinion about somebody else's machine, and the render
+       it produces is letterboxed into a window sized from a different
+       opinion. `SceneRenderer.logicalSize` reads the scene, and answers
+       nil when no guest has said. */
 
     // Metrics (px in logical space).
     public static let menubarHeight: CGFloat = 20

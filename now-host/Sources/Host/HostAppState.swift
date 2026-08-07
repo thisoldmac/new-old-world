@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import MirrorKit
 
 @MainActor
 final class HostAppState: ObservableObject {
@@ -174,11 +175,31 @@ final class HostAppState: ObservableObject {
         }
         return "no Mac connected"
     }
+    /// **The guest's screen, or nothing.** The one place on this side that
+    /// answers the question, and it answers it from the guest's own
+    /// `scene.screen` — never from a constant. nil means `unknown`: no
+    /// scene has arrived, so nobody has measured it.
+    ///
+    /// Deliberately does not construct the Mirror, for the same reason
+    /// `bindMirrorMetrics` does not: asking what has been measured must
+    /// not create the measurer and then answer for it.
+    var guestScreenIfKnown: MirrorKit.Scene.ScreenSize? {
+        guard madeMirrorSource else { return nil }
+        return mirrorSource.scene?.screen.known
+    }
+
     private(set) lazy var chat: ChatModuleModel = {
         let model = ChatModuleModel(
             agentIntegration: agentIntegration,
             guestFiles: guestFiles,
-            agentActivity: agentActivity)
+            agentActivity: agentActivity,
+            guestScreen: { [weak self] in
+                await MainActor.run {
+                    self?.guestScreenIfKnown.flatMap {
+                        ChatSystemPrompt.Screen(w: $0.w, h: $0.h)
+                    }
+                }
+            })
         listener.chatService = model.wireService
         return model
     }()

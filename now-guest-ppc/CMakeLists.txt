@@ -76,6 +76,7 @@ add_application(now-guest-ppc
     src/workshop/confirm.c
     src/core/ot_carbon.c
     src/core/json.c
+    src/core/screen_bounds.c
     src/core/loopstat.c
     src/core/wire_sleep.c
     src/core/wirestat_cmd.c

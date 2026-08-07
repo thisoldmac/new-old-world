@@ -199,10 +199,36 @@ public struct Scene: Codable, Equatable, Sendable {
         }
     }
 
+    /// **The guest's screen, and the only place its size is stated.**
+    ///
+    /// One machine, one answer: the guest measures its own `gdRect` and
+    /// sends `scene.screen.w/h`, and every consumer reads it from here.
+    /// Nothing on this side may decide for itself what size the other
+    /// machine's screen is — four places once did (800×600 in the host
+    /// window, 800×600 in the poller, 1024×768 in the theme, 640×480 in
+    /// the chat prompt), and a wrong screen is not cosmetic: it decides
+    /// hit-test mapping, what "fit" means, and what a model is told it
+    /// is looking at.
+    ///
+    /// `unknown` is a state, not a missing value. It means the guest has
+    /// not said yet — never "assume something plausible". A caller that
+    /// cannot proceed without a size refuses and says so.
     public struct ScreenSize: Codable, Equatable, Sendable {
         public var w: Int
         public var h: Int
         public init(w: Int, h: Int) { self.w = w; self.h = h }
+
+        /// No guest has said. Distinct from a real screen, and the wire's
+        /// own encoding of absence — a scene with no `screen` object
+        /// decodes to zeroes.
+        public static let unknown = ScreenSize(w: 0, h: 0)
+
+        public var isKnown: Bool { w > 0 && h > 0 }
+
+        /// The size, or nil when no guest has said. The form a consumer
+        /// should reach for, because it cannot be used without deciding
+        /// what to do about `unknown`.
+        public var known: ScreenSize? { isKnown ? self : nil }
     }
 
     public struct AppRef: Codable, Equatable, Sendable {

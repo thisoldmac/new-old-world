@@ -12,6 +12,7 @@
 #include "files_browser_view.h"
 #include "files_share_view.h"
 #include "pump.h"
+#include "screen_bounds.h"
 #include "screenshots_module.h"
 #include "prefs.h"
 #include "wire.h"
@@ -242,13 +243,7 @@ static Boolean another_instance_is_running(void)
 
 static void compute_screen_bounds(void)
 {
-    RgnHandle desktop = GetGrayRgn();
-
-    if (desktop != NULL) {
-        GetRegionBounds(desktop, &g_screen_bounds);
-    } else {
-        SetRect(&g_screen_bounds, 0, 20, 800, 600);
-    }
+    now_screen_desktop(&g_screen_bounds);
 }
 
 /* Activation routing (activateEvt and the osEvt foreground switch —

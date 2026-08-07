@@ -7,13 +7,17 @@ import Foundation
 public struct ScenePoller {
     public let target: MirrorTarget
     public let wire: WireClient
-    /// Guest screen size — passed through into every scene.
+    /// Guest screen size — passed through into every scene. Starts
+    /// `unknown`, because at construction no guest has said: `detectScreen`
+    /// asks the machine. A poller that never detected publishes scenes
+    /// carrying `unknown`, which every consumer must handle, rather than a
+    /// plausible number nobody can tell from an answer.
     public var screen: Scene.ScreenSize
 
     private var seq = 0
 
     public init(target: MirrorTarget,
-                screen: Scene.ScreenSize = .init(w: 800, h: 600),
+                screen: Scene.ScreenSize = .unknown,
                 timeout: Double = 10.0) {
         self.target = target
         self.wire = WireClient(target: target, timeout: timeout)
@@ -24,7 +28,7 @@ public struct ScenePoller {
     /// the poller and the dispatcher must not each hold their own to the
     /// same worker, or the second is reset).
     public init(target: MirrorTarget, wire: WireClient,
-                screen: Scene.ScreenSize = .init(w: 800, h: 600)) {
+                screen: Scene.ScreenSize = .unknown) {
         self.target = target
         self.wire = wire
         self.screen = screen
@@ -32,8 +36,9 @@ public struct ScenePoller {
 
     /// Learn the guest's real screen size from the `video` verb (main
     /// device's `gdRect`), so the render surface matches the guest at any
-    /// resolution. Best-effort: leaves `screen` at its default if `video`
-    /// isn't in scope or fails. Call once before polling.
+    /// resolution. Best-effort: leaves `screen` at `.unknown` if `video`
+    /// isn't in scope or fails, and the returned value says so — a failed
+    /// detection must not read as a screen. Call once before polling.
     @discardableResult
     public mutating func detectScreen() -> Scene.ScreenSize {
         if let (result, _) = try? wire.request("video"),
@@ -435,9 +440,15 @@ public struct ScenePoller {
     /// The Finder's default disk layout: top-right, stacked downward. Used only
     /// for volumes the guest reported as unplaced — a real position, when we can
     /// get one, always wins.
+    ///
+    /// **An unknown screen has no right edge**, so nothing is placed: the
+    /// volumes come back exactly as the guest gave them, still unplaced.
+    /// Inventing a width here put icons at 800-minus-an-inset on a machine
+    /// nobody had measured, which reads as a position rather than a guess.
     static func placeVolumes(_ vols: [Scene.DesktopItem],
                              screen: Scene.ScreenSize) -> [Scene.DesktopItem] {
-        let right = screen.w > 0 ? screen.w : 800
+        guard let screen = screen.known else { return vols }
+        let right = screen.w
         var out: [Scene.DesktopItem] = []
         for (i, v) in vols.enumerated() where !v.invisible {
             var item = v
