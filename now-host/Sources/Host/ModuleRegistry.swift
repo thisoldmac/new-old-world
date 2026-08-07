@@ -38,10 +38,13 @@ struct ModuleRegistry: Sendable {
     ///
     /// The selected module is written to preferences by id, so renaming one
     /// silently retires whoever was last looking at it: their saved
-    /// selection stops resolving and the next launch drops them on
-    /// Screenshots with no explanation. A rename therefore leaves a
+    /// selection stops resolving and the next launch drops them on the
+    /// first module with no explanation. A rename therefore leaves a
     /// forwarding address here rather than only in the descriptor.
-    static let renamedIDs: [String: String] = ["agent": "mcp"]
+    static let renamedIDs: [String: String] = [
+        "agent": "mcp",
+        "screenshots": "screen",
+    ]
 
     /// The module a saved selection means today, following one rename.
     func resolvingRenames(id: String) -> ModuleDescriptor? {
@@ -68,8 +71,11 @@ struct ModuleRegistry: Sendable {
        something else is how the copy drifted in the first place. */
     static let standard = ModuleRegistry(modules: [
         ModuleDescriptor(
-            id: "screenshots",
-            title: "Screenshots",
+            /* Not "Screenshots": the page took a still picture when it was
+               named, and it now also carries the live stream and its
+               recording. One noun for the subject both of those are about. */
+            id: "screen",
+            title: "Screen",
             symbol: "camera.viewfinder",
             summary: "Capture, stream and save "
                 + "\(MachineNaming.possessive(nil)) screen"
@@ -104,7 +110,7 @@ struct ModuleRegistry: Sendable {
         /* Straight after Processes, because it answers the next question
            about the same subject: Processes is what is running, Mirror is
            what those programs have on screen. It sits above Console for the
-           same reason Screenshots does — both are ways of LOOKING at the
+           same reason Screen does — both are ways of LOOKING at the
            machine, and the pages that DO things to it come after. */
         ModuleDescriptor(
             id: "mirror",

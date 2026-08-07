@@ -47,15 +47,16 @@ enum GuestConnectionState: Equatable, Sendable {
     }
 
     /// What to call the machine on the other end, for anything a human
-    /// reads. It is the name that machine sent in its hello; before a
-    /// connection there is no name to use, so it degrades to a plain
-    /// description. Never "the guest" — guest and host are words for
-    /// the code, not for the person using it. And never "the Mac":
-    /// both of them are Macs.
-    var peerLabel: String {
-        if case .connected(let name, _) = self, !name.isEmpty { return name }
-        return "the classic Mac"
-    }
+    /// reads — the name it sent in its hello, or the plain reference when
+    /// there is none yet.
+    ///
+    /// The rule is not here: it is `MachineNaming`, which is the one place
+    /// that decides what an unnamed machine is called. This property is
+    /// where most of the app happens to ask, so it delegates rather than
+    /// keeping a fallback of its own — the old literal "the classic Mac"
+    /// was a second answer to a question that must only have one, and it
+    /// reached roughly two dozen call sites unchallenged.
+    var peerLabel: String { MachineNaming.sentence(self) }
 }
 
 /// Rolling numbers for the live stream — the tuning surface: watch fps
@@ -151,11 +152,12 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     /// What `stream.start` carries: the minimum interval between frames.
     var minIntervalMs: Int { maxFps > 0 ? 1000 / maxFps : 0 }
 
-    /// Whether the tuning row is disclosed; plumbing most sessions never
-    /// touch stays folded away.
-    @Published var showSettings: Bool {
-        didSet { defaults.set(showSettings, forKey: Keys.showSettings) }
-    }
+    /* The tuning knobs used to be a disclosure row on the page, and whether
+       it was open was PERSISTED. They are a sheet now, and a sheet's
+       presentation is not a preference: restoring it would open the app with
+       a modal already up over a page nobody had asked to configure. So it is
+       the view's own state, and `screenshots.showSettings` is left on disk
+       unread rather than migrated — there is nothing to carry over. */
 
     var tuning: GuestListener.CaptureTuning {
         .init(chunkKb: chunkKB, paceMs: paceMs, pack: compress,
@@ -260,7 +262,10 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     var streamOwnerNote: String? {
         switch streamOwner {
         case .agent:
-            return "An agent is streaming this Mac's screen. Capture is "
+            /* The screen an agent is watching is the DRIVEN machine's. This
+               said "this Mac's", which named the wrong one outright. */
+            return "An agent is streaming "
+                + "\(MachineNaming.possessive(connection)) screen. Capture is "
                 + "unavailable while it runs — the machine has one transfer "
                 + "lane. Stop Streaming ends it."
         case .guest:
@@ -288,7 +293,10 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     var latest: ScreenshotRecord? { history.first }
 
     private enum Keys {
-        static let showSettings = "screenshots.showSettings"
+        /* These keep their `screenshots.` prefix after the module was
+           renamed to Screen: the module id is what a person navigates by,
+           these are where their tuning lives, and renaming them would silently
+           reset every install's settings to defaults. */
         static let chunkKB = "screenshots.chunkKB"
         static let paceMs = "screenshots.paceMs"
         static let compress = "screenshots.compress"
@@ -351,7 +359,6 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
         let fps = defaults.integer(forKey: Keys.maxFps)
         self.maxFps = ScreenshotModuleModel.fpsChoices.contains(fps)
             ? fps : ScreenshotModuleModel.defaultMaxFps
-        self.showSettings = defaults.bool(forKey: Keys.showSettings)
         let stored = defaults.string(forKey: Keys.saveDirectory)
         self.saveDirectory = stored.map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .picturesDirectory,

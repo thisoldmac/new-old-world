@@ -11,7 +11,7 @@ final class HostAppStateTests: XCTestCase {
 
         let state = HostAppState(registry: .standard, defaults: defaults)
 
-        XCTAssertEqual(state.selectedModuleID, "screenshots")
+        XCTAssertEqual(state.selectedModuleID, "screen")
     }
 
     /// The footer is drawn apart from the list but selected the same way, so
@@ -34,7 +34,7 @@ final class HostAppStateTests: XCTestCase {
     ///
     /// The Agent page became the MCP page. A person who was last looking at
     /// it has `agent` in their preferences, and without the rename table
-    /// that resolves to nothing and they are silently moved to Screenshots
+    /// that resolves to nothing and they are silently moved to Screen
     /// — which reads as the app forgetting them rather than as a rename.
     func testAPersistedSelectionSurvivesTheModuleBeingRenamed() {
         let suite = "HostAppStateTests.\(UUID().uuidString)"

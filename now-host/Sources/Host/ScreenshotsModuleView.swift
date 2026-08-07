@@ -2,42 +2,45 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+/// The Screen page: one still capture, or the live stream, of the machine
+/// being driven.
+///
+/// The file keeps its old name (the projection rows in
+/// `CaptureScreenProjection` and `StreamScreenProjection` name it, and
+/// `HostFaceParityTests` reads it) — the MODULE is "Screen", because the
+/// page carries the stream and its recording as well as the stills.
+///
+/// Three bands, top to bottom, and the order is the point: what you ask for,
+/// what came back, and what happens to it. The controls that decide the
+/// NEXT capture live in the bottom band with the output because that is
+/// where a person is looking when they decide to change one.
 struct ScreenshotsModuleView: View {
     @ObservedObject var model: ScreenshotModuleModel
+
+    /* View state, not a preference: an app that reopened with its settings
+       sheet already up would be presenting a modal nobody asked for. */
+    @State private var showingSettings = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             header
             Divider()
-            if model.isStreaming, let frame = model.liveFrame {
-                preview(frame)
-                streamStatsRow
-            } else if model.isStreaming {
-                VStack(spacing: 10) {
-                    ProgressView()
-                    Text("Waiting for the first frame…")
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let shot = model.latest {
-                preview(shot)
-                statsRow(shot)
-                actionRow(shot)
-            } else {
-                emptyState
-            }
+            output
+            Divider()
+            outputRow
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
+        .sheet(isPresented: $showingSettings) { settingsSheet }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Screenshots")
+                    Text("Screen")
                         .font(.largeTitle.weight(.semibold))
                     Text("Capture \(model.connection.peerLabel)'s screen over the wire.")
                         .foregroundStyle(.secondary)
@@ -78,6 +81,10 @@ struct ScreenshotsModuleView: View {
                     Button("Cancel") { model.cancel() }
                 }
 
+                Spacer()
+
+                settingsButton
+
                 if let error = model.lastError {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
@@ -110,74 +117,141 @@ struct ScreenshotsModuleView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            settingsDisclosure
-            if model.showSettings {
-                tuningRow
-            }
-
             if model.isCapturing || model.progress != nil {
                 transferProgress
             }
             if let recording = model.recording {
                 recordingRow(recording)
             }
-            saveRow
         }
     }
 
-    private var settingsDisclosure: some View {
+    /// The middle band: whatever there is to look at, filling the space.
+    @ViewBuilder
+    private var output: some View {
+        if model.isStreaming, let frame = model.liveFrame {
+            preview(frame)
+            streamStatsRow
+        } else if model.isStreaming {
+            VStack(spacing: 10) {
+                ProgressView()
+                Text("Waiting for the first frame…")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let shot = model.latest {
+            preview(shot)
+            statsRow(shot)
+            actionRow(shot)
+        } else {
+            emptyState
+        }
+    }
+
+    // MARK: - Settings
+
+    /// The driven machine as the owner of something, at the head of a
+    /// sentence — hoisted because the call does not fit in a string
+    /// interpolation on one line.
+    private var drivenMachinePossessive: String {
+        MachineNaming.startingSentence(
+            MachineNaming.possessive(model.connection))
+    }
+
+    private var settingsButton: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                model.showSettings.toggle()
-            }
+            showingSettings = true
         } label: {
-            HStack(spacing: 5) {
-                Image(systemName: model.showSettings
-                      ? "chevron.down" : "chevron.right")
-                    .font(.caption.weight(.semibold))
-                Text("Settings")
-            }
-            .foregroundStyle(.secondary)
-            .font(.callout)
+            Label("Settings", systemImage: "slider.horizontal.3")
         }
-        .buttonStyle(.plain)
+        .help("How captures and streams cross the wire")
     }
 
-    /// The same knobs the guest's panel has; sent with every request and
-    /// stream, so the side that initiates decides.
-    private var tuningRow: some View {
-        HStack(spacing: 14) {
-            Picker("Depth", selection: $model.selectedDepth) {
-                ForEach(CaptureDepth.allCases) { depth in
-                    Text(depth.title).tag(depth)
+    /// The wire plumbing, and nothing else.
+    ///
+    /// Depth is NOT in here, deliberately: it is the one knob a person
+    /// changes to answer a question about the picture they are looking at
+    /// ("would this read better in colour?"), so it lives beside the picture.
+    /// What is left is how the bytes travel — chunking, pacing, the frame
+    /// ceiling and the three encodings — which is set once and forgotten.
+    private var settingsSheet: some View {
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    Picker("Chunk size", selection: $model.chunkKB) {
+                        ForEach([1, 2, 4, 8, 16, 32], id: \.self) { kb in
+                            Text("\(kb) K").tag(kb)
+                        }
+                    }
+                    Picker("Pacing", selection: $model.paceMs) {
+                        ForEach([0, 2, 5, 10, 20], id: \.self) { ms in
+                            Text(ms == 0 ? "None" : "\(ms) ms").tag(ms)
+                        }
+                    }
+                } header: {
+                    Text("Transfer")
+                } footer: {
+                    Text("Smaller chunks and a pause between them leave "
+                         + "\(MachineNaming.sentence(model.connection)) "
+                         + "responsive while it sends; larger ones finish "
+                         + "sooner.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    Picker("Frame ceiling", selection: $model.maxFps) {
+                        ForEach(ScreenshotModuleModel.fpsChoices,
+                                id: \.self) { fps in
+                            Text("\(fps) fps").tag(fps)
+                        }
+                    }
+                } header: {
+                    Text("Stream")
+                } footer: {
+                    /* A guard rail rather than a target — see maxFps. */
+                    Text("A ceiling, not a goal: this hardware captures "
+                         + "well below it. It exists to stop unchanged "
+                         + "frames flooding the wire.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    Toggle("Compress", isOn: $model.compress)
+                    Toggle("Predictive", isOn: $model.predictive)
+                    Toggle("Interlace", isOn: $model.interlace)
+                } header: {
+                    Text("Encoding")
+                } footer: {
+                    Text("Sent with every request, so the side that asks "
+                         + "decides. \(drivenMachinePossessive) own panel "
+                         + "governs only what it starts itself.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 130)
-            Picker("Chunk", selection: $model.chunkKB) {
-                ForEach([1, 2, 4, 8, 16, 32], id: \.self) { kb in
-                    Text("\(kb) K").tag(kb)
+            .formStyle(.grouped)
+            /* Locked while bytes are in flight for the same reason the old
+               inline row was: these travel WITH a request, and changing one
+               mid-transfer would describe a transfer that is not happening. */
+            .disabled(model.isCapturing || model.isStreaming)
+
+            Divider()
+            HStack {
+                if model.isCapturing || model.isStreaming {
+                    Label("Locked while a transfer is running",
+                          systemImage: "lock")
+                        .foregroundStyle(.secondary)
+                        .font(.callout)
                 }
+                Spacer()
+                Button("Done") { showingSettings = false }
+                    .keyboardShortcut(.defaultAction)
             }
-            .frame(width: 120)
-            Picker("Pacing", selection: $model.paceMs) {
-                ForEach([0, 2, 5, 10, 20], id: \.self) { ms in
-                    Text(ms == 0 ? "None" : "\(ms) ms").tag(ms)
-                }
-            }
-            .frame(width: 130)
-            Picker("Max fps", selection: $model.maxFps) {
-                ForEach(ScreenshotModuleModel.fpsChoices, id: \.self) { fps in
-                    Text("\(fps) fps").tag(fps)
-                }
-            }
-            .frame(width: 130)
-            Toggle("Compress", isOn: $model.compress)
-            Toggle("Predictive", isOn: $model.predictive)
-            Toggle("Interlace", isOn: $model.interlace)
+            .padding(16)
         }
-        .pickerStyle(.menu)
-        .font(.callout)
-        .disabled(model.isCapturing || model.isStreaming)
+        .frame(width: 460, height: 480)
     }
 
     /// A capture over 802.11b takes long enough that silence reads as a
@@ -205,9 +279,6 @@ struct ScreenshotsModuleView: View {
         }
     }
 
-    /// The landing pad is not the toggle's: screenshots the guest sends
-    /// always save to the folder, so the folder is always live. The toggle
-    /// only governs captures taken from this panel.
     /// The finished movie of the stream that just ended, already encoded:
     /// saving is a file move, declining deletes the temp.
     private func recordingRow(_ recording: StreamRecorder.Recording)
@@ -242,8 +313,37 @@ struct ScreenshotsModuleView: View {
         }
     }
 
-    private var saveRow: some View {
+    // MARK: - The output row
+
+    /// What becomes of the picture: the depth it arrives at, whether it is
+    /// kept and copied, and where it is kept.
+    ///
+    /// **Present and live before the first capture**, unchanged. Every
+    /// control here governs the NEXT capture rather than describing the last
+    /// one — depth is sent with the request, the two toggles decide what
+    /// happens when bytes land, and the folder is already the landing pad for
+    /// screenshots the driven machine pushes unasked, which arrive whether
+    /// this page has ever taken one or not. There is nothing here to grey out
+    /// for want of an image; the buttons that DO need one (Save as PNG…, Copy
+    /// to Clipboard) are in `actionRow`, above, which is simply absent until
+    /// there is a picture for them to act on.
+    private var outputRow: some View {
         HStack(spacing: 16) {
+            /* Left of the toggles, and out of the settings sheet: depth is
+               the knob a person reaches for while LOOKING at a capture —
+               "would this read better in colour?" — so it belongs with the
+               picture, not behind a modal. */
+            Picker("Depth", selection: $model.selectedDepth) {
+                ForEach(CaptureDepth.allCases) { depth in
+                    Text(depth.title).tag(depth)
+                }
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
+            .disabled(model.isCapturing || model.isStreaming)
+            .help("How many colours \(MachineNaming.sentence(model.connection)) "
+                  + "sends. Fewer means less to carry.")
+
             Toggle("Save captures", isOn: $model.autoSave)
             Toggle("Copy to clipboard", isOn: $model.autoCopy)
             Spacer()
@@ -258,6 +358,10 @@ struct ScreenshotsModuleView: View {
     /// The system's folder-choosing idiom (as in Safari's download
     /// location): a pop-up of the likely folders, with Other… falling
     /// through to the real open panel.
+    ///
+    /// The landing pad is not the toggle's: screenshots the driven machine
+    /// sends always save to the folder, so the folder is always live. The
+    /// toggle only governs captures taken from this panel.
     private var folderPicker: some View {
         Menu {
             ForEach(folderChoices, id: \.path) { url in
@@ -394,6 +498,8 @@ struct ScreenshotsModuleView: View {
         .font(.callout)
     }
 
+    /// What can be done with THIS picture. Absent without one — unlike the
+    /// output row below, every button here needs an image to act on.
     private func actionRow(_ shot: ScreenshotRecord) -> some View {
         HStack(spacing: 12) {
             Button("Save as PNG…") { save(shot) }
@@ -412,7 +518,7 @@ struct ScreenshotsModuleView: View {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 42))
                 .foregroundStyle(.secondary)
-            Text("No Screenshots Yet")
+            Text("Nothing Captured Yet")
                 .font(.title2.weight(.semibold))
             Text(model.connection.canCapture
                  ? "Press Capture to pull "

@@ -37,7 +37,7 @@ enum QuickCaptureOutcome: Equatable {
     }
 }
 
-/// Whether "Screenshot Guest" can run right now, and why not when it can't.
+/// Whether "Capture Screen" can run right now, and why not when it can't.
 /// Pure and separate from the models so the menu's validation hook and the
 /// tests agree on one rule instead of two drifting copies.
 struct QuickCaptureReadiness: Equatable {

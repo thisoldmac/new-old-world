@@ -127,7 +127,38 @@ final class ScreenshotModelTests: XCTestCase {
         model.connection = .connected(named: "PowerBook 1400")
         model.capture()
         // The listener holds no session, so it refuses immediately.
-        XCTAssertEqual(model.lastError, "No Mac is connected")
+        XCTAssertEqual(model.lastError,
+                       "No \(MachineNaming.commonNoun) is connected")
         XCTAssertTrue(model.history.isEmpty)
+    }
+
+    // MARK: - What the app calls the machine on the other end
+
+    /// **`peerLabel` keeps no fallback of its own.**
+    ///
+    /// It is where roughly two dozen call sites across the app ask what to
+    /// call the driven machine, and it used to answer "the classic Mac" —
+    /// a second answer to a question `MachineNaming` already owns, which is
+    /// how the copy came to name that machine four different ways. Nothing
+    /// in the suite noticed when the literal was put back: this is the
+    /// guard that does.
+    func testPeerLabelDefersToMachineNamingRatherThanAFallbackOfItsOwn() {
+        for state: GuestConnectionState in [.disconnected, .connecting] {
+            XCTAssertEqual(state.peerLabel, MachineNaming.simpleReference,
+                           "\(state) must read through MachineNaming")
+            XCTAssertFalse(state.peerLabel.lowercased().contains("classic"),
+                           "\"classic\" is not one of this app's words for "
+                           + "a machine")
+        }
+        // A machine that has said its name is called by it, still.
+        XCTAssertEqual(GuestConnectionState.connected(named: "Zulu").peerLabel,
+                       "Zulu")
+        /* The placeholder the host writes into its own registry when a
+           machine says nothing about itself reaches display code as an
+           ordinary name — and must not be shown as one. Only MachineNaming
+           knows that, which is the second reason not to answer here. */
+        XCTAssertEqual(
+            GuestConnectionState.connected(named: Session.unnamedGuest).peerLabel,
+            MachineNaming.simpleReference)
     }
 }

@@ -135,13 +135,13 @@ final class HostAppState: ObservableObject {
     private(set) lazy var software = SoftwareModel(listener: listener)
     private(set) lazy var processes: ProcessesModel = {
         let model = ProcessesModel(listener: listener)
-        // "Screenshot App" shows the Screenshots page and asks for a
+        // "Screenshot App" shows the Screen page and asks for a
         // window-cropped capture of the process. The guest owns the timing
         // (front, let it repaint, crop, deliver — process.shot), so there
         // is no delay to fake here.
         model.onScreenshotApp = { [weak self] psnHigh, psnLow in
             guard let self else { return }
-            self.selectedModuleID = "screenshots"
+            self.selectedModuleID = "screen"
             self.screenshots.captureProcess(psnHigh: psnHigh, psnLow: psnLow)
         }
         return model

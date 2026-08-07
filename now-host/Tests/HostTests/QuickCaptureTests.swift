@@ -88,7 +88,10 @@ final class QuickCaptureTests: XCTestCase {
         var outcomes: [QuickCaptureOutcome] = []
         command.report = { outcomes.append($0) }
         command.run()
-        XCTAssertEqual(outcomes, [.failed("No Mac is connected")])
+        // The listener's own refusal, not QuickCapture's: the badge said
+        // connected, so the readiness rule let the command through.
+        XCTAssertEqual(outcomes, [.failed(
+            "No \(MachineNaming.commonNoun) is connected")])
     }
 
     // MARK: - Outcome copy
@@ -139,7 +142,7 @@ final class QuickCaptureTests: XCTestCase {
         let delegate = AppDelegate()
         let menu = delegate.makeStatusMenu()
         let shoot = try XCTUnwrap(menu.items.first {
-            $0.title == "Screenshot Guest"
+            $0.title == "Capture Screen"
         }, "the status menu must offer the command")
         XCTAssertEqual(shoot.keyEquivalent, "s")
         XCTAssertTrue(shoot.target === delegate)
