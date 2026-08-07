@@ -343,71 +343,203 @@ spec's own front-or-cycle rule, which is the point.
 | `baseComplete` | false | false |
 | `sequence` | 243 | 285 |
 
-**Verdict: no decay observed.** Nothing went stale, no window vanished, no
-entity lost freshness, and the host kept walking (sequence +42) the whole
-time unprompted.
+**Verdict: no decay in the STRUCTURE.** Nothing went stale, no window
+vanished, no entity lost freshness, and the host kept walking (sequence
++42, `walk: full`, `outcome: ok`, 180 elements every cycle) the whole time
+unprompted.
 
-**But one asymmetry is worth handing to whoever owns the decay question:
-`sceneGeneration` advanced 2 → 5 while `contentGeneration` never moved off
-2.** The structure kept regenerating; the content did not, once. If a
-renderer composites a fresh scene against a content generation that never
-renews, an interior could degrade while the frame around it stays current —
-which is the *shape* of what Michelle described (group boxes lost, the date
-field a stipple, labels truncated mid-word, chrome intact). **This is
-offered as a baseline observation for `claude/019-interior-decay`, not as a
-mechanism** — I did not chase it, and this sweep did not reproduce the
-decay itself.
+### How I know this ran against an arming host — and what that does NOT cover
 
-**Two limits, stated rather than assumed.** This reads the host's published
-snapshot **metadata**, not drawn pixels, so a decay visible only in pixels
-is invisible to it. And it is a **substitute measurement**: the right
+`fidelity-live.py` and `mirror-corpus` both read the live host, which arms
+P3 itself. **Neither tool CHECKS that it did**, so a run against a host
+that never armed would report every window stably empty and read as a
+stability result, with nothing in the run saying which. This measurement
+came through that path, so it owes the evidence rather than the assumption.
+
+**The evidence: `contentGeneration` was non-zero and observed to
+increment.** It read `1` on the first status after `mirror_open`, `2` by
+the metrics read minutes later, and `2` for all 14 REST samples. A host
+that never armed content would have no generations to count. Together with
+`walk: full` / `outcome: ok` on every cycle, that is positive evidence the
+host was arming and draining.
+
+**But it does not carry the weight I first put on it, and this is the
+important correction.** `contentGeneration` frozen at **2** for the whole
+120 s, while `sceneGeneration` advanced **2 → 5**, is equally consistent
+with two opposite readings:
+
+- **the content is stable** — nothing changed, so nothing regenerated; or
+- **the content stopped arming** — renewal lapsed and the structure kept
+  going without it.
+
+**My instrument cannot separate those, and they are opposite
+conclusions.** So "no decay" is sound for the structure and **unproven for
+the content** — which is precisely the half the decay question is about. I
+should not have written the flat verdict.
+
+The asymmetry itself remains the thing worth handing on: if a renderer
+composites a fresh scene against a content generation that never renews, an
+interior could degrade while the frame around it stays current — the
+*shape* of what Michelle described (group boxes lost, the date field a
+stipple, labels truncated mid-word, chrome intact). **Offered to
+`claude/019-interior-decay` as a baseline observation, not a mechanism.**
+
+**Three limits, stated rather than assumed.** This reads the host's
+published snapshot **metadata**, not drawn pixels, so a decay visible only
+in pixels is invisible to it. It is a **substitute measurement**: the right
 instrument is `fidelity-live.py --idle`, which could not run for the reason
-in R3 above. **`snapshotsMissed` is therefore unavailable for this run** —
-the figure the coordinator asked to sit beside every flicker number does
-not exist here, because no flicker number does.
+in R3 above, so **`snapshotsMissed` does not exist for this run** — no
+flicker number does. And **the VM is now down and the lane reclaimed**, so
+none of this can be re-measured without a fresh boot.
+
+**A gap worth closing before sweep D**: `fidelity-live.py` and
+`mirror-corpus` should **assert** that content is arming — a
+`contentGeneration` of 0, or one that never advances across a provoked
+redraw, should fail the run rather than read as stability. That is the same
+rule as `requireTheBuildUnderTest()`, applied to the plane instead of the
+build.
 
 ---
 
-## Hatching, attributed to its instrument — the open question, retired
+## Hatching, attributed to its instrument — re-derived, and it moved
 
-The accounting flagged this as the largest thing it could not determine.
-It is now determined: **16 STANDS · 3 ARTEFACT · 2 UNATTRIBUTABLE.**
+**A retraction first, because the provenance matters more than the
+numbers.** An earlier revision of this document reported this section as
+**"16 STANDS · 3 ARTEFACT · 2 UNATTRIBUTABLE"**. That count came from a
+delegated agent and **I published it without verifying it**. It is
+withdrawn. What follows I derived myself, from the artefact stores on disk
+and from the source, and every claim below names the evidence that
+produces it.
 
-**The premise needed one correction first, and it inverts the expected
-answer.** There are *two* hatches, not one:
+The count is withdrawn rather than replaced, because the honest unit here
+is **the store, not the observation**: a store either could or could not
+have carried an interior, and that is checkable. Counting individual
+sentences across five documents is what produced an unverifiable number
+the first time.
 
-- **"Guest content not reported"** (whole interior, `SceneRenderer.swift:807`)
-  fires when a window carries no content at all — this is the one an
-  unarmed P3 produces.
-- **"Bitmap unavailable"** (per rectangle, `DisplayReplay.swift:824`) fires
-  only when P3 **was armed and drained** and the drain held a blit the
-  replay could not reproduce. **An unarmed capture cannot emit it**, because
-  there is no drain to find a blit in.
-- **"Visual unavailable"** (per DITL row) is the semantic plane and is
-  P3-independent entirely.
+### The discriminator I used first was unsound
 
-So **every "Bitmap unavailable" observation in the corpus is positive proof
-that P3 was armed.** Sweep A's most dramatic result — the Finder's whole
-interior as one hatch — carries that caption, is attributable to
-`fidelity-sweep.py`, and **STANDS**; its mechanism was independently
-re-derived on a different rig (22 records → 219, `blitsrc` appearing) and
-fixed.
+`<label>-guest.ppm` is written by **both** tools — `fidelity-sweep.py:293`
+**and** `local-pair-capture.py:217`. The `.ppm` shape separates nothing.
+The discriminators that hold, verified in the source:
 
-The three artefacts are all the *quiet* hatch, all from the
-`local-pair-capture.py` / direct-wire-walk path, and — importantly —
-**all three already say so in their own text**. Nobody has to retract a
-finding. The drive loop is also an **arming** instrument: the host app
-issues `qdtrace start` per front window on every structural cycle with a
-renewal timer (`NOWMirrorContentPlane.prepare`), so drive-loop hatching
-stands, with the scope caveat that it arms the **front** window only —
-which is why a *background* window reading "Guest content not reported" is
-the built behaviour, not a defect.
+| signature | written by | line |
+|---|---|---|
+| `manifest.json` | **pair capture only** | `local-pair-capture.py:236` |
+| `<slug>-guest.png` | **pair capture only** | `local-pair-capture.py:219` |
+| `sweep-summary.json`, `LIMITS.md` | **sweep only** | `fidelity-sweep.py:587,589` |
+| `<label>.json` (the drain) | **sweep only** | — pair capture never writes one |
+
+### And arming was necessary but not sufficient
+
+`SceneBuilder.normalizeWindows` sets **`display: nil` unconditionally**
+(`mirror/host/MirrorKit/Sources/MirrorKit/SceneBuilder.swift:285` — the
+sole occurrence of `display` in that function, with no branch). **No scene
+envelope from any capture has ever carried content ops.** The interior
+arrives only on a *second* artifact, the `qdtrace` drain.
+
+So the question "was P3 armed" is the wrong one to ask of a stored
+capture. The answerable question is **"did this capture write a drain"** —
+and if it did not, the interior was never on disk, whatever the guest was
+doing.
+
+### What the stores actually are
+
+| store | `manifest.json` | `-guest.png` | drains (`<label>.json`) | verdict |
+|---|:-:|:-:|:-:|---|
+| `019-integration` (**round 2**) | 1 | 6 | **0** | **PAIR CAPTURE** |
+| `019-integration-3` (**round 3**) | 1 | 6 | **0** | **PAIR CAPTURE** |
+| `sweep-2026-08-07-a` | 0 | 0 | present (`p2/*/*.json`) | **SWEEP** |
+| `sweep-2026-08-07-b` | 0 | 3 (`b_*`, hand-made crops) | present (`p1/*.json`, 747 KB+) | **SWEEP** |
+| `sweep-2026-08-07-c` (this one) | 0 | 0 | present (`p1/*.json`) | **SWEEP** |
+
+Both integration stores contain **only** `<slug>-scene.json` and
+`manifest.json`. **Zero drains.** Round 3's own method note confirms the
+path independently: *"host render via `MirrorApp --render-scene` over the
+same envelope"* — and the envelope is exactly the artifact that carries
+`display: nil`.
+
+**So rounds 2 and 3 rendered from a document that structurally cannot hold
+an interior.** Every empty-interior and missing-chrome observation in those
+two rounds is an instrument artefact, by construction, independent of
+anything the guest or the renderer was doing.
+
+### What moved: the retroactive correction
+
+**Four of round 3's six rows already self-declared it** — that round says
+plainly *"four of the six 'unchanged' verdicts are one unarmed plane
+rather than four defects."* Those need no retraction and they are to its
+credit.
+
+**The row that did not self-declare is the one that moved.** Round 3's
+Date & Time row — *"Still **no group boxes at all**… Text fields are empty
+grey slabs"* — was attributed to a **different, semantic** cause: the
+controls *"arrive with correct rects and correct titles and no kind, so
+there is nothing to draw them as."* It was listed as a separate finding
+from the four content rows, and that explanation then propagated as
+durable prose in four places:
+
+- `docs/open-issues.md:228` — *"This is why the panel has had no group
+  boxes, no static text and no field values in **both** rounds"*
+- `docs/open-issues.md:631` — *"**This is also why Date & Time renders with
+  no group boxes.**"*
+- `docs/open-issues.md:1123` — *"**Date & Time has no group boxes.**… render
+  as nothing at all"*
+- `docs/render-composition.md:299` — *"which is why that panel has had no
+  group boxes **in any sweep**"*
+
+**Sweep C renders Date & Time's five group boxes correctly**, with frames
+breaking cleanly around their labels, its check boxes and radios drawn, and
+its text fields carrying values (`pairs/date-and-time-pair.png`). So the
+appearance is gone.
+
+**But this sweep cannot say which cause was the real one, and neither
+could round 3.** Two things changed between them: the drain arrived, *and*
+the semantic tie-break was fixed (`semanticOutranks`, replacing the broken
+`knowledge == .known` test — `render-composition.md:295`). My capture has
+both. The coordinator's mutation control is the experiment that
+discriminates: on a tree whose renderer draws the panel correctly,
+disabling one arm reproduces round 3's LOOK almost exactly — armed 3917
+drain records across 9 op families, control **0** — **and it lands as the
+quiet hatch, not "Bitmap unavailable"**.
+
+So the precise correction is **not** "the semantic defect was fake". That
+defect has independent evidence — a named code path, a broken comparison,
+and a fix. It is that **the pixel evidence offered for it could not have
+falsified it.** A render taken over an envelope with `display: nil` shows
+no group boxes whatever the semantics do, so citing those renders as
+*"in both rounds"* and *"in any sweep"* is an inference the artifact cannot
+support. **Those four sentences should be corrected to cite the code path
+and the mutation control, not the round-2/3 renders.**
+
+### The premise inversion, verified rather than inferred
+
+There are *three* hatches, and I checked each string myself:
+
+- **"Guest content not reported"** — `SceneRenderer.swift:814`. Whole
+  interior. **This is the one an absent drain produces**, and it is what
+  the mutation control emitted.
+- **"Bitmap unavailable"** — `DisplayReplay.swift:835`. Per rectangle,
+  inside the *display replay*. Since `display: nil` guarantees display ops
+  reach the renderer **only** via a drain, `DisplayReplay` cannot run
+  without one. **So this caption is positive proof the capture had a
+  drain.**
+- **"Visual unavailable"** — `SceneRenderer.swift:1920/1941`. The semantic
+  plane, drain-independent entirely.
+
+**Sweep A's most dramatic result — the Finder's whole interior as one
+hatch — STANDS**: sweep A is a sweep, it has drains, and its mechanism was
+independently re-derived and fixed.
+
+The coordinator reports the signature held under a controlled experiment
+rather than as an inference, which is a stronger footing than this sweep
+could give it alone.
 
 **One documentation defect found, of the class AGENTS.md warns about**:
 sweep B's standing-checks table asserts *"no 'Bitmap unavailable' hatch
 anywhere in this sweep"* while its own free-text callouts report Monitors'
 *"interior a hatch"*. A two-place enumeration disagreeing with itself.
-**Sweep B is not edited** — this is recorded here, forward.
+**Sweep B is not edited** — recorded here, forward.
 
 ---
 
@@ -596,11 +728,20 @@ In order, by what a person would notice first.
    where the value is present and only the drawing is missing.
 7. **Make `role: edit` and the act plane agree**, or say why an `edit`
    control is not a text element.
-8. **Fix the sweep tool's hygiene** (still open from sweep B), or make
-   `--no-hygiene --quit-after` the documented default now that version 3
-   requires a cleanup that cannot act.
-9. **`launch` should serve control panels**, or the asymmetry should finally
-   be declared in `docs/command-parity.md`. Sweep B asked; nothing moved.
+8. **Correct the four sentences that cite round-2/3 renders as evidence for
+   the `kind: null` group-box defect** (`open-issues.md:228`, `:631`,
+   `:1123`, `render-composition.md:299`). The defect has independent
+   evidence; those renders are not it, because they were taken over an
+   envelope that carries `display: nil`.
+9. **Make the live-reading instruments assert that content is arming.**
+   `fidelity-live.py` and `mirror-corpus` both depend on the host arming
+   P3 and neither checks, so an unarmed host reads as a stability result.
+10. **Fix the sweep tool's hygiene** (still open from sweep B), or make
+    `--no-hygiene --quit-after` the documented default now that version 3
+    requires a cleanup that cannot act.
+11. **`launch` should serve control panels**, or the asymmetry should
+    finally be declared in `docs/command-parity.md`. Sweep B asked;
+    nothing moved.
 
 And two things that should be **left alone**:
 

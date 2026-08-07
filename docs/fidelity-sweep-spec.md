@@ -376,6 +376,52 @@ So, standing, from version 3:
 A sweep that never stops driving has answered every question except the
 one a person asks by walking away from the machine and coming back.
 
+## An observation is only as good as the instrument that took it
+
+**Before believing a render finding — including an old one — establish
+which instrument produced the capture.** Two artifacts of this project
+make that non-obvious, and both have already produced wrong conclusions:
+
+- **`SceneBuilder.normalizeWindows` sets `display: nil` unconditionally**
+  (`SceneBuilder.swift:285`). **No scene envelope has ever carried content
+  ops.** An interior arrives only on a second artifact, a `qdtrace` drain.
+  So a render taken over an envelope alone shows an empty interior *no
+  matter what the guest or the renderer was doing*, and no amount of
+  arming changes what is on disk.
+- **The obvious fingerprint is the wrong one.** `<label>-guest.ppm` is
+  written by **both** `fidelity-sweep.py` and `local-pair-capture.py`, so
+  it separates nothing.
+
+**Fingerprint a stored capture by these, and record which in the report:**
+
+| signature | means |
+|---|---|
+| `manifest.json`, `<slug>-guest.png` | **pair capture** — no drain, interiors artefactual |
+| `sweep-summary.json`, `LIMITS.md`, `<label>.json` | **sweep** — drain present, interiors real |
+
+**And the hatch caption tells you which side it came from**, which is
+often faster than finding the store:
+
+- **"Guest content not reported"** (`SceneRenderer.swift:814`) — whole
+  interior, and what an **absent drain** produces. Suspect the instrument.
+- **"Bitmap unavailable"** (`DisplayReplay.swift:835`) — per rectangle,
+  emitted from the display replay, which cannot run without display ops.
+  **Positive proof the capture HAD a drain.** Suspect the product.
+- **"Visual unavailable"** — the semantic plane, drain-independent.
+
+**A live-reading instrument must ASSERT that the plane armed.**
+`fidelity-live.py` and `mirror-corpus` read the live host, which arms P3
+itself — and neither checks. A run against a host that never armed reports
+every window stably empty and **reads as a stability result**. Treat a
+`contentGeneration` of 0, or one that never advances across a provoked
+redraw, as a failed run. Same rule as `requireTheBuildUnderTest()`,
+applied to the plane instead of the build.
+
+**And a count you did not derive is not evidence.** Sweep C published an
+attribution table taken from a delegated agent without checking it, and
+had to withdraw it. Whoever signs the report derives the number, or the
+number does not go in the report.
+
 ## The guest's pixels are the truth — and how much to check
 
 Michelle, on the dose:
@@ -496,6 +542,7 @@ away the only thing this axis was added to capture: **which step**.
 | 1 | inside plan 018 | *Is this horribly broken?* Targets only. |
 | 2 | 2026-08-07 | Seams, states, the standing checks, per-rectangle pixel comparison, the two honesty rules (agreement with the machine; zero is a pass). |
 | 3 | 2026-08-07 | **Axis 4, interactions**: sequences, state changes confirmed where visible, refusals as a posed class with the false-negative row, per-step timing. Plus the **REST** measurement, an **INTERACTION** score column, hygiene promoted into rig discipline, and the unposeable menu-refusal check struck with its record kept. |
+| 3.1 | 2026-08-07 | **"An observation is only as good as the instrument that took it"** — the capture fingerprints, the three hatch captions and what each implicates, the rule that a live-reading instrument must assert the plane armed, and the rule that a count you did not derive is not evidence. Added after sweep C withdrew an attribution table it had not checked. |
 
 **A version bump makes rows incomparable, and that is fine when
 declared.** Say per row where the method changed.
