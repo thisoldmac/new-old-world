@@ -53,7 +53,7 @@ final class MirrorRunControl: ObservableObject {
     private var retry: Task<Void, Never>?
     private var runningMirror: AnyCancellable?
 
-    init(source: NOWMirrorSource, defaults: UserDefaults = .standard) {
+    init(source: NOWMirrorSource, defaults: UserDefaults = ProductIdentity.defaults) {
         self.source = source
         self.defaults = defaults
         wantsRunning = defaults.bool(forKey: Self.wantsRunningKey)

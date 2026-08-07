@@ -288,7 +288,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
 
     init(
         listener: GuestListener,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = ProductIdentity.defaults,
         artifactApprover: AgentIntegrationHostAdapter? = nil
     ) {
         self.listener = listener

@@ -17,7 +17,7 @@ final class HostShare {
     private let defaults: UserDefaults
     private static let key = "files.hostShareDirectory"
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ProductIdentity.defaults) {
         self.defaults = defaults
     }
 

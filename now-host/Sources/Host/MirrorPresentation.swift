@@ -112,7 +112,7 @@ final class MirrorPresentation: ObservableObject {
     private static let inspectorKey = "mirrorInspectorShown"
     private static let eventsKey = "mirrorEventsShown"
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ProductIdentity.defaults) {
         self.defaults = defaults
         isDetached = defaults.bool(forKey: Self.detachedKey)
         zoom = Self.sanitised(defaults.string(forKey: Self.zoomKey))

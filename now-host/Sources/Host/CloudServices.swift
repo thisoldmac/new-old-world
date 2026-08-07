@@ -235,7 +235,7 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
         set { defaults.set(newValue.rawValue, forKey: Self.downloadSizeKey) }
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ProductIdentity.defaults) {
         self.defaults = defaults
         super.init()
     }
@@ -690,7 +690,7 @@ final class ContactsCloudProvider: CloudProvider {
     private let defaults: UserDefaults
     private let store = CNContactStore()
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ProductIdentity.defaults) {
         self.defaults = defaults
     }
 

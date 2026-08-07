@@ -32,5 +32,40 @@ enum ProductIdentity {
         return "\(basePreferencesSuite).\(suffix)"
     }
 
+    /// **The defaults store for this instance's host state — every part of
+    /// it, not just the settings suite.**
+    ///
+    /// `preferencesSuite` above scopes exactly four call sites:
+    /// `SettingsModel`, `HostAppState`, `App` and `ChatModuleModel`.
+    /// Everything else in this application defaulted to
+    /// `UserDefaults.standard`, which is the app's own bundle-id domain —
+    /// **one store shared by every host copy running on the Mac**. So a
+    /// run launched with `NOW_PREFS_SUFFIX` had its listening port
+    /// isolated and its Mirror controls, file locations, share directory,
+    /// cloud settings, sidebar and screenshot settings still pointed at
+    /// the desk's real ones, writing into them while a human's session was
+    /// open. `mirror.appPath`, `mirror.qmpSocket` and
+    /// `mirror.forwardedAgentPort` are in that shared domain, and they are
+    /// exactly the settings that decide what a Mirror is looking at.
+    ///
+    /// Found on 2026-08-07 while establishing whether an agent lane had
+    /// reached a human's running app. It had not — the wire and the agent
+    /// socket were both properly isolated, and each guest was paired with
+    /// its own host throughout. But the isolation a lane was relying on
+    /// was much narrower than its name suggested, and nothing said so.
+    ///
+    /// Opt-in and env-only, exactly like `preferencesSuite`: with no
+    /// suffix this IS `.standard`, so a shipped launch behaves as it
+    /// always did and no existing preference moves.
+    static var defaults: UserDefaults {
+        guard let suffix = ProcessInfo.processInfo
+                .environment["NOW_PREFS_SUFFIX"],
+              !suffix.isEmpty,
+              let suite = UserDefaults(
+                suiteName: "\(bundleIdentifier).\(suffix)")
+        else { return .standard }
+        return suite
+    }
+
     static let windowFrameName = "now-main-window"
 }

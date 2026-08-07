@@ -342,7 +342,7 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     static let defaultMaxFps = 15
 
     init(listener: GuestListener,
-         defaults: UserDefaults = .standard,
+         defaults: UserDefaults = ProductIdentity.defaults,
          capabilities: GuestCapabilityRecord = .shared) {
         self.listener = listener
         self.capabilities = capabilities
