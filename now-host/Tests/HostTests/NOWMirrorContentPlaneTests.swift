@@ -894,4 +894,69 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         XCTAssertNil(update.scene.windows[1].display)
         XCTAssertTrue(update.sentence.contains("named no window"))
     }
+
+    // MARK: - Whether the plane ever LOOKED at a window (plan 019 slice C)
+
+    /// P3 is a one-window spotlight, so most windows in any real scene carry
+    /// no interior — and until this stamp existed, a window the host never
+    /// armed reached the renderer identical to one it armed and found empty.
+    /// Both drew "Guest content not reported", which is a claim about the
+    /// guest that was true of only one of them.
+    func testAWindowTheHostNeverArmedIsMarkedNotAttempted() throws {
+        let model = plane()
+        var value = try scene(address: 0x1000)
+        XCTAssertGreaterThan(value.windows.count, 1)
+        value.windows[1].addr = 0x2000
+
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[],"nextCursor":0,"records":0}
+        """), to: value)
+
+        XCTAssertEqual(update.scene.windows[0].contentPlane, .notAttempted)
+        XCTAssertEqual(update.scene.windows[1].contentPlane, .notAttempted)
+    }
+
+    /// The distinction the whole stamp exists for: armed and empty is an
+    /// ANSWER, and must not read as never-asked. Recorded on the request, so
+    /// a window that drew nothing after being armed still says `armed`.
+    func testAnArmedWindowThatDrewNothingStillReadsArmed() throws {
+        let model = plane()
+        var value = try scene(address: 0x1000)
+        value.windows[1].addr = 0x2000
+        model.attempted.insert("\(value.windows[0].psn):4096")   // 0x1000
+
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[],"nextCursor":0,"records":0}
+        """), to: value)
+
+        XCTAssertNil(update.scene.windows[0].display,
+                     "armed and empty is the case under test")
+        XCTAssertEqual(update.scene.windows[0].contentPlane, .armed)
+        XCTAssertEqual(update.scene.windows[1].contentPlane, .notAttempted,
+                       "the arm is per exact window, never per process")
+    }
+
+    /// A window with no exact guest address cannot be armed at all, so
+    /// NEITHER answer is available and the stamp stays nil rather than
+    /// picking one. `qdtrace start` refuses an all-windows arm by name.
+    func testAWindowWithNoGuestAddressCarriesNoAttentionStampAtAll() throws {
+        let model = plane()
+        var value = try scene(address: 0x1000)
+        value.windows[1].addr = nil
+
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[],"nextCursor":0,"records":0}
+        """), to: value)
+
+        XCTAssertNil(update.scene.windows[1].contentPlane)
+    }
+
+    /// A different guest is a different machine; "we asked about window
+    /// 0x1000" says nothing about the one that replaces it.
+    func testGuestChangeForgetsWhatThisHostHadAsked() throws {
+        let model = plane()
+        model.attempted.insert("0.29949953:4096")
+        model.guestChanged()
+        XCTAssertTrue(model.attempted.isEmpty)
+    }
 }

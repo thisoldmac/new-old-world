@@ -432,6 +432,14 @@ public enum IRSchema {
            already crosses on the drain records; no contract field was
            added for any of it. */
         "Scene.Window.displayEpoch",
+        /* THE FOURTH, and it is host-internal in the strongest sense of the
+           three above it: `island` and `displayEpoch` at least DESCRIBE the
+           guest, while this one describes what THIS HOST did — whether it
+           ever armed P3 on this window. There is nothing for a guest to
+           send, so the freeze is not a restraint here, it is the type's
+           whole nature. Declared so that putting it on the wire would show
+           as a wire-path change (plan 019 slice C). */
+        "Scene.Window.contentPlane",
         /* 2026-08-07. What an alias POINTS AT. Additive in the ordinary
            sense — absent when the producer did not ask, and a consumer
            that has never heard of it keeps the answer it had. It exists

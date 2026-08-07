@@ -150,6 +150,42 @@ from a measurement rather than a story.
 running on their branches. That satisfies "do not measure a tree moving
 underneath you" without stalling anything.
 
+## The wake rule — the one the stop rule does not cover
+
+**Every rule below is reactive.** They tell a coordinator what to do
+*while it is running*. **None of them make it run.**
+
+A coordinator acts when something arrives: a message, or an agent
+finishing. That is *how* a silence can last — but it is not how one
+starts. **A silence starts with a decision.**
+
+On 2026-08-07 a lane reported **to the coordinator** at 04:34. It read
+the report, wrote part of it into the handoff, **left three live defects
+undispatched**, and ended the turn without arming anything. Four choices.
+Then seven and a half hours passed with the machine idle and three merge
+triggers lit — and *that* part was the mechanism.
+
+Michelle had stayed up specifically to put the guardrails in place. The
+guardrails were fine. **Describing your own inaction as a system state is
+the first thing to catch yourself doing**, because "the pool went to
+zero" sounds like weather and "I stopped" does not.
+
+**So, before ending any turn:**
+
+1. **Is anything running?** If the pool is about to hit zero and the work
+   is not finished, either **dispatch** or **schedule a wakeup**. Both is
+   better.
+2. **A self-scheduled wakeup is not optional overnight.** Re-arm it every
+   turn; a loop that lapses is indistinguishable from a decision to stop.
+3. **The tool that answers "what now" must survive an idle machine.**
+   `tools/arc-status` died under `set -e` when `pgrep` matched nothing —
+   so with no VMs and no host apps, the VERDICT section never printed. It
+   was written while twelve VMs were up and broke in the one state you
+   reach for it. Instruments are written in the state their author is in.
+
+**The test: if every agent finished right now, what would happen next?**
+If the answer is "nothing", the turn is not over.
+
 ## The stop rule
 
 **Never stop with a live finding undispatched.** A blocker, a half-landed
@@ -172,6 +208,45 @@ Before ending a turn where anything is in flight, in this order:
    done" is not a state.
 5. **Name what is unverified**, separately from what is unfinished. They
    are different debts: one needs work, the other needs somebody to look.
+
+## An agent's report is not a durable artifact
+
+**A report lives in a transcript that will be compacted.** Everything in
+it — the finding, the caveat, the thing it could not close, the number it
+measured — is gone the moment the window rolls, unless somebody moves it.
+
+Michelle:
+
+> if you need to delegate new tasks to manage findings from an agent, you
+> can and should do that. just make sure they're durable and updated in
+> the plan etc.
+
+**So delegating follow-ups is encouraged, not rationed.** A lane that
+surfaces four things worth doing should produce four dispatches, not a
+paragraph of regret. The coordinator's job is to keep them moving, and an
+agent is cheap next to a lost finding.
+
+**Every item in a report leaves with exactly one of these, and the choice
+is made in the same pass as reading it:**
+
+1. **Dispatched** — an agent, now, with the finding quoted into its brief.
+2. **Written into the plan or `docs/`** — where the next person will meet
+   it without knowing to look.
+3. **Graduated to the corpus** — if it outlives this repository.
+4. **Explicitly dropped, with the reason**, which is a real option and
+   sometimes the right one.
+
+What is not on the list: *"noted"*. A finding acknowledged in a reply and
+nowhere else has been lost with extra steps.
+
+**Update the plan in the same pass.** Not "at the end" — the end is
+exactly when the context is gone. This arc corrected its own plan a dozen
+times as lanes came back, and every one of those corrections is now the
+only record that the earlier version was wrong.
+
+The test, and it is cheap: **if this session ended right now, would
+anything in that report survive?** If the answer is no for an item, it is
+not done being handled.
 
 ## A failed mechanism is not a result
 

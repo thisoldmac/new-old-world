@@ -1254,6 +1254,24 @@ extension MirrorStateProjectionServiceTests {
                 fact about the machine. A projection that published it \
                 would be exporting a renderer's opinion as guest evidence.
                 """),
+            "contentPlane": .declined("""
+                Whether THIS HOST ever armed P3 on this window (plan 019 \
+                slice C). It is the strongest case of the three shelves \
+                above it: `island` and `displayEpoch` at least describe \
+                the guest, while this describes only what this host chose \
+                to look at, and an agent driving the machine has no use \
+                for another client's attention history.
+
+                It is DECLINED rather than carried, and the boundary is \
+                worth stating because the honesty argument cuts the other \
+                way for the renderer: a render that cannot say whether it \
+                looked is dishonest, because a person reads a picture as a \
+                claim about the machine. An MCP caller reads a projection \
+                as guest evidence, and this is not guest evidence. If an \
+                agent ever needs to know whether an interior was captured, \
+                the answer it should get is P3's own `qdtrace status`, \
+                which is the machine's word rather than ours.
+                """),
         ]
     }
 }

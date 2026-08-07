@@ -413,6 +413,16 @@ public struct Scene: Codable, Equatable, Sendable {
         /// struct — freezing it would put a base64 RGBA blob in an
         /// interchange contract no consumer has ever received.
         public var island: PixelIsland? = nil
+        /// **Whether the content plane was ever ASKED about this window** —
+        /// see ``ContentPlaneAttention``. nil when the host has no content
+        /// plane at all (no P3, or a guest that does not serve `qdtrace`),
+        /// which is the case where neither answer would be true.
+        ///
+        /// **Not in the frozen IR**, for the same reason `displayEpoch` and
+        /// `island` are not: host-internal render state that happens to live
+        /// on this struct. It describes what THIS host did, not what the
+        /// machine is, so there is nothing for a guest to send.
+        public var contentPlane: ContentPlaneAttention? = nil
 
         /// The frozen IR is everything except the two host-internal shelves
         /// above. Listing the keys explicitly is also what makes an

@@ -173,6 +173,21 @@ final class IRFreezeTests: XCTestCase {
             .contains("Scene.Window.displayEpoch"))
     }
 
+    /// `contentPlane` is the fourth host-internal shelf (plan 019 slice C),
+    /// and the one with the least business on a wire: it records what THIS
+    /// HOST did — whether it ever armed P3 on this exact window — not
+    /// anything about the machine. A guest has nothing to send for it.
+    func testTheContentPlaneAttentionIsNotOnTheWire() throws {
+        var scene = Self.maximalScene()
+        scene.windows[0].contentPlane = .notAttempted
+        let paths = try IRSchema.wirePaths(
+            ofEncoded: try JSONEncoder().encode(scene))
+        XCTAssertFalse(paths.contains("windows[].contentPlane"),
+                       "whether this host looked is not a fact about the guest")
+        XCTAssertTrue(IRSchema.declaredProperties(of: scene)
+            .contains("Scene.Window.contentPlane"))
+    }
+
     /// `windows[].items` came back ADDITIVELY (lane H2, 2026-07-31): on the
     /// wire, recorded in `v1Additions`, absent from `v1Frozen`, and the major
     /// did not move. That is the whole shape of an addition, and each clause

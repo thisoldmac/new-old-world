@@ -147,6 +147,22 @@ final class NOWMirrorContentPlane {
     /// The structural scene sequence each slot's display last settled
     /// against — reported, never gated on. See ``DisplayEpoch``.
     private var settledAtSequence: [String: Int] = [:]
+    /// **Every `psn:addr` this host has ever armed P3 on**, so a window
+    /// with no interior can say WHY it has none. P3 is a one-window
+    /// spotlight, so most windows in most scenes are in neither this set
+    /// nor `settledDisplay`, and until now they rendered the same hatch as
+    /// a window the plane looked at and found nothing in — captioned with
+    /// a claim about the guest that was only true of the second.
+    /// See ``MirrorKit/ContentPlaneAttention``.
+    ///
+    /// It grows and is never pruned within one guest session, which is the
+    /// correct shape: "we asked about this window at 12:04" does not stop
+    /// being true because the arm has since moved on. `guestChanged`
+    /// clears it, because a different guest is a different machine.
+    ///
+    /// Internal rather than private so tests can drive an arm without a
+    /// listener, the same seam `carryForward` uses.
+    var attempted: Set<String> = []
 
     /// Keep enough ordered drawing to include a full repaint without allowing
     /// a busy application to grow the host indefinitely.
@@ -187,6 +203,7 @@ final class NOWMirrorContentPlane {
         deadWorldSlots.removeAll()
         hollowed.removeAll()
         settledAtSequence.removeAll()
+        attempted.removeAll()
         armedAt = nil
     }
 
@@ -348,6 +365,15 @@ final class NOWMirrorContentPlane {
                     return
                 }
                 self.armedAt = Date()
+                /* THE ONE PLACE THAT KNOWS WE LOOKED. Recorded on the
+                   REQUEST rather than on the first record, because the
+                   question this answers is "did this host ask about this
+                   window", and a window we armed and that drew nothing has
+                   been asked. Recording it at the first record instead
+                   would make a genuinely empty interior indistinguishable
+                   from one nobody looked at all over again, which is the
+                   defect this exists to close. */
+                self.attempted.insert("\(front.psn):\(window)")
                 completion(.init(
                     scene: self.attachCached(to: scene),
                     sentence: "content: requested \(front.app)'s trace; "
@@ -1250,8 +1276,25 @@ final class NOWMirrorContentPlane {
     private func attachCached(to scene: MirrorKit.Scene) -> MirrorKit.Scene {
         var attached = scene
         for index in attached.windows.indices {
-            guard let address = attached.windows[index].addr,
-                  let identity = settledDisplay[
+            guard let address = attached.windows[index].addr else {
+                /* No exact guest address is the one case where NEITHER
+                   answer is available: P3 cannot be armed on this window
+                   at all, so it was not asked and could not have been.
+                   `nil` says that, rather than picking one of two answers
+                   that are both wrong. */
+                continue
+            }
+            /* WHETHER WE LOOKED, stamped on EVERY window with an address —
+               above the display attach, and deliberately not inside its
+               guard. The windows that matter most here are exactly the
+               ones that fall through it: P3 is a one-window spotlight, so
+               in any real scene most windows have no interior, and the
+               renderer had no way to tell "we never armed here" from "we
+               armed here and the guest drew nothing". */
+            attached.windows[index].contentPlane =
+                attempted.contains("\(attached.windows[index].psn):\(address)")
+                    ? .armed : .notAttempted
+            guard let identity = settledDisplay[
                     "\(attached.windows[index].psn):\(address)"],
                   let ops = settledOperations[identity], !ops.isEmpty else {
                 continue

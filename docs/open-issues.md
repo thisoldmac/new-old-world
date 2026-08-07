@@ -735,6 +735,146 @@ session; and — cheapest and most valuable — **the app stating in its own
 UI what it is pointed at and who pointed it there**. The failure mode this
 lane's alarm assumed is not currently detectable by the human at all: an
 app that got repointed would keep running and look entirely normal.
+## RESERVED FOR A DECISION, with the numbers attached: one window interior at a time (2026-08-07, `claude/019-multi-window-content`)
+
+Plan 019 slice C. **The content plane P3 is a per-window spotlight, not a
+plane**, and the question is whether that is the product. This entry is
+the options and their measured costs; the choice is Michelle's, and
+nothing here has been implemented except the half that is owed under
+every option (below).
+
+### What actually bounds it, and it is NOT the resident's hook
+
+The one-window limit is **one word in a shared struct and one parameter
+in a verb.** Everything else on the path is already per-window:
+
+- `qdtrace start` takes exactly one `window` and refuses an all-windows
+  arm by name (`now-guest-ppc/src/content/qdtrace_cmd.c :: run_start`).
+- The block carries one `arm_window` / `active_window`
+  (`contract/content_table.h`), and the capture gate is one comparison —
+  `port != gBlock->active_window` (`ext/src/now_content.c:236`), with the
+  probe's sight gate the same test again.
+- `content_install_exact_window` walks the WindowList and installs the
+  ONE port whose address matches.
+
+But **every ring record header already carries `port` — the comment in
+the contract calls it "the window identity key"** — and the resident's
+port table holds `kNowContentMaxPorts = 16` rows which it ALREADY fills
+with several ports of one A5 at a time (the offscreen worlds hooked at
+birth). On the host, `currentDisplay`, `settledDisplay`,
+`replacementFloor`, `portStates` and `latestEpoch` are all dictionaries
+keyed `psn:addr`, and `attachCached` attaches a display to *every* window
+that has one. **The transport, the resident's table and the whole host
+accumulator are N-window ready today.** Only the request cell and the
+capture gate are singular.
+
+So the cost of N is not a rewrite. It is what N spends.
+
+### What N costs — measured, not reasoned
+
+`tools/local-multiwindow-cost.py`, 2026-08-07. One lane-private clone off
+`os91-runner.qcow2` (block 29, wire 12233), this checkout's ext staged and
+cold-booted, guest build `113f1b176035`, sourceManifest `f41867cfe431`,
+buildFingerprint `4d0988e8e891`. Finder front with two windows open
+(`Macintosh HD`, `Desktop`). Not the shared stage oracle; nothing on
+metal.
+
+| reading | value |
+|---|---|
+| arm the Finder's front window | **203 ms**, `hookedPorts` settles at **2** |
+| retarget to its OTHER window, same process | **117 ms**, `hookedPorts` still **2** |
+| round-robin, 2 windows, 2 s dwell, 21 s | **4,011 ring bytes/s**, **10** forced repaints |
+| **control** — ONE standing arm, same app, 24 s | **33 ring bytes/s**, **0** forced repaints |
+
+**Read the control row first, because it is the whole finding.** The
+handshake was never the cost: a second arm into an already-armed process
+is 69–117 ms, cheaper than the first. The cost is that **every arm issues
+an `InvalWindowRect` at the newly armed window**
+(`content_request_redraw`), so a rotation is a forced repaint of a real
+application's window, at the rotation rate, for as long as it runs.
+122× the ring traffic of a standing arm, and 1.3 whole 64 KiB rings in
+21 seconds against a ring one standing arm would take half an hour to
+fill. A host that fell 16 s behind on the drain would start losing bytes
+it had never seen.
+
+Two more bounds, and one ceiling:
+
+- **The port table is not the binding constraint at realistic N.** One
+  armed Finder window plus its interior costs 2 of 16 rows steady-state
+  (9 worlds born and 9 died inside the settle window, none of them
+  surviving the pass). A widget-per-world application is a different
+  story and `qdext_born_missed` exists to say so, but the Finder leaves
+  headroom for several windows.
+- **A retarget drops the LEAVING window's rows** —
+  `content_uninstall_context` runs on every identity change — so a
+  rotation discards each window's composite lineage every time round.
+- **THE CEILING: a background process never arms at all**, and that is
+  reproduced on this build with a control. Target NOW's own window while
+  the Finder is front: not armed in 10 s, `wrongContext` climbing ~56/s
+  (3,046 → 3,610 — other contexts pumping, none of them the target).
+  Bring NOW forward **without re-requesting** and it arms **204 ms
+  later**, with `wrongContext` moving 3 in that interval. This is the
+  2026-08-06 arm-latency table's "never, 25–45 s" row, re-measured today
+  against a different target — and a sharper one, because NOW was
+  demonstrably executing the whole time (it answered a status poll every
+  200 ms from the background) and still never ran the resident's jGNE
+  pass. **So no shape here can serve more than the FRONT process's
+  windows.** Multi-process interiors are not expensive; they are closed.
+
+### The options
+
+**(a) One arm, a small window LIST.** `arm_window` becomes a bounded
+array; the capture gate becomes a membership test over ≤N entries;
+`content_install_exact_window` matches a set in the one WindowList walk
+it already does. One generation covers all N, so **no re-arm, no identity
+churn, no forced repaints beyond the N one-off invalidations**. Costs: an
+**in-memory contract change** (`contract/content_table.h`) and therefore a
+bake; a verb change and its parity seam; ≤N extra compares in the
+resident's hottest path; N of 16 port rows plus whatever the application's
+worlds want. Front process only. This is the only shape that scales.
+
+**(b) Round-robin within one TTL.** Cheapest to build, and the
+measurement says do not: 122× the ring traffic, a forced repaint of a
+live application's window at the rotation rate, and every rotation is a
+RETARGET — which under the decay lane's fix inherits nothing, so each
+window's picture restarts empty every time round and is complete only
+until the next rotation takes it away. It also multiplies a known live
+bug: the blit join looks a held source up by *the bits record's*
+generation (`NOWMirrorContentPlane.swift`, `SourceKey(port:generation:)`),
+so any re-arm between a world's ops and its placing blit misses the join
+and the composite never lands. More re-arms, more misses.
+
+**(c) Arm-on-demand from what the host renders.** This is essentially
+what ships: the host arms `scene.windows.first(where: \.front)`. Its
+retarget cost is (b)'s, paid on a focus change instead of a timer — which
+is why it is affordable. Extending it to "arm whatever is visible" is (b)
+with a nicer name.
+
+**(d) Accept one at a time, and make the others honest.** Free, and owed
+under every option above. See below.
+
+**Recommendation, for the record and not as a decision: (d) now, (a) if
+and when a second live interior is worth an in-memory contract change.**
+(b) and (c)-extended should be refused on the measurement rather than
+re-argued later.
+
+### The half that is owed regardless, and is now done
+
+Whichever shape wins, **the current render is dishonest in one exact
+place**: a window we never armed and a window we armed and found nothing
+in both arrive at `display == nil` and both draw the same
+"Guest content not reported" hatch. One of those sentences is true and
+the other is a claim about the guest we never made. (A *lapsed* arm is a
+different lie and a different lane's: it freezes rather than hatching, and
+`DisplayEpoch.stale` is where that one is answered.)
+
+`claude/019-multi-window-content` closes the never-armed half:
+`Scene.Window.contentPlane` records whether P3 was ever asked about this
+exact `psn:addr`, and the renderer says
+**"Interior not captured — one window at a time"** where it used to claim
+the guest reported nothing. Host-internal render state, off the wire, by
+the same argument as `displayEpoch` and `island`; no contract field, and
+no dependence on which option is chosen.
 
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
