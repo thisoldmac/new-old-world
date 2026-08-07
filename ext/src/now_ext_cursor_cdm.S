@@ -82,3 +82,30 @@ now_cdm_next_device:
     move.l  (%sp)+,%d2
     unlk    %a6
     rts
+
+| void now_cdm_crsr_task(void)
+|
+| Call the cursor task through its jump vector, JCrsrTask (0x08EE).
+|
+| WHY THIS EXISTS ON TOP OF CursorDeviceMoveTo. The manager call answers
+| noErr and its own CursorData record lands exactly on the requested
+| point - read from outside the guest, `where` was 760,520 while the
+| drawn arrow was still at 419,333, where the emulated DEVICE had last
+| left it. So on Mac OS 9 the manager owns the POSITION and something
+| else owns the BLIT, and the blit is the cursor task. The pointing
+| device's own interrupt handler reaches it through this vector; nothing
+| else on this machine appears to, which is why a resident that only sets
+| state is a resident whose cursor never draws.
+|
+| Every register is preserved. This runs at interrupt time inside
+| whatever was executing, exactly like the jGNE filter and the Time
+| Manager shims beside it, and the cursor task is somebody else's code -
+| the same argument now_liveness_tm.S makes about a callback whose ABI is
+| not ours to assume.
+    .globl now_cdm_crsr_task
+now_cdm_crsr_task:
+    movem.l %d0-%d7/%a0-%a6,-(%sp)
+    move.l  0x08EE,%a0
+    jsr     (%a0)
+    movem.l (%sp)+,%d0-%d7/%a0-%a6
+    rts

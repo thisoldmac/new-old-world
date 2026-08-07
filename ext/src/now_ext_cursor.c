@@ -93,6 +93,11 @@ static volatile UInt8 *volatile gCrsrCouple = (volatile UInt8 *)0x08CFUL;
    cannot be C declarations with TWOWORDINLINE. */
 extern long now_cdm_move_to(void *device, long absX, long absY);
 extern long now_cdm_next_device(void **device);
+/* The cursor task, through JCrsrTask. The manager moves the POSITION and
+   this is what moves the PICTURE - see the shim's own header for how
+   that was established, because the two look identical from inside the
+   guest and the difference is 340 pixels of arrow. */
+extern void now_cdm_crsr_task(void);
 
 static NowPeekTable *gTable = NULL;
 static void *gDevice = NULL;
@@ -200,6 +205,14 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned)
     } else if (gDevice != NULL) {
         long err = now_cdm_move_to(gDevice, (long)h, (long)v);
         if (err == 0) {
+            /* State, then picture, and BOTH are required. The manager
+               call alone leaves CursorData holding the new point with
+               the arrow still drawn at the old one; the task alone would
+               redraw from a position the manager does not agree with.
+               CrsrNew is set first because the task is what consumes
+               it. */
+            *gCrsrNew = *gCrsrCouple;
+            now_cdm_crsr_task();
             route = kNowPeekCursorRouteDevice;
             if (cell != NULL) {
                 cell->by_device++;
@@ -211,6 +224,7 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned)
                disagree about. The errno is kept because "it refused"
                and "it refused with -1" are different investigations. */
             *gCrsrNew = *gCrsrCouple;
+            now_cdm_crsr_task();
             route = kNowPeekCursorRouteLowMem;
             if (cell != NULL) {
                 cell->last_err = (NowPeekI32)err;
@@ -219,6 +233,7 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned)
         }
     } else {
         *gCrsrNew = *gCrsrCouple;
+        now_cdm_crsr_task();
         route = kNowPeekCursorRouteLowMem;
         if (cell != NULL) {
             cell->by_lowmem++;
