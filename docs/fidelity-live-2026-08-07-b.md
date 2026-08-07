@@ -207,3 +207,31 @@ nothing on this surface does.
 4. **Report `missed`.** Every count on this page is a floor.
 5. **Let the tool refuse.** A run that reports no drain is not a stable
    render; it is a run that could not have seen one.
+
+## Two rig facts this run confirmed
+
+- **The guest-clean route needs the host app quit FIRST.** `--wire` is
+  the only shutdown measured to leave a clean volume, and it works by
+  asking the Finder its own Special ▸ Shut Down over NOW's wire — which
+  it must bind. A running host app is holding that port, so the route
+  cannot even be attempted while it is up. Quitting the host and then
+  running `tools/shutdown-guest.py <qmp> --port 15072 --wire 15073`
+  reached `Finder Special(260) item 8 'Shut Down'` and **the guest
+  powered off and QEMU exited on its own in 6 s** — the real thing, not
+  a quit.
+- **`NOW_PREFS_SUFFIX` seeds TWO domains with different names.** The
+  listening port lives in `dev.newoldworld.now.settings.<suffix>`
+  (`ProductIdentity.preferencesSuite`) and everything else — including
+  `mirror.qmpSocket` — in `dev.newoldworld.now.<suffix>`
+  (`ProductIdentity.defaults`). Writing the port into the second one is
+  silent: the app starts on its default port and the guest never
+  arrives. Both were seeded here and `session_health` reported
+  `listeningPort 15073`, which is the check worth making.
+
+## Artefacts
+
+`~/Lab/Assets/now-mirror-assets/live-2026-08-07-b/` — 63 MB: five
+`*-frames.jsonl` traces (9,691 frames), five `*-flicker.json` reports
+each carrying its own `rig` and `planeEvidence` blocks, `LIMITS.md`,
+guest screendumps at every provoke and settle, the spin-up log with the
+image-provenance table, and the run logs. Copied out **before** teardown.
