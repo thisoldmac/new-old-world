@@ -65,7 +65,68 @@ Each is a rectangle to look at, not a vibe.
 - **One interior at a time** is the built behaviour; a screenshot with one
   live interior and the rest hatched is not a defect.
 
-## ✗ FIRST — a claim under test IS NOT IN THE TREE
+## ✗ FIRST — a FALSE NEGATIVE on an act that landed, caught in the guest's own pixels
+
+**This is the row the spec calls "the expensive one", and the sweep has
+one.**
+
+SEQ-A step 4 pressed a control in the Appearance panel — the help "?"
+button, `role: button`, rect `(598,125)-(627,153)` — with `ctlact
+part: 11`. The act answered:
+
+```
+{"code": "act-not-taken",
+ "message": "armed, and the application never called TrackControl",
+ "correlation": "4F976CC0-00000003",
+ "settlement": "timed-out"}
+```
+
+A refusal, with a reason, and a settlement that timed out. Under sweep
+C's reading that is a **pass** — the plane declining to claim something it
+could not verify.
+
+**It is not a pass. The press landed.** The screendump taken before the
+press (`c/A2-after.ppm`) shows Appearance on its Themes tab and no Help
+Viewer anywhere on the machine. The screendump after the sequence
+(`c/A5-back.ppm`) shows **Mac Help open and frontmost, having run a search
+for "Appearance", with ten results on screen.** Nothing else in the
+sequence could have opened it: step 5's only act was refused with
+`element-not-found` in 5 ms.
+
+| act said | machine did | verdict |
+|---|---|---|
+| `act-not-taken` + `settlement: timed-out` | **Mac Help opened and searched** | **✗ false negative** |
+
+### And the mechanism is in the message
+
+The refusal says exactly why it believes nothing happened: *"the
+application never called TrackControl."* **That is one mechanism's
+evidence being reported as the world's state.** A Carbon control that is
+actuated by any other route — and a Help button on CarbonLib is a prime
+candidate — lands while `ctlact` reports it did not, because the only
+thing being watched is a trap the application never had to call.
+
+So the finding is not "the refusal text is wrong". It is that
+**`act-not-taken` is inferred from a single observation and phrased as a
+conclusion about the machine.** `dispatched-but-unconfirmed` — which
+`ctlact part 0` now returns, and which is the honest shape — was
+available and was not used here.
+
+### What this costs, said plainly
+
+Sweep C's report scored an identical message on `part 11` as *"REFUSED
+CLEANLY"* and listed the act plane's refusal vocabulary among the two
+things that should be **left alone**. On this evidence that row cannot
+stand as written: the same message, in the same verb, is sometimes a
+correct refusal and sometimes a false negative, **and nothing in the
+message distinguishes the two.** An agent cannot tell them apart, and
+neither could a sweep that did not happen to screendump the whole screen
+afterwards.
+
+**Verification level: this is a driven observation on an emulated guest,
+with the build asserted. Not metal-verified.**
+
+## ✗ SECOND — a claim under test IS NOT IN THE TREE
 
 **Claim 4, render stability, is not on `claude/019-integration-7`.** The
 fix exists — `49c9a6f6` *"fix(mirror): one scene, one picture — and the
