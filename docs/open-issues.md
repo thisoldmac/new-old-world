@@ -80,22 +80,69 @@ words — *"that reference names a control, not a text element"* — which
 proves the reference vocabulary crosses but is not a completed reading.
 Nothing has run on real hardware.
 
+### Closed the same day, on `claude/019-conformance`
+
+All three of the below were left open above and were taken up by the
+conformance lane. The entries stay because what each turned out to BE is
+worth more than the fix.
+
+- **A completed text reading has now been taken through MCP.** It needs a
+  dialog's `TEHandle`, so SimpleText's Find dialog was opened;
+  `now_observe_elements` minted the reference under `windows[].text.ref`,
+  `now_text_get` answered `completed` with `text: "New Old World"`,
+  `now_text_set` wrote `"read through MCP"`, and a second read returned
+  it. Emulator-verified, guest build `20ba2e29bff1`.
+- **The lease was not the defect. The walk claimed no plane at all.**
+  `observe` / `elements` / `axtree` read every foreign process through
+  the anchor plane and never claimed it, so they worked only while
+  somebody else held it up — the scene, whose ten-second lease is renewed
+  by host traffic only once a `scene.request` has been served on the
+  link, or the Processes page while it is visible. A headless MCP client
+  therefore had **no** claim and got `no-plane` for everything, for ever;
+  a client with a Mirror polling beside it got the intermittent form that
+  was reported. Fixed by giving the walk the scene's own claim-then-settle
+  pattern under its own owner. Measured A/B on one clone: pre-fix, 8 of 8
+  processes `no-plane` and `requested` still `0x0` after the walk;
+  post-fix, 0 of 8 and `requested=0x3 active=0x3` inside the same call.
+  The lease still lapses after ten seconds of silence, and a caller can no
+  longer observe it — the next walk re-arms and waits for the resident's
+  echo before reading.
+- **The refusal vocabulary was wired at two of four sites, not two of
+  two.** `reach` is derived from the guest's own reply (a refusal with no
+  correlation was never registered, so nothing was armed). `dispatch` and
+  the elements walk derived it; `textget` and `key` hardcoded `unknown`
+  and dropped the correlation and settlement the derivation rests on. Both
+  fixed, and a gate now reads the source and derives both sets from it —
+  every `Self.failure(…)` built from a `result.error`, against every one
+  that asks `reach(ofGuestRefusal:)` — in both directions, because
+  otherwise it is satisfiable by pasting the derivation onto local
+  refusals and turning every provable `notSent` into an `unknown`.
+
 ### Still open, noticed in passing and not chased
 
-- **A completed text reading has still never been taken through MCP.**
-  It needs a window whose `TEHandle` a foreign walk can find — a
-  dialog's — and none was open. The two tools are proven reachable, not
-  proven to read.
-- **The anchor plane's lease lapses between calls.** An `elements` walk
-  seconds after a `reveal` answered `bind: no-plane`, then answered `ok`
-  on a later poll. Nothing was lost, but a caller that observes once and
-  believes the answer will sometimes be told a bound process is
-  unreachable. Whether that is a lease bound worth naming or a lifetime
-  worth extending was not investigated here.
-- **`now_text_set`'s refusal carries `reach: notSent` where
-  `now_text_get`'s carries `unknown`**, for the same guest sentence
-  about the same reference. One of the two is describing the wrong
-  thing.
+Three answers the first full live conformance run surfaced. All are
+**answers a healthy host gave that contradict the machine**, which is the
+class the surface work is for; none was chased.
+
+- **`now_mirror_lifecycle` refused with *"No Mac is connected, so no
+  resident has answered"* while a Mac was connected** and eighteen other
+  tools were serving from it in the same run.
+- **`now_guest_files_upload_begin` refused a four-byte upload** with
+  *"Private staging cannot reserve the declared upload"*.
+- **`now_reveal_item` refused *"nothing named System Folder to reveal"***
+  on a Mac OS 9 volume that has one.
+
+And two structural gaps the same run named:
+
+- **`now_transfer_approved_artifact` is unreachable from MCP.** Its
+  argument is minted by a person approving a transfer in the host UI, and
+  no tool on this surface produces one. It is the conformance run's only
+  `uncovered` row.
+- **The reference walk's frame budget is spent on our own process.**
+  `observe --scope all` came back `truncated: true` after ONE process on
+  a machine running eight, because NOW's own window carries the most
+  controls — so the walk cannot reach the Finder unless it is aimed by
+  serial. The least interesting process is the one that fills the reply.
 
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 
