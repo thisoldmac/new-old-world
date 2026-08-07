@@ -115,6 +115,21 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// addresses a published scene entity and settles the way a click
         /// does. Two mutation paths would be two products.
         case mirrorDrive = "mirror_drive"
+        /// Open the native Mirror window on an ALREADY-RUNNING host, and
+        /// raise it if it is already open.
+        ///
+        /// The only operation on this surface whose whole effect is on
+        /// the modern machine — `reveal_item` is the closest relative and
+        /// still crosses the wire. It takes no arguments for the same
+        /// reason the diagnostics do not: there is exactly one Mirror,
+        /// and which Mac it shows is the one this host is driving.
+        ///
+        /// Not folded into `mirror_read` or `mirror_drive`. Those two
+        /// address a published scene and are meaningless before a window
+        /// exists; this one is what makes a window exist, and a caller
+        /// that had to ask for a reading to get one would be opening a
+        /// window as a side effect of observing.
+        case mirrorOpen = "mirror_open"
         /// Open the live-stream bracket, read a frame off it, or close it.
         ///
         /// One operation for the same reason `capture` folded take, page and
@@ -744,6 +759,12 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         return request
     }
 
+    /// Open the Mirror on this host. No arguments — there is one Mirror,
+    /// and it shows the Mac this host is driving.
+    public static func mirrorOpen(requestID: UUID = UUID()) -> Self {
+        projected(.mirrorOpen, requestID: requestID)
+    }
+
     // MARK: - The live-stream bracket
 
     /// Open the bracket. The pace is not optional here even though the
@@ -889,6 +910,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case diagnostics(AgentIntegrationGuestRowReportResult)
     case mirrorRead(AgentIntegrationMirrorReadResult)
     case mirrorDrive(AgentIntegrationMirrorDriveResult)
+    case mirrorOpen(AgentIntegrationMirrorOpenResult)
     /// The bracket's state, or one page of one frame off it.
     case stream(AgentIntegrationStreamResult)
     /* The act lane's five, one case each — for the reason the five
@@ -978,6 +1000,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         AgentIntegrationGuestRowReportResult? = nil
     public var mirrorReadResult: AgentIntegrationMirrorReadResult? = nil
     public var mirrorDriveResult: AgentIntegrationMirrorDriveResult? = nil
+    public var mirrorOpenResult: AgentIntegrationMirrorOpenResult? = nil
     /// The bracket, or one page of a frame off it. Sized like the capture
     /// field beside it, and for the same reason — a frame IS a capture, so
     /// a full page still leaves the response inside the 16 KiB cap.
@@ -1360,6 +1383,12 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     }
 
     public init(requestID: UUID,
+                mirrorOpenResult: AgentIntegrationMirrorOpenResult) {
+        self.init(empty: requestID)
+        self.mirrorOpenResult = mirrorOpenResult
+    }
+
+    public init(requestID: UUID,
                 streamResult: AgentIntegrationStreamResult) {
         self.init(empty: requestID)
         self.streamResult = streamResult
@@ -1432,6 +1461,7 @@ public enum AgentIntegrationLocalCodec {
         "guestLogTailResult", "machineFactsResult",
         "catalogSearchResult", "revealItemResult",
         "diagnosticsResult", "mirrorReadResult", "mirrorDriveResult",
+        "mirrorOpenResult",
         "streamResult",
         // The act lane's five, in both gates from the day they landed.
         "windowActResult", "controlActResult", "menuActResult",
@@ -1936,6 +1966,13 @@ public enum AgentIntegrationLocalCodec {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Mirror drive request does not match its gesture")
             }
+        case .mirrorOpen:
+            /* Says only its own name, like the three grouped above — but
+               its own branch rather than joining them, because it is the
+               one operation here that never reaches a guest and a reader
+               scanning for "what does this send to the Mac" should not
+               find it in a group whose other members do. */
+            expectedKeys = ["version", "requestID", "operation"]
         case .mirrorRead:
             expectedKeys = [
                 "version", "requestID", "operation", "mirrorReadRequest",

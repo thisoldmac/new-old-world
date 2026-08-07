@@ -838,6 +838,12 @@ final class GuestListener: ObservableObject {
     /// which is the honest pre-family silence the contract describes.
     weak var chatService: ChatWireService?
 
+    /// Brings one of THIS Mac's own windows forward, set by the app that
+    /// owns them. Nil for a headless listener (tests, the companion
+    /// process), which refuses `host.show` with a reason rather than
+    /// going quiet — see HostSurfaceService.swift.
+    var hostSurfaceOpener: HostSurfaceOpener?
+
     /// Text conversion for files we serve, mirroring the Files module's
     /// setting for the ones we fetch.
     var convertServedText = true
@@ -2728,6 +2734,10 @@ final class GuestListener: ObservableObject {
             onServeChat: { [weak self] ask in
                 guard let self, let asker = origin.session else { return }
                 self.serveChat(ask, on: asker)
+            },
+            onServeHostShow: { [weak self] request in
+                guard let self, let asker = origin.session else { return }
+                self.serveHostShow(request, on: asker)
             },
             onProcessListing: { [weak self] listing in
                 guard fromActive() else { return }

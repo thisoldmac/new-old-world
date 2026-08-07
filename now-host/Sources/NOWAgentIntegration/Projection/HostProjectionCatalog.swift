@@ -38,6 +38,10 @@ public enum HostProjectionCatalog {
            mint a second cache, or substitute for the direct-input/pixel
            gate. Status is the cheap identity, snapshot the full projection,
            find a bounded local query, and wait the next published snapshot. */
+        /* First of the family, because it is the row that makes the
+           others answer anything: they read a state engine that only runs
+           while the window is open, and nothing else here can open it. */
+        MirrorOpenProjection.self,
         MirrorStatusProjection.self,
         MirrorSnapshotProjection.self,
         MirrorFindProjection.self,

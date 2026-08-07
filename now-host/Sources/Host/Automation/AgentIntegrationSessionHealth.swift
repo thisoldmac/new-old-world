@@ -122,6 +122,36 @@ final class AgentIntegrationHostAdapter {
         mirrorDriver = drive
     }
 
+    /// Bound like the driver above and for the same reason: the window
+    /// belongs to the app, and this service only asks for the one a
+    /// menu item would have opened.
+    private var mirrorOpener: (() -> HostSurfaceOutcome)?
+
+    func bindMirrorOpener(_ open: @escaping () -> HostSurfaceOutcome) {
+        mirrorOpener = open
+    }
+
+    /// The agent face on the host's own Mirror. Refusing when nothing is
+    /// bound is the honest answer for a headless adapter — and it is a
+    /// TYPED refusal rather than silence, because the caller with no
+    /// route is exactly the caller who otherwise reaches for the
+    /// desktop.
+    func openMirror() -> AgentIntegrationMirrorOpenResult {
+        guard let mirrorOpener else {
+            return .init(unavailable: .init(
+                code: "now-mirror-window-absent",
+                message: "This host adapter has no window layer, so there "
+                    + "is no Mirror to open."))
+        }
+        switch mirrorOpener() {
+        case .showing(let wasOpen, let detail):
+            return .init(alreadyOpen: wasOpen, detail: detail)
+        case .refused(let code, let reason):
+            return .init(unavailable: .init(
+                code: "now-mirror-open-" + code, message: reason))
+        }
+    }
+
     func driveMirror(_ request: AgentIntegrationMirrorDriveRequest)
         -> AgentIntegrationMirrorDriveResult {
         guard let mirrorDriver else {

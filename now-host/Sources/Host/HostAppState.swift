@@ -122,6 +122,48 @@ final class HostAppState: ObservableObject {
     }()
     private(set) lazy var mirrorWindow = NOWMirrorWindow(source: mirrorSource)
 
+    /// **Open the Mirror on an already-running host, whoever asked.**
+    ///
+    /// The one implementation behind four faces: the Mirror page's own
+    /// button, the Window menu item, the `mirror_open` agent verb and
+    /// the guest's `host.show`. All of them end here, and here ends at
+    /// the same `NOWMirrorWindow.show` a click performs — so none of
+    /// them can drift into being a second way to open a window.
+    ///
+    /// It exists because until now there was no third face at all.
+    /// `--open-mirror` covers launch and a click covers a person at this
+    /// Mac; an agent on the socket, and a person sitting at the classic
+    /// Mac, had nothing — and the gap was closed in practice by
+    /// scripting macOS accessibility to click the button, on somebody's
+    /// actual desktop.
+    ///
+    /// Already open is not an error: the window is raised and the answer
+    /// is the same `showing`. The asker wanted the Mirror in front of
+    /// them, and it is.
+    @discardableResult
+    func showMirrorWindow() -> HostSurfaceOutcome {
+        let name = connectedMachineName
+        let wasOpen = mirrorWindow.isOpen
+        guard wasOpen || Self.guestState(
+            from: listener.state, key: listener.activeKey).canCapture else {
+            /* Refused rather than opened-empty. A Mirror with no Mac
+               behind it publishes nothing, so a caller that opened one
+               would read an honest empty answer and have no way to tell
+               it from a quiet machine — the same trap `--open-mirror`
+               fell into before it learned to retry `start()`. */
+            return .refused(
+                code: "unavailable",
+                reason: "No Mac is connected, so there is nothing to "
+                    + "mirror yet.")
+        }
+        mirrorWindow.show(title: "Mirror — \(name)")
+        return .showing(
+            wasAlreadyOpen: wasOpen,
+            detail: wasOpen
+                ? "The Mirror was already open; brought it to the front."
+                : "Opened the Mirror on \(name).")
+    }
+
     /// What to put in the mirror window's title bar. A person may have
     /// several Macs connected, and a window showing one of them that does
     /// not say which is a window they will drive by mistake.
@@ -270,6 +312,26 @@ final class HostAppState: ObservableObject {
            the Mirror — an agent asking what has been measured would then
            create the measurer and get an empty answer that reads exactly
            like a quiet machine. */
+        /* The guest's face on the same implementation. Bound here rather
+           than in the listener's own init for the reason the drivers
+           below are: the window layer is the app's, and a listener
+           running without one must refuse by name instead of pretending. */
+        listener.hostSurfaceOpener = { [weak self] surface in
+            guard let self else {
+                return .refused(code: "unavailable",
+                                reason: "This Mac is shutting down.")
+            }
+            switch surface {
+            case .mirror: return self.showMirrorWindow()
+            }
+        }
+        integration.bindMirrorOpener { [weak self] in
+            guard let self else {
+                return .refused(code: "unavailable",
+                                reason: "This Mac is shutting down.")
+            }
+            return self.showMirrorWindow()
+        }
         integration.bindMirrorDriver { [weak self] request in
             guard let self else {
                 return .init(unavailable: .init(
