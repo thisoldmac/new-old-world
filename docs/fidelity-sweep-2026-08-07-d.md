@@ -502,6 +502,36 @@ earlier sweep has taken it (checked against all five earlier sweep
 documents). It is also a target that could not be reached through the
 guest's own `launch` verb at all — see below.
 
+### The rotated target found a second thing: the guest's `quit` is not a quit
+
+Posed by accident and then read carefully, which is worth stating plainly.
+
+Pass 1 ran `--no-hygiene --quit-after`, so **no hygiene routine pressed
+any button** — the whole mechanism sweep B and sweep C blamed for the
+"Set Time Zone" contamination was switched off. The only act between
+targets was `quit target=Date & Time` over the wire.
+
+The Date & Time target's own scene has one window and no modal. **The very
+next target's scene has two Date & Time windows, and the second is
+`Set Time Zone`** — and it stayed up for the rest of the pass, appearing
+in the general-controls, extensions-manager, simpletext, finder and
+apple-system-profiler scenes and in the post-run health alert:
+
+```
+!! POST-RUN HEALTH: [{"app": "Date & Time", "title": "Set Time Zone", "kind": 2},
+                     {"app": "Date & Time", "title": "Date & Time",   "kind": 2}]
+```
+
+So: **the app did not quit, and something opened its modal.** Sweep C
+attributed this contamination to `Sweep._dismiss` pressing DITL item 2;
+that explanation cannot cover this run, because `_dismiss` never ran.
+The correction matters because it changes what needs fixing — fixing the
+hygiene routine would not have prevented this.
+
+Not chased further, and stated at the level the evidence supports: `quit`
+on a `cdev` opened through the anchor left the process running with a
+modal on screen, in a run with hygiene disabled.
+
 ### And it widens sweep C's S4 before it is even captured
 
 Sweep C's S4 was *"`launch` still refuses control panels"*. Posed at this
