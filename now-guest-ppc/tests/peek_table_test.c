@@ -243,8 +243,27 @@ int main(void)
     check(offsetof(NowPeekTable, endpoint_os)
               == offsetof(NowPeekTable, channel_sends) + sizeof(NowPeekU32),
           "the endpoint OS string follows the channel block");
-    check(offsetof(NowPeekTable, endpoint_os) + 32 == sizeof(NowPeekTable),
-          "the endpoint OS string is the tail, so shorter means absent");
+    /* U11's rest-state pair and pass counter are the new tail. The OS
+       string is no longer it, and that is the append rule working rather
+       than a check going stale: an application built against U10 reads a
+       shorter `length`, never looks past the string, and is right not to. */
+    check(offsetof(NowPeekTable, rest_format)
+              == offsetof(NowPeekTable, endpoint_os) + 32,
+          "the rest-state pair follows the endpoint OS string");
+    check(offsetof(NowPeekTable, gne_passes)
+              == offsetof(NowPeekTable, rest_format) + sizeof(NowPeekU32),
+          "the filter pass counter follows the rest-state pair");
+    check(offsetof(NowPeekTable, gne_passes) + sizeof(NowPeekU32)
+              == sizeof(NowPeekTable),
+          "the filter pass counter is the tail, so shorter means absent");
+    /* The bits are the contract and must not collide, because a reader
+       that mistook "the trap table is patched" for "the block is
+       allocated" would report the wrong durable fact about a machine. */
+    check((kNowPeekRestGNEFilter | kNowPeekRestLivenessTicking
+           | kNowPeekRestTransport | kNowPeekRestContentBlock
+           | kNowPeekRestContentHooks | kNowPeekRestActPatched
+           | kNowPeekRestQDExtPatched) == 0x7F,
+          "the seven rest-state bits are distinct and contiguous");
 
     /* Reachability is not a dial, and the values are the contract rather
        than an ordering — a refusal carries the driver's own OSErr so that

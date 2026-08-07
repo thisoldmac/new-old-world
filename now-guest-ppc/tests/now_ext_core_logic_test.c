@@ -88,5 +88,55 @@ int main(void)
     check(publishes == 2 && publishes < passes,
           "twelve event passes cause two publishes, not twelve scans");
 
+    /* P6's stand-down. This is the decision that keeps a Macintosh whose
+       user never launches NOW indistinguishable from one without the
+       extension, so the case that matters most is the FIRST one: a fully
+       formed table with nothing published must say no. */
+    memset(&table, 0, sizeof table);
+    check(!now_ext_liveness_should_run(&table, 1000),
+          "a zeroed table never runs the vehicle");
+    table.magic = kNowPeekTableMagic;
+    table.length = sizeof table;
+    table.endpoint_format = kNowPeekLivenessFormatV2;
+    check(!now_ext_liveness_should_run(&table, 1000),
+          "no endpoint published: the vehicle stays down");
+    table.endpoint.endpoint_epoch = 1;
+    check(now_ext_liveness_should_run(&table, 1000),
+          "a published endpoint starts the vehicle");
+    table.endpoint.endpoint_epoch = 0;
+    check(!now_ext_liveness_should_run(&table, 1000),
+          "a withdrawn endpoint stands the vehicle back down");
+
+    /* The lease must NOT gate this plane - see kNowPeekLivenessIdleTicks.
+       A starved application cannot renew a lease, and starvation is the
+       whole reason P6 exists, so an expired lease inside the idle window
+       has to keep ticking. This pair is the guard against someone later
+       "tidying" the decision by reusing the lease check one file over. */
+    table.endpoint.endpoint_epoch = 1;
+    table.writer_format = kNowPeekWriterFormatV1;
+    table.writer_length = sizeof table.writer;
+    table.writer.heartbeat_ticks = 1000;
+    check(now_ext_liveness_should_run(
+              &table, 1000 + kNowPeekWriterLeaseTicks * 10),
+          "a starved application keeps the vehicle running");
+    check(now_ext_liveness_should_run(
+              &table, 1000 + kNowPeekLivenessIdleTicks),
+          "the vehicle runs to the idle boundary");
+    check(!now_ext_liveness_should_run(
+              &table, 1001 + kNowPeekLivenessIdleTicks),
+          "a crashed application stops costing an interrupt eventually");
+
+    /* Accretion, the same way every other cell here is gated: an older
+       resident is SHORTER and a reader must not infer a field it cannot
+       reach. A short table with a set epoch is a table whose epoch is at
+       an offset this build invented. */
+    table.length = offsetof(NowPeekTable, endpoint_os);
+    check(!now_ext_liveness_should_run(&table, 1000),
+          "a table too short to hold the endpoint never runs");
+    table.length = sizeof table;
+    table.endpoint_format = kNowPeekLivenessFormatV2 - 1;
+    check(!now_ext_liveness_should_run(&table, 1000),
+          "a pre-V2 endpoint format never runs");
+
     return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
