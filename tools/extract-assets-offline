@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import shutil
@@ -45,6 +46,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, ".."))
 PARSERS = os.path.join(REPO, "mirror", "tools", "extract-assets")
 sys.path.insert(0, PARSERS)
+
+from PIL import Image     # noqa: E402
 
 import cursors            # noqa: E402
 import fonts              # noqa: E402
@@ -328,6 +331,210 @@ def extract_patterns(fork: resfork.ResourceFork, out: str, prov: list) -> dict:
         raise SystemExit("no 'Mac OS Default' ppat — the desktop pattern the "
                          "renderer fills with would be lost")
     return summary
+
+
+# --- what the machine's desktop ACTUALLY is ------------------------------
+#
+# 'ppat' 16 in the System file is a SHIPPED DEFAULT, not the setting. Under
+# Appearance (8.5+) the desktop is chosen in a control panel that writes
+# neither the System file nor a theme file, and the two answers genuinely
+# differ: on now-mirror-stage.qcow2, System 'ppat' 16 is the 128x128 purple
+# Mac face while the running guest's desktop is the 800x600 JPEG "Indigo
+# Foam" — verified pixel-for-pixel against a QMP screendump (p95 delta 3
+# over the visible desktop strip, docs/local/018-lane-c-desktop-pattern.md).
+# So the renderer tiling 'ppat' 16 is a confident wrong answer twice over:
+# wrong art, and tiled where the machine does not tile.
+#
+# Two files carry the truth, and neither was being read:
+#   - the SELECTION: 'alis' 128 + 'dkp≈' 0 in Preferences/Desktop Pictures
+#     Prefs. The alias names the picture and its absolute path; the 'dkp≈'
+#     blob's OSType at +12 says what kind of thing was chosen.
+#   - the PATTERN LIBRARY: 44 NAMED 'ppat's inside the Appearance control
+#     panel. The System file holds three, none of them the ones a person
+#     picks, which is why a name off the guest could never have resolved.
+
+APPEARANCE_CP = "System Folder/Control Panels/Appearance"
+DESKTOP_PREFS = "System Folder/Preferences/Desktop Pictures Prefs"
+
+
+def extract_appearance_patterns(mnt: str, out: str, prov: list) -> dict:
+    """The desktop patterns a person can actually choose, BY NAME.
+
+    Keyed by name rather than resource id because the name is the only
+    identity the running machine can hand over: Appearance's
+    kThemeDesktopPatternNameTag is a Str255, and the control panel's list
+    is these names. An id would be an identity only this file knows.
+    """
+    d = os.path.join(out, "patterns", "appearance")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    raw = rsrc(os.path.join(mnt, APPEARANCE_CP))
+    if not raw:
+        return {"count": 0, "error": f"no resource fork at {APPEARANCE_CP}"}
+    fork = resfork.ResourceFork(raw)
+    listed, failed = [], []
+    for p in patterns.extract_patterns(fork)["ppat"]:
+        if "image" not in p:
+            failed.append({"id": p["id"], "name": p["name"],
+                           "error": p.get("error")})
+            continue
+        if not p["name"]:
+            # An unnamed one cannot be addressed by the identity the guest
+            # can send, so it is not written: art nothing can ask for is
+            # weight in the pack and a temptation to guess from.
+            continue
+        fname = f"{safe(p['name'])}.png"
+        p["image"].save(os.path.join(d, fname))
+        listed.append({"name": p["name"], "id": p["id"],
+                       "w": p["w"], "h": p["h"], "file": fname})
+        prov.append({"asset": f"patterns/appearance/{fname}",
+                     "source": APPEARANCE_CP, "type": "ppat", "id": p["id"]})
+    return {"count": len(listed), "patterns": sorted(listed,
+                                                     key=lambda x: x["name"]),
+            "failed": failed}
+
+
+def parse_alias(blob: bytes) -> dict:
+    """The readable half of an AliasRecord: names, type, absolute path.
+
+    The 150-byte header is fixed; the variable-length extras that follow
+    it are (type:SInt16, length:UInt16, data) until type == -1. Only three
+    are read here — parent folder name (0), absolute path (2) — because
+    those are the ones that let a file be found again, and a field read
+    without a use is a field nobody notices going wrong.
+
+    The rest of the record, and the 'dkp≈' blob beside it, contain live
+    heap POINTERS from whichever process last wrote them. That is not
+    corruption and it is not ours to interpret; it is why nothing here
+    parses past what it can name.
+    """
+    if len(blob) < 150:
+        return {"error": f"alias too short ({len(blob)} B)"}
+
+    def pstr(off: int, cap: int) -> str:
+        n = min(blob[off], cap)
+        return blob[off + 1:off + 1 + n].decode("mac_roman")
+
+    out = {
+        "volume": pstr(10, 27),
+        "name": pstr(50, 63),
+        "file_type": ostype_key(blob[122:126]),
+        "creator": ostype_key(blob[126:130]),
+        "parent": None,
+        "path": None,
+    }
+    off = 150
+    while off + 4 <= len(blob):
+        kind, length = struct.unpack_from(">hH", blob, off)
+        if kind == -1 or off + 4 + length > len(blob):
+            break
+        body = blob[off + 4:off + 4 + length]
+        if kind == 0:
+            out["parent"] = body.decode("mac_roman")
+        elif kind == 2:
+            out["path"] = body.decode("mac_roman")
+        off += 4 + length + (length & 1)
+    return out
+
+
+def desktop_state(mnt: str, out: str, prov: list) -> dict:
+    """What THIS image's desktop is set to, and the art to draw it with.
+
+    Returns an identity the renderer can act on, or says plainly that it
+    could not resolve one. It never falls back to 'ppat' 16: an
+    unresolvable desktop is the marked unknown's job, and a plausible
+    wrong purple is the thing this whole function exists to stop.
+
+    UNVERIFIED, and deliberately not guessed at: what these files hold
+    when a PATTERN rather than a picture is chosen. Only the picture case
+    has been seen. The pattern case is reported as `kind: "unknown"` with
+    the OSType that was found, so the next person sees the real evidence
+    instead of an assumption baked into a manifest.
+    """
+    d = os.path.join(out, "patterns")
+    os.makedirs(d, exist_ok=True)
+    state: dict = {
+        "source": DESKTOP_PREFS,
+        "kind": "unresolved",
+        "name": None,
+        "file": None,
+        "confidence": None,
+    }
+    path = os.path.join(mnt, DESKTOP_PREFS)
+    raw = rsrc(path) if os.path.exists(path) else b""
+    if not raw:
+        state["confidence"] = (
+            f"no {DESKTOP_PREFS} on this image — nothing here says what the "
+            "desktop is set to; the renderer must draw its marked unknown")
+        return state
+    fork = resfork.ResourceFork(raw)
+    dkp = fork.of_type("dkp≈")
+    if dkp and len(dkp[0].data) >= 16:
+        state["dkp_type"] = ostype_key(dkp[0].data[12:16])
+    aliases = fork.of_type("alis")
+    if not aliases:
+        state["confidence"] = (
+            "the prefs file has no 'alis' — a pattern, or a picture chosen "
+            "some way this has not seen. Unresolved on purpose")
+        return state
+    alias = parse_alias(aliases[0].data)
+    state["alias"] = alias
+    state["name"] = alias.get("name")
+
+    # Volume-relative: the alias's path is "Volume:a:b:c" and the mount IS
+    # that volume, so the first component is dropped rather than matched —
+    # an image restored under another volume name is still this desktop.
+    src = None
+    if alias.get("path") and ":" in alias["path"]:
+        rel = alias["path"].split(":", 1)[1].replace(":", "/")
+        cand = os.path.join(mnt, rel)
+        if os.path.isfile(cand):
+            src = cand
+            state["guest_path"] = alias["path"]
+    if src is None:
+        state["kind"] = "unresolved"
+        state["confidence"] = (
+            f"the prefs name {alias.get('name')!r} at "
+            f"{alias.get('path')!r}, which is not on this volume")
+        return state
+
+    if alias.get("file_type") not in ("JPEG", "PICT", "GIFf", "TIFF", "8BPS"):
+        state["kind"] = "unknown"
+        state["confidence"] = (
+            f"selected item is type {alias.get('file_type')!r}, which this "
+            "extractor does not claim to understand")
+        return state
+    try:
+        img = Image.open(src).convert("RGB")
+    except Exception as exc:                               # noqa: BLE001
+        state["kind"] = "unresolved"
+        state["confidence"] = f"{alias.get('file_type')} would not decode: {exc}"
+        return state
+    fname = "desktop-current.png"
+    img.save(os.path.join(d, fname))
+    with open(src, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
+    state.update({
+        "kind": "picture",
+        "file": f"patterns/{fname}",
+        "w": img.width, "h": img.height,
+        "format": alias.get("file_type"),
+        "source_sha256": digest,
+        # NOT read: the alignment (tile / centre / scale / fill). It lives
+        # in Appearance's kThemeDesktopPictureAlignmentTag on a running
+        # machine and somewhere in the unattributed half of 'dkp≈' here.
+        # Until something reads it, the only honest way to draw this is
+        # 1:1 at the origin when it is exactly screen-sized.
+        "alignment": None,
+        "confidence": (
+            "read from this image's own preferences; true for a guest "
+            "booted from it and not changed since. GetTheme on a running "
+            "guest (kThemeDesktopPicture/PatternNameTag) is the only thing "
+            "that can close that gap"),
+    })
+    prov.append({"asset": f"patterns/{fname}", "source": DESKTOP_PREFS,
+                 "type": alias.get("file_type"), "id": 0})
+    return state
 
 
 def extract_pictures(fork: resfork.ResourceFork, out: str, prov: list) -> dict:
@@ -934,6 +1141,9 @@ def main() -> None:
                     help="leave the converted copy mounted and on disk")
     ap.add_argument("--theme-report", action="store_true",
                     help="census the Platinum theme file and stop")
+    ap.add_argument("--desktop-report", action="store_true",
+                    help="say what this image's desktop is SET to and stop "
+                         "(art goes to --work, not the pack)")
     ap.add_argument("--accent-ramps", action="store_true",
                     help="print the theme file's 21 accent clut ramps and stop")
     ap.add_argument("--swift-out", default=DEFAULT_SWIFT_OUT,
@@ -963,6 +1173,13 @@ def main() -> None:
             print(json.dumps(theme, indent=1, sort_keys=True))
             return
 
+        if args.desktop_report:
+            report = desktop_state(mnt, args.work, [])
+            report["library"] = extract_appearance_patterns(
+                mnt, args.work, [])
+            print(json.dumps(report, indent=1, sort_keys=True))
+            return
+
         ramps = extract_accent_ramps(mnt)
         ramps["active"] = active_theme_hint(mnt, ramps)
         if args.accent_ramps:
@@ -979,6 +1196,10 @@ def main() -> None:
         icons_sum = extract_system_icons(sysfork, args.out, prov)
         cursors_sum = extract_cursors(sysfork, args.out, prov)
         patterns_sum = extract_patterns(sysfork, args.out, prov)
+        # After extract_patterns: it wipes patterns/ to stay idempotent.
+        patterns_sum["appearance"] = extract_appearance_patterns(
+            mnt, args.out, prov)
+        desktop_sum = desktop_state(mnt, args.out, prov)
         pictures_sum = extract_pictures(sysfork, args.out, prov)
         fonts_sum = extract_fonts(mnt, args.out, prov)
         apps_sum = extract_appicons(mnt, args.out, prov, args.verbose)
@@ -993,6 +1214,10 @@ def main() -> None:
             "icons": icons_sum,
             "cursors": cursors_sum,
             "patterns": patterns_sum,
+            # SEPARATE from `patterns` on purpose: patterns is a library of
+            # art, this is a SETTING. Reading the first as the second is
+            # the defect this key exists to close.
+            "desktop": desktop_sum,
             "pictures": pictures_sum,
             "fonts": fonts_sum,
             "appicons": apps_sum,
@@ -1016,7 +1241,14 @@ def main() -> None:
         print(f"  cursors:  {cursors_sum['count']}")
         print(f"  patterns: {len(patterns_sum['ppat'])} ppat + "
               f"{len(patterns_sum['PAT'])} PAT (desktop id "
-              f"{patterns_sum['desktop_ppat_id']})")
+              f"{patterns_sum['desktop_ppat_id']}) + "
+              f"{patterns_sum['appearance'].get('count', 0)} named "
+              "Appearance patterns")
+        print(f"  desktop:  {desktop_sum['kind']} "
+              f"{desktop_sum.get('name')!r}"
+              + (f" {desktop_sum['w']}x{desktop_sum['h']}"
+                 if desktop_sum.get("w") else "")
+              + f" — {desktop_sum['confidence']}")
         print(f"  pictures: {pictures_sum['count']} PICT (unconverted)")
         print(f"  fonts:    {len(fonts_sum['sheets'])} NFNT sheets, "
               f"{len(fonts_sum['ttf'])} TTF"
