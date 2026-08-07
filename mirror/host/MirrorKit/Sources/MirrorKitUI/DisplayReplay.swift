@@ -500,7 +500,40 @@ public enum DisplayReplay {
                     break
                 }
             default:
-                break   // arc/poly remain unsupported structured ops
+                /* AN OP THIS RENDERER CANNOT DRAW IS STILL SOMETHING THE
+                   MACHINE DREW, and until now it left no trace at all.
+                   `poly` is the arrow family — Memory's fourteen are
+                   8x4 and 8x5 paints, which is a stepper's two triangles
+                   and a popup's chevron — so every stepper, scroll and
+                   popup arrow in the corpus simply was not there. Slice
+                   2 deleted the size-based classification that used to
+                   paint a document icon over them, which was right, and
+                   left nothing in its place, which was not: "an arrow
+                   that draws nothing where it used to draw a wrong
+                   document icon is progress, but rung 4 should still
+                   mark it" (plan 018 slice 16, defect 5).
+
+                   The marked unknown and NOT a triangle. The op carries
+                   a bounding rect and a verb and no shape, so drawing a
+                   triangle in it is the region defect one family over: a
+                   plausible guess with no evidence, on a rectangle small
+                   enough that the guess would read as fact. Rung 4 says
+                   the true thing — something is drawn here and this host
+                   cannot say what — and the deferred-op inventory keeps
+                   counting it so the gap stays measurable.
+
+                   An ERASE is exempt, for the same reason `Coverage`
+                   does not count one: it removes rather than adds, and
+                   marking it would claim missing content where the
+                   machine cleared the ground. */
+                guard op.verb != 2, let r = op.rect, r.count == 4 else {
+                    break
+                }
+                let frame = rectFrom(r, pt: pt)
+                drawUnavailableBits(in: drawingContext(), frame: frame)
+                coverage?.add(frame)
+                coverage?.attribute(frame, .unknown)
+                drew = true
             }
         }
 

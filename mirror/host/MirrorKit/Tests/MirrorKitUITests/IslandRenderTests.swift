@@ -246,6 +246,44 @@ final class IslandRenderTests: XCTestCase {
                        "CopyBits placeholders must remain behind structured ops")
     }
 
+    /// **An op this renderer cannot draw is still marked.**
+    ///
+    /// `poly` is the arrow family: the Memory panel's fourteen are 8×4
+    /// and 8×5 paints, which is a stepper's two triangles and a popup's
+    /// chevron. The replay's `default:` branch dropped them silently, so
+    /// every stepper, scroll and popup arrow in the corpus was simply
+    /// absent (plan 018 slice 16, defect 5).
+    ///
+    /// Marked, NOT drawn as a triangle: the op carries a bounding box, a
+    /// verb and no shape, and inventing the shape is the region defect
+    /// one family over.
+    func testADeferredOpIsMarkedRatherThanDroppedSilently() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        var arrow = DisplayOp(op: "poly", ticks: 1)
+        arrow.verb = 1
+        arrow.rect = [40, 40, 48, 44]
+        var marked = window(title: "Memory", front: true, z: 0,
+                            rect: r, island: nil)
+        marked.display = [arrow]
+        var empty = marked
+        empty.display = []
+
+        XCTAssertNotEqual(try RenderShot.png(scene: scene([marked])),
+                          try RenderShot.png(scene: scene([empty])),
+                          "a poly the renderer defers still leaves a mark")
+
+        /* An ERASE is exempt — it removes rather than adds, and marking
+           it would claim missing content where the machine cleared the
+           ground. Same rule `Coverage` follows for erases. */
+        var wipe = arrow
+        wipe.verb = 2
+        var erased = marked
+        erased.display = [wipe]
+        XCTAssertEqual(try RenderShot.png(scene: scene([erased])),
+                       try RenderShot.png(scene: scene([empty])),
+                       "a deferred ERASE marks nothing")
+    }
+
     /// **The render never prints text the machine truncated.**
     ///
     /// NOW's own Workshop sidebar is 92 points wide, so the Workshop
