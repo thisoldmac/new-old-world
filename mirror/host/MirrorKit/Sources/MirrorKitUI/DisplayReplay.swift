@@ -517,24 +517,14 @@ public enum DisplayReplay {
         guard frame.width > 1, frame.height > 1 else { return }
         var clipped = ctx
         clipped.clip(to: Path(frame))
-        clipped.fill(Path(frame), with: .color(Platinum.g1))
-        var x = frame.minX - frame.height
-        while x < frame.maxX {
-            var hatch = Path()
-            hatch.move(to: CGPoint(x: x, y: frame.maxY))
-            hatch.addLine(to: CGPoint(x: x + frame.height, y: frame.minY))
-            clipped.stroke(hatch, with: .color(Platinum.g2), lineWidth: 1)
-            x += 6
-        }
-        clipped.stroke(Path(frame), with: .color(Platinum.g3),
-                       style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
-        guard frame.width >= 92, frame.height >= 14 else { return }
-        let label = "Bitmap unavailable"
-        if let font = FontBook.small {
-            font.draw(label, in: clipped, x: frame.minX + 4,
-                      baselineY: frame.midY + CGFloat(font.ascent) / 2,
-                      color: Platinum.g4)
-        }
+        /* One definition, in UnknownVisual — this used to be a second copy
+           of the scene renderer's hatch, identical by coincidence. */
+        UnknownVisual.drawGround(in: clipped, frame: frame)
+        guard let font = FontBook.small,
+              let at = UnknownVisual.captionOrigin(
+                  in: frame, ascent: CGFloat(font.ascent)) else { return }
+        font.draw("Bitmap unavailable", in: clipped, x: at.x, baselineY: at.y,
+                  color: UnknownVisual.caption)
     }
 
     /// Map a guest font id + size to a bundled NFNT strike.
