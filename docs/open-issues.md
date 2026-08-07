@@ -38,6 +38,18 @@ six.
 The method, so the next element costs an hour rather than an afternoon:
 [deriving-a-drawn-procedure.md](deriving-a-drawn-procedure.md).
 
+**UNVERIFIED: five of the seven tab states have never been seen.**
+Every control panel and application in sweep A was scanned for the tab
+signature and exactly two have tabs — Appearance and Energy Saver — both
+with their window ACTIVE and FRONT. So there is no capture anywhere of an
+inactive tab strip, a pressed tab, an unavailable one, or a **small**
+(`kThemeSmallTabHeight` = 16) tab. `DrawnTabStrip` accepts 16-high tabs
+and `PlatinumTab` is written for them, and neither has ever been drawn
+against a reference. Same for direction: everything measured is
+`kThemeTabNorth`, and a South/East/West strip would be drawn as North and
+be wrong without refusing. Getting a capture is cheap — open Energy Saver
+and click another window — and nobody has.
+
 **Still open on that panel, and not addressed here:** Appearance
 publishes `controls = 0` and `dialogItems = 0` — six tabs and not one of
 them enumerable — so the tabs are now visible and still not addressable,
