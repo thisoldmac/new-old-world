@@ -35,7 +35,8 @@ final class IRFreezeTests: XCTestCase {
         let item = Scene.DesktopItem(
             name: "n", kind: "file", type: "TEXT", creator: "ttxt",
             x: 10, y: 20, placed: true, alias: false, invisible: false,
-            w: 16, h: 16)   // a list row: MAXIMAL means the box too
+            w: 16, h: 16,   // a list row: MAXIMAL means the box too
+            origin: .drawn) // …and where that box came from
 
         let control = Scene.Control(
             ref: "r", role: "scrollbar", title: "t", rect: rect,

@@ -153,8 +153,58 @@ public enum FinderItems {
             "end repeat",
             "end try",
             "end repeat",
+            desktopClause(maxItems: maxItems),
             "return r",
             "end tell",
+        ].joined(separator: "\n")
+    }
+
+    /// **The desktop, asked the same question every other surface is asked.**
+    ///
+    /// Folder windows have had the Finder's own drawn box since the list-view
+    /// lane; the desktop did not, and that is the whole of the snap-back
+    /// blocker. Its icons came from `SceneBuilder.desktopItems` — the *saved*
+    /// `fdLocation` grid out of the catalog — and its disks from
+    /// `ScenePoller.placeVolumes`, which invents a top-right stack. Both then
+    /// set `placed = true`, so a drag asking "do we know where this is?" would
+    /// have been told yes by the one that made the answer up.
+    ///
+    /// The desktop is a Finder container like any other and answers `bounds
+    /// of` in **global screen coordinates** — no content origin to add, which
+    /// is the one way these records differ from `I|`.
+    ///
+    /// Disks are enumerated separately as well as through `items of desktop`.
+    /// The two overlap on every machine we have looked at, and the parser
+    /// keeps the first record for a name; the second loop costs one Finder
+    /// enumeration and covers the case where they do not.
+    ///
+    /// It rides inside `windowsScript` rather than travelling as its own
+    /// request because a `script` call costs ~1–2 s of Finder time (measured)
+    /// and the desktop is wanted on exactly the polls the windows are.
+    static func desktopClause(maxItems: Int) -> String {
+        [
+            "set n to 0",
+            "try",
+            "repeat with t in (get items of desktop)",
+            "set n to n + 1",
+            "if n > \(maxItems) then",
+            "set r to r & \"X|;;\"",
+            "exit repeat",
+            "end if",
+            "set q to bounds of t",
+            "set r to r & \"D|\" & (name of t) & \"|\" & (item 1 of q) & \",\""
+                + " & (item 2 of q) & \",\" & (item 3 of q) & \",\""
+                + " & (item 4 of q) & \";;\"",
+            "end repeat",
+            "end try",
+            "try",
+            "repeat with t in disks",
+            "set q to bounds of t",
+            "set r to r & \"D|\" & (name of t) & \"|\" & (item 1 of q) & \",\""
+                + " & (item 2 of q) & \",\" & (item 3 of q) & \",\""
+                + " & (item 4 of q) & \";;\"",
+            "end repeat",
+            "end try",
         ].joined(separator: "\n")
     }
 
@@ -233,6 +283,65 @@ public enum FinderItems {
         return out
     }
 
+    /// The desktop's own drawn boxes, in GLOBAL screen coordinates, and
+    /// whether the Finder had more items than the cap.
+    public struct DesktopReport: Equatable {
+        public var items: [Placed]
+        public var truncated: Bool
+    }
+
+    /// Pull the `D|`/`X|` records out of the same script output `parse` reads.
+    ///
+    /// A second pass over one string rather than a second request: the
+    /// desktop's records ride inside `windowsScript`, and splitting the parse
+    /// keeps `parse`'s contract — and its tests — exactly as the list-view
+    /// lane left them.
+    ///
+    /// **First record for a name wins.** `items of desktop` and `disks`
+    /// overlap, and the Finder answers the same box for both; keeping the
+    /// first makes the duplicate inert rather than a last-writer race.
+    public static func parseDesktop(_ output: String) -> DesktopReport {
+        var report = DesktopReport(items: [], truncated: false)
+        var seen = Set<String>()
+        for record in unquoted(output).components(separatedBy: ";;")
+        where !record.isEmpty {
+            let fields = record.components(separatedBy: "|")
+            switch fields.first {
+            case "D":
+                guard fields.count >= 3, let box = box(fields[2]),
+                      !seen.contains(fields[1]) else { continue }
+                seen.insert(fields[1])
+                report.items.append(.init(name: fields[1], x: box.l, y: box.t,
+                                          w: box.r - box.l, h: box.b - box.t))
+            case "X":
+                report.truncated = true
+            default:
+                continue
+            }
+        }
+        return report
+    }
+
+    /// A four-number `l,t,r,b` field, or nil for anything else — including the
+    /// two-number form, which a desktop record never carries. A half-read box
+    /// is dropped rather than half-believed, the same rule `parse` applies.
+    private static func box(_ field: String) -> Rect? {
+        let n = field.split(separator: ",").compactMap {
+            Int($0.trimmingCharacters(in: .whitespaces))
+        }
+        guard n.count == 4 else { return nil }
+        return Rect(l: n[0], t: n[1], r: n[2], b: n[3])
+    }
+
+    /// OSADoScript renders its result in SOURCE form, so a text result arrives
+    /// wrapped in quotes.
+    private static func unquoted(_ raw: String) -> String {
+        guard raw.hasPrefix("\""), raw.hasSuffix("\""), raw.count >= 2 else {
+            return raw
+        }
+        return String(raw.dropFirst().dropLast())
+    }
+
     // MARK: - Joining identity to position
 
     /// The Finder says *what is in the window and where*; the catalog (`list`)
@@ -256,8 +365,50 @@ public enum FinderItems {
             item.w = p.w
             item.h = p.h
             item.placed = true      // the Finder drew it; that IS placement
+            item.origin = .drawn    // …and this is what makes it a HOME
             return item
         }
+    }
+
+    /// The desktop's items, joining the Finder's drawn boxes to whatever the
+    /// catalog and the volume list already knew about identity.
+    ///
+    /// **The Finder is authoritative on position and nothing else.** The
+    /// catalog says what a thing is (`kind`, `type`, `creator`, alias bit); the
+    /// volume list says which names are disks. Both keep their say; only the
+    /// coordinates and the provenance are replaced.
+    ///
+    /// **An item the Finder did not draw keeps the position it had**, and
+    /// keeps that position's provenance — an invisible file, or one the
+    /// enumeration truncated past. It does not silently inherit `.drawn` from
+    /// its neighbours, which is the way this kind of join usually goes wrong.
+    public static func mergeDesktop(drawn: [Placed],
+                                    existing: [Scene.DesktopItem])
+        -> [Scene.DesktopItem] {
+        var byName: [String: Scene.DesktopItem] = [:]
+        for entry in existing { byName[entry.name] = entry }
+        var out: [Scene.DesktopItem] = []
+        var claimed = Set<String>()
+        for p in drawn {
+            var item = byName[p.name] ?? .init(
+                name: p.name, kind: "file", type: nil, creator: nil,
+                x: 0, y: 0, placed: false, alias: false, invisible: false)
+            /* The Finder does not draw what the Finder does not show. An
+               invisible catalog entry that somehow carries the same name as a
+               drawn item stays invisible — the drawn box is about geometry,
+               and membership was decided by whoever set that bit. */
+            guard !item.invisible else { continue }
+            item.x = p.x; item.y = p.y
+            item.w = p.w; item.h = p.h
+            item.placed = true
+            item.origin = .drawn
+            claimed.insert(p.name)
+            out.append(item)
+        }
+        for entry in existing where !claimed.contains(entry.name) {
+            out.append(entry)
+        }
+        return out
     }
 
     // MARK: - Geometry

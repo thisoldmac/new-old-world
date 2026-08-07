@@ -237,6 +237,19 @@ public enum IRSchema {
         "windows[].items[].y",
         "windows[].items[].w",
         "windows[].items[].h",
+
+        /* 2026-08-07. WHERE a position came from — `drawn`, `saved` or
+           `unknown`. Optional, and absent means the producer did not say,
+           which reads as untrustworthy.
+
+           It is on the wire because `placed` was three provenances wearing
+           one boolean: set from the box the Finder drew, from the saved
+           `fdLocation` grid, and from a layout rule the HOST invented for
+           volumes. A consumer that must decide whether it may return an
+           item to a position was being told "yes, we know where this is"
+           by the one producer that had made the answer up. */
+        "desktopItems[].origin",
+        "windows[].items[].origin",
     ]
 
     /// Declared properties added after the freeze (wire-bearing or not).
@@ -257,6 +270,9 @@ public enum IRSchema {
            sense: nothing changes shape, and a reader that has never
            heard of them is exactly as correct as it was yesterday. */
         "DisplayOp.len", "DisplayOp.fullLen", "DisplayOp.trunc",
+
+        /* 2026-08-07. See desktopItems[].origin in v1Additions. */
+        "Scene.DesktopItem.origin",
     ]
 
     // MARK: - IR v2 semantic evidence
