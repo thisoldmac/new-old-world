@@ -1118,23 +1118,23 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 36ebf4ca06badf4bce83dec236aa7855c00eae1b
-derive ppc-inbound-types sha256=37fc462e78256c4de7150c6ad4be1594722e4d872131387de4ee4c8801480f1f lines=48 published
+sources-sha1: 1d7ed22aeedbddb6f6a79964ca925cf8c3b71fe6
+derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=a9b141fe03737b877e28850089045fabf82e9064908ed444cd167dbdca79770b lines=3
+derive disposition-census sha256=307e511d3de26faab3dcd6c48e1fb8ce78f5f5349ea406d4c5c3cecbc0de830c lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c
-derive unnoticed-from-table sha256=7cc654f3b11b4f42f9a356becaab8fa62d3471e7916dbf88c87bb2726efde394 lines=9
+derive unnoticed-from-table sha256=f02459c7b08ea7eb3926b9c5867761042bb300ba3cb38b9ecb18caab24a99814 lines=14
     echo "name-lists: 1"
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {t=$2; gsub(/[ `]/,"",t); \
         s=$5; gsub(/ /,"",s); if (s=="unnoticed") print t}' \
         docs/mcp-coverage.md | sort -u
-derive unnoticed-from-prose sha256=7cc654f3b11b4f42f9a356becaab8fa62d3471e7916dbf88c87bb2726efde394 lines=9
+derive unnoticed-from-prose sha256=f02459c7b08ea7eb3926b9c5867761042bb300ba3cb38b9ecb18caab24a99814 lines=14
     runs() { awk '/^### The unnoticed rows, named together/{s=1;next} \
         s&&/^#/{s=0} s' docs/mcp-coverage.md \
       | tr '\n' ' ' | grep -oE '\*\*[^*]+\*\*' \
@@ -1147,4 +1147,5 @@ rederived: 2026-08-07T03:50:12-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 6
 rederived: 2026-08-07T03:52:39-0400 d17ca9eb unchanged (count the lists, not just their union)
 rederived: 2026-08-07T03:52:58-0400 d17ca9eb unnoticed-from-table 8->9, unnoticed-from-prose 8->9 (the prose derivation now counts the LISTS, because two lists whose union matches the table is the 2026-08-05 rot)
 rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
+rederived: 2026-08-07T12:06:16-0400 c76fea99 sources, ppc-inbound-types 48->49, disposition-census 3->3, unnoticed-from-table 9->14, unnoticed-from-prose 9->14
 -->

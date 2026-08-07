@@ -1012,6 +1012,50 @@ between two derivations on one day is not a property of the command.)*
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
 
+## Re-derived at the 019 integration round 5, 2026-08-07 (`claude/019-integration-5`)
+
+**This supersedes every derivation below.** Seven lanes —
+`019-embed-mirror`, `019-embed-content`, `019-sweepb-regressions`,
+`019-theme-colours`, `019-derived-gate`, `019-workflow-lessons` and
+`019-sweep-b` — were merged into one tree and the commands at the foot
+were run against the RESULT, not carried across the merge.
+
+| | Derived here | Round 4 said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 49 | — |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **47** | 47 | — |
+| PowerPC verbs served | **44** | 44 | — |
+| NOW-68K verbs served | **13** | 13 | — |
+| census probes, PPC / 68K | **14 / 14** | 14 / 14 | — |
+
+**Nothing moved, and this round the counts are no longer the only thing
+checking that.** Round 4 found this file's verb table carrying 43 rows
+against a 47-verb registry with three prose sentences restating the
+smaller number — a hole no count could see, because every count was
+right. `019-derived-gate` landed in this same merge and closes it
+mechanically: the derived block at the foot of this file records the
+sha256 of each command's ANSWER, not its length, so a row that goes
+missing changes the hash even when the total does not. It was re-run at
+this merge (`tools/derived-doc-gate rederive`) and moved the recorded
+answers 48→49 inbound, 42→47 registry and 39→44 verbs — not because the
+tree changed under it, but because the gate's own receipt was declared on
+a lane cut before round 4's verbs landed. **That is the merge-time rot
+this file has been describing for two days, caught by a tool for the
+first time.**
+
+Checked by row rather than by total, this round: the table's 47 verb
+rows and the registry's 47 names are the same 47 (`comm -3` empty), and
+`comm -23` still names the same three unserved verbs — `put`, `cancel`,
+`shotdiag`. In `mcp-coverage.md` the unnoticed list is **one** list of
+thirteen names, and its `unnoticed-from-prose` derivation hashes
+identically to `unnoticed-from-table`. The two-lists defect did not
+recur across a seven-lane merge.
+
+`019-theme-colours` adds `meta.theme` to the scene, which is a new FIELD
+on an existing message and so is exactly the change these counts cannot
+see — the same blind spot round 4 recorded for `018-cdef-classify`.
+
 ## Re-derived at the 019 integration round 4, 2026-08-07 (`claude/019-integration-4`)
 
 **This supersedes every derivation below.** Five lanes —
@@ -1233,18 +1277,18 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 4ef3f3b249b947c22cab3312933850f1924d5a9f
-derive ppc-inbound-types sha256=37fc462e78256c4de7150c6ad4be1594722e4d872131387de4ee4c8801480f1f lines=48 published
+sources-sha1: 5caa8826f35d76f62e3cfe804bf5ef282a4a5d47
+derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=37b0fe5ed498218762060d37035ab15059d91f5b7080b02b2afd0968250b298c lines=42 published
+derive x-commands-registry sha256=2cfac62c73d551f528ca57266caa5fa724aee8fd21486c054e79b332399fdfdf lines=47 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
          f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=205252e1afa343f534eaf23e08f784a91a7968565c56cf51b8323b978c128de6 lines=39 published
+derive ppc-verbs sha256=a50feab1794656fbff9a897f1c1e3bb27aee0b26761d46edb6fcba3ad8e61223 lines=44 published
     grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
         now-guest-ppc/src/commands/commands.c \
       | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
@@ -1253,4 +1297,5 @@ derive 68k-verbs sha256=70a32cc1ffb1933862444e2c0a0d7972fb6f1b68e40d34a2fd6bb5ef
       | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
 rederived: 2026-08-07T03:49:51-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, x-commands-registry 0->42, ppc-verbs 0->39, 68k-verbs 0->13 (first declaration)
 rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
+rederived: 2026-08-07T12:06:15-0400 c76fea99 sources, ppc-inbound-types 48->49, x-commands-registry 42->47, ppc-verbs 39->44
 -->
