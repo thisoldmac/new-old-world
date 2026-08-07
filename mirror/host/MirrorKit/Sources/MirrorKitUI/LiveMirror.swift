@@ -267,6 +267,26 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         .background(Color.yellow.opacity(0.25))
                         .allowsHitTesting(false)
                 }
+                /* The SAME rule, one level finer. An absent pack is a
+                   loud state; a present pack that is missing one FACE is
+                   a quiet one, and the quiet one has already cost this
+                   project a day of diagnosis aimed at the wrong half of
+                   the system - group boxes that appeared to cross their
+                   own labels were Chicago standing in for Charcoal and
+                   overrunning a band sized for a narrower face.
+                   Substituting is now an accepted decision; substituting
+                   in silence is not, so the render says which glyphs are
+                   ours. Derived, so it retires itself on a desk whose
+                   pack rasterises Charcoal. */
+                if let banner = FontSubstitution.bannerText {
+                    Text(banner)
+                        .font(.system(size: 11))
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Color.yellow.opacity(0.25))
+                        .allowsHitTesting(false)
+                }
                 /* The hover names what a click WOULD do; the status says
                    what one DID. The second is the answer to a question a
                    person just asked, so it leads. */
