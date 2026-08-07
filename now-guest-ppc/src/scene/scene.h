@@ -216,6 +216,33 @@ typedef struct {
     NowSceneAnchor anchor;        /* the verdict for this partition */
     unsigned long stamp_ticks;    /* the anchor's capture tick */
     int stale;                    /* Ok, but older than the caller's window */
+    /* THE PROCESS'S OWN DECLARATION that it has no user interface: the
+       `modeOnlyBackground` bit of its 'SIZE' resource, as the Process
+       Manager reports it in ProcessInfoRec.processMode. A faceless
+       background application - Control Strip Extension, Folder Actions,
+       an 'appe' worker - sets it, and for such a process having no
+       windows is a NORMAL, EXPECTED state rather than an unobserved one.
+       "Headless" and "faceless" are the same fact in prose; the wire
+       word is `backgroundOnly` everywhere, matching the OS bit, and
+       ProcessListing's `kind: "background"` is the enum spelling of the
+       same declaration.
+
+       THE APPLICATION MENU IS NOT A SECOND SIGNAL. Its membership is
+       this same bit, one remove away: the Process Manager omits a
+       `modeOnlyBackground` application from the Application menu, which
+       is why the mirror's own SYNTHESISED switcher listing background
+       processes read as wrong beside the real one (open-issues,
+       Cycle 20). Reading that menu back to learn what a process IS would
+       put a walked UI artifact in the path of a fact the Process Manager
+       hands over directly - and would fail for the very processes it is
+       asked about. There is one source here, and it is this field.
+
+       Never inferred from an empty window list. That inference cannot
+       tell "has no UI by design" from "we failed to look", and asserting
+       the first from the second is what made six healthy processes read
+       as `ax_oracle_not_found` errors on a good boot. 0 means the
+       process did not declare it - not that we know it has a face. */
+    int background_only;
     short window_count;           /* windows admitted for this process */
     NowSceneCoverage windows_coverage;
 } NowSceneProc;
@@ -486,6 +513,14 @@ void now_scene_set_process_incarnation(NowScene *s, int proc,
                                        unsigned long incarnation);
 void now_scene_set_windows_coverage(NowScene *s, int proc,
                                     NowSceneCoverage coverage);
+
+/* The process's own `modeOnlyBackground` declaration (see
+   NowSceneProc.background_only). The caller passes the bit it read from
+   ProcessInfoRec.processMode; this side never derives it from window
+   counts, and there is deliberately no way to set it from a walk result.
+   No-op for an out-of-range row. */
+void now_scene_set_process_background_only(NowScene *s, int proc,
+                                           int background_only);
 
 /* Adds a window to a process already added. Returns 1 on success, 0 when
    the scene is full (sets windows_truncated) or when `proc` is out of

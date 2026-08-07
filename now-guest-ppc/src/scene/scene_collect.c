@@ -390,6 +390,16 @@ void now_scene_collect(NowScene *out, long seq,
         if (row < 0) {
             break;                    /* assembly recorded the truncation */
         }
+        /* THE PROCESS'S OWN DECLARATION, read in the same breath as its
+           name, from the same record. `modeOnlyBackground` is the
+           'SIZE' bit a faceless background application sets to say it
+           has no user interface - so this is the process answering, not
+           us inferring, and there is deliberately no path from the walk
+           result to this field. Inferring it from "we saw no windows"
+           is the mistake that made six healthy processes read as
+           errors. */
+        now_scene_set_process_background_only(
+            out, row, (info.processMode & modeOnlyBackground) != 0);
         now_scene_set_process_incarnation(
             out, row,
             now_obs_process_fingerprint(
