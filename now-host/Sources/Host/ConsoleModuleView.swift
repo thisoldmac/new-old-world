@@ -22,8 +22,9 @@ struct ConsoleModuleView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Console")
                     .font(.largeTitle.weight(.semibold))
-                Text("A shell into the connected Mac. Lines go across as "
-                     + "typed; \"help\" asks it what it serves.")
+                Text("A command line on \(MachineNaming.sentence(machineName)). "
+                     + "Lines go across as typed; \"help\" asks it what it "
+                     + "serves.")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -35,12 +36,19 @@ struct ConsoleModuleView: View {
     private var connectionBadge: some View {
         switch listener.state {
         case .connected(let name):
-            Label(name, systemImage: "circle.fill")
+            Label(MachineNaming.title(name), systemImage: "circle.fill")
                 .foregroundStyle(.green)
         default:
-            Label("No Mac Connected", systemImage: "circle.fill")
+            Label("No \(MachineNaming.properNoun) Connected",
+                  systemImage: "circle.fill")
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// What the machine on the wire calls itself, when there is one.
+    private var machineName: String? {
+        if case .connected(let name) = listener.state { return name }
+        return nil
     }
 
     private var scrollback: some View {

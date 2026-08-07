@@ -48,7 +48,10 @@ struct FilesModuleView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear { if model.rows.isEmpty { model.refresh() } }
+        .onAppear {
+            if model.rows.isEmpty { model.refresh() }
+            model.discoverLocationsIfNeeded()
+        }
         .onReceive(clock) { elapsed = $0 }
         .confirmationDialog(
             "Replace “\(model.overwritePrompt?.name ?? "")”?",
@@ -110,7 +113,7 @@ struct FilesModuleView: View {
                 Label("Connecting", systemImage: "circle.dotted")
                     .foregroundStyle(.orange)
             case .disconnected:
-                Label("No Mac Connected", systemImage: "circle.fill")
+                Label("No \(MachineNaming.properNoun) Connected", systemImage: "circle.fill")
                     .foregroundStyle(.secondary)
             }
         }
@@ -317,7 +320,7 @@ struct FilesModuleView: View {
         case .ready:
             EmptyView()
         case .noGuest:
-            Text("— no Mac connected")
+            Text("— no \(MachineNaming.commonNoun) connected")
                 .foregroundStyle(.secondary)
         case .loading:
             Text("— listing…")
@@ -339,19 +342,146 @@ struct FilesModuleView: View {
     }
 
     private var table: some View {
-        FileBrowserTable(model: model,
-                         rows: model.sorted(using: sortOrder),
-                         // A double-click means "let me look at this":
-                         // a folder opens, a file comes to the folder
-                         // this Mac shares and opens here.
-                         onOpen: { model.openOnThisMac($0) },
-                         sort: $sortOrder)
+        HStack(spacing: 0) {
+            locationsSidebar
+            Divider()
+            FileBrowserTable(model: model,
+                             rows: model.sorted(using: sortOrder),
+                             // A double-click means "let me look at this":
+                             // a folder opens, a file comes to the folder
+                             // this Mac shares and opens here.
+                             onOpen: { model.openOnThisMac($0) },
+                             sort: $sortOrder)
+                .overlay {
+                    if model.rows.isEmpty && !model.isLoading {
+                        emptyState
+                    }
+                }
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    /// The places worth one click on the machine being browsed.
+    ///
+    /// Everything in it was found rather than assumed — see
+    /// `ClassicLocations` for which route found what — and anything that
+    /// did not answer is simply not here. A person fills the gaps by
+    /// dragging a folder in, and empties it by throwing rows out; both
+    /// survive a restart, per machine.
+    private var locationsSidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("Places")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if model.isDiscoveringLocations {
+                    ProgressView().controlSize(.small)
+                }
+                Menu {
+                    Button("Look Again") { model.discoverLocations() }
+                        .disabled(!model.canBrowse
+                                  || model.isDiscoveringLocations)
+                    Button("Add This Folder") {
+                        model.pinLocation(path: model.path)
+                    }
+                    .disabled(model.pinnableName(for: model.path) == nil)
+                    Divider()
+                    Button("Restore Removed Places") {
+                        model.restoreRemovedLocations()
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("What is in this list, and how to change it")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+
+            List {
+                ForEach(model.locations) { location in
+                    locationRow(location)
+                }
+                .onMove { model.moveLocations(from: $0, to: $1) }
+            }
+            .listStyle(.sidebar)
             .overlay {
-                if model.rows.isEmpty && !model.isLoading {
-                    emptyState
+                if model.locations.isEmpty {
+                    Text(model.isDiscoveringLocations
+                         ? "Looking…"
+                         : "Nothing found inside the shared folder. Drag a "
+                           + "folder here to add it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(12)
                 }
             }
-            .frame(maxHeight: .infinity)
+        }
+        .frame(width: 190)
+        /* A folder dragged out of the browser lands here. The pasteboard
+           carries its path as text; the MODEL decides whether that string
+           names a folder it can currently see, so a stray drag of any
+           other text is refused rather than pinned. */
+        .onDrop(of: [.text], isTargeted: nil) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: NSString.self) { text, _ in
+                    guard let path = text as? String else { return }
+                    Task { @MainActor in model.pinLocation(path: path) }
+                }
+            }
+            return true
+        }
+    }
+
+    private func locationRow(_ location: FileLocation) -> some View {
+        Button {
+            model.go(to: location)
+        } label: {
+            Label(location.name, systemImage: location.symbol)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(model.path == location.path
+                         ? AnyShapeStyle(.primary)
+                         : AnyShapeStyle(.secondary))
+        .disabled(!model.canBrowse)
+        .help(locationHelp(location))
+        .contextMenu {
+            if location.origin != .root {
+                Button("Remove from Sidebar") {
+                    model.removeLocation(location)
+                }
+            }
+        }
+    }
+
+    /// Says which route found it, because "the Folder Manager told us"
+    /// and "we guessed this name and it existed" are different claims and
+    /// only one of them survives a localised system.
+    private func locationHelp(_ location: FileLocation) -> String {
+        let place = location.path.isEmpty
+            ? "the folder \(model.connection.peerLabel) shares"
+            : location.path
+        switch location.origin {
+        case .root:
+            return "Go to \(place)"
+        case .folderManager:
+            return "\(place) — found through "
+                + "\(MachineNaming.possessive(model.connection)) own "
+                + "Folder Manager, so this is its own name for it."
+        case .probed:
+            return "\(place) — found by asking for this name, which is a "
+                + "guess that happened to be right."
+        case .pinned:
+            return "\(place) — you added this."
+        }
     }
 
     private var emptyState: some View {
@@ -372,9 +502,10 @@ struct FilesModuleView: View {
             Image(systemName: "externaldrive.badge.questionmark")
                 .font(.system(size: 42))
                 .foregroundStyle(.secondary)
-            Text("No Mac Connected")
+            Text("No \(MachineNaming.properNoun) Connected")
                 .font(.title2.weight(.semibold))
-            Text("The other Mac dials this one; its shared folder "
+            Text("The \(MachineNaming.commonNoun) dials "
+                 + "\(MachineNaming.thisMac); its shared folder "
                  + "appears here once it does.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -401,8 +532,10 @@ struct FilesModuleView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .help(transfer.isAwaitingReceipt
-                      ? "Everything has been sent, but the classic Mac "
-                        + "reads far slower than we write. It confirms "
+                      ? "Everything has been sent, but "
+                        + "\(MachineNaming.sentence(model.connection)) "
+                        + "reads far slower than this side writes. It "
+                        + "confirms "
                         + "once the file is written and named."
                       : "Bytes handed to the network so far.")
             Button("Cancel") { model.cancelTransfer() }
@@ -578,7 +711,8 @@ struct FilesModuleView: View {
                 approval.receipt, forType: .string)
             alert.messageText = "Artifact Approval Copied"
             let destination = approval.destination.isEmpty
-                ? "the guest share root" : approval.destination
+                ? "\(MachineNaming.possessive(model.connection)) share root"
+                : approval.destination
             var detail =
                 "A private read-only copy of “\(approval.name)” is approved "
                 + "once for \(destination) for 10 minutes. "

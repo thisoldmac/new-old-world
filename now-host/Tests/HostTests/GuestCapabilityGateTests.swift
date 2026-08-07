@@ -40,7 +40,8 @@ final class GuestCapabilityGateTests: XCTestCase {
         // one. The peer label degrades to a description before a connection,
         // and a sentence built around it would read as an accusation.
         XCTAssertFalse(reason.contains("does not serve"))
-        XCTAssertTrue(reason.contains("No Mac is connected"))
+        XCTAssertTrue(reason.contains(
+            "No \(MachineNaming.commonNoun) is connected"))
     }
 
     func testUnaskedIsEnabledAndSaysTheClickIsWhatSettlesIt() {

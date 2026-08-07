@@ -285,7 +285,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                               keyEquivalent: "o")
         open.target = self
         menu.addItem(open)
-        let shoot = NSMenuItem(title: "Screenshot Guest",
+        // The same words as the main menu's item: one command, one name.
+        let shoot = NSMenuItem(title: "Capture Screen",
                                action: #selector(screenshotGuest),
                                keyEquivalent: "s")
         shoot.target = self

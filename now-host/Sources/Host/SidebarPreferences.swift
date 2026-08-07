@@ -55,7 +55,17 @@ final class SidebarPreferences: ObservableObject {
     static func sanitised(_ stored: [String], against known: [String]) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
-        for id in stored where known.contains(id) && seen.insert(id).inserted {
+        /* Through the rename table first, for the same reason the saved
+           SELECTION goes through it: a renamed module is not a retired one,
+           and dropping its old id here would silently move the page a person
+           had dragged to the top down to the bottom of their sidebar. */
+        for stored in stored {
+            let id = known.contains(stored)
+                ? stored
+                : ModuleRegistry.renamedIDs[stored].flatMap {
+                    known.contains($0) ? $0 : nil
+                }
+            guard let id, seen.insert(id).inserted else { continue }
             result.append(id)
         }
         // Anything the stored order has never heard of goes to the end, in

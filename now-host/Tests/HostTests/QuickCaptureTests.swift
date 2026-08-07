@@ -25,7 +25,7 @@ final class QuickCaptureTests: XCTestCase {
             connection: .disconnected, isCapturing: false,
             isStreaming: false, isTransferringFile: false)
         XCTAssertFalse(ready.isEnabled)
-        XCTAssertEqual(ready.reason, "No Mac is connected")
+        XCTAssertEqual(ready.reason, "No \(MachineNaming.commonNoun) is connected")
     }
 
     func testConnectingIsNotYetConnected() {
@@ -76,7 +76,7 @@ final class QuickCaptureTests: XCTestCase {
         var outcomes: [QuickCaptureOutcome] = []
         command.report = { outcomes.append($0) }
         command.run()
-        XCTAssertEqual(outcomes, [.failed("No Mac is connected")])
+        XCTAssertEqual(outcomes, [.failed("No \(MachineNaming.commonNoun) is connected")])
     }
 
     /// The badge says connected but the listener holds no session, so the
@@ -88,7 +88,10 @@ final class QuickCaptureTests: XCTestCase {
         var outcomes: [QuickCaptureOutcome] = []
         command.report = { outcomes.append($0) }
         command.run()
-        XCTAssertEqual(outcomes, [.failed("No Mac is connected")])
+        // The listener's own refusal, not QuickCapture's: the badge said
+        // connected, so the readiness rule let the command through.
+        XCTAssertEqual(outcomes, [.failed(
+            "No \(MachineNaming.commonNoun) is connected")])
     }
 
     // MARK: - Outcome copy
@@ -139,7 +142,7 @@ final class QuickCaptureTests: XCTestCase {
         let delegate = quietAppDelegate()
         let menu = delegate.makeStatusMenu()
         let shoot = try XCTUnwrap(menu.items.first {
-            $0.title == "Screenshot Guest"
+            $0.title == "Capture Screen"
         }, "the status menu must offer the command")
         XCTAssertEqual(shoot.keyEquivalent, "s")
         XCTAssertTrue(shoot.target === delegate)

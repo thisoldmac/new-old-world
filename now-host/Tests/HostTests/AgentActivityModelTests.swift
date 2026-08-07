@@ -271,7 +271,14 @@ final class AgentActivityModelTests: XCTestCase {
                       silent.detail)
         // And it says who is proceeding anyway, rather than implying the
         // machine agreed to it.
-        XCTAssertTrue(silent.detail.contains("host decision"), silent.detail)
+        XCTAssertTrue(silent.detail.contains(
+            "decision made on \(MachineNaming.thisMac)"), silent.detail)
+        // And it names the machine that stayed silent rather than calling
+        // it "this Mac" — the phrase the window around this row already
+        // spends on the reader's own machine.
+        XCTAssertTrue(silent.detail.lowercased().contains("q950"),
+                      silent.detail)
+        XCTAssertFalse(silent.detail.contains("This Mac"), silent.detail)
     }
 
     func testTheFourAnswersReadAsFourDifferentThings() {

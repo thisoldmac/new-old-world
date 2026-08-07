@@ -188,12 +188,17 @@ final class HostServingTests: XCTestCase {
     // MARK: - Pushing
 
     func testGuestCanSendAFileAndItLandsInTheShare() async throws {
-        /* The announce hook, not a published array: an arriving file is
-           made visible by a system notification, and a test that
-           asserted a list nothing reads would have passed while the
-           visible half was broken. */
+        /* The event the notifier subscribes to, not a published array:
+           an arriving file is made visible by a system notification, and
+           a test that asserted a list nothing reads would have passed
+           while the visible half was broken. */
         var announced: [URL] = []
-        listener.announceReceivedFile = { _, url, _ in announced.append(url) }
+        let watch = listener.events.subscribe { event in
+            if case .fileReceived(_, let url, _, _) = event {
+                announced.append(url)
+            }
+        }
+        defer { watch.unsubscribe() }
         let guest = try await connectedGuest()
         let bytes = "sent from the PowerBook\r".data(using: .macOSRoman)!
 
