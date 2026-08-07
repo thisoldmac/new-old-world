@@ -14,6 +14,101 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## UNVERIFIED: the Mirror is a module with a detach, and no drive has watched it (2026-08-07, `claude/019-embed-mirror`)
+
+The Mirror renders inside the host app as a module, alongside the others,
+and detaches into the window it used to only ever be. One
+`LiveMirrorView` over one `NOWMirrorSource` in both containers, so an
+attached and a detached view cannot disagree — that is a property of
+there being no second render path, not of anything being kept in step.
+
+**The change is really the LIFECYCLE, and the rendering was nearly
+free.** `FitTransform` already took both sizes as arguments and
+`LiveMirrorView` was already wrapped in a `GeometryReader`, so a pane and
+a window are the same code path with a different number. What had to be
+taken apart is that **a window WAS the poll**: `show()` called
+`source.start()` and `windowWillClose` called `source.stop()`. Running
+and where-it-is-shown are now two axes, each persisting its own last
+answer, and the second one cannot touch the first.
+
+**Backgrounding does nothing, deliberately, and this is the decision most
+likely to be revisited by somebody who has not read this.** Stopping the
+poll when the module is not showing sounds thrifty and is not: every
+`now_mirror_*` projection and the whole fidelity sweep read the source
+with no window involved and refuse while it is stopped, so an agent's
+drive would start refusing because a person clicked Console, with nothing
+on either machine naming the cause. The rendering cost of backgrounding
+is already zero — `HostRootView` is a `switch` in a `ViewBuilder` and
+destroys the pane's view anyway. `MirrorContainerTests` fails if any view
+on that path grows an `onDisappear`.
+
+**What was found on the way, and is the most valuable thing here.**
+Making every drawn bitmap nearest-neighbour — which the powers-of-two
+zoom stops need, or a 1-pixel Platinum rule becomes a smear that no
+similarity score can see — exposed that `BitmapFont` drew the glyph sheet
+at whatever fractional pen its caller passed. A centred window title
+lands on a half pixel whenever the parities differ. Smoothing had merely
+blurred that; nearest-neighbour made a glyph **sample the sheet cell
+beside it**, and a "c" in a title grew a stray dot. The pen rounds now,
+which is what QuickDraw does — it has no sub-pixel pen. `IslandRenderTests`
+caught it by comparing a render pair byte for byte, which is the only
+kind of gate that could have.
+
+**What is NOT verified, and why — this is the honest half.**
+
+- **No drive has been watched, attached or detached.** The lane's own VM
+  booted, the guest dialled in, the host owned the wire. The drive was
+  going to go over the agent socket (`now_mirror_drive`), and there is
+  **one agent endpoint per user**: `FileManager.default.temporaryDirectory`
+  resolves through `confstr(_CS_DARWIN_USER_TEMP_DIR)` and **ignores
+  `TMPDIR`**, so `NOW_PREFS_SUFFIX` cannot separate two hosts' sockets the
+  way it separates their preferences. Another session's host held it, the
+  guard refused correctly (`unsafeEndpoint("Another New Old World host
+  owns the local endpoint")`), and taking it would have been the
+  2026-08-06 mistake in a new currency. Nothing here is
+  emulator-verified.
+- **Nobody has looked at the pane on screen.** Capturing the host's own
+  window needs a Screen Recording grant this session must not give
+  itself, and UI scripting was out of scope by instruction. So "it
+  renders as a module" is **tested** — the view is composed, the gates
+  pass — and not *seen*.
+- **The zoom stops are proven offline, not on screen.**
+  `ZoomFidelityTests` renders a 1-pixel-striped island at 100% and 200%
+  and asserts the second is the first with every pixel doubled; watched
+  failing by mutation, where a black row came back as 64/255 grey. That
+  is the right measurement and it is not a person looking at a Platinum
+  frame at 200%, which is what the sampling change ultimately asks for.
+- **`UnknownVisual`'s tiled shading cannot be told.**
+  `GraphicsContext.Shading.tiledImage` takes no interpolation parameter.
+  The tile now carries `.interpolation(.none)` on the `Image` **and**
+  `shouldInterpolate: false` on its `CGImage`, which is the same intent
+  stated twice — but whether the shading honours either is undocumented
+  and untested. It is a 2×2 stipple, so the visible cost is small; it is
+  named here rather than assumed away.
+- **A stop longer than ten seconds still costs the anchor lease.** P1/P2/P4
+  are ten-second resident leases that retire by not being renewed, so a
+  Stop→wait→Start makes every act refuse `element-not-found` until the
+  restart re-arms. That is unchanged behaviour, but a Start/Stop control
+  makes it reachable in two clicks where it used to take a deliberate
+  window close.
+
+**Fixed on the way**, both of them silent classes rather than symptoms
+anyone had reported: `NOWMirrorContentPlane.disable` wiped the content
+cache from inside its own `qdtrace` round trip with no generation guard,
+so a quick Stop→Start cleared the *new* run's interiors for a cycle and
+read as a render defect; and `NOWMirrorWindow.exportEvidence` captured
+`window?.contentView`, which is nil while attached and threw `emptyFrame`
+— an error naming a blank capture rather than a missing window. It goes
+through `RenderShot` now, which is 1:1 guest pixels in either container
+by construction.
+
+The dated line this supersedes: the "`--open-mirror` could leave a window
+over a stopped poll" note below is now a note about a model that no
+longer exists. An open window has never been a running poll; since this
+change it is not even claimed to be, and `showMirror()` starts before it
+shows — gated, and watched failing by mutation with the two statements
+swapped.
+
 ## BROKEN: the first watch of the INTEGRATED render, and what it shows (2026-08-07, `claude/018-integration`)
 
 Seventeen plan-018 lanes merged into one tree, then the tree was

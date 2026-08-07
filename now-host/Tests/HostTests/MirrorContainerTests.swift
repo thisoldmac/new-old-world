@@ -166,6 +166,41 @@ final class MirrorContainerTests: XCTestCase {
                       + "picture simply disappears with nothing saying where")
     }
 
+    /// **B2, which the scope called the single most important edit.**
+    ///
+    /// Showing used to imply starting, because a window was the only
+    /// container and its `show()` called `source.start()`. With the axes
+    /// split, a `showmirror` from the guest against a stopped Mirror puts
+    /// a frozen picture in front of somebody and refuses every act behind
+    /// it — which is `docs/open-issues.md`'s "a window over a stopped
+    /// poll" arriving through a new door. The one implementation behind
+    /// all four faces has to resolve BOTH axes, and start first.
+    func testShowingTheMirrorStartsItBeforePuttingItAnywhere() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let show = try XCTUnwrap(state.range(of: "func showMirror()"))
+        let end = try XCTUnwrap(
+            state.range(of: "\n    }", range: show.upperBound..<state.endIndex))
+        let body = String(state[show.upperBound..<end.lowerBound])
+
+        let started = try XCTUnwrap(
+            body.range(of: "mirrorRun.start()"),
+            "showMirror must START the Mirror. Every face — the guest's "
+            + "button, the Window menu, now_mirror_open, --open-mirror — "
+            + "ends here, and none of them can be left showing a Mirror "
+            + "that is not running.")
+        let shown = try XCTUnwrap(
+            body.range(of: "mirrorWindow.show("),
+            "and it must still put it where it can be seen")
+        XCTAssertLessThan(
+            started.lowerBound, shown.lowerBound,
+            "start comes FIRST. Showing a stopped Mirror and starting it "
+            + "afterwards is the same defect with a shorter window.")
+        XCTAssertTrue(body.contains("selectedModuleID = \"mirror\""),
+                      "when the Mirror is attached, 'show it' means select "
+                      + "its module — there is no window to raise")
+    }
+
     /// **Backgrounding must do NOTHING.** `HostRootView` is a `switch` in a
     /// `ViewBuilder`, so the pane's view is destroyed on every module
     /// change and the rendering cost of backgrounding is already zero. If
