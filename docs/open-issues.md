@@ -197,6 +197,57 @@ documented way to confirm an act destroys the way to repeat it, so a
 five-step sequence cannot currently hold a reference across its own
 waiting.
 
+
+## FIXED: a human's stack was handed over headless, and the brief was the only thing that could have caught it (2026-08-07, `claude/019-human-stack`)
+
+**Verification level: TESTED.** `scripts/test-all` green on
+`claude/019-integration-7` plus these edits. The replacement stack itself
+is emulator-verified in the weaker sense that it was looked at: see below.
+
+Round 6 handed Michelle a stack whose VM ran `-display none`. When a
+modal alert came up in Mail — *"Is your computer set up for Internet
+access?"* — she had no window to dismiss it in, and the act plane was
+refusing those buttons. Her stack was, from her side, stuck.
+
+**Nothing was misconfigured and the brief was followed exactly.**
+Headless is the correct default for a lane; no step said "and give her a
+screen". That is the same shape as the port reservation one layer up —
+allocation reserved a NAME while the collision happened on a SOCKET —
+and it has the same cure: move the decision out of the prose and into
+the machine.
+
+`scripts/spin-up-ppc` now reads the answer off the **ports**, which
+already know whose stack it is. A boot on the reserved human range
+(`tools/lane-ports human --is-human`) gets a window by default and
+REFUSES `NOW_SPIN_DISPLAY=0` with exit 64 before it clones the image.
+`NOW_HUMAN_STACK=0` is the only way past, and it is a statement rather
+than a knob. [`docs/handing-over-a-human-stack.md`](handing-over-a-human-stack.md)
+is the checklist.
+
+### Two things found while repairing it, neither chased
+
+- **A modal in the front application costs you the clean-shutdown route
+  too.** `tools/shutdown-guest.py`'s primary route is the Finder's own
+  Special ▸ Shut Down, and it needs the Finder to own the menu bar. Mail
+  did, so it declined by name (`the menu bar belongs to 'Mail', not the
+  Finder`) and fell back to the applet — which shuts the machine down but
+  is known to leave the volume marked mounted. Acceptable for a throwaway
+  session clone and never for the shared stage image. So a stuck modal on
+  a human stack is not only a stuck stack; it is also a dirty image
+  waiting to happen if anyone preserves that clone.
+- **The `--wire` route needs the host app quit FIRST.** It *listens* on
+  the wire port and waits for the guest to redial, so a running host app
+  holding it means the Finder route cannot even be attempted. The obvious
+  ordering — guest down, then host — is the wrong one.
+
+### Still unverified
+
+Whether the act plane can drive that alert's buttons at all. It was
+reported refusing them, this arc did not reproduce it deliberately, and
+a fresh boot cleared the modal rather than answering the question. The
+guest is a Carbon-era alert in a foreign application, which is the
+`dialogItem` path — a second data point for whatever picks that up.
+
 ## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
 
 **Verification level: TESTED.** Found by reading a merge, not by any gate,

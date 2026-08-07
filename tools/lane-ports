@@ -684,6 +684,12 @@ def cmd_human(args) -> int:
     know which ports to stay off can ask, instead of inferring it from a
     `whose` answer that would otherwise read "unclaimed".
     """
+    # A predicate, for a caller that needs to BRANCH on the answer rather
+    # than read it. Silent and exit-coded, so shell can say `if ... then`.
+    if args.is_human is not None:
+        block = block_of_port(args.is_human)
+        return 0 if block is not None and is_human_block(block) else 1
+
     ports = ports_of(HUMAN_BLOCK)
     out = {"block": HUMAN_BLOCK, "reservedRange":
            [HUMAN_BLOCK_FIRST, HUMAN_BLOCK_LAST],
@@ -874,6 +880,14 @@ def main(argv: list[str]) -> int:
     human = sub.add_parser(
         "human", help="the reserved human block's ports (read-only)")
     human.add_argument("--json", action="store_true")
+    # So a caller can ASK rather than restate 590-599. The range is stated
+    # once, here, and scripts/spin-up-ppc reads it through this flag to
+    # decide whether the machine it is about to boot belongs to a person.
+    # A second copy of the numbers in a shell script is exactly the
+    # "state a limit once" defect AGENTS.md names.
+    human.add_argument("--is-human", type=int, metavar="PORT", default=None,
+                       help="exit 0 if PORT is in the reserved human range, "
+                            "1 if it is not. Prints nothing.")
 
     args = ap.parse_args(argv)
     if args.command in (None, "show"):
