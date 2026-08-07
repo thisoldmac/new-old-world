@@ -196,10 +196,10 @@ bevel rows.
 
 | region | pixels | exact | p50 | p95 | max |
 |---|---|---|---|---|---|
-| **appearance** / whole strip | 11,600 | 75.9 % | 0 | 204 | 255 |
-| appearance / chrome only | 4,150 | 65.3 % | 0 | 184 | 255 |
-| **energy-saver** / whole strip | 11,250 | 77.6 % | 0 | 204 | 255 |
-| energy-saver / chrome only | 3,200 | 68.5 % | 0 | 178 | 255 |
+| **appearance** / whole strip | 11,600 | 76.1 % | 0 | 204 | 255 |
+| appearance / chrome only | 4,150 | 65.5 % | 0 | 184 | 255 |
+| **energy-saver** / whole strip | 11,250 | 77.8 % | 0 | 204 | 255 |
+| energy-saver / chrome only | 3,200 | 68.7 % | 0 | 178 | 255 |
 
 Per tab — only the two caps, which is the part this drawer invented,
 with the label box excluded. `flat` excludes a two-column band around
@@ -207,9 +207,9 @@ the machine's own outline, which is where its anti-aliasing runs:
 
 | tab | caps: exact / p95 | caps **flat**: exact / p95 / **max** |
 |---|---|---|
-| leftmost, **front** (both panels) | 55.5 % / 187 | 73.1 % / 34 / **34** |
-| middle, non-front (×6 across both) | 63.3 % / 183 | 86.1–86.4 % / 34 / **34** |
-| rightmost, non-front (both panels) | 63.3 % / 183 | 86.4 % / 34 / **34** |
+| leftmost, **front** (both panels) | 55.7 % / 187 | 73.1 % / 34 / **34** |
+| middle, non-front (×6 across both) | 63.5 % / 183 | 86.1–86.4 % / 34 / **34** |
+| rightmost, non-front (both panels) | 63.5 % / 183 | 86.4 % / 34 / **34** |
 
 Read those rows carefully, because they say something a single
 percentage cannot:
@@ -323,6 +323,14 @@ replay has ever drawn came out as two rows at half coverage.
 The fix is a half-pixel translation (`DisplayReplay.pixelCentre`) and an
 inset on the frame verb. It moved the tab strip's exact-pixel score from
 55.6 % to 69.5 % on its own, before the caps were touched.
+
+**And it has a second half nobody would look for.** `LineTo` inks BOTH
+endpoints, so a line from `h` to `h2` covers `h2 - h + 1` pixels — while a
+butt-capped stroke drawn between the two pixel CENTRES covers half a pixel
+less at each end. Every line in every window was also losing its first and
+last column to grey. `lineCap: .square` restores them. Two independent
+off-by-a-half errors in one operation, and the second was only visible
+once the first was gone.
 
 The lesson is the one this repository keeps paying for in a new costume:
 **a whole-image similarity number cannot find a systematic one-pixel
