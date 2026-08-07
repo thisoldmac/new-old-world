@@ -14,10 +14,118 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## PARTLY GATED: the silent self-revert now has two gates, and both ship unarmed (2026-08-07, `claude/019-merge-gates`)
+
+**Verification level: TESTED**, by replaying the real incident and by
+mutation. Neither gate has refused a real commit or a real merge, because
+neither is armed.
+
+The entry below asked for two things nothing detected. Both now exist.
+
+**`tools/self-revert-gate`** — a commit that undoes its own branch's
+predecessor. For each commit it walks its own first-parent line (stopping
+at a merge: past one, the ancestors are somebody else's) and asks how many
+of the lines a near ancestor ADDED this commit REMOVES, byte for byte, in
+the same file. It flags on four conditions together: 12+ lines, 55% of
+everything that ancestor added, within 20 commits and 24 hours, and no
+mention of the ancestor in the message. Replayed against `fe4d8179` it
+names all four predecessors it undid, not the one an integrator found —
+129 of 129 lines from `9c219366` seven minutes earlier, 128 of 130 from
+`361c50ec`, 15 of 15 from `4fb1262d`, 31 of 31 from `8d92dba2`.
+
+The last condition is what makes it fair to refuse on, by the
+ext-bake-gate's own test: satisfying it is fully in the committer's
+power. A commit that means to undo its predecessor says so in one line.
+It is not asking for different work, it is asking for a message that
+describes the diff it carries.
+
+**Measured flag rate**, because a threshold without one is a hope:
+`tools/self-revert-gate sweep claude/019- main` flags **9 of 1050
+distinct commits across 61 branches** (0.86%, 2026-08-07). It is a
+subcommand rather than a number written down, because the rate moves as
+branches land and a derived figure quoted from memory is the defect this
+repository paid for three times in one day.
+
+`fe4d8179` is one of the nine. Another is `1de856e3`, which removes all
+48 substantial lines `39191398` added fourteen minutes earlier — a whole
+`scene_self.c`/`scene_self.h` feature and its source test — in a commit
+titled "drive system actions through guest state". **Nobody had noticed
+that one**, and it is not what this lane was sent to find. Whether the
+other seven are reworks or reverts is a reading; the point of the gate is
+that it hands a reader nine commits instead of a thousand.
+
+**`tools/merge-census-gate`** — the merge half. It derives every
+top-level definition in a tree (C functions, prototypes, macros and tags;
+Swift declarations; Python defs and classes; every published document's
+headings — 29,917 names over 1,407 files, in 0.7 seconds) and compares
+both parents and the merge base against the result. Three verdicts:
+
+- **DROPPED** *(refuses)* — a definition **neither side removed** relative
+  to the base, absent from the merge. Nobody deleted it and it is gone, so
+  the resolution lost it. That is both keep-both truncations in this
+  ledger: the six duplicate Python `def`s that still parsed, and the docs
+  entry gutted by keeping a newer heading and dropping an older body.
+- **IMPORTED SELF-REVERT** *(refuses)* — a commit in `HEAD..MERGE_HEAD`
+  the sibling gate flags. A merge whose own body NAMES the commit passes,
+  which is why round 7's real merge of `claude/019-asset-packs` is green:
+  it named `fe4d8179` and resolved all seven files by hand. History
+  already on the first parent is never re-refused, or an arc goes red
+  forever for a commit nobody on the merge can change.
+- **REMOVED BY A SIDE** *(reports, never refuses)* — a deletion a parent
+  actually made. A deliberate deletion and a revert are the same bytes
+  here, so refusing would refuse every honest deletion in the fleet. Each
+  name is instead attributed to the commit that removed it and grouped
+  under its subject: 87 bare names is a list nobody reads, and 87 names
+  under 26 subjects is 26 judgements.
+
+**The census alone would have caught one name out of that seven-file
+revert** — `Scene.swift`'s `cdef` — and that is stated here rather than
+discovered later. Everything else `fe4d8179` reverted lives INSIDE
+function bodies: three `switch` arms in `now_cdef_role`, a parameter on
+`put_coverage_claim`, a `snprintf` of `"cdef"`, 117 lines of this
+document under headings that survived. A census counts names, and the
+names did not move. So the imported-commit half is not a convenience —
+it is the half that works on this defect, and the census is the half that
+works on the keep-both truncations.
+
+**Both ship UNARMED**, behind `NOW_SELF_REVERT_GATE` (`.githooks/commit-msg`,
+a new hook — the only one that has the staged content *and* the message,
+and the message is half this verdict) and `NOW_MERGE_CENSUS_GATE`
+(`.githooks/pre-merge-commit` **and** `.githooks/pre-commit`, because a
+conflicted merge is committed by `git commit` and only the second fires).
+That is the derived-doc-gate's precedent and its reasoning: arming a gate
+into a live fleet is a change to every branch at once, made by somebody
+who is not on any of them. Arming is one deletion per hook, named in the
+comment beside it.
+
+**What neither gate covers**, and the list is longer than the covered one:
+
+- A revert that RETYPES rather than restores. Both comparisons are byte
+  exact on whole lines.
+- A revert of a SIBLING lane's work. `self-revert-gate` searches a
+  commit's own ancestry on purpose; widening it to the fleet turns a named
+  accusation into a similarity score.
+- A partial revert. Three of twelve lines is under both thresholds and
+  stays there.
+- Anything a merge changes *inside* a name it keeps — signatures,
+  bodies, a heading whose body was gutted.
+- **Neither is armed, so neither has refused anything.** They are tools
+  with tests until somebody arms them.
+
+`scripts/test-native` runs both suites (10 and 11 cases, ~25 seconds
+between them). Eight mutations were watched to fail them, including one
+that stops censusing Swift properties — which is what makes the replay of
+the real auto-merge load-bearing rather than decorative.
+
 ## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
 
 **Verification level: TESTED.** Found by reading a merge, not by any gate,
 and it would have landed silently.
+
+*(2026-08-07, later: both gates this entry asks for now exist and ship
+unarmed — see the entry above. The root cause, a shared worktree checked
+out under a running lane, is untouched: what changed is that its damage
+is visible.)*
 
 `fe4d8179` on `claude/019-asset-packs` — subject "feat(contract): hello
 says which Macintosh, in fields rather than in prose" — reverts the

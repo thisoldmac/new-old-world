@@ -253,6 +253,16 @@ run_py_path tools/mirror-gate-tests/test_arc_status_measurements.py
 # miscounts reports a plausible wrong number rather than failing -- the
 # same reason loopstat_test.c exists.
 run_py_path tools/mirror-gate-tests/test_flicker_analysis.py
+# The two merge-damage gates, both driven against real git repositories
+# built per case -- one throwaway per fixture, plus a replay of the actual
+# 2026-08-07 incident out of this repository's own history. They are the
+# slowest entries here, about 25 seconds between them, and the cost is the
+# replay: `git merge-tree` really re-resolves round 7's merge of
+# `claude/019-asset-packs` and the gates really census both sides of it. A
+# synthetic-only version would run in two seconds and would never have met
+# the defect either gate was built for.
+run_py_path tools/mirror-gate-tests/test_self_revert_gate.py
+run_py_path tools/mirror-gate-tests/test_merge_census_gate.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
