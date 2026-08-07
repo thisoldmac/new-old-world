@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cmd_line.h"
 #include "input_args.h"
 #include "json.h"
 
@@ -370,8 +371,18 @@ void now_input_run_script(const char *request_json, long id,
        carries a file or window name a person typed. Left undecoded, a
        host's UTF-8 reaches the OSA component as bytes this machine cannot
        read and the script fails on a name that is right. */
-    if (!now_json_find_text(request_json, "source", source,
-                            (long)sizeof source)) {
+    /* THE NAMED ARG, ELSE THE WHOLE LINE, which is what this verb's
+       `x-line` has promised since it was declared: "the script source,
+       which is the whole rest of the line". It read only the named arg,
+       so `script tell application "Finder" to activate` typed at the
+       machine answered "script requires source" while the identical wire
+       call worked. `CommandParityTests` cannot catch that - the verb is
+       present on both faces and merely broken on one - and the console
+       is the only face available when the wire is what you are
+       debugging. `now_cmd_arg_rest` is the same find_TEXT decode by
+       either door, so a name a person typed survives both. */
+    now_cmd_arg_rest(request_json, "source", source, (long)sizeof source);
+    if (source[0] == '\0') {
         source_len = -1;
     } else {
         source_len = (int)strlen(source);
