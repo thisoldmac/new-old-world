@@ -40,7 +40,8 @@ final class IRFreezeTests: XCTestCase {
             name: "n", kind: "file", type: "TEXT", creator: "ttxt",
             x: 10, y: 20, placed: true, alias: true, invisible: false,
             aliasTarget: .init(name: "t", kind: "application",
-                               type: "APPL", creator: "aplt"))
+                               type: "APPL", creator: "aplt"),
+            w: 16, h: 16)   // a list row: MAXIMAL means the box too
 
         let control = Scene.Control(
             ref: "r", role: "scrollbar", title: "t", rect: rect,

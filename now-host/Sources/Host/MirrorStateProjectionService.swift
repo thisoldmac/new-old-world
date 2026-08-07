@@ -299,11 +299,19 @@ final class MirrorStateProjectionService {
                        addresses them and why `finderOpen` takes a name
                        rather than a reference. */
                     ref: nil, role: item.kind, title: item.name,
+                    /* **The box the FINDER drew, not a 32x32 constant.** A
+                       list view's rows are 16x16 at a 19-px pitch, so a
+                       constant box overlapped the row below it and a click
+                       computed from its centre selected the wrong file.
+                       `HitTester.targetSize` is the one place that decides
+                       it, and it still answers 32x44 for an item whose
+                       producer never asked the Finder for a size. */
                     rect: item.placed
-                        ? .init(l: x, t: y,
-                                r: x + HitTester.iconSize,
-                                b: y + HitTester.iconSize
-                                    + HitTester.iconLabelHeight)
+                        ? {
+                            let box = HitTester.targetSize(item)
+                            return .init(l: x, t: y,
+                                         r: x + box.w, b: y + box.h)
+                        }()
                         : nil,
                     enabled: true, visible: !item.invisible,
                     value: nil, checked: nil,

@@ -123,6 +123,11 @@ public enum IRSchema {
         "desktopItems[].type",
         "desktopItems[].x",
         "desktopItems[].y",
+        /* The box the Finder DREW. Absent from a producer that
+           asked only for a position, which is why both are
+           optional; see FinderItems on the list view. */
+        "desktopItems[].w",
+        "desktopItems[].h",
 
         "meta",
         "meta.bytes",
@@ -174,6 +179,7 @@ public enum IRSchema {
         "Scene.DesktopItem.name", "Scene.DesktopItem.kind",
         "Scene.DesktopItem.type", "Scene.DesktopItem.creator",
         "Scene.DesktopItem.x", "Scene.DesktopItem.y",
+        "Scene.DesktopItem.w", "Scene.DesktopItem.h",
         "Scene.DesktopItem.placed", "Scene.DesktopItem.alias",
         "Scene.DesktopItem.invisible",
 
@@ -229,6 +235,8 @@ public enum IRSchema {
         "windows[].items[].type",
         "windows[].items[].x",
         "windows[].items[].y",
+        "windows[].items[].w",
+        "windows[].items[].h",
     ]
 
     /// Declared properties added after the freeze (wire-bearing or not).

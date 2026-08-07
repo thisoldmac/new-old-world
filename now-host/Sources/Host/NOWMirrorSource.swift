@@ -1042,12 +1042,26 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// bound; every page carries the same total so a partial read is refused.
     nonisolated private static let iconPageSize = 8
 
+    /// **`bounds of`, not `position of`** — the whole of the list-view defect.
+    ///
+    /// `position` is the Finder's live layout in an ICON view and the SAVED
+    /// icon grid in a list view, and this script had no idea which it was
+    /// looking at. So a window drawing ten rows at a 19-px pitch reported ten
+    /// icons on a three-column grid, every rect was wrong, and nothing could
+    /// be selected — Michelle's "unable to select items in list view".
+    ///
+    /// `bounds` is the box the Finder actually drew, in every view, and it
+    /// carries the position as its top-left; there is nothing `position`
+    /// answered that this does not. Measured 2026-08-07 on mac99 / OS 9.1
+    /// against a screendump — the full table is in `FinderItems`'s header,
+    /// along with the `view of window` vocabulary that was measured in the
+    /// same pass and is deliberately NOT read here.
     static func iconItemsScript(container: String, offset: Int,
                                 limit: Int = iconPageSize) -> String {
         """
         tell application "Finder"
         set ns to name of every item of \(container)
-        set ps to position of every item of \(container)
+        set ps to bounds of every item of \(container)
         set ks to kind of every item of \(container)
         end tell
         set totalCount to count ns
@@ -1059,7 +1073,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         repeat with i from firstIndex to lastIndex
         set p to item i of ps
         set out to out & "I" & tab & (item i of ns) & tab & (item 1 of p) & \
-        tab & (item 2 of p) & tab & (item i of ks) & return
+        tab & (item 2 of p) & tab & (item 3 of p) & tab & (item 4 of p) & \
+        tab & (item i of ks) & return
         end repeat
         end if
         return out
@@ -1550,6 +1565,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// classic AppleScript's terminator, and the reason `linefeed` is not
     /// used to build it (that identifier does not exist in OS 9's
     /// AppleScript and fails the whole script with osaErr -1753).
+    /// One roster row, with the Finder's kind string reduced to the four
+    /// words `Scene.DesktopItem.kind` is allowed to hold.
+    static func rosterItem(name: String, kind rawKind: String,
+                           x: Int, y: Int, w: Int?, h: Int?)
+        -> MirrorKit.Scene.DesktopItem {
+        let kind = rawKind.lowercased()
+        return .init(
+            name: name,
+            kind: kind.contains("folder") ? "folder"
+                : kind.contains("disk") ? "disk"
+                : kind.contains("application") ? "application" : "file",
+            type: nil, creator: nil,
+            x: x, y: y, placed: true,
+            alias: kind.contains("alias"), invisible: false,
+            w: w, h: h)
+    }
+
     static func parseIcons(_ raw: String) -> [MirrorKit.Scene.DesktopItem] {
         let text = unquote(raw)
         var items: [MirrorKit.Scene.DesktopItem] = []
@@ -1561,16 +1593,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard f.count >= 5 else { continue }
             switch f[0] {
             case "I":
-                guard let x = Int(f[2]), let y = Int(f[3]) else { continue }
-                let kind = f[4].lowercased()
-                items.append(.init(
-                    name: f[1],
-                    kind: kind.contains("folder") ? "folder"
-                        : kind.contains("disk") ? "disk"
-                        : kind.contains("application") ? "application" : "file",
-                    type: nil, creator: nil,
-                    x: x, y: y, placed: true,
-                    alias: kind.contains("alias"), invisible: false))
+                /* Seven fields since the roster moved to `bounds`: name,
+                   l, t, r, b, kind. A five-field row is an older capture
+                   carrying a bare position, and is still read — with no
+                   size, which every reader answers with the 32x32 it used
+                   to assume. A row that is neither is a partial read and
+                   is dropped rather than half-believed. */
+                guard f.count >= 7, let l = Int(f[2]), let t = Int(f[3]),
+                      let r = Int(f[4]), let b = Int(f[5]) else {
+                    guard let x = Int(f[2]), let y = Int(f[3]) else { continue }
+                    items.append(Self.rosterItem(name: f[1], kind: f[4],
+                                                 x: x, y: y, w: nil, h: nil))
+                    continue
+                }
+                items.append(Self.rosterItem(name: f[1], kind: f[6],
+                                             x: l, y: t,
+                                             w: r - l, h: b - t))
             case "F":
                 /* The Finder answers with the type as a `type class`, which
                    reaches the wire as AppleScript's rendering of it rather

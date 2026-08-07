@@ -469,6 +469,21 @@ public struct Scene: Codable, Equatable, Sendable {
         public var creator: String?
         public var x: Int
         public var y: Int
+        /// The size of the box the Finder actually drew, when the producer
+        /// asked for it — `bounds of` an item, minus its top-left.
+        ///
+        /// **Why a size at all, when every icon is 32×32.** It is not. A
+        /// window in list view draws a 16×16 row icon, and one in small-icon
+        /// view a 16×16 icon on a different grid; only the icon view's box is
+        /// 32×32. A producer that reported a position and let the reader
+        /// assume the size therefore described a list row as if it were an
+        /// icon on a grid — see the `view` measurement in `FinderItems`.
+        ///
+        /// **nil is a real answer**, and means the producer did not ask. Every
+        /// reader falls back to the 32×32 icon box, which is what it assumed
+        /// before this field existed, so an older fixture decodes unchanged.
+        public var w: Int?
+        public var h: Int?
         public var placed: Bool
         public var alias: Bool
         public var invisible: Bool
@@ -499,9 +514,11 @@ public struct Scene: Codable, Equatable, Sendable {
         public init(name: String, kind: String, type: String?,
                     creator: String?, x: Int, y: Int, placed: Bool,
                     alias: Bool, invisible: Bool,
-                    aliasTarget: AliasTarget? = nil) {
+                    aliasTarget: AliasTarget? = nil,
+                    w: Int? = nil, h: Int? = nil) {
             self.name = name; self.kind = kind; self.type = type
             self.creator = creator; self.x = x; self.y = y
+            self.w = w; self.h = h
             self.placed = placed; self.alias = alias
             self.invisible = invisible
             self.aliasTarget = aliasTarget
