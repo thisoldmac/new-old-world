@@ -70,8 +70,17 @@ add_executable(NowExt
     # what tbt's sibling INIT binaries used to.
     src/now_ext_act.c
     src/now_ext_act_patch.S
+    # P7, the drag vehicle. Its own translation unit for the reason the
+    # liveness pair are two: this is the file that can leave a machine
+    # holding the mouse button, so it must be the file you can find.
+    # No trap patches at all - four low-memory writes and a deadline.
+    src/now_ext_drag.c
+    src/now_ext_drag_tm.S
     src/now_content_qdext.S
     ../now-guest-shared/src/now_act_guard.c
+    # P7's decisions, where the host cc can compile them and
+    # scripts/test-native can watch the dead-man fire.
+    ../now-guest-shared/src/now_drag_logic.c
     ../now-guest-shared/src/now_semantic_guard.c)
 add_dependencies(NowExt generate_now_ext_identity)
 set_source_files_properties(src/now_ext.c

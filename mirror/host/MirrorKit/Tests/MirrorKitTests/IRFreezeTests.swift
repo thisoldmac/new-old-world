@@ -41,7 +41,8 @@ final class IRFreezeTests: XCTestCase {
             x: 10, y: 20, placed: true, alias: true, invisible: false,
             aliasTarget: .init(name: "t", kind: "application",
                                type: "APPL", creator: "aplt"),
-            w: 16, h: 16)   // a list row: MAXIMAL means the box too
+            w: 16, h: 16,   // a list row: MAXIMAL means the box too
+            origin: .drawn) // …and where that box came from
 
         let control = Scene.Control(
             ref: "r", role: "scrollbar", title: "t", rect: rect,

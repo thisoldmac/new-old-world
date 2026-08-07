@@ -204,7 +204,14 @@ public enum SceneBuilder {
                 x: h, y: v,
                 placed: !(h == 0 && v == 0),
                 alias: flags & fdIsAlias != 0,
-                invisible: false))
+                invisible: false,
+                /* The SAVED grid, and it says so. `fdLocation` is where the
+                   icon was last filed, not where the Finder has laid it out
+                   now — on the probe folder the two differed by a constant
+                   (52, 25) at rest. Fine to draw a desktop from, and not a
+                   place to return a dragged file to. A {0,0} entry has no
+                   position at all, which `placed` already says. */
+                origin: (h == 0 && v == 0) ? .unknown : .saved))
         }
         return items
     }

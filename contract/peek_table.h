@@ -121,7 +121,23 @@ enum {
        are never inferred from a version. A build that gains the channel
        says so with its own bit rather than by the vehicle's changing
        meaning underneath a reader. */
-    kNowPeekTableCapLivenessNet = 1u << 6
+    kNowPeekTableCapLivenessNet = 1u << 6,
+    /* P7: the DRAG vehicle — a mouse button that stays down across a
+       gesture the application is inside, and a resident that releases it
+       whether or not anybody asks.
+
+       Its own bit rather than a version of P4's, because it is a
+       different vehicle and not a new op on the old one. P4's whole
+       input mechanism (`act_post_click`) queues a mouseDown and its
+       mouseUp in one call at jGNE time; a drag cannot be served that way
+       at all, because during `DragGrayRgn` the application is NOT in
+       GetNextEvent and the jGNE filter is never re-entered. So P7 brings
+       a Time Manager task, which runs whether or not anything is being
+       scheduled — the same argument P6 makes for the same reason.
+
+       A build without this bit refuses a drag rather than arming a
+       vehicle that cannot fire. */
+    kNowPeekTableCapDrag = 1u << 7
 };
 
 /* P3 asked for 1u << 2 and for its field at the head of the appended
@@ -272,7 +288,23 @@ enum {
     /* A system Application-menu visibility command, served in the target
        process context. `item_index` carries kNowPeekActVisibility* so the
        V1 cell keeps every existing offset. */
-    kNowPeekActOpVisibility = 8
+    kNowPeekActOpVisibility = 8,
+    /* Begin a drag: queue a mouseDown at (click_h, click_v) in the
+       target's own context and LEAVE THE BUTTON DOWN, handing the
+       gesture to the resident's drag vehicle (P7, below).
+
+       There is deliberately no matching OpDragMove and no OpDragRelease,
+       and the absence is the design rather than an omission. Once the
+       button is down the application is inside its own tracking loop —
+       `DragGrayRgn` reading `StillDown`/`GetMouse` — and is not calling
+       GetNextEvent, so the jGNE filter that serves every op above is
+       never re-entered and could not serve them. Motion and release are
+       written straight into `NowPeekDragCell` and consumed by the Time
+       Manager task, which fires regardless of who is scheduled.
+
+       So: the press is a REQUEST (it needs the target's context, its
+       identity check and its A5). The rest of the gesture is a SESSION. */
+    kNowPeekActOpDragPress = 9
 };
 
 enum {
@@ -383,7 +415,15 @@ enum {
     kNowPeekActErrItemDisabled = 15,
     kNowPeekActErrIdentity = 16,
     kNowPeekActErrExpired = 17,
-    kNowPeekActErrSessionChanged = 18
+    kNowPeekActErrSessionChanged = 18,
+    /* P7. A drag is already in flight. Single-flight for the same reason
+       the act cell is: there is one mouse button. */
+    kNowPeekActErrDragBusy = 19,
+    /* The resident has no drag vehicle — the Time Manager task never
+       installed, or this build predates P7. Distinct from Busy and from
+       PostFailed: nothing was asked of the application, and the repair is
+       a different resident, not a retry. */
+    kNowPeekActErrDragNoVehicle = 20
 };
 
 /* How a text request names its object. Every kind requires text_window,
@@ -520,6 +560,194 @@ typedef struct {
 
     unsigned char text_buf[kNowPeekActTextMax];
 } NowPeekActCell;
+
+/* ======================================================================
+   P7 - THE DRAG VEHICLE
+   ======================================================================
+
+   P4 above can click. It cannot HOLD, and the difference is not a matter
+   of degree. `act_post_click` queues a mouseDown and its mouseUp in one
+   call, from the jGNE filter, and returns; every op in P4 is that shape.
+   A drag needs three things none of which that shape can give:
+
+   1. A press whose release is not already queued.
+   2. Motion delivered WHILE the button is down. The Finder's own drag
+      loop reads `StillDown`, `GetMouse` and `WaitMouseUp`, all of which
+      read the mouse low-memory globals - so motion is a sequence of
+      writes to those globals. But the application is INSIDE that loop
+      and is therefore not calling GetNextEvent, so the jGNE filter is
+      never re-entered and cannot deliver them. The vehicle must be an
+      interrupt-time one: a Time Manager task, for the same reason P6 is.
+   3. A release.
+
+   And then the fourth thing, which is not a feature but the price of the
+   other three:
+
+   4. A DEAD-MAN RELEASE THE RESIDENT ENFORCES ITSELF.
+
+   A guest left with the button down sits in the Finder's tracking loop
+   forever, and the host cannot rescue it: the host's only channel into
+   the guest is the same cell the wedged application has stopped reading.
+   So the release cannot be something the host is trusted to send. The
+   resident carries a deadline and releases the button when it expires,
+   whether or not anybody asked - including when the host process was
+   killed between the press and the release, which is the case that
+   motivates the whole design.
+
+   TWO deadlines, and either fires:
+
+   - `idle_deadline` - ticks of silence tolerated since the last thing the
+     HOST asked for. It catches a dead host.
+   - `max_ticks` - the whole gesture's ceiling, refreshed by nothing at
+     all. It catches a host that is alive and heartbeating with a wedged
+     idea of what it is doing. One timer that the thing it measures can
+     refresh is not a timeout (finding instrument-feeds-the-clock); this
+     is why there are two, and why only one of them is refreshable.
+
+   BOTH ARE CLAMPED BY THE RESIDENT, not by the caller. A host that
+   writes 0, or 0xFFFFFFFF, or forgets the field entirely must not be
+   able to switch the dead-man off - so the resident treats these as
+   requests inside a range it owns. That is the one place in this header
+   where the application's number is advisory.
+
+   WHAT THE HEARTBEAT MUST MEAN. `heartbeat_ticks` is the HOST's
+   liveness relayed through the guest application, never the guest
+   application's own idle pump. An application that refreshed it from its
+   event loop would keep a dead host's drag alive forever and the
+   dead-man would measure nothing. The application refreshes it only when
+   a drag message actually arrives from a face. */
+enum {
+    kNowPeekDragFormatNone = 0,
+    kNowPeekDragFormatV1 = 1
+};
+
+enum {
+    kNowPeekDragStateIdle = 0,
+    /* The button is down and the Time Manager task owns the gesture. */
+    kNowPeekDragStateHeld = 1,
+    /* The button has been written up and the session is finished. It
+       stays here, with its end_reason, until the next press clears it:
+       a session that vanished on completion could not tell a host that
+       came back late WHY its drag ended. */
+    kNowPeekDragStateEnded = 2
+};
+
+/* Why a drag ended. The four are separately actionable and a single
+   "done" would make them one - which is the whole complaint P4's error
+   enum makes about collapsing failures. */
+enum {
+    kNowPeekDragEndNone = 0,        /* still held */
+    kNowPeekDragEndReleased = 1,    /* the host asked, and it happened */
+    /* The dead-man. Two codes, because the repairs differ: an idle
+       expiry says the host stopped talking, a cap expiry says it never
+       stopped and never finished. */
+    kNowPeekDragEndDeadManIdle = 2,
+    kNowPeekDragEndDeadManCap = 3,
+    /* The table's writer lease changed under the session, or the plane
+       was disarmed. The button still goes up - that is not optional -
+       but the gesture was not completed and must never be reported as
+       though it were. */
+    kNowPeekDragEndSessionLost = 4
+};
+
+/* The clamps the resident applies to whatever the caller asked for.
+   Stated once, here, because a limit that lives in the sender and again
+   in the receiver is the defect class this project has paid for most.
+
+   60 ticks = 1 s of silence, and 1800 = 30 s of gesture. Both are
+   deliberately short: a drag is a hand movement, and the cost of ending
+   one early is a snap-back, while the cost of ending one late is a
+   machine nobody can use. */
+enum {
+    kNowPeekDragIdleMinTicks = 15,
+    kNowPeekDragIdleMaxTicks = 300,
+    kNowPeekDragIdleDefaultTicks = 60,
+    kNowPeekDragCapMinTicks = 60,
+    kNowPeekDragCapMaxTicks = 1800,
+    kNowPeekDragCapDefaultTicks = 600,
+    /* How often the vehicle fires. 16 ms is roughly a frame and is what
+       the mouse VBL itself runs at; faster buys nothing a tracking loop
+       can see, and slower makes the dead-man coarse. */
+    kNowPeekDragTickMs = 16
+};
+
+/* One drag session. Its own cell rather than more fields on the act cell
+   because it is not a request: it is a state two contexts share, written
+   at both ends, and outliving many jGNE passes.
+
+   `seq` is the seqlock the rest of this table uses - odd while the
+   RESIDENT writes. The application's own writes are single words
+   committed by `want_seq` and `release_request`, so they need no lock:
+   the resident reads each of them once per tick and a torn 32-bit read
+   is not a thing either compiler produces here.
+
+   Layout obeys the same rule as everything above: every field is 32 bits
+   wide, so no compiler inserts padding and the asserts below hold under
+   all three. */
+typedef struct {
+    NowPeekU32 seq;             /* odd while the resident writes         */
+    NowPeekU32 state;           /* kNowPeekDragState*                    */
+    /* Allocated by the press and named by everything after it. A release
+       that names a stale session is DROPPED rather than obeyed: without
+       this, a release for a gesture that already timed out would end the
+       next one, and the two are indistinguishable from the cell alone. */
+    NowPeekU32 session;
+    NowPeekU32 target_a5;       /* the A5 world the press was served in  */
+
+    /* ---- written by the APPLICATION ---------------------------------- */
+    NowPeekI32 want_h;          /* where the host wants the pointer      */
+    NowPeekI32 want_v;
+    /* The commit word for want_h/want_v, bumped AFTER them. The resident
+       acts on a want only when this changes, so a half-written point is
+       never consumed - the same discipline endpoint_epoch uses. */
+    NowPeekU32 want_seq;
+    /* The HOST's liveness, relayed. See the header above: never the
+       guest application's own idle. */
+    NowPeekU32 heartbeat_ticks;
+    /* The session nonce to release, or 0. Not a boolean, so that a
+       release cannot be for "whatever is running". */
+    NowPeekU32 release_request;
+    NowPeekU32 idle_deadline;   /* requested; the resident clamps it     */
+    NowPeekU32 max_ticks;       /* requested; the resident clamps it     */
+
+    /* ---- written by the RESIDENT ------------------------------------- */
+    NowPeekI32 at_h;            /* where the pointer actually is         */
+    NowPeekI32 at_v;
+    NowPeekI32 origin_h;        /* where the press landed                */
+    NowPeekI32 origin_v;
+    NowPeekU32 begin_ticks;
+    NowPeekU32 last_want_ticks; /* when the last new want was consumed   */
+    NowPeekU32 end_reason;      /* kNowPeekDragEnd*                      */
+    NowPeekU32 end_ticks;
+    /* The clamped values actually in force, reported so a caller can see
+       that its request was narrowed rather than obeyed. A clamp nobody
+       can observe is indistinguishable from a caller being right. */
+    NowPeekU32 idle_in_force;
+    NowPeekU32 cap_in_force;
+    /* Evidence the vehicle RAN, in the same shape liveness_ticks is: a
+       count, not a timestamp, because a stopped clock and a stopped task
+       look identical in a timestamp. */
+    NowPeekU32 ticks_served;
+    /* The LAST want this vehicle consumed, not a count of them - and the
+       difference is the useful part. A host that moves the pointer
+       faster than the vehicle fires will see this skip values, which is
+       exactly the fact "3 moves applied" would hide: the gesture is
+       being sampled, not replayed. */
+    NowPeekU32 moves_applied;
+    /* The button has been written up and a mouseUp EVENT is still owed.
+       The two halves are separated on purpose. Writing the low-memory
+       button state is what every tracking loop reads and is the part
+       that must never fail, so the resident does it at interrupt time
+       where nothing can refuse it. Queueing the event needs the target's
+       own context and PPostEvent, so the jGNE pass does that on its next
+       entry - which happens as soon as the tracking loop, now seeing the
+       button up, returns the application to GetNextEvent. */
+    NowPeekU32 pending_mouseup;
+    /* What the resident last wrote to MBState: 1 down, 0 up. It is the
+       one fact a person looking at a wedged machine most needs, and
+       deriving it from `state` would be a guess. */
+    NowPeekU32 button_down;
+} NowPeekDragCell;
 
 /* One process's anchors, captured by the jGNE filter while that
    process's context is current - the only place its low-memory
@@ -1058,6 +1286,14 @@ typedef struct {
        heap — read from a foreign context after that heap may be gone, for
        the same reason `guest_name` beside it is one. */
     unsigned char endpoint_os[32];
+    /* U11 P7 append. **The drag session.** Appended at the tail by the
+       accretive rule: every offset above is unchanged, and a resident or
+       an application built before P7 finds each field exactly where it
+       left it. `length` and `drag_format` together are what say this
+       region was written — a reader must check BOTH, because a zeroed
+       tail and an absent tail have to look different. */
+    NowPeekU32 drag_format;   /* kNowPeekDragFormat* */
+    NowPeekDragCell drag;
 } NowPeekTable;
 
 /* What the resident's own liveness channel is doing. Values are the
@@ -1187,10 +1423,15 @@ _Static_assert(sizeof(NowPeekActV2Cell) == 32 * 4,
 /* The table ends where its last appended field ends. Every append edits
    this line, and that is the point: it is the one assert that notices a
    field added anywhere but the tail. */
-_Static_assert(sizeof(NowPeekTable)
-                   == offsetof(NowPeekTable, endpoint_os)
-                    + sizeof(((NowPeekTable *)0)->endpoint_os),
-               "table size");
+/* Retired by U11: the endpoint OS string is no longer the tail. Kept as
+   a fixed-position assert rather than deleted, because what a deployed
+   resident depends on is the OFFSET, and that is what an append must not
+   move. The "is the tail" claim belongs to whichever region appended
+   last, and is asserted once, at the bottom of this file. */
+_Static_assert(offsetof(NowPeekTable, endpoint_os)
+                    + sizeof(((NowPeekTable *)0)->endpoint_os)
+                   == offsetof(NowPeekTable, drag_format),
+               "the endpoint OS string keeps its place under an append");
 _Static_assert(sizeof(NowPeekSemanticRecord) == 48,
                "semantic record size");
 _Static_assert(offsetof(NowPeekTable, semantic_format)
@@ -1280,8 +1521,31 @@ _Static_assert(offsetof(NowPeekTable, channel_sends)
 _Static_assert(offsetof(NowPeekTable, endpoint_os)
                    == offsetof(NowPeekTable, channel_sends) + 4,
                "the endpoint's OS string offset");
-_Static_assert(sizeof(NowPeekTable)
+/* U11 P7. The drag cell appends behind the endpoint OS string, so every
+   offset a deployed resident depends on is unchanged and these are
+   the only new numbers. 25 four-byte fields, no padding under any of the
+   three compilers - which is the layout rule stated at the top of this
+   file, and these asserts are how it is watched rather than assumed.
+
+   The width assert is not decoration. This struct is written by an
+   INTERRUPT-TIME task in one binary and read by a Carbon application
+   compiled by a different compiler; a packing difference here would show
+   up as a drag that reads its own deadline out of somebody else's field,
+   which is the one defect in this plane that ends with a machine holding
+   the mouse button down. */
+_Static_assert(sizeof(NowPeekDragCell) == 100, "drag cell size");
+_Static_assert(offsetof(NowPeekDragCell, want_seq) == 24,
+               "the want commit word's offset");
+_Static_assert(offsetof(NowPeekDragCell, button_down) == 96,
+               "the button state is the drag cell's tail");
+_Static_assert(offsetof(NowPeekTable, drag_format)
                    == offsetof(NowPeekTable, endpoint_os) + 32,
-               "the endpoint OS string is the new tail");
+               "the drag plane appends behind the endpoint OS string");
+_Static_assert(offsetof(NowPeekTable, drag)
+                   == offsetof(NowPeekTable, drag_format) + 4,
+               "drag cell offset");
+_Static_assert(sizeof(NowPeekTable)
+                   == offsetof(NowPeekTable, drag) + sizeof(NowPeekDragCell),
+               "the drag cell is the new tail");
 
 #endif /* NOW_PEEK_TABLE_H */

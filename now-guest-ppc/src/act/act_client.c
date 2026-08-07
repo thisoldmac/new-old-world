@@ -526,6 +526,8 @@ const char *now_act_error_code(unsigned long plane_error)
     case kNowPeekActErrIdentity: return "act-identity-mismatch";
     case kNowPeekActErrExpired: return "act-expired";
     case kNowPeekActErrSessionChanged: return "act-session-changed";
+    case kNowPeekActErrDragBusy:    return "drag-busy";
+    case kNowPeekActErrDragNoVehicle: return "drag-no-vehicle";
     default:                        return "act-refused";
     }
 }
@@ -578,6 +580,15 @@ const char *now_act_error_message(unsigned long plane_error)
     case kNowPeekActErrSessionChanged:
         return "the application writer session changed before the request "
                "could be served";
+    /* Two refusals that must not collapse into one. Busy is a retry - a
+       button is already held and there is exactly one. No-vehicle is a
+       different resident: this extension has no drag Time Manager task,
+       so no amount of retrying will ever produce one. */
+    case kNowPeekActErrDragBusy:
+        return "a drag is already holding the mouse button down";
+    case kNowPeekActErrDragNoVehicle:
+        return "this resident has no drag vehicle, so the button could "
+               "never be held";
     default:
         return "the target refused the request";
     }

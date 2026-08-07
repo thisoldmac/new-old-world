@@ -87,6 +87,172 @@ reported, which is the known anchor-bind failure on the staging path
 rather than a new defect. `cycle` itself worked and reported honestly
 (`armed`, `complete`, `restored`, 8 considered, 6 `backgroundOnly` —
 the headless lane's classification, live).
+## UNVERIFIED: the drag vehicle exists and has never fired (2026-08-07, slice 10 of plan 018)
+
+**Built, gate-green, never run on a Macintosh.** P7 — a mouse button that
+stays down across a gesture, and a resident that lets go whether or not
+anybody asks. The design, the dead-man and the Time Manager argument are
+in [docs/mirror-act-plane.md](mirror-act-plane.md) > "Drag".
+
+What IS proven: `scripts/test-native` drives the dead-man's decision
+layer and five mutations were watched failing, each naming a distinct
+case; `scripts/build-guests` cross-compiles the resident;
+`scripts/test-all` is green.
+
+**What is not proven is everything above that**, and the list is short
+and load-bearing:
+
+- **Whether the Finder's `DragGrayRgn` actually tracks these writes.**
+  The whole design rests on it and nobody has looked. `StillDown` and
+  `GetMouse` read the globals the vehicle writes — that is documented —
+  but a tracking loop that also polls something else, or that latches on
+  entry, would make the gesture a no-op and it would look identical to a
+  vehicle that never fired.
+- **Whether the cursor visibly moves.** The `CrsrNew`/`CrsrCouple` redraw
+  is reasoned from Inside Macintosh, not seen. If it does not work, a
+  drag is invisible on a screendump — which does not break the gesture
+  but does remove the only way to watch one.
+- **Whether `PPostEvent` from the jGNE pass settles the owed `mouseUp`
+  where an application wants it.** A stray `mouseUp` with no preceding
+  `mouseDown` is ignored by most event loops; "most" is not a measurement.
+- **The dead-man on a real interrupt.** The logic is tested. The Time
+  Manager task carrying it has never been primed.
+
+### Two things block the live proof, and both were held deliberately
+
+1. **Three wire verbs the contract does not declare.** A drag needs
+   `dragpress` / `dragmove` / `dragrelease` on both faces, which is an
+   `x-commands` change to `contract/asyncapi.yaml`. Contract changes
+   serialise through Michelle and this lane did not make one. Until they
+   exist there is no way to reach the vehicle from a host at all — so the
+   vehicle is unreachable code in a shipped resident, which is the honest
+   state and is why the capability bit is published only when the Time
+   Manager install succeeded.
+2. **A bake.** `ext/` changed, so the resident under test is whatever was
+   baked, and `scripts/bake-ext-image` is private-by-default and was not
+   run.
+
+### And the presentation half was blocked on geometry — that half is CLOSED
+
+**Superseded 2026-08-07 by the targeting lane.** What it said: slice
+10.5's snap-back needs a defensible "home", and `placed == true` was not
+a trust signal — only `FinderItems.merge` set it from the Finder's own
+drawn box, and that path ran for folder windows only, while
+`SceneBuilder.desktopItems` derived it from the saved `fdLocation` grid
+and `ScenePoller.placeVolumes` **invented** a position and set it true.
+So "refuse rather than guess" would have refused every desktop drag.
+
+Closed both ways at once:
+
+- `Scene.DesktopItem.origin` carries `drawn` / `saved` / `unknown`, and
+  `homeIsTrustworthy` is `drawn` alone. Absent means the producer did not
+  say and reads as untrustworthy. `placeVolumes` still draws the disk it
+  laid out — an absent disk is worse than a displaced one — and now says
+  `.unknown` over the coordinates it makes up, so no act may aim with
+  them.
+- The desktop is asked the same question every other surface is asked. A
+  desktop clause in `FinderItems.windowsScript` reads `bounds of` every
+  item of the desktop and every disk, in global coords, inside the one
+  script call the folder windows already pay for.
+
+Emulator-verified on a private clone (anchor 1920 / wire 5470, build
+`1a8ffb91f636`, OS 9.1 on mac99). Two things the run said that were not
+predicted:
+
+- **That guest served neither `list` nor `volumes`** (`unknown-command`),
+  so without the clause its desktop arrives EMPTY. The saved grid was not
+  a weaker source there; it was no source at all. The **Trash** is on the
+  desktop and is not in the Desktop Folder, so the catalog path could
+  never have reported it under any circumstances.
+- `items of desktop` and `disks` both report `Macintosh HD`, with the
+  **same box**, which is what makes "first record wins" inert.
+
+And the live claim was watched rather than reasoned: `set position of` on
+a desktop file moved it and `bounds of` followed — 608,92,640,124 →
+120,320 → 240,548 — with a QMP screendump showing the icon in its new
+place.
+
+## FIXED (builds): a self reference described every one of our own controls as {0,0,0,0}, over `resolved: true` (2026-08-07, slice 10.5 of plan 018)
+
+The drag lane found a press landing at **0,0** and reported it as "the
+resolver and the scene walk disagree about where a control is". They do
+not disagree. **One of them was never asked.**
+
+`observe.c :: resolve_self` is the path a reference into OUR OWN process
+takes — no foreign A5 world to aim, the Toolbox answers directly. Its
+element branch filled `control`, `window`, `verdict` and `identity`, and
+**never touched `out->detail` at all**, which `resolve_kind` had already
+`memset` to zero. So every self element resolved to a control with an
+empty title, invisible, disabled, value 0, bounds {0,0,0,0} — beside
+`"resolved": true`. The window branch had the same hole for its title.
+
+Two consequences, and the second is why it survived:
+
+- The `handle` verb described this application's own controls that way.
+- `ctlact` computes its press point from that rectangle, so the press
+  landed at 0,0 — and it did not matter, because the act plane's patch
+  answers for the control HANDLE the request names and declines every
+  other. Where the press landed decided nothing. It stops being harmless
+  the moment a caller needs the point itself, which is a drag.
+
+Fixed by filling `detail` from the live Toolbox
+(`GetControlBounds`/`GetControlTitle`/`IsControlVisible`/`IsControlActive`
+/value/min/max, and `GetWTitle` for the window). **In GLOBAL coordinates**,
+because that is what `detail.control` already means — the foreign twin
+`now_ax_read_control` adds the window's content origin to the local rect
+it reads, so the same origin is added here. Deliberately NOT
+`scene_self.c`'s convention, which keeps a control's rect content-relative
+because IR v1 says so: those are two fields with two contracts, and
+conflating them is how a click misses by a title bar.
+
+**Status: builds.** `scripts/build-guests` compiles it and `test-all` is
+green; the Carbon audit reports 0 findings. It is NOT driven, and the
+reason is worth writing down: on the emulator (build `1b6fbb321684`) the
+`elements` and `observe` walks report our own process with `bind:
+no-plane` and an empty `windows` array, so **the wire cannot mint a self
+element reference at all** and `handle` cannot be pointed at one of our
+own controls from outside. Whatever minted the reference the drag lane
+used did not come through those two verbs. Reaching this from a host
+needs either that mint path on the wire or the drag verbs themselves.
+
+## UNVERIFIED: targeting and provisional presentation, with nothing to drive them (2026-08-07, slice 10.5 of plan 018)
+
+The host half of the drag is built and gate-green, and **not one gesture
+has reached a guest**, because the vehicle above is still unreachable:
+`dragpress` / `dragmove` / `dragrelease` do not exist on the wire, so
+`ItemDragDriver` — the seam the view calls — has no conformer at all.
+Today the live view answers an item drag with "this mirror cannot hold
+the mouse button down", which is honest and is not the feature.
+
+What IS proven: `DragTargeting` resolves subjects, destinations and
+intents against the geometry above, including against a **recorded real
+desktop** from the run named earlier; `ItemDragSession` carries the four
+presentation rules and each was watched failing under a mutation;
+`ProvisionalDragRenderTests` reads the pixels back.
+
+What is NOT proven, and needs the vehicle:
+
+- **That a drop lands where the targeting says it will.** Every
+  destination is derived from the hit tester, which is well exercised for
+  clicks — and a click is a point while a drop is a point plus a thing
+  being carried, and the Finder decides the second one.
+- **That a rearrangement inside a Finder window behaves as one.** The
+  intent is computed; nothing has watched an icon shuffle.
+- **The snap-back as a person sees it.** The state machine returns the
+  ghost to `home`; whether that reads as "it went back" or as a flicker
+  is a question for a hand on a trackpad.
+- **The provisional style at speed.** The stipple is anchored to the
+  rectangle so the texture rides with the item; that was verified in a
+  render test at two positions, not at 60 frames a second under a moving
+  pointer.
+
+One gap deliberately left open: a desktop item whose position is
+`.unknown` — a disk the Finder would not place — is still **clickable**
+at its invented position. Drags refuse it and clicks do not, which is
+today's behaviour left unchanged rather than a decision. It sends a click
+to bare desktop, so it deselects rather than doing damage; closing it
+means teaching the click path the same provenance the drag path now
+reads.
 
 ## FIXED: an act could report success it had not verified, and a window could go silent without naming itself (2026-08-07, lane D of plan 018)
 

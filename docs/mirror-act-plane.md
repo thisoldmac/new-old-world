@@ -540,51 +540,169 @@ own dispatch is the authority; verify by re-reading.
   answered. But **nobody has armed a window act and then clicked
   elsewhere.**
 
-## Drag: there is no sustained-press vehicle, and this is what one costs
+## Drag: the vehicle, and why it is a Time Manager task
 
-Assessed 2026-08-07 for plan 018's slice 1.5 (drag between targets inside
-the mirrored guest). **Nothing here can hold the mouse button down.**
+Assessed 2026-08-07 (below), then built the same day. **P4 cannot hold
+the mouse button and P7 can.** What follows is the assessment, kept
+because it is still the argument, then what was built against it.
 
-`ext/src/now_ext_act.c :: act_post_click` is the whole input vehicle, and
-it queues a `mouseDown` and its matching `mouseUp` in one call, from
+### The assessment
+
+`ext/src/now_ext_act.c :: act_post_click` is P4's whole input vehicle,
+and it queues a `mouseDown` and its matching `mouseUp` in one call, from
 inside the target's context, before it returns. Every op that needs a
 click — control, dialog item, menu — goes through it. There is no op that
 presses without releasing, no motion between the two, and no separate
-release. `kNowPeekActOp*` (contract/peek_table.h) has no case for one.
+release.
 
-So a drag is not an application-side feature that can be built on the
-existing plane. It needs, in the resident:
+**And the gap is not a missing op.** P4 serves everything from the jGNE
+filter, which runs inside the application's own `GetNextEvent`. The
+instant the button goes down the application enters its own tracking
+loop — the Finder's is `DragGrayRgn`, reading `StillDown`, `GetMouse`
+and `WaitMouseUp`; a scroll bar's is `TrackControl` — and **none of them
+calls `GetNextEvent`**. So from the press until the release the filter is
+never entered, and any design that delivers motion or a release through
+it delivers neither. That is the finding, and it is what makes a drag a
+new plane rather than a ninth op.
 
-1. **A press that does not queue its release.** `act_post_click` split in
-   two, with the button state left down (`LMSetMouseButtonState(0x00)`)
-   rather than restored.
-2. **A motion path.** The Finder's own drag loop reads `StillDown`,
-   `GetMouse` and `WaitMouseUp`, all of which read the mouse low-memory
-   globals — so motion is a sequence of `LMSetMouseLocation` /
-   `LMSetRawMouseLocation` writes serviced while the button is down, which
-   means the resident must be re-entered repeatedly during a gesture the
-   application is inside. Today a request is served once and completes.
-3. **A release**, as its own op.
-4. **A DEAD-MAN RELEASE, which is the part that must not be optional.**
-   A guest left with the button down and no `mouseUp` queued sits in the
-   Finder's tracking loop forever, and the host has no lever to undo it —
-   its only channel is the same cell the wedged application is no longer
-   reading. So the press must carry a deadline the RESIDENT enforces:
-   if no motion or release arrives before it expires, the resident
-   releases the button itself and reports that it did. A drag that dies
-   because the host process was killed between press and release must
-   still end with the button up.
+### What was built
 
-That is new operations, new cell fields, a new liveness rule in the
-resident, and therefore `contract/peek_table.h` plus `ext/` — which
-triggers the bake gate. It is its own slice, not an increment on this
-one, and this file records the shape so the next person does not have to
-re-derive it.
+`ext/src/now_ext_drag.c`, a **Time Manager task** — the only vehicle in
+this component that fires regardless of who is being scheduled, which is
+the same argument P6's liveness task makes. It has **no trap patches at
+all**, so its blast radius is far smaller than P4's six. Everything the
+tracking loops read is a mouse low-memory global, so the whole vehicle is
+four writes:
 
-**The presentation half is independent and can be built first**, because
-it is honest without the vehicle: show the dragged item moving with the
-pointer immediately, marked as PROVISIONAL until a select confirms, and
-snap it home on release-before-confirm or on a failed select. Snap-back
-needs a defensible "home", so an item whose position we cannot trust
-(unplaced, or from a view whose geometry we cannot read) must refuse the
-drag before it starts rather than guess a return address.
+| Global | Address | What reads it |
+|---|---|---|
+| `MBState` | 0x0172 | `Button()`, and therefore `StillDown()` |
+| `MouseLocation` | 0x0830 | `GetMouse()` |
+| `RawMouseLocation` | 0x082C | the cursor's own position |
+| `MTemp` | 0x0828 | the cursor VBL's staging point |
+
+Plus `CrsrNew`/`CrsrCouple` (0x08CE/0x08CF), which make the cursor
+actually redraw. Without them a drag moves what `GetMouse` reports and
+not what a person sees — and a gesture nobody can watch is a gesture
+nobody can verify. They are past where this toolchain's `LowMem.h` stops
+and are reached through **volatile pointer variables**, because GCC folds
+a cast constant and rejects it under `-Werror=array-bounds` as "likely at
+address zero" — a diagnostic correct about every C program except one
+running in a Macintosh's low memory.
+
+**One new act op, `kNowPeekActOpDragPress`, and deliberately no others.**
+The press needs the target's context, its identity check and its A5, so
+it is a request. Everything after is a **session**, in `NowPeekDragCell`,
+written at both ends and consumed by the task.
+
+### The dead-man
+
+A guest left with the button down sits in that tracking loop forever, and
+the host cannot rescue it: the host's only channel is the same cell the
+wedged application has stopped reading. So the release cannot be
+something the host is trusted to send.
+
+- **Two clocks, either of which fires.** `idle_deadline` catches a dead
+  host. `max_ticks` is refreshed by **nothing** and catches a live host
+  with a wedged idea of what it is doing. One timer the measured thing
+  can refresh measures nothing — the finding
+  `instrument-feeds-the-clock`, paid for once already here.
+- **Both clamped by the RESIDENT.** A host that writes 0, or
+  0xFFFFFFFF, or forgets the field must not be able to switch the
+  dead-man off. The clamped values are reported back
+  (`idle_in_force` / `cap_in_force`), because a clamp nobody can observe
+  is indistinguishable from a caller being right.
+- **The deadlines are checked BEFORE the release the host asked for**, so
+  a tick where both are true ends as a *deadline* and says which. It is
+  the same button either way and a different fact; reporting the
+  friendlier of the two would be exactly the plausible wrong answer this
+  arc exists to stop.
+- **The heartbeat is the HOST's liveness relayed**, never the guest
+  application's own idle pump. An application that got that wrong would
+  keep a dead host's drag alive forever and the dead-man would be
+  decoration.
+
+### A release is two halves with different owners
+
+Writing `MBState` up is what every tracking loop actually reads, and it
+happens **at interrupt time, where nothing can refuse it**. Queueing the
+`mouseUp` EVENT needs `PPostEvent` and the target's own context, so it is
+left owed (`pending_mouseup`) and settled by the next jGNE pass in the
+drag's own A5 world — which arrives the moment the tracking loop, now
+seeing the button up, hands the application back to `GetNextEvent`.
+
+The split is the safety property: the part that must never fail runs
+where it cannot, and the part that needs a context waits for one. Posting
+the event from the task would put an Event Manager call at interrupt time
+on the critical path of the one rule that must not have a critical path.
+
+### Where the decisions live, and why
+
+`now-guest-shared/src/now_drag_logic.c`. Toolbox-free, compiled by the
+host `cc`, driven by `now-guest-shared/tests/now_drag_logic_test.c`.
+
+**You cannot watch a dead-man work by driving a guest**: to see it fire
+you must *not* release, and "did not release" and "the test hung" are the
+same observation until something separates them. Five mutations were
+watched failing, each naming a distinct case — removing either clock,
+unclamping the caller's deadline, checking the release before the
+deadlines, and writing `elapsed` as `now >= then + limit` (which is wrong
+across the `TickCount` wrap, and whose symptom is a drag that never times
+out once every 2.3 years of uptime).
+
+### What is NOT proven
+
+**Everything above the native gate.** The vehicle cross-compiles and has
+never fired. Nobody has pressed, moved or released on a guest; the
+`CrsrNew` redraw is reasoned from Inside Macintosh and has not been seen;
+whether the Finder's `DragGrayRgn` actually tracks these writes is the
+question the whole design rests on and is **unanswered**. Live proof
+needs a private bake and three wire verbs the contract does not declare —
+see [docs/open-issues.md](open-issues.md).
+
+### The presentation half, built — and with nothing to drive it
+
+Independent of the vehicle and honest without it: show the dragged item
+moving with the pointer immediately, marked as PROVISIONAL until a select
+confirms, and snap it home on release-before-confirm or on a failed
+select. Built 2026-08-07 (slice 10.5), host-side, gate-green, and **not
+one gesture has reached a guest** — `dragpress` / `dragmove` /
+`dragrelease` are still undeclared, so `ItemDragDriver` has no conformer
+and the live view answers an item drag with "this mirror cannot hold the
+mouse button down".
+
+**Snap-back needed a defensible "home", and that was the blocker.**
+`placed` was three provenances wearing one boolean: the Finder's own
+drawn box (`FinderItems.merge`, folder windows only), the saved
+`fdLocation` grid (`SceneBuilder.desktopItems`), and a top-right stack
+`ScenePoller.placeVolumes` **invented**. "Refuse rather than guess" would
+have refused every desktop drag.
+
+Closed by carrying the provenance —
+`Scene.DesktopItem.origin` is `drawn` / `saved` / `unknown`, and
+`homeIsTrustworthy` is `drawn` alone — and by asking the desktop the same
+question every other surface is asked: a desktop clause in
+`FinderItems.windowsScript` reads `bounds of` every item of the desktop
+and every disk, inside the script call the folder windows already pay
+for. Emulator-verified; see [docs/open-issues.md](open-issues.md) for
+what the run said, including a guest that served no `list` at all.
+
+The four pieces, and where each lives:
+
+| Piece | Where | What it owns |
+|---|---|---|
+| provenance | `Scene.DesktopItem.origin` | may an item be returned here |
+| targeting | `DragTargeting` | subject, destination, intent, refusals |
+| the contract's rules | `ItemDragSession` | move / confirm / release / refused |
+| the marking | `ProvisionalVisual` | how "not yet real" looks |
+
+`ProvisionalVisual` sits in `UnknownVisual.swift`, one file, because they
+are one idea in two tenses. **The anchoring is the one place they
+differ and it is deliberate**: the marked unknown's stipple is anchored
+to the CONTEXT so a static rectangle's texture does not crawl; a
+provisional item moves with the pointer, so its lattice is anchored to
+the RECTANGLE or the texture would flow through the object. One rule
+underneath both — the texture belongs to whatever the reader perceives as
+holding still. `ProvisionalDragRenderTests` asserts the pair, because a
+later edit unifying them "for consistency" would otherwise show up
+nowhere.

@@ -355,6 +355,16 @@ int now_act_serve_begin(NowPeekActCell *cell, unsigned long current_a5,
         verdict = kNowActServeDialogItem;
         break;
 
+    case kNowPeekActOpDragPress:
+        /* No patch to check: this plane has none. What it needs instead
+           is a vehicle, and only the resident knows whether the Time
+           Manager task installed - so that refusal is made there and
+           arrives as kNowPeekActErrDragNoVehicle. */
+        cell->fired = 0;
+        cell->armed = kNowPeekActArmNone;
+        verdict = kNowActServeDragPress;
+        break;
+
     case kNowPeekActOpVisibility:
         if (cell->item_index != kNowPeekActVisibilityHide
             && cell->item_index != kNowPeekActVisibilityHideOthers) {
