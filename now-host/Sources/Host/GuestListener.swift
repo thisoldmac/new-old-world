@@ -105,12 +105,28 @@ final class GuestListener: ObservableObject {
         static let none = Pacing(bytes: 0, gap: 0)
     }
 
+    /// **The event bus every page learns from.** Owned here because this is
+    /// where the truth changes; injectable so a test can watch one listener
+    /// without the app's.
+    ///
+    /// The publishes below hang off `didSet` on the properties that ARE the
+    /// state rather than off the functions that assign them. There are five
+    /// call sites that clear `captureProgress` and four that move
+    /// `activeKey`, and the version of this that announced from the call
+    /// sites would be one forgotten assignment away from a page that never
+    /// repaints — the failure being fixed here, reintroduced in the fix.
+    let events: HostEventBus
+
     @Published private(set) var state: State = .idle {
         didSet {
             if ProcessInfo.processInfo.environment["NOW_HOST_DEBUG"] != nil {
                 FileHandle.standardError.write(
                     Data("[now-host] state -> \(state)\n".utf8))
             }
+            // Only a real move. `publishActive()` reassigns the same state
+            // on every roster change, and a page that repainted for each
+            // would repaint once per ping.
+            if state != oldValue { events.publish(.linkStateChanged(state)) }
         }
     }
     @Published private(set) var lastDisconnect: String?
@@ -256,7 +272,12 @@ final class GuestListener: ObservableObject {
     let registry: GuestRegistry
     /// Which of them the request-shaped API drives. Nil when none are
     /// connected.
-    private(set) var activeKey: GuestKey?
+    private(set) var activeKey: GuestKey? {
+        didSet {
+            guard activeKey != oldValue else { return }
+            events.publish(.focusChanged(to: activeKey))
+        }
+    }
 
     /// The active session. Every existing caller means this one, so it
     /// stays spelled `session` and stays private — the table is the new
@@ -267,11 +288,21 @@ final class GuestListener: ObservableObject {
 
     /// Who is connected, active one first-class rather than implied.
     /// Published so a view can list them; nothing reads it yet.
-    @Published private(set) var guests: [ConnectedGuest] = []
+    @Published private(set) var guests: [ConnectedGuest] = [] {
+        didSet {
+            guard guests != oldValue else { return }
+            events.publish(.rosterChanged)
+        }
+    }
 
     init(identity: HostIdentity, timing: Timing = Timing(),
          pacing: Pacing = .classicMac, maxGuests: Int = 4,
-         registry: GuestRegistry? = nil) {
+         registry: GuestRegistry? = nil,
+         /* Optional rather than defaulted to a fresh bus, because a default
+            argument is evaluated where the CALLER stands and this type is
+            main-actor-isolated. */
+         events: HostEventBus? = nil) {
+        self.events = events ?? HostEventBus()
         self.registry = registry ?? GuestRegistry()
         self.identity = identity
         self.timing = timing
@@ -404,6 +435,7 @@ final class GuestListener: ObservableObject {
                 machineBySession[session]?.autoAssigned = false
             }
             publishActive()
+            events.publish(.guestRenamed(key, id: renamed))
         }
         return outcome
     }
@@ -787,10 +819,6 @@ final class GuestListener: ObservableObject {
         }
     }
 
-    /// Set by the app so an arriving file is visible from outside the
-    /// window. Kept as a hook so this file stays free of AppKit chrome
-    /// and the tests stay silent.
-    var announceReceivedFile: ((String, URL, Int) -> Void)?
 
     /// The four change operations, answered the way the guest answers
     /// them: one file.result, success or not, because the asker is
@@ -798,6 +826,18 @@ final class GuestListener: ObservableObject {
     /// something it can reverse.
     fileprivate func serveChange(_ change: ChangeRequest,
                                 on session: Session) {
+        /* Anything that leaves the block below without throwing has
+           moved, trashed, restored or created something in OUR shared
+           folder. Announced once, from the one exit, rather than in each
+           of the four arms — four publishes is four chances for a fifth
+           operation to arrive without one. */
+        var served: String?
+        defer {
+            if let path = served {
+                events.publish(.fileTreeChanged(session.guestKey,
+                                                side: .host, path: path))
+            }
+        }
         do {
             switch change {
             case .move(let request):
@@ -807,6 +847,7 @@ final class GuestListener: ObservableObject {
                                                 ?? false)
                 note("#\(request.id) moved \(request.path) to \(landed)",
                      area: "files")
+                served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
                     trashedAs: nil, code: nil, reason: nil)))
@@ -816,6 +857,7 @@ final class GuestListener: ObservableObject {
                    Trash is the line most worth having later. */
                 note("#\(request.id) trashed \(request.path), it is in the "
                      + "Trash as \(landed)", area: "files")
+                served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: request.path,
                     trashedAs: landed, code: nil, reason: nil)))
@@ -824,6 +866,7 @@ final class GuestListener: ObservableObject {
                                                to: request.toPath)
                 note("#\(request.id) restored \(request.trashedAs) to "
                      + "\(landed)", area: "files")
+                served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
                     trashedAs: nil, code: nil, reason: nil)))
@@ -831,6 +874,7 @@ final class GuestListener: ObservableObject {
                 let landed = try share.makeFolder(path: request.path)
                 note("#\(request.id) made the folder \(landed)",
                      area: "files")
+                served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
                     trashedAs: nil, code: nil, reason: nil)))
@@ -862,9 +906,17 @@ final class GuestListener: ObservableObject {
     fileprivate func noteReceived(_ url: URL, from session: Session) {
         let bytes = (try? FileManager.default.attributesOfItem(
             atPath: url.path)[.size] as? Int) ?? nil
-        // The sender, not the active guest: a notification naming the
-        // wrong Mac is worse than one naming none.
-        announceReceivedFile?(session.guestName, url, bytes ?? 0)
+        /* The SENDER, not the active guest: a notification naming the
+           wrong Mac is worse than one naming none. This used to be an
+           assignment hook the app set (`announceReceivedFile`), which
+           meant exactly one thing could ever hear it — the notifier — and
+           the shared folder's own view could not. */
+        events.publish(.fileReceived(session.guestKey, url: url,
+                                     bytes: bytes ?? 0,
+                                     guestName: session.guestName))
+        events.publish(.fileTreeChanged(
+            session.guestKey, side: .host,
+            path: url.deletingLastPathComponent().path))
     }
 
     // MARK: - Files
@@ -1495,6 +1547,12 @@ final class GuestListener: ObservableObject {
         guard let completion = pendingChanges.removeValue(forKey: result.id)
         else { return }
         if result.ok {
+            /* The guest's disk is no longer what the last listing said.
+               Published before the completion so a page that reloads on
+               the event does not race the caller's own handler. */
+            events.publish(.fileTreeChanged(
+                activeKey, side: .guest,
+                path: result.path ?? ""))
             completion(.success(result))
         } else {
             completion(.failure(.init(
@@ -1524,6 +1582,12 @@ final class GuestListener: ObservableObject {
         clearWatchdog(result.id)
         pendingProcessResults.removeValue(forKey: result.id)?(
             .success(result))
+        /* A front or a quit that the guest SERVED changed its process
+           table. Neither guest pushes that fact, so this is the only
+           moment the host can know it — and it is the moment an agent's
+           `process.quit` becomes visible on a page nobody clicked. */
+        guard result.ok else { return }
+        events.publish(.processListChanged(activeKey))
     }
 
     fileprivate func failFile(_ refuse: FileRefuse) {
@@ -1614,19 +1678,30 @@ final class GuestListener: ObservableObject {
         }
     }
 
-    @Published private(set) var captureProgress: CaptureProgress?
-
-    /// Guest-initiated captures land here — decoded, ready for whichever
-    /// module cares. The request path never uses this; a solicited capture
-    /// settles its own completion instead.
-    let pushedCaptures = PassthroughSubject<CaptureDelivery, Never>()
-
-    /// Live-stream frames. Same decode as any capture; the stream id is
-    /// what routed them here instead of pushedCaptures.
-    let streamFrames = PassthroughSubject<CaptureDelivery, Never>()
+    /// The in-flight transfer's byte counter — a VALUE several callers read
+    /// (the agent transfer lane asks "is one running"), which is why it is
+    /// still a property here and not only an event. The event is how a page
+    /// finds out it moved; this is how a caller finds out where it got to.
+    @Published private(set) var captureProgress: CaptureProgress? {
+        didSet {
+            guard captureProgress != oldValue else { return }
+            if let progress = captureProgress {
+                events.publish(.transferProgressed(
+                    activeKey, received: progress.received,
+                    expected: progress.expected))
+            } else {
+                events.publish(.transferEnded(activeKey))
+            }
+        }
+    }
 
     /// Non-nil while a stream bracket is open.
-    @Published private(set) var activeStreamId: Int?
+    @Published private(set) var activeStreamId: Int? {
+        didSet {
+            guard activeStreamId != oldValue else { return }
+            events.publish(.streamStateChanged(activeKey, id: activeStreamId))
+        }
+    }
 
     /// **Who asked for the bracket that is open**, nil when none is.
     ///
@@ -1742,7 +1817,8 @@ final class GuestListener: ObservableObject {
             observeFamily(AgentIntegrationCapabilityNames.streamStart,
                           served: true)
         }
-        streamFrames.send(delivery)
+        events.publish(.streamFrame(delivery.guestKey ?? activeKey,
+                                    delivery))
     }
 
     fileprivate func streamEnded(_ stopped: StreamStopped) {
@@ -2069,6 +2145,7 @@ final class GuestListener: ObservableObject {
     /// with none.
     private func recordGuestError(_ problem: ErrorMessage) {
         lastGuestError = problem
+        events.publish(.guestReportedError(activeKey, problem))
         guard let id = problem.id else { return }
         // EVERY waiter, not just command waiters. The ids are drawn from
         // one sequence and an `error` is the contract's answer to any
@@ -2286,6 +2363,7 @@ final class GuestListener: ObservableObject {
                    whoever is using it. */
                 if self.activeKey == nil { self.activeKey = key }
                 self.publishActive()
+                self.events.publish(.guestConnected(key))
             },
             onLog: { [weak self] text, area, level in
                 self?.note(text, area: area, level: level)
@@ -2363,7 +2441,8 @@ final class GuestListener: ObservableObject {
                close when it grows a guest column. */
             onPushedCapture: { [weak self] delivery in
                 self?.captureProgress = nil
-                self?.pushedCaptures.send(delivery)
+                self?.events.publish(
+                    .captureArrived(delivery.guestKey, delivery))
             },
             onStreamFrame: { [weak self] delivery in
                 guard fromActive() else { return }
@@ -2556,6 +2635,8 @@ final class GuestListener: ObservableObject {
                 // abilities off a hello name.
                 self.familyObservationsByGuest[key] = nil
                 self.lastDisconnect = reason
+                self.events.publish(
+                    .guestDisconnected(key, reason: reason))
                 guard self.activeKey == key else {
                     // A background guest left. Nothing was waiting on it,
                     // and the console must not flicker.

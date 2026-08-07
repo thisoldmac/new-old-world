@@ -314,7 +314,7 @@ final class ConnectionsModel: ObservableObject {
     private let select: (GuestKey) -> Bool
     private var ended: [String: EndedGuestSession] = [:]
     private var liveGuests: [GuestKey: ConnectedGuest] = [:]
-    private var watch: Set<AnyCancellable> = []
+    private var watch: HostEventSubscription?
 
     /// Bounded by machines rather than by connections, so a desk that
     /// reconnects all day does not grow a ledger.
@@ -326,16 +326,22 @@ final class ConnectionsModel: ObservableObject {
         self.listener = listener
         self.resolve = resolve
         self.select = select ?? { [listener] key in listener.selectGuest(key) }
-        /* `@Published` fires in `willSet`, so a sink reading the listener
-           synchronously sees the OUTGOING value. Every other subscriber in
-           this app defers a turn for the same reason (GuestStatusMonitor);
-           doing it differently here would put the pane one event behind. */
-        listener.$guests.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.refresh() }
-        }.store(in: &watch)
-        listener.$state.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.refresh() }
-        }.store(in: &watch)
+        /* This used to sink `$guests` and `$state` and hop a turn through
+           the main queue, because `@Published` fires in `willSet` and a sink
+           reading the listener back synchronously saw the OUTGOING value.
+           The bus publishes from `didSet`, so the listener has already
+           settled when this runs and the hop is gone with the reason for it
+           — which also means the pane is right within the turn rather than
+           after one. */
+        watch = listener.events.subscribe { [weak self] event in
+            switch event {
+            case .rosterChanged, .linkStateChanged, .focusChanged,
+                 .guestConnected, .guestDisconnected, .guestRenamed:
+                self?.refresh()
+            default:
+                break
+            }
+        }
         refresh()
     }
 

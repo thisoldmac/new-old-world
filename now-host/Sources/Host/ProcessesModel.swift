@@ -30,6 +30,12 @@ final class ProcessesModel: ObservableObject, GuestScopedModel {
     var onScreenshotApp: ((Int, Int) -> Void)?
 
     private let listener: GuestListener
+    /// The page's one push: the table changed, so re-read it.
+    ///
+    /// Scoped to the Mac being shown. Everything else here is still a
+    /// pull — neither guest offers a process table it has not been asked
+    /// for, so a list is only ever as fresh as the last question.
+    private var busWatch: HostEventSubscription?
     /// What the machines on the wire have said they can do. Shared with every
     /// other page that gates a control, injectable so a test gets its own.
     let capabilities: GuestCapabilityRecord
@@ -41,6 +47,15 @@ final class ProcessesModel: ObservableObject, GuestScopedModel {
          capabilities: GuestCapabilityRecord = .shared) {
         self.listener = listener
         self.capabilities = capabilities
+        busWatch = listener.events.subscribe(
+            scopedTo: { [weak self] in self?.connection.key }
+        ) { [weak self] event in
+            guard let self, case .processListChanged = event else { return }
+            /* Only with a table on screen. A page nobody has opened does
+               not fetch one because an agent quit something. */
+            guard !self.rows.isEmpty else { return }
+            self.refresh()
+        }
     }
 
     var canBrowse: Bool { connection.canCapture }
@@ -184,9 +199,12 @@ final class ProcessesModel: ObservableObject, GuestScopedModel {
             self.actionInFlight = false
             switch result {
             case .success(let r) where r.ok:
-                // Front changed, or a quit was sent: re-read so the front
-                // flag moves and a process that took the hint drops out.
-                self.refresh()
+                /* The re-read used to be here. It is on the bus now
+                   (`processListChanged`, published where the guest's answer
+                   lands), because a `process.quit` served over the agent
+                   surface changed the same table and this page never heard
+                   about it. */
+                break
             case .success(let r):
                 self.lastError = r.reason ?? "The Mac declined"
             case .failure(let f):

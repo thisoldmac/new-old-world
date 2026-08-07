@@ -312,11 +312,15 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     /// Macs; injectable, so a test gets its own.
     let capabilities: GuestCapabilityRecord
     private let defaults: UserDefaults
-    private var progressWatch: AnyCancellable?
-    private var pushWatch: AnyCancellable?
-    private var streamWatch: AnyCancellable?
-    private var streamStateWatch: AnyCancellable?
-    private var errorWatch: AnyCancellable?
+    /// Everything the wire tells this page, on one subscription.
+    ///
+    /// **Deliberately NOT guest-scoped.** Four of the five things it hears
+    /// are about the Mac being driven, but a pushed capture is not: a
+    /// background Mac may take a screenshot unasked, and this page files it
+    /// under the machine that sent it (`receivePushed`) rather than showing
+    /// it as the focused Mac's. Scoping the subscription would drop those on
+    /// the floor, which is the bug MultiGuestFocusTests names.
+    private var busWatch: HostEventSubscription?
     private var capabilityWatch: AnyCancellable?
     /// The id of a bracket this page opened and has not seen a frame from.
     /// It is what lets a guest's `error` be attributed to `stream.start`
@@ -353,27 +357,30 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
             ?? FileManager.default.urls(for: .picturesDirectory,
                                         in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
-        progressWatch = listener.$captureProgress
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.progress = $0 }
-        pushWatch = listener.pushedCaptures
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.receivePushed($0) }
-        streamWatch = listener.streamFrames
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.receiveStreamFrame($0) }
-        streamStateWatch = listener.$activeStreamId
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] id in self?.streamStateChanged(id) }
-        /* The one place a stream refusal can be heard. `stream.start` takes
-           an id no pending map holds, so a guest that does not implement the
-           bracket answers `error` into `lastGuestError` and nothing else on
-           this side is listening. Without this the button would offer the
-           same dead click every time, forever. */
-        errorWatch = listener.$lastGuestError
-            .compactMap { $0 }
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.guestReportedError($0) }
+        busWatch = listener.events.subscribe { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .transferProgressed(_, let received, let expected):
+                self.progress = .init(received: received, expected: expected)
+            case .transferEnded:
+                self.progress = nil
+            case .captureArrived(_, let delivery):
+                self.receivePushed(delivery)
+            case .streamFrame(_, let delivery):
+                self.receiveStreamFrame(delivery)
+            case .streamStateChanged(_, let id):
+                self.streamStateChanged(id)
+            /* The one place a stream refusal can be heard. `stream.start`
+               takes an id no pending map holds, so a guest that does not
+               implement the bracket answers `error` and nothing else on this
+               side is waiting on it. Without this the button would offer the
+               same dead click every time, forever. */
+            case .guestReportedError(_, let problem):
+                self.guestReportedError(problem)
+            default:
+                break
+            }
+        }
         // The gate is computed, so a recorded refusal has to nudge the view.
         capabilityWatch = capabilities.$revision
             .receive(on: DispatchQueue.main)

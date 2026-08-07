@@ -515,8 +515,10 @@ final class GuestPushCaptureTests: XCTestCase {
     func testOfferAcceptBulkLandsInPushedCaptures() async throws {
         let guest = try await connectedGuest()
         var delivered: GuestListener.CaptureDelivery?
-        let watch = listener.pushedCaptures.sink { delivered = $0 }
-        defer { watch.cancel() }
+        let watch = listener.events.subscribe { event in
+            if case .captureArrived(_, let d) = event { delivered = d }
+        }
+        defer { watch.unsubscribe() }
 
         let (offer, bulk) = pushBlob()
         try guest.send(.captureOffer(offer))
@@ -544,9 +546,14 @@ final class GuestPushCaptureTests: XCTestCase {
         let guest = try await connectedGuest()
         var frames: [GuestListener.CaptureDelivery] = []
         var pushed = 0
-        let watchFrames = listener.streamFrames.sink { frames.append($0) }
-        let watchPushed = listener.pushedCaptures.sink { _ in pushed += 1 }
-        defer { watchFrames.cancel(); watchPushed.cancel() }
+        let watch = listener.events.subscribe { event in
+            switch event {
+            case .streamFrame(_, let d): frames.append(d)
+            case .captureArrived: pushed += 1
+            default: break
+            }
+        }
+        defer { watch.unsubscribe() }
 
         listener.startStream(depth: 8, origin: .person)
         var streamId: Int?
@@ -654,8 +661,10 @@ final class GuestPushCaptureTests: XCTestCase {
     func testStreamFrameRecordsStartAsServed() async throws {
         let guest = try await connectedGuest()
         var frames: [GuestListener.CaptureDelivery] = []
-        let watch = listener.streamFrames.sink { frames.append($0) }
-        defer { watch.cancel() }
+        let watch = listener.events.subscribe { event in
+            if case .streamFrame(_, let d) = event { frames.append(d) }
+        }
+        defer { watch.unsubscribe() }
         XCTAssertNil(listener.familyObservations[
             AgentIntegrationCapabilityNames.streamStart],
             "nothing is known about the family before it is asked")
@@ -678,8 +687,10 @@ final class GuestPushCaptureTests: XCTestCase {
     func testRefusedRefreshLeavesRunningStreamAlone() async throws {
         let guest = try await connectedGuest()
         var frames: [GuestListener.CaptureDelivery] = []
-        let watch = listener.streamFrames.sink { frames.append($0) }
-        defer { watch.cancel() }
+        let watch = listener.events.subscribe { event in
+            if case .streamFrame(_, let d) = event { frames.append(d) }
+        }
+        defer { watch.unsubscribe() }
         let (id, send) = try await streamingGuest(guest, width: 4, height: 4)
         try send(1, redPalette + [UInt8](repeating: 1, count: 16), "key",
                  nil, 768, 4)
@@ -708,8 +719,10 @@ final class GuestPushCaptureTests: XCTestCase {
     func testStreamCompositesKeyDeltaAndEmptyFrames() async throws {
         let guest = try await connectedGuest()
         var frames: [GuestListener.CaptureDelivery] = []
-        let watch = listener.streamFrames.sink { frames.append($0) }
-        defer { watch.cancel() }
+        let watch = listener.events.subscribe { event in
+            if case .streamFrame(_, let d) = event { frames.append(d) }
+        }
+        defer { watch.unsubscribe() }
 
         listener.startStream(depth: 8, origin: .person)
         var streamId: Int?
@@ -826,8 +839,10 @@ final class GuestPushCaptureTests: XCTestCase {
     func testInterlacedFieldDeltaKeepsTheCanvasFullHeight() async throws {
         let guest = try await connectedGuest()
         var frames: [GuestListener.CaptureDelivery] = []
-        let watch = listener.streamFrames.sink { frames.append($0) }
-        defer { watch.cancel() }
+        let watch = listener.events.subscribe { event in
+            if case .streamFrame(_, let d) = event { frames.append(d) }
+        }
+        defer { watch.unsubscribe() }
         let (_, send) = try await streamingGuest(guest, width: 4, height: 4)
 
         // Key: 4x4, every pixel red.
@@ -857,8 +872,10 @@ final class GuestPushCaptureTests: XCTestCase {
         async throws {
         let guest = try await connectedGuest()
         var frames: [GuestListener.CaptureDelivery] = []
-        let watch = listener.streamFrames.sink { frames.append($0) }
-        defer { watch.cancel() }
+        let watch = listener.events.subscribe { event in
+            if case .streamFrame(_, let d) = event { frames.append(d) }
+        }
+        defer { watch.unsubscribe() }
         let (_, send) = try await streamingGuest(guest, width: 4, height: 4)
 
         try send(1, redPalette + [UInt8](repeating: 1, count: 16), "key",

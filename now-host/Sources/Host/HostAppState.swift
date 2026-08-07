@@ -15,14 +15,26 @@ final class HostAppState: ObservableObject {
     }()
     private let notifier = CaptureNotifier()
     private(set) lazy var files: FilesModuleModel = {
-        listener.announceReceivedFile = { [notifier] guest, url, bytes in
-            notifier.announce(fileFrom: guest, url: url, bytes: bytes)
-        }
-        return FilesModuleModel(
+        FilesModuleModel(
             listener: listener,
             defaults: defaults,
             artifactApprover: agentIntegration)
     }()
+
+    /// A file the guest sent landed here — say so outside the window.
+    ///
+    /// This used to be an assignment hook on the listener
+    /// (`announceReceivedFile`), set from the middle of `files`' lazy
+    /// initialiser, which meant the notification only existed once somebody
+    /// had touched the Files page and that exactly one thing could ever
+    /// hear it. It is an event now, and this is one subscriber among
+    /// however many want it.
+    private lazy var arrivals: HostEventSubscription = listener.events
+        .subscribe { [notifier] event in
+            guard case .fileReceived(_, let url, let bytes, let guest) = event
+            else { return }
+            notifier.announce(fileFrom: guest, url: url, bytes: bytes)
+        }
 
     /// The menu-bar "Screenshot Guest" command. Reports through the system
     /// notifier and, because that path is silent under an ad-hoc signature,
@@ -137,9 +149,8 @@ final class HostAppState: ObservableObject {
 
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"
-    private var stateMirror: AnyCancellable?
-    private var rosterMirror: AnyCancellable?
-    private var knownGuests: Set<GuestKey> = []
+    /// The one subscription that re-points every guest-scoped model.
+    private var focusWatch: HostEventSubscription?
 
     /// Every model that shows one machine's state. Listed once so a new
     /// module cannot be wired into the connection and forgotten by the
@@ -197,46 +208,55 @@ final class HostAppState: ObservableObject {
         selectedModuleID = stored.flatMap(registry.resolvingRenames(id:))?.id
             ?? registry.modules.first?.id
             ?? ""
-        stateMirror = listener.$state.sink { [weak self] state in
+        _ = arrivals
+        focusWatch = listener.events.subscribe { [weak self] event in
             guard let self else { return }
-            let connection = Self.guestState(
-                from: state, key: self.listener.activeKey)
-            /* One assignment per model, from one place, in one turn. The
-               models decide for themselves what a switch means to them —
-               see GuestScopedState.swift — but they must all learn about it
-               at the same moment, or the window shows two machines at once
-               for a frame. */
-            for model in self.guestScopedModels {
-                model.connection = connection
-            }
-            // The console's completions came from THIS guest's `help`, and
-            // the next one may serve a different set — NOW-68K serves three
-            // commands where the Carbon guest serves fifteen. So they go
-            // with the connection rather than lingering as a list from a
-            // machine that is no longer there.
-            self.console.focus(on: connection)
-            if case .connected = state {} else {
-                self.console.forgetGuest()
-            }
-            self.captureSmokeIfRequested(state)
-        }
-        /* A guest leaving the roster is a different event to the active one
-           changing, and only the models whose cache dies with the
-           connection act on it. Diffed here rather than published as a
-           departure, because the roster is the thing that is true. */
-        rosterMirror = listener.$guests.sink { [weak self] guests in
-            guard let self else { return }
-            let now = Set(guests.map(\.key))
-            for gone in self.knownGuests.subtracting(now) {
+            switch event {
+            /* Both, because either can change what "the machine on screen"
+               means: the link going down with one Mac attached, and the
+               focus moving between two that are both up. They settle in
+               either order, so this reads the listener rather than the
+               event's payload. */
+            case .linkStateChanged, .focusChanged:
+                self.repointModels()
+            /* A guest leaving is a different event to the active one
+               changing, and only the models whose cache dies with the
+               connection act on it. It arrives named now; it used to be
+               DIFFED out of the roster here, which was a second thing that
+               had to agree with the listener about who had gone. */
+            case .guestDisconnected(let gone, _):
                 for model in self.guestScopedModels {
                     model.guestLeft(gone)
                 }
+            default:
+                break
             }
-            self.knownGuests = now
         }
         if settings.listenAtLaunch {
             startListening()
         }
+    }
+
+    /// One assignment per model, from one place, in one turn. The models
+    /// decide for themselves what a switch means to them — see
+    /// GuestScopedState.swift — but they must all learn about it at the same
+    /// moment, or the window shows two machines at once for a frame.
+    private func repointModels() {
+        let state = listener.state
+        let connection = Self.guestState(from: state, key: listener.activeKey)
+        for model in guestScopedModels {
+            model.connection = connection
+        }
+        // The console's completions came from THIS guest's `help`, and the
+        // next one may serve a different set — NOW-68K serves three commands
+        // where the Carbon guest serves fifteen. So they go with the
+        // connection rather than lingering as a list from a machine that is
+        // no longer there.
+        console.focus(on: connection)
+        if case .connected = state {} else {
+            console.forgetGuest()
+        }
+        captureSmokeIfRequested(state)
     }
 
     func startListening() {

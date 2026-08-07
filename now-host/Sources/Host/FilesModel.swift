@@ -275,7 +275,14 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     internal let listener: GuestListener
     private let defaults: UserDefaults
     private let artifactApprover: AgentIntegrationHostAdapter?
-    private var progressWatch: AnyCancellable?
+    /// What the wire tells this page without being asked: how far a
+    /// transfer has got, and that the folder it is showing is no longer
+    /// what the last listing said.
+    ///
+    /// Scoped to the machine being browsed, because both are claims about
+    /// ONE Mac's disk and a background guest's upload finishing must not
+    /// reload a listing of a different machine's folder.
+    private var busWatch: HostEventSubscription?
     private var pageCursor: Int?
 
     init(
@@ -295,15 +302,30 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                                         in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
         listener.convertServedText = convertText
-        progressWatch = listener.$captureProgress
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] progress in
-                guard let self, var state = self.transfer,
-                      let progress else { return }
-                state.received = progress.received
-                state.expected = progress.expected
+        busWatch = listener.events.subscribe(
+            scopedTo: { [weak self] in self?.connection.key }
+        ) { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .transferProgressed(_, let received, let expected):
+                guard var state = self.transfer else { return }
+                state.received = received
+                state.expected = expected
                 self.transfer = state
+            /* The page stops being true the moment anything changes the
+               guest's disk — a change this window made, an agent's upload,
+               a mutation over the command surface. It used to stay wrong
+               until somebody clicked Refresh; the whole point of the bus is
+               that nobody has to. Only when this page is showing a listing:
+               a reload with nothing on screen would ask a question no
+               person is waiting on the answer to. */
+            case .fileTreeChanged(_, let side, _) where side == .guest:
+                guard self.canBrowse, !self.rows.isEmpty else { return }
+                self.refresh()
+            default:
+                break
             }
+        }
     }
 
     /// The rows in display order, sorted once per change rather than
