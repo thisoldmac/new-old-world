@@ -106,6 +106,54 @@ final class UnknownVisualRenderTests: XCTestCase {
                        + "quarter of the region or it is loud again")
     }
 
+    /// **An unknown too small to carry a caption must still read as one.**
+    ///
+    /// The quiet style was chosen against Monitors, where eight unknowns
+    /// of 200×40 and larger read as damage. At icon scale it fails the
+    /// other half of the same brief: 0xDC dots on 0xEF, with no room for
+    /// the word, is not distinguishable from a flat plate — and a flat
+    /// plate is candidate B, rejected because it LIES about the region
+    /// being empty. Michelle read nine Finder folders and both `?`
+    /// buttons as blank plates on 2026-08-07 (plan 018 slice 16, defect
+    /// 2); every one of them was already rung 4.
+    ///
+    /// Watched failing by mutation: setting `closeTile` back to the
+    /// 0xDC dot puts the contrast at 19 levels and this fails naming it.
+    func testASmallUnknownIsLegibleRatherThanBlank() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        let png = try RenderShot.png(
+            scene: scene([unknownWindow(rect: r, dst: [20, 40, 52, 72])]))
+        let x0 = r.l + 1 + 20 + 8
+        let y0 = r.t + Int(Platinum.contentTop) + 40 + 8
+        let ax = x0 - (x0 % 2), ay = y0 - (y0 % 2)
+
+        var dots = 0, grounds = 0, foreign: [String] = []
+        for dy in 0..<4 {
+            for dx in 0..<4 {
+                let p = try XCTUnwrap(pixel(png, x: ax + dx, y: ay + dy))
+                switch p {
+                case (0xC4, 0xC4, 0xC4): dots += 1
+                case (0xEF, 0xEF, 0xEF): grounds += 1
+                default:
+                    foreign.append(String(format: "%02X%02X%02X",
+                                          p.0, p.1, p.2))
+                }
+            }
+        }
+        XCTAssertEqual(foreign, [],
+                       "a small unknown is the same two-colour lattice, "
+                       + "not a third appearance")
+        XCTAssertEqual(dots, 4, "same 25% lattice, same phase rule")
+        XCTAssertEqual(grounds, 12)
+        /* THE POINT, stated as the number that failed: a marker a person
+           cannot see is a flat plate wearing a texture's name. */
+        XCTAssertGreaterThanOrEqual(0xEF - 0xC4, 40,
+                                    "a small unknown needs contrast a "
+                                    + "person can see at reading distance; "
+                                    + "the large style's 19 levels do not "
+                                    + "survive 32x32")
+    }
+
     /// The old fill captioned anything 92x14 or larger, which put four
     /// repetitions of the same sentence down one Monitors panel. The
     /// threshold is part of the definition, so it is pinned here rather
