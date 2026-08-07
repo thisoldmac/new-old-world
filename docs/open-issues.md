@@ -13621,3 +13621,77 @@ classification. It is downstream, in what the renderer has to draw an
   reference registry holds 96 and three panels open at once exhausted it,
   so Appearance walked with zero controls. Its before-figures (16
   `pushButton` of 71 classified) come from slice 18.
+
+## 2026-08-07 — three bare-widget symptoms, told apart, and only one of them is classification
+
+Follow-up to the entry above, prompted by two coordination reports whose
+evidence pointed AWAY from where this slice was sent. They were right to,
+and separating the three is the useful result.
+
+**Verification level: emulator-verified.** Same rig discipline as above;
+second machine, lane block 350, anchor 14800 / wire 14801, guest build
+`23fb3bc8f88b`, warm-up scene discarded. Extensions Manager and General
+Controls captured for the first time.
+
+### The refutation first
+
+Memory, General Controls and Date & Time were classified **identically**
+before this slice's change — every button-family control `derived` /
+`pushButton` — and only Date & Time drew its check boxes. **Identical
+input, different output.** Classification cannot be the cause of a
+divergence it does not contain, and this slice's change makes the
+`unknown` population LARGER rather than smaller.
+
+### The three symptoms, and where each one lives
+
+**1. Widget absent — Memory, General Controls.** The radio buttons and
+check boxes are real controls, walked, and now honestly `unknown` with
+`cdef: 23`. What the renderer does with an `unknown` control is
+downstream of this slice and is where this symptom lives.
+
+**2. Widget drawn, state missing — Extensions Manager's rows.** Not this
+route, and not reachable by it. That window's whole control chain is
+**six** controls: 2 scroll bars, 3 push buttons (`cdef: 0`) and 1 popup.
+There is no list control and there are no per-row controls. The rows sit
+inside **dialog item 4**, a `userItem` spanning (14,65)-(458,265) — a
+rectangle the application draws itself. So a per-row check box has no
+ControlRecord and no DITL row, and its state cannot come from the control
+plane or the dialog plane. It can only come from the display plane, and
+nothing reads it today.
+
+**3. Widgets "missing from the walk" — Extensions Manager's help button.**
+This one is a reading error rather than a gap. The help button IS in the
+scene: `dialogItems[1]`, title `?`, `knowledge: unknown`,
+`definition: system`, with a ref. Extensions Manager is a **DLOG**, so it
+publishes 28 dialog items beside its 6 controls, and a consumer that
+reads `controls` alone sees 6 widgets where the window has more. "5
+walked against ~8 on screen" is that consumer, not that walk.
+
+### And a mitigation the cost estimate above did not account for
+
+Extensions Manager's three push buttons appear **twice** — as controls
+(now `unknown`, `cdef: 0`) and as dialog items 6/7/8, where the DITL
+route already reports them `knowledge: known`, `kind: pushButton`,
+`action: press`, provenance `guest-ditl`. **For dialog windows the
+stronger answer was never coming from the CDEF route at all**, so this
+slice costs those windows nothing. The cost lands on non-dialog windows
+and on controls no DITL row covers — which is what Memory and General
+Controls are.
+
+### One corroboration worth keeping
+
+Extensions Manager's buttons are `cdef: 0` (the CLASSIC family) while
+Memory, General Controls and Date & Time are `cdef: 23` (the Appearance
+family). Both are live on the same System at the same moment. A change
+that refused one family and kept attributing the other would have been
+honest about one control panel and confidently wrong about the next.
+
+The ids the route DOES resolve are worth reading as its own validation.
+Every one matches the control's own title without ever having seen it:
+General Controls' "Insertion Point Slider" and "Menu Blink Slider" are
+`cdef: 3` (slider), its "Launcher Picture" and "Hide Desktop Picture" are
+`cdef: 19` (picture); Memory's "RAM Disk Slider" is `cdef: 3`, its three
+"… Separator" controls are `cdef: 9` (separator line), and its "Cache
+Up/Down Controls" and "VM Up/Down Control" are `cdef: 6` (little arrows).
+All are ids this product deliberately has no role for — so they stay
+`unknown`, and are now countable rather than anonymous.
