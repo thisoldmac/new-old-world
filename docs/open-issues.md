@@ -24,6 +24,99 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## LOOK: round 9 landed four lanes, and the two things that would have gone wrong were both caught by reading (2026-08-07, `claude/019-integration-9`)
+
+**Verification level: TESTED, and the gates were NOT armed.**
+`scripts/test-all` exits 0 only under `TBT_ALLOW_UNARMED_HOOKS=1` in this
+worktree — `core.hooksPath` names `/Users/michelle/Lab/Code/timbottu/now/.githooks`,
+which does not exist, and 63 worktrees carry their own shadowing value.
+So GATE_EXIT=0 means **the tests pass; nothing refuses a bad commit**.
+Every commit in this round was made with `git -c core.hooksPath=.githooks`,
+which gates the committer's own commits and mutates nothing shared.
+Nothing here is metal-verified.
+
+Four lanes, 21 commits: `019-asset-packs` (docs), `019-pressed-and-waiting`
+(8, skipped by rounds 7 and 8), `019-kw01-kw06` (6, carrying
+`019-known-wrong-register` as an ancestor rather than as a second merge).
+Five conflicts, all resolved by reading.
+
+**The two that a mechanical resolution would have got wrong.**
+
+1. `RenderShot` in `SceneView.swift`. This tree had round 8's split into
+   `cgImage` plus a REFUSAL when neither a size nor a guest screen is
+   known; the lane still had the older single `png` that defaulted the
+   size. Both sides were adding the same thing — a `pressed:` parameter —
+   to different shapes of the same function. Taking the lane's whole
+   hunk parses, compiles, and silently reinstates an invented render
+   surface where the tree now refuses. The resolution was to keep this
+   side's structure and thread the lane's parameter through it.
+
+2. `WindowChrome.growBox`. Both sides carried a `growBox`; this side's
+   still opened `guard win.kind != 2` with a long note arguing the
+   discriminator was wrong and left deliberately, and the lane REMOVES
+   it. Here keeping "ours" — the reflex on a foundation file — restores
+   the exact defect the lane was written to delete, measured at 0 of 225
+   pixels agreeing on Appearance and wrong in BOTH directions at once.
+
+The shared shape is worth naming: **in both cases the two sides were not
+disagreeing, they were at different points along the same argument.** A
+merge tool sees two texts; only a reader sees which one is later.
+
+**The register renumbered, and an id stopped meaning what it said.**
+`019-kw01-kw06` closed the grow box (then `KW-01`) and the `ctlact`
+false negative (then `KW-06`, which the first closure had already shifted
+to `KW-05`). Ids are gated for contiguity, so closing a row moves every
+row below it. Today `KW-01` is the zoom box and `KW-06` is menu geometry
+— **different defects wearing the ids the branch name still carries.**
+`KnownWrongRegisterTests` was updated by the lane and passes; its
+`testKW01…`/`testKW06…` names now assert the new occupants. Cite rows by
+title.
+
+**What was checked because a previous round paid for it.**
+
+- Round 8's duplicate-declaration class (two branches each adding a
+  byte-identical `hasTitleBar` at different offsets, merged cleanly,
+  caught only by the compiler): every changed `.swift`/`.c`/`.h` scanned
+  for repeated top-level declarations. None. This is still a scan, not a
+  gate — nothing runs it automatically.
+- `tools/merge-census-gate pending` before each merge: 0 dropped, 0 files
+  gone, 0 imported self-reverts, both times. `tools/self-revert-gate
+  scan`: 0 of 5, 0 of 8, 0 of 6. **Both were run by hand. Both still
+  ship unarmed**, so the next integrator who does not think of them gets
+  nothing.
+- `scripts/test-native`'s manifest audited in Python against the tree
+  rather than by grep: 118 test files, 0 unlisted, 0 listed twice.
+- `docs/open-issues.md` union-resolved twice. The second was not a
+  concatenation: the lane's block opened with a paragraph belonging to
+  the file's INTRO and only then two entries, so the paragraph went to
+  the intro and the entries to the top of the list.
+
+**A derived document read clean over real change, for the second round
+running.** `tools/derived-doc-gate rederive`: unchanged, both files.
+This round altered `now-guest-ppc/src/act/act_client.c` and
+`act_cmds.c` — `ctlact` stopped concluding a refusal from a silent trap
+patch, which is a change to what a verb ANSWERS — and `act_cmds.c` is not
+among `contract-coverage.md`'s declared sources, so not even
+`sources-sha1` moved. Round 8 saw the narrower version (sources-sha1 moved
+while every derive answer was identical). **These numbers count which
+verbs exist and are structurally blind to what a verb replies.** That is
+not a defect in the gate; it is the boundary of what it claims, and it
+should be written where the table is read.
+
+**Numbers.** `test-all` GATE_EXIT=0. Guest cross-builds: PPC, 68K, ext
+and three rig instruments all ok. `test-native` 149 passed / 0 failed.
+MirrorKit 280 tests, 0 failures. Host gate run twice by its own single
+command: **1899 tests, 0 failures, 54 then 72 skipped** — the second run
+is `NOW_MIRROR_ASSETS=none`, so the skip pair is the documented
+honest-degradation pair and not variance. `xcodebuild` Debug and Release
+both pass.
+
+**What this round did NOT do.** No bake (Michelle's call; two resident
+changes are owed a `--shared` bake and the installed oracle matches no
+receipt). Nothing landed on `main`. No drive, no emulator, no metal — the
+lanes' own "EMULATOR-VERIFIED" claims are inherited from their authors
+and were not re-witnessed here.
+
 ## OPEN: a symbol census cannot see a duplicated definition, and round 8 landed one (2026-08-07, `claude/019-integration-8`)
 
 **Verification level: TESTED.** `scripts/test-all` GATE_EXIT=0 on the
