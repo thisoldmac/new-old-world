@@ -998,6 +998,33 @@ between two derivations on one day is not a property of the command.)*
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
 
+## Re-derived at the 019 integration round 3, 2026-08-07 (`claude/019-integration-3`)
+
+**This supersedes every derivation below.** Seven lanes —
+`018-cdef-classify` (carrying `018-control-semantics`), `019-conformance`,
+`019-cursor-follow`, `019-embed-mirror`, `019-embed-scope`,
+`019-one-answer-a`, `019-one-answer-b` — were merged into one tree and the
+five commands at the foot were run against the RESULT.
+
+| | Derived here | Round 2 said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 49 | — |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **47** | 47 | — |
+| PowerPC verbs served | **44** | 44 | — |
+| NOW-68K verbs served | **13** | 13 | — |
+
+**Nothing moved, and that is the finding.** Ninety-nine commits landed,
+including a cursor lane that added a resident vehicle, a shared-header
+change to `contract/peek_table.h` and 58 lines to
+`now-guest-ppc/src/input/input_cmds.c` — and not one of them added a
+verb or a message type. The cursor work extended the *arguments* of
+verbs that already existed rather than the vocabulary, which is exactly
+the shape of change these counts cannot see and the reason the counts
+are not the whole coverage story. `comm -23` over the sorted registry
+and PowerPC lists still names the same three unserved verbs: `put`,
+`cancel`, `shotdiag`.
+
 ## Re-derived at the 019 integration merge, 2026-08-07 (`claude/019-integration-2`)
 
 **This supersedes every derivation below.** `main` and four lanes —
