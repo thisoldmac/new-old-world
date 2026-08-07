@@ -246,6 +246,211 @@ that is worth saying plainly: **a green run of that probe says nothing
 whatever about the product**, and the probe now says so in its own output
 rather than leaving a reader to infer it.
 
+### How a Finder icon gets named, and the fact that decided it (2026-08-07, `claude/019-drag-element-refs`)
+
+Break 2 says a Finder icon has no element reference. The obvious repair —
+mint one — was written up, costed, and **rejected**, and the reason is
+worth more than the design that replaced it.
+
+**Candidate A: teach the element walk to see Finder icons.** The walk
+reads foreign memory along two documented chains, the Window Manager's
+window list and each window's control list (`axwalk.h`). A desktop or
+folder icon is in neither: the Finder lays them out in its own private
+structures, which have no published layout and no stability guarantee
+across 8.6–9.2.2. Seeing them means reverse-engineering the Finder's
+heap, and the failure mode of getting it subtly wrong on a system version
+nobody tested is *a file moving*. Rejected.
+
+**Candidate B: `FinderItems` mints the reference.** `FinderItems` is host
+code, and the registry's first anti-forgery property is that the token is
+*not derived from anything a caller knows* (`obsref.h`). A host-minted
+token is by construction a caller-supplied token. Rejected as stated.
+
+**Candidate C: the guest asks the Finder and mints there.** Honest in
+principle — the Finder is the only observer that can see its own icons,
+and the guest already reaches it through `script`/`OSADoScript`. The cost
+is where it fails: the registry re-proves a reference from foreign memory
+— window address, ControlHandle, node fingerprint — and a Finder item has
+none of the three. Its revalidation could only re-prove the process, so a
+Finder-item reference would be **weaker than every other reference while
+spelled identically on the wire**. Uniform spelling over non-uniform
+strength is the convincing-lie shape this repository keeps paying for.
+
+**And then the fact that settles it, read out of the resident rather
+than reasoned about.** For `dragpress` — unlike `ctlact` — *the reference
+does not bound the act.* `ext/src/now_ext_act.c:829` serves the press as
+`now_ext_drag_press(table, cell->control_handle, a5, cell->click_h,
+cell->click_v, …)`: the button goes down at the **caller's point**, and
+`control_handle` is repurposed to carry the session nonce, so no
+ControlHandle is checked and no trap patch answers for one. The element
+therefore buys exactly two things — the PSN whose context the press runs
+in, and a fallback rectangle for a caller that sends no point. A drag
+always sends a point.
+
+So the element's whole job in `dragpress` is **to name the process**, and
+candidate C would have built a weak new species of reference to name the
+Finder, which a Finder *window* reference already names with far more
+re-proving behind it.
+
+**Chosen — candidate D: `dragpress` names its container.** It accepts a
+`now-window-` reference as an alternative to `element`; in that form
+`h`/`v` are REQUIRED, because there is no rectangle to fall back on and
+the rule against pressing at a guessed point stands unchanged. And the
+reference is made to do real work rather than sit there as provenance:
+**the press point must lie inside the resolved window**, which the guest
+checks from the resolver's own global content rectangle
+(`NowAxWindow`). A window reference plus an arbitrary global point would
+have been "a coordinate is a reference" arriving by the back door;
+a window reference plus a point *inside that window* is a bound the
+guest can check and does.
+
+The one thing that could have left this half-closed was the desktop: a
+desktop icon is inside no *folder* window, so the form reaches it only if
+the Finder's desktop is itself a window in the window list. That is a
+fact about this Macintosh rather than a design choice, so it was measured
+rather than assumed — and it came back better than the design needed.
+
+**The Finder's desktop IS a window, and the guest already mints a
+reference for it.** Emulator-measured 2026-08-07 on this lane's own clone
+(block 979, anchor 19832 / wire 19833, guest build `113f1b176035`), by
+aiming `elements` at the Finder's own PSN:
+
+| window | kind | z | content bounds (global) | reference |
+| --- | --- | --- | --- | --- |
+| `Macintosh HD` | 20 | 0 | `{48, 103, 452, 321}` | minted |
+| `Desktop` | 20 | 1 | `{0, 20, 800, 600}` | minted |
+
+So the desktop is an ordinary Finder window of the same kind as a folder
+window, its content region starts below the menu bar, and the element
+walk had been naming it the whole time — nobody had asked. **No new
+species of reference is needed for any Finder icon**, which is the
+strongest possible argument that candidates A through C were the wrong
+shape: the addressing this feature wanted already existed, one verb over.
+
+The bound the guest checks falls out of the same fact. A desktop drag is
+a press inside `Desktop`'s rectangle, a folder drag is a press inside
+that folder window's, and both are the same comparison against the same
+global content box.
+
+### Break 3, found by driving: nothing ever posted the mouseDown
+
+The window form was built, the conformer written, and the gesture driven
+against a real Finder — and the icon did not move. **The vehicle was
+never going to start a drag, and the reason is one line that was never
+there.**
+
+`now_ext_drag.c` says in its own header that the whole vehicle is "write
+those four" low-memory globals, and that is true. But writing `MBState`
+is what a tracking loop **reads** once it is running; it is not what
+**starts** one. An application begins a drag because a `mouseDown`
+arrived through `GetNextEvent`, it hit-tested the point, and it called
+`DragGrayRgn`. No `mouseDown` was ever queued.
+
+That stayed invisible because the plane's other users do not need one:
+`ctlact` arms a patch that answers `TrackControl` for a handle the
+request names, so the target is **already inside** a loop when the button
+matters. A drag starts from outside one. `local-drag-vehicle.py` could
+not have caught it either, and says so in its own header — it aims at
+NOW's own window and claims nothing about what an application did.
+
+So the `DragPress` serve now posts a `mouseDown` — one event, `where`
+stamped on the queue element, in the target's own context, which is where
+that serve already runs. Only the down: the up is what the vehicle's
+deadline owes, and queueing it here would end the gesture the instant it
+began. A refused queue **abandons the gesture** rather than being
+best-effort, the opposite of the mouseUp's policy and deliberately so —
+there the button is already up, here it would be down with nothing
+tracking it.
+
+**It works, and it is not enough.** Emulator-verified, same rig as above:
+with NOW hidden and the Finder frontmost, the press reaches the Finder
+and **the Trash selects itself under the pointer** — the guest's own
+pixels, `dt-1-pressed`. Nothing in this project had ever made a foreign
+application respond to a drag press before. Which is what let the next
+wall be found.
+
+### Break 4: the press's own reply is blocked by the loop the press starts
+
+With the Finder genuinely tracking, `dragpress` answers:
+
+```
+State = ended    Button = up    Vehicle ticks = 253
+Moves applied = 0    Ended = dead-man-idle
+```
+
+**The gesture is over before the caller learns the session nonce.** Not a
+timing accident — it is the plane's own central fact, arriving one step
+earlier than the contract expected it. `dragpress`'s description already
+says that from the instant the button is down "the filter that serves act
+requests is never entered again until the gesture ends", and concludes
+that motion and release therefore cannot be act requests. True, and
+incomplete: **`dragpress` is itself an act request**, and `now_act_submit`
+waits for the target to pump before it can report `fired`. The target
+stops pumping the moment it starts tracking. So the press cannot answer
+until the drag is over, and the only thing that ends it is the dead-man.
+
+The circle: the press starts the tracking loop → the loop stops the
+target pumping → the press's reply cannot be composed → no `dragmove`
+can be sent, because it needs the nonce the reply carries → the idle
+deadline expires → the loop ends → the reply finally arrives, saying
+`dead-man-idle`, `Moves applied 0`.
+
+This is stated and stopped at rather than patched. The shapes a repair
+could take all change the plane's contract, and picking one is a design
+pass rather than a fix:
+
+- the nonce could be **minted by the caller** and sent with the press, so
+  nothing has to come back before motion can start;
+- or `dragpress` could answer **on arming rather than on firing**, which
+  means saying "the press is queued" instead of "the button is down" —
+  a weaker and more honest claim, and one that changes what an `ok` reply
+  means;
+- or the resident could publish the session in the drag cell, which any
+  reader can poll, so the press's reply stops being the only route to it.
+
+The first is the smallest and the most suspicious: a caller-supplied
+nonce is a caller-supplied identifier, and that family of shortcut is
+what `obsref.h` exists to refuse. It is probably still right here — a
+nonce is not an address — but it is exactly the argument that wants to be
+had out loud rather than settled by whoever is holding the keyboard.
+
+**What this means for the two breaks above.** Both are closed and both
+are real: a Finder icon is nameable, the conformer exists, and the press
+lands on the right icon in the right process. What is not closed is
+carrying the gesture, and no part of the product should claim otherwise
+until Break 4 is.
+
+### The resident change here carries NO bake receipt, and nothing stopped it
+
+Said out loud because the mechanism that should have said it did not run.
+`ext/src/now_ext_act.c` changed in this thread, which is exactly the case
+`tools/ext-bake-gate` exists to catch — and `scripts/test-all` ended with:
+
+> **all gates passed — BUT THE COMMIT GATES ARE NOT ARMED IN THIS CLONE.**
+> Nothing refuses a commit here: not the main guardrail, not the ext bake
+> gate.
+
+So the deferral was typed (`TBT_DEFER_EXT_BAKE_REASON`) and **went
+nowhere**: `ext/stage-receipts.json` is untouched by every commit in this
+thread, because the hook that would have written it never ran. A
+deferral is supposed to be a written decision that lands in the same
+commit as the work it excuses; this one is written here instead, which is
+the only place left for it.
+
+The decision itself stands and is small: the resident under test was this
+tree's build, staged into a session-private clone and cold-booted —
+`scripts/spin-up-ppc`'s ordinary mode, recorded in that run's own
+`provenance.md` — and no shared image was baked or touched. What is
+missing is the receipt, not the evidence.
+
+Two things follow for whoever picks this up. **Bake before this lands on
+`main`**: `merge-check` refuses resident source covered by no bake, and
+it will be right to. And **`tools/setup-hooks` is per clone**, so an
+agent worktree under `/private/tmp` can be a clone where nothing is
+armed at all — a green `test-all` there means the tests pass and says
+nothing whatever about the guardrails. That warning is well-written and
+it is the only reason this was noticed.
+
 ### A gate, so the next conformer is not silently absent
 
 Nothing failed when `itemDragDriver` went unimplemented, because a

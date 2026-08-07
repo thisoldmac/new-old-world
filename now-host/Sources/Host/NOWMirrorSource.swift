@@ -299,6 +299,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private let listener: GuestListener
     private let engineRegistry: MirrorStateEngineRegistry?
     private let act: AgentIntegrationActControl
+    /// The nonce `dragpress` minted for the gesture in flight, and the only
+    /// thing `dragmove` and `dragrelease` can be addressed with. Nil
+    /// between gestures — and nil is not "released": the resident's own
+    /// dead-man is what guarantees the button comes up, never this field.
+    fileprivate var dragSession: Int?
     private let cycleIO: NOWMirrorCycleIO
     private let sendCommand: GuestCommandSend
     private let interval: TimeInterval
@@ -2726,6 +2731,124 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return "available"
         case .inputDeviceUnavailable(let reason), .unsupported(let reason):
             return reason
+        }
+    }
+}
+
+// MARK: - Holding the mouse button down
+
+/// **The span between a gesture a person makes and a Macintosh that can
+/// hold the mouse button down.**
+///
+/// Written 2026-08-07 after Michelle said "drag isnt working on my build".
+/// It was not, it never had, and *nothing was red*: `MirrorSceneSource`
+/// declares `itemDragDriver` with a protocol default of `nil`, this type
+/// never overrode it, and a protocol default that returns nil is a legal
+/// conformance. So the app compiled, conformed, passed every gate, and
+/// answered every item drag with "this mirror cannot hold the mouse button
+/// down" — a well-written refusal on a status line that scrolls, which is
+/// how a deliberate refusal reads to a person as a dead feature.
+/// `ItemDragSeamTests` now checks this conformer and the `dragpress` verb
+/// as a pair, so half a bridge fails in either direction.
+///
+/// ## Why it names a WINDOW
+///
+/// `dragpress` takes an observation-minted reference, and a Finder icon has
+/// none: it is not a Control Manager object, the element walk cannot see
+/// it, and no observation ever minted one. What the guest CAN name is the
+/// container — a folder window, or the Finder's own full-screen `Desktop`
+/// window, both of which the walk has been reporting all along — so that is
+/// what crosses, with the point checked against the window's rectangle on
+/// the guest side. The reasoning, and the three designs rejected on the way
+/// to it, are in docs/open-issues.md.
+///
+/// ## What it does NOT do
+///
+/// It never synthesises an answer. `.confirmed` is the only door to a
+/// promoted drag in `ItemDragSession`, and a driver that manufactured one
+/// would turn "we do not know yet" into a plausible wrong claim about a
+/// file — the failure this whole arc exists to remove. Every case below is
+/// either the guest's own word or a refusal in the guest's own sentence.
+extension NOWMirrorSource: ItemDragDriver {
+
+    var itemDragDriver: ItemDragDriver? { self }
+
+    func dragPress(_ subject: DragTargeting.Subject, at point: MirrorKit.Point,
+                   answer: @escaping (ItemDragAnswer) -> Void) {
+        guard let window = containerReference(for: subject) else {
+            answer(.refused(
+                "the Macintosh has not named the "
+                    + (subject.container == .desktop ? "desktop"
+                                                     : "window")
+                    + " \(subject.name) is in, so there is nothing to hold "
+                    + "it by yet — try again once the mirror has observed "
+                    + "it"))
+            return
+        }
+        Task { @MainActor in
+            switch await act.dragPress(window: window, h: point.x,
+                                       v: point.y) {
+            case .done(let session):
+                /* The session is what dragmove and dragrelease name. A
+                   press whose nonce this side lost is a button down that
+                   nothing here can ask about, so it is refused rather than
+                   confirmed — and the resident's dead-man is what actually
+                   lets go. */
+                guard let session else {
+                    answer(.refused("the Macintosh did not say which "
+                                    + "gesture the press belongs to"))
+                    return
+                }
+                self.dragSession = session
+                answer(.confirmed)
+            case .refused(let why):
+                self.dragSession = nil
+                answer(.refused(why))
+            }
+        }
+    }
+
+    func dragMove(to point: MirrorKit.Point) {
+        guard let session = dragSession else { return }
+        Task { @MainActor in
+            _ = await act.dragMove(session: session, h: point.x, v: point.y)
+        }
+    }
+
+    func dragRelease(_ plan: DragTargeting.Plan?,
+                     answer: @escaping (ItemDragAnswer) -> Void) {
+        guard let session = dragSession else {
+            /* Nothing is held. Saying so is not the same as saying the
+               drag worked, and the view's abandonment path calls this with
+               no plan precisely when there may be nothing to release. */
+            answer(.refused("no drag is being held"))
+            return
+        }
+        dragSession = nil
+        Task { @MainActor in
+            switch await act.dragRelease(session: session) {
+            case .done:
+                answer(.confirmed)
+            case .refused(let why):
+                answer(.refused(why))
+            }
+        }
+    }
+
+    /// The observation-minted reference for the container an item lives in.
+    ///
+    /// The desktop is found with `HitTester.isDesktopBackdrop`, the predicate
+    /// this side already uses to decide what a click on bare desktop means
+    /// — one place deciding what the desktop window is, rather than a
+    /// second spelling of the same title match.
+    private func containerReference(
+        for subject: DragTargeting.Subject) -> String? {
+        guard let scene else { return nil }
+        switch subject.container {
+        case .desktop:
+            return scene.windows.last(where: HitTester.isDesktopBackdrop)?.ref
+        case .window(let id):
+            return scene.windows.first(where: { $0.id == id })?.ref
         }
     }
 }
