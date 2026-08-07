@@ -1179,11 +1179,24 @@ static void test_a_cdef_id_is_derived_and_not_known(void)
     /* THE LINE. A documented id with no honest role says nothing, and it
        must not quietly become the nearest thing. */
     check_absent(out, "\"kind\":\"clock\"");
-    /* It says nothing, and it says WHICH id said nothing: the lookup
-       succeeded, so `cdef` rides beside the unknown as the fact that
-       sizes the gap. `knowledge` is still the only load-bearing word. */
+    /* ...and it says WHICH id said nothing. `cdef` is the difference
+       between "the Resource Manager named this and the table still would
+       not attribute it" and "we never got an answer at all", and after
+       2026-08-07 the first is the common case: the two button families
+       attribute nothing, so most of an OS 9 control panel lands here.
+       Without this key they all arrive as one anonymous `unknown`. */
     check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
                        "\"cdef\":15,\"provenance\"");
+    /* An id is a FACT and never a kind. The clock's id is emitted and the
+       clock's kind is not, in the same object. */
+    check_absent(out, "\"cdef\":15,\"kind\"");
+    /* And it is absent where nobody could ask: control 3's lookup found
+       the handle in no resource map, so there is no id to print and an
+       invented 0 would read as CDEF 0 - the button family, which is the
+       one id that must never appear without having been read. */
+    check_present(out, "\"value\":\"Unsupported custom control\"");
+    check(count_of(out, "\"cdef\":") == 1,
+          "exactly one control here had an id to report");
     /* And a derived kind is never spelled `known`: exactly one control
        here reached that word, and it is the one that carried a role. */
     check(count_of(out, "\"knowledge\":\"known\"") == 1,
