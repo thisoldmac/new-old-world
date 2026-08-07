@@ -65,17 +65,103 @@ Each is a rectangle to look at, not a vibe.
 - **One interior at a time** is the built behaviour; a screenshot with one
   live interior and the rest hatched is not a defect.
 
+## ✗ FIRST — a claim under test IS NOT IN THE TREE
+
+**Claim 4, render stability, is not on `claude/019-integration-7`.** The
+fix exists — `49c9a6f6` *"fix(mirror): one scene, one picture — and the
+buffer that was never ours"*, the commit that measured the 1,471 of 57,600
+changed pixels — and it lives on **`claude/019-first-render-differs`**, a
+branch this round did not merge.
+
+Derived, not remembered:
+
+```
+$ git merge-base --is-ancestor 49c9a6f6 HEAD ; echo $?
+1                                   # NOT an ancestor
+$ git branch -a --contains 49c9a6f6
++ claude/019-first-render-differs    # and nothing else
+$ git log --oneline --merges claude/019-integration-7 ^claude/019-integration-5 \
+    | grep first-render
+                                     # no merge of that lane in rounds 6 or 7
+```
+
+And the code says the same thing: `RenderShot.png`
+(`mirror/host/MirrorKit/Sources/MirrorKitUI/SceneView.swift:64-68`) still
+reads
+
+```swift
+let renderer = ImageRenderer(content: view)
+renderer.scale = 1
+guard let cgImage = renderer.cgImage else { … }
+```
+
+— the borrowed backing store, not a bitmap context of our own.
+
+**Why this outranks the rest of the report.** It is not only an unlanded
+fix. It is a live hazard for *this* sweep and for every render finding
+taken from this tree, because the composed renderer's output depends on
+how many renders have already happened in the process. The nine targets in
+a capture pass are rendered by one `LiveShapedRenderTests` process in list
+order, so the earliest targets are drawn by a renderer that has not
+settled and the later ones by one that has. **A per-target render finding
+from this tree carries an ordering artefact nobody has been subtracting.**
+
+The other six claims ARE in the tree, checked the same way:
+
+| # | Claim | Landed? | Where |
+|---|---|---|---|
+| 1 | title-bar widgets per window class | **yes** | `WindowChrome.hasTitleBar` now `!(kind == 2 && title.isEmpty)`; lane `019-titlebar-fidelity` merged at `5c29db31` |
+| 2 | `Platinum.contentTop` 22 → 20 | **yes** | `PlatinumTheme.swift:131` and `PlatinumTitleBar.Row.contentTop` both 20 |
+| 3 | zoom box drawn nowhere | **yes** | `WindowChrome.zoomBox` returns `nil` unconditionally, with the Extensions-Manager/Memory pair written into the doc comment |
+| 4 | render stability | **NO** | see above |
+| 5 | CDEF counts down deliberately | **yes** | `8bb266b5` "a button family is not a push button", in HEAD |
+| 6 | `controlsState` 4-way | **yes** | `Scene.ControlsState` = complete/empty/unknown/notFetched, read through `controlsKnowledge` |
+| 7 | desktop names who answered + corner plate | **yes** | `SceneRenderer.swift:332-352`, lane `019-honest-substitution` merged at `b64a1504` |
+
+## A seam found while checking claim 1, before any pixel was taken
+
+`WindowChrome.hasTitleBar` was corrected from `win.kind != 2` — the
+discriminator that gave every Dialog-Manager-owned window no widgets.
+**`WindowChrome.growBox` (`WindowChrome.swift:96`) still reads
+`win.kind != 2`.** So a `kind == 2` window that IS resizable — Extensions
+Manager is the corpus's own example, and it is the very window the zoom-box
+doc comment cites for exactly this "kind cannot stand in" reason — gets no
+grow box from the hit-tester. Same wrong discriminator, same file, one
+function apart, fixed in one place. Not yet checked against the machine.
+
 ## Measurements taken so far
 
-Nothing yet. The rig was being brought up when this checkpoint was
-written.
+Capture pass 1 was running when this checkpoint was written. See
+"Targets reached" below.
 
 ## Targets reached / not reached
 
 | Target | Captured | Scored | Note |
 |---|---|---|---|
-| — | — | — | rig bring-up only |
+| — | — | — | capture pass 1 in flight |
 
 ## Rotated new target
 
-Not yet chosen.
+**Apple System Profiler**, at
+`Macintosh HD:System Folder:Apple Menu Items:Apple System Profiler`. No
+earlier sweep has taken it (checked against all five earlier sweep
+documents). It is also a target that could not be reached through the
+guest's own `launch` verb at all — see below.
+
+### And it widens sweep C's S4 before it is even captured
+
+Sweep C's S4 was *"`launch` still refuses control panels"*. Posed at this
+guest directly:
+
+```
+launch Macintosh HD:System Folder:Apple Menu Items:Apple System Profiler
+  -> launch-refused: not an application (type APPD)
+launch Macintosh HD:System Folder:Control Panels:TCP/IP
+  -> launch-refused: not an application (type cdev)
+```
+
+Two file types, not one, and the anchor worker opens both. **The refusal
+is honest and specific — that half is a pass** — but the asymmetry is
+wider than the sweep C row says, and `docs/command-parity.md` still
+declares neither.
+
