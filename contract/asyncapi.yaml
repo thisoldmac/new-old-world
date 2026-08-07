@@ -1432,10 +1432,77 @@ components:
             machine has already withdrawn.
         name:
           type: string
-          description: Human-facing machine name, e.g. "Power Mac G3".
+          description: >
+            Human-facing machine name, e.g. "Power Mac G3". A LABEL, shown to
+            people, and deliberately NOT an identity: it is guest-asserted, a
+            person can edit it in a control panel, and on this project a
+            deployed guest runs under its MacBinary name — so the same Mac
+            answers one string today and another after the next deploy.
+            Never compared, never keyed on (`GuestIdentity.swift` carries the
+            two defects that cost). `machine` is the field that answers
+            "which kind of Macintosh is this".
         os:
           type: string
-          description: Guest OS version string, e.g. "9.1".
+          description: >
+            The guest's SYSTEM VERSION, as `major.minor.bugfix` decoded from
+            `gestaltSystemVersion` — "9.1.0", "7.1.0". Read from the machine
+            at hello time, not compiled in.
+            IT USED TO BE A LITERAL, on both guests: "9" on the PowerPC guest
+            and "7.1" on NOW-68K, hardcoded in the send. A field that claims
+            to describe the machine and is really a property of the build
+            cannot key anything, and cannot notice a System upgrade. That is
+            why it changed (2026-08-07), and the change is additive in the
+            only sense that matters here — the shape is the same string and
+            every existing reader displays it.
+            ABSENT, or the literal `unknown`, means Gestalt did not answer.
+            A receiver must not substitute a guess; see `machine` for why
+            `unknown` is a first-class value rather than a gap to fill.
+        machine:
+          type: object
+          additionalProperties: false
+          description: >
+            WHICH KIND OF MACINTOSH THIS IS, in typed fields rather than in
+            prose. Added 2026-08-07 for the asset-pack key
+            (docs/plans/2026-08-07-021-feat-asset-packs-plan.md), and it adds
+            no capability: both guests already compute every value here for
+            the census `identity` probe. It moves facts out of display
+            strings and into fields.
+            WHY NOT READ THE CENSUS. `census.report` carries `[name, raw,
+            meaning]` string triples and the two guests SPELL THE SAME FACT
+            DIFFERENTLY — the system row is labelled `Mac OS` on the PowerPC
+            guest and `System` on NOW-68K, and `Model`'s raw column is a name
+            on one and a decimal machine type on the other. Parsing that
+            needs a per-guest label map: a third place that must agree with
+            two others, maintained by hand, with nothing failing the build
+            when a guest changes a word. That is the defect class this
+            project has paid most for, and the reason this is a field.
+            IT IS A MODEL, NOT A SERIAL NUMBER, and that is deliberate rather
+            than a limitation. Gestalt carries no per-unit identifier at all;
+            two PowerBook 1400cs answer identically here. For the thing this
+            exists to key — the art of a System Folder — that is CORRECT: a
+            pack extracted from one 1400c running 9.1 is the right pack for
+            another. Nothing may treat this as identifying a UNIT.
+            ABSENT means the sender predates the field. It is never inferred
+            from `name`.
+          properties:
+            id:
+              type: integer
+              description: >
+                The raw `gestaltMachineType` response. Machine-readable and
+                stable across Systems and localisations, which is why it
+                leads. 0 means Gestalt did not answer — a fact, not a model.
+            model:
+              type: string
+              maxLength: 64
+              description: >
+                The machine's own name for itself, for display and as the
+                fallback key where `id` is 0. Resolved the way both guests
+                already resolve it: Gestalt `'mnam'` first (the machine's own
+                answer beats any table), then the System's machine-name
+                string or a built-in table, then the raw id in words.
+                A machine outside the table reports its NUMBER rather than a
+                guess — `unknown` is a fact about what we could establish and
+                must stay legible as one.
         chunk:
           type: integer
           minimum: 512
@@ -3293,20 +3360,6 @@ components:
     # means a documented answer exists somewhere, never that this is a push
     # button. It can never authorise an act, and a receiver that promotes it
     # to a kind is reading a key that does not say that.
-    # IR v2 also carries `semantic.cdef` — an integer — and, like
-    # `definition`, ONLY where `semantic.kind` is absent. It is the resource
-    # id of the control definition function the Resource Manager named, and
-    # it says that the lookup SUCCEEDED and still did not settle a kind.
-    # The common case is ids 0 and 23, the classic and Appearance button
-    # FAMILIES: push button, check box and radio button share one id, and
-    # the variation code that separates them is not readable from outside
-    # the owning process (measured 2026-08-07 — every button-family control
-    # in Memory and Date & Time reports contrlDefProc 0x00002EC8 with a zero
-    # high byte, and GetControlVariant answers 0 for all of them while
-    # answering correctly for controls the guest itself created). It sizes
-    # and names an undetermined population; it is never a kind, and a
-    # receiver that maps an id to one has re-created the defect this key
-    # exists to record.
     SceneRequest:
       type: object
       required: [type, id]

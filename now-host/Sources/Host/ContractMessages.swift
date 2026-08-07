@@ -407,9 +407,47 @@ struct Hello: Codable, Equatable, Sendable {
     /// here. A machine that refuses says `.disabled` out loud, which is
     /// the only thing separating it from one that is simply older.
     var agent: AgentIntegrationGuestAccess? = nil
+    /// A LABEL — what the machine calls itself — and deliberately not an
+    /// identity. See `GuestIdentity`, which carries the two defects that
+    /// paid for that sentence. `machine` is the field that says which
+    /// kind of Macintosh this is.
     var name: String?
+    /// The guest's system version as `major.minor.bugfix`, read from
+    /// `gestaltSystemVersion` at hello time.
+    ///
+    /// It used to be a LITERAL on both guests — `"9"` and `"7.1"`,
+    /// compiled in — so before 2026-08-07 this field described the build
+    /// and claimed to describe the machine. A value from a guest older
+    /// than that change is still whatever that build was compiled with,
+    /// which is why nothing may treat a `nil` here and an old literal as
+    /// different kinds of unknown: both mean "not measured".
     var os: String?
+    /// Which kind of Macintosh, in typed fields.
+    ///
+    /// Nil means the sender predates the field (contract, 2026-08-07),
+    /// and is never inferred from `name`.
+    var machine: GuestMachine?
     var chunk: Int?
+}
+
+/// The guest's own answer to "which kind of Macintosh is this", as
+/// `hello.machine`.
+///
+/// **A MODEL, never a unit.** Gestalt carries no per-machine serial
+/// number at all, so two PowerBook 1400cs are indistinguishable here.
+/// That is correct for the thing this exists to key — the art of a
+/// System Folder is the same on both — and it is wrong for anything that
+/// needs to tell two Macs apart. `GuestAddress` and `GuestKey` are the
+/// types for that question.
+struct GuestMachine: Codable, Equatable, Sendable {
+    /// The raw `gestaltMachineType` response. Machine-readable and
+    /// stable across Systems and localisations, which is why it leads.
+    /// 0 — like nil — means the guest could not establish it, and is
+    /// never a model.
+    var id: Int?
+    /// The machine's own name for itself, for display and as the
+    /// fallback key where `id` is absent or 0.
+    var model: String?
 }
 
 struct Refuse: Codable, Equatable, Sendable {

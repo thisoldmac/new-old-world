@@ -646,7 +646,11 @@ final class GuestWireFixtureTests: XCTestCase {
                        "NOW68K_APP_VERSION, read from wire68.c")
         XCTAssertEqual(hello.name, "now-68k",
                        "the name that tells the two guests apart in the UI")
-        XCTAssertEqual(hello.os, "7.1")
+        XCTAssertEqual(hello.os, "7.1.0",
+                       "measured from gestaltSystemVersion, three components")
+        XCTAssertEqual(hello.machine?.id, 34,
+                       "the raw gestaltMachineType, not a name")
+        XCTAssertEqual(hello.machine?.model, "Macintosh Quadra 950")
         XCTAssertEqual(hello.chunk, 4096)
         XCTAssertLessThan(hello.chunk ?? Contract.defaultChunk,
                           Contract.defaultChunk,
@@ -1391,8 +1395,14 @@ enum Guest68KWire {
         return String(quoted)
     }()
 
+    /// `os` and `machine` are MEASURED now, not compiled in (contract,
+    /// 2026-08-07). This fixture therefore carries one machine's answer —
+    /// a Quadra 950 on 7.1.0 — where it used to carry a literal that was
+    /// the same on every machine. The shape is what is being pinned; the
+    /// values are an example, and `hello.c` does not choose them.
     static let hello = #"{"type":"hello","contract":2,"side":"guest","#
-        + #""version":"\#(appVersion)","name":"now-68k","os":"7.1","#
+        + #""version":"\#(appVersion)","name":"now-68k","os":"7.1.0","#
+        + #""machine":{"id":34,"model":"Macintosh Quadra 950"},"#
         + #""chunk":4096}"#
 
 
