@@ -158,7 +158,7 @@ is not a closed defect.
 ## BROKEN: the integrated render at round 3 — six targets, and the content plane reached none of them (2026-08-07, `claude/019-integration-3`)
 
 Seven lanes merged, then the tree was watched composing. Pairs in
-`/tmp/pairs-int3-p2` (guest pixels via QMP screendump after the walk
+`~/Lab/Assets/now-mirror-assets/019-integration-3/` (out of git) (guest pixels via QMP screendump after the walk
 returned, host render via `MirrorApp --render-scene` over the same
 envelope). Emulated mac99/OS 9.1, private image `now-stage-int3`,
 resident `4d0988e8e891`. Nothing here is metal-verified.
