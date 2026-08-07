@@ -1,9 +1,34 @@
 #!/usr/bin/env bash
-# Bake the current resident into the shared Mirror stage image, and write
-# the receipt that lets the commit gate believe it happened.
+# Bake the current resident into a Mirror stage image — YOUR OWN by
+# default, the shared oracle only when you say so out loud.
 #
-#     scripts/bake-ext-image
-#     NOW_WIRE_PORT=5311 scripts/bake-ext-image     # pick your own ports
+#     scripts/bake-ext-image                     # PRIVATE. Your own image.
+#     scripts/bake-ext-image --shared            # installs over the ORACLE
+#     scripts/bake-ext-image --name plane-abi    # name your private image
+#     NOW_WIRE_PORT=5311 scripts/bake-ext-image  # pick your own ports
+#
+# WHICH MODE YOU WANT, in one line each:
+#
+#   --throwaway (the default) is for IN-FLIGHT LANE WORK. You are changing
+#   ext/ and you want a machine with your resident on it. Nobody else has
+#   any business reading your image, so it goes to
+#   ~/Lab/Assets/os91-qemu/agent-stage/<name>.qcow2 with a
+#   .provenance.json sidecar, and ext/stage-receipts.json IS NOT TOUCHED —
+#   a receipt there is a claim about the SHARED file and yours is not it.
+#
+#   --shared is for LANDING. The resident work is finished and the oracle
+#   every other session clones must now contain it. It is a deliberate,
+#   announced act because the last bake wins: between your bake and your
+#   commit another lane can replace the file your receipt describes, and
+#   between your bake and someone else's sweep you have changed the base
+#   under them. Say so in the channel before you run it.
+#
+# The default used to be --shared, and there was no other mode at all. Six
+# lanes ran against clones on 2026-08-06 while one was in ext/; a bake
+# mid-arc would have replaced the base under all of them, and the only
+# reason it did not is that nobody happened to run one. That is not a
+# safety property, it is luck, and the throwaway mode is what removes the
+# collision class rather than warning about it.
 #
 # From a worktree OUTSIDE the TimBotTu tree (agents often work in
 # /private/tmp, because a deep worktree path overflows the 104-byte UNIX
@@ -47,6 +72,41 @@ ASSETS="${NOW_STAGE_ASSETS:-$HOME/Lab/Assets/os91-qemu}"
 STAGE="${NOW_STAGE_IMAGE:-$ASSETS/now-mirror-stage.qcow2}"
 RUN="${NOW_SPIN_RUN:-/private/tmp/nowvm-bake-$$}"
 WIRE="${NOW_WIRE_PORT:-5311}"
+
+# --- which image are we installing over? ---------------------------------
+MODE=throwaway
+NAME=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --shared)    MODE=shared ;;
+        --throwaway|--private) MODE=throwaway ;;
+        --name)      NAME="$2"; shift ;;
+        --name=*)    NAME="${1#--name=}" ;;
+        -h|--help)   sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *)           echo "unknown argument: $1 (see --help)" >&2; exit 64 ;;
+    esac
+    shift
+done
+
+BRANCH="$(git -C "$NOW" rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
+if [ -z "$NAME" ]; then
+    # The branch is the honest name for a lane's image: whoever finds the
+    # file can tell whose it is and what it was for without asking. A
+    # deploy named for what it was MEANT to be rather than what it is cost
+    # an evening once (AGENTS.md > Deploying); the same rule applies to an
+    # image, which lives longer than a deploy and is cloned by others.
+    NAME="$(printf '%s' "$BRANCH" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-')"
+fi
+AGENT_DIR="${NOW_STAGE_AGENT_DIR:-$ASSETS/agent-stage}"
+if [ "$MODE" = shared ]; then
+    TARGET="$STAGE"
+else
+    TARGET="$AGENT_DIR/now-stage-$NAME.qcow2"
+    mkdir -p "$AGENT_DIR"
+fi
+# The base to START from is the shared oracle either way: a private bake is
+# "the oracle, plus my resident", not a machine built from nothing.
+BASE_IMAGE="${NOW_STAGE_BASE_IMAGE:-$STAGE}"
 # The capability word the resident must publish, DERIVED from the contract
 # rather than typed here: every kNowPeekTableCap* bit in
 # contract/peek_table.h, OR'd. A bake that comes back with a smaller word —
@@ -67,7 +127,43 @@ PY
 fi
 echo "   expected capability word: $WANT_CAPS (from contract/peek_table.h)"
 
-[ -f "$STAGE" ] || { echo "no stage image at $STAGE (set NOW_STAGE_IMAGE)" >&2; exit 1; }
+[ -f "$BASE_IMAGE" ] || { echo "no base image at $BASE_IMAGE (set NOW_STAGE_IMAGE)" >&2; exit 1; }
+
+echo
+if [ "$MODE" = shared ]; then
+    cat >&2 <<BANNER
+########################################################################
+#  --shared: THIS WILL REPLACE THE ORACLE EVERY OTHER SESSION CLONES.  #
+#                                                                      #
+#  $TARGET
+#                                                                      #
+#  Every sweep started after this finishes tests YOUR resident. Say so  #
+#  in the channel first. If you only need a machine with your own ext   #
+#  on it, stop now and run it without --shared — that is the default    #
+#  and it touches nothing anybody else reads.                           #
+########################################################################
+BANNER
+    # The last bake wins, so a bake while other machines are up changes
+    # the base under a run in progress. QEMU on this Mac is not proof of
+    # that, but it is the cheapest question there is, and the answer is
+    # the one a person needs before deciding.
+    others="$(pgrep -fl 'qemu-system-ppc' 2>/dev/null | grep -v "bake-$$" || true)"
+    if [ -n "$others" ] && [ -z "${NOW_STAGE_SHARED_FORCE:-}" ]; then
+        echo "  QEMU is already running on this Mac:" >&2
+        printf '    %s\n' "$others" >&2
+        echo "  Another session may be mid-sweep against the image you are about" >&2
+        echo "  to replace. Ask, then re-run with NOW_STAGE_SHARED_FORCE=1." >&2
+        exit 75
+    fi
+else
+    echo "== bake: PRIVATE. Nothing shared is touched. =="
+    echo "   target      $TARGET"
+    echo "   from base   $BASE_IMAGE"
+    echo "   ext/stage-receipts.json will NOT be written: a receipt there is a"
+    echo "   claim about the shared oracle, and this is not it."
+fi
+echo
+"$NOW/tools/image-provenance" "$BASE_IMAGE" --label "bake base ($MODE)" || true
 
 OUT="${TMPDIR:-/tmp}/now-guest-builds/$(printf '%s' "$NOW" | shasum | cut -c1-12)"
 IDENTITY="$OUT/ext/now_ext_identity.r"
@@ -90,9 +186,9 @@ WANT_BUILD="${IDENT_HEX:40:40}"
 echo "   local build fingerprint: $WANT_BUILD"
 
 echo
-echo "== bake: clone the oracle, stage, cold boot, and let the guest speak =="
+echo "== bake: clone the base, stage, cold boot, and let the guest speak =="
 rm -rf "$RUN"
-NOW_SPIN_BASE="$STAGE" NOW_SPIN_RUN="$RUN" NOW_WIRE_PORT="$WIRE" \
+NOW_SPIN_BASE="$BASE_IMAGE" NOW_SPIN_RUN="$RUN" NOW_WIRE_PORT="$WIRE" \
     "$NOW/scripts/spin-up-ppc"
 
 ANCHOR="$(cut -d' ' -f1 "$RUN/ports")"
@@ -221,27 +317,36 @@ VOLUME_CLEAN=clean
 
 echo
 echo "== bake: preserve the old image, install the new one =="
-BAK="$STAGE.bak-$(date +%Y%m%d)"
-n=1
-while [ -e "$BAK" ]; do n=$((n + 1)); BAK="$STAGE.bak-$(date +%Y%m%d)-$n"; done
-cp -c "$STAGE" "$BAK"            # APFS clone: instant, and costs no space
-cp -c "$DISK" "$STAGE.new"
-mv "$STAGE.new" "$STAGE"
-SHA="$(shasum -a 256 "$STAGE" | cut -d' ' -f1)"
-BYTES="$(stat -f %z "$STAGE")"
-echo "   $STAGE"
+if [ -e "$TARGET" ]; then
+    BAK="$TARGET.bak-$(date +%Y%m%d)"
+    n=1
+    while [ -e "$BAK" ]; do n=$((n + 1)); BAK="$TARGET.bak-$(date +%Y%m%d)-$n"; done
+    cp -c "$TARGET" "$BAK"       # APFS clone: instant, and costs no space
+else
+    BAK=""                        # first private bake: there is nothing to keep
+fi
+cp -c "$DISK" "$TARGET.new"
+mv "$TARGET.new" "$TARGET"
+# The stale sha cache is invalidated by (size, mtime), and `mv` gives the
+# new file its own — but a sidecar left over from the PREVIOUS image at
+# this path would describe bytes that are gone, which is the exact failure
+# mode this whole arc is about. Remove it before writing a fresh one.
+rm -f "$TARGET.provenance.json" "$TARGET.sha256"
+SHA="$(shasum -a 256 "$TARGET" | cut -d' ' -f1)"
+BYTES="$(stat -f %z "$TARGET")"
+echo "   $TARGET"
 echo "   sha256 $SHA"
-echo "   previous image kept as $(basename "$BAK")"
+[ -n "$BAK" ] && echo "   previous image kept as $(basename "$BAK")"
 
 echo
 echo "== bake: the receipt =="
 RECEIPT="$RUN/receipt.json"
-python3 - "$RECEIPT" "$NOW" "$STAGE" "$SHA" "$BYTES" "$BAK" "$SHUTDOWN" \
+python3 - "$RECEIPT" "$NOW" "$TARGET" "$SHA" "$BYTES" "$BAK" "$SHUTDOWN" \
         "$MIRROR_JSON" "$WANT_BUILD" "$WANT_SOURCE" "$VOLUME_CLEAN" \
-        "$SHUTDOWN_PATH" <<'PY'
+        "$SHUTDOWN_PATH" "$MODE" "$NAME" "$BASE_IMAGE" <<'PY'
 import json, subprocess, sys, time, os
 (out, now, image, sha, size, bak, shutdown, mirror_json,
- build, source, volume_clean, shutdown_path) = sys.argv[1:13]
+ build, source, volume_clean, shutdown_path, mode, name, base) = sys.argv[1:16]
 def git(*a):
     return subprocess.run(["git", "-C", now, *a], capture_output=True,
                           text=True).stdout.strip()
@@ -258,7 +363,17 @@ json.dump({
     "image": image.replace(os.path.expanduser("~"), "~"),
     "imageSha256": sha,
     "imageBytes": int(size),
-    "previousImage": os.path.basename(bak),
+    "previousImage": os.path.basename(bak) if bak else None,
+    # WHICH FILE THIS IS A CLAIM ABOUT. A receipt used to be implicitly
+    # about the shared oracle because that was the only thing this script
+    # could write. It is now the difference between "the file every
+    # session clones contains this resident" and "one lane's private image
+    # does", and those must never be read as each other — so it is a field,
+    # and tools/ext-bake-gate refuses a `throwaway` receipt in the tracked
+    # file rather than trusting nobody will paste one in.
+    "scope": mode,
+    "imageName": name,
+    "baseImage": base.replace(os.path.expanduser("~"), "~"),
     "qemuImgCheck": "clean",
     # The container check and the FILESYSTEM check are separate fields on
     # purpose: the first cannot stand in for the second, and three
@@ -271,9 +386,34 @@ json.dump({
     "commit": git("rev-parse", "HEAD"),
 }, open(out, "w"), indent=2)
 PY
-"$NOW/tools/ext-bake-gate" record "$RECEIPT"
-git -C "$NOW" add -- ext/stage-receipts.json
-
-echo
-echo "baked, verified and installed. Commit the receipt with the work:"
-echo "    git -C $NOW commit -- ext/stage-receipts.json ..."
+if [ "$MODE" = shared ]; then
+    "$NOW/tools/ext-bake-gate" record "$RECEIPT"
+    git -C "$NOW" add -- ext/stage-receipts.json
+    echo
+    echo "baked, verified and INSTALLED OVER THE SHARED ORACLE."
+    echo "Commit the receipt with the work:"
+    echo "    git -C $NOW commit -- ext/stage-receipts.json ..."
+    echo
+    echo "Two things are now true and only one of them is in the receipt:"
+    echo "  * the file on disk contains this resident AS OF NOW;"
+    echo "  * the next --shared bake by anybody replaces it, and your receipt"
+    echo "    cannot know that. tools/image-provenance --oracle is what asks."
+else
+    # The private image accounts for ITSELF, beside itself. Deliberately
+    # not in ext/stage-receipts.json: that file is a claim about the shared
+    # oracle, and a lane's image appearing there would be read as one.
+    cp "$RECEIPT" "$TARGET.provenance.json"
+    echo
+    echo "baked and verified into YOUR OWN image. Nothing shared was touched."
+    echo "   $TARGET"
+    echo "   sha256 $SHA"
+    echo "   provenance sidecar: $(basename "$TARGET").provenance.json"
+    echo
+    echo "Boot it:"
+    echo "    NOW_SPIN_BASE=\"$TARGET\" NOW_SPIN_RUN=/private/tmp/nowvm-\$\$ \\"
+    echo "      NOW_ANCHOR_PORT=<yours> NOW_WIRE_PORT=<yours> scripts/spin-up-ppc"
+    echo
+    echo "When this resident must become what everyone else clones — and that"
+    echo "is a decision, announced, not a step — re-run with --shared."
+    echo "Throw it away when the lane ends:  rm -f $TARGET*"
+fi
