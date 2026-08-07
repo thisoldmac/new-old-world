@@ -14,6 +14,127 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED and EMULATOR-VERIFIED: the Finder's list rows were unclickable because a column header was read as a scroll bar — and Extensions Manager's list is not a control at all (2026-08-07, `claude/019-list-selection`)
+
+Michelle: Finder list view and Extensions Manager are *"completely not
+selectable."* Two targets, two different answers, and neither was the one
+the arc had been chasing.
+
+**Rig.** mac99 / OS 9.1, session-private clone of `os91-runner.qcow2`
+(sha256 `f34f7e5d…`, plain base, never baked), lane block 755, anchor
+18040 / wire 18041, guest build `113f1b176035`, `actselftest`
+`abi-agreed`. Every scene capture discarded a warm-up pass and was
+repeated; every claim below is paired with a QMP screendump.
+
+### The taxonomy, re-decided per target rather than assumed
+
+The three list flavours the `018-control-semantics` entry distinguished
+are the right frame, and **neither of these two targets is flavour 1.**
+
+| target | flavour | what the control walk sees |
+|---|---|---|
+| Appearance's Themes / Patterns lists | 1 — `kControlKindListBox` | the control, classified `listBox` |
+| **Extensions Manager** | **2 — not a control** | 2 scroll bars, 3 push buttons, 1 popup. **No list.** |
+| **Finder list view** | **3 — the Finder draws it** | 13 controls: 8 push buttons (the column headers), 2 scroll bars, a triangle, a static, one unknown. **No list.** |
+
+Both readings were steady across repeated passes.
+
+### The Finder: everything was right except the one thing that aimed
+
+The rows' geometry has been correct since 2026-08-06 — `bounds of` gives
+the box the Finder drew, 16×16 at `l=22`, 19-px pitch — and
+`FinderItems.clickPoint`, `HitTester.windowItem`, `ObjectResolver` and
+`InteractionPolicy` all resolve a point to `finderSelect` by name. Every
+link was individually right and the chain still produced nothing,
+because **`FinderItems.iconArea` bounded the clickable field by every
+visible control**, telling a bottom scroll bar from anything else by
+SHAPE: wide and short.
+
+A folder window in ICON view has exactly two controls and the shape held.
+A window in LIST view also has its column headers — "Name", "Date
+Modified", "Size", "Kind" — which are wide, short, and at the TOP, so
+each one pulled the field's bottom up to its own top. Measured on this
+run, Macintosh HD in `name` view:
+
+    icon field = 0,41,389,21      <- a bottom ABOVE its top
+
+So every row had no click point, every click fell through to bare window
+content, and on a guest with no positional-click verb nothing happened at
+all. The two views differ by exactly the controls that broke one of them,
+which is why icon view worked throughout and this survived three lanes.
+
+`iconArea` now reads only the window's own SCROLL BARS, which is the rule
+its own doc comment always stated. Field becomes `0,41,389,203`.
+
+**Driven and watched.** The point `(78,249)` — the centre of the box the
+Finder itself drew for row 7 — resolves through MirrorKit's real hit
+test, object resolver and interaction policy to `finderSelect "TBT" of
+window "Macintosh HD"`; the guest was asked for exactly that act and
+selected TBT. `name of selection` went `{}` → `"TBT"`, watched in a
+paired before/after screendump with the row highlighted. Eight of the ten
+rows resolve to their own name; the two below the horizontal scroll bar
+correctly resolve to nothing, because an item scrolled out is not a
+target.
+
+**The inch still unproven, and it is host UI plumbing:** the drive above
+begins at a POINT and ends at a selected row, but the point was handed to
+`HitTester` by a script rather than by an `NSView`. No agent-socket
+gesture takes a raw point, so only a human's mouse in the Mirror window
+exercises that last call.
+
+**What is still not selectable in the Finder, and why:** the file's
+NAME. `bounds of` answers the 16×16 row icon and says nothing about where
+the Finder drew the text, so a point on the name is bare content. The
+window's own "Name" column header measures the column (content `0..214`)
+and that is **not** the same statement — OS 9 does not select from the
+empty space after a short name, and nothing here has measured the text.
+Widening to the column would be a guess about the Finder's hit rule
+rather than a reading of it, so `testTheNameColumnIsNotYetATarget` pins
+the current behaviour and says what would have to be measured first. From
+where a person sits this is most of what "not selectable" still means:
+the target is a 16-px icon at the far left of a 400-px row.
+
+### Extensions Manager: flavour 2, and it is blocked on the resident
+
+Its list has **no control anywhere in the window's chain** — the walk
+finds the scroll bar beside the list (max 146) and nothing for the list
+itself. So all four requirements fail at once: nothing mints a ref,
+nothing reports a rect, there is no action to authorise, and no point to
+aim. The semantic assist cannot help: `now_semantic.c :: list_for_control`
+reaches a list through `GetControlData(kControlListBoxListHandleTag)` on
+a **control**, and there is no control to ask.
+
+Closing it means the resident finding and reporting a list that is not
+behind a control, and reporting per-row geometry — `NowPeekSemanticRecord`
+carries row, column, flags and text, and no rect. That is
+`contract/peek_table.h` and `ext/`, which is a bake, so it is **parked
+here rather than attempted**. Per the standing rule: if the machine
+cannot say where a row is, the honest answer is that it is unclickable —
+a click aimed at a guessed row selects the wrong file.
+
+### A third thing, because it bit the instrument that makes these claims
+
+`tools/local-control-drive.py` computed its global point as the SCENE
+window rect plus a content-relative control rect. **`windows[].rect` is
+the structure box and `controls[].rect` is content-relative**, so every
+point it aimed was one title bar — 20 points — too high. Measured both
+ways on this machine: Extensions Manager reported `windows[].rect.t = 51`
+in the scene and `bounds.top = 71` in `axtree`; the Finder's "Name"
+header (content `t=21..42`) lands at global `124..145` with the axtree
+origin and at `104..125` — the info bar above it — with the other. It now
+takes the content origin from `axtree`, whose window bounds ARE the
+global content rect, rather than from a constant written in the tool. A
+tall control absorbed the error, and the drives that found this
+instrument useful were the tall ones; a 16-px list row is smaller than
+the error.
+
+**Positive control for flavour 1, on the corrected origin:** `ctlact`
+part 0 at global `(504,221)` selected "Lime Horizon" in Appearance's
+Themes list box — row highlighted, the panel's own "Current Theme:"
+changed from "Indigo Foam", and the whole desktop repainted. Paired
+before/after screendumps. So a real `listBox` row IS selectable by a
+click at a point on this build.
+
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
 Emulator-capture-verified, on the lane's own VM (block 591, anchor 16728 /
