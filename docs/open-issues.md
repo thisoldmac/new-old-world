@@ -14,6 +14,73 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: three states wore one error word, and it pinned a health signal at `partial` forever (2026-08-07)
+
+`ax_oracle_not_found` was the scene's answer to three different
+questions, and only one of them was a defect:
+
+1. a **faceless background application** — no user interface by its own
+   declaration, so it never could have had an anchor;
+2. an application **with a face and nothing open right now** — normal,
+   and transient;
+3. an application whose windows exist and **which we failed to read**.
+
+Six processes on a healthy Mac OS 9.1 boot reported it: Control Strip
+Extension, DVD AutoLauncher, FBC Indexing Scheduler, Folder Actions,
+`tbt-appe`, `tbt-worker`. An error word for a normal condition is the
+same defect class as a confidently wrong pixel — an assertion of failure
+where the honest answer is "this process has no UI by design".
+
+**It had a measured consequence.** `MirrorStateEngine.enrichVisibility`
+required a visibility row for every application in the replica, and the
+census is the Finder's `every application process`, which a faceless
+process is not. So the `process-visibility` coverage claim could never
+read `complete` on a healthy machine, and a health signal that can never
+read green is the same as no signal. Measured on the emulator
+(mac99 / OS 9.1, build `0231bd990e2c`): **8 processes, of which 2 could
+ever be covered.** The denominator was six rows short and always would
+be. With the six excluded by their own declaration, the same census
+settles `complete`.
+
+The discriminator is the process's **own** declaration — `modeOnlyBackground`
+in its `SIZE` resource, from `ProcessInfoRec.processMode`, read in the
+same breath as its name — never an inference from an empty window list,
+which cannot tell "has no UI by design" from "we failed to look". It
+reaches the wire as `apps[].backgroundOnly`, and the suppression of the
+error token is narrow: `NotFound` alone, on a process that declared
+itself. `Ambiguous`, `Mismatch`, `Unreadable` and `NoPlane` are real
+failures whatever the process is.
+
+Three things worth keeping from how it went:
+
+- **The Application menu is NOT a second signal.** It was proposed as
+  corroboration; the Process Manager populates it from this same bit, so
+  agreement is arithmetic. Confirmed live: the menu offered exactly the
+  two non-`backgroundOnly` processes. Also, the **Application Switcher is
+  itself a faceless process** (seen `headless` in the first run) — so a
+  design that read the switcher to learn what a process is would have
+  been blind to the thing doing the reading.
+- **A true-only key needs a roster-wide claim to mean anything.** Sending
+  `backgroundOnly` only when true made ABSENT mean both "has a face" and
+  "this producer never heard of the question", which forces every such row
+  to `unknown` — losing exactly the middle state. Sending an explicit
+  `false` on every row broke the encoder's own 64 KB ceiling (66422 bytes,
+  watched). The answer is one `process-kind` coverage claim per scene,
+  which is `scene.h`'s existing `_present` idiom rather than a second
+  mechanism.
+- **`empty` is earned, never assumed.** The visibility lane measured a
+  fourth condition that looks identical to state 2: an application
+  acquires an anchor slot only after being frontmost once since NOW armed
+  (451 armed passes, **one** slot scan). Such a process has not failed to
+  be observed — the filter has never run inside it. It arrives with no
+  windows and `ax_oracle_not_found`, so the classifier consults the ERROR
+  first and the window count second, and it lands in `unknown` where it
+  belongs.
+
+Still open, and not this slice's to fix: the Finder read
+`ax_oracle_not_found` on that same emulator run with no planes armed.
+That is the anchor-acquisition condition above, owned by its own lane.
+
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 
 Reported against a running session: the Mirror "looks largely regressed"

@@ -317,6 +317,20 @@ has never carried an error token. So absence-known and absence-unknown were
 always distinguishable here; what was missing was the third answer, "there
 was never anything to enumerate."
 
+**A true-only key needs a roster-wide claim to mean anything.**
+`backgroundOnly` is sent only when true, because 40 process rows across
+`apps[]` and `processes[]` carrying an explicit `,"backgroundOnly":false`
+is 1.8 KB against a 64 KB ceiling this encoder already nearly touches —
+its own size gate refused the overrun at 66422 bytes. But a true-only key
+makes ABSENT ambiguous between "this process has a face" and "this
+producer never heard of the question", and a consumer that cannot tell
+those apart must report `unknown` for both — losing exactly the middle
+state. So the answer is given once for the whole roster as a
+`process-kind` coverage claim: `complete` means every row's kind was
+read, so an absent key means a face; `unavailable`, the value a producer
+that never sets it leaves behind, means nobody asked. That is this file's
+own `_present` idiom rather than a second mechanism.
+
 The suppression is deliberately narrow — `NotFound` alone. `Ambiguous`,
 `Mismatch`, `Unreadable`, `NoPlane` and `Stub` are real failures whatever
 the process is, and `NoPlane` above all says we could not look at *any*
@@ -334,6 +348,15 @@ real menu does not — open-issues, Cycle 20 — and that was a defect in the
 synthesis, not evidence of a second source.) Reading a walked UI artifact
 back to learn what a process *is* would also fail for exactly the processes
 being asked about. There is one source, and it is the declaration.
+
+Measured on the emulator (mac99 / Mac OS 9.1, wire 5380, build
+`0231bd990e2c`, 2026-08-07): 8 processes, 6 declared faceless, and the
+Application menu offered exactly the 2 that were not — the coincidence
+"the same bit one remove away" predicts, and therefore not corroboration.
+An earlier run on the same machine caught the **Application Switcher
+itself** running as a faceless process, which is the sharper version of
+the argument: a design that read the switcher to learn what a process is
+would have been blind to the thing doing the reading.
 
 **Stale is derived here, because it cannot arrive from below.** `peek_read.c`
 deliberately runs with **no age gate** — window state is only ever as fresh as
