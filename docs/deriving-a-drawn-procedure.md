@@ -135,6 +135,34 @@ Two things the pixels also settle, which no amount of reasoning would:
   deliberately not chased: Core Graphics anti-aliases the same geometry
   its own way, and the shape is what matters.
 
+## Every conclusion, and which rung it came from
+
+Michelle authorised reverse-engineering AppearanceLib **where necessary**.
+The record should therefore say where it was necessary, and the answer is
+**nowhere** — the tab was fully derived without disassembling anything.
+Per conclusion:
+
+| conclusion | route | rung |
+|---|---|---|
+| tab heights are 21 (large) / 16 (small), overlap 3 | INFERENCE — header constants, then confirmed by the capture's own 21/24 rects | 1 + 3 |
+| there are seven tab states and four directions | INFERENCE — `ThemeTabStyle` / `ThemeTabDirection` | 1 |
+| a tab is a paint rect + three top lines + a title | INFERENCE — read directly out of the drain | 3 |
+| the front tab is the one that overlaps the pane | INFERENCE — the only 24-high rect, matching `kThemeTabPaneOverlap` | 3 + 1 |
+| face is `#EEEEEE` front / `#CCCCCC` non-front | INFERENCE — the `fg` at each paint. Not a chosen grey | 3 |
+| bevel is black / `#CCCCCC` / `#FFFFFF` front, `#DDDDDD` non-front | INFERENCE — the `fg` at each of the three lines | 3 |
+| pane top = tab top + non-front height | INFERENCE — the pane's own paint rect agrees at y 31 | 3 |
+| **caps width is 12** | INFERENCE ×2 — half the 24-px gap between neighbours, and independently the guest's pixels | 3 **and** 4 |
+| the cap is a 1-in-3 slant for 17 rows and a 4-row corner | MEASUREMENT — pixel columns off the screendump | 4 |
+| the front tab interrupts the pane's frame line | MEASUREMENT — the line is absent under its caps | 4 |
+| the lit edge runs top and left only | MEASUREMENT — the right slant has no highlight | 4 |
+| AppearanceLib composites a stencil for the caps | INFERENCE from measurement — the diagonal carries blend values classic QuickDraw cannot produce | 4 |
+| **reverse-engineering AppearanceLib** | **not needed** | 5 |
+
+The one line worth carrying forward is the caps width: **two independent
+routes agreeing is what ends a derivation.** A single measurement of a
+12-pixel shape is very easy to get one pixel wrong, and one pixel is the
+whole error budget.
+
 ## Implementing it: three rules
 
 1. **Parameterise from the stream, gate on the header.** Every colour
