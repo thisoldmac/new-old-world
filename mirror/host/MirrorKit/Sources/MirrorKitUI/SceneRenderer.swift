@@ -2320,18 +2320,25 @@ public struct SceneRenderer {
     /// Order is the point. `notAttempted` outranks everything: a window
     /// nobody spotlighted has nothing to say about its controls either, and
     /// naming the control pool there would explain the wrong silence.
-    /// `notFetched` comes next and is worth naming above the rest because it
-    /// is the only one that is not about this window at all — the guest's
-    /// control pool is shared across the scene, and asking again with room
-    /// would answer it.
+    ///
+    /// **Only `notFetched` earns a sentence of its own**, and the first
+    /// version of this fold got that wrong in a way its own tests caught.
+    /// `notFetched` is a POSITIVE statement by the guest — the scene-wide
+    /// control pool filled before this window, and asking again with room
+    /// would answer it — so it is the one state that is not about this
+    /// window at all. `unknown` is the opposite: ``Scene/ControlsState`` is
+    /// explicit that it means the producer does not report this and
+    /// therefore could not tell us. Drawing "Controls unknown" over an
+    /// ordinary scene from an older guest would put a diagnosis on every
+    /// window in it, which is exactly the guess the `nil`-attention clause
+    /// below refuses to make in the other direction.
     static func absentContentCaption(_ win: MirrorKit.Scene.Window) -> String {
         switch win.contentPlane {
         case .notAttempted: return "Interior not captured — one window at a time"
         case .armed, .none:
             switch win.controlsKnowledge {
             case .notFetched: return "Controls not fetched"
-            case .unknown: return "Controls unknown"
-            case .empty, .complete: return "Guest content not reported"
+            case .unknown, .empty, .complete: return "Guest content not reported"
             }
         }
     }

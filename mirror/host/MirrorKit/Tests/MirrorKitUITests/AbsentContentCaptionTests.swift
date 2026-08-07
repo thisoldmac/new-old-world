@@ -50,6 +50,43 @@ final class AbsentContentCaptionTests: XCTestCase {
                        "Guest content not reported")
     }
 
+    /// **The third answer, folded in at the round 7 merge and gated here
+    /// because it arrived with nothing gating it.**
+    ///
+    /// `019-guest-halves` added a caption switch of its own on
+    /// `controlsKnowledge`, in the same call site as this producer and
+    /// without tests. Merging the two by hand first produced a version that
+    /// answered "Controls unknown" for every window above — which the tests
+    /// above named — because `unknown` is the ABSENCE of a report, not a
+    /// diagnosis (see ``Scene/ControlsState``: "came from a producer that
+    /// does not report this and therefore could not tell us").
+    ///
+    /// `notFetched` is the one that earns a sentence: it is a positive
+    /// statement that the scene-wide control pool filled before this
+    /// window, so unlike everything else here it is not about this window
+    /// at all, and asking again with room would answer it.
+    func testAPoolThatFilledSaysSoRatherThanBlamingThisWindow() {
+        var win = window()
+        win.contentPlane = .armed
+        win.controlsState = "notFetched"
+        XCTAssertEqual(win.controlsKnowledge, .notFetched)
+        XCTAssertEqual(SceneRenderer.absentContentCaption(win),
+                       "Controls not fetched")
+    }
+
+    /// MUTATION: add `case .unknown` back to the caption switch and this
+    /// fails, along with two of the tests above. An empty `controls` with no
+    /// word is `unknown` by definition, so this is every window of every
+    /// scene from a guest that predates the field.
+    func testAnUnreportedControlsStateIsNotADiagnosis() {
+        var win = window()
+        win.contentPlane = .armed
+        XCTAssertEqual(win.controlsKnowledge, .unknown,
+                       "an empty controls array with no word is unknown")
+        XCTAssertEqual(SceneRenderer.absentContentCaption(win),
+                       "Guest content not reported")
+    }
+
     /// The two captions must not converge. If a later edit made them equal
     /// the distinction would be gone with every test above still green — the
     /// exact way this defect shipped the first time.
