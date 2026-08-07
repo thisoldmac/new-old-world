@@ -67,6 +67,13 @@ base fails the gate**.
 
 Still open, and honestly:
 
+- **No clone site can currently trip a refusal**, because all three stage
+  a fresh resident, and that is what makes staleness a warning rather
+  than an error. The refusing rows serve a caller that boots a base as it
+  is — which nothing here does yet — and a person running `tools/base-image
+  fit --purpose oracle` by hand. The refusal path is watched failing in
+  the gates and end to end through `spin-up-ppc` with a forced purpose; it
+  is not exercised by ordinary work.
 - **Nothing here booted a VM.** Tested, not metal-verified, and not even
   emulator-verified: the guards are watched failing against synthetic HFS
   images, and the wiring is watched only as far as `bash -n`, the

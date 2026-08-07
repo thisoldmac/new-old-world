@@ -130,7 +130,18 @@ rather than a false conclusion.
 
 `--stages-resident` is the load-bearing flag and it must be told the truth.
 `spin-up-ppc` passes it because it stages this checkout's ext and app into
-the clone and cold-boots; a site that only boots must not.
+the clone and cold-boots; a site that only boots must not. `spin-up-ppc`
+refuses `NOW_SPIN_PURPOSE=oracle` outright for that reason — it can never
+be a measurement of the baked resident, so declaring itself one would be a
+lie told to the gate.
+
+Which has a consequence worth saying plainly rather than discovering:
+**no clone site in this tree can currently trip the refusal path**, because
+all three stage a resident. The refusals are for the caller that boots a
+base as it is, and for a person running `tools/base-image fit --purpose
+oracle` by hand before quoting a result about what is baked into an image.
+If you write a site that boots without staging, that is the moment those
+rows start doing work.
 
 A refusal can be overridden the way the other floors in this repository
 are, and on the same terms: `NOW_BASE_FORCE=1` **with**
