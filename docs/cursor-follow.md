@@ -102,6 +102,73 @@ it with `owned = 1`. `now_ext_drag.c` no longer spells `0x08CE` at all:
 one plane owns the cursor, and two files spelling the same two addresses
 is how a pair drifts.
 
+## Three routes, and only the third draws
+
+This is the part worth reading before anyone "simplifies" the plane.
+
+| Route | What it does | Does the sprite move? |
+|---|---|---|
+| low memory | `MTemp`/`RawMouse`/`MouseLocation`, then `CrsrNew` ← `CrsrCouple` | **no** |
+| device | `CursorDeviceMoveTo`, then the cursor task through `JCrsrTask` | **no** |
+| QuickDraw | `HideCursor()` then `ShowCursor()` | **yes** |
+
+The first two are not decoration and are not dead code: they are what
+makes the machine *agree* about where the pointer is. `CursorDeviceMoveTo`
+answers `noErr` and the manager's own `CursorData.where` reads back
+exactly the requested point — verified from outside the guest, `where`
+was 760,520 — while the drawn arrow sat at 419,333 where the emulated
+device had last left it. Calling the cursor task directly through
+`JCrsrTask` (0x08EE), the vector the pointing device's own interrupt
+handler uses, changed nothing either.
+
+So on Mac OS 9 the **blit** lives somewhere in the device interrupt path
+that neither the manager's state nor the compatibility vector reaches.
+`HideCursor` erases the sprite from wherever it really is; `ShowCursor`
+draws it at the current mouse position, which is the one we just wrote.
+The pair is a nesting counter rather than a cursor setter, so the SHAPE
+is preserved and an application's own `SetCursor` still decides what is
+drawn.
+
+### Two consequences that are not obvious
+
+**The redraw is owed, not performed.** QuickDraw needs a real context and
+the drag vehicle runs at interrupt time. So an interrupt-time placement
+records a debt and the next jGNE pass settles it — the same split P7 uses
+for its owed `mouseUp`. It is deliberately *not* gated on the act plane
+being armed: the debt is a picture that disagrees with the machine, and
+disarming a plane does not make the arrow correct again. The yield rule
+is re-checked at settlement rather than trusted from the placement,
+because time has passed and a person may have taken the mouse in exactly
+that window.
+
+**`CrsrObscure` must be cleared, because we ARE the mouse moving.**
+`ObscureCursor` is what every text application calls on every keystroke —
+hide the arrow, the person is typing, keep it hidden *until the mouse
+moves*. The pointing device's driver clears the flag on its next report.
+Without the resident doing the same, P8 draws faithfully into an
+invisible cursor: `route` correct, `by_device` climbing, zero pixels
+changed, indistinguishable from the plane not working — and it would have
+worked perfectly in an empty Finder and vanished in every application
+anybody actually drives.
+
+## The cursor's SHAPE already tracks our position
+
+**Answered, and the answer is yes.** SimpleText launched, its text area
+at 4,20–619,581; the resident placed the pointer at 311,100, inside it.
+The sprite drawn there is an **I-beam**, not an arrow
+(`S-inside-text.ppm`).
+
+Nothing in this plane knows what an I-beam is. SimpleText picks its
+cursor from its own event loop — read `GetMouse`, decide, `SetCursor` —
+and `GetMouse` follows the resident's writes, as it always has. So
+**shape mirroring needs nothing from the guest beyond what P8 already
+does**: an application asked where the pointer was, was told our point,
+and chose the cursor for it.
+
+That is the load-bearing part for the deferred "mirror the guest's own
+cursor" feature. The remaining work is on the HOST — reading the current
+`Cursor` and drawing it — not on the guest, and not on this plane.
+
 ## Optional, in the charter's sense
 
 `kNowPeekTableCapCursor` (bit 8) is published **only** if
