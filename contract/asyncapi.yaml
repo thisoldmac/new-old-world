@@ -3520,6 +3520,80 @@ components:
         type: object
         properties:
           putstat: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    desktop:
+      description: >
+        What the guest's desktop is actually drawn from, asked of the
+        running machine rather than read out of a resource.
+
+        The renderer used to tile the System file's `ppat` 16
+        unconditionally. Under Appearance the desktop is chosen
+        elsewhere, so that resource sits at its factory value forever —
+        purple Mac faces beside whatever the person actually picked. It
+        was a confident wrong answer, which is the one thing a mirror of
+        another machine must never produce.
+
+        `LMGetDeskCPat` and `SetDeskCPat` are not in Carbon, and there
+        is no Carbon replacement that hands back the bits. The route
+        that exists is the Appearance Manager's theme collection —
+        `GetTheme` into a Collection, then the desktop tags in it. Those
+        tags are in the headers' second group, documented as Mac OS 9
+        only, so every one is read as may-be-absent rather than assumed.
+
+        A PICTURE is drawn OVER the pattern layer, so a machine showing
+        a picture still has a pattern, and that layer is what shows
+        wherever the picture does not reach. Both are reported; `source`
+        says which one a person is looking at.
+
+        Raw before decoded, throughout. Each row carries what the
+        machine said — a four-char tag, a byte count, a hex run — beside
+        what it means, and a value nothing here can decode keeps its raw
+        form and says so. A decoded OSType has been shipped as a fact
+        and been wrong before; a byte count survives being
+        misunderstood.
+      args: {}
+      x-line: Empty. It takes no arguments.
+      output:
+        type: object
+        description: >
+          Rows for a person, and four typed facts beside them for a
+          renderer — which must not have to parse prose to learn whether
+          a pattern is even visible.
+
+          The row labels are the guest's own vocabulary and a caller
+          must not require any particular one to exist; the four fields
+          below are the structural promise.
+        properties:
+          desktop: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          source:
+            type: string
+            enum: [pattern, picture, unknown]
+            description: >
+              What the person at that machine is looking at. `unknown`
+              is a first-class answer and not an error: a desktop that
+              cannot be attributed renders as the marked unknown, never
+              as a guessed pattern.
+          hasPattern:
+            type: boolean
+            description: >
+              Whether a pattern could be read at all. True beside
+              `source: picture` is the normal case, and means the
+              pattern layer under the picture is known.
+          patternBytes:
+            type: integer
+            description: >
+              The TRUE length of the flattened pattern, or -1 when there
+              is none. Never the amount that fitted — a length that
+              means "what we could carry" is the same defect as a
+              truncated frame, one field over.
+          patternCarried:
+            type: integer
+            description: >
+              How many of those bytes the rows actually carry as hex.
+              Less than patternBytes means the rest was not sent, not
+              that it does not exist.
+          note:
+            type: string
+            description: One sentence about the answer itself, when there is one.
     wirestat:
       description: >
         How long the guest takes to NOTICE a request, as two

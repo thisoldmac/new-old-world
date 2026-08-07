@@ -1,6 +1,7 @@
 #include "commands.h"
 
 #include "act_cmds.h"
+#include "desktop.h"
 #include "input_cmds.h"
 #include "mach_verbs.h"
 #include "nowlog.h"
@@ -1528,6 +1529,14 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "putstat") == 0) {
         run_putstat(id, out, cap);
+        return;
+    }
+    /* What the desktop is drawn from, from the Appearance Manager rather
+       than from a resource nobody updates - see desktop.h. Takes no
+       arguments, so the console reaches it through console_model.c's
+       fallback and renders it with the same row renderer. */
+    if (strcmp(name, "desktop") == 0) {
+        now_desktop_command(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "ls") == 0) {

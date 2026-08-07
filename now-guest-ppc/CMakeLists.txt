@@ -166,6 +166,12 @@ add_application(now-guest-ppc
     src/machine/mach_reply.c
     src/machine/mach_activate.c
     src/machine/mach_selftest.c
+    # The desktop's own account of itself, via the Appearance Manager's
+    # theme collection. Same split again: desktop_report.c is Toolbox-free
+    # and natively tested, desktop_theme.c holds every Toolbox call and
+    # decides nothing the report cannot show.
+    src/machine/desktop_report.c
+    src/machine/desktop_theme.c
     # The input plane: mouseloc (a read, and the instrument the act plane
     # is measured with), script (OSADoScript) and aesend (four core Apple
     # Events, a closed vocabulary rather than a class/id pipe).
