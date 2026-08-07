@@ -45,6 +45,110 @@ makes `actselftest` refuse on every spun-up clone. Two of `menuact`'s
 three argument requirements were also found by being refused for them in
 turn, and both refusals said exactly what was missing, which is the
 error vocabulary working.
+## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
+
+Michelle, driving the integrated build: *"a lot of controls (such as
+scrollbars and tabs) and basically all lists say the guest did not
+provide complete authoritative semantics. so like lists, scrollbars and
+tabs render now but they cant be used"*. Slices 3, 8 and 16 each hit this
+and none named the cause. This entry names it. **Emulator-verified**
+(mac99/OS 9.1, resident active, `3370f72a244e`); nothing here is
+metal-verified.
+
+**The proposed mechanism does not exist on our floor.** Slice 18's brief
+proposed `GetControlKind`. Universal Interfaces `Controls.h` line 2310
+says of it, in Apple's own words: *"This function is only available in
+Mac OS X."* CarbonLib 1.6 does not export it and the link fails — which
+`control_kind.h` already recorded in 2026-08-03. The working substitute
+is `GetControlData(…, kControlKindTag, …)`, and the resident already uses
+exactly that (`ext/src/now_semantic.c :: classify_member`). **Nothing was
+missing from the implementation.**
+
+**What the Control Manager actually answers.** Measured over steady-state
+scenes, with a warm-up scene discarded (the first scene of a connection
+walks before semantics is active and reports every role `unknown` for a
+reason that is not this defect):
+
+| Window | Controls | Answer |
+|---|---|---|
+| Appearance | 73 | 62 `Unsupported custom control`, 5 `Semantic classification unavailable`, 4 never reached by the drain, **2** classified (`listBox`) |
+| Date & Time | 21 | **21** `Unsupported custom control` |
+| NOW's own Workshop | 9 | **9** classified, with actions — button, checkbox, scrollbar, popup, triangle |
+
+`Unsupported custom control` is the resident saying it asked for
+`kControlKindTag` and the Control Manager declined, and that the
+documented `kControlListBoxListHandleTag` fallback declined too. So the
+plane is **reached, and cannot read them** — not unreached. That settles
+the question the integration round left open, and it means the split is
+by process ownership only as a *consequence*: we classify our own
+controls from the procID `control_kind.c` recorded when we made them, and
+for a foreign control there is no such record and the machine will not
+substitute one.
+
+The reason is that `kControlKindTag` is answered only for controls made
+through the Appearance-era `Create*Control` APIs. OS 9's own control
+panels are `CNTL`-resource controls created through `GetNewControl`, and
+the Control Manager holds no `ControlKind` for them. **The authoritative
+answer does not exist for the windows this product most needs it for.**
+
+**This is also why Date & Time renders with no group boxes.** "Current
+Date", "Current Time", "Time Zone" and "Use a Network Time Server" are
+four of that panel's 21 refusals. They arrive with correct rects and
+correct titles and no kind, so the renderer has nothing to draw them as.
+The missing chrome and the refused act are one defect wearing two
+costumes.
+
+**The three list flavours, distinguished** — they are not one thing and a
+single fix would have been wrong for two of them:
+
+1. **`kControlKindListBox`** — a real control. Classified correctly (the
+   2 in Appearance). It is refused for a *different* reason:
+   `scene_json.c :: control_action` returns no action for `listBox`, so
+   `Semantics.authorizesAction` is false and MirrorKit declines. Not a
+   capture defect at all. Selecting a row needs a click POINT, and
+   `ctlact` presses the control's centre — so this wants a contract
+   argument, not a role.
+2. **A bare List Manager `ListHandle`** — not a control. The control walk
+   never sees it and never will; it is not in any window's control chain.
+3. **The Finder's own lists** — the Finder draws them itself. In this
+   session a Finder window did not reach the scene at all. `FinderItems`
+   (AppleScript) is the answer for these and is a separate path.
+
+**What landed here:** an unclassified control now carries the guest's own
+reason instead of a bare `unknown`. The guest computed those strings all
+along and the encoder emitted them only beside a *known* role — the one
+case that did not need them. So a refusal by the machine, a miss by the
+drain, and a question never asked were indistinguishable downstream,
+which is most of why this took three slices to locate.
+
+**What did NOT land, and why:** nothing that would make these controls
+usable. Every route needs a gated surface and none should be taken
+unattended —
+
+- **Tabs** need `kControlKindTabs` (`'tabs'`, `ControlDefinitions.h` line
+  861) added to the resident's `compact_kind`, which today collapses it
+  and ~18 other documented kinds to `OtherSystem`. That is `ext/`, so it
+  triggers a bake. *It would not have helped here anyway* — Appearance's
+  tab control is among the 73 refusals, so the resident never gets a kind
+  to map.
+- **The honest fallback** is the control's **CDEF resource ID**, read via
+  `GetResInfo` on `contrlDefProc` — which the walk already reads raw
+  (`axwalk.c :: def_proc_origin`) and already reports as `system` for all
+  73. A system-heap CDEF with a documented id is the machine stating an
+  answer, not us guessing, and it is the only route that reaches OS 9's
+  own panels. It needs its own provenance and a weaker knowledge level so
+  the uncertainty stays visible. **This is the recommended next slice.**
+- **List rows and tab selection** need a click point on `ctlact`. The
+  act cell already carries `click_h`/`click_v`, so no `peek_table.h`
+  change — but the verb's args are contract-declared, and contract
+  changes serialise.
+
+**Do not "fix" this by weakening the reporting.** `completeness:
+complete` beside `knowledge: unknown` is the walk correctly saying it
+finished and still does not know. The number gets better by making it
+know, not by making it stop saying so.
+
+## BROKEN: the first watch of the INTEGRATED render, and what it shows (2026-08-07, `claude/018-integration`)
 
 **Status: list view remains UNWATCHED, not disproved** — third pass
 running. But it is now blocked on one named thing (foreign-process
@@ -774,6 +878,7 @@ And there is deliberately no verb the other way: the host drives the
 guest's windows through the act plane, and a `guest.show` would be a
 second, weaker route into it.
 ## FIXED: rig ports were assigned by hand, and three lanes paid for it in one day (2026-08-07)
+
 
 A dozen parallel lanes each wanted a guest VM and a host app, and the
 ports came one pair at a time from whichever session was coordinating —
