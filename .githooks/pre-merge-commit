@@ -1,0 +1,21 @@
+#!/bin/sh
+# The backstop for a merge that went through WITHOUT anybody deciding.
+#
+# git runs this only for a merge it is about to commit automatically — i.e.
+# exactly the case the receipts merge driver exists to prevent and cannot,
+# because the driver lives in per-clone git config and a clone that never
+# ran tools/setup-hooks has none. Non-zero here aborts the merge commit.
+#
+# It refuses only on evidence that the merge itself produced something
+# incoherent — receipts out of time order, a private lane's receipt in the
+# shared file, unparseable JSON. It does NOT refuse because the image on
+# disk has moved on; that is not something a merge can be wrong about.
+root=$(git rev-parse --show-toplevel)
+if [ -x "$root/tools/ext-bake-gate" ]; then
+    "$root/tools/ext-bake-gate" merge-check || {
+        echo "  (aborting the merge COMMIT, not the merge: your working tree" >&2
+        echo "   still holds it. Resolve, then \`git commit\`.)" >&2
+        exit 1
+    }
+fi
+exit 0
