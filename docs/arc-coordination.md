@@ -49,9 +49,15 @@ gates, boot a guest, and **look at pixels**. Computed triggers, any one:
   scene/act/peek trees, the contract. Everyone else is working against a
   tree about to move.
 
-**FULL SWEEP** — rare, scored, with a person driving a parallel build.
-Its job is to name the pain points that steer work **still in flight**,
-so it must not wait for everything. Computed trigger:
+**FULL SWEEP** — rare, scored, and specified in
+[fidelity-sweep-spec.md](fidelity-sweep-spec.md). Its job is to name the
+pain points that steer work **still in flight**, so it must not wait for
+everything.
+
+**A sweep does not require a person.** An agent runs it alone and the
+result stands. A human co-drive is *additional* signal, scheduled when
+convenient — treating it as a precondition once turned a preference into
+a blocker and nearly cost a night's measurement. Computed trigger:
 
 - **Every branch in `SWEEP_GATE` is landed**, AND
 - **at least one merge-test-drive round has run since the last of them
