@@ -973,8 +973,11 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
             part == 0 ? "the application's own tracking, unanswered"
                       : "the application's own TrackControl");
     if (has_point) {
-        row_addf(&rows, "Point", "%ld,%ld (global, as sent)",
+        char point[64];
+
+        snprintf(point, sizeof point, "%ld,%ld (global, as sent)",
                  point_h, point_v);
+        row_add(&rows, "Point", point);
     } else {
         row_add(&rows, "Point", "the centre of the control this reference "
                                 "names");
