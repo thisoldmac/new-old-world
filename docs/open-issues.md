@@ -99,6 +99,49 @@ a desktop file moved it and `bounds of` followed — 608,92,640,124 →
 120,320 → 240,548 — with a QMP screendump showing the icon in its new
 place.
 
+## FIXED (builds): a self reference described every one of our own controls as {0,0,0,0}, over `resolved: true` (2026-08-07, slice 10.5 of plan 018)
+
+The drag lane found a press landing at **0,0** and reported it as "the
+resolver and the scene walk disagree about where a control is". They do
+not disagree. **One of them was never asked.**
+
+`observe.c :: resolve_self` is the path a reference into OUR OWN process
+takes — no foreign A5 world to aim, the Toolbox answers directly. Its
+element branch filled `control`, `window`, `verdict` and `identity`, and
+**never touched `out->detail` at all**, which `resolve_kind` had already
+`memset` to zero. So every self element resolved to a control with an
+empty title, invisible, disabled, value 0, bounds {0,0,0,0} — beside
+`"resolved": true`. The window branch had the same hole for its title.
+
+Two consequences, and the second is why it survived:
+
+- The `handle` verb described this application's own controls that way.
+- `ctlact` computes its press point from that rectangle, so the press
+  landed at 0,0 — and it did not matter, because the act plane's patch
+  answers for the control HANDLE the request names and declines every
+  other. Where the press landed decided nothing. It stops being harmless
+  the moment a caller needs the point itself, which is a drag.
+
+Fixed by filling `detail` from the live Toolbox
+(`GetControlBounds`/`GetControlTitle`/`IsControlVisible`/`IsControlActive`
+/value/min/max, and `GetWTitle` for the window). **In GLOBAL coordinates**,
+because that is what `detail.control` already means — the foreign twin
+`now_ax_read_control` adds the window's content origin to the local rect
+it reads, so the same origin is added here. Deliberately NOT
+`scene_self.c`'s convention, which keeps a control's rect content-relative
+because IR v1 says so: those are two fields with two contracts, and
+conflating them is how a click misses by a title bar.
+
+**Status: builds.** `scripts/build-guests` compiles it and `test-all` is
+green; the Carbon audit reports 0 findings. It is NOT driven, and the
+reason is worth writing down: on the emulator (build `1b6fbb321684`) the
+`elements` and `observe` walks report our own process with `bind:
+no-plane` and an empty `windows` array, so **the wire cannot mint a self
+element reference at all** and `handle` cannot be pointed at one of our
+own controls from outside. Whatever minted the reference the drag lane
+used did not come through those two verbs. Reaching this from a host
+needs either that mint path on the wire or the drag verbs themselves.
+
 ## UNVERIFIED: targeting and provisional presentation, with nothing to drive them (2026-08-07, slice 10.5 of plan 018)
 
 The host half of the drag is built and gate-green, and **not one gesture

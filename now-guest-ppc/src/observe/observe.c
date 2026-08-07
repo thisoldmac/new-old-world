@@ -276,11 +276,101 @@ static int window_is_ours(WindowRef window)
     return 0;
 }
 
+/* `detail` for one of OUR OWN windows, and for the control in it.
+ *
+ * THIS USED TO BE LEFT ZEROED, and the verdict said Ok over it. The
+ * foreign path fills `detail` from `now_ax_resolve_ref`, which reads the
+ * other process's ControlRecord; the self path has no foreign memory to
+ * read and simply did not fill it, so every consumer of a self reference
+ * was handed a control with an empty title, invisible, disabled, value 0
+ * and the rectangle {0,0,0,0} — beside `"resolved": true`.
+ *
+ * Two consequences, one of them silent for months:
+ *
+ * - The `handle` verb described every control of this application that
+ *   way. A confidently wrong answer, which is the defect class plan 018
+ *   exists to remove.
+ * - `ctlact` computes its press point from this rectangle, so the press
+ *   landed at 0,0. HARMLESS THERE, and that is why nobody noticed: the
+ *   act plane's patch answers for the control HANDLE the request names
+ *   and declines every other, so where the press landed decided nothing.
+ *   It stops being harmless the moment a caller needs the point itself —
+ *   which a drag does, and the drag lane hit it on 2026-08-07.
+ *
+ * GLOBAL COORDINATES, because that is what `detail.control` already
+ * means: `now_ax_read_control` adds the window's content origin to the
+ * local rect it reads (`axwalk.c`, "Local to global"). `GetControlBounds`
+ * answers in the owner window's LOCAL coordinates, so the same origin is
+ * added here. Two producers of one field must agree about its space, and
+ * the field's space was decided by whoever wrote first.
+ *
+ * Note this is deliberately NOT `scene_self.c`'s convention, which keeps
+ * a control's rect content-relative because IR v1 says a control's rect
+ * is content-relative. Those are two different fields with two different
+ * contracts, and the disagreement the drag lane found was between this
+ * one and its own foreign twin — not between the scene and the handle.
+ */
+static void fill_self_control_detail(ControlRef control, WindowRef owner,
+                                     NowAxControl *detail)
+{
+    Rect   box;
+    Rect   content;
+    Str255 title;
+    short  dh = 0;
+    short  dv = 0;
+
+    if (GetWindowBounds(owner, kWindowContentRgn, &content) == noErr) {
+        dh = content.left;
+        dv = content.top;
+    }
+    GetControlBounds(control, &box);
+    detail->address = (unsigned long)control;
+    detail->top = (short)(box.top + dv);
+    detail->left = (short)(box.left + dh);
+    detail->bottom = (short)(box.bottom + dv);
+    detail->right = (short)(box.right + dh);
+    detail->visible = IsControlVisible(control) ? 1 : 0;
+    detail->enabled = IsControlActive(control) ? 1 : 0;
+    detail->value = GetControlValue(control);
+    detail->min = GetControlMinimum(control);
+    detail->max = GetControlMaximum(control);
+    title[0] = 0;
+    GetControlTitle(control, title);
+    detail->title_len = title[0];
+    if (title[0] != 0) {
+        memcpy(detail->title, title + 1, title[0]);
+    }
+    detail->title[title[0]] = '\0';
+}
+
+static void fill_self_window_detail(WindowRef window, NowAxWindow *detail)
+{
+    Rect   box;
+    Str255 title;
+
+    if (GetWindowBounds(window, kWindowStructureRgn, &box) == noErr) {
+        detail->left = box.left;
+        detail->top = box.top;
+        detail->right = box.right;
+        detail->bottom = box.bottom;
+    }
+    detail->address = (unsigned long)window;
+    detail->visible = IsWindowVisible(window) ? 1 : 0;
+    /* The title travelled as an empty string too, for the same reason and
+       with the same `resolved: true` over it. */
+    title[0] = 0;
+    GetWTitle(window, title);
+    detail->title_len = title[0];
+    if (title[0] != 0) {
+        memcpy(detail->title, title + 1, title[0]);
+    }
+    detail->title[title[0]] = '\0';
+}
+
 static void resolve_self(NowObsKind kind, const NowObsEntry *entry,
                          NowObsHandle *out)
 {
     WindowRef window = (WindowRef)entry->identity.window_address;
-    Rect      box;
 
     if (kind == kNowObsKindElement) {
         ControlRef control = (ControlRef)entry->identity.control_handle;
@@ -296,6 +386,8 @@ static void resolve_self(NowObsKind kind, const NowObsEntry *entry,
         out->window = GetControlOwner(control);
         out->verdict = kNowObsOk;
         out->identity = entry->identity;
+        fill_self_control_detail(control, out->window, &out->detail.control);
+        fill_self_window_detail(out->window, &out->detail.window);
         return;
     }
 
@@ -307,14 +399,7 @@ static void resolve_self(NowObsKind kind, const NowObsEntry *entry,
     out->window = window;
     out->verdict = kNowObsOk;
     out->identity = entry->identity;
-    if (GetWindowBounds(window, kWindowStructureRgn, &box) == noErr) {
-        out->detail.window.left = box.left;
-        out->detail.window.top = box.top;
-        out->detail.window.right = box.right;
-        out->detail.window.bottom = box.bottom;
-    }
-    out->detail.window.address = (unsigned long)window;
-    out->detail.window.visible = IsWindowVisible(window) ? 1 : 0;
+    fill_self_window_detail(window, &out->detail.window);
 }
 
 static void resolve_kind(NowObsKind kind, const char *reference, long len,
