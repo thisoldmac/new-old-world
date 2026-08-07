@@ -14,6 +14,47 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: nothing could open the Mirror in an already-running host (2026-08-06, night)
+
+`--open-mirror` covers a launch and a click on the Mirror page covers a
+person sitting at the modern Mac. Everyone else had no route at all: an
+agent on the socket, and the person sitting at the CLASSIC Mac, whose
+screen the Mirror is a rendering OF.
+
+**The cost was not a missing feature, it was a documented bad habit.** A
+sweep that could not open the Mirror from the agent socket fell back to
+macOS accessibility scripting to click the button, and wrote that up as
+a rig fact; later sessions copied the pattern and started taking
+computer-use on the desk's actual desktop mid-session. A missing
+affordance became a rig technique.
+
+Closed with three faces over one implementation
+(`HostAppState.showMirrorWindow`, which ends at the same
+`NOWMirrorWindow.show` a click performs):
+
+- **`now_mirror_open`** on the agent surface — the only projection there
+  whose whole effect is on the modern machine.
+- **Window > Show Mirror (Cmd-Shift-M)** in the host app.
+- **A "Show Mirror on Host" button** on the guest's Mirror page, with
+  `showmirror` as its typed face, over a new additive contract family
+  (`host.show` / `host.shown`).
+
+Two things worth keeping:
+
+- **Already open is a success, not an error.** The window is raised and
+  the answer says which it was. The asker wanted the Mirror in front of
+  them; it is.
+- **No Mac connected is a REFUSAL, not an empty window.** A Mirror with
+  nothing behind it publishes an empty state that no call of its own can
+  get out of — the same trap `--open-mirror` fell into above.
+
+**What is left uneven, declared rather than left silent:** NOW-68K
+neither asks nor serves the family. That is the arc's scope, not a limit
+of a 68030 — a NOW-68K with a Mirror page would want the same button.
+And there is deliberately no verb the other way: the host drives the
+guest's windows through the act plane, and a `guest.show` would be a
+second, weaker route into it.
+
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 
 Reported against a running session: the Mirror "looks largely regressed"
