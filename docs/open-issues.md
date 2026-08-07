@@ -14,6 +14,89 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: the MCP surface advertised 41 tools, answered a batch, and could not reach the machine with seven of them (2026-08-07)
+
+Two defects, found one behind the other, and the second was found only
+because the first was being **driven** rather than tested.
+
+**Seven tools were advertised and dead.**
+`SocketAgentIntegrationClient` — the client every MCP call travels
+through — never overrode `observeElements`, `mirrorDrive` or
+`tailGuestLog`, so all three landed on the protocol default in
+`AgentIntegrationClient` and answered "no lane" from a perfectly healthy
+host. The blast radius was larger than three rows:
+`ObserveElementsProjection` is the ONLY producer of the `now-element-…`
+references `now_window_act`, `now_control_act`, `now_text_get` and
+`now_text_set` take, so those four were unreachable for want of a legal
+argument.
+
+Two of the three were four-line forwarders over lanes the socket had
+been serving the whole time. **The walk was not.** There was no
+`observe_elements` operation on the agent socket at all — no adapter
+method, no arm in the host's switch — so the audit's consolation that
+"all of it works through `tools/now-agent`" did not hold for that one:
+that tool speaks the same socket. The act plane's four addressed rows
+had had no argument producer on **any** face of this host since they
+landed on 2026-07-31.
+
+**And the transport answered nothing to a real client.** The stdio loop
+read `FileHandle.standardInput.readData(ofLength: 4096)`, which on
+Darwin blocks until it has the full count or the pipe closes. An MCP
+client holds stdio open for the session and sends one small line at a
+time, so the loop sat on a 76-byte `initialize` waiting for 4020 bytes
+that were never coming — and answered nothing, on all forty-one tools.
+Measured: one small line with stdin held open gets no reply in ten
+seconds; the same line padded to exactly 4096 bytes is answered
+immediately. It survived because every driver this binary ever had wrote
+its whole script and **closed stdin**, which is what makes the blocking
+read return. A pipeline that closes the pipe is a batch, not a client,
+and the surface passed on batches for months.
+
+**The shape both share, and the reason they are one entry.** No test
+asserted that a registered projection's client method is overridden, and
+no test ever spoke to the transport the way a client does. Every gate
+that existed was pointed one layer inside the defect: `MCPCoverageTests`
+checks the catalog against the contract, `HostProjectionRegistryTests`
+that rows are registered, `NOWAgentCompanionTests` that tools are listed
+and bounded. All were green throughout. **A table of what a surface
+declares is not evidence that the surface answers.**
+
+Two gates now, both derived rather than enumerated:
+`SocketClientForwardingTests` reads the projections' `client.<method>(`
+calls and the client protocol's requirements out of source and fails on
+any name the socket client does not declare a `func` for;
+`StdioTransportLivenessTests` spawns the real executable, writes one
+small line and holds stdin open. Both were watched failing — the first
+named all three missing lanes before the fix, the second by mutation.
+
+**Emulator-verified, not metal-verified.** All seven were driven through
+the companion binary against Mac OS 9 under QEMU on 2026-08-07 and four
+were watched taking effect: the walk minted references for a Finder
+window's scrollbars, `now_window_act` moved that window to exactly the
+coordinates it was given, `now_control_act` dispatched against one of
+those scrollbars, `now_mirror_drive` zoomed it. `now_text_get` and
+`now_text_set` reached the guest and were refused in the guest's own
+words — *"that reference names a control, not a text element"* — which
+proves the reference vocabulary crosses but is not a completed reading.
+Nothing has run on real hardware.
+
+### Still open, noticed in passing and not chased
+
+- **A completed text reading has still never been taken through MCP.**
+  It needs a window whose `TEHandle` a foreign walk can find — a
+  dialog's — and none was open. The two tools are proven reachable, not
+  proven to read.
+- **The anchor plane's lease lapses between calls.** An `elements` walk
+  seconds after a `reveal` answered `bind: no-plane`, then answered `ok`
+  on a later poll. Nothing was lost, but a caller that observes once and
+  believes the answer will sometimes be told a bound process is
+  unreachable. Whether that is a lease bound worth naming or a lifetime
+  worth extending was not investigated here.
+- **`now_text_set`'s refusal carries `reach: notSent` where
+  `now_text_get`'s carries `unknown`**, for the same guest sentence
+  about the same reference. One of the two is describing the wrong
+  thing.
+
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 
 Reported against a running session: the Mirror "looks largely regressed"
