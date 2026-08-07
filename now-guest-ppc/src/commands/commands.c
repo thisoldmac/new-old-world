@@ -1608,6 +1608,18 @@ void now_command_run(const char *name, const char *request_json, long id,
         now_act_run_ctlact(request_json, id, out, cap);
         return;
     }
+    if (strcmp(name, "dragpress") == 0) {
+        now_act_run_dragpress(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "dragmove") == 0) {
+        now_act_run_dragmove(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "dragrelease") == 0) {
+        now_act_run_dragrelease(request_json, id, out, cap);
+        return;
+    }
     if (strcmp(name, "ditemact") == 0) {
         now_act_run_ditemact(request_json, id, out, cap);
         return;
