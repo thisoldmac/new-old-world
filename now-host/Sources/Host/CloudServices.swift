@@ -208,12 +208,21 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
             }
         }
 
+        /// What a PERSON reads in the Downloads picker, and nothing
+        /// else. The wire token is `rawValue`; these two strings must
+        /// never be confused, because renaming a label is free while
+        /// renaming a token is a contract change (CloudGet.size) that
+        /// both guests would have to be taught in the same breath.
+        /// `original` reads as the default size because that is what
+        /// it is from the person's side — no stop applied — and the
+        /// numbers stand alone because the picker's own name already
+        /// says these are downloads, not a fit box.
         var label: String {
             switch self {
-            case .original: return "Original"
-            case .long1600: return "Long side 1600"
-            case .long1024: return "Long side 1024"
-            case .long640: return "Long side 640"
+            case .original: return "Default size"
+            case .long1600: return "1600 px"
+            case .long1024: return "1024 px"
+            case .long640: return "640 px"
             }
         }
     }
