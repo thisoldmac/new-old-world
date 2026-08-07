@@ -290,6 +290,17 @@ typedef struct {
        nothing-to-say value, and self-observed controls leave it there -
        they already have a procID-derived role, which is strictly more. */
     short definition;
+    /* WHICH definition function, when the Resource Manager could name it
+       - a `NowCdefState` and, for `Named`, the `CDEF` resource id and the
+       variation code the machine confirmed. This is one step stronger
+       than `definition` (which heap) and one step weaker than `role`
+       (what the control itself said it is), and it must stay in the
+       middle: the emitter reports it under its own knowledge level, and
+       nothing here promotes it. Zero (`Unattempted`) is the
+       nothing-to-say value. */
+    short cdef_state;
+    short cdef_id;
+    short cdef_variant;
     int semantic_value_known;
     char semantic_value[kNowSceneTextMax];
     int list_cells_present;
@@ -715,6 +726,12 @@ void now_scene_set_control_role(NowScene *s, int window, int index,
 /* `origin` is a NowAxDefProcOrigin. Setting it never implies a kind. */
 void now_scene_set_control_definition(NowScene *s, int window, int index,
                                       short origin);
+/* `state` is a NowCdefState; `id` and `variant` matter only for Named.
+   Like the origin above, setting it never implies a kind - it records
+   what the Resource Manager answered, and the emitter decides what that
+   is worth. */
+void now_scene_set_control_cdef(NowScene *s, int window, int index,
+                                short state, short id, short variant);
 void now_scene_set_control_semantic_value(NowScene *s, int window, int index,
                                           const char *value);
 /* Attaches a bounded guest-provided list payload to one control. `complete`

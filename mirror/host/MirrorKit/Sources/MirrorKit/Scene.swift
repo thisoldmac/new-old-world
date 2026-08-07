@@ -48,6 +48,19 @@ public struct Scene: Codable, Equatable, Sendable {
 
     public enum Knowledge: String, Codable, Equatable, Sendable {
         case known
+        /// The machine named the CODE that draws this control - a `CDEF`
+        /// resource id, via the Resource Manager - and the guest looked
+        /// the id up in a documented table. One remove from `known`,
+        /// which is the control answering about itself through
+        /// `kControlKindTag`, and the distance matters: OS 9's own
+        /// control panels build their controls from `CNTL` resources and
+        /// the Control Manager declines to name them at all (measured
+        /// 2026-08-07: Appearance 2 of 73, Date & Time 0 of 21), so
+        /// `derived` is the only answer that exists for most of what a
+        /// person actually drives. It is not a guess and it is not
+        /// `known`; a consumer that needs the stronger claim tests for
+        /// `known` explicitly.
+        case derived
         case unknown
         case truncated
         case stale
@@ -168,8 +181,18 @@ public struct Scene: Codable, Equatable, Sendable {
             self.completeness = completeness
         }
 
+        /// WHY `derived` AUTHORISES. The bar this property enforces is
+        /// "the machine said so", not "the strongest possible source said
+        /// so". A `CDEF` resource id comes from the Resource Manager
+        /// naming a loaded resource; the id-to-kind table is Apple's own
+        /// `ControlDefinitions.h`. Nothing in that chain is a shape
+        /// heuristic or a value-range guess - which is what
+        /// `presentation-inference` is, and why it stays excluded by
+        /// name. Holding `derived` out would have left every control in
+        /// every OS 9 control panel undrivable while the render drew them
+        /// perfectly, which is the exact split this refuses to ship.
         public var authorizesAction: Bool {
-            knowledge == .known
+            (knowledge == .known || knowledge == .derived)
                 && completeness == .complete
                 && action != nil
                 && provenance != "presentation-inference"

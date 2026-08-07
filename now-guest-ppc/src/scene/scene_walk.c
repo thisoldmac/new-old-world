@@ -7,6 +7,7 @@
 
 #include "axmenu.h"
 #include "axtext.h"
+#include "cdef_resolver.h"
 #include "dialog_text.h"
 #include "scene_phase.h"
 #include "semantic_client.h"
@@ -207,6 +208,21 @@ static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
            resident that does answer overwrites nothing. */
         now_scene_set_control_definition(s, window, hops,
                                          control.def_proc_origin);
+        /* And WHICH definition, when the Resource Manager can say. Asked
+           only for a definition function in the system heap: that is the
+           zone the read above validated, and the only one whose CDEFs
+           are in this process's resource chain. An application's own
+           CDEF is in a resource file we never opened, so there is no
+           lookup to make and the resolver is not asked to make one. */
+        if (control.def_proc_origin == (short)kNowAxDefProcSystem) {
+            short state, cdef_id = 0, cdef_variant = 0;
+
+            state = now_cdef_resolve(control.def_proc,
+                                     memory->system_lo, memory->system_hi,
+                                     &cdef_id, &cdef_variant);
+            now_scene_set_control_cdef(s, window, hops, state,
+                                       cdef_id, cdef_variant);
+        }
         handle = control.next_control;
     }
     /* The chain ended on its own sentinel: the count is exact and equals
