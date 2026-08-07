@@ -8,6 +8,7 @@
 #include "peek_read.h"
 #include "prefs.h"
 #include "proc_actions.h"
+#include "proc_roster.h"
 #include "processes_layout.h"
 #include "pump.h"
 #include "screenshot.h"
@@ -174,67 +175,45 @@ static void drop_icons(ProcEntry *table, int count)
     }
 }
 
-/* The kind that drives grouping and the "Kind:" label. From
-   processMode, not from guessing at the 'appe' type - the mode's
-   modeOnlyBackground bit is the authority on what is faceless. */
-static short kind_of(unsigned long type, unsigned long sig,
-                     unsigned long mode)
+/* The page's kind enum, from the roster's. Two enums exist because this
+   page groups and labels where the wire serves a string; the DECISION -
+   what is the Finder, what is faceless - is made once, in
+   proc_roster.c, and this only re-spells it. */
+static short kind_of_row(NowProcKind kind)
 {
-    if (type == NOW_PEEK_4CC('F', 'N', 'D', 'R')
-        || sig == NOW_PEEK_4CC('M', 'A', 'C', 'S')) {
-        return kProcKindFinder;
-    }
-    if ((mode & modeOnlyBackground) != 0) {
-        return kProcKindBackground;
+    switch (kind) {
+    case kNowProcKindFinder:     return kProcKindFinder;
+    case kNowProcKindBackground: return kProcKindBackground;
+    case kNowProcKindApplication:break;
     }
     return kProcKindApp;
 }
 
 static int walk_processes(ProcEntry *out, int max)
 {
-    ProcessSerialNumber psn = { 0, kNoProcess };
-    ProcessSerialNumber self;
-    ProcessSerialNumber front;
-    Boolean have_self = GetCurrentProcess(&self) == noErr;
-    Boolean have_front = GetFrontProcess(&front) == noErr;
+    NowProcRosterIter it;
+    NowProcRosterRow row;
     int count = 0;
 
-    while (count < max && GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        Str31 name;
+    now_proc_roster_begin(&it);
+    while (count < max && now_proc_roster_next(&it, &row)) {
         ProcEntry *entry = &out[count];
-        Boolean same = false;
 
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        info.processAppSpec = NULL;
-        name[0] = 0;
-        if (GetProcessInformation(&psn, &info) != noErr) {
-            continue;
-        }
         memset(entry, 0, sizeof *entry);
-        entry->psn = psn;
-        memcpy(entry->name, name + 1, name[0]);
-        entry->name[name[0]] = '\0';
-        entry->type = info.processType;
-        entry->sig = (unsigned long)info.processSignature;
-        entry->size_kb = (long)(info.processSize / 1024);
-        entry->used_kb =
-            (long)((info.processSize - info.processFreeMem) / 1024);
-        if (entry->used_kb < 0) {
-            entry->used_kb = 0;
-        }
-        entry->launched = info.processLaunchDate;
-        entry->active_time = info.processActiveTime;
-        entry->mode = (unsigned long)info.processMode;
-        entry->kind = kind_of(entry->type, entry->sig, entry->mode);
+        entry->psn = row.psn;
+        memcpy(entry->name, row.name, sizeof entry->name - 1);
+        entry->name[sizeof entry->name - 1] = '\0';
+        entry->type = (OSType)row.type;
+        entry->sig = row.creator;
+        entry->size_kb = row.size_kb;
+        entry->used_kb = row.used_kb;
+        entry->launched = (unsigned long)row.launch_date;
+        entry->active_time = (unsigned long)row.active_time;
+        entry->mode = row.mode;
+        entry->kind = kind_of_row(row.kind);
         entry->window_count = -1;         /* filled by the anchor read */
-        entry->self = have_self && SameProcess(&psn, &self, &same) == noErr
-            && same;
-        same = false;
-        entry->is_front = have_front
-            && SameProcess(&psn, &front, &same) == noErr && same;
+        entry->self = row.is_self;
+        entry->is_front = row.is_front;
         ++count;
     }
     return count;
@@ -452,7 +431,7 @@ static void front_and_capture(void)
     g_capture_target = g_procs[g_selected].psn;
     snprintf(g_capture_name, sizeof g_capture_name, "%.31s",
              g_procs[g_selected].name);
-    SetFrontProcess(&g_capture_target);
+    (void)now_proc_front_confirm(&g_capture_target, 0);
     g_capture_pending = true;
     /* ~0.75 s for the target to come front and redraw before we read the
        framebuffer; the main loop's WaitNextEvent yields do the waiting. */
@@ -480,7 +459,7 @@ static void do_capture(void)
     g_capture_pending = false;
     if (now_peek_windows_for_psn(&g_capture_target, &w) != kNowPeekReadOk
         || w.count < 1) {
-        SetFrontProcess(&g_capture_self);
+        (void)now_proc_front_confirm(&g_capture_self, 0);
         set_notice("The window could not be read for capture.");
         return;
     }
@@ -489,12 +468,12 @@ static void do_capture(void)
     now_prefs_load(&prefs);
     if (now_screenshot_rect(&rect, prefs.shot_depth, true, &stats, err,
                             sizeof err) != 0) {
-        SetFrontProcess(&g_capture_self);
+        (void)now_proc_front_confirm(&g_capture_self, 0);
         snprintf(msg, sizeof msg, "Capture failed: %.80s", err);
         set_notice(msg);
         return;
     }
-    SetFrontProcess(&g_capture_self);         /* back to NOW */
+    (void)now_proc_front_confirm(&g_capture_self, 0);         /* back to NOW */
     snprintf(msg, sizeof msg,
              "Captured %s - %d x %d - saved \"%.24s\" on the Desktop",
              g_capture_name, stats.width, stats.height, stats.saved_name);

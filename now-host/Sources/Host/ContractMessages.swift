@@ -930,6 +930,21 @@ struct ProcessShot: Codable, Equatable, Sendable {
 struct ProcessResult: Codable, Equatable, Sendable {
     var id: Int
     var ok: Bool
+    /// What the guest ESTABLISHED about the machine, in
+    /// `ActSettlement.status`'s vocabulary — `confirmed`,
+    /// `dispatched-but-unconfirmed`, `refused`, and the rest.
+    ///
+    /// `ok` alone cannot tell "refused" from "accepted and never landed",
+    /// and those want different responses: one is a wrong request, the
+    /// other is a machine that did not comply. Three places in this
+    /// package worked around its absence by re-listing — see
+    /// `BringToFrontProjection`, whose comment says outright that
+    /// `process.result` "has no field that could carry 'and it landed'".
+    ///
+    /// **Optional, and nil is not `unknown`** — it means the sender does
+    /// not report outcomes. NOW-68K does not emit it, so the confirming
+    /// re-list stays the fallback rather than being deleted as redundant.
+    var outcome: String?
     var reason: String?
 }
 

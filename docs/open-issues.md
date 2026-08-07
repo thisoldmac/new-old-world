@@ -45,6 +45,7 @@ makes `actselftest` refuse on every spun-up clone. Two of `menuact`'s
 three argument requirements were also found by being refused for them in
 turn, and both refusals said exactly what was missing, which is the
 error vocabulary working.
+
 ## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
 
 Michelle, driving the integrated build: *"a lot of controls (such as
@@ -584,6 +585,7 @@ and references. What it lacks is NAMES — 37 of 38 control titles empty,
 every role `unknown`, and its DITL titles arriving as pointer bytes.
 That is the pointer-title defect (everywhere, slice 4) plus element-kind
 coverage, not an addressing problem, and no fix belongs in the act plane.
+
 ## ANSWERED: a window opened BEFORE arming now composes — the census (2026-08-07, plan 018)
 
 **Emulator-verified.** QEMU mac99, Mac OS 9.1, guest build `288944aab6b8`,
@@ -687,6 +689,7 @@ works; only a shared one makes it what everybody else clones.
 - **The 4 MiB truncation path is untested** on a heap large enough to hit
   it.
 - Nothing here has run on the PowerBook.
+
 ## FIXED: tabs had no edges, and the reason was that nobody read the drain (2026-08-07)
 
 Appearance and Energy Saver rendered their tab labels on flat grey — no
@@ -751,6 +754,7 @@ whole window, and a systematic one-pixel offset is exactly the error a
 similarity score cannot see — it degrades every number a little and names
 nothing. What found it was cropping thirty rows and printing them as
 characters.
+
 ## FIXED: three states wore one error word, and it pinned a health signal at `partial` forever (2026-08-07)
 
 `ax_oracle_not_found` was the scene's answer to three different
@@ -817,6 +821,7 @@ Three things worth keeping from how it went:
 Still open, and not this slice's to fix: the Finder read
 `ax_oracle_not_found` on that same emulator run with no planes armed.
 That is the anchor-acquisition condition above, owned by its own lane.
+
 ## FIXED: nothing could open the Mirror in an already-running host (2026-08-06, night)
 
 `--open-mirror` covers a launch and a click on the Mirror page covers a
@@ -877,8 +882,154 @@ of a 68030 — a NOW-68K with a Mirror page would want the same button.
 And there is deliberately no verb the other way: the host drives the
 guest's windows through the act plane, and a `guest.show` would be a
 second, weaker route into it.
-## FIXED: rig ports were assigned by hand, and three lanes paid for it in one day (2026-08-07)
 
+## FIXED: one question, five answers — the process family, the scene and the front process (2026-08-07, `claude/019-one-answer-b`)
+
+Plan 019 slice 2, findings F3, F5 and F6 of the surface audit.
+
+**Five independent `GetNextProcess` walks** answered "what is running and
+which of it is faceless" — `process.list`, the `ps` console command, the
+Processes page, the scene plane and `observe` — and the
+`modeOnlyBackground` classification was copy-pasted into four of them.
+`commands.c` admitted it in a comment: *"the same test
+`serve_process_list` makes."* **The scene read the bit in none of them**,
+so at one instant `process.list` said `kind: background` about a process
+the scene called `ax_oracle_not_found`. Both were honest. A caller could
+not tell, and a driving agent that reads one answer and acts on another
+is the failure this exists to prevent.
+
+`now-guest-ppc/src/processes/proc_roster.{h,c}` is now the one walk and
+the one classifier. It is an **iterator, not a table**: a table of every
+process is a kilobyte of somebody's stack on a 56 MB machine, and the
+thing worth sharing is the sampling discipline. `now_proc_roster_begin`
+samples `GetFrontProcess` and `GetCurrentProcess` **once**, before the
+first row — so "one front process per reply" holds by construction
+rather than by care. `observe.c`'s `bind_target` read the front **per
+process** (F5) and could emit a reply in which two rows carried
+`front: true`; it now has no such call to make.
+
+**The headless lane's vocabulary is preserved and was the point**: the
+kind is the process's own `SIZE` declaration, never inferred from an
+empty window list, and the scene's `partial` coverage is derived from the
+roster's `unreadable` count rather than a flag each walk sets for itself.
+
+**F6 — three fronting implementations, three claims.** `SetFrontProcess`
+returning `noErr` means the switch was *scheduled*. The console `front`
+confirmed with its own loop; `mach activate` confirmed with a second copy
+of that loop; the **wire's `process.front` answered `ok:true` and never
+looked** — and `now_bring_to_front` over MCP rides that exact path, so an
+agent got the weakest of three claims with no way to tell; the anchor
+`cycle` called `SetFrontProcess` raw and counted **accepted requests** in
+a field its own header documents as *"applications actually brought
+forward"*. `now_proc_front_confirm` is that ask-and-re-read, once, and
+every caller now reports what happened.
+
+**DRIVEN, on an emulated mac99/OS 9.1 clone of the stage oracle** (lane
+block 502, anchor 16016 / wire 16017, guest build `d4f42b3753e7`), not
+merely tested:
+
+- Console `ps`, wire `process.list` and the **scene plane** agree on all
+  **8** rows of one machine in one connection — including the six
+  faceless ones, which the scene now reports as `backgroundOnly: true`
+  with window coverage `unavailable, reason: no-ui`. The scene's
+  `process-kind` coverage reads `complete`.
+- **The one remaining `ax_oracle_not_found` in that scene is the
+  Finder** — a faced process whose anchor genuinely could not be read on
+  a VM with no armed plane. That is the word doing its job: an error
+  about a failure, not about a normal condition.
+- `observe` returned 8 rows with **exactly one** `front: true`.
+- `process.front` on the Finder answered `ok:true`, and a
+  `process.list` taken immediately after named the Finder as front. The
+  verb's claim was checked against the machine rather than believed.
+
+**What is NOT verified, and matters.** The confirm's
+*accepted-but-unconfirmed* branch was **never exercised** — asking to
+front a faceless process on this machine took the `SetFrontProcess`
+refusal path instead, and a switch that is accepted and then does not
+land could not be staged deliberately. So that branch builds, reads
+correctly and has never run. Nothing here is metal-verified.
+
+**The contract change WAS made**, under an explicit ruling, after this
+entry first recorded it as deferred. `ProcessResult` gains **`outcome`**,
+in `ActSettlement.status`'s vocabulary — borrowed rather than invented,
+because two honest-but-different words for "did it happen" would be a
+fresh instance of the defect this slice closed. `ok` now means **the
+effect this verb can establish**, never a receipt; and rather than
+silently redefining it, the difference between the two verbs is
+*declared*:
+
+- **`process.front` can be told more**, by re-reading `GetFrontProcess`,
+  so its `ok` is true only when the target is actually frontmost.
+- **`process.quit` cannot** — a `quit` Apple Event is one an application
+  may decline or sit on behind a Save dialog — so its `ok` means the
+  event was delivered and its `outcome` says
+  `dispatched-but-unconfirmed`.
+
+That split is the project's own established position rather than a new
+one: the host had already worked around the missing field in three
+places, and `BringToFrontProjection` says outright that `process.result`
+*"has no field that could carry 'and it landed'"* while
+`AgentIntegrationProcessControl` records that *"quit stops at 'the
+request was sent' because nothing on this platform can tell it more, and
+front CAN be told more."*
+
+`outcome` is **optional, and its absence is not `unknown`** — it means
+the sender does not report outcomes. NOW-68K emits none, so the host's
+confirming re-list stays as the fallback rather than being deleted as
+redundant. **That asymmetry is declared in the schema**, not left to be
+discovered.
+
+**Driven, all five shapes**, on the same rig: `front` on the Finder →
+`ok:true, outcome: confirmed`, with an independent `process.list`
+naming the Finder as front; `front` on a faceless process →
+`ok:false, outcome: refused`, front unmoved; `quit` on NOW itself and on
+a dead PSN → `outcome: refused` (never reached the machine); `quit` on a
+background process → `ok:true, outcome: dispatched-but-unconfirmed`,
+and it had in fact gone three seconds later — which is exactly the point,
+because the verb **declined to claim** what it had not established.
+
+`ProcessRosterSingleSourceTests` keeps it closed and **maintains no
+list**: it walks every `.c` under `now-guest-ppc/src` at test time and
+derives both sets from what it finds, so a sixth walk in a new directory
+fails the same day it is written. Its five substantive rules were each
+watched failing by mutation, and four of them **failed on their first
+run against real code** — naming `main.c`, `software.c`,
+`proc_actions.c`, `anchor_cycle.c` and `processes_layout.c`, all now
+closed. `software.c`'s Finder lookup matched the `'MACS'` creator alone,
+so a Finder identified by its `'FNDR'` **type** — which every other
+reader in this guest accepts — was not the Finder there.
+
+Removed on the way: `proc_kind_text`, which had a native test and **no
+caller in the product** — a fourth opinion on what the Finder is, held
+only by its own test. That is the shape [contract-coverage](contract-coverage.md)
+warns about: coverage that proves nothing.
+
+**A second finding, from being the port scheme's first real user.** Two
+`tools/lane-ports` frictions, both fixed here and both driven:
+`scripts/spin-up-ppc` required `NOW_LAB_ROOT` by hand because every copy
+of the lab lookup assumed a worktree lives inside its checkout — an agent
+lane under `/private/tmp` has **no shared ancestor with the lab at all**,
+so the walk-up reaches `/` and finds nothing; git's `--git-common-dir`
+answers it. And `lane-ports reclaim` died on a missing import while
+printing *"clean shutdown FAILED and the VM is left up … re-run with
+`--power-cut`"* — **a host-side setup error wearing a guest failure's
+words**, one step from a dirty volume, in a repo that has already paid
+for getting shutdown wrong once. A rig that cannot start now exits 3 and
+says the machine was never asked and must not be power-cut. The lookup
+was copy-pasted into **twelve** rig tools in three shapes, one hardcoding
+a specific person's home directory; `tools/lab_root.py` is its one home
+and the two tools on the lane path use it. The other ten are experiment
+scripts off that path, left unchanged rather than edited unrun.
+
+**Left for later, named rather than silently skipped:** F8 (`sw` sweeps live where
+`software.list` pages a cache that cannot say how old it is) and F12
+(eight hand-rolled frame codecs). **F4 was already closed** in
+`claude/018-integration` before this lane began — `scene_walk.c` now
+reads "THE LIVE CONTROL WINS, ALWAYS", with Mail's Internet-setup alert
+as its worked example — so the audit's F4 text is stale rather than
+outstanding.
+
+## FIXED: rig ports were assigned by hand, and three lanes paid for it in one day (2026-08-07)
 
 A dozen parallel lanes each wanted a guest VM and a host app, and the
 ports came one pair at a time from whichever session was coordinating —
@@ -921,6 +1072,7 @@ scheme and the alternatives weighed against it.
   with one in place this worktree went from 6 SKIPPED to 6 ok in 7.8 s),
   but the file has to be put there once, by hand, by somebody who owns
   the desk.
+
 ## FIXED: the MCP surface advertised 41 tools, answered a batch, and could not reach the machine with seven of them (2026-08-07)
 
 Two defects, found one behind the other, and the second was found only
@@ -2154,6 +2306,7 @@ window**. The evidence is a paired capture and five tests over the
 captured document, each watched to fail with its fix reverted; the guest
 half was watched to change the wire on a live machine (build
 `bcd1b1893664`, wire 5600).
+
 ## LIVE RISK, deliberately taken: the act wait now services the wire, and the no-hijack argument's single-cell protection is gone (2026-08-06)
 
 **This is not a defect report. It is a protection that was spent on
@@ -3262,6 +3415,7 @@ than the lease still lets the planes lapse — deliberately, that is the
 lease doing its job — and the recovery now costs latency (one settle)
 rather than a scene. And the arm handshake itself is unchanged: nothing
 here makes a plane arm faster, only stops asking before it has.
+
 ## FIXED in the host, UNVERIFIED by any drive: Apple menu items did nothing, and the act was never the missing part (2026-08-06)
 
 Michelle, driving: "apple menu items dont work (apple menu -> control
@@ -3458,6 +3612,7 @@ executing — so it is re-argued and dropped.
   itself. `now_content_arm_verdict` is untouched, so the mechanism
   survives, but the per-pass constant does not necessarily. Re-measure
   after that lands.
+
 ## SHIPPED on an emulator, UNVERIFIED on metal: a scene can now answer "the same", or send only what moved (2026-08-06)
 
 Plan 013 § 5. The wire had become the dominant cost — a 3–8.5 ms walk
@@ -3508,6 +3663,7 @@ byte-identical each time. Either the Finder did not reorder its windows,
 or the walk does not see that it did. `scene.same` is a rather good
 change detector and it has just detected something. Worth a second look;
 not chased here.
+
 ## FIXED on an emulator, NEVER ON METAL: both things the control sweep got wrong, from one change — the guest stopped hunting for controls it had made itself (2026-08-06)
 
 Plan 013 § 2. The entry below names two costs, a 1.9-second focus change
@@ -3654,6 +3810,7 @@ need it, and every scene publishes `phases.clockUs` so a reader can
 subtract rather than wonder. **If a metal pass shows `Microseconds`
 costing what it costs here, the seam count is what to reduce** — the
 per-process bind/windows/menubar trio is 6 of every 8 clock reads.
+
 ## FIXED: the PowerPC guest never reads the host's contract revision (2026-08-06)
 
 **Fixed and watched on an emulated Power Mac G4 the same night**, guest
@@ -3835,6 +3992,7 @@ identical within a page, different across one, correct on each.
   we have. If a metal run shows the Apple menu's folder-backed items cost
   real time there, that is a different finding ("this cost is
   disk-shaped") and points at not re-reading unchanged items at all.
+
 ## BROKEN, contract violation: the PowerPC guest never reads the host's contract revision (2026-08-06)
 
 `contract/asyncapi.yaml`, connection rules: "`contract` is a single
@@ -4388,6 +4546,7 @@ Still open:
   purpose): the three Data Browser pages gate arrows on
   `GetKeyboardFocus` and so have never taken a key. Spun off as its own
   task; docs/guest-ui-start-here.md carries the rule.
+
 ## CLOSED: the liveness vehicle runs, and it runs while applications do not (2026-08-05, later)
 
 The entry below is **fixed**, and it is left standing because the wrong
@@ -4709,6 +4868,7 @@ Three things worth keeping regardless of how that goes:
   Item and content families now hold separate stated byte shares of one
   ceiling. **Anything further added to this payload must take a share
   rather than assume room; there is none.**
+
 ## BROKEN: a blocked callee deafens NOW for 15 s per script (2026-08-05)
 
 **This is the mechanism behind the dropped connection**, and it is not
@@ -5478,6 +5638,7 @@ Still open from this:
   attaches the PREVIOUS command's correlation. It is conservative for the
   host rule above — a stale correlation reads as "may have landed", which
   only costs a wait — but it is wrong.
+
 ## FIXED, TESTED: an agent-driven act was journalled as a person's when it waited (2026-08-05, test landed 2026-08-05)
 
 An act that arrives while an observation is in flight is deferred and
@@ -6018,6 +6179,7 @@ until something has watched it go false.
 operation end to end. The host app could not be run beside the one already
 holding the per-user agent endpoint, so the script was proven against the
 guest directly and the join proven by unit test, not the two together.
+
 ## P4's plane is intact; the reason named for its silence was wrong (2026-08-05)
 
 **The symptom stands; the diagnosis attached to it does not.** A human drive on
@@ -7451,6 +7613,7 @@ on a build that was already correct.
   STRUCTURE region, which is a third convention again. It has not been
   measured and no consumer has complained, because the windows that
   matter come from the bound path.
+
 ## UNVERIFIED: Hide has a route now, and nothing has watched it (2026-08-05)
 
 **This amends an entry that is not in this file yet.** The branch this was
@@ -7852,6 +8015,7 @@ running; whether `mirror-agent` is the name the agent's process wears in
 the guest's own `process.list` (it is the name Mirror's source and
 `spin-up.sh` use, read rather than observed); and whether SIGTERM
 releases the agent's single client slot as cleanly as the code assumes.
+
 ## The host suite was fighting itself over ports (2026-08-02, settled 2026-08-05)
 
 **It WAS contention — and the suite was manufacturing it.** For three
@@ -8378,6 +8542,7 @@ machine. What only a granted library and metal can prove:
   ~60 KB, ~0.2 s at the measured 300 KiB/s — arithmetic, not a
   measurement; nobody has felt the selection-to-pixels latency at
   the PowerBook.
+
 ## The cloud.* family: real providers are untested, and the guest half does not exist (2026-08-01)
 
 **Unverified / unfinished, deliberately.** The host serves
@@ -8535,6 +8700,7 @@ has no metal coverage at all.** `HostServingTests` is loopback-only,
 and no `Metal*` suite exercises a real guest browsing this host's
 share. The browse direction guest→host is metal-verified only from the
 2026-07-20 arc, before the name bridge and placeholders landed.
+
 ## The Files path row names the share, unverified on metal (2026-08-01)
 
 **Unverified.** `file.listing.root` now carries the host share's Finder
@@ -8549,6 +8715,7 @@ nobody has watched: the row on a real screen — the root name arrives
 over the wire UTF-8→MacRoman via `now_json_find_text`, and an accented
 share name drawn through `DrawString` is exactly the kind of thing the
 emulator has hidden before.
+
 ## The Mirror page has never been on a machine (2026-08-01)
 
 **Unverified, and the whole page is unverified together.** The guest now
@@ -9824,6 +9991,7 @@ machine. That is the trade this subsystem exists to make.
 not serve, and it is mostly a renderer: `health.c` already samples the
 facts and the census now reports most of them again. A host asking for
 it by name still gets `unknown-command`.
+
 ## NOW-68K's software listing has never touched a disk (2026-07-28)
 
 `software.list` and the `sw` verb are served on NOW-68K
@@ -10296,6 +10464,7 @@ unverified — most of it is about what a small frame costs.
   type `docs/command-parity.md` called for now exists (`N68CmdRows`) and
   `ls` uses it; moving the other three is a refactor of working code that
   was deliberately not done in the same change as a new message family.
+
 ## An abandoned transfer wedged NOW-68K against all future ones (2026-07-26)
 
 `file.cancel` appeared nowhere in `wire68.c`'s dispatch. The guest sent
@@ -10412,6 +10581,7 @@ a desynchronised wire rather than a cancelled transfer.
   a metal gate belongs with whoever is working on that harness; it
   needs `requireTheBuildUnderTest()` before anything it reports can be
   believed.
+
 ## `front`, on both faces of both guests (2026-07-26)
 
 `process.front` had been on the PowerPC guest's wire since the Processes
@@ -13245,6 +13415,7 @@ for its live handle. So the cost is dominated by the number of
 cross-boundary reads, not by anything per-byte. If someone takes perf,
 that is where to look first — and they should measure before believing
 this paragraph.
+
 ## UNVERIFIED: the host render never settles, and nobody knows if it reaches pixels (2026-08-07)
 
 Measured live, on the unmodified tree, by `tools/fidelity-live.py`:
@@ -13292,6 +13463,7 @@ Two smaller things found on the way, both closed:
   that made it and the row that inherited it. Sweep A lost Date & Time's
   whole stability row to exactly this, and `--quit-after` read as success
   the entire time, because an application holding a modal ignores a quit.
+
 ## BROKEN: the anchor plane arms, and captures an anchor for NOW alone (2026-08-07)
 
 **Found while diagnosing plan 018 slice 3, and it is bigger than that
@@ -13471,6 +13643,7 @@ same snapshot reports `marked: true` for "as List" **and** for "as Window"
 and "Sort List" simultaneously — consistent with the sibling finding that
 `mark` is a raw byte carrying a submenu ID rather than a checkmark flag.
 Nothing here reads it.
+
 ## EXPLAINED, and it was never a contradiction: an application holds an anchor only after it has been FRONTMOST once (2026-08-07)
 
 **This closes the blocker recorded as *"BROKEN: the anchor plane arms,
@@ -13681,6 +13854,7 @@ Verification level: **emulator-verified** (QEMU mac99, OS 9.1, run dirs
 `/private/tmp/nowvm-vis18` and `-vis18b`, anchor 1810 / wire 5360, guest
 builds `59dce8562ad4` and `f3db46a66630`, both asserted on the hello).
 Nothing here touched metal.
+
 ## WORKED AROUND, not fixed: `cycle` makes an undriven machine visible, and three things it taught (2026-08-07)
 
 This continues the entry above — *"an application holds an anchor only

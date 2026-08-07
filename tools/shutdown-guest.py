@@ -69,6 +69,7 @@ import json
 import os
 import socket
 import struct
+import subprocess
 import sys
 import time
 
@@ -78,13 +79,13 @@ NOW = os.path.abspath(os.path.join(HERE, ".."))
 # The lab checkout owns the emulator and the anchor client; NOW owns the
 # artifacts. Normally NOW's parent - but not from a git worktree, which
 # sits several levels deeper and whose parent has no mcp-classic in it.
-LAB = os.environ.get("NOW_LAB_ROOT")
-if not LAB:
-    LAB = NOW
-    while LAB != "/" and not os.path.isdir(os.path.join(LAB, "mcp-classic")):
-        LAB = os.path.dirname(LAB)
-sys.path.insert(0, os.path.join(LAB, "mcp-classic"))
-from timbottu_mcp_classic.harness import Harness, HarnessError  # noqa: E402
+sys.path.insert(0, HERE)
+from lab_root import import_harness  # noqa: E402
+
+# THE RIG IS MISSING IS NOT THE GUEST REFUSING TO SHUT DOWN. import_harness
+# exits 3 saying so, so a caller cannot read a host-side setup problem as a
+# machine that would not go down and reach for a power cut.
+Harness, HarnessError = import_harness("shut itself down")
 
 DEV = os.environ.get("NOW_GUEST_DIR", "Macintosh HD:TimBotTu:now-dev")
 APPLET = os.environ.get("NOW_SHUTDOWN_NAME", "NOW Shut Down")
