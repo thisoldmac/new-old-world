@@ -75,7 +75,14 @@ void now_scene_note_front_process(void)
         g_front_order_ready = 1;
         now_front_order_reset(&g_front_order);
     }
-    if (GetFrontProcess(&front) != noErr) {
+    /* THE PROCESSES FAMILY'S FRONT SAMPLE, not a second GetFrontProcess.
+       This file also walks the roster, and a file that does both is
+       exactly what `ProcessRosterSingleSourceTests` refuses - the pairing
+       is how one reply comes to name two front processes. The rule holds
+       here for a subtler reason than usual: this ledger and that walk
+       must agree about who is in front, and two calls to the Toolbox
+       seconds apart can disagree. One asker, one answer. */
+    if (!now_proc_roster_front(&front)) {
         return;                       /* nothing observed, nothing claimed */
     }
     now_front_order_note(&g_front_order,

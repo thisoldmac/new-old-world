@@ -40,8 +40,8 @@ void now_scene_collect(NowScene *out, long seq,
                        unsigned long stale_after_ticks);
 
 /* Notes who is in front, for the cross-application layer ledger
-   (front_order.h). ONE `GetFrontProcess`, and idempotent while nothing
-   changes.
+   (front_order.h). ONE front sample — the processes family's, through
+   `now_proc_roster_front` — and idempotent while nothing changes.
 
    Called from the main event loop rather than from now_scene_collect,
    and that is the whole point: layer order is a sequence of TRANSITIONS
