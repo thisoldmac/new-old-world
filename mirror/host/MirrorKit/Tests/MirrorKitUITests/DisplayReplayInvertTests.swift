@@ -177,22 +177,35 @@ final class DisplayReplayInvertTests: XCTestCase {
     /// The sizes below are the whole near-square blit census of the nine
     /// committed captures, so this fails if anyone widens the bound back
     /// over a real control or narrows it under a real icon.
-    func testTheIconBoundKeepsEveryRealIconAndReleasesTheMagnifier() {
+    /// **The size bound survived; the CLAIM it used to make did not.**
+    ///
+    /// `iconSized` and `controlSized` answered "what is at this rectangle"
+    /// from its dimensions. Sweep A priced that: four wrong page icons in
+    /// fifteen windows, plus the Finder's 16×16 scroll arrows. Identity now
+    /// comes from the semantic plane (`ProvenanceLadder`), and the numbers
+    /// below survive only as a DRAW-ORDER rule — small answers go in stream
+    /// order so a composite's own erase does not wipe them.
+    ///
+    /// Kept as a test because the range is measured against the committed
+    /// captures and a regression in it would move ink around invisibly.
+    func testTheStreamOrderBoundCoversEveryRealIconAndControl() {
         for size in [CGSize(width: 12, height: 12),
                      CGSize(width: 16, height: 16),
                      CGSize(width: 18, height: 18),
                      CGSize(width: 21, height: 20),
                      CGSize(width: 32, height: 24),
-                     CGSize(width: 32, height: 32)] {
+                     CGSize(width: 32, height: 32),
+                     CGSize(width: 48, height: 48)] {
             XCTAssertTrue(
-                DisplayReplay.iconSized(CGRect(origin: .zero, size: size)),
-                "\(size) is an icon in the measured corpus")
+                DisplayReplay.answeredInStreamOrder(
+                    CGRect(origin: .zero, size: size)),
+                "\(size) is small enough that a composite erase wipes it")
         }
-        let magnifier = CGRect(x: 417, y: 98, width: 48, height: 48)
-        XCTAssertFalse(DisplayReplay.iconSized(magnifier),
-                       "a 48×48 blit is Sherlock's magnifier, not an icon")
-        XCTAssertTrue(DisplayReplay.controlSized(magnifier),
-                      "and it lands on the untyped control plate instead")
+        XCTAssertFalse(
+            DisplayReplay.answeredInStreamOrder(
+                CGRect(x: 0, y: 0, width: 404, height: 218)),
+            "a window-scale composite is marked AHEAD of the stream, or a "
+            + "mark that large would cover text the guest did report")
     }
 
     func testAllThreeRegionShapeStatesRenderTheSamePixels() throws {

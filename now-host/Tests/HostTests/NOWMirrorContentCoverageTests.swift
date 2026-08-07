@@ -458,30 +458,54 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
     /// window-spanning op follows the list content; in the one-pass
     /// capture it does not.
     func testFlattenedPassesPutAWindowBlitOverTheSoundList() throws {
-        func lastSpanningOpAfterList(_ fixture: String) throws -> Bool {
+        /* ANSWERED 2026-08-07 (plan 018 slice 1), and the assertion is
+           inverted rather than deleted, because the finding above is the
+           reason the fix exists and would otherwise leave no trace.
+
+           `NOWMirrorContentPlane.lastRepaintPass` now publishes the LAST
+           repaint pass alone. So the three-pass capture no longer carries
+           an earlier pass's list rows for a later pass's window blit to
+           paint over: it carries one pass, and whatever that pass could
+           account for. The pixels are unchanged — content that was covered
+           was already invisible — and what changes is that the frame no
+           longer contains a contradiction about which repaint it is.
+
+           The one-pass control still composes its list, which is the half
+           that could regress silently: if truncation ever cut inside a
+           pass, this is where it would show. */
+        func spanningOpsAfterList(_ fixture: String) throws -> (list: Int?,
+                                                                after: Int) {
             let display = try compose(fixture, window: 0x1e612eb0,
                                       psn: "0.37355521", title: "Sound")
             let list = display.lastIndex {
                 $0.op == "text" && $0.text == "ChuToy"
             }
-            let spanning = display.lastIndex { op -> Bool in
-                guard op.op == "bits" || op.op == "rect",
-                      let box = op.dst ?? op.rect, box.count == 4
+            let after = display.indices.filter { i -> Bool in
+                guard display[i].op == "bits" || display[i].op == "rect",
+                      let box = display[i].dst ?? display[i].rect,
+                      box.count == 4 else { return false }
+                guard (box[2] - box[0]) >= 350, (box[3] - box[1]) >= 250
                 else { return false }
-                return (box[2] - box[0]) >= 350 && (box[3] - box[1]) >= 250
-            }
-            let listIndex = try XCTUnwrap(list, "\(fixture) has no list rows")
-            guard let spanning else { return false }
-            return spanning > listIndex
+                return i > (list ?? Int.max)
+            }.count
+            return (list, after)
         }
-        XCTAssertTrue(try lastSpanningOpAfterList("qdtrace-drain-sweep-sound"),
-                      "the three-pass capture no longer paints over its "
-                      + "list — the flattening was fixed, or the capture "
-                      + "changed shape")
-        XCTAssertFalse(
-            try lastSpanningOpAfterList("qdtrace-drain-sweep-sound-1pass"),
-            "the one-pass control now paints over its list too — it has "
-            + "stopped being a control")
+
+        let flattened = try spanningOpsAfterList("qdtrace-drain-sweep-sound")
+        XCTAssertEqual(flattened.after, 0, """
+            the published frame still has a window-scale op painting over \
+            its own list rows. Truncation to the last repaint pass is \
+            supposed to make that impossible — see \
+            NOWMirrorContentPlane.lastRepaintPass.
+            """)
+
+        let control = try spanningOpsAfterList("qdtrace-drain-sweep-sound-1pass")
+        XCTAssertNotNil(control.list, """
+            the ONE-PASS capture lost its list rows. Nothing in slice 1 may \
+            cut inside a pass; if this fails, `lastRepaintPass` found a \
+            boundary that is not one.
+            """)
+        XCTAssertEqual(control.after, 0)
     }
 
     /// Sherlock 2 WAS the boundary case, and this gate is the boundary

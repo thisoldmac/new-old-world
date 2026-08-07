@@ -54,11 +54,42 @@ public enum DisplayReplay {
     /// second hatch on top of it states nothing new.
     public final class Coverage {
         public private(set) var inked: [CGRect] = []
+
+        /// **The per-rectangle owner map, in the order it was decided.**
+        ///
+        /// The ladder resolves every rectangle it is asked about; this is
+        /// simply the resolution written down instead of thrown away. It
+        /// costs one append per drawing operation and only exists when a
+        /// caller passes a `Coverage` at all, which the live render does
+        /// and nothing else has to.
+        ///
+        /// It is here rather than in a new type because the alternative is
+        /// a second traversal of the same ops reaching the same answers by
+        /// a parallel route — which is how two halves of one rule drift
+        /// apart, and this file's own history is the argument.
+        ///
+        /// Sweep-shaped readers want it because "the render was stable"
+        /// and "the render was stable AND every rectangle had the same
+        /// owner both times" are different claims, and only the second one
+        /// is what plan 018 promised.
+        public private(set) var owners: [(rect: CGRect,
+                                          rung: ProvenanceLadder.Rung)] = []
         public init() {}
 
         func add(_ rect: CGRect) {
             guard rect.width > 0, rect.height > 0 else { return }
             inked.append(rect)
+        }
+
+        func attribute(_ rect: CGRect, _ rung: ProvenanceLadder.Rung) {
+            guard rect.width > 0, rect.height > 0 else { return }
+            owners.append((rect, rung))
+        }
+
+        /// Who owns a rectangle, last decision wins — the render draws in
+        /// order, so the last claim on a rectangle is the one visible.
+        public func owner(of frame: CGRect) -> ProvenanceLadder.Rung? {
+            owners.last { $0.rect.intersects(frame) }?.rung
         }
 
         /// Whether the replay drew anything inside `frame`.
@@ -74,7 +105,14 @@ public enum DisplayReplay {
     public static func draw(_ ops: [MirrorKit.DisplayOp], in ctx: GraphicsContext,
                             content: CGRect,
                             excluding semanticFrames: [CGRect] = [],
+                            ladder: ProvenanceLadder? = nil,
                             coverage: Coverage? = nil) -> Bool {
+        /* THE LADDER IS THE POLICY; this replay is one of its two readers.
+           Given none, it falls back to a ladder that names nothing — which
+           makes every unjoined blit an unknown. That default is the honest
+           one: a caller that has not said what the semantic plane knows has
+           not earned a claim about any rectangle. */
+        let ladder = ladder ?? ProvenanceLadder(owning: semanticFrames)
         guard !ops.isEmpty else { return false }
         var g = ctx
         g.clip(to: Path(content))
@@ -179,17 +217,29 @@ public enum DisplayReplay {
                 if !bounded.isNull { draw.clip(to: Path(bounded)) }
             }
             let frame = rectFrom(d, pt: bitsPoint)
-            /* Icon-sized blits are NOT hatched here: they get the
-               extracted generic icon in the second pass, IN STREAM
-               ORDER, because a composite build opens with a full-window
-               erase and anything this pass drew under it is wiped. The
-               big placeholders stay in this pass for the original
-               reason - they must never cover text the guest reported. */
-            /* Control-shaped blits are theme art, not missing content;
-               they are drawn as plates in the second pass, in stream
-               order, for the same reason icons are. */
-            if Self.iconSized(frame) || Self.controlSized(frame) { continue }
-            drawUnavailableBits(in: draw, frame: frame)
+            /* WHICH PASS A BLIT IS ANSWERED IN IS A DRAW-ORDER QUESTION,
+               NOT A PROVENANCE ONE, and the two must not be confused
+               again. The ladder decides WHAT is drawn — art or the marked
+               unknown — and that answer is identical in both passes. This
+               only decides WHEN.
+
+               Small answers go in stream order (pass 2) because a
+               composite repaint opens with a full-window erase and
+               anything drawn before it is wiped: that is why Sherlock 2's
+               channel cells rendered as bare background the first time
+               rung 4 was wired, and `DrawnCellGridTests` said so.
+               Window-scale answers stay here, ahead of everything, for the
+               original reason — a mark that large drawn in order would
+               cover text the guest DID report. */
+            if !Self.answeredInStreamOrder(frame) {
+                if ladder.owner(ofUnjoinedBlit: frame) == .unknown {
+                    drawUnavailableBits(in: draw, frame: frame)
+                    coverage?.add(frame)
+                    coverage?.attribute(frame, .unknown)
+                    drew = true
+                }
+                continue
+            }
             coverage?.add(frame)
             drew = true
         }
@@ -233,6 +283,11 @@ public enum DisplayReplay {
                         y: where0.y - CGFloat(font.ascent),
                         width: CGFloat(font.width(shown)),
                         height: CGFloat(font.ascent + font.descent)))
+                    coverage?.attribute(CGRect(
+                        x: where0.x,
+                        y: where0.y - CGFloat(font.ascent),
+                        width: CGFloat(font.width(shown)),
+                        height: CGFloat(font.ascent + font.descent)), .ink)
                 } else {
                     draw.draw(draw.resolve(Text(shown)
                         .font(.system(size: CGFloat(op.size ?? 12)))
@@ -243,6 +298,11 @@ public enum DisplayReplay {
                         y: where0.y - CGFloat(op.size ?? 12),
                         width: CGFloat(shown.count * (op.size ?? 12)) / 2,
                         height: CGFloat(op.size ?? 12)))
+                    coverage?.attribute(CGRect(
+                        x: where0.x,
+                        y: where0.y - CGFloat(op.size ?? 12),
+                        width: CGFloat(shown.count * (op.size ?? 12)) / 2,
+                        height: CGFloat(op.size ?? 12)), .ink)
                 }
                 drew = true
             case "line":
@@ -254,36 +314,53 @@ public enum DisplayReplay {
                 let draw = drawingContext()
                 draw.stroke(path, with: .color(fg), lineWidth: 1)
                 coverage?.add(path.boundingRect.insetBy(dx: -0.5, dy: -0.5))
+                coverage?.attribute(path.boundingRect.insetBy(dx: -0.5, dy: -0.5), .ink)
                 drew = true
             case "bits":
-                /* An icon-sized blit gets the extracted generic icon (the
-                   host's own icl8 pack) rather than nothing: identity is
-                   deferred - PlotIconSuite interception - but a
-                   recognisable stub at the right position beats an empty
-                   cell. Drawn here, in stream order, so the composite's
-                   own erases precede it instead of wiping it.
+                /* RUNG 3, AND IT IS ADDRESSED BY IDENTITY. An unjoined
+                   blit carries geometry and no pixels, so the only thing
+                   that can say what belongs here is the semantic plane.
+                   Where it named the rectangle, its art is drawn — here,
+                   in stream order, so the composite's own erases precede
+                   it instead of wiping it. Where it did not, the honest
+                   answer was already drawn as an unknown in the pass
+                   above.
 
-                   The SIZE is not a guess even though the identity is: a
-                   16x16 destination is a list row, and OS 9 draws those
-                   from the ics8 resource, which is its own hand-tuned
-                   drawing rather than the icl8 shrunk. Picking by
-                   destination stops the replay blurring a 32x32 into a
-                   cell the machine fills crisply. */
+                   WHAT THIS REPLACED: `iconSized`, which painted a
+                   generic DOCUMENT over any near-square blit between 12
+                   and 36 points. Sweep A found that firing on Mouse's
+                   three tracking pictures, Sherlock 2's nine channel
+                   buttons, two alert icons and the Finder's 16×16 scroll
+                   arrows — a confident wrong answer every time, and never
+                   once on an actual document. Size is not identity. */
                 guard let d = op.dst, d.count == 4 else { break }
                 let frame = rectFrom(d, pt: pt)
-                if Self.iconSized(frame),
-                   let icon = IconAtlas.namedIcon(
-                       "document", size: IconAtlas.Size.fitting(frame)) {
+                switch ladder.art(at: frame) {
+                case .icon:
+                    guard let icon = IconAtlas.namedIcon(
+                        "document", size: IconAtlas.Size.fitting(frame))
+                    else { break }
                     let draw = drawingContext()
                     draw.draw(Image(decorative: icon, scale: 1), in: frame)
                     coverage?.add(frame)
+                    coverage?.attribute(frame, .namedArt)
                     drew = true
-                } else if Self.controlSized(frame) {
+                case .control:
                     drawControlPlate(in: drawingContext(), frame: frame)
                     coverage?.add(frame)
+                    coverage?.attribute(frame, .namedArt)
+                    drew = true
+                case nil:
+                    /* Rung 4, in stream order. A window-scale unknown was
+                       already marked in the pre-pass; anything smaller is
+                       marked here so a composite's own erase precedes it
+                       instead of wiping it. */
+                    guard Self.answeredInStreamOrder(frame) else { break }
+                    drawUnavailableBits(in: drawingContext(), frame: frame)
+                    coverage?.add(frame)
+                    coverage?.attribute(frame, .unknown)
                     drew = true
                 }
-                // larger geometry was hatched before this pass
             case "rect", "rrect", "oval", "rgn":
                 guard let r = op.rect, r.count == 4 else { continue }
                 let rect = rectFrom(r, pt: pt)
@@ -318,6 +395,7 @@ public enum DisplayReplay {
                 case 0:   // frame
                     draw.stroke(Path(rect), with: .color(fg), lineWidth: 1)
                     coverage?.add(rect)
+                    coverage?.attribute(rect, .ink)
                     drew = true
                 case 1, 4:  // paint / fill
                     draw.fill(Path(rect), with: .color(fg))
@@ -328,6 +406,7 @@ public enum DisplayReplay {
                        has had every chance to be covered. */
                     lastFill = (rect, fg)
                     coverage?.add(rect)
+                    coverage?.attribute(rect, .ink)
                     drew = true
                 case 2:   // erase uses the port's current background colour
                     draw.fill(Path(rect), with: .color(bg))
@@ -335,6 +414,7 @@ public enum DisplayReplay {
                 case 3:
                     invert(rect, in: draw)
                     coverage?.add(rect)
+                    coverage?.attribute(rect, .ink)
                     drew = true
                 default:
                     break
@@ -437,25 +517,30 @@ public enum DisplayReplay {
         return bg
     }
 
-    /// A blit the size and shape of an ordinary control.
+    /// **Whether a blit's answer is drawn in stream order, or ahead of
+    /// everything. A DRAW-ORDER rule — it decides nothing about what the
+    /// rectangle IS.**
     ///
-    /// This exists because "Bitmap unavailable" was the wrong CLAIM for
-    /// most of what a control panel blits. Under Appearance, a themed
-    /// field, button or popup is DRAWN by blitting theme art — so Date
-    /// & Time's every field arrived as a small CopyBits and the replay
-    /// hatched each one as missing data. Nothing was missing: that
-    /// window is chrome the host can draw natively, and a hatch saying
-    /// otherwise is a false negative in the one direction that reads as
-    /// a broken mirror.
+    /// It is the same shape range that `controlSized` and `iconSized` used
+    /// to classify by, and keeping the numbers while deleting the meaning
+    /// is deliberate: they were always a good description of "small enough
+    /// that a composite's erase will wipe it, and small enough that drawing
+    /// it in order cannot swallow the window's own text". They were never a
+    /// good answer to "what is this". Sweep A found the old claim wrong
+    /// four times in fifteen windows; nobody has ever found the ORDER
+    /// wrong.
     ///
-    /// The bound is shape-based rather than a whitelist: a themed
-    /// control is short and not window-spanning. Anything bigger keeps
-    /// the honest hatch, because at that size an unjoined blit really
-    /// is content we failed to reach.
-    static func controlSized(_ frame: CGRect) -> Bool {
-        frame.height >= 6 && frame.height <= 48
+    /// The bound is measured. Across the committed capture corpus every
+    /// near-square blit is 12×12 through 32×32, every themed control is
+    /// short and not window-spanning, and the things above the bound are
+    /// composites the size of a window.
+    static func answeredInStreamOrder(_ frame: CGRect) -> Bool {
+        let controlish = frame.height >= 6 && frame.height <= 48
             && frame.width >= 8 && frame.width <= 460
             && !(frame.width > 200 && frame.height > 40)
+        let iconish = frame.width >= 12 && frame.width <= 36
+            && frame.height >= 12 && frame.height <= 36
+        return controlish || iconish
     }
 
     /// A control-shaped blit, drawn as the Platinum plate it is: a face
@@ -474,30 +559,6 @@ public enum DisplayReplay {
         light.addLine(to: CGPoint(x: frame.minX + 1, y: frame.minY + 1))
         light.addLine(to: CGPoint(x: frame.maxX - 1, y: frame.minY + 1))
         ctx.stroke(light, with: .color(Platinum.g0), lineWidth: 1)
-    }
-
-    /// Roughly square and within the classic icon range (16×16 list rows
-    /// up to 32×32 icon view, with margin for masks and badges).
-    ///
-    /// THE UPPER BOUND WAS 48 AND THAT MARGIN WAS DOING HARM. Sherlock 2's
-    /// magnifier button is a 48×48 CopyBits at window-local (417,98) with no
-    /// `blitsrc` — its source world is never hooked, so no pixels and no
-    /// identity cross — and the old bound accepted it and painted a generic
-    /// DOCUMENT icon over a round button. That is a placeholder typed more
-    /// precisely than the drawing stream allows, which is the one rule
-    /// docs/render-composition.md states about this layer.
-    ///
-    /// 36 is measured rather than picked: across all nine committed
-    /// captures every near-square blit is 12×12, 16×16, 18×18, 21×20,
-    /// 32×24 or 32×32 — and the only things above that are Sherlock's
-    /// three magnifier blits. So the bound keeps every real icon and
-    /// releases exactly the control, which then reads as the untyped
-    /// Platinum plate `controlSized` already draws for theme art.
-    static func iconSized(_ frame: CGRect) -> Bool {
-        guard frame.width >= 12, frame.width <= 36,
-              frame.height >= 12, frame.height <= 36 else { return false }
-        let aspect = frame.width / max(frame.height, 1)
-        return aspect > 0.7 && aspect < 1.4
     }
 
     private static func rgb(_ c: [Int]) -> Color {

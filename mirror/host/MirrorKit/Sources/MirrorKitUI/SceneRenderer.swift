@@ -156,22 +156,46 @@ public struct SceneRenderer {
 
     // MARK: - Desktop
 
+    /// The desktop, through the same ladder as every other rectangle.
+    ///
+    /// It used to tile `ppat` 16 unconditionally and fill
+    /// `Platinum.desktopBlue` when the pack had none — two guesses, on the
+    /// largest rectangle in the picture. Lane C measured the first as wrong
+    /// on the image we run (the guest's desktop is an 800×600 picture, not
+    /// a tiled pattern) and the second was never evidence of anything.
+    ///
+    /// Rung 3 draws art the pack IDENTIFIED; rung 4 marks the rest. A
+    /// plausible wrong purple is exactly what rule 1 forbids.
     private func drawDesktop(_ ctx: GraphicsContext, _ bounds: CGRect) {
-        guard let tile = DesktopPattern.tile else {
-            ctx.fill(Path(bounds), with: .color(Platinum.desktopBlue))
-            return
-        }
-        // Tile the real 128×128 "Mac OS Default" ppat across the surface.
-        let tw = CGFloat(tile.width), th = CGFloat(tile.height)
-        let image = Image(decorative: tile, scale: 1)
-        var y: CGFloat = 0
-        while y < bounds.height {
-            var x: CGFloat = 0
-            while x < bounds.width {
-                ctx.draw(image, in: CGRect(x: x, y: y, width: tw, height: th))
-                x += tw
+        switch DesktopPattern.answer(screen: bounds.size) {
+        case .picture(let art):
+            /* ONCE, AT THE ORIGIN, UNSCALED — the operation the machine
+               performs. `answer` has already refused any picture whose
+               size is not the screen's, so this cannot crop or stretch. */
+            ctx.draw(Image(decorative: art, scale: 1),
+                     in: CGRect(x: bounds.minX, y: bounds.minY,
+                                width: CGFloat(art.width),
+                                height: CGFloat(art.height)))
+        case .pattern(let tile):
+            let tw = CGFloat(tile.width), th = CGFloat(tile.height)
+            guard tw > 0, th > 0 else { break }
+            let image = Image(decorative: tile, scale: 1)
+            var y = bounds.minY
+            while y < bounds.maxY {
+                var x = bounds.minX
+                while x < bounds.maxX {
+                    ctx.draw(image, in: CGRect(x: x, y: y, width: tw, height: th))
+                    x += tw
+                }
+                y += th
             }
-            y += th
+        case .unknown(let why):
+            /* The marked unknown, at desktop scale. `why` is deliberately
+               NOT drawn — the mirror talking about itself inside a picture
+               of the machine — but it is the sentence a diagnostic asks
+               for, and it is why this is an enum rather than an optional. */
+            _ = why
+            drawUnavailableVisual(ctx, bounds, "")
         }
     }
 
@@ -722,6 +746,8 @@ public struct SceneRenderer {
         if let display = win.display {
             DisplayReplay.draw(display, in: contentCtx, content: content,
                                excluding: semanticFrames,
+                               ladder: Self.ladder(for: win, content: content,
+                                                   owning: semanticFrames),
                                coverage: replayCoverage)
         }
         if !displayOwnsVisuals, let text = win.text {
@@ -886,6 +912,63 @@ public struct SceneRenderer {
               }) else { return false }
         guard let r = ctl.rect else { return false }
         return (r.b - r.t) <= 26 && (r.r - r.l) > 20
+    }
+
+    /// **Rung 3's identities, gathered from the semantic plane.**
+    ///
+    /// The one rule: a rectangle is NAMED only because P2 said what is at
+    /// it. Never because of its size, never because of its shape. See
+    /// ``ProvenanceLadder`` and docs/render-composition.md.
+    ///
+    /// Two exclusions carry the weight, and both were paid for by sweep A:
+    ///
+    /// - **A derived cell names nothing.** `DrawnCellGrid` derives Sherlock
+    ///   2's channel grid from the drawing itself, so a cell's evidence IS
+    ///   the pixels — it can say where the cell is and which is selected,
+    ///   and nothing at all about the art inside it. Sweep A found nine
+    ///   page icons in that grid. They are unknowns.
+    /// - **An untyped control names nothing.** A Finder window's scroll
+    ///   bars arrive with `role: "unknown"` and no semantic kind, so their
+    ///   16×16 arrow blits get no name and draw as marked unknowns rather
+    ///   than as documents. That is the whole of Michelle's complaint #5,
+    ///   and "arrows or a marked unknown, never a page" is the exit
+    ///   criterion it became.
+    public static func ladder(for win: MirrorKit.Scene.Window,
+                              content: CGRect,
+                              owning: [CGRect]) -> ProvenanceLadder {
+        func place(_ r: MirrorKit.Rect) -> CGRect {
+            CGRect(x: content.minX + CGFloat(r.l), y: content.minY + CGFloat(r.t),
+                   width: CGFloat(max(0, r.r - r.l)),
+                   height: CGFloat(max(0, r.b - r.t)))
+        }
+        var named: [(rect: CGRect, art: ProvenanceLadder.NamedArt)] = []
+        for control in win.controls where control.visible {
+            guard let rect = control.rect,
+                  control.semantic?.knowledge == .known,
+                  let kind = control.semantic?.kind,
+                  kind != MirrorKit.DrawnCellGrid.cellKind,
+                  !Self.isBackgroundKind(kind) else { continue }
+            named.append((place(rect), .control))
+        }
+        for item in win.dialogItems ?? [] where item.visible {
+            let kind = item.semantic.kind
+            if kind == "icon" {
+                named.append((place(item.rect), .icon))
+            } else if item.semantic.knowledge == .known,
+                      !Self.isBackgroundKind(kind ?? "") {
+                named.append((place(item.rect), .control))
+            }
+        }
+        return .init(owning: owning, named: named,
+                     inkIsCurrent: win.displayEpoch?.stale != true)
+    }
+
+    /// Backgrounds name nothing: they routinely wrap most of a dialog, and
+    /// a background that claimed every blit inside it would be the
+    /// `dialogItemOwnsDisplay` defect wearing a third hat.
+    static func isBackgroundKind(_ kind: String) -> Bool {
+        kind == "panel" || kind == "placard" || kind == "selectionBand"
+            || kind == "groupBox" || kind == "userItem"
     }
 
     /// Window furniture the Control Manager draws OVER application content

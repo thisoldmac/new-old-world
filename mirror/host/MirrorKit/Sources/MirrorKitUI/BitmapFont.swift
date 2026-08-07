@@ -193,15 +193,113 @@ public enum FontBook {
 }
 
 /// The extracted default desktop pattern ('ppat' 16 "Mac OS Default"), tiled.
+/// **What the guest's desktop actually is, or the honest admission that we
+/// do not know.**
+///
+/// This used to be one line — tile `patterns/desktop.png` across the
+/// screen, and fill `Platinum.desktopBlue` if the pack had none. Both
+/// halves were guesses, and lane C of plan 018 measured how wrong:
+///
+/// - **Wrong art.** `ppat` 16 is "Mac OS Default", a shipped DEFAULT and
+///   not a setting. Under Appearance the desktop is chosen in a control
+///   panel that writes neither the System file nor a theme file, so the
+///   System resource sits at its factory value forever while the screen
+///   shows something else. On the stage image the desktop is an 800×600
+///   JPEG, "Indigo Foam".
+/// - **Wrong operation.** A picture is drawn ONCE, at the origin. Tiling
+///   it is a claim the machine does not make.
+///
+/// So the answer comes from the pack's own `manifest.json`, where the
+/// extractor records what it read out of the guest's
+/// `Desktop Pictures Prefs` — and where it cannot, this reports `.unknown`
+/// and the renderer marks the surface rather than painting a plausible
+/// purple. Rule 1 of plan 018: a stable honest gap beats an unstable
+/// plausible answer, and the desktop is the largest rectangle in the
+/// picture to be wrong about.
+///
+/// **The limit, carried rather than hidden.** This is true for a guest
+/// booted from the image the pack was extracted from and not changed
+/// since. Only `GetTheme` with `kThemeDesktopPictureNameTag` on a RUNNING
+/// guest closes that gap (CarbonLib 1.0+, inside our floor; `LMGetDeskCPat`
+/// is not available in Carbon at all). It is not closed today, and
+/// `Answer.confidence` carries the sentence that says so.
 public enum DesktopPattern {
-    public static let tile: CGImage? = {
-        guard let url = AssetPack.url(forResource: "desktop",
-                                      withExtension: "png",
-                                      subdirectory: "patterns"),
-              let data = try? Data(contentsOf: url),
-              let src = CGImageSourceCreateWithData(data as CFData, nil) else {
-            return nil
-        }
-        return CGImageSourceCreateImageAtIndex(src, 0, nil)
+
+    /// What to draw for the desktop surface.
+    public enum Answer: Equatable {
+        /// A picture the size of the screen: draw it once, at the origin,
+        /// unscaled.
+        case picture(CGImage)
+        /// A named pattern with art in the pack: tile it.
+        case pattern(CGImage)
+        /// Nobody could say. The renderer marks it.
+        case unknown(String)
+    }
+
+    /// The pack's `manifest.json`, read once.
+    private static let manifest: [String: Any]? = {
+        guard let root = AssetPack.root,
+              let data = try? Data(contentsOf:
+                root.appendingPathComponent("manifest.json")),
+              let object = try? JSONSerialization.jsonObject(with: data)
+        else { return nil }
+        return object as? [String: Any]
     }()
+
+    private static func image(_ relative: String) -> CGImage? {
+        guard let root = AssetPack.root else { return nil }
+        let url = root.appendingPathComponent(relative)
+        guard let data = try? Data(contentsOf: url),
+              let src = CGImageSourceCreateWithData(data as CFData, nil)
+        else { return nil }
+        return CGImageSourceCreateImageAtIndex(src, 0, nil)
+    }
+
+    /// Resolve the desktop for a screen of this size.
+    ///
+    /// The size test is the load-bearing part and it is not fussiness:
+    /// Mac OS 9 ships desktop pictures at 800×600, 1024×768 AND 832×624,
+    /// and the alignment field that says what to do with a mismatch is
+    /// recorded as `null` by the offline route. Drawing an 832×624 picture
+    /// on an 800×600 screen at the origin would silently crop it and look
+    /// like a render bug; scaling it would look like a different picture.
+    /// Neither is a fact, so a mismatch is an unknown.
+    public static func answer(screen: CGSize) -> Answer {
+        guard let desktop = manifest?["desktop"] as? [String: Any] else {
+            return .unknown("the asset pack does not say what this guest's "
+                            + "desktop is")
+        }
+        let kind = desktop["kind"] as? String
+        let file = desktop["file"] as? String
+        switch kind {
+        case "picture":
+            guard let w = desktop["w"] as? Int, let h = desktop["h"] as? Int
+            else { return .unknown("the desktop picture has no size") }
+            guard CGFloat(w) == screen.width, CGFloat(h) == screen.height
+            else {
+                return .unknown("the desktop picture is \(w)×\(h) and this "
+                                + "screen is \(Int(screen.width))×"
+                                + "\(Int(screen.height)); the alignment that "
+                                + "would say what to do was not readable")
+            }
+            guard let file, let art = image(file) else {
+                return .unknown("the desktop picture's art is not in the pack")
+            }
+            return .picture(art)
+        case "pattern":
+            guard let name = desktop["name"] as? String,
+                  let art = image("patterns/appearance/\(name).png") else {
+                return .unknown("this guest's pattern is not in the pack")
+            }
+            return .pattern(art)
+        default:
+            return .unknown("the pack does not name a desktop kind")
+        }
+    }
+
+    /// Retired, and deliberately left as a name that answers nil. Nothing
+    /// may go back to tiling one file unconditionally; ``answer(screen:)``
+    /// is the question.
+    @available(*, deprecated, message: "use answer(screen:); a tiled ppat 16 is a guess, not the guest's desktop")
+    public static var tile: CGImage? { nil }
 }

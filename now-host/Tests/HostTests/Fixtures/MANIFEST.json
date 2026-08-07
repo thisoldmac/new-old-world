@@ -85,6 +85,18 @@
    }
   },
   {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-sweep18a-finder-icon.json",
+   "sha256": "f288c1221cc56877366b2cfc27928e4d9519c96d688b0d11410a416842fac27a",
+   "bytes": 86604,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786049334.0,
+    "version": 2
+   }
+  },
+  {
    "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-blitsrc-control.json",
    "sha256": "ce001825c14fa0d749d430d22b89c3f2ee5baeaea48fd8e405eff8e4a050b859",
    "bytes": 4144,
@@ -425,6 +437,20 @@
     "build": "1bff0bd2ca39",
     "vm": "nowvm-fsw1",
     "run": "fidelity-sweep stickies (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep18a-finder-icon.json",
+   "sha256": "9fe6baf6d7f3ef78fafb18a763b732ca1ebc389f501d8642a43489c4b3d317ab",
+   "bytes": 37568,
+   "ops": 226,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "59dce8562ad4",
+    "vm": "nowvm-sw18a",
+    "run": "fidelity-sweep finder (record mode, worlds hooked at birth)",
     "capturedAt": "2026-08-06",
     "guest": "mac99/OS 9.1 emulated"
    }
