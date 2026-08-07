@@ -151,6 +151,13 @@ public enum UnknownVisual {
         return Image(decorative: cg, scale: 1)
     }()
 
+    /// The lattice cell, shared with `ProvisionalVisual` — which is the whole
+    /// reason it is not `private` any more. Two textures for one idea is the
+    /// defect this arc has merged away twice; a sibling that says "not yet
+    /// real" must be visibly the same family as the one that says "not
+    /// known", or the two become separate vocabularies by drift.
+    static var latticeTile: Image { tile }
+
     /// Where the caption's baseline goes, or nil if the rectangle is too
     /// small to carry one honestly.
     ///
@@ -162,5 +169,134 @@ public enum UnknownVisual {
               frame.height >= minCaptionHeight else { return nil }
         return CGPoint(x: frame.minX + captionInset,
                        y: (frame.midY + ascent / 2).rounded())
+    }
+}
+
+/// **The provisional drag — rung 4's sibling, and the same decision made
+/// once.**
+///
+/// The presentation contract Michelle gave for slice 10.5:
+///
+/// 1. Do not wait for confirmation to begin showing the drag — the item moves
+///    with the pointer immediately.
+/// 2. Until the select is confirmed, the item shows as **provisional** —
+///    visible at a glance as not yet real.
+/// 3. Releasing before confirmation snaps the item back home.
+/// 4. A failed select response also snaps it back home.
+///
+/// Rules 3 and 4 are `LiveMirrorView`'s; this file owns rule 2, and owns it
+/// alone. It lives beside `UnknownVisual` rather than in the drag code
+/// because they are one idea in two tenses — *we do not know this* and *we do
+/// not know this YET* — and the arc has twice had to merge away a second
+/// visual vocabulary for a decision that already had one.
+///
+/// ## Why it is not simply the marked unknown
+///
+/// Because a marked unknown is a hole in a picture and a provisional drag is
+/// an OBJECT. The unknown replaces content nobody can supply; the provisional
+/// item has perfectly good content — the icon and its name — and what is in
+/// doubt is not the drawing but the STATE. So the item is drawn, in full, and
+/// the marking sits around and under it: it is recognisably the thing being
+/// dragged, recognisably not yet placed.
+///
+/// ## The anchoring decision, which is the trap
+///
+/// `UnknownVisual`'s stipple is anchored to the **context** origin,
+/// deliberately: a static rectangle that shifts a pixel between frames must
+/// not make its texture crawl, and two adjacent unknowns should share one
+/// continuous field.
+///
+/// **A provisional item inherits that and swims.** It moves with the pointer
+/// by definition, so a context-anchored lattice would stay nailed to the
+/// screen while the item slid across it — the texture would visibly flow
+/// through the object, which reads as a rendering fault rather than as a
+/// state. The same property that makes the unknown stable makes the ghost
+/// wrong.
+///
+/// So this one is anchored to the **rectangle**: the context is translated to
+/// the ghost's top-left before the tile is laid, which puts the lattice
+/// origin on the object. The texture then rides with the item and the ghost
+/// reads as one moving thing.
+///
+/// Both anchorings are correct, for opposite reasons, and the reason is the
+/// same in both cases: *the texture belongs to whatever the reader will
+/// perceive as holding still.* For a hole in a window, that is the window.
+/// For an item under the pointer, it is the item. `ProvisionalDragRenderTests`
+/// pins the pair, because nothing else about the two files would notice if a
+/// later edit unified them.
+public enum ProvisionalVisual {
+
+    // MARK: - The definition (swap here, nowhere else)
+
+    /// The dragged item's own art, dimmed. Classic Mac drag feedback is a
+    /// 50%-grey outline of the icon; this is the same idea in a medium that
+    /// has alpha, and it keeps the item identifiable — a person needs to see
+    /// WHICH file is in flight.
+    public static let itemOpacity: Double = 0.55
+
+    /// The plate the ghost sits on, carrying the unknown's own lattice so the
+    /// two read as one family.
+    public static let ground = UnknownVisual.ground
+
+    /// The edge. A shade firmer than the unknown's, because this rectangle is
+    /// an object with a boundary rather than the extent of a gap.
+    public static let edge = Color(hex: 0xA0A0A0)
+
+    /// The corner glyph's ink — the "not yet real" mark itself.
+    public static let markInk = Color(hex: 0x808080)
+
+    /// Side of the square the mark occupies, at the ghost's top-left.
+    public static let markSize: CGFloat = 9
+
+    /// Padding around the item's art, so the plate is visible as a plate.
+    public static let inset: CGFloat = 2
+
+    // MARK: - Drawing
+
+    /// The plate a provisional item rides on: ground, rectangle-anchored
+    /// stipple, edge. The caller draws the item's own art over it at
+    /// `itemOpacity`, and then `drawMark`.
+    ///
+    /// Small enough that a caller could inline it, and that is exactly why it
+    /// is here instead.
+    public static func drawPlate(in ctx: GraphicsContext, frame: CGRect) {
+        guard frame.width > 1, frame.height > 1 else { return }
+        var plate = ctx
+        plate.clip(to: Path(frame))
+        /* THE ANCHORING. Translating first puts the tile's origin on the
+           rectangle rather than on the context, so the lattice travels with
+           the ghost instead of the ghost swimming through it. */
+        plate.translateBy(x: frame.minX, y: frame.minY)
+        let local = CGRect(origin: .zero, size: frame.size)
+        plate.fill(Path(local), with: .tiledImage(UnknownVisual.latticeTile))
+        plate.stroke(Path(local.insetBy(dx: 0.5, dy: 0.5)),
+                     with: .color(edge), lineWidth: 1)
+    }
+
+    /// The mark: a small hollow square with a gap in its lower-right, drawn
+    /// at the ghost's top-left corner.
+    ///
+    /// **Not a caption and not an alert triangle.** A word would repeat on
+    /// every dragged item and would not survive a 16×16 list row, and a
+    /// warning glyph says "something is wrong" when nothing is — the item is
+    /// merely not confirmed yet. An open, unclosed box is the smallest thing
+    /// that reads as *incomplete* rather than as *broken*, and it survives
+    /// being drawn at 9 points.
+    public static func drawMark(in ctx: GraphicsContext, frame: CGRect) {
+        guard frame.width >= markSize * 2, frame.height >= markSize * 2 else {
+            /* Too small to carry the mark honestly — a list row's 16×16 box.
+               The plate and the dimmed art are still the marking there, which
+               is the same bargain `UnknownVisual` strikes with its caption. */
+            return
+        }
+        let box = CGRect(x: frame.minX + 1, y: frame.minY + 1,
+                         width: markSize, height: markSize)
+        var path = Path()
+        path.move(to: CGPoint(x: box.midX, y: box.maxY))
+        path.addLine(to: CGPoint(x: box.minX, y: box.maxY))
+        path.addLine(to: CGPoint(x: box.minX, y: box.minY))
+        path.addLine(to: CGPoint(x: box.maxX, y: box.minY))
+        path.addLine(to: CGPoint(x: box.maxX, y: box.midY))
+        ctx.stroke(path, with: .color(markInk), lineWidth: 1)
     }
 }
