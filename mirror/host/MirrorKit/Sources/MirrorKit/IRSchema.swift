@@ -448,7 +448,11 @@ public enum IRSchema {
         "Scene.DialogItem.visible", "Scene.DialogItem.ref",
         "Scene.DialogItem.semantic",
         "Scene.Semantics.knowledge", "Scene.Semantics.kind",
-        "Scene.Semantics.definition", "Scene.Semantics.cdef",
+        "Scene.Semantics.definition",
+        // Additive and optional, and it rides the same rule as
+        // `definition`: present only where `kind` is absent. A v2 consumer
+        // that has never heard of it loses a diagnosis, never a kind.
+        "Scene.Semantics.cdef",
         "Scene.Semantics.action", "Scene.Semantics.state",
         "Scene.Semantics.value", "Scene.Semantics.selection",
         "Scene.Semantics.listCells", "Scene.Semantics.listTotalCount",
