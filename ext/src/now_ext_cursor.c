@@ -85,6 +85,17 @@
    two addresses is how the pair drifts. */
 static volatile UInt8 *volatile gCrsrNew = (volatile UInt8 *)0x08CEUL;
 static volatile UInt8 *volatile gCrsrCouple = (volatile UInt8 *)0x08CFUL;
+/* CrsrObscure (0x08D2). Non-zero means an application called
+   ObscureCursor - "hide the arrow, the person is typing" - and the
+   cursor stays invisible UNTIL THE MOUSE MOVES. SimpleText does it on
+   every keystroke; so does every text editor on this machine.
+
+   We are the mouse moving. Clearing it is what the pointing device's own
+   driver does on the next report, and without it P8 draws faithfully
+   into an invisible cursor: watched 2026-08-07, `route` correct,
+   `by_device` climbing, CrsrObscure 0x01 and zero pixels, which is
+   indistinguishable from the plane not working at all. */
+static volatile UInt8 *volatile gCrsrObscure = (volatile UInt8 *)0x08D2UL;
 
 /* _CursorDeviceDispatch. Passed whole, the way now_content.c passes
    _QDExtensions; NGetTrapAddress masks it. */
@@ -253,6 +264,7 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
            The drag vehicle does not, which is why the flag exists and
            why a drag still reports `device` and is still invisible. */
         (void)now_cdm_move_to(gDevice, (long)h, (long)v);
+        *gCrsrObscure = 0;
         HideCursor();
         ShowCursor();
         gRedrawOwed = false;
@@ -338,6 +350,7 @@ void now_ext_cursor_gne(NowPeekTable *table)
             return;                 /* somebody else has it now */
         }
     }
+    *gCrsrObscure = 0;
     HideCursor();
     ShowCursor();
     cell = now_ext_cursor_cell(gTable);
