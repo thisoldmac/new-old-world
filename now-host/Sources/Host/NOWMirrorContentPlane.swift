@@ -104,6 +104,50 @@ final class NOWMirrorContentPlane {
     /// `rehome`, which double-counted it until 2026-08-07.
     private var sourceBirth: [SourceKey: [Int]] = [:]
     private var evictedSourceCount = 0
+    /// **THE GENERATION EACH PORT'S HELD OPS WERE RECORDED UNDER**, which is
+    /// not always the generation of the blit that comes to place them.
+    ///
+    /// A world's ops arrive before the blit that reveals them — that is the
+    /// whole reason they are held — and `generation` moves on every RE-ARM,
+    /// which happens on a 9-minute timer against a 10-minute guest TTL. So a
+    /// renewal landing between a world's drawing and its placing blit is not
+    /// exotic: it is routine, and until this ledger existed the lookup used
+    /// the BITS record's generation, missed, and the composite never joined.
+    /// The failure was at least honest — the bits op falls through and the
+    /// renderer hatches it — but honest is not the same as correct.
+    ///
+    /// The generation stays in ``SourceKey`` because a disposed world's
+    /// address is reused by the next `NewGWorld` of the same size (measured
+    /// 2026-08-06: `0x1ea59e00` twice running), and two different worlds must
+    /// never share a bucket. What changes is only WHICH generation a lookup
+    /// quotes: the one the ops were written under, tracked here, rather than
+    /// the one the reader happens to be standing in.
+    ///
+    /// **WHAT THIS GIVES UP, stated rather than discovered later.** A bare
+    /// generation change used to void the join, and that was read as a guard
+    /// against address reuse. It cannot be: from the wire, "a re-arm happened
+    /// between this world's ops and its blit" and "this world was disposed
+    /// and its address reused" look identical if generation is all you
+    /// consult — and the first is ROUTINE, because the arm renews every nine
+    /// minutes against a ten-minute TTL. So the void was firing constantly on
+    /// live worlds to catch a case it could not actually identify.
+    ///
+    /// Reuse is now guarded by the evidence that can tell them apart: the
+    /// guest's own `worlddied`, which releases the hold outright. The
+    /// residual is a world disposed and its address reused with the death
+    /// record never reaching this host — and there the join is wrong, where
+    /// before every join across a renewal was missing.
+    private var sourceGeneration: [UInt32: Int] = [:]
+
+    /// The key `port`'s held ops actually live under. Falls back to the
+    /// caller's own generation when this host has never held anything for
+    /// that port — in which case the lookup was going to miss either way,
+    /// and missing under the caller's generation is the older behaviour.
+    private func heldSourceKey(_ port: UInt32,
+                               orUnder generation: Int) -> SourceKey {
+        SourceKey(port: port,
+                  generation: sourceGeneration[port] ?? generation)
+    }
 
     /* ── ONE CLOCK (plan 018 slice 1) ──────────────────────────────────
        Three small ledgers, and between them they answer the only question
@@ -528,12 +572,19 @@ final class NOWMirrorContentPlane {
                    composite is gone, which beats any retention guess -
                    and neither record is drawing, so neither is held. */
                 if record.op.op == "worlddied" {
-                    let key = SourceKey(port: address,
-                                        generation: record.generation)
+                    /* RESOLVED THE SAME WAY THE JOIN IS, and it has to be:
+                       a death is now the ONLY thing that voids a hold, so a
+                       death arriving after a re-arm must find the ops it is
+                       about. Keyed on this record's own generation it would
+                       miss exactly when it matters most. */
+                    let key = heldSourceKey(address,
+                                            orUnder: record.generation)
                     if sourceOperations.removeValue(forKey: key) != nil {
                         sourceOrder.removeAll { $0 == key }
                         died += 1
                     }
+                    sourceGeneration[address] = nil
+                    sourceBirth[key] = nil
                     sourceLineage[key] = nil
                     /* THE DEATH REACHES THE COMPOSITE, which is the half
                        that was missing. Releasing the held ops was always
@@ -584,24 +635,24 @@ final class NOWMirrorContentPlane {
                     continue
                 }
                 portStates[address, default: PortState()].absorb(record.op)
+                /* Same key correction as the window branch below: the inner
+                   world's ops were recorded under whatever generation was
+                   current WHEN THEY WERE DRAWN, which a re-arm moves off. */
                 if record.op.op == "bits",
                    let inner = pendingBlitSource.removeValue(forKey: address),
-                   let heldOps = sourceOperations[
-                       SourceKey(port: inner, generation: record.generation)],
+                   case let innerKey = heldSourceKey(
+                       inner, orUnder: record.generation),
+                   let heldOps = sourceOperations[innerKey],
                    !heldOps.isEmpty,
                    let rehomed = Self.rehome(
                        heldOps, bits: record.op,
                        restoring: portStates[address] ?? PortState(),
                        into: portStates[address] ?? PortState(),
-                       bornAt: sourceBirth[SourceKey(
-                           port: inner,
-                           generation: record.generation)] ?? [0, 0]) {
+                       bornAt: sourceBirth[innerKey] ?? [0, 0]) {
                     appendSource(destKey, rehomed)
                     /* Composition nests, so lineage must too: this world's
                        pixels now depend on the inner world's life as well
                        as its own. */
-                    let innerKey = SourceKey(port: inner,
-                                             generation: record.generation)
                     sourceLineage[destKey, default: []].insert(innerKey)
                     sourceLineage[destKey, default: []]
                         .formUnion(sourceLineage[innerKey] ?? [])
@@ -677,8 +728,11 @@ final class NOWMirrorContentPlane {
             }
             if record.op.op == "bits",
                let source = pendingBlitSource.removeValue(forKey: address) {
-                let key = SourceKey(port: source,
-                                    generation: record.generation)
+                /* KEYED ON THE GENERATION THE OPS WERE RECORDED UNDER, not
+                   on this record's. See `sourceGeneration`: a re-arm between
+                   a world's drawing and its placing blit used to miss here
+                   and the composite never joined. */
+                let key = heldSourceKey(source, orUnder: record.generation)
                 if let heldOps = sourceOperations[key], !heldOps.isEmpty,
                    let rehomed = Self.rehome(
                        heldOps, bits: record.op,
@@ -1148,6 +1202,10 @@ final class NOWMirrorContentPlane {
             sourceOrder.append(key)
             sourceOperations[key] = []
         }
+        /* The one place a port's generation is LEARNED. Every hold goes
+           through here, so a later blit can always ask what generation this
+           port's ops were written under instead of assuming its own. */
+        sourceGeneration[key.port] = key.generation
         sourceOperations[key]!.append(contentsOf: ops)
         if sourceOperations[key]!.count > Self.operationCapPerWindow {
             sourceOperations[key]!.removeFirst(

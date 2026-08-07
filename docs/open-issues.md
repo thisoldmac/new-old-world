@@ -14,6 +14,55 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## WAS BROKEN, NOW FIXED: the blit join keyed on the wrong generation, and a guard that could not see what it claimed to (2026-08-07, `claude/019-window-flags-and-join`)
+
+**Verification level: TESTED.** Four mutations watched; nothing here has
+been near a guest.
+
+`NOWMirrorContentPlane` looked up a blit's held source with
+`SourceKey(port: source, generation: record.generation)` — **the BITS
+record's generation, not the generation the held ops were recorded
+under.** A world's ops arrive before the blit that places them, which is
+the entire reason they are held, so any re-arm in between missed the
+lookup and the composite never joined. It was left unfixed once because
+its failure is at least honest: the bits op falls through and the renderer
+hatches it. **That is a reason to defer, not to keep** — and its rate is
+coupled to arm frequency, because `join` renews every nine minutes against
+a ten-minute TTL, so it fired on machines nobody touched.
+
+Fixed by tracking the generation each port's ops were recorded under
+(`sourceGeneration`, learned in the one place a hold is created) and
+quoting that at the lookup. **Both sites**, and the second is worth its own
+line: the nested world-into-world branch had the identical defect and
+**no test at all**. Reverting it alone left every test in this file and in
+`NOWMirrorContentCoverageTests` green. It was found by mutation, not by
+reading, and it now has a test that fails against exactly that revert.
+
+### What was GIVEN UP, said plainly, because it looks like a deletion
+
+`testSourceAddressReuseAcrossGenerationsDoesNotJoin` asserted that a bare
+generation change voids the join, on the ground that a disposed world's
+address is reused by the next `NewGWorld` of the same size (measured
+2026-08-06: `0x1ea59e00` twice running). **The hazard is real and that
+guard could not see it.** From the wire, "a re-arm happened between this
+world's ops and its blit" and "this world was disposed and its address
+reused" are indistinguishable if generation is all you consult — and the
+first is the routine one. So it was voiding every join across a renewal to
+catch a case it could not identify.
+
+The guard now rests on the evidence that *can* tell them apart: the guest's
+own `worlddied`, which releases the hold outright, resolved through the
+same key the join uses so a death arriving after a renewal still finds the
+ops it is about. `testADeadWorldDoesNotJoinEvenAtAReusedAddress` replaces
+the old test and was watched failing against a mutation that stops the
+release — which also broke two real-capture tests, so the release is doing
+work on actual Date & Time and Appearance drains, not only in fixtures.
+
+**The residual, unfixed:** a world disposed and its address reused with the
+`worlddied` record never reaching this host would now join wrongly. Before,
+every join across a renewal was missing. Nothing measures how often the
+first happens.
+
 ## WAS BROKEN, NOW CLOSED: the zoom box — and the grow box is NOT the same fix (2026-08-07, `claude/019-window-flags-and-join`)
 
 **Verification level: TESTED**, against the machine's own pixels. Nothing
