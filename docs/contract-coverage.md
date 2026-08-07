@@ -194,7 +194,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 
 PPC handles **49** inbound types; NOW-68K handles **23**. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 44 command verbs and 14 hardware probes.
+these rows open into 47 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -224,7 +224,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **44 verbs.** Sixteen of
+The registry is `x-commands` in the contract: **47 verbs.** Sixteen of
 them landed on 2026-07-31 and are grouped at the foot of the table; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
@@ -278,10 +278,14 @@ number here has been found wrong by re-deriving it.
 | `winact` | move, resize, zoom or close one window | ✅ | ❌ |
 | `textget` | read one addressed text element | ✅ | ❌ |
 | `textset` | replace one addressed text element's contents | ✅ | ❌ |
-| `ctlact` | act on one control | ✅ | ❌ |
+| `ctlact` | act on one control — optionally at a NAMED POINT inside it, because a tab strip's centre is one particular tab and a list's centre is one particular row | ✅ | ❌ |
+| `dragpress` | press and hold the mouse button on one addressed element | ✅ | ❌ |
+| `dragmove` | move a held drag to a point | ✅ | ❌ |
+| `dragrelease` | release a held drag | ✅ | ❌ |
 | `ditemact` | select one addressed Dialog Manager item | ✅ | ❌ |
 | `menuact` | perform one menu command | ✅ | ❌ |
 | `activate` | bring one process forward, by serial number | ✅ | ❌ |
+| `cycle` | walk the App Switcher's own membership to bring a process forward when `activate` cannot | ✅ | ❌ |
 | `actselftest` | prove the act plane's trap ABI in one process | ✅ | ❌ |
 | `mouseloc` | where the pointer actually is, and where its PICTURE was last put | ✅ | ❌ |
 | `script` | run one AppleScript | ✅ | ❌ |
@@ -428,19 +432,29 @@ produced the first live sighting of the sampler's own stated limit — a
 backgrounded and its event passes never saw the change. See
 [open-issues.md](open-issues.md).
 
-**PPC serves 41 of 44.** `put` is console-only there and `cancel` is
+**PPC serves 44 of 47.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 42** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 47** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The twenty-nine it does not: `gestalt`, `catsearch`, `tail`,
-`reveal`, `vers`, `putstat`, `wirestat`, `key`, `net`, `mirror`, `hide`, the eleven of the
-act plane and the reference layer, the six registered on 2026-07-31 —
-`activate`, `actselftest`, `mouseloc`, `script`, `aesend`, `qdtrace` —
-and `transitions`.
+`front`. The **thirty-four** it does not, derived with `comm -23` over
+the sorted registry and its own table rather than listed from memory:
+`activate`, `actselftest`, `aesend`, `axsnap`, `axtree`, `catsearch`,
+`ctlact`, `cycle`, `desktop`, `ditemact`, `dragmove`, `dragpress`,
+`dragrelease`, `elements`, `gestalt`, `handle`, `hide`, `key`,
+`menuact`, `mirror`, `mouseloc`, `net`, `observe`, `putstat`, `qdtrace`,
+`reveal`, `script`, `tail`, `textget`, `textset`, `transitions`, `vers`,
+`winact`, `wirestat`.
+
+(That sentence read "13 of 42 … the twenty-nine it does not" until
+2026-08-07 and named a list four verbs short — `cycle` and the drag
+plane's three, none of which had a table row either. This is the
+enumeration-rots-at-merges failure in its usual shape: the table was
+right about what it contained and the prose restated a smaller,
+older version of it.)
 
 `transitions` is a **declared asymmetry, not an omission**, and it is
 the same one `qdtrace` and `mirror` already carry: all three read the
@@ -997,6 +1011,53 @@ between two derivations on one day is not a property of the command.)*
 > settled by RUNNING the commands below against the merged tree, which
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
+
+## Re-derived at the 019 integration round 4, 2026-08-07 (`claude/019-integration-4`)
+
+**This supersedes every derivation below.** Five lanes —
+`018-render-defects`, `018-cdef-classify`, `019-charcoal`,
+`019-cursor-follow`, `019-depth-and-face` — were merged into one tree and
+the five commands at the foot were run against the RESULT.
+
+| | Derived here | Round 3 said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 49 | — |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **47** | 47 | — |
+| PowerPC verbs served | **44** | 44 | — |
+| NOW-68K verbs served | **13** | 13 | — |
+| census probes, PPC / 68K | **14 / 14** | 14 / 14 | — |
+
+**Nothing moved again, and the second nothing is more interesting than
+the first.** `018-cdef-classify` classifies controls by CDEF resource id
+and gives `ctlact` a click point; `019-cursor-follow` makes the guest's
+drawn cursor follow and adds prose to `mouseloc`. Both are exactly the
+change these counts cannot see — new ARGUMENTS on existing verbs, and a
+new field on an existing message — and a reader who watched only this
+table would conclude the surface was untouched on a night when three
+things that had never been drivable became drivable. `comm -23` over the
+sorted registry and PowerPC lists still names the same three unserved
+verbs: `put`, `cancel`, `shotdiag`.
+
+**Round 3's section above claims `018-cdef-classify` and
+`019-cursor-follow` among its seven merged lanes, and they were not in
+its tree** — both branches conflicted against `claude/019-integration-3`
+when merged here, which they could not have done had they already
+landed. The counts round 3 recorded are unaffected (neither lane adds a
+verb), but the sentence naming what was in the tree is wrong, and it is
+left standing above with this note rather than edited, because a
+derivation record that gets quietly corrected stops being evidence.
+
+**What DID move is the table, and it had been wrong for two rounds.**
+The verb table carried 43 rows against a 47-verb registry: `cycle`
+(`018-anchor-acquisition`) and `dragpress` / `dragmove` / `dragrelease`
+(`018-drag`) had landed in the registry, been recorded in the round-2
+*counts*, and never been given rows. The prose under it restated the
+smaller table — "the registry is 44 verbs", "PPC serves 41 of 44",
+"NOW-68K serves 13 of 42 … the twenty-nine it does not" — three numbers
+and a list, each internally consistent with the others and none
+consistent with the contract. Rows added, prose re-derived, and the
+row-for-row check now passes with nothing on either side.
 
 ## Re-derived at the 019 integration round 3, 2026-08-07 (`claude/019-integration-3`)
 
