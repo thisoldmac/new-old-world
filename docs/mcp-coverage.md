@@ -1033,7 +1033,24 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-08-07, on `claude/018-mcp-revival`, by running
+Last derived: **2026-08-07**, on `claude/019-integration-3`, by running
+`swift test --filter MCPClientConformance` and `--filter MCPCoverage`
+against the merged tree of seven lanes. **No row moved**, and the run's
+own line is `served 0, refused 41, failed 0, uncovered 1` — 42 advertised
+tools, every one of which answered a real client, with no host running
+so a named refusal is the right answer for all of them. The one
+`uncovered` is `now_transfer_approved_artifact`, unchanged and for the
+reason its recipe states.
+
+Two things had to be fixed before that line could be produced, and both
+were merge artefacts rather than defects in either lane: `now_mirror_open`
+had no conformance recipe (`018-open-mirror` landed the row before
+`019-conformance` forked), and its reply is a **fourth** spelling of
+availability — `showing` beside `available`, `hostAvailable` and `ok`.
+Consolidating those four is the open item; see
+[open-issues.md](open-issues.md).
+
+Before that, 2026-08-07, on `claude/018-mcp-revival`, by running
 `swift test --filter MCPCoverage` — which reads the registry in process, so
 the tables below are what the running catalog says today. **No row moved**,
 and that is the finding rather than the absence of one: the seven tools this
