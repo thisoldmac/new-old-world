@@ -163,6 +163,45 @@ Before ending a turn where anything is in flight, in this order:
 5. **Name what is unverified**, separately from what is unfinished. They
    are different debts: one needs work, the other needs somebody to look.
 
+## An agent's report is not a durable artifact
+
+**A report lives in a transcript that will be compacted.** Everything in
+it — the finding, the caveat, the thing it could not close, the number it
+measured — is gone the moment the window rolls, unless somebody moves it.
+
+Michelle:
+
+> if you need to delegate new tasks to manage findings from an agent, you
+> can and should do that. just make sure they're durable and updated in
+> the plan etc.
+
+**So delegating follow-ups is encouraged, not rationed.** A lane that
+surfaces four things worth doing should produce four dispatches, not a
+paragraph of regret. The coordinator's job is to keep them moving, and an
+agent is cheap next to a lost finding.
+
+**Every item in a report leaves with exactly one of these, and the choice
+is made in the same pass as reading it:**
+
+1. **Dispatched** — an agent, now, with the finding quoted into its brief.
+2. **Written into the plan or `docs/`** — where the next person will meet
+   it without knowing to look.
+3. **Graduated to the corpus** — if it outlives this repository.
+4. **Explicitly dropped, with the reason**, which is a real option and
+   sometimes the right one.
+
+What is not on the list: *"noted"*. A finding acknowledged in a reply and
+nowhere else has been lost with extra steps.
+
+**Update the plan in the same pass.** Not "at the end" — the end is
+exactly when the context is gone. This arc corrected its own plan a dozen
+times as lanes came back, and every one of those corrections is now the
+only record that the earlier version was wrong.
+
+The test, and it is cheap: **if this session ended right now, would
+anything in that report survive?** If the answer is no for an item, it is
+not done being handled.
+
 ## A failed mechanism is not a result
 
 This gets handed off as done a lot, and it is worth naming precisely
