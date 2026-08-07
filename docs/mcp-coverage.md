@@ -1033,7 +1033,22 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-08-07, on `claude/018-mcp-revival`, by running
+Last derived: 2026-08-07, on `claude/019-integration-4`, by running
+`swift test --filter MCPCoverage` against the five-lane merge
+(`018-render-defects`, `018-cdef-classify`, `019-charcoal`,
+`019-cursor-follow`, `019-depth-and-face`) as part of a green
+`scripts/test-all`. **No row moved and no list rotted** — the unnoticed
+paragraph's thirteen names still match the `awk` over the Disposition
+column exactly, which is the first round since that list was written
+where the check found nothing to fix. Two of the merged lanes widened
+verbs the surface already exposes rather than adding rows: `ctlact`
+gained a click point and `mouseloc` gained prose. **A projection that
+does not pass `h`/`v` through cannot aim a click at a tab or a list
+row**, and nothing in these tables can see that, because they count rows
+and this is an argument — the same blind spot `contract-coverage.md`
+recorded at round 4 for the same pair of lanes.
+
+Before that, 2026-08-07, on `claude/018-mcp-revival`, by running
 `swift test --filter MCPCoverage` — which reads the registry in process, so
 the tables below are what the running catalog says today. **No row moved**,
 and that is the finding rather than the absence of one: the seven tools this
