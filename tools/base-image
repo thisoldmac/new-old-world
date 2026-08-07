@@ -1,0 +1,514 @@
+#!/usr/bin/env python3
+"""WHICH base image should I be cloning, and is it FIT to clone?
+
+    tools/base-image which                     # the designated PPC base
+    tools/base-image which --purpose oracle
+    tools/base-image fit <image> --purpose ppc-work --stages-resident
+    tools/base-image fit --purpose 68k <image>
+
+WHY THIS FILE EXISTS, and it is a recurrence rather than a worry.
+
+Four times now a run has been pointed at a base image nobody meant, and
+each fix guarded the layer that had just failed while the next failure
+happened one layer away:
+
+  1. 2026-08-06 — the shared stage image was three days old while SIX
+     extension commits had landed that day. Every session cloned it,
+     staged a fresh build into a throwaway clone, and discarded the
+     clone. The rule was already written in docs/open-issues.md and
+     nothing checked it. `tools/ext-bake-gate` came out of that.
+  2. Three bakes in one night installed images whose HFS volume was
+     still marked mounted. `qemu-img check` said `clean` for all three,
+     because it answers a different question. `tools/volclean.py` came
+     out of that.
+  3. 19 July → 2026-08-07 — `os91-runner.qcow2` sat dirty for nineteen
+     days, opening a modal that waits for a dismissal on every clone.
+     Nobody noticed: the anchor came up at 167 s behind it.
+  4. 2026-08-07 — `scripts/spin-up-ppc` DEFAULTED to `os91-runner.qcow2`
+     rather than the stage image, in one line of shell, with a comment
+     twenty lines further down saying so. So a whole arc of lanes cloned
+     a 19 July image. That is failure 1 again, one layer down, where no
+     gate was watching.
+
+The pattern is the finding. Bake is well gated; the CLONE SITES were not
+gated at all. And the answer to "which base" was spread across a default
+in a shell script, a comment contradicting it, `ext/stage-receipts.json`
+and prose in AGENTS.md — which is exactly the shape this project's own
+rule forbids: STATE A LIMIT ONCE, WHERE BOTH SIDES READ IT. This file is
+that one place, and every clone site consults it.
+
+WHAT IT CAN HONESTLY ASSERT: which path is designated for a purpose; that
+the bytes at a path are (or are not) claimed by a receipt in this branch;
+what the HFS volume inside says about its own last unmount; and whether
+the newest `ext/` work in THIS CHECKOUT is younger than the bake that
+covers those bytes. WHAT IT CANNOT: that a receipt is true, or that the
+file will still be these bytes in a minute — the oracle is shared and the
+last bake wins.
+
+WARN OR REFUSE IS ARGUED PER CHECK, not settled once. The rule is
+`tools/ext-bake-gate`'s: refusing is right when the fix is in the
+caller's power and the failure would otherwise produce a WRONG RESULT
+THAT LOOKS RIGHT; warning is right when the fix is not something this
+caller can act on, or when the cost is inconvenience rather than a false
+conclusion. `verdicts()` below carries the table, one row per check, with
+its argument written beside it — because a gate whose severity nobody can
+account for gets forced past on the first inconvenient morning.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+# --- the one place the answer lives --------------------------------------
+# A purpose, not a path: "which image" has a different right answer for a
+# PPC sweep, a bake, and a 68K run, and every previous version of this
+# answer was a bare default that could not tell them apart.
+#
+# ppc-work  ordinary PowerPC guest work: sweeps, fidelity passes, UI
+#           drives, anything scripts/spin-up-ppc boots. The DESIGNATED
+#           base is the stage image, because it is the one file anybody
+#           can account for; os91-runner.qcow2 is a plain base that no
+#           receipt covers and that carries no resident at all.
+# oracle    a run whose CONCLUSION is about the resident BAKED into the
+#           image — i.e. one that does not stage a fresh resident of its
+#           own. Same file, stricter checks.
+# bake      scripts/bake-ext-image's starting point. Also the stage image:
+#           a private bake is "the oracle, plus my resident".
+# 68k       the 68K base named only by .env.lab. There is exactly one, so
+#           there is nothing to designate — the checks that apply are the
+#           ones about the file itself.
+STAGE_IMAGE = os.path.expanduser(
+    os.environ.get("NOW_STAGE_IMAGE",
+                   "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2"))
+PLAIN_BASE = os.path.expanduser(
+    os.environ.get("NOW_PLAIN_BASE",
+                   "~/Lab/Assets/os91-qemu/os91-runner.qcow2"))
+
+PURPOSES = {
+    "ppc-work": STAGE_IMAGE,
+    "oracle": STAGE_IMAGE,
+    "bake": STAGE_IMAGE,
+    "68k": None,          # named by .env.lab; nothing to designate
+}
+
+FORCE_ENV = "NOW_BASE_FORCE"
+FORCE_REASON_ENV = "NOW_BASE_FORCE_REASON"
+
+GATED_SOURCE = ("ext", "contract/peek_table.h")
+
+
+def designated(purpose: str) -> str | None:
+    if purpose not in PURPOSES:
+        raise SystemExit(f"unknown purpose {purpose!r} "
+                         f"(one of {', '.join(sorted(PURPOSES))})")
+    return PURPOSES[purpose]
+
+
+# --- borrowed, not re-derived --------------------------------------------
+# tools/image-provenance already hashes the file, reads the receipts and
+# asks the volume. Re-implementing any of that here would be a second
+# place to be wrong about the same bytes, which is the defect class this
+# whole family of tools exists for.
+def _provenance_module():
+    # SourceFileLoader by name, because `image-provenance` has no `.py`
+    # suffix and spec_from_file_location alone returns a spec with no
+    # loader for a file it cannot classify — which fails as an
+    # AttributeError three frames away from the cause.
+    path = os.path.join(HERE, "image-provenance")
+    spec = importlib.util.spec_from_loader(
+        "now_image_provenance",
+        importlib.machinery.SourceFileLoader("now_image_provenance", path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def git(root: str, *args: str) -> str | None:
+    try:
+        return subprocess.run(["git", "-C", root, *args], capture_output=True,
+                              text=True, check=True).stdout.strip()
+    except Exception:
+        return None
+
+
+def newest_resident_commit(root: str) -> dict | None:
+    """The youngest commit in THIS CHECKOUT touching the gated source.
+
+    This is the 2026-08-06 question asked from the other end. That day
+    six ext/ commits landed while every session cloned a three-day-old
+    image, and nothing compared the two dates.
+    """
+    out = git(root, "log", "-1", "--format=%H%x00%cI%x00%s", "--",
+              *GATED_SOURCE)
+    if not out:
+        return None
+    parts = out.split("\0")
+    if len(parts) < 3:
+        return None
+    return {"commit": parts[0], "date": parts[1], "subject": parts[2]}
+
+
+def worktree_ext_digest(root: str) -> str | None:
+    gate = os.path.join(root, "tools", "ext-bake-gate")
+    if not os.path.exists(gate):
+        return None
+    try:
+        got = subprocess.run([sys.executable, gate, "digest", "--worktree"],
+                             cwd=root, capture_output=True, text=True,
+                             check=True).stdout.strip()
+        return got or None
+    except Exception:
+        return None
+
+
+# --- the table ------------------------------------------------------------
+
+def verdicts(image: str, purpose: str, stages_resident: bool,
+             root: str | None = None) -> dict:
+    """Every check, its state, and — per check — whether it refuses.
+
+    A finding is {check, state, severity, headline, action}. `severity`
+    is "refuse", "warn" or "ok"; `action` is what the READER should do,
+    and it is not optional. Four lanes read a true warning on 2026-08-06
+    and correctly did nothing, because it named an action none of them
+    could safely take. A warning nobody can act on is broken however true
+    it is.
+    """
+    root = root or ROOT
+    prov = _provenance_module()
+    image = os.path.abspath(os.path.expanduser(image))
+    want = designated(purpose)
+    p = prov.describe(image, root, label=f"base for {purpose}")
+    findings: list[dict] = []
+
+    def add(check, state, severity, headline, action):
+        findings.append({"check": check, "state": state, "severity": severity,
+                         "headline": headline, "action": action})
+
+    # 1. IS THERE A FILE. Refuses, always: a clone of a file that is not
+    #    there is not a slower run, it is no run.
+    if not p["imageExists"]:
+        add("exists", "missing", "refuse",
+            f"there is no file at {image}",
+            "Name a base that exists, or ask the lane that was going to "
+            "bake one. `tools/base-image which --purpose "
+            f"{purpose}` prints the designated path.")
+        return _summarise(image, purpose, stages_resident, p, findings)
+
+    # 2. IS IT THE DESIGNATED BASE.
+    #    WARN by default: a lane's own private bake is a legitimate base
+    #    and refusing it would break the documented throwaway workflow.
+    #    REFUSE for purpose=oracle: there the run's conclusion is about
+    #    the resident baked into "the" stage image, and quoting such a
+    #    result from a different file is a wrong answer that looks right.
+    if want is None:
+        add("designated", "no-designation", "ok",
+            "this image family has exactly one base, named by .env.lab",
+            "Nothing to choose. The checks below are about the file itself.")
+    elif os.path.realpath(image) == os.path.realpath(want):
+        add("designated", "designated", "ok",
+            f"this IS the designated base for {purpose}", "")
+    else:
+        sev = "refuse" if purpose == "oracle" else "warn"
+        add("designated", "not-designated", sev,
+            f"this is NOT the designated base for {purpose} — designated is "
+            f"{_tilde(want)}",
+            ("A result about the baked resident must come from the "
+             "designated base. Either boot the designated one, or say the "
+             "run is about your own image and drop --purpose oracle."
+             if sev == "refuse" else
+             "Fine if you meant it — a private bake or a plain base is a "
+             "legitimate thing to boot. If you did not mean it, unset "
+             "NOW_SPIN_BASE. Whatever you quote from this run, quote "
+             "$RUN/provenance.md with it: it names this file, not the "
+             "stage image."))
+
+    # 3. THE VOLUME. WARN, never refuse — and the argument is
+    #    ext-bake-gate's: a dirty shared base is not in this run's power
+    #    to fix, and it is not an error, only a slower boot behind a
+    #    dialog. Refusing here would strand a contributor for a reason
+    #    they cannot act on.
+    #    'unknown' IS ITS OWN STATE. An image that could not be read is
+    #    not clean; folding the two is how `qemu-img check` came to stand
+    #    in for a question it cannot answer.
+    vm = p.get("volumeMeasured") or {}
+    state = vm.get("state", "unknown")
+    if state == "clean":
+        add("volume", "clean", "ok",
+            "the HFS volume was cleanly unmounted; no Disk First Aid at boot",
+            "")
+    elif state == "dirty":
+        add("volume", "dirty", "warn",
+            "the HFS volume in this image is still marked MOUNTED — every "
+            "clone of it boots through a Disk First Aid pass",
+            "Your results stay valid; the boot is slower and a person "
+            "watching sees a repair dialog nobody asked for. The repair is "
+            "somebody's separate job, not this run's: boot the image, let "
+            "the check finish, and shut the guest down with "
+            "tools/shutdown-guest.py — never a QMP quit. Say in the channel "
+            "that you saw it, so it gets fixed once rather than tolerated "
+            "nineteen times.")
+    else:
+        add("volume", "unknown", "warn",
+            f"the volume could not be asked ({vm.get('error') or 'no reason given'}) "
+            "— which is NOT the same as clean",
+            "Usually a VM is holding the file open, in which case this is "
+            "harmless and the answer is to re-ask when it is down: "
+            f"tools/volclean.py {_tilde(image)}. Do not record this run as "
+            "having had a clean base.")
+
+    # 4. WHOSE RESIDENT IS IN IT, and is it older than this checkout's?
+    #    This is the 2026-08-06 failure, and it is the one that produces a
+    #    WRONG RESULT THAT LOOKS RIGHT: a plane measured against a resident
+    #    from before the work under test answers confidently and answers
+    #    about the wrong build.
+    #    REFUSE when the run does NOT stage a fresh resident. WARN when it
+    #    does — scripts/spin-up-ppc stages this checkout's ext and app into
+    #    the clone and cold-boots, so what is baked into the base is not
+    #    what is under test, and refusing would be false.
+    findings.append(_resident_finding(p, purpose, stages_resident, root))
+    return _summarise(image, purpose, stages_resident, p, findings)
+
+
+def _resident_finding(p: dict, purpose: str, stages_resident: bool,
+                      root: str) -> dict:
+    newest = newest_resident_commit(root)
+    matched = p.get("matchedReceipt") or p.get("sidecar")
+    sev_when_stale = "warn" if stages_resident else "refuse"
+    staging_note = (
+        "This run stages this checkout's own ext and app into the clone and "
+        "cold-boots, so the resident under test is YOUR build — that is why "
+        "this warns rather than refuses. It still matters for anything the "
+        "base itself carries (assets, fixtures, the Finder's own state)."
+        if stages_resident else
+        "This run does NOT stage a resident, so what is baked into the base "
+        "IS what you would be measuring.")
+
+    if not matched:
+        # TWO DIFFERENT SILENCES, and folding them would repeat the
+        # mistake this family of tools keeps paying for. A plain base was
+        # never baked and no receipt is expected of it — saying
+        # "unaccounted" there is the gate crying wolf about the normal
+        # case. The SHARED ORACLE with no matching receipt is the other
+        # thing entirely: somebody wrote that file and left nothing behind
+        # saying what is in it, which is precisely 2026-08-06.
+        plain = p.get("verdict") == "unbaked-base"
+        if plain:
+            head = ("no resident is baked into this base at all — it is a "
+                    "plain image no receipt covers")
+            sev = "ok" if stages_resident else "refuse"
+        else:
+            head = ("no receipt on this branch claims these bytes, so nobody "
+                    "can say which resident is inside")
+            sev = "warn" if stages_resident else "refuse"
+        return {"check": "resident", "state":
+                "no-resident" if plain else "unaccounted",
+                "severity": sev,
+                "headline": head,
+                "action": staging_note + (
+                    (" Whatever you quote from this run, quote "
+                     "$RUN/provenance.md with it — it is the only thing that "
+                     "will still name these bytes tomorrow. If the run is "
+                     "about the resident, re-bake: scripts/bake-ext-image."
+                     if not plain else "")
+                    if stages_resident else
+                    " Bake one first (scripts/bake-ext-image — private by "
+                    "default, ~5 minutes), or boot the designated base and "
+                    "check `tools/base-image fit` again.")}
+
+    baked_at = matched.get("at")
+    digest = matched.get("extDigest")
+    mine = worktree_ext_digest(root)
+    if mine and digest and mine == digest:
+        return {"check": "resident", "state": "current", "severity": "ok",
+                "headline": f"the baked resident IS this checkout's ext source "
+                            f"({str(digest)[:12]})",
+                "action": ""}
+
+    if newest and baked_at and _iso(newest["date"]) > _iso(baked_at):
+        return {"check": "resident", "state": "stale",
+                "severity": sev_when_stale,
+                "headline": (
+                    f"the resident in this base was baked {baked_at}, and "
+                    f"ext/ has moved since: {newest['commit'][:12]} "
+                    f"{newest['date']} — {newest['subject']}"),
+                "action": staging_note + (
+                    " Re-bake before measuring: scripts/bake-ext-image "
+                    "(private, ~5 minutes) and boot that with NOW_SPIN_BASE. "
+                    "Only --shared touches the file other lanes clone, and "
+                    "that is announced out loud."
+                    if not stages_resident else
+                    " If you are about to quote a number about the RESIDENT, "
+                    "re-bake first or say plainly which resident it came "
+                    "from — $RUN/provenance.md names it.")}
+
+    return {"check": "resident", "state": "accounted", "severity": "ok",
+            "headline": (f"a receipt claims these bytes: baked {baked_at}"
+                         + (f", extDigest {str(digest)[:12]}" if digest else "")),
+            "action": ""}
+
+
+def _iso(text: str) -> str:
+    """Sortable form of the two date shapes these files carry.
+
+    Receipts write `2026-08-06T01:00:00-0400`; git `%cI` writes
+    `2026-08-06T01:00:00-04:00`. Compared as text without this they sort
+    by their punctuation, which is the kind of quiet wrongness that put
+    this tool here.
+    """
+    from datetime import datetime
+    for form in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            dt = datetime.strptime(text, form)
+            if dt.tzinfo is None:
+                return dt.strftime("%Y%m%d%H%M%S")
+            return dt.astimezone().strftime("%Y%m%d%H%M%S")
+        except ValueError:
+            continue
+    try:
+        from datetime import datetime as _dt
+        return _dt.fromisoformat(text).astimezone().strftime("%Y%m%d%H%M%S")
+    except Exception:
+        return text
+
+
+def _tilde(path: str) -> str:
+    return path.replace(os.path.expanduser("~"), "~")
+
+
+def _summarise(image: str, purpose: str, stages_resident: bool, p: dict,
+               findings: list[dict]) -> dict:
+    refusals = [f for f in findings if f["severity"] == "refuse"]
+    warnings = [f for f in findings if f["severity"] == "warn"]
+    return {
+        "image": _tilde(image),
+        "purpose": purpose,
+        "stagesResident": stages_resident,
+        "designated": _tilde(designated(purpose)) if designated(purpose) else None,
+        "imageSha256": p.get("imageSha256"),
+        "provenanceVerdict": p.get("verdict"),
+        "findings": findings,
+        "verdict": "refuse" if refusals else ("warn" if warnings else "fit"),
+    }
+
+
+# --- saying it ------------------------------------------------------------
+
+MARK = {"refuse": "REFUSED", "warn": "WARNING", "ok": "ok"}
+
+
+def render(s: dict) -> str:
+    import textwrap
+    bar = "=" * 72
+    L = [bar, f"BASE IMAGE — {s['purpose']}", bar,
+         f"  image        {s['image']}"]
+    if s.get("imageSha256"):
+        L.append(f"  sha256       {s['imageSha256']}")
+    if s.get("designated"):
+        L.append(f"  designated   {s['designated']}")
+    L.append(f"  stages a fresh resident: "
+             f"{'yes' if s['stagesResident'] else 'NO'}")
+    L.append("")
+    for f in s["findings"]:
+        L.append(f"  [{MARK[f['severity']]:<7}] {f['check']}: {f['headline']}")
+        if f["action"]:
+            for chunk in textwrap.wrap(f["action"], 66):
+                L.append(f"             {chunk}")
+    L.append("")
+    if s["verdict"] == "refuse":
+        L.append("  VERDICT      REFUSED — this run would produce a result "
+                 "about the wrong")
+        L.append("               thing and look right doing it. Nothing has "
+                 "booted.")
+        L.append(f"               A deliberate override is a WRITTEN decision: "
+                 f"{FORCE_ENV}=1")
+        L.append(f"               {FORCE_REASON_ENV}=\"…\" — the reason is "
+                 "printed and goes into")
+        L.append("               the run's provenance, the way "
+                 "TBT_DEFER_EXT_BAKE does.")
+    elif s["verdict"] == "warn":
+        L.append("  VERDICT      fit to clone, with the warnings above. They "
+                 "are not")
+        L.append("               rhetorical: each names something to do and "
+                 "who can do it.")
+    else:
+        L.append("  VERDICT      fit to clone.")
+    L.append(bar)
+    return "\n".join(L)
+
+
+def forced() -> str | None:
+    if os.environ.get(FORCE_ENV) != "1":
+        return None
+    return os.environ.get(FORCE_REASON_ENV) or ""
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    w = sub.add_parser("which", help="print the designated base for a purpose")
+    w.add_argument("--purpose", default="ppc-work")
+
+    f = sub.add_parser("fit", help="check a base before cloning it")
+    f.add_argument("image", nargs="?")
+    f.add_argument("--purpose", default="ppc-work")
+    f.add_argument("--stages-resident", action="store_true",
+                   help="the caller stages this checkout's ext into the clone "
+                        "and cold-boots, so the base's own resident is not "
+                        "what is under test")
+    f.add_argument("--json", help="write the findings here")
+    f.add_argument("--quiet", action="store_true")
+    f.add_argument("--repo")
+
+    args = ap.parse_args(argv[1:])
+
+    if args.cmd == "which":
+        want = designated(args.purpose)
+        if want is None:
+            print(f"no designated base for purpose {args.purpose!r} — it is "
+                  "named by .env.lab", file=sys.stderr)
+            return 2
+        print(want)
+        return 0
+
+    image = args.image or designated(args.purpose)
+    if not image:
+        ap.error(f"purpose {args.purpose!r} has no designated base; name one")
+    s = verdicts(image, args.purpose, args.stages_resident,
+                 args.repo or ROOT)
+    if not args.quiet or s["verdict"] != "fit":
+        print(render(s), file=sys.stderr if s["verdict"] == "refuse" else sys.stdout)
+    if args.json:
+        os.makedirs(os.path.dirname(os.path.abspath(args.json)), exist_ok=True)
+        with open(args.json, "w") as fh:
+            json.dump(s, fh, indent=2)
+    if s["verdict"] == "refuse":
+        reason = forced()
+        if reason is None:
+            return 3
+        # The override exists because the enforcement is the floor and not
+        # the rule (AGENTS.md > Git, on TBT_ALLOW_MAIN). An override with
+        # no reason is refused: a decision nobody wrote down is the thing
+        # that made every one of these four failures unattributable.
+        if not reason.strip():
+            print(f"[base-image] {FORCE_ENV}=1 with no "
+                  f"{FORCE_REASON_ENV} — a deliberate override is a written "
+                  "decision. Set the reason and run again.", file=sys.stderr)
+            return 3
+        print(f"[base-image] OVERRIDDEN: {reason}", file=sys.stderr)
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
