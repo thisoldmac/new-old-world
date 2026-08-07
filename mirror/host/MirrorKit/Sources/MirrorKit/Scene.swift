@@ -189,6 +189,16 @@ public struct Scene: Codable, Equatable, Sendable {
         /// Process identity across captures. A PSN alone can be reused after
         /// an application quits, so reducers key continuity from this token.
         public var incarnation: String? = nil
+        /// The process's own declaration that it has no user interface —
+        /// `modeOnlyBackground` in its 'SIZE' resource, as the guest's
+        /// Process Manager reports it. "Headless" and "faceless" are the
+        /// same fact in prose.
+        ///
+        /// `nil` is NOT `false`. It means the producer did not say, which
+        /// is a different claim from "this process has a face"; a scene
+        /// from a guest that predates the field reads nil on every row.
+        /// Never derive it from a window count — see `ProcessPresence`.
+        public var backgroundOnly: Bool? = nil
         /// Per-app oracle error (`ax_oracle_*`), surfaced honestly.
         public var error: String?
     }
@@ -199,6 +209,10 @@ public struct Scene: Codable, Equatable, Sendable {
         public var front: Bool
         public var signature: String
         public var incarnation: String? = nil
+        /// See `AppRef.backgroundOnly`. Carried on both rows because the
+        /// two arrays are populated from the same Process Manager walk
+        /// and a consumer may hold either.
+        public var backgroundOnly: Bool? = nil
     }
 
     public struct Menubar: Codable, Equatable, Sendable {

@@ -79,10 +79,12 @@ final class IRFreezeTests: XCTestCase {
             version: IR.version, seq: 1, source: "axtree", capturedAt: 1,
             screen: .init(w: 800, h: 600),
             apps: [.init(psn: "0.1", name: "A", front: true,
-                         incarnation: "process-12345678", error: "e")],
+                         incarnation: "process-12345678",
+                         backgroundOnly: true, error: "e")],
             processes: [.init(psn: "0.1", name: "A", front: true,
                               signature: "MACS",
-                              incarnation: "process-12345678")],
+                              incarnation: "process-12345678",
+                              backgroundOnly: true)],
             menubar: .init(app: "A", menus: [
                 .init(title: "File", apple: false, left: 40, id: 128, items: [
                     .init(title: "New", index: 1, separator: false,
