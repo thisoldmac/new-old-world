@@ -286,24 +286,39 @@ extension MCPConformance {
     static func classify(structured: [String: Any],
                          live: Bool) -> (Verdict, String) {
         if let outcome = structured["outcome"] as? String {
-            switch outcome {
-            case "completed":
-                return (.served, "completed")
-            case "refused":
-                let failure = structured["refused"] as? [String: Any]
-                return refusal(failure, kind: "refused")
-            case "unavailable":
-                let failure = structured["unavailable"] as? [String: Any]
-                let code = (failure?["code"] as? String) ?? ""
+            let payload = structured[outcome] as? [String: Any]
+            /* `unavailable` is the one outcome name every family spells the
+               same, because they all carry the same type for it. */
+            if outcome == "unavailable" {
+                let code = (payload?["code"] as? String) ?? ""
                 if live, code == "now-host-unavailable" {
                     return (.failed, "answered now-host-unavailable while "
                             + "a host was running")
                 }
-                return refusal(failure, kind: "unavailable")
-            default:
-                return (.failed, "an outcome this driver does not know: "
-                        + outcome)
+                return refusal(payload, kind: "unavailable")
             }
+            /* **The shape decides, not the word.** Every family names its
+               own outcomes — `completed`, `captured`, `requestSent`,
+               `abandoned`, `stale`, `notFound` — and a driver holding a
+               list of those words would classify a new capability by not
+               recognising it. A refusal is a payload that is a code and a
+               sentence; anything else that carries a payload at all is an
+               answer.
+
+               The payload is not always under the outcome's own name: the
+               capture family answers `{"outcome":"captured","capture":{…}}`.
+               So a refusal is looked for under the outcome name, where the
+               families that have one put it, and everything else is judged
+               on whether the reply said anything besides its verdict. */
+            if let payload, payload["code"] is String,
+               payload["message"] is String {
+                return refusal(payload, kind: outcome)
+            }
+            guard structured.keys.contains(where: { $0 != "outcome" }) else {
+                return (.failed, "outcome \(outcome) and nothing else — a "
+                        + "verdict with no answer beside it")
+            }
+            return (.served, outcome)
         }
         /* `now_session_health` and the guest Files family keep their own
            envelopes; both say availability with a boolean beside a reason. */

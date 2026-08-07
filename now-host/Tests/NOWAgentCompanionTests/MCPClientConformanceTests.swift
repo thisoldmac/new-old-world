@@ -56,6 +56,8 @@ final class MCPClientConformanceTests: XCTestCase {
 
         try assertRecipesCoverExactly(advertised)
 
+        try requireTheBuildUnderTest(client)
+
         let rows = try run(advertised, through: client)
         print(Self.table(rows, live: Self.live))
 
@@ -88,6 +90,47 @@ final class MCPClientConformanceTests: XCTestCase {
                     .joined(separator: "\n"))
                 """)
         }
+    }
+
+    // MARK: Whose machine answered
+
+    /// **Which guest is on the other end, asserted before anything it says
+    /// is believed.**
+    ///
+    /// Every QEMU guest on this Mac sees the host as `10.0.2.2`, several
+    /// sessions run at once, and the agent endpoint was per-uid until
+    /// `NOW_AGENT_SOCKET_SUFFIX` — so a live run can be answered in full,
+    /// promptly and wrongly by another branch's Macintosh. AGENTS.md's
+    /// metal rule in its host-side form.
+    ///
+    /// `NOW_MCP_CONFORMANCE_BUILD` is the build prefix the run expects.
+    /// Absent, the run says out loud whose machine it reached rather than
+    /// silently accepting whichever one did, because a table nobody can
+    /// attribute to a build is not a measurement.
+    private func requireTheBuildUnderTest(_ client: MCPClient) throws {
+        guard Self.live else { return }
+        let reply = try client.request(
+            "tools/call",
+            params: ["name": "now_session_health", "arguments": [:]],
+            timeout: Self.callTimeout)
+        let structured = (reply["result"] as? [String: Any])?[
+            "structuredContent"] as? [String: Any]
+        let health = structured?["health"] as? [String: Any]
+        let guest = health?["guest"] as? [String: Any]
+        let build = (guest?["build"] as? String) ?? ""
+        let name = (guest?["name"] as? String) ?? "<no guest>"
+        print("=== conformance is driving: \(name), build \(build)")
+
+        guard let expected = ProcessInfo.processInfo
+            .environment["NOW_MCP_CONFORMANCE_BUILD"], !expected.isEmpty
+        else { return }
+        XCTAssertTrue(build.hasPrefix(expected), """
+            A live conformance run reached a guest whose build is \
+            \(build.isEmpty ? "<unreported>" : build), and this run expects \
+            \(expected). Any VM on this Mac can answer a host, and several \
+            sessions run here at once — a full table from the wrong \
+            Macintosh reads exactly like a passing one.
+            """)
     }
 
     // MARK: Totality
