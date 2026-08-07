@@ -36,8 +36,15 @@
 #   3. SESSION-PRIVATE CLONE, ALWAYS. tbt_clone_disk (APFS cp -c) is
 #      instant and free, and it is what lets parallel sessions run without
 #      image-lock collisions. The shared base stays pristine.
-#   4. COLLISION-SAFE PORTS. Another session may hold any given one, so
-#      probe and advance rather than attach to whatever answers.
+#   4. COLLISION-SAFE PORTS, AND THEY ARE DERIVED RATHER THAN ASSIGNED.
+#      tools/lane-ports hashes this worktree's path to a block of eight
+#      ports nobody else can pick, and claims it; probe-and-advance
+#      remains as the floor. It replaces a coordinating session handing
+#      out 1700/5250, 1710/5260, ... by hand, which on 2026-08-06 lost a
+#      lane's run to a port held by a VM nobody owned any more and put
+#      HostMachineGuardTests red for lane after lane over a NEIGHBOUR's
+#      QEMU. An explicit NOW_ANCHOR_PORT/NOW_WIRE_PORT still wins.
+#      docs/lane-ports.md.
 #   5. TEAR DOWN WHAT YOU STARTED, BY PATH - NOT WITH tools/stop.
 #      Rule 3 makes the run directory session-private via NOW_SPIN_RUN.
 #      The lab's tools/stop DOES NOT KNOW THAT VARIABLE: it derives its
@@ -190,18 +197,54 @@ PY
 # 10.0.2.2:5250 by default (prefs.c set_defaults, contract 5250), and
 # 10.0.2.2 under user-mode networking IS this Mac's loopback, so the
 # listener binds it directly and no forward is involved.
+#
+# THE DEFAULTS ARE DERIVED, NOT ASSIGNED. tools/lane-ports hashes this
+# worktree's path to a block of 8 ports in 12000-19999 and claims it, so
+# two lanes that never talk cannot pick the same pair and no coordinating
+# session has to hold the allocations in its head. That is what 1700+2n /
+# 5250+10n was, by hand, on 2026-08-06 — and it lost a lane's run to a
+# port held by a VM nobody owned any more. See docs/lane-ports.md.
+#
+# An explicitly-passed NOW_ANCHOR_PORT / NOW_WIRE_PORT still wins,
+# unchanged: a lane already in flight on a hand-assigned pair is not
+# disturbed by this, and neither is a machine already booted.
 port_free () { ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
-ANCHOR="${NOW_ANCHOR_PORT:-1700}"
-if [ -z "${NOW_ANCHOR_PORT:-}" ]; then
+#
+# The caller's own values are read BEFORE the derivation runs, because
+# `--env` sets NOW_ANCHOR_PORT and NOW_WIRE_PORT itself — a derivation
+# that overwrote them would silently move a lane that had asked for a
+# specific pair, which is the one thing this change must not do.
+ASKED_ANCHOR="${NOW_ANCHOR_PORT:-}"
+ASKED_WIRE="${NOW_WIRE_PORT:-}"
+LANE_ANCHOR=1700; LANE_WIRE=5250; LANE_BLOCK=""
+if [ -x "$NOW/tools/lane-ports" ] \
+   && lane_env="$("$NOW/tools/lane-ports" --lane "$NOW" --env 2>/dev/null)"; then
+    eval "$lane_env"
+    LANE_ANCHOR="$NOW_LANE_ANCHOR"; LANE_WIRE="$NOW_LANE_WIRE"
+    LANE_BLOCK="$NOW_LANE_BLOCK"
+    echo "lane block $LANE_BLOCK: anchor $LANE_ANCHOR wire $LANE_WIRE \
+(tools/lane-ports)"
+fi
+ANCHOR="${ASKED_ANCHOR:-$LANE_ANCHOR}"
+if [ -z "$ASKED_ANCHOR" ]; then
     tries=0
     while ! port_free "$ANCHOR"; do
         ANCHOR=$((ANCHOR + 2)); tries=$((tries + 1))
         [ "$tries" -gt 30 ] && { echo "no free anchor port"; exit 1; }
     done
+    # Advancing out of the derived block means something is running in
+    # this lane's own ports, which is almost always this lane's own
+    # orphaned VM — the case that lost a run on 2026-08-06. Say whose it
+    # is rather than sliding quietly onto a neighbour's block.
+    if [ -n "$LANE_BLOCK" ] && [ "$ANCHOR" != "$LANE_ANCHOR" ]; then
+        echo "note: lane anchor $LANE_ANCHOR was busy; advanced to $ANCHOR" >&2
+        "$NOW/tools/lane-ports" whose --port "$LANE_ANCHOR" >&2 || true
+        echo "  \`tools/lane-ports reclaim\` stops your own orphan cleanly" >&2
+    fi
 elif ! port_free "$ANCHOR"; then
     echo "requested anchor port $ANCHOR is in use (another session?)"; exit 1
 fi
-WIRE="${NOW_WIRE_PORT:-5250}"
+WIRE="${ASKED_WIRE:-$LANE_WIRE}"
 # NOW_SPIN_RESTRICT=1 isolates the guest from every host listener
 # (slirp restrict=on): its dial to 10.0.2.2:5250 fails exactly as it
 # does on hardware with no host up, while the anchor hostfwd still
@@ -220,6 +263,15 @@ HOSTFWD="hostfwd=tcp:127.0.0.1:${ANCHOR}-:1400"
 [ "$RESTRICT" = "1" ] && HOSTFWD="restrict=on,$HOSTFWD"
 printf '%s %s\n' "$ANCHOR" "$WIRE" > "$RUN/ports"
 echo "ports: anchor=$ANCHOR wire=$WIRE"
+
+# Record the machine against this lane's block, BEFORE it boots. The QMP
+# socket path is the load-bearing field: it is the only safe handle on a
+# VM, because the process holding a wire port is qemu itself and killing
+# by port kills the machine. Written first so a boot that dies halfway
+# still leaves something `tools/lane-ports reclaim` can find — an orphan
+# nobody recorded is exactly what cost a lane its run on 2026-08-06.
+[ -n "$LANE_BLOCK" ] && "$NOW/tools/lane-ports" attach --lane "$NOW" \
+    --qmp "$QMP" --run "$RUN" >/dev/null || true
 
 # A window a person will look at comes from tbt_human_display, not from a
 # backend spelled here: cocoa shears under the pointer and SDL is what fixed
@@ -274,7 +326,14 @@ echo "== boot a fresh, session-private clone =="
 boot fresh; wait_anchor
 
 echo "== stage the extension, the app and the shutdown applet =="
-NOW_ANCHOR_PORT="$ANCHOR" NOW_EXT_BIN="$EXT_BIN" NOW_APP_BIN="$APP_BIN" \
+# NOW_WIRE_PORT is passed EXPLICITLY, not left to the environment. The
+# guest's dialling book is written at stage time from this variable
+# (tools/stage-ext.py step 2b); without it the clone keeps the image's
+# saved 5250 and would dial whatever host session holds that — which is
+# the collision this whole scheme removes, arriving through the one path
+# that does not go over a port we chose.
+NOW_ANCHOR_PORT="$ANCHOR" NOW_WIRE_PORT="$WIRE" \
+    NOW_EXT_BIN="$EXT_BIN" NOW_APP_BIN="$APP_BIN" \
     NOW_SHUTDOWN_BIN="$SHUTDOWN_BIN" \
     python3 "$NOW/tools/stage-ext.py"
 
@@ -420,6 +479,9 @@ echo "remembering which image was involved."
 echo
 
 echo "anchor=127.0.0.1:$ANCHOR  wire=127.0.0.1:$WIRE  qmp=$QMP"
+[ -n "$LANE_BLOCK" ] && \
+    echo "stop:  $NOW/tools/lane-ports reclaim   # lane block $LANE_BLOCK; \
+guest-clean, then frees the run dir"
 echo "stop:  $NOW/tools/shutdown-guest.py $QMP --port $ANCHOR"
 echo "       # quits the front application, then launches the staged"
 echo "       # applet so the guest shuts ITSELF down. Leaves the VM up on"

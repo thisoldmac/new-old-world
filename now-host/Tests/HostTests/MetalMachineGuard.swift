@@ -228,11 +228,14 @@ enum MetalMachineGuard {
                 Port \(port) is already held on this Mac, so this run would \
                 either fail to bind or measure somebody else's transfer:
                   \(held.map(\.description).joined(separator: "\n  "))
+                \(LanePorts.attribution(ofPort: port, mine: LanePorts.mine(),
+                                        lanes: LanePorts.all()))
                 Another session's harness, a `deploy-68k --test` still \
                 running, or the NOW app itself (it lives on 5250). Give \
                 this run a port nothing else is dialling with \
-                NOW_METAL_PORT, or wait for the other one — do not race it. \
-                See docs/68k-metal-runbook.md.
+                NOW_METAL_PORT — `tools/lane-ports --env` exports one \
+                derived for this lane — or wait for the other one; do not \
+                race it. See docs/68k-metal-runbook.md.
                 """, file: file, line: line)
             throw Busy()
         }

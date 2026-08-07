@@ -63,11 +63,15 @@ final class HostMachineGuardTests: XCTestCase {
         }
         guard !held.isEmpty else { return }
         let who = held.map(\.description).joined(separator: "\n  ")
+        let whose = LanePorts.attribution(ofPort: port,
+                                          mine: LanePorts.mine(),
+                                          lanes: LanePorts.all())
         guard !overridden else {
             return print("""
                 === host machine guard: port \(port) is held, and \
                 NOW_ALLOW_BUSY_MACHINE says proceed anyway:
                   \(who)
+                \(whose)
                 Anything red in this run is unattributable. Say so.
                 """)
         }
@@ -75,6 +79,7 @@ final class HostMachineGuardTests: XCTestCase {
             Port \(port) is already held on this Mac, so this run is \
             measuring a machine somebody else is using:
               \(who)
+            \(whose)
             Usually the NOW app (it lives on \(port)), or another \
             worktree's `swift test`, which runs as a bare `xctest` and so \
             matches no `ps | grep` you are likely to try. Quit it and \
@@ -82,6 +87,50 @@ final class HostMachineGuardTests: XCTestCase {
             how this one went misread from 2026-08-02 to 2026-08-05 \
             (docs/open-issues.md). To proceed regardless and label the \
             result unattributable, set NOW_ALLOW_BUSY_MACHINE=1.
+            """)
+    }
+
+    /// What this lane's own port block is doing — reported, never failed.
+    ///
+    /// Deliberately not an assertion. A lane's VM holding the lane's own
+    /// anchor and wire is a *working* spin-up, and `swift test` does not
+    /// bind either of them; failing for it would be a guard that stops
+    /// honest work, which is the failure mode that gets guards routed
+    /// around.
+    ///
+    /// It is worth printing because the 2026-08-06 hazard was never that
+    /// a port was busy — it was that nobody could say whose it was. One
+    /// line naming this lane's block turns "something holds 1840" into
+    /// "your own orphaned VM, reclaim it".
+    func testThisLanesOwnPortBlockIsReported() throws {
+        guard let mine = LanePorts.mine() else {
+            return print("""
+                === host machine guard: tools/lane-ports did not answer, so \
+                this run has no derived port block and is back to whatever \
+                a coordinator handed it. Not a failure — the tool is \
+                additive — but see docs/lane-ports.md.
+                """)
+        }
+        let busy = mine.ports
+            .sorted { $0.key < $1.key }
+            .compactMap { role, port -> String? in
+                guard let held = MetalMachineGuard.holders(ofPort: port),
+                      !held.isEmpty else { return nil }
+                return "\(role) \(port): "
+                    + held.map(\.description).joined(separator: ", ")
+            }
+        guard !busy.isEmpty else {
+            return print("=== lane ports: block \(mine.block) "
+                         + "(\(mine.label)) — all free")
+        }
+        print("""
+            === lane ports: block \(mine.block) (\(mine.label)) has \
+            something running in it —
+              \(busy.joined(separator: "\n  "))
+            Yours by derivation, so this is your own VM. Not a failure: \
+            `swift test` binds none of these. `tools/lane-ports reclaim` \
+            stops it guest-clean through the recorded QMP socket path if \
+            it is an orphan.
             """)
     }
 
