@@ -14,6 +14,61 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## OPEN: a symbol census cannot see a duplicated definition, and round 8 landed one (2026-08-07, `claude/019-integration-8`)
+
+**Verification level: TESTED.** `scripts/test-all` GATE_EXIT=0 on the
+twelve-lane merge; host gate run twice (1892 tests, 0 failures, 54 then
+72 skipped — the documented single-command pair). Nothing metal.
+
+`tools/merge-census-gate` landed in this same round and was run before
+every one of the twelve merges. It reported **0 dropped, 0 imported
+self-reverts, 0 files gone** every time, and it was right each time. Then
+`mirror/host/MirrorKit/Sources/MirrorKit/WindowChrome.swift` **failed to
+compile** on `invalid redeclaration of 'hasTitleBar'`.
+
+Two branches had each added a byte-identical `hasTitleBar` to the same
+file at different offsets. Git merged them with no conflict, and the
+census could not object: **it asks whether a name is present, and the
+name was present twice.** A census counts names; it does not count how
+many of each.
+
+This is the same limit already written into the tool's own docstring for
+the *inside-a-function-body* case, arriving from the other direction, and
+it is worth stating as its own line because the two cases feel different
+and are not:
+
+- a definition the merge LOST — the census sees it (`DROPPED`);
+- a definition the merge DOUBLED — the census cannot;
+- a definition the merge kept while changing what it does — the census
+  cannot.
+
+Only the first is a census question. **The compiler caught this one, and
+nothing would have caught it in a language without a redeclaration
+error** — a duplicated Python `def` or a duplicated Markdown heading
+parses fine, and this repository has already paid for both (six duplicate
+`def`s; a docs entry gutted by keeping a newer heading). A `+1`/`-0`
+count per symbol would close it and is a small change to a tool that
+already builds the per-file symbol table it would need.
+
+**Three other things this merge found by reading that no gate reported:**
+
+- **A constant restated in prose auto-merged clean while being wrong.**
+  `WindowChrome.contentOrigin`'s doc said the titled render is off by
+  (1, 2) because `Platinum.contentTop = 22`. A sibling branch had already
+  taken it to 20 and moved the frame outside the scene rect. Neither side
+  conflicted, because they are different files. Corrected in place, dated.
+- **Two branches independently wrote down the same finding** (the 3,789
+  tracked worktree files), one proposing the fix and one performing it.
+  Both entries are kept and cross-referenced rather than collapsed,
+  because the duplication is the evidence.
+- **The two halves of one function landed on different branches.**
+  `RenderShot` gained a `cgImage` entry point on one lane and a
+  screen-unknown REFUSAL on another, both editing the same six lines.
+  Keep-both would have produced two function headers; the resolution was
+  to move the refusal down into `cgImage`, which `png` now delegates to,
+  so both callers pass one guard.
+
+
 ## PARTLY GATED: the silent self-revert now has two gates, and both ship unarmed (2026-08-07, `claude/019-merge-gates`)
 
 **Verification level: TESTED**, by replaying the real incident and by
