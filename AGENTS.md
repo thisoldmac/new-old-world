@@ -145,6 +145,16 @@ Both: comments say **why**, not what. Match the surrounding density.
   the build, machine and port beside every number and
   `NOW_METAL_REPEATS` samples the large rungs more than once
   ([docs/68k-metal-baseline.md](docs/68k-metal-baseline.md)).
+- **Your ports are derived, not asked for.** `tools/lane-ports` hashes
+  your worktree path to a block of eight ports nobody else can pick, and
+  `scripts/spin-up-ppc` already defaults to them — so no coordinating
+  session hands out `--port N` and no lane has to ask. It replaces
+  exactly that, and the hand-assigned scheme it replaces lost a lane's
+  run on 2026-08-06 to a port held by a VM nobody owned any more. The
+  guards now answer *whose* a held port is, and a block whose owner died
+  is reclaimable by its owner alone (`tools/lane-ports reclaim` — through
+  QMP by socket path, never `kill` on what `lsof` named).
+  [docs/lane-ports.md](docs/lane-ports.md).
 - `GuestWireConformanceTests` reads `now-guest-ppc/src/**/*.c` and checks every
   message the guest can emit against this side's decoder and the
   contract's required fields. **If you add a message built across

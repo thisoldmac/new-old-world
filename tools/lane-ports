@@ -615,7 +615,58 @@ def cmd_gc(args) -> int:
         removed += 1
     print(f"{removed} orphan block(s), {freed // (1 << 20)} MB"
           + (" would be freed" if args.dry_run else " freed"))
+    report_unrecorded_run_dirs()
     return 0
+
+
+def report_unrecorded_run_dirs(root: str = "/private/tmp") -> None:
+    """Run directories from BEFORE this scheme — named, never removed.
+
+    On 2026-08-06 these reached 11 GB and outlived their VMs, because a
+    run directory is created by whoever boots and removed by whoever
+    remembers. `gc` cleans the ones a claim records; these predate any
+    claim, so nothing here can tell whose they are — which is the same
+    unattributability the port scheme exists to end, one layer down.
+
+    Reported rather than swept, and that is deliberate. Whether a
+    `session.qcow2` is open is knowable (a running QEMU holds it), but
+    "no process has it open" is not the same as "nobody wants it": a lane
+    between two boots has a live run directory and no live process.
+    Deleting somebody's mid-flight clone to reclaim disk would be the
+    2026-08-03 mistake in a different currency.
+    """
+    stale = []
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return
+    for name in entries:
+        path = os.path.join(root, name)
+        if not name.startswith("nowvm-") or not os.path.isdir(path):
+            continue
+        if any(path in claim.get("runDirs", [])
+               for claim in (read_claim(int(f[:-5]))
+                             for f in (os.listdir(REGISTRY)
+                                       if os.path.isdir(REGISTRY) else [])
+                             if f.endswith(".json"))
+               if claim):
+            continue
+        disk = os.path.join(path, "session.qcow2")
+        busy = bool(os.path.exists(disk)
+                    and subprocess.run(["/usr/sbin/lsof", "-t", disk],
+                                       capture_output=True).stdout.strip())
+        stale.append((path, dir_size(path), busy))
+    if not stale:
+        return
+    total = sum(size for _, size, busy in stale if not busy)
+    print(f"\nrun directories not recorded by any lane ({root}/nowvm-*):")
+    for path, size, busy in stale:
+        print(f"  {size // (1 << 20):>5} MB  {path}"
+              + ("   <- a process still has its disk open" if busy else ""))
+    print(f"  {total // (1 << 20)} MB in the ones nothing has open. NOT "
+          "removed here: an idle run directory between two boots looks "
+          "exactly like an abandoned one, and this cannot tell them apart. "
+          "Ask whoever is working, then `rm -rf` the ones they disown.")
 
 
 def dir_size(path: str) -> int:
