@@ -110,8 +110,18 @@ Take each **where the target affords it**, and record ✓ / ✗ / n/a:
 - **A menu item lands where it was named** — and a press aimed at a menu
   whose position is unknown is *refused*, not armed at x=0.
 - **A window opens, closes, and the one behind it redraws.**
-- **Fronting a process makes its windows appear** (anchor acquisition),
-  and `cycle` populates an undriven machine.
+- **Fronting a process makes it OBSERVABLE**, and `cycle` populates an
+  undriven machine. **Not "makes its windows appear"** — an earlier draft
+  said that and it was wrong in a way that would have cost somebody an
+  hour. **Plenty of applications legitimately have no windows**, and the
+  two every agent meets first are among them: the Finder with nothing but
+  the desktop open, and NOW's own Workshop before its window is up.
+  <br>The check is the **distinction**, not the count: after fronting, a
+  process must answer its window list — and **zero windows reported as
+  `empty` is a pass**, because that is a fact about the machine. Only
+  `unknown` is a failure, because that is a fact about us. An agent that
+  reads "no windows" as "acquisition failed" will chase a defect that
+  is not there.
 - **The desktop shows its icons**, and one can be selected by name.
 - **Text is what the machine drew** — no glyph the guest truncated, no
   glyph the guest drew missing.
