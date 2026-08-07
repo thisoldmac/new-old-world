@@ -83,8 +83,23 @@
    after staging the point in MTemp. Without it a drag is invisible on a
    screendump, and a gesture nobody can watch is a gesture nobody can
    verify. */
-#define NOW_LM_CRSR_NEW     ((volatile UInt8 *)0x08CEUL)
-#define NOW_LM_CRSR_COUPLE  ((volatile UInt8 *)0x08CFUL)
+/* Reached through VOLATILE POINTER VARIABLES rather than cast constants,
+   and that is not style either. GCC folds `*(volatile UInt8 *)0x08CE`
+   into a dereference of a known-tiny address and rejects it under
+   -Werror=array-bounds as "likely at address zero" - a diagnostic that
+   is correct about every C program except one running inside a
+   Macintosh's low memory. Making the POINTER volatile means the compiler
+   must load it before each use and cannot reason about its value, which
+   is the narrowest possible way to say "I mean this address" - narrower
+   than -Wno-array-bounds on the file, which would also silence the
+   diagnostic on every real bug in it.
+
+   The addresses cannot come from LowMem.h: that header stops at CrsrBusy
+   (0x08CD), and its accessor macros expand to nothing under GCC (they
+   are 68K inline traps for other compilers), so declaring siblings that
+   way would produce undefined symbols rather than instructions. */
+static volatile UInt8 *volatile gCrsrNew = (volatile UInt8 *)0x08CEUL;
+static volatile UInt8 *volatile gCrsrCouple = (volatile UInt8 *)0x08CFUL;
 
 typedef struct {
     TMTask task;                /* first: the Time Manager owns this */
@@ -141,7 +156,7 @@ static void drag_place(NowPeekI32 h, NowPeekI32 v)
     LMSetMouseTemp(pt);
     LMSetRawMouseLocation(pt);
     LMSetMouseLocation(pt);
-    *NOW_LM_CRSR_NEW = *NOW_LM_CRSR_COUPLE;
+    *gCrsrNew = *gCrsrCouple;
 }
 
 /* The two writes that are the button, and nothing else. Separated from
