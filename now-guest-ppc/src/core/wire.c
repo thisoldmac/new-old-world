@@ -5406,13 +5406,18 @@ static void serve_software_list(const char *request)
    serial. Both verbs answer with the one process.result shape. */
 static void serve_process_act(const char *request, Boolean quit)
 {
-    char json[192];
+    char json[256];   /* + outcome; the longest reason is 57 bytes */
     long id = now_json_find_int(request, "id", 0);
     ProcessSerialNumber psn;
     ProcessInfoRec info;
     Str31 name;
     OSErr err = noErr;
     const char *reason = NULL;
+    /* ActSettlement.status's vocabulary, borrowed rather than invented -
+       see ProcessResult.outcome in the contract. Refusals that never
+       reached the machine stay "refused"; only the two verbs' own
+       terminal states are set below. */
+    const char *outcome = "refused";
 
     psn.highLongOfPSN =
         (unsigned long)now_json_find_int(request, "psnHigh", 0);
@@ -5441,6 +5446,15 @@ static void serve_process_act(const char *request, Boolean quit)
             err = now_proc_ask_quit(&psn);
             if (err != noErr) {
                 reason = "the Mac would not deliver the quit request";
+            } else {
+                /* QUIT CANNOT BE TOLD MORE THAN THIS, and that is a fact
+                   about the platform rather than a gap here: a 'quit'
+                   Apple Event is one an application may decline or sit
+                   on behind a Save dialog. `ok` says the event was
+                   delivered; `outcome` says plainly that delivery is all
+                   that was established, so a caller reading `outcome`
+                   alone is never misled into thinking it has gone. */
+                outcome = "dispatched-but-unconfirmed";
             }
         }
     } else {
@@ -5450,20 +5464,30 @@ static void serve_process_act(const char *request, Boolean quit)
            SCHEDULED and nothing more - so `now_bring_to_front` over MCP,
            which rides this exact path, got the weakest of three claims
            and no way to tell. A verb reports what happened; an accepted
-           request that never landed is not a switch, and saying so is
-           the whole point of re-reading. */
+           request that never landed is not a switch. */
         switch (now_proc_front_confirm(&psn,
                                        (unsigned long)kProcFrontWaitSecs
                                        * 60)) {
         case kProcFrontConfirmed:
+            outcome = "confirmed";
             break;
         case kProcFrontAccepted:
+            /* NEVER OBSERVED. Driven on 2026-08-07 against an emulated
+               OS 9.1 guest: fronting a faceless process took the
+               refusal branch below instead, and a switch that is
+               accepted and then does not land could not be staged
+               deliberately. This branch compiles and reads correctly
+               and has never run - which is a different thing from
+               tested, and the next person should not have to infer
+               that from its absence in a log. */
             err = -1;
+            outcome = "dispatched-but-unconfirmed";
             reason = "the Mac accepted the request and it is still not "
                      "frontmost";
             break;
         case kProcFrontSetRefused:
             err = -1;
+            outcome = "refused";
             reason = "the Mac would not bring it to the front";
             break;
         }
@@ -5492,11 +5516,13 @@ static void serve_process_act(const char *request, Boolean quit)
 
     if (reason == NULL) {
         snprintf(json, sizeof json,
-                 "{\"type\":\"process.result\",\"id\":%ld,\"ok\":true}", id);
+                 "{\"type\":\"process.result\",\"id\":%ld,\"ok\":true,"
+                 "\"outcome\":\"%s\"}", id, outcome);
     } else {
         snprintf(json, sizeof json,
                  "{\"type\":\"process.result\",\"id\":%ld,\"ok\":false,"
-                 "\"reason\":\"%s\"}", id, reason);
+                 "\"outcome\":\"%s\",\"reason\":\"%s\"}",
+                 id, outcome, reason);
     }
     send_control(json);
 }

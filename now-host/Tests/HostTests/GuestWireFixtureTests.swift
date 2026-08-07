@@ -507,6 +507,48 @@ final class GuestWireFixtureTests: XCTestCase {
         }
         XCTAssertFalse(declined.ok)
         XCTAssertEqual(declined.reason, "that process is no longer running")
+
+        /* THE THREE SHAPES serve_process_act now writes, as it writes
+           them. `outcome` exists because `ok` alone cannot tell a refusal
+           from an accepted switch that never landed, and a field the host
+           declares but drops on the floor would be the same lie one layer
+           down - so these decode it rather than only permitting it. */
+        let landed = #"{"type":"process.result","id":13,"ok":true,"#
+            + #""outcome":"confirmed"}"#
+        guard case .processResult(let front) = try decode(landed) else {
+            return XCTFail("not a process result")
+        }
+        XCTAssertTrue(front.ok)
+        XCTAssertEqual(front.outcome, "confirmed")
+
+        /* The branch that has NEVER RUN on a real guest (wire.c says so
+           at the site). The fixture is what proves the host can read it
+           when it does, which is the only thing a fixture can prove. */
+        let unlanded = #"{"type":"process.result","id":14,"ok":false,"#
+            + #""outcome":"dispatched-but-unconfirmed","#
+            + #""reason":"the Mac accepted the request and it is still "#
+            + #"not frontmost"}"#
+        guard case .processResult(let pending) = try decode(unlanded) else {
+            return XCTFail("not a process result")
+        }
+        XCTAssertFalse(pending.ok)
+        XCTAssertEqual(pending.outcome, "dispatched-but-unconfirmed")
+
+        /* A quit: delivered, and that is ALL that was established. ok is
+           true and the outcome says why that is not a promise it has
+           gone. */
+        let sent = #"{"type":"process.result","id":15,"ok":true,"#
+            + #""outcome":"dispatched-but-unconfirmed"}"#
+        guard case .processResult(let asked) = try decode(sent) else {
+            return XCTFail("not a process result")
+        }
+        XCTAssertTrue(asked.ok)
+        XCTAssertEqual(asked.outcome, "dispatched-but-unconfirmed")
+
+        /* NOW-68K emits no outcome at all, and nil must not be read as
+           "unknown" - it means the sender does not report outcomes, which
+           is why BringToFrontProjection's confirming re-list stays. */
+        XCTAssertNil(applied.outcome)
     }
 
     /// A first page that fills: `more` is true and the cursor points past

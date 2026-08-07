@@ -2675,7 +2675,49 @@ components:
       properties:
         type: { const: process.result }
         id: { type: integer }
-        ok: { type: boolean }
+        ok:
+          type: boolean
+          description: >
+            THE EFFECT THIS VERB CAN ESTABLISH, never a receipt for a
+            request that was accepted. What each verb can establish
+            differs, and the difference is declared in `outcome` rather
+            than hidden here:
+
+            process.front CAN be told more, by re-reading
+            GetFrontProcess, so ok is true only when the target is
+            actually frontmost. It answered ok on SetFrontProcess
+            returning noErr until 2026-08-07 - which means the switch
+            was SCHEDULED and nothing more - so a caller that fronts a
+            process and then addresses its windows was acting on a
+            receipt.
+
+            process.quit stops at "the request was sent", because
+            nothing on this platform can tell it more: a 'quit' Apple
+            Event is one an application is free to decline or to sit on
+            behind a Save dialog. Its ok therefore means the event was
+            delivered, and its `outcome` says
+            dispatched-but-unconfirmed so that a caller reading
+            `outcome` alone is never misled.
+        outcome:
+          enum: [confirmed, dispatched-but-unconfirmed, refused,
+                 timed-out, session-changed, unknown]
+          description: >
+            What was established about the machine - THE SAME
+            VOCABULARY ActSettlement.status uses, deliberately. ok
+            cannot distinguish "refused" from "accepted and never
+            landed", and those want different responses from a caller:
+            one is a wrong request, the other is a machine that did not
+            comply. Two honest-but-different vocabularies for "did it
+            happen" would be a fresh instance of the defect this field
+            exists to close, so this one is borrowed rather than
+            invented.
+
+            OPTIONAL, and its absence is not "unknown": it means the
+            sender does not report outcomes. NOW-68K does not emit it
+            (wire68.c :: handle_process_drive) and that asymmetry is
+            declared here rather than left to be discovered - a caller
+            that needs the distinction from a 68K guest must still
+            confirm by re-listing.
         reason:
           type: string
           description: Present when ok is false; why the verb did not apply.

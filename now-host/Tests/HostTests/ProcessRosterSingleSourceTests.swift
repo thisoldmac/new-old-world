@@ -166,3 +166,57 @@ final class ProcessRosterSingleSourceTests: XCTestCase {
             + "happened rather than that it dispatched.")
     }
 }
+
+/// **`process.result.outcome` and `ActSettlement.status` are one
+/// vocabulary, and stay one.**
+///
+/// The audit's whole thesis is one answer per question across the
+/// surface. Two honest-but-different words for "did it happen" would be a
+/// fresh instance of exactly the defect slice 2 closed — so the fronting
+/// verb borrowed the act plane's enum rather than inventing one, and this
+/// derives both sets from the contract at test time so a later edit to
+/// either cannot quietly fork them.
+final class ProcessOutcomeVocabularyTests: XCTestCase {
+
+    /// Every `enum: [...]` list in the contract that contains
+    /// `confirmed` and `refused` — found by reading, not by naming the
+    /// two schemas, so a third copy is caught the day it appears.
+    private func settlementVocabularies() throws -> [[String]] {
+        let text = try GateSource.raw("contract/asyncapi.yaml")
+        var found: [[String]] = []
+        var rest = Substring(text)
+        while let e = rest.range(of: "enum: [") {
+            let after = rest[e.upperBound...]
+            guard let close = after.firstIndex(of: "]") else { break }
+            let words = after[..<close]
+                .split(whereSeparator: { ", \n".contains($0) })
+                .map(String.init)
+            if words.contains("confirmed") && words.contains("refused") {
+                found.append(words.sorted())
+            }
+            rest = after[close...]
+        }
+        return found
+    }
+
+    func testTheGateFoundMoreThanOneVocabularyToCompare() throws {
+        let v = try settlementVocabularies()
+        XCTAssertGreaterThanOrEqual(
+            v.count, 3,
+            "found \(v.count) settlement vocabularies — expected "
+            + "ActSettlement.status, CommandResult.error.settlement and "
+            + "ProcessResult.outcome. A gate comparing one list to itself "
+            + "proves nothing.")
+    }
+
+    func testEverySettlementVocabularyIsTheSameOne() throws {
+        let v = try settlementVocabularies()
+        let distinct = Set(v.map { $0.joined(separator: ",") })
+        XCTAssertEqual(
+            distinct.count, 1,
+            "the contract carries \(distinct.count) different settlement "
+            + "vocabularies: \(distinct.sorted()). `ok` cannot say whether "
+            + "an effect landed and `outcome` exists to; two spellings of "
+            + "that answer is the defect this field was added to close.")
+    }
+}
