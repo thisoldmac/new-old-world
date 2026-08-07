@@ -486,11 +486,23 @@ final class IslandRenderTests: XCTestCase {
         let png = try RenderShot.png(scene: scene([w]))
         let contentX = r.l + 1
         let contentY = r.t + Int(Platinum.contentTop)
-        let mark = try XCTUnwrap(pixel(png, x: contentX + 20,
-                                       y: contentY + 38))
+        /* THE DARKEST PIXEL IN THE BOX, not one named pixel inside it. A
+           single coordinate pinned where the tick's stem happened to land,
+           and a stem is free to move a pixel for reasons that have nothing
+           to do with whether a tick is drawn: it moved when `RenderShot`
+           stopped borrowing ImageRenderer's own backing store (2026-08-07),
+           which drew this control's 1px frame soft and now draws it crisp.
+           The claim was never "this pixel is black" — it is "there is a mark
+           in the box", and that is what this now asks. */
+        var darkest = 255
+        for y in (contentY + 32)...(contentY + 44) {
+            for x in (contentX + 14)...(contentX + 26) {
+                if let p = pixel(png, x: x, y: y) { darkest = min(darkest, p.0) }
+            }
+        }
         let formerPillEdge = try XCTUnwrap(pixel(
             png, x: contentX + 100, y: contentY + 30))
-        XCTAssertLessThan(mark.0, 100, "the checkbox mark is visible")
+        XCTAssertLessThan(darkest, 100, "the checkbox mark is visible")
         XCTAssertTrue(formerPillEdge.0 == 255 && formerPillEdge.1 == 255
                         && formerPillEdge.2 == 255,
                       "the semantic checkbox must not retain a pill border")
