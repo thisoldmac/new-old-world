@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -102,26 +103,58 @@ class DerivationTests(Sandbox):
         b = module.preferred_block("/w/lane-b")
         self.assertNotEqual(a, b)
 
+    def test_the_derivation_is_a_pinned_function_of_the_path_alone(self):
+        """Golden vectors, and they are the guard that has teeth.
+
+        `test_a_wiped_registry_does_not_move_a_lane` was watched PASSING
+        against a `preferred_block` mutated to fold in `int(time.time())`
+        — because it asks the same question twice inside one second. A
+        derivation that drifts with anything but the path loses a lane
+        its running VM, so it is pinned to constants computed once,
+        here, rather than to agreement between two adjacent calls.
+        """
+        module = load_module()
+        for root, block in (("/w/lane-a", 370),
+                            ("/w/lane-b", 266),
+                            ("/Users/michelle/Lab/Code/timbottu/now", 37)):
+            self.assertEqual(module.preferred_block(root), block,
+                             f"the derivation for {root} moved; every lane "
+                             "with a VM up has just lost track of it")
+
     def test_a_collision_is_stepped_past_rather_than_shared(self):
         """A hash alone collides — 1000 blocks and fifteen lanes is a
         ~10% chance of a pair landing together, and 'usually collision
         free' is what the hand-assigned scheme already was. So a taken
-        block is probed past, deterministically."""
+        block is probed past, deterministically.
+
+        The collision is FORCED, not hoped for. A first version of this
+        claimed two roots and checked they differed, which they did for
+        the ordinary reason — it passed against an `allocate` mutated to
+        hand out a claimed block, because the two roots never landed on
+        the same one to begin with.
+
+        The lane roots have to EXIST, too, and the strengthened version
+        found that out the hard way: a claim naming a directory that is
+        not there is an orphan by definition, and `allocate` correctly
+        took it over. Two made-up paths test the orphan path, not the
+        collision path.
+        """
         module = load_module()
         module.REGISTRY = self.registry
-        block = module.preferred_block("/w/squatter")
-        os.makedirs(self.registry, exist_ok=True)
-        module.write_claim(block, {
-            "laneRoot": "/w/squatter", "branch": "other",
-            "qmpSockets": [], "runDirs": []})
-        # A lane that hashes to the same block must not be handed it.
-        got = module.allocate("/w/squatter-2", create=False)
-        forced = module.preferred_block("/w/squatter-2")
-        self.assertEqual(forced % module.BLOCKS, forced)
-        occupied = module.read_claim(block)
-        self.assertEqual(occupied["laneRoot"], "/w/squatter")
-        if got["block"] == block:
-            self.fail("a claimed block was handed to a second lane")
+        module.preferred_block = lambda root: 5     # everybody wants block 5
+        one = os.path.realpath(tempfile.mkdtemp(prefix="lane-one-"))
+        two = os.path.realpath(tempfile.mkdtemp(prefix="lane-two-"))
+        self.addCleanup(shutil.rmtree, one, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, two, ignore_errors=True)
+        first = module.allocate(one)
+        second = module.allocate(two)
+        self.assertEqual(first["block"], 5)
+        self.assertNotEqual(second["block"], 5,
+                            "two lanes were handed the same block")
+        self.assertEqual(module.read_claim(5)["laneRoot"], one)
+        self.assertEqual(module.read_claim(second["block"])["laneRoot"], two)
+        # And the displaced lane is stable too: it keeps where it landed.
+        self.assertEqual(module.allocate(two)["block"], second["block"])
 
     def test_a_lane_gets_eight_ports_and_they_are_contiguous(self):
         lane = self.show()
@@ -297,6 +330,83 @@ class AdditiveTests(unittest.TestCase):
         stage = text[text.index("== stage the extension"):
                      text.index('python3 "$NOW/tools/stage-ext.py"')]
         self.assertIn('NOW_WIRE_PORT="$WIRE"', stage)
+
+    def test_spin_up_actually_honours_the_ports_it_is_given(self):
+        """The behavioural half, because the three above read text.
+
+        `scripts/spin-up-ppc` is RUN, with a `/bin/echo` standing in for
+        QEMU and empty files for the images, until it writes `$RUN/ports`
+        — which is the decision under test and happens before anything
+        boots. A text assertion about variable order would survive a
+        later edit that reintroduced the overwrite somewhere else; this
+        does not.
+
+        Skipped by name, not silently, where the lab checkout providing
+        `tools/lib.sh` is absent: spin-up-ppc cannot start at all there.
+        """
+        lab = ROOT
+        while lab != lab.parent and not (lab / "tools" / "lib.sh").is_file():
+            lab = lab.parent
+        if not (lab / "tools" / "lib.sh").is_file():
+            raise unittest.SkipTest(
+                "no lab checkout above the repo (tools/lib.sh), so "
+                "spin-up-ppc cannot run here")
+
+        # /private/tmp, not $TMPDIR: a UNIX socket path is capped at 104
+        # bytes and spin-up-ppc refuses (exit 78) a run directory over 80,
+        # which /var/folders/... already is before anything is appended.
+        work = tempfile.mkdtemp(prefix="lnpt-", dir="/private/tmp")
+        self.addCleanup(shutil.rmtree, work, ignore_errors=True)
+        for name in ("base.qcow2", "ext.bin", "app.bin", "shut.bin"):
+            open(os.path.join(work, name), "wb").close()
+        registry = os.path.join(work, "registry")
+
+        def spin(label, **extra):
+            run_dir = os.path.join(work, label)
+            env = dict(os.environ,
+                       NOW_LANE_REGISTRY=registry,
+                       NOW_SPIN_RUN=run_dir,
+                       TIMBOTTU_QEMU="/bin/echo",
+                       NOW_SPIN_BASE=os.path.join(work, "base.qcow2"),
+                       NOW_EXT_BIN=os.path.join(work, "ext.bin"),
+                       NOW_APP_BIN=os.path.join(work, "app.bin"),
+                       NOW_SHUTDOWN_BIN=os.path.join(work, "shut.bin"),
+                       **extra)
+            child = subprocess.Popen([str(SPIN)], env=env, cwd=str(ROOT),
+                                     stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL)
+            ports_file = os.path.join(run_dir, "ports")
+            try:
+                for _ in range(240):
+                    if os.path.exists(ports_file):
+                        break
+                    if child.poll() is not None:
+                        break
+                    time.sleep(0.25)
+            finally:
+                child.terminate()
+                try:
+                    child.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+            self.assertTrue(os.path.exists(ports_file),
+                            f"{label}: spin-up-ppc never chose ports")
+            with open(ports_file, encoding="utf-8") as handle:
+                return [int(field) for field in handle.read().split()]
+
+        derived = spin("derived")
+        self.assertTrue(all(12000 <= port < 20000 for port in derived),
+                        f"the default is not the derived block: {derived}")
+
+        # A lane mid-flight on the hand-assigned pair that lost a run on
+        # 2026-08-06. It must land on exactly those, unmoved.
+        self.assertEqual(spin("explicit", NOW_ANCHOR_PORT="1840",
+                              NOW_WIRE_PORT="5440"), [1840, 5440])
+
+        # And one half at a time: the other half still derives.
+        anchor_only = spin("half", NOW_ANCHOR_PORT="1700")
+        self.assertEqual(anchor_only[0], 1700)
+        self.assertEqual(anchor_only[1], derived[1])
 
     def test_the_vm_is_recorded_before_it_boots(self):
         """An orphan nobody recorded cannot be reclaimed. The attach has

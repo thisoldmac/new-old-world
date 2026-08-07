@@ -303,6 +303,14 @@ def allocate(root: str, *, create: bool = True) -> dict:
     the file, so the loser sees EEXIST and steps on. No lock, no daemon,
     no coordinator.
     """
+    # BOTH SIDES OF THE COMPARISON BELOW MUST BE NORMALISED, and only one
+    # of them was. `lane_root()` realpaths what it returns, but `allocate`
+    # is also called with a raw path, and /var vs /private/var was enough
+    # to make a lane fail to recognise its own claim — so it stepped past
+    # its own block and took a fresh one on every call. A lane that moves
+    # is a lane that has lost its running VM, which is the failure this
+    # whole scheme exists to prevent, arriving through a symlink.
+    root = os.path.realpath(root)
     start = preferred_block(root)
     branch = lane_branch(root)
     for step in range(BLOCKS):
