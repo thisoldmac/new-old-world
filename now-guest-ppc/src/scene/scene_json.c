@@ -1005,6 +1005,47 @@ static void put_meta(Sink *k, const NowScene *s)
                 "rather than some of them");
         first = 0;
     }
+    /* WHICH WINDOW, by name. The sentences above and below say a plane
+       was dropped somewhere in this scene; these say where. A driving
+       agent meeting `controls: []` on a panel it can see six tabs in
+       otherwise has no way to tell an empty window from an unread one -
+       measured on the Appearance control panel, 2026-08-07, which
+       published zero controls and zero dialog items with nothing naming
+       it. Emitted per window rather than folded into one line because
+       two silent windows are two separate errands. */
+    for (i = 0; i < s->window_count; ++i) {
+        const NowSceneWindow *w = &s->windows[i];
+        char line[kNowSceneTitleMax + 160];
+        const char *why;
+
+        switch (w->walk_verdict) {
+        case kNowSceneWalkRecordUnreadable:
+            why = "window record failed validation, so no control or item "
+                  "plane was attempted - absent here means unknown, "
+                  "not empty";
+            break;
+        case kNowSceneWalkControlsRetracted:
+            why = "control chain hit a bound or failed validation, so its "
+                  "controls are unknown rather than absent";
+            break;
+        case kNowSceneWalkDialogItemsRetracted:
+            why = "dialog item list hit a bound or failed validation, so "
+                  "its items are unknown rather than absent";
+            break;
+        case kNowSceneWalkControlsAndItemsRetracted:
+            why = "both the control chain and the dialog item list failed, "
+                  "so nothing in this window is addressable and the reason "
+                  "is the walk, not the window";
+            break;
+        default:
+            continue;
+        }
+        snprintf(line, sizeof line, "%s: %s",
+                 w->title[0] != '\0' ? w->title : "(untitled window)", why);
+        put(k, first ? "" : ",");
+        put_str(k, line);
+        first = 0;
+    }
     if (s->list_cells_truncated) {
         put(k, first ? "" : ",");
         put_str(k, "list cells truncated: structured list content exceeded "

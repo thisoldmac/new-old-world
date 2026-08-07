@@ -349,7 +349,12 @@ void now_scene_walk_window(NowScene *s, int window,
         return;
     }
     if (now_ax_read_window(memory, address, &win) != kNowAxOk) {
-        return;                       /* every sub-plane stays absent */
+        /* Every sub-plane stays absent - and SAYS SO. This used to be a
+           bare return, so a window whose record failed validation
+           published `controls: []` and no dialogItems key, which reads
+           exactly like a window that has neither. */
+        now_scene_note_window_unreadable(s, window);
+        return;
     }
     now_scene_set_window_kind(s, window, win.kind);
     now_scene_phase_enter(kNowScenePhaseRefs);

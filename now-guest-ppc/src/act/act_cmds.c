@@ -6,6 +6,7 @@
 
 #include "act_args.h"
 #include "act_client.h"
+#include "act_menu_probe.h"
 #include "axresolve.h"
 #include "cmd_line.h"
 #include "json.h"
@@ -1002,7 +1003,9 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     int                 h;
     int                 v;
     int                 visibility;
+    NowActMenuProbe     probe;
 
+    memset(&probe, 0, sizeof probe);
     now_act_begin_command();
     if (!arg_int(request_json, "menu", &menu)
         || !arg_int(request_json, "item", &item) || item < 1) {
@@ -1038,6 +1041,22 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     psn.lowLongOfPSN = (unsigned long)lo;
     want = &psn;
     visibility = menu == -16489L && (item == 1L || item == 2L);
+    /* READ THE ITEM BEFORE PRESSING IT. Not for tidiness: MenuSelect
+       returns whatever we answer with, so a press on a DISABLED item
+       reported `dispatched` and did nothing, forever - the Finder's
+       `File > Print` with an empty selection, watched 2026-08-07. The
+       probe refuses only on a POSITIVE reading; an unreadable menu list
+       comes back Unknown and this dispatches as before, because "I could
+       not look" is not "no". Skipped for the visibility items, which the
+       Process Manager serves rather than any application's menu. */
+    if (!visibility) {
+        now_act_menu_probe(want, menu, item, &probe);
+        if (now_act_menu_probe_code(&probe) != NULL) {
+            reply_error(out, cap, id, now_act_menu_probe_code(&probe),
+                        now_act_menu_probe_message(&probe));
+            return;
+        }
+    }
     if (!visibility && act_target_is_self(want)
         && g_self_menu_handler != NULL) {
         if (!g_self_menu_handler((menu << 16) | (item & 0xFFFFL))) {
@@ -1087,6 +1106,16 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
         : (NowPeekI32)item;
     cell->arm_point_h = (NowPeekI32)h;
     cell->arm_point_v = (NowPeekI32)v;
+    /* A MARKED MENU CAN CONFIRM ITSELF. Where the machine already marks
+       one of this menu's items, the mark landing on the one pressed is
+       the application saying its handler ran, and the act can reach
+       `confirmed`. Where it does not, no postcondition is armed and the
+       reply says the effect is unverifiable rather than leaving
+       `dispatched-but-unconfirmed` to read like a pending answer. */
+    now_act_clear_menu_postcondition();
+    if (probe.marked_group && !probe.item_marked) {
+        now_act_arm_menu_postcondition(menu, item);
+    }
 
     st = now_act_submit(&g_target, &g_snap);
     if (st == kNowActRefused) {
@@ -1124,6 +1153,25 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     row_add(&rows, "Mechanism", visibility
         ? "the Process Manager's keyboard equivalent in the target context"
         : "the application's own MenuSelect");
+    /* WHAT WOULD PROVE IT, said out loud. A caller reading
+       `dispatched-but-unconfirmed` cannot otherwise tell "not yet" from
+       "never, because nothing here can answer", and treating the second
+       as the first is how a driving agent waits on a result that is not
+       coming. */
+    row_add(&rows, "Verification",
+            visibility
+                ? "none: the Process Manager's own action leaves no mark "
+                  "this Mac can read back"
+            : probe.verdict == kNowActMenuProbeUnknown
+                ? "unavailable: this menu bar could not be read, so the "
+                  "item was neither checked before nor can be checked after"
+            : probe.marked_group && !probe.item_marked
+                ? "the mark moving onto this item; a later scene settles it"
+            : probe.marked_group && probe.item_marked
+                ? "none: this item already carried the mark, so the mark "
+                  "cannot say whether the press did anything"
+                : "none available: this menu marks no item, so the machine "
+                  "states nothing this act could be confirmed against");
     now_log(kLogInfo, "act", "#%ld menuact %ld/%ld dispatched", id, menu, item);
     settlement_rows(&rows);
     reply_rows(out, cap, id, "menuact", &rows);

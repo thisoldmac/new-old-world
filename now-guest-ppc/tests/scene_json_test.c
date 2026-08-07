@@ -1112,6 +1112,46 @@ static void test_dialog_items_carry_v2_semantics(void)
     }
 }
 
+/* A SILENT WINDOW MUST NAME ITSELF.
+ *
+ * `controls: []` is required by the IR and is emitted both for a window
+ * with no controls and for one whose walk was dropped. The scene-wide
+ * "controls omitted" note above says a plane was lost SOMEWHERE; it
+ * names no window, so a driving agent meeting an empty list on a panel
+ * it can see six tabs in cannot tell an empty window from an unread one.
+ * Measured on the Appearance control panel, 2026-08-07: zero controls,
+ * zero dialog items, and nothing in the scene naming it. */
+static void test_a_dropped_window_plane_names_its_window(void)
+{
+    NowScene s;
+    char out[16384];
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 1, "Appearance", 0, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Appearance", 0, 0, 10, 10, 1);
+    (void)now_scene_add_window(&s, p, "Empty By Nature", 0, 0, 10, 10, 1);
+    (void)now_scene_open_controls(&s, 1);      /* walked, and has none */
+
+    (void)now_scene_add_control(&s, 0, "Themes", 0, 0, 5, 5, 1, 1, 0, 0, 1);
+    now_scene_retract_controls(&s, 0);
+
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "Appearance: control chain hit a bound");
+    check(well_formed(out), "a named retraction is still valid JSON");
+
+    /* ...and the window that was walked and legitimately has none must
+       NOT be accused of anything. Two empty arrays, one note. */
+    check_absent(out, "Empty By Nature:");
+
+    /* A window whose RECORD would not validate is a different errand
+       from one whose control chain broke, and says so. */
+    now_scene_note_window_unreadable(&s, 1);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "Empty By Nature: window record failed validation");
+}
+
 int main(void)
 {
     test_coverage_and_incarnation_reach_the_wire();
@@ -1125,6 +1165,7 @@ int main(void)
     test_conditional_planes();
     test_reference_plane();
     test_retractions_are_reported();
+    test_a_dropped_window_plane_names_its_window();
     test_verdicts_reach_the_wire();
     test_truncation_shows_up_in_meta();
     test_overflow_fails_closed();
