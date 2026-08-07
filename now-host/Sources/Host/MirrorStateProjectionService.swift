@@ -144,12 +144,25 @@ final class MirrorStateProjectionService {
             applicationRecords = []
             windowRecords = []
         }
+        // Window counts come from the SCENE's own attribution, which is
+        // what the guest's walk produced — this side never counts windows
+        // to decide whether a process has a face, only to split "has
+        // windows" from "enumerated and has none".
+        var windowsByPsn: [String: Int] = [:]
+        for record in windowRecords {
+            windowsByPsn[record.window.psn, default: 0] += 1
+        }
         let applications = applicationRecords.map { record in
-                AgentIntegrationMirrorEntity(
+                let verdict = ProcessPresence.classify(
+                    record.app,
+                    windowCount: windowsByPsn[record.app.psn] ?? 0)
+                return AgentIntegrationMirrorEntity(
                     id: processID(record.identity), kind: .process,
                     ownerID: nil, name: record.app.name, title: nil,
                     front: record.app.front,
                     visible: engine.processVisibility(record.identity),
+                    presence: verdict.presence.rawValue,
+                    presenceReason: verdict.reason,
                     freshness: record.freshness.rawValue,
                     actionable: record.actionable)
             }

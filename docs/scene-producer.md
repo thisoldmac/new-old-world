@@ -284,7 +284,8 @@ emit. So each verdict reaches the wire as a per-app token, in upstream's own
 |---|---|---|
 | `Ok` | *(absent)* | yes |
 | `Stale` | `ax_oracle_stale` | **yes** — reported, never refused |
-| `NotFound` | `ax_oracle_not_found` | no |
+| `NotFound`, process declared `backgroundOnly` | *(absent)* — see below | no, and none expected |
+| `NotFound`, otherwise | `ax_oracle_not_found` | no |
 | `Ambiguous` | `ax_oracle_ambiguous` | no |
 | `Mismatch` | `ax_oracle_mismatch` | no |
 | reader `Unreadable` | `ax_read` | no |
@@ -292,7 +293,47 @@ emit. So each verdict reaches the wire as a per-app token, in upstream's own
 | reader `NoPlane` | `now_no_plane` | no |
 | reader `Stub` | `now_not_walked` | no |
 
-Two of those rows carry the design.
+Three of those rows carry the design.
+
+**A faceless process is a KIND, not a failure.** `NotFound` used to answer
+three different questions at once: a background-only application, which has
+no user interface *by declaration*; an application with a face and nothing
+open right now; and an application whose windows exist and which the walk
+could not read. Only the third is a defect, and six processes on a healthy
+Mac OS 9.1 boot — Control Strip Extension, DVD AutoLauncher, FBC Indexing
+Scheduler, Folder Actions, `tbt-appe`, `tbt-worker` — reported the second-
+worst kind of wrong answer there is: an error word for a normal condition.
+
+The discriminator is the process's **own declaration**, `modeOnlyBackground`
+in its `SIZE` resource, read from `ProcessInfoRec.processMode` in the same
+breath as its name (`scene_collect.c`). It is emitted as
+`apps[].backgroundOnly` / `processes[].backgroundOnly`, **only when true**,
+and it is never derived from an empty window list — that inference is
+precisely what cannot tell "has no UI by design" from "we failed to look".
+
+The middle state was already modelled and was not the bug: the reader's
+`NoWindows` is an enumeration that **succeeded** and found nothing, and it
+has never carried an error token. So absence-known and absence-unknown were
+always distinguishable here; what was missing was the third answer, "there
+was never anything to enumerate."
+
+The suppression is deliberately narrow — `NotFound` alone. `Ambiguous`,
+`Mismatch`, `Unreadable`, `NoPlane` and `Stub` are real failures whatever
+the process is, and `NoPlane` above all says we could not look at *any*
+process. Staleness survives it too. The per-process `windows` coverage claim
+keeps status `unavailable` and changes its reason from `not-observed` to
+`no-ui`: the same admission that we did not enumerate, with the reason that
+says the gap is the machine working correctly.
+
+**The Application menu is not a second signal.** It is tempting to
+cross-check the declaration against the app switcher's membership, and that
+corroboration would be worthless: the Process Manager populates that menu
+from this same bit. (The one place the two visibly disagreed was the
+mirror's own *synthesised* switcher, which listed background processes the
+real menu does not — open-issues, Cycle 20 — and that was a defect in the
+synthesis, not evidence of a second source.) Reading a walked UI artifact
+back to learn what a process *is* would also fail for exactly the processes
+being asked about. There is one source, and it is the declaration.
 
 **Stale is derived here, because it cannot arrive from below.** `peek_read.c`
 deliberately runs with **no age gate** — window state is only ever as fresh as
