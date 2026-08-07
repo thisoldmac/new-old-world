@@ -121,8 +121,10 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// feel driveable rather than watched.
     @State private var hovered: String = ""
 
-    /// An item travelling under the pointer. See `ItemDragState`.
-    @State private var itemDrag: ItemDragState?
+    /// An item travelling under the pointer. The transitions belong to
+    /// `ItemDragSession` in the core; this view feeds it a pointer and draws
+    /// what it says.
+    @State private var itemDrag: ItemDragSession?
 
     /// A live drag in progress, carrying the dragged window's original rect.
     ///
@@ -133,28 +135,6 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// instead of being re-derived and re-announced sixty times a second.
     private enum DragMode { case move(Rect), resize(Rect), thumb
                             case item, refusedItem }
-
-    /// **What the mirror is showing about a drag it has not been told the
-    /// truth about yet.**
-    ///
-    /// The presentation contract, in state:
-    ///
-    /// - the item moves with the pointer from the first pixel (`frame`),
-    /// - it is drawn provisional until `confirmed`, which only a real guest
-    ///   answer sets,
-    /// - and `home` is where it goes back to — the box the FINDER drew, which
-    ///   is why `DragTargeting` refuses a subject that has no such box.
-    private struct ItemDragState {
-        var subject: DragTargeting.Subject
-        /// Global guest coords. The ghost returns here on any unhappy ending.
-        var home: Rect
-        var frame: Rect
-        /// Where inside the box the pointer took hold, so the item does not
-        /// jump to have its corner under the cursor.
-        var grabX: Int
-        var grabY: Int
-        var confirmed = false
-    }
 
     public init(controller: Source) {
         self.controller = controller
@@ -446,93 +426,52 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                 + "down — \(subject.name) was not dragged")
                 return .refusedItem
             }
-            var state = ItemDragState(
-                subject: subject, home: home, frame: home,
-                grabX: start.x - home.l, grabY: start.y - home.t)
-            state.frame = frame(of: home, under: now,
-                                grabX: state.grabX, grabY: state.grabY)
-            itemDrag = state
+            var session = ItemDragSession(
+                subject: subject, home: home,
+                grabbedAt: Point(x: start.x, y: start.y))
+            session.move(to: Point(x: now.x, y: now.y))
+            itemDrag = session
             driver.dragPress(subject, at: Point(x: start.x, y: start.y)) {
                 answer in
-                /* RULE 4, and the only thing that may promote a provisional
-                   drag. A `.confirmed` this side made up would be exactly the
-                   plausible wrong answer the arc is about. */
+                /* THE ONLY DOOR TO CONFIRMED. A `.confirmed` this side made
+                   up would be exactly the plausible wrong answer the arc is
+                   about — and the session type has no other way in. */
                 guard var live = itemDrag, live.subject == subject else {
                     return
                 }
                 switch answer {
                 case .confirmed:
-                    live.confirmed = true
+                    live.confirm()
                     itemDrag = live
-                case .refused(let why):
-                    snapHome(why: "the guest would not take \(subject.name): "
-                             + why)
+                case .refused(let why):          // RULE 4
+                    finish(live.refused(why))
                 }
             }
             return .item
         }
     }
 
-    /// The ghost's box for a pointer at `p`, keeping the grab offset so the
-    /// item does not jump to put its corner under the cursor.
-    private func frame(of home: Rect, under p: (x: Int, y: Int),
-                       grabX: Int, grabY: Int) -> Rect {
-        let l = p.x - grabX, t = p.y - grabY
-        return Rect(l: l, t: t, r: l + (home.r - home.l),
-                    b: t + (home.b - home.t))
-    }
-
     private func moveItemDrag(to p: (x: Int, y: Int)) {
         guard var live = itemDrag else { return }
-        live.frame = frame(of: live.home, under: p,
-                           grabX: live.grabX, grabY: live.grabY)
+        live.move(to: Point(x: p.x, y: p.y))
         itemDrag = live
         controller.itemDragDriver?.dragMove(to: Point(x: p.x, y: p.y))
     }
 
-    /// Put the item back where the Finder had it, and say why.
+    /// Carry out an ending the session decided.
     ///
-    /// One function for rules 3 and 4 because they are one behaviour: the
-    /// mirror showed something it could not vouch for, and it takes it back.
-    /// Two implementations of that would be two chances to leave a ghost on
-    /// screen after a failure — which reads as the drag having worked.
-    private func snapHome(why: String) {
-        itemDrag = nil
-        controller.note(why)
-    }
-
-    /// The release.
-    ///
-    /// Three endings, and the unhappy two are the contract:
-    ///
-    /// 1. **Not confirmed** — rule 3. The human let go before the guest
-    ///    answered, so there is nothing to drop; the button is released and
-    ///    the item goes home.
-    /// 2. **Confirmed, but the drop lands on nothing** — the gesture was real
-    ///    and its destination was not, so the same snap-back with the
-    ///    targeting layer's own words.
-    /// 3. **Confirmed onto a real target** — the plan travels, and the ghost
-    ///    stays on screen until the driver answers. It is cleared by that
-    ///    answer and by nothing else, because the next scene from the guest
-    ///    is what will show the item in its new place.
-    private func endItemDrag(_ scene: MirrorKit.Scene,
-                             from start: (x: Int, y: Int),
-                             to end: (x: Int, y: Int)) {
-        guard let live = itemDrag else { return }
-        let driver = controller.itemDragDriver
-        guard live.confirmed else {
-            driver?.dragRelease(nil) { _ in }
-            return snapHome(why: "let go before the guest confirmed — "
-                            + "\(live.subject.name) went back")
-        }
-        switch DragTargeting.plan(scene, from: start, to: end) {
-        case .failure(let refusal):
-            driver?.dragRelease(nil) { _ in }
-            snapHome(why: refusal.message + " — \(live.subject.name) "
-                     + "went back")
-        case .success(let plan):
+    /// One function for both unhappy endings because they are one behaviour —
+    /// the mirror showed something it could not vouch for and takes it back —
+    /// and two implementations would be two chances to leave a ghost on screen
+    /// after a failure, which reads as the drag having worked.
+    private func finish(_ ending: ItemDragSession.Ending) {
+        switch ending {
+        case .snapBack(let why):
+            itemDrag = nil
+            controller.note(why)
+        case .drop(let plan):
             controller.note(describe(plan))
-            driver?.dragRelease(plan) { answer in
+            controller.itemDragDriver?.dragRelease(plan) { answer in
                 switch answer {
                 case .confirmed:
                     /* The guest has it. Drop the ghost and let the next scene
@@ -541,10 +480,28 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                        nobody has reported yet. */
                     itemDrag = nil
                 case .refused(let why):
-                    snapHome(why: "\(live.subject.name) did not land: \(why)")
+                    guard let live = itemDrag else { return }
+                    finish(live.refused(why))
                 }
             }
         }
+    }
+
+    /// The release. The DECISION is `ItemDragSession.release` — see the four
+    /// rules there; this is the part that talks to the driver.
+    private func endItemDrag(_ scene: MirrorKit.Scene,
+                             from start: (x: Int, y: Int),
+                             to end: (x: Int, y: Int)) {
+        guard let live = itemDrag else { return }
+        let ending = live.release(
+            DragTargeting.plan(scene, from: start, to: end))
+        if case .snapBack = ending {
+            /* The button still goes up. A mouse left down is the one failure
+               the resident's dead-man exists for, and this side must not be
+               the reason it has to fire. */
+            controller.itemDragDriver?.dragRelease(nil) { _ in }
+        }
+        finish(ending)
     }
 
     /// What a drop is about to do, for the status line. Named per intent
