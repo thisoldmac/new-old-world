@@ -332,6 +332,15 @@ public enum IRSchema {
         "Scene.Semantics.focused", "Scene.Semantics.isDefault",
         "Scene.Semantics.provenance", "Scene.Semantics.completeness",
         "Scene.Selection.start", "Scene.Selection.end",
+
+        /* THE THIRD HOST-INTERNAL SHELF (plan 018 slice 1), declared here
+           for the same reason `Scene.Window.island` is: it must never
+           reach the wire, and the way to keep it off is to freeze the
+           DECLARATION so that quietly adding it to `CodingKeys` shows up
+           as a wire-path change rather than as nothing. Every number in it
+           already crosses on the drain records; no contract field was
+           added for any of it. */
+        "Scene.Window.displayEpoch",
     ]
 
     // MARK: - What the gate compares against

@@ -181,4 +181,144 @@ final class LiveShapedRenderTests: XCTestCase {
                              + "deliberately clears")
         XCTAssertGreaterThan(window.controls.count, 10)
     }
+
+    // MARK: - One clock (plan 018 slice 1)
+
+    /// The Finder capture sweep A priced as the worst result in the run —
+    /// `Macintosh HD`, icon view, whose whole interior rendered as one
+    /// "Bitmap unavailable" hatch. Composed onto its OWN scene, as the app
+    /// draws it.
+    private func composedFixture(drain drainName: String, scene sceneName: String)
+        throws -> (scene: MirrorKit.Scene, plane: NOWMirrorContentPlane,
+                   raw: QDTraceDecode.Drain) {
+        let sceneURL = try XCTUnwrap(Bundle.module.url(
+            forResource: sceneName, withExtension: "json",
+            subdirectory: "Fixtures"))
+        let scene = try NOWMirrorSceneDecoder.decode(
+            irVersion: 2, document: Data(contentsOf: sceneURL))
+        let drainURL = try XCTUnwrap(Bundle.module.url(
+            forResource: drainName, withExtension: "json",
+            subdirectory: "Fixtures"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: drainURL)) as? [String: Any])
+        let drain = try XCTUnwrap(QDTraceDecode.drain(object))
+        let plane = NOWMirrorContentPlane(listener: GuestListener(
+            identity: .init(version: "test", name: "Test Host")))
+        return (plane.apply(drain, to: scene).scene, plane, drain)
+    }
+
+    private static let finderDrain = "qdtrace-drain-sweep18a-finder-icon"
+    private static let finderScene = "now-scene-sweep18a-finder-icon"
+
+    /// Ops that cover (most of) the window — a composite blit or a
+    /// full-area erase. The same test `lastRepaintPass` applies, restated
+    /// here on purpose: a gate that imports the rule it checks proves the
+    /// rule is spelled once, not that it is right.
+    private func spanningIndices(_ ops: [MirrorKit.DisplayOp],
+                                 w: Int, h: Int) -> [Int] {
+        ops.indices.filter { i in
+            let destructiveRect = ops[i].op == "rect"
+                && (ops[i].verb == 1 || ops[i].verb == 2 || ops[i].verb == 4)
+            let box = ops[i].op == "bits" ? ops[i].dst
+                : (destructiveRect ? ops[i].rect : nil)
+            guard let box, box.count == 4 else { return false }
+            return Double(box[2] - box[0]) >= 0.8 * Double(w)
+                && Double(box[3] - box[1]) >= 0.8 * Double(h)
+        }
+    }
+
+    /// **A frame is ONE repaint pass, not three concatenated.**
+    ///
+    /// `displayEpoch` moves once per arm and never per repaint, so a drain
+    /// that spans several front/back cycles arrives as one identity with
+    /// successive repaints end to end — and a later pass's window-spanning
+    /// op lands on top of an earlier pass's content. This capture carries
+    /// two such openers; the published frame must carry one, and it must
+    /// be the last.
+    ///
+    /// Watched failing by mutation: with `lastRepaintPass` returning `ops`
+    /// unchanged, the published display carries both openers and the
+    /// second assertion names it.
+    func testTheFindersFrameIsTheLastRepaintPassAlone() throws {
+        let (scene, _, _) = try composedFixture(drain: Self.finderDrain,
+                                                scene: Self.finderScene)
+        let window = try XCTUnwrap(scene.windows.first(where: \.front))
+        XCTAssertEqual(window.title, "Macintosh HD")
+        let w = window.rect.r - window.rect.l
+        let h = window.rect.b - window.rect.t
+        let display = try XCTUnwrap(window.display)
+
+        // The capture itself must still exhibit the defect, or this gate
+        // is measuring a fixture that was quietly replaced.
+        let raw = try XCTUnwrap(QDTraceDecode.drain(
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(
+                contentsOf: try XCTUnwrap(Bundle.module.url(
+                    forResource: Self.finderDrain, withExtension: "json",
+                    subdirectory: "Fixtures")))) as? [String: Any])))
+        let rawWindowOps = raw.records
+            .filter { $0.portAddress == window.addr }.map(\.op)
+        XCTAssertGreaterThan(
+            spanningIndices(rawWindowOps, w: w, h: h).count, 1,
+            "the capture no longer carries several repaint passes, so this "
+            + "gate proves nothing — replace the fixture or delete the test")
+
+        let openers = spanningIndices(display, w: w, h: h)
+        XCTAssertEqual(openers.count, 1, """
+            the published frame carries \(openers.count) window-spanning \
+            ops. Every one after the first paints over the content of the \
+            pass before it — the Sound panel's list rows and the Finder's \
+            interior both vanish that way. Only the LAST pass may be \
+            published. See NOWMirrorContentPlane.lastRepaintPass.
+            """)
+        XCTAssertLessThan(try XCTUnwrap(openers.first), 6,
+                          "the opener must start the frame; anything drawn "
+                          + "before it belongs to a pass that is over")
+    }
+
+    /// **The published frame carries the clock it came off.**
+    ///
+    /// A window with a live stream gets a `displayEpoch`; a window without
+    /// one gets `nil` and renders semantics-only rather than waiting. That
+    /// second half is the degradation rule, and it is asserted here
+    /// because its absence would be a deadlock rather than a wrong pixel.
+    func testEveryWindowSaysWhetherItHasAClockAtAll() throws {
+        let (scene, _, _) = try composedFixture(drain: Self.finderDrain,
+                                                scene: Self.finderScene)
+        let front = try XCTUnwrap(scene.windows.first(where: \.front))
+        let epoch = try XCTUnwrap(front.displayEpoch,
+                                  "the streamed window must carry its epoch")
+        XCTAssertFalse(epoch.stale,
+                       "nothing in this capture supersedes the settled frame")
+        XCTAssertEqual(epoch.generation, 1)
+        for other in scene.windows where !other.front {
+            XCTAssertNil(other.displayEpoch, """
+                \(other.title) has no content stream in this capture and \
+                must say so with nil rather than with a stale epoch — a \
+                window that is not streamed renders its semantics now.
+                """)
+        }
+    }
+
+    /// **The same capture always publishes the same frame.**
+    ///
+    /// The stability axis, made cheap: two independent planes fed the same
+    /// bytes, and one plane fed them twice, must agree op for op. A
+    /// renderer cannot be stable if the thing it renders is not.
+    func testTheSameCapturePublishesTheSameFrameEveryTime() throws {
+        let first = try composedFixture(drain: Self.finderDrain,
+                                        scene: Self.finderScene)
+        let second = try composedFixture(drain: Self.finderDrain,
+                                         scene: Self.finderScene)
+        let a = try XCTUnwrap(first.scene.windows.first(where: \.front)?.display)
+        let b = try XCTUnwrap(second.scene.windows.first(where: \.front)?.display)
+        XCTAssertEqual(a, b, "two planes, same bytes, different frames")
+
+        // And again through the same plane: a re-drain of an unchanged ring
+        // must not grow the frame.
+        let again = first.plane.apply(first.raw, to: first.scene).scene
+        let c = try XCTUnwrap(again.windows.first(where: \.front)?.display)
+        XCTAssertEqual(spanningIndices(c, w: 404, h: 238).count, 1,
+                       "a second drain of the same records re-concatenated "
+                       + "the passes")
+    }
 }

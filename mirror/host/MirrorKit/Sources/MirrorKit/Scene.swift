@@ -305,6 +305,15 @@ public struct Scene: Codable, Equatable, Sendable {
         /// nil when not traced. The renderer draws it in place of the empty
         /// content rect.
         public var display: [DisplayOp]?
+        /// Which clock `display` came off — see ``DisplayEpoch``. nil means
+        /// this window has NO content stream, which is the common healthy
+        /// case and renders semantics-only rather than waiting.
+        ///
+        /// **Not in the frozen IR (v1/v2)**, for the same reason `island`
+        /// is not: it is host-internal render state that happens to live on
+        /// this struct. Every number in it already crosses the wire on the
+        /// drain records themselves.
+        public var displayEpoch: DisplayEpoch? = nil
         /// M3 pixel island: this window's content area as the guest's REAL
         /// pixels, for content with no semantics to read — the Finder
         /// composites its icon views offscreen and blits them in, so their

@@ -137,6 +137,22 @@ final class IRFreezeTests: XCTestCase {
         XCTAssertTrue(props.contains("Scene.Window.island"))
     }
 
+    /// `displayEpoch` is the same decision one shelf later (plan 018): the
+    /// content plane's own clock, host-internal, declared so it cannot be
+    /// put on the wire by accident.
+    func testTheDisplayEpochIsNotOnTheWire() throws {
+        var scene = Self.maximalScene()
+        scene.windows[0].displayEpoch = DisplayEpoch(
+            generation: 1, epoch: 12, sceneSequence: 3, stale: false)
+        let paths = try IRSchema.wirePaths(
+            ofEncoded: try JSONEncoder().encode(scene))
+        XCTAssertFalse(paths.contains("windows[].displayEpoch"),
+                       "the content plane's clock is host render state; "
+                       + "every number in it already crosses on the drain")
+        XCTAssertTrue(IRSchema.declaredProperties(of: scene)
+            .contains("Scene.Window.displayEpoch"))
+    }
+
     /// `windows[].items` came back ADDITIVELY (lane H2, 2026-07-31): on the
     /// wire, recorded in `v1Additions`, absent from `v1Frozen`, and the major
     /// did not move. That is the whole shape of an addition, and each clause
