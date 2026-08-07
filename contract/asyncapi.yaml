@@ -414,6 +414,49 @@ operations:
       windows[].controls says "this producer does not report controls",
       not "this window has none", and a consumer must not read absence as
       emptiness.
+      AND WHEN THE KEY IS NOT ABSENT, added 2026-08-07 as
+      windows[].controlsState and additive. `controls` is a REQUIRED key,
+      so this producer emits `[]` and the sentence above has no way to be
+      said at all — three different facts have been arriving as the same
+      two characters. `controlsState` is one word a consumer branches on:
+      `complete` (walked, and here they are), `empty` (walked, and this
+      window has none), `unknown` (we looked and could not establish it —
+      the chain was longer than the scene carries, or failed validation,
+      or did not terminate), `notFetched` (we have not asked).
+      WHY notFetched IS NOT A SHADE OF unknown. The control pool is
+      shared across every window in a scene. A window walked after it
+      filled is refused a slot and retracts, so a panel with twenty
+      controls published `[]` for a reason that had nothing to do with
+      that panel and read exactly like a panel proven to have none.
+      `unknown` is a fact about the MACHINE — it will not tell us.
+      `notFetched` is a fact about US — we did not ask, and it is the
+      only one of the four that asking again could answer. Collapsing
+      them is the defect class this project has paid most for, and it had
+      collapsed them in the one plane an agent drives the machine
+      through.
+      The line between the two words is not how much work was done, it is
+      whose fault the silence is: a window whose RECORD would not
+      validate is `unknown`, because we tried and the machine was
+      unreadable where we are allowed to look.
+      WHERE THE KEY APPEARS, and why not everywhere. It is emitted
+      exactly when `controls` is EMPTY — the only case in which the array
+      cannot speak for itself. A non-empty array is `complete` by
+      construction and no other state can produce one, and saying so on
+      every window costs about 900 bytes of a 64 KB scene ceiling this
+      producer already touches (measured: the ceiling case went to 66447
+      bytes and the gate caught it, which is why this rule is here rather
+      than in a comment). It is the same arithmetic as `backgroundOnly`
+      riding only when true, and it is safe for the reason that one had
+      to argue: absence is not ambiguous here, because the array beside
+      it decides which reading applies.
+      So a consumer reads it as: a non-empty `controls` is `complete`; an
+      empty `controls` WITH the key means the key; an empty `controls`
+      WITHOUT it is `unknown`, because it came from a producer that does
+      not report this and therefore could not tell us.
+      A consumer that has never heard of the key reads `controls` exactly
+      as it did before. One that has must not treat `notFetched` as an
+      empty window: `empty` is the only one of the four that licenses
+      drawing a bare window.
       THE REFERENCE PLANE, added 2026-08-01 and the reason a rendered
       scene can be acted on at all. windows[].controls[].ref is a
       declared IR v1 field this producer had been leaving out;

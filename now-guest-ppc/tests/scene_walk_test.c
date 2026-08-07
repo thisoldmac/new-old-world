@@ -382,6 +382,57 @@ static void a_complete_chain_reports_its_length_too(void)
     check(s.windows[0].control_chain_len_exact == 1, "and exactly");
 }
 
+/* A WINDOW THAT LOST THE POOL WAS NOT ASKED, and the walk has to say so
+ * where the evidence is.
+ *
+ * The control pool is shared across every window in a scene. A window
+ * walked after it filled is refused a SLOT and retracts - and every
+ * other retraction in this file is a fact about the machine, so lumping
+ * this one in with them published "we could not establish this window's
+ * controls" for a window nobody had looked at yet. On the wire both
+ * arrived as `controls: []`.
+ *
+ * Watched failing by mutation 2026-08-07: dropping the `pool_full`
+ * branch in read_controls leaves the plain ControlsRetracted verdict,
+ * and the first two checks below name it.
+ */
+static void a_window_that_lost_the_pool_was_not_asked(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+    int i;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kCtl1H, 0, 0, 40, 60, 200, 400);
+    build_control(&f, kCtl1H, kCtl1, kCtl2H, "OK", 10, 20, 30, 90, 0, 1);
+    build_control(&f, kCtl2H, kCtl2, 0, "Cancel", 10, 100, 30, 170, 255, 0);
+
+    one_window(&s, kNowSceneAnchorOk);
+    /* Spend the whole pool before this window is reached - which is what
+       an earlier, busier window in the same scene does. */
+    (void)now_scene_open_controls(&s, 0);
+    for (i = 0; i < kNowSceneMaxControls; ++i) {
+        (void)now_scene_add_control(&s, 0, "spent", 0, 0, 9, 9, 1, 1, 0, 0, 1);
+    }
+    check(s.control_count == kNowSceneMaxControls,
+          "the pool is spent before the walk");
+
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+
+    check(s.windows[0].walk_verdict == kNowSceneWalkControlsPoolFull,
+          "a window refused a SLOT says the pool ran out, not that its "
+          "chain broke - the first is about us and the second is not");
+    check(now_scene_controls_state(&s.windows[0])
+          == kNowSceneControlsNotFetched,
+          "and that reads as notFetched, never unknown");
+    /* AND HOW LONG THE CHAIN WAS. One measured panel is not a
+       distribution; this is how the windows that LOST get counted. */
+    check(s.windows[0].control_chain_len == 2,
+          "the chain it never recorded is measured anyway");
+    check(s.windows[0].control_chain_len_exact == 1, "and exactly");
+}
+
 /* An unreadable window record claims NOTHING. The row keeps exactly what
    peek_read.c established for it. */
 static void an_unreadable_record_claims_nothing(void)
@@ -1003,6 +1054,7 @@ int main(void)
     a_long_chain_reports_its_length();
     a_cycle_is_not_a_long_chain();
     a_complete_chain_reports_its_length_too();
+    a_window_that_lost_the_pool_was_not_asked();
     an_unreadable_record_claims_nothing();
     dialog_text();
     dialog_items_are_guest_semantics();

@@ -788,6 +788,39 @@ void now_scene_set_control_handle(NowScene *s, int window, int index,
     s->controls[w->first_control + index].handle = handle;
 }
 
+short now_scene_controls_state(const NowSceneWindow *w)
+{
+    if (w == NULL) {
+        return kNowSceneControlsNotFetched;
+    }
+    if (w->controls_present) {
+        /* WALKED. Zero here is a fact about the machine and the only one
+           of the four that licenses a bare window: the chain head was a
+           sentinel, so this window has none. */
+        return w->control_count > 0 ? kNowSceneControlsComplete
+                                    : kNowSceneControlsEmpty;
+    }
+    switch (w->walk_verdict) {
+    /* WE ASKED AND THE MACHINE WOULD NOT SAY. Each of these is a
+       different errand for whoever reads the note, which is why the
+       verdicts stay separate; as knowledge they are one word. */
+    case kNowSceneWalkRecordUnreadable:
+    case kNowSceneWalkControlsBound:
+    case kNowSceneWalkControlsInvalid:
+    case kNowSceneWalkControlsCyclic:
+    case kNowSceneWalkControlsRetracted:
+    case kNowSceneWalkControlsAndItemsRetracted:
+        return kNowSceneControlsUnknown;
+    /* WE DID NOT ASK, and could. The pool was spent on other windows. */
+    case kNowSceneWalkControlsPoolFull:
+        return kNowSceneControlsNotFetched;
+    default:
+        /* No verdict and no plane: this producer never opened the
+           control plane for this window. Also not asked. */
+        return kNowSceneControlsNotFetched;
+    }
+}
+
 void now_scene_retract_controls(NowScene *s, int window)
 {
     NowSceneWindow *w = window_at(s, window);
