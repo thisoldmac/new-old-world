@@ -14,6 +14,91 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: a FOREIGN process's controls have no determined kind — 169 of 169, across five targets (2026-08-07, `claude/019-integration-2`)
+
+The 019 integration merged `main` and four lanes, then watched the tree
+compose five real windows on emulated mac99/OS 9.1. Pairs, scenes and
+renders: `~/Lab/Assets/now-mirror-assets/019-integration/` (out of git).
+Nothing here is metal-verified.
+
+**The split is the finding, and it is perfectly clean.** In every one of
+the five scenes:
+
+| window | controls | roles determined |
+|---|---|---|
+| NOW's own Workshop | 9 | **9** — 3 button, 3 checkbox, scrollbar, popup, triangle |
+| Date & Time | 21 | 0 |
+| Appearance | 76 | 0 |
+| Finder `Macintosh HD` | 3 | 0 |
+
+Our own process resolves richly; **every control in every foreign process
+is `role: "unknown"`, without exception.** This is not the semantic plane
+failing to run — it ran, and it says so:
+
+```json
+"role": "unknown",
+"semantic": { "completeness": "complete", "knowledge": "unknown",
+              "definition": "system", "provenance": "guest-control-manager" }
+```
+
+`completeness: complete` beside `knowledge: unknown` is the plane
+reporting honestly that it walked the whole thing and could not classify
+any of it. The rects and the titles are right — "Current Date",
+"Set Time Zone…", "On"/"Off" all arrive with correct geometry.
+
+**What it costs in pixels**, judged on the whole frame:
+
+- **Date & Time has no group boxes.** "Current Date", "Current Time",
+  "Time Zone" and "Use a Network Time Server" arrive as controls with the
+  correct enclosing rects and their titles, and render as nothing at all
+  — so the panel is a scatter of buttons on bare grey. The guest draws
+  four engraved, labelled frames.
+- **The two date fields lose their steppers**, and the two
+  daylight-saving checkboxes render as bare truncated text: "Set
+  Daylight-Saving Time Automa", "Daylight-Saving Time is in effe".
+- **Appearance's tab strip is absent**, and three scroll bars stack where
+  the theme swatches belong.
+
+**This is the same defect [mirror-element-coverage.md](mirror-element-coverage.md)
+measured at 62%**, seen here at 100% because control panels are entirely
+foreign. It is worth re-recording because the 100%/0% split by process
+ownership is sharper than a single percentage: whatever determines a kind
+is running only for our own process, and the foreign path returns
+`guest-control-manager` geometry with no classification step behind it.
+
+### And every window reports z = 0
+
+Across all five targets, every real window carries `z: 0`; only the
+Finder's `Desktop` ever gets `z: 1`. So the renderer has no stacking
+order and draws in array order. Watched: in the Date & Time pair the
+guest shows the Finder's `Macintosh HD` window in front of NOW's
+Workshop, and the render draws the Workshop's sidebar over the top of it
+instead.
+
+### What this pass did NOT arm, and therefore does not judge
+
+The capture drove the wire directly rather than through the host app, and
+a `scene.request` armed **structure, semantics and interaction — not
+content**. So every content-plane observation is out of scope here and is
+NOT evidence against the 018 pairs, which came through the app: the tab
+strip, the theme swatches, the field values, the Finder's items and the
+list rows all live on the content plane. The renderer's
+"Guest content not reported" placeholder in those regions is the product
+being honest about a plane nobody asked for, and reads as a defect only
+if you forget which planes you armed.
+
+**Two rig facts worth keeping**, both of which cost a run:
+
+- **The planes arm as a RESULT of the first `scene.request`**, so the
+  first scene on a connection is walked before semantics is active and
+  comes back with every role `unknown` — indistinguishable, in the
+  render, from the defect above. `requested`/`active` went 0/0 → 7/7
+  across one request and the body grew 25701 → 42621 bytes. A capture
+  rig needs a warm-up scene it throws away.
+- **`cycle` restores the previously-front application when it finishes**
+  (`restored: true`), which is correct and is not what a walk of one
+  target wants. Front the target with `script`, then `cycle`, then walk.
+
 ## BROKEN: the plain base image has been dirty on disk since 19 July, so every clone of it boots into Disk First Aid (2026-08-07, `claude/019-integration-2`)
 
 `scripts/spin-up-ppc`'s default base,
