@@ -836,14 +836,58 @@ none named it as the cause of unusability:
 So the defect is **capture**, not render and not the act plane: the walk
 does not report what a control IS.
 
-**The mechanism is in our floor.** The Appearance-era Control Manager
-answers this directly — `GetControlKind` returns a `ControlKind` whose
-signature and kind name the control (`kControlKindScrollBar`,
-`kControlKindTabs`, `kControlKindListBox`, and the rest). We have been
-inferring roles from procIDs and titles where the machine will simply
-say. Read the real headers on the CarbonLib floor rather than trusting
-this note — and remember Retro68's Universal Interfaces headers have CR
-line endings, so pipe through `tr '\r' '\n'` before grep.
+**The mechanism this plan first proposed does NOT exist on our floor, and
+the correction is the finding.** `GetControlKind` is **Mac OS X only** —
+Universal Interfaces `Controls.h:2310` says so in Apple's own words, and
+CarbonLib 1.6 does not export it. The working substitute is
+`GetControlData(…, kControlKindTag, …)`, and **the resident already does
+exactly that** (`ext/src/now_semantic.c :: classify_member`). Nothing was
+missing from the implementation.
+
+**What the Control Manager actually answers** (emulator-verified, warm-up
+scene discarded, passes 2–19 identical):
+
+| Window | Controls | Answer |
+|---|--:|---|
+| Appearance | 73 | 62 *unsupported custom control*, 5 *classification unavailable*, 4 unreached, **2** classified |
+| Date & Time | 21 | **21** *unsupported custom control* |
+| NOW's Workshop | 9 | **9** classified, with actions |
+
+*Unsupported custom control* means the resident asked and **the Control
+Manager declined.** So the plane is **reached and cannot read them** —
+which settles the question the integration round left open, and inverts
+the reading of its 169-of-169.
+
+**The ownership split is a consequence, not a cause.** We classify our
+own controls from the procID we recorded when we made them.
+`kControlKindTag` is answered only for controls built through the
+Appearance-era `Create*Control` APIs; **OS 9's own panels are
+`CNTL`-resource controls from `GetNewControl`**, and the machine will not
+substitute an answer for them. So **the authoritative answer does not
+exist for the windows this product most needs it for.**
+
+Two consequences worth stating plainly:
+
+- **Missing chrome and a refused act are one defect in two costumes.**
+  "Current Date", "Current Time" and "Time Zone" are four of Date &
+  Time's 21 refusals — correct rects, correct titles, no kind, so the
+  renderer has nothing to draw them as.
+- **The list taxonomy resolved**, and only one of the three is a
+  classification problem: `kControlKindListBox` classifies fine and is
+  refused for an unrelated reason (`control_action` returns no action for
+  `listBox`, and selecting a row needs a click *point* where `ctlact`
+  presses the centre); a bare `ListHandle` is not a control and the walk
+  will never see it; the Finder's lists are its own drawing, answered by
+  `FinderItems`.
+
+**The route that can work — slice 19.** The control's **CDEF resource ID**
+via `GetResInfo` on `contrlDefProc`, which the walk already reads raw and
+already reports as `system` for all 73. A system-heap CDEF with a
+documented id is **the machine stating an answer rather than us guessing**,
+and it is the only route that reaches OS 9's own panels. It needs its own
+provenance and a **weaker knowledge level**, so the uncertainty stays
+visible rather than being laundered into the same confidence as a
+`kControlKindTag` answer.
 
 Rules this slice inherits:
 
