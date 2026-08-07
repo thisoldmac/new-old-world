@@ -542,6 +542,41 @@ work lost is this repository's most expensive lesson. Warn loudly where
 the failure is informational; refuse only where a quiet pass lets a real
 lie through; prove the in-flight branches still commit, by name.
 
+### Slice 13 — Headless processes are a kind, not a failure (added 2026-08-07)
+
+Michelle, on learning which processes were reporting
+`ax_oracle_not_found`:
+
+> ah right, headless apps. we should be aware of these and have
+> contracts in place for them. we dont need them for the immediate
+> render work but id rather account for them rather than just ignore
+> them
+
+**This arc's thesis one plane over.** A faceless background process
+legitimately has no windows; reporting `ax_oracle_not_found` for it is
+an **error word for a normal condition** — we assert a failure where the
+honest answer is "this process has no UI by design." Six were observed
+on a healthy boot: Control Strip Extension, DVD AutoLauncher, FBC
+Indexing Scheduler, Folder Actions, tbt-appe, tbt-worker.
+
+**It already costs a health signal.** Lane A traced the coverage claim
+to `MirrorStateEngine.swift:163-172`, which settles on `partial` with
+the reason *"visibility census did not uniquely cover every
+application"*. On a healthy machine that pins at `partial` **forever**,
+because the census can never cover processes that have nothing to
+cover. So modelling headless processes plausibly converts a
+permanently-false signal into a true one — to be **measured, not
+assumed**.
+
+The discriminator is the process's **own declaration**:
+`ProcessInformationRec.processMode`'s `modeOnlyBackground`, from the
+`SIZE` resource. **Never classify by "we saw no windows"** — that is the
+exact inference that produced the false alarm, and it cannot tell "has
+no UI" from "we failed to look."
+
+Rendering anything for headless processes is explicitly out of scope;
+so is any change to the ladder.
+
 ### Not taken: window chrome — VETOED to plan 016 (2026-08-07)
 
 Michelle proposed polishing title bars and their buttons. Declined as a
