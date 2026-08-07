@@ -14,6 +14,86 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: the font substitution was silent, and `arc-status` measured the wrong tree (2026-08-07, `claude/019-honest-substitution`)
+
+Two honesty defects, both TESTED and neither metal-verified.
+
+**The system font is substituted and now says so.** Font id 0 is the
+system font, which under Appearance is Charcoal; where the pack carries
+no Charcoal strike the renderer falls back to Chicago, Chicago is wider,
+and a run the application clips loses its last glyph
+(§ "the system font is Charcoal and the pack has no Charcoal", below).
+Substituting is now an **accepted product decision** — Michelle,
+2026-08-07: *"our fonts are ok at this stage, im happy enough with
+them"* — and this arc's accounting classed the SILENCE, not the
+substitution, as its one dishonest-by-default item. It had already cost
+a day: group-box frames appeared to cross their own labels, three people
+read it as a chrome defect, and it was Chicago overrunning a band sized
+for a narrower face.
+
+No pixels changed. `MirrorKitUI/FontSubstitution.swift` makes it
+answerable — `StrikeChoice` says what was asked for, what was served,
+and whether the width came from the machine or from us — and
+`LiveMirrorView` carries a banner beside the render, sibling of the
+asset-pack one. `substituted` is its own state rather than `unknown`
+(nothing here is unestablished: both faces are nameable and the error
+has a known direction) and a second AXIS rather than a fifth rung of
+`ProvenanceLadder`, which correctly calls a substituted run the
+machine's own ink — which is exactly why the substitution was invisible.
+
+Derived, never remembered: the pack gained a Charcoal rasterisation on
+2026-08-06, so a constant saying "we draw Chicago" would have shipped
+false. The banner fires only when the fallback would actually fire, and
+reads nil on a desk whose pack has Charcoal — which is the state that
+makes the REMAINING substitutions the point: font id 2002, every family
+the pack does not carry, and any desk whose pack predates that work.
+**It does not model style**: `op.face` is still never consulted, so a
+bold run reports `exact` and is not.
+
+**`LiveMirror.cursor(for:)` had no test at all** and now has one:
+guest-declared `editText` is the only I-beam, the match is exact, and
+the hover resolves through `ObjectResolver`/`HitTester` rather than
+walking the scene a second time — the failure its own comment predicts.
+Worth knowing before writing another: `NSCursor.arrow` **segfaults** in
+a bare `xctest` process without an `NSApplication`.
+
+**`tools/arc-status` was wrong about arc state.** It reported *"nothing
+graduated to the corpus in 21h"* while 26 findings sat on
+`claude/018-findings` across 7 commits — it read the parent's working
+directory, which sits on `main`, so it measured a checkout rather than
+the work. The warning is kept (the worry is legitimate and this arc has
+genuinely let findings sit); what changed is that it now reads the
+commits on every ref, and reports **written** and **landed** as
+different states with different repairs.
+
+Three more of the same class, found while in there:
+
+- A lane cut from another lane counted its parent's commits as its own
+  (a branch with one commit read as seventeen) and the arc's unlanded
+  total counted them twice. Now `N commits (M shared with X)`, and the
+  total is a union. **Deliberately symmetric**: deriving a direction was
+  tried twice and answers backwards whenever the parent's tip has moved
+  past the fork point, which is the normal state of a live lane.
+- Every table enumerated `claude/01[0-9]-*` under a heading saying "work
+  that exists". Branches outside the glob are now counted on their own
+  line — 55 of them at the time of writing.
+- The machine count matched `qemu-system-ppc` only, so a bench running
+  68K guests read as idle.
+
+`tools/mirror-gate-tests/test_arc_status_measurements.py` drives the real
+script against a synthetic repository and its synthetic corpus; a source
+check would have passed on the day the bug shipped. Every guard watched
+failing by mutation.
+
+**Still open, and not this lane's:** the shared checkout at
+`/Users/michelle/Lab/Code/timbottu/now` is parked on
+`claude/mirror-subproject`, which predates `.githooks/`, so
+`core.hooksPath` points at a directory that does not exist and **the
+commit hooks are dead in every worktree off it**. `arc-status` says so
+under GATE FRESHNESS; nothing here fixes it, because moving that
+checkout is a decision about somebody else's tree (AGENTS.md > Git,
+"keep the shared checkout on main").
+
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
 Emulator-capture-verified, on the lane's own VM (block 591, anchor 16728 /
@@ -2337,6 +2417,16 @@ below are gated in `RendererTextFidelityTests`, watched failing by
 putting the substitution back. Bold Charcoal and font id 2002 still
 substitute and are named in [charcoal-strike.md](charcoal-strike.md).
 Not metal-verified.
+
+**2026-08-07, the leftovers now DECLARE themselves.** Closing the main
+case did not close the substitution: font id 2002, every family the pack
+does not carry, and any desk whose pack predates the Charcoal work all
+still get a face they did not ask for, and all still got it in silence.
+`MirrorKitUI/FontSubstitution.swift` answers what was asked, what was
+served and whose the width is, and `LiveMirrorView` says so on screen
+when the Chicago fallback is live. **Not the style axis**: `op.face` is
+still never consulted, so a BOLD run reports `exact` and is not — that
+gap is unchanged and is still this section's.
 
 The diagnosis as it stood:
 

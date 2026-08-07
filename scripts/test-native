@@ -236,6 +236,10 @@ run_py_path tools/mirror-gate-tests/test_spin_up_ppc_shutdown.py
 run_py_path tools/mirror-gate-tests/test_lane_ports.py
 run_py_path tools/mirror-gate-tests/test_build_guests_env.py
 run_py_path tools/mirror-gate-tests/test_qemu_memory_oracle.py
+# The tool that reports where the arc stands, driven against a synthetic
+# repository rather than read. It was wrong about arc state — a source
+# check would have passed on the day the bug shipped.
+run_py_path tools/mirror-gate-tests/test_arc_status_measurements.py
 # The flicker instrument's arithmetic (tools/fidelity-live.py). It needs
 # no VM: the analyser is a pure function over a frame sequence, and the
 # number plan 018's A/B rests on comes out of it. An instrument that
