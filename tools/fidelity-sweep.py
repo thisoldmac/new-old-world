@@ -52,6 +52,32 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gwprobe  # noqa: E402
+from sweeplimits import write_limits  # noqa: E402
+
+
+# Stated in the artifacts, not only in whatever report a human writes
+# afterwards. See tools/sweeplimits.py for why.
+LIMITS = {
+    "settled-capture-only": (
+        "This tool renders a SETTLED capture. It never draws two "
+        "consecutive live frames, so a STABILITY score derived from it "
+        "means 'two independent captures composed to identical pixels' "
+        "and says NOTHING about whether the live window flickers. "
+        "tools/fidelity-live.py is the instrument for that."),
+    "three-phases-not-one-instant": (
+        "The agent surface, the host render and the guest pixels are "
+        "not one instant. The sweep tool and the host app both bind the "
+        "wire port the guest dials, so they cannot run together; a full "
+        "sweep is capture pass, live agent-surface phase, capture pass, "
+        "on one boot. Views 2 and 3 are simultaneous; view 1 is not."),
+    "emulator-not-metal": (
+        "Emulated mac99/OS 9 unless the run says otherwise. Nothing here "
+        "is metal-verified."),
+    "who-answered": (
+        "--expect-build refuses a guest whose hello build does not match "
+        "this checkout. A run without it is void, not annotated: every "
+        "QEMU guest on this Mac dials 10.0.2.2."),
+}
 
 
 def read_expected_build(repo):
@@ -319,6 +345,127 @@ class Sweep:
                 "texts": texts, "screendump": got_shot,
                 "qdext": status.get("qdext")}
 
+    # ---- state hygiene -------------------------------------------------
+    #
+    # Sweep A (2026-08-07) VOIDED Date & Time's whole stability row: pass
+    # 1 left the panel's own "Set Time Zone" modal open, pass 2 measured a
+    # different world, and the two renders were of two different machines.
+    # The dialog then stayed up for the rest of the run and contaminated
+    # every later health check. `--quit-after` did not close it, because
+    # asking an application to quit while it holds a modal does nothing.
+    #
+    # So: fingerprint the world before a target, try to put it back
+    # after, and when it cannot be put back SAY SO on both rows — the
+    # target that made the mess and the target that inherited it. A row
+    # measured in a world the sweep does not recognise is not a lower
+    # score, it is not a measurement.
+
+    def world(self):
+        """The set of windows and processes, as a comparable fingerprint.
+        Titles are included because a modal is often the only window its
+        application ever opens, so counting windows alone misses it."""
+        try:
+            scene = self.guest.scene()
+        except Exception as exc:                            # noqa: BLE001
+            return {"failed": str(exc)}
+        wins = []
+        for win in scene.get("windows", []):
+            wins.append({"app": win.get("app"), "title": win.get("title"),
+                         "kind": win.get("kind"), "ref": win.get("ref"),
+                         "addr": win.get("addr")})
+        return {"windows": wins,
+                "processes": sorted(p.get("name") for p in
+                                    scene.get("processes", []) if p.get("name"))}
+
+    @staticmethod
+    def _win_key(win):
+        return (win.get("app"), win.get("title"), win.get("kind"))
+
+    def _dismiss(self, win):
+        """Try to close ONE window, cheapest route first. A modal is a
+        dialog before it is a window: `ditemact` on its cancel item is
+        the route that worked in sweep A (7.6 s on the Mail modal), and
+        `winact close` is what a document window answers."""
+        attempts = []
+        ref = win.get("ref")
+        kind = win.get("kind")
+        if kind in (1, 2, 3):
+            # Dialog Manager items 1 and 2 are OK and Cancel by
+            # convention. Cancel FIRST: a sweep must never press the
+            # button that commits a control panel's change.
+            for item in (2, 1):
+                if not ref:
+                    break
+                reply = self.guest.command("ditemact", {"element": ref,
+                                                        "item": item})
+                attempts.append(("ditemact:%d" % item, bool(reply.get("ok"))))
+                if reply.get("ok"):
+                    time.sleep(2)
+                    return attempts
+            reply = self.guest.command("key", {"char": 27})     # Escape
+            attempts.append(("key:esc", bool(reply.get("ok"))))
+            time.sleep(2)
+            return attempts
+        if ref:
+            reply = self.guest.command("winact", {"window": ref,
+                                                  "action": "close"})
+            attempts.append(("winact:close", bool(reply.get("ok"))))
+            time.sleep(2)
+        return attempts
+
+    def tidy(self, label, before, app=None, quit_app=False):
+        """Return the world to `before`, and report honestly when it
+        cannot be. The return value is attached to the target's own row
+        AND, when it is not clean, to the next target's row."""
+        report = {"target": label, "clean": None, "dismissed": [],
+                  "residue": [], "attempts": []}
+        if "windows" not in before:
+            report["clean"] = False
+            report["residue"] = [{"note": "no baseline world for this target"}]
+            return report
+
+        baseline = {self._win_key(w) for w in before["windows"]}
+        for _ in range(3):
+            now = self.world()
+            if "windows" not in now:
+                report["clean"] = False
+                report["residue"] = [{"sceneFailed": now.get("failed")}]
+                return report
+            extra = [w for w in now["windows"]
+                     if self._win_key(w) not in baseline]
+            if not extra:
+                break
+            for win in extra:
+                report["attempts"].append(
+                    {"window": self._win_key(win),
+                     "tried": self._dismiss(win)})
+                report["dismissed"].append(self._win_key(win))
+        # Quitting comes AFTER the windows are gone: an application
+        # holding a modal ignores a quit, which is exactly how sweep A's
+        # --quit-after read as success while leaving the dialog up.
+        if quit_app and app:
+            try:
+                self.guest.command("quit", {"target": app})
+                time.sleep(3)
+            except Exception:                               # noqa: BLE001
+                pass
+
+        now = self.world()
+        if "windows" not in now:
+            report["clean"] = False
+            report["residue"] = [{"sceneFailed": now.get("failed")}]
+            return report
+        residue = [w for w in now["windows"]
+                   if self._win_key(w) not in baseline]
+        report["residue"] = [self._win_key(w) for w in residue]
+        report["clean"] = not residue
+        if residue:
+            print("  !! DIRTY EXIT after %s: %s — the next target is "
+                  "measured in a world this sweep did not set up and its "
+                  "row is marked contaminated"
+                  % (label, json.dumps(report["residue"])), flush=True)
+        return report
+
     def health(self):
         """A crashed application shows a dialog and reports nothing; a
         run's own counters read green through exactly that. So every
@@ -381,6 +528,11 @@ def main():
                              "front window — a caret and selected text are "
                              "drawn by invert and nothing in the corpus "
                              "has either")
+    parser.add_argument("--no-hygiene", dest="hygiene", action="store_false",
+                        default=True,
+                        help="do NOT return the world to its pre-target "
+                             "state between targets. Sweep A voided a row "
+                             "this way; only pass this to reproduce that.")
     parser.add_argument("--quit-after", action="store_true",
                         help="ask each app to quit once captured, so a long "
                              "sweep does not exhaust the guest's heap")
@@ -389,19 +541,37 @@ def main():
 
     sweep = Sweep(args)
     results = []
+    contaminated_by = None
     for spec in args.target:
         if args.max_targets and len(results) >= args.max_targets:
             print("stopping at --max-targets", flush=True)
             break
         app, _, path = spec.partition("=")
         label = app.lower().replace(" ", "-").replace("&", "and")
+        before = sweep.world() if args.hygiene else None
         try:
-            results.append(sweep.capture(label, app, path or None))
+            result = sweep.capture(label, app, path or None)
         except Exception as exc:                            # noqa: BLE001
             print("  FAILED: %s" % exc, flush=True)
-            results.append({"label": label, "app": app,
-                            "status": "error", "error": str(exc)})
-        if args.quit_after and path and path != "-":
+            result = {"label": label, "app": app,
+                      "status": "error", "error": str(exc)}
+        if contaminated_by:
+            # Named on the row that INHERITED the mess, not only on the
+            # row that made it: sweep A's void was discovered by reading
+            # a screendump, which is not a property an instrument should
+            # rely on a human noticing.
+            result["contaminatedBy"] = contaminated_by
+            result["contaminationNote"] = (
+                "measured in a world %s left dirty; scores on this row "
+                "are not comparable across passes" % contaminated_by)
+        results.append(result)
+        if args.hygiene:
+            tidy = sweep.tidy(label, before, app=app,
+                              quit_app=bool(args.quit_after and path
+                                            and path != "-"))
+            result["hygiene"] = tidy
+            contaminated_by = None if tidy.get("clean") else label
+        elif args.quit_after and path and path != "-":
             try:
                 sweep.guest.command("quit", {"target": app})
                 time.sleep(3)
@@ -412,9 +582,11 @@ def main():
     if alerts:
         print("\n!! POST-RUN HEALTH: %s" % json.dumps(alerts), flush=True)
     summary = {"vm": args.vm, "build": sweep.expect, "date": args.date,
-               "results": results, "postRunAlerts": alerts}
+               "results": results, "postRunAlerts": alerts,
+               "limits": LIMITS, "hygiene": bool(args.hygiene)}
     with open(os.path.join(args.outdir, "sweep-summary.json"), "w") as handle:
         json.dump(summary, handle, indent=1)
+    write_limits(args.outdir, "fidelity-sweep", LIMITS)
     print("\n%s" % json.dumps(
         [{k: r.get(k) for k in ("label", "status", "records", "window")}
          for r in results], indent=1))
