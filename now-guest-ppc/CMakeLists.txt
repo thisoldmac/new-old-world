@@ -62,6 +62,7 @@ add_application(now-guest-ppc
     src/cloud/cloud_contacts_view.c
     src/mirror/mirror_anchor.c
     src/mirror/mirror_layout.c
+    src/mirror/mirror_log.c
     src/mirror/mirror_json.c
     src/mirror/mirror_probe.c
     src/mirror/mirror_module.c

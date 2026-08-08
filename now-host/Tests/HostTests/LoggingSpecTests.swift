@@ -71,6 +71,71 @@ final class LoggingSpecTests: XCTestCase {
         }
     }
 
+    /// Rule 11, and the one boundary the Mirror's new `mirror` area may
+    /// not cross.
+    ///
+    /// `ext/` is the NOW Extension. Its QuickDraw bottlenecks, its trap
+    /// patches and its jGNE filter run **inside foreign processes, at draw
+    /// time**, and are bounded and allocation-free by construction —
+    /// `now_content.c` says so in its own comments. A disk write there
+    /// would change the timing of the thing being measured and could take
+    /// the Finder down with it, which is strictly worse than the silence
+    /// the `mirror` area was added to fix.
+    ///
+    /// So a fact only knowable inside a hook is surfaced as a COUNTER the
+    /// application reads at task time (`NowContentCounters`, read by
+    /// `now_mirror_log_idle`), never as a line the resident writes.
+    ///
+    /// **Which half of this the linker already does, measured rather than
+    /// assumed.** `now_log(` is checked first, and on 2026-08-08 the
+    /// mutation for it — a call plus a local `extern` declaration, which is
+    /// how someone would get it compiling — BUILT and then failed to LINK:
+    /// the INIT has no such symbol. So for that one spelling the linker is
+    /// the primary enforcement and this assertion is a named reason
+    /// arriving before an unresolved-symbol error nobody can read.
+    ///
+    /// **The File Manager half is the one nothing else catches**, and it is
+    /// the real hazard. `FSWrite`, `PBWrite` and their neighbours are
+    /// TRAPS: an INIT may call them with no library and no symbol, so a
+    /// resident that decided to keep its own little log would link clean
+    /// and then perform a disk write inside a QuickDraw bottleneck running
+    /// in the Finder's context at draw time. `ext/src` is clean of them
+    /// today except for the Device Manager `PBOpenSync` MacTCP needs, which
+    /// is named as an exception here rather than matched loosely.
+    ///
+    /// **Reach.** Literal spellings over comment-stripped text — a macro
+    /// alias defeats it, as it defeats the per-chunk check above. Unlike
+    /// that check the FILE LIST IS DERIVED, so a new resident source is
+    /// covered the day it lands.
+    func testTheResidentNeverLogs() throws {
+        // Disk writes an INIT can reach through traps alone.
+        let banned = ["now_log(", "FSWrite(", "PBWrite", "FSpCreate(",
+                      "FSpOpenDF(", "SetFPos(", "FlushVol(", "DebugStr("]
+        let extDir = GateSource.repoRoot.appendingPathComponent("ext/src")
+        let sources = try FileManager.default
+            .contentsOfDirectory(atPath: extDir.path)
+            .filter { $0.hasSuffix(".c") }
+            .sorted()
+        XCTAssertFalse(sources.isEmpty,
+                       "ext/src has no C sources — this gate found nothing "
+                       + "to read, which is not the same as finding it clean")
+        for name in sources {
+            let text = try GateSource.guestC("ext/src/\(name)")
+            for call in banned {
+                XCTAssertFalse(text.contains(call), """
+                    ext/src/\(name) calls \(call): it is resident code, and \
+                    it runs inside foreign processes at draw time and at \
+                    interrupt level, bounded and allocation-free by \
+                    construction. Writing to disk there changes the timing \
+                    of the thing it measures and can take the Finder down \
+                    with it. Surface the fact as a counter the application \
+                    reads at task time instead — see docs/logging.md, rule \
+                    11, and now-guest-ppc/src/mirror/mirror_log.h.
+                    """)
+            }
+        }
+    }
+
     /// Braces-balanced body of a C function, so the check reads the
     /// function rather than a window of lines around its name.
     ///
