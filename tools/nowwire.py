@@ -115,6 +115,25 @@ class GuestWire:
                   f"build {self.hello.get('build')}")
         return self.hello
 
+    def rebind(self):
+        """Close the listener and open a fresh one.
+
+        REQUIRED AFTER A SNAPSHOT RESTORE, and this is measured rather than
+        precautionary. The guest retries its dial while no host is up, so
+        connections pile up in the listening socket's ACCEPT BACKLOG. A
+        `loadvm` rewinds the GUEST and touches none of them, so the next
+        accept() hands back a connection whose guest-side no longer exists
+        — and it is indistinguishable from a real dial until the guest
+        never answers. Watched twice on 2026-08-07: once as "the guest
+        closed the connection", once as "the connection is open and the
+        event loop is not turning". Two different symptoms, one stale
+        socket."""
+        self.drop()
+        if self._srv is not None:
+            self._srv.close()
+            self._srv = None
+        return self.listen()
+
     def drop(self):
         """Close the guest connection but KEEP listening. This is how a
         gate hands the machine to a snapshot: the guest sees its host go
@@ -205,6 +224,28 @@ class GuestWire:
         that only used the command would never reach page two of a probe
         and would call a machine safe that is not."""
         return self.ask("census.request", probe=probe, cursor=cursor)
+
+    def exec_line(self, line):
+        """The console face: a whole line in, the text this Mac's own
+        Console page would have drawn back out (contract: the exec plane).
+        Returns (ok, text)."""
+        self._id += 1
+        mid = self._id
+        self._send({"type": "exec.request", "id": mid, "line": line})
+        chunks = {}
+        while True:
+            msg = self._read()
+            if msg.get("type") == "ping":
+                self._send({"type": "pong", "id": msg.get("id", 0)})
+                continue
+            if msg.get("id") != mid:
+                continue
+            if msg.get("type") == "exec.output":
+                chunks[msg.get("seq", len(chunks))] = msg.get("text", "")
+                continue
+            if msg.get("type") == "exec.result":
+                text = "".join(chunks[k] for k in sorted(chunks))
+                return bool(msg.get("ok")), text
 
     # --- liveness and identity -------------------------------------------
 

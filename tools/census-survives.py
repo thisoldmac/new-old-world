@@ -139,33 +139,52 @@ def screendump(qmp_sock, out_ppm, log):
         return None
 
 
-def anchor_answers(port, timeout=25.0):
-    """Does the anchor worker still answer? A separate process from NOW,
-    so this asks whether the damage stayed inside the application."""
+def find_lab():
+    lab = os.environ.get("NOW_LAB_ROOT")
+    if lab and os.path.isdir(os.path.join(lab, "mcp-classic")):
+        return lab
+    # A worktree sits several levels under the lab checkout; walk up to the
+    # one that has the anchor client, the same way scripts/spin-up-ppc does.
+    d = HERE
+    while d != "/":
+        if os.path.isdir(os.path.join(d, "mcp-classic")):
+            return d
+        d = os.path.dirname(d)
+    return None
+
+
+def anchor_answers(port, timeout=25.0, tries=3, gap=5.0):
+    """Does the anchor worker still answer? A separate process from NOW, so
+    this is the question "did the damage stay inside the application?".
+
+    Asked more than once on purpose, and this is a judgement rather than a
+    reflex: a single dropped connection to this worker is ordinary — it is
+    reconnected per request and a lane's other tools talk to it too, and
+    one such drop went red here against a machine that was demonstrably
+    fine. The defect it exists for did not look like that. It timed out,
+    twice in a row, minutes apart, with both graceful shutdown routes shut.
+    Three tries tells those apart; one try does not."""
+    lab = find_lab()
+    if lab is None:
+        return None, "no lab checkout found for the anchor client"
+    sys.path.insert(0, os.path.join(lab, "mcp-classic"))
     try:
-        lab = os.environ.get("NOW_LAB_ROOT")
-        if not lab:
-            for cand in ("/Users/michelle/Lab/Code/timbottu",):
-                if os.path.isdir(os.path.join(cand, "mcp-classic")):
-                    lab = cand
-                    break
-        if not lab:
-            return None, "no lab checkout found for the anchor client"
-        sys.path.insert(0, os.path.join(lab, "mcp-classic"))
         from timbottu_mcp_classic.harness import Harness
-        h = Harness(host="127.0.0.1", port=port, expect_backing={"worker"},
-                    timeout=timeout)
-        h.request("hello", {})
-        return True, "the anchor worker answered"
-    except TypeError:
-        try:
-            h = Harness(host="127.0.0.1", port=port, expect_backing={"worker"})
-            h.request("hello", {})
-            return True, "the anchor worker answered"
-        except Exception as e:
-            return False, f"{type(e).__name__}: {e}"
     except Exception as e:
-        return False, f"{type(e).__name__}: {e}"
+        return None, f"the anchor client will not import: {e}"
+    why = "never attempted"
+    for attempt in range(tries):
+        try:
+            h = Harness(host="127.0.0.1", port=port, expect_backing={"worker"},
+                        timeout=timeout)
+            h.request("hello", {})
+            return True, ("the anchor worker answered" if attempt == 0 else
+                          f"the anchor worker answered on try {attempt + 1}")
+        except Exception as e:
+            why = f"{type(e).__name__}: {e}"
+            if attempt + 1 < tries:
+                time.sleep(gap)
+    return False, f"{tries} tries, last: {why}"
 
 
 def main():
@@ -227,6 +246,35 @@ def main():
             log("   [warn] no --build-dir: this run does NOT know which guest "
                 "answered.")
 
+        # THE LIST THIS GATE SWEEPS, CHECKED AGAINST THE GUEST'S OWN.
+        # The probe names live in THREE places: the guest's dispatch table,
+        # the contract's x-census (which this gate derives from), and the
+        # hand-typed `help census` text a person reads at the console. This
+        # gate's first derivation was silently wrong — it ran past x-census
+        # and swept three cloud services as hardware probes — and the RESULT
+        # could not show it, because a probe a guest does not serve answers
+        # `refused`, which reads green. So the two lists are compared out
+        # loud. A hand-maintained enumeration wants a test that reads it
+        # (AGENTS.md > Enumerated lists rot at merges).
+        try:
+            ok, text = wire.exec_line("help census")
+            named = set(re.findall(r"\b([a-z][a-z0-9-]{2,})\b", text))
+            claimed = named & set(probes)
+            missing = [p for p in probes if p not in named]
+            if ok and claimed and missing:
+                return fail(
+                    "the contract declares census probes the guest's own "
+                    f"`help census` does not name: {', '.join(missing)}. One "
+                    "of the two lists is wrong, and a gate that swept the "
+                    "contract's list would have called a probe nobody serves "
+                    "'refused' and read green.", 2)
+            log(f"   `help census` on the guest names all {len(probes)} "
+                "declared probes")
+        except GuestGone:
+            raise
+        except Exception as e:
+            log(f"   [warn] could not cross-check `help census`: {e}")
+
         before = wire.command("ps")
         procs_before = [r[0] for r in before.get("output", {}).get("ps", [])]
         log(f"   before: {len(procs_before)} processes — "
@@ -282,13 +330,38 @@ def main():
     except GuestGone as e:
         return fail(f"the guest died answering `ps` after the sweep: {e}")
 
-    lost = [p for p in procs_before if p not in procs_after]
+    # THE FURNITURE, not every process. The first version of this check
+    # asked that NO process present before the sweep was missing after it,
+    # and went red on `tbt-runner` — a rig instrument that legitimately
+    # comes and goes while a lane works. A gate that cries at ordinary
+    # churn gets its result explained away, which is the failure mode that
+    # costs most: the next red is read as the same noise.
+    #
+    # So it names what MUST survive. NOW itself, because that is the
+    # symptom. The Finder, because the human's second report was that the
+    # Finder crashed. And the Application Switcher, because "I tried
+    # selecting the app switcher and it crashed Finder" is the sentence
+    # this arc is answering — it IS a process, it IS in `ps`, and its
+    # disappearance is therefore checkable here rather than only by a
+    # person clicking. (Selecting it from the Application menu is still
+    # NOT covered; see this file's header. Present is not the same as
+    # usable.)
+    must_survive = ["New Old World", "Finder", "Application Switcher"]
+    lost = [p for p in must_survive
+            if p in procs_before and p not in procs_after]
     if lost:
-        return fail("processes that were running before the census are gone "
-                    f"after it: {', '.join(lost)}. The census took something "
-                    "down with it.")
-    log(f"   after:  {len(procs_after)} processes — every one that was there "
-        "before is still there")
+        return fail(f"gone after the census: {', '.join(lost)}. These are the "
+                    "machine's own furniture, not rig instruments — the "
+                    "census took them down with it.")
+    absent = [p for p in must_survive if p not in procs_before]
+    if absent:
+        log(f"   [warn] not running before the sweep either, so not checked: "
+            + ", ".join(absent))
+    churn = [p for p in procs_before if p not in procs_after and p not in lost]
+    log(f"   after:  {len(procs_after)} processes; "
+        + ", ".join(p for p in must_survive if p in procs_after)
+        + " all still there"
+        + (f" (rig churn, not checked: {', '.join(churn)})" if churn else ""))
 
     if a.anchor:
         ok, why = anchor_answers(a.anchor)

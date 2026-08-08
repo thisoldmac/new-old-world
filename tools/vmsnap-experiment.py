@@ -54,7 +54,9 @@ def savevm(sock, tag, log):
     return time.time() - t
 
 
-def loadvm(sock, tag, log):
+def loadvm(sock, tag, log, wire=None):
+    if wire is not None:
+        wire.rebind()          # see GuestWire.rebind — stale backlog
     t = time.time()
     out = hmp(sock, f"loadvm {tag}")
     log(f"   loadvm {tag}: {time.time() - t:.1f}s {out.strip()!r}")
@@ -111,7 +113,7 @@ def main():
         return finish(results)
     wire.drop()
     log("   host connection dropped; restoring...")
-    loadvm(sock, a.tag + "-connected", log)
+    loadvm(sock, a.tag + "-connected", log, wire)
     try:
         t = take("A")
         record("A-restore-while-connected", True, t,
@@ -132,7 +134,7 @@ def main():
     except OracleError as e:
         record("B-savevm-idle", False, 0, f"savevm refused: {e}")
         return finish(results)
-    loadvm(sock, a.tag + "-idle", log)
+    loadvm(sock, a.tag + "-idle", log, wire)
     try:
         t = take("B")
         record("B-restore-from-idle", True, t,
@@ -142,19 +144,45 @@ def main():
 
     # --- C: restore over a machine that is broken ------------------------
     log("")
-    log("== C: restore over a WEDGED machine ==")
-    log("   The case a suite actually needs: the reason to restore is that")
-    log("   the last test broke the Mac. If this does not work, snapshots")
-    log("   buy nothing — a suite only needs them for the tests that hurt.")
+    log("== C: does a restore actually REWIND the machine? ==")
+    log("   B proves the wire reconnects. That is not the property a suite")
+    log("   needs — it needs the MACHINE put back. NOW itself cannot be used")
+    log("   for this: the guest refuses to quit itself by design")
+    log("   (kProcQuitRefusedSelf), so a real process is quit instead and the")
+    log("   question is whether the restore brings it back.")
+    # NO second accept here: B left a live connection and this guest serves
+    # ONE host. Taking another put two listeners on one wire and the guest
+    # dropped both — a self-inflicted "the guest closed the connection" that
+    # looked exactly like the defect being measured.
+    victim = "Control Strip Extension"
+    before = [r[0] for r in wire.command("ps").get("output", {}).get("ps", [])]
+    if victim not in before:
+        record("C-restore-rewinds", False, 0,
+               f"{victim!r} was not running, so nothing could be quit; "
+               "this case did not run")
+        return finish(results)
+    wire.command("quit", target=victim)
+    time.sleep(6)
+    mid = [r[0] for r in wire.command("ps").get("output", {}).get("ps", [])]
+    if victim in mid:
+        record("C-restore-rewinds", False, 0,
+               f"{victim!r} declined to quit, so the machine was never "
+               "damaged and this case proves nothing")
+        return finish(results)
+    log(f"   {victim} quit: {len(before)} processes -> {len(mid)}")
     wire.drop()
-    loadvm(sock, a.tag + "-idle", log)
+    loadvm(sock, a.tag + "-idle", log, wire)
     try:
         t = take("C")
-        record("C-restore-recovers", True, t,
-               "restore reached a live guest again (see the note below on "
-               "what 'wedged' means in this run)")
+        after = [r[0] for r in wire.command("ps").get("output", {}).get("ps", [])]
+        back = victim in after
+        record("C-restore-rewinds", back, t,
+               f"{victim!r} is {'BACK' if back else 'STILL GONE'} after the "
+               "restore — the snapshot "
+               + ("rewound the machine, not just the wire"
+                  if back else "did NOT rewind process state"))
     except GuestGone as e:
-        record("C-restore-recovers", False, a.redial_wait, str(e))
+        record("C-restore-rewinds", False, a.redial_wait, str(e))
 
     return finish(results)
 
