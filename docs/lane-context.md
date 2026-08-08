@@ -121,6 +121,12 @@ These rot. The commands are the source:
 
 ```
 tools/arc-status <integration-branch>     # lanes, triggers, corpus backlog
+                                          # NOT on main; fetch from an
+                                          # integration branch >= 024. A copy
+                                          # from claude/019-integration-5 is
+                                          # STALE — blind to every 02x lane.
+                                          # It now refuses; see
+                                          # docs/arc-coordination.md.
 tools/base-image which --purpose ppc-work # which base to clone
 tools/lane-ports human                    # the reserved human ports
 git branch --list 'claude/0[12][0-9]-*'   # the arc's lanes

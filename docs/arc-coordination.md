@@ -87,6 +87,39 @@ what is landed, what is not, what conflicts each unlanded branch would
 hit, whether main is in, what is running on the machine, and whether the
 gates are actually armed. Run it before saying any of that out loud.
 
+### Where to fetch it, and why the name in your brief is probably wrong
+
+This tool is on integration branches and **nowhere common** — not on
+`main`, and absent from 400 of the 449 branches in this repository
+(derived 2026-08-08). So a brief cannot say "run `tools/arc-status`"; it
+has to say where to get it, and for weeks the standing arc-trigger check
+has said:
+
+    git show claude/019-integration-5:tools/arc-status     # DO NOT
+
+**That copy is stale and it does not say so.** Its lane glob is
+`claude/01[0-9]-*`, written out in five separate places, so it is blind
+to every `02x` lane — it enumerates the 019 branches, omits the arc
+actually running, and prints a table headed *"work that exists"* that is
+a true sentence about a smaller set than the reader thinks. Of the 49
+branches carrying this file, **40 carry that narrow glob**; only 9 carry
+the widened one (commit `ed5da741`).
+
+Fetch it from a branch that has `ed5da741` as an ancestor — any
+integration branch from `claude/024-integration-12` onward:
+
+    git show claude/024-integration-12:tools/arc-status > /tmp/arc-status
+    chmod +x /tmp/arc-status
+
+**But do not rely on getting that name right.** Pinning a branch in prose
+is the thing that failed here, and it will fail again the moment the arc
+rolls to `03x`. The tool now **refuses to run** when its own glob cannot
+match the newest arc number present in the repository, deriving that
+number by a scan that does not use the glob — because a check written in
+terms of the thing under test cannot fail. A stale copy exits 65 with a
+refusal naming both globs. That guard was watched fail: the narrow glob
+was reintroduced and the refusal fired.
+
 **And every line of it is a timestamp.** `idle` means *that worktree had
 no dirty files at the moment it was read* — an agent between two edits
 reads exactly like an agent that finished. An integration takes an hour;

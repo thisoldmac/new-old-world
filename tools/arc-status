@@ -30,7 +30,71 @@ fi
 # The lane set, enumerated ONCE. Five loops used to each write the same
 # glob, which is five places for a naming convention to change and four
 # of them to be missed.
-lanes=$(git branch --list 'claude/0[12][0-9]-*' --format='%(refname:short)')
+LANE_GLOB='claude/0[12][0-9]-*'
+lanes=$(git branch --list "$LANE_GLOB" --format='%(refname:short)')
+
+# SELF-CHECK: A STALE COPY OF THIS SCRIPT MUST REFUSE, NOT ANSWER.
+#
+# This tool is not on `main` and not on most branches, so the way a lane
+# gets it is by fetching it out of some pinned branch that happens to
+# carry it — and the standing arc-trigger check has for weeks named
+# `claude/019-integration-5`, whose copy globs `claude/01[0-9]-*` in five
+# separate places. Run that copy today and it enumerates the 019 lanes,
+# omits every 02x lane in silence, and prints a table headed "work that
+# exists" that is a true sentence about a smaller set than the reader
+# thinks. Nothing in the output says so. Measured 2026-08-08: of the 49
+# branches carrying this file, 40 carry the narrow glob.
+#
+# That is this project's most-repeated defect shape — an instrument whose
+# NORMAL mode of operation is the one condition under which the defect
+# cannot appear. A widened glob sees a narrow one's blind spot; a narrow
+# glob cannot see its own. So correcting the pinned branch name in the
+# docs is necessary and is not sufficient: the next arc rolls to 03x and
+# every copy pinned today goes quietly wrong again, including this one.
+#
+# The fix is a guard that makes staleness a REFUSAL. The arc number is
+# DERIVED — from the branch names present, by a scan that deliberately
+# does not use $LANE_GLOB, because a check written in terms of the thing
+# under test cannot fail. If the newest arc in the repository is not one
+# this glob can match, we do not know what we are looking at and we say
+# so instead of printing a confident partial answer.
+#
+# Scoped to the NEWEST arc on purpose. A glob that excludes arcs 001-011
+# is a scope decision; a glob that has fallen behind the arc actually
+# running is a defect. Older gaps are reported and do not refuse.
+arc_nums () {   # stdin: branch names -> the 3-digit arc numbers in them
+    sed -n 's,^claude/\([0-9][0-9][0-9]\)-.*,\1,p' | sort -u
+}
+all_arcs=$(git branch --format='%(refname:short)' | arc_nums)
+seen_arcs=$(printf '%s\n' $lanes | arc_nums)
+newest_arc=$(printf '%s\n' "$all_arcs" | sort -n | tail -1)
+if [ -n "$newest_arc" ] && ! printf '%s\n' "$seen_arcs" | grep -qx "$newest_arc"; then
+    cat >&2 <<REFUSE
+=== REFUSING TO RUN — this copy of arc-status is STALE
+
+    Its lane glob is   $LANE_GLOB
+    The newest arc is  $newest_arc   (derived from the branch names present)
+
+    That glob cannot match a single claude/$newest_arc-* branch, so every
+    table below would omit the arc that is actually running and would
+    say nothing about having done so. A partial answer from this tool is
+    worse than no answer: it is quoted to people as the derived truth.
+
+    You are almost certainly running a copy fetched from a branch pinned
+    in a brief. Fetch one that carries the widened glob instead:
+
+        git show <a branch with claude/$newest_arc-* work>:tools/arc-status
+
+    The widening commit is ed5da741 ("fix(arc-status): the arc rolled
+    past 019 and the trigger did not"); any branch with that as an
+    ancestor is current. Do not edit the glob by hand in a fetched copy
+    — fix it where it lives, or the next lane repeats this.
+REFUSE
+    exit 65
+fi
+missed=$(printf '%s\n' "$all_arcs" | grep -vxF -f <(printf '%s\n' "$seen_arcs") || true)
+[ -n "$missed" ] && \
+    echo "note: lane glob $LANE_GLOB does not match arc(s): $(echo $missed) (older arcs; not refusing)"
 
 # THE LANE THIS ONE SHARES THE MOST HISTORY WITH, and how much — printed
 # as "N commits (M shared with X)" so that nobody adds the column up.
@@ -85,7 +149,7 @@ echo
 # person deciding what to merge actually wants; both are printed,
 # because the first is still what a merge would bring across.
 echo "=== NOT LANDED — work that exists and is not in $INT"
-echo "    (branches matching claude/0[12][0-9]-*; see the last line for the rest)"
+echo "    (branches matching $LANE_GLOB; see the last line for the rest)"
 notlanded=0
 for b in $lanes; do
     [ "$b" = "$INT" ] && continue
@@ -115,7 +179,7 @@ done
 outside=0
 for b in $(git branch --format='%(refname:short)'); do
     [ "$b" = "$INT" ] && continue
-    case "$b" in claude/0[12][0-9]-*|main) continue ;; esac
+    case "$b" in $LANE_GLOB|main) continue ;; esac
     git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
     outside=$((outside + 1))
 done
