@@ -135,3 +135,38 @@ one window's ink.
 
 That is arguably worth more than the crash fix. A crash is loud. This is
 the quiet hatch.
+
+## The next bisect, and it needs no rebuild
+
+The resident arms planes by a **lease union**: `arm_request` is the union
+of what each owner has claimed (`peek.c :: publish_claims_to`). Every
+owner claims a different set, and each is reachable from the **guest's
+own console** — so the plane that crashes can be found on the machine,
+with no host, no cross-compile and no deploy.
+
+| on the guest | owner | caps claimed |
+|---|---|---|
+| open the Processes module | Processes | anchors |
+| `observe` | Observe | anchors + tree (P1/P2) |
+| `qdtrace start` | Content | **content (P3)** |
+| `actselftest` | Act | anchors + act (P4) |
+| `transitions` | Events | events (P5) |
+
+Procedure: reinstall the INIT, reboot, and walk the ladder **without
+opening the host Mirror at all**. Whichever verb takes the machine down
+names the plane.
+
+P3 is the standing suspect — it is the only plane whose machinery
+(trap patches, CQDProcs, GWorld hooks) executes inside foreign processes
+at draw time, and it is the one the six defended mechanisms were read
+out of.
+
+**A null result is equally useful.** If every verb is survivable and the
+Mirror still crashes, the fault is in the host's *combination* of planes
+rather than any single one, and `wire.c:2016` — where the host's
+requested set becomes `now_peek_release(optional & ~requested)` followed
+by `now_peek_claim(requested)` — is where to look next.
+
+Note the shape of that pair: a release of everything optional that was
+not requested, then a claim. Two writes to the lease set per scene
+request, and the plane goes through a transition on every one.
