@@ -202,6 +202,10 @@ typedef struct {
     UInt16 r1[4]; UInt8 *buffer; UInt16 r2[12]; SInt16 r3[6];
 } TrapAtaIdentify;
 enum { kAtaFnIdentify = 0x13 };
+/* ATA.h: bATAFlagIORead = 13. Named here because this file deliberately
+   does not include the Carbon-gated header; the value is checked against
+   Universal Interfaces ATA.h, not remembered. */
+enum { kAtaFlagIORead = 1 << 13 };
 
 typedef struct {
     UInt8 signature[2]; UInt16 count; UInt16 revision; UInt16 csLevel;
@@ -228,6 +232,37 @@ SInt16 census_ata_identify(unsigned long device_id, unsigned char *buf)
     pb.fn = kAtaFnIdentify;
     pb.deviceID = device_id;
     pb.timeout = 1000;                  /* ms; a live drive answers at once */
+    /* THE DIRECTION OF THE TRANSFER, AND IT IS NOT OPTIONAL. Drive
+       Identify moves 512 bytes from the drive to `buffer`, and the ATA
+       Manager only drives that data phase when the read flag says so.
+       Without it the call still returns noErr — so it looks like a
+       working probe that happens to meet drives with nothing to say —
+       and that is exactly how it read on the PB1400c on 2026-07-22:
+       "the manager answers noErr with an EMPTY IDENTIFY buffer". The
+       buffer was empty because nobody ever asked for the data.
+
+       The empty buffer was the harmless half. The device is left mid-
+       command, and on Mac OS 9 the cost lands minutes later on the ONE
+       write nothing else can cover for: the Shutdown Manager's final
+       "volume unmounted" flag. The machine runs, the census page comes
+       back, hundreds of blocks are written, the Finder's Special > Shut
+       Down powers the Mac off in six seconds looking perfect — and the
+       HFS volume comes back marked mounted, so every clone of that image
+       opens in Disk First Aid and scripts/bake-ext-image refuses it.
+
+       Measured on the emulator 2026-08-07, same base image and same
+       shutdown route throughout: no census -> CLEAN; the full 14-probe
+       sweep -> DIRTY; `--probes ata` alone -> DIRTY; the same probe
+       narrowed to the one device id that answers -> DIRTY (so it is the
+       SUCCESSFUL Identify, not the timeouts on the absent ids); with
+       this flag, `--probes ata` -> CLEAN and the full sweep -> CLEAN.
+       A static parameter block was tried first and changed nothing,
+       which is how the queue-element theory was ruled out.
+
+       Not metal-verified: nobody has yet shut a PB1400c down after a
+       census. The row's contents on that machine should be re-read too —
+       it may no longer say "no IDENTIFY data". */
+    pb.flags = kAtaFlagIORead;
     pb.buffer = buf;
     if (dispatch(&g_ata_rd, &pb) != noErr) {
         return -1;
