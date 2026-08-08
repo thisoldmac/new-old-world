@@ -141,7 +141,76 @@ class ArcStatusMeasurementTests(unittest.TestCase):
         self.assertIn("2 finding(s) on main", out)
         self.assertIn("3 finding(s) written and NOT on main, "
                       "across 1 branch(es)", out)
-        self.assertIn("3 on claude/018-findings (3 commit(s))", out)
+        self.assertIn("3 unique to claude/018-findings, 3 not on main "
+                      "(3 commit(s))", out)
+
+    # ---- the unlanded total is a SET, not a sum -----------------------
+    #
+    # Round 8 recorded that the commits half of this script had learned
+    # not to double-count across branches sharing history and the
+    # findings half had not. On 2026-08-07 that cost a landing: 57
+    # findings went onto `main`, `main` moved 216 -> 273, and this line
+    # went on reporting "87 across 35" — unchanged, still naming the
+    # branch whose 26 had just landed. The true remainder was 15.
+
+    def _fork(self, parent, name, files):
+        """A corpus branch cut from `parent`, adding one commit per file."""
+        git(self.corpus_repo, "checkout", "-q", "-b", name, parent)
+        for f in files:
+            commit(self.corpus_repo, f"data/findings/{f}.md", f"{f}\n",
+                   f"findings: {f}")
+        git(self.corpus_repo, "checkout", "-q", "main")
+
+    def test_a_finding_on_two_branches_is_counted_once(self):
+        """A child lane carries its parent's findings. Summing
+        `--diff-filter=A` per branch counted them once per branch, so the
+        arc's backlog grew every time somebody cut a worktree."""
+        self._fork("main", "claude/x", ["shared"])
+        self._fork("claude/x", "claude/y", ["why"])
+        out = self.run_arc_status()
+        # three/four/five on 018, plus shared and why. Five files, not
+        # the six a per-branch sum produces by counting `shared` twice.
+        self.assertIn("5 finding(s) written and NOT on main, "
+                      "across 3 branch(es)", out)
+
+    def test_a_finding_that_has_landed_stops_being_counted(self):
+        """The expensive half. `--diff-filter=A $trunk...$cb` measures
+        against the branch's own merge base, so a finding copied onto the
+        trunk — which is exactly how the landing lane lands them — still
+        reads as an addition on every branch that ever held it. The
+        number then cannot move no matter how much work lands, and it is
+        wrong in the direction that makes a reader redo the landing."""
+        commit(self.corpus_repo, "data/findings/three.md", "0\n",
+               "corpus: land three")
+        out = self.run_arc_status()
+        self.assertIn("3 finding(s) on main", out)
+        self.assertIn("2 finding(s) written and NOT on main, "
+                      "across 1 branch(es)", out)
+
+    def test_the_directory_readme_is_not_a_finding(self):
+        """`tools/data check` reports 273 where the `.md` count is 274.
+        A tool whose number cannot be reconciled with the corpus's own
+        gate is a second number for a reader to distrust."""
+        commit(self.corpus_repo, "data/findings/README.md", "how to\n",
+               "findings: readme")
+        self._fork("main", "claude/x", ["shared"])
+        out = self.run_arc_status()
+        self.assertIn("2 finding(s) on main", out)
+        self.assertIn("4 finding(s) written and NOT on main", out)
+
+    def test_the_branch_column_is_what_deleting_it_would_lose(self):
+        """The only question a per-branch breakdown answers. `claude/x`
+        holds one unlanded finding and `claude/y` also holds it, so
+        deleting `claude/x` loses nothing and it must not be listed;
+        `claude/y` alone holds `why`."""
+        self._fork("main", "claude/x", ["shared"])
+        self._fork("claude/x", "claude/y", ["why"])
+        out = self.run_arc_status()
+        knowledge = out.split("=== KNOWLEDGE")[1]
+        self.assertIn("1 unique to claude/y, 2 not on main", knowledge)
+        self.assertNotIn("claude/x", knowledge,
+                         "nothing is lost by deleting it; listing it "
+                         "sends somebody to rescue a duplicate")
 
     def test_a_stale_corpus_still_earns_the_warning(self):
         """The warning is kept, not softened: the worry is legitimate and

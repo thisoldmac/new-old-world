@@ -295,38 +295,74 @@ if [ -d "$corpus" ] && [ -n "$croot" ]; then
     # total is how this goes wrong: the 2026-08-07 handoff said "235
     # findings", which is neither the 243 on the branch nor the 217 on
     # main, and no reader could tell which it meant to be.
-    ontrunk=$(git -C "$croot" ls-tree -r --name-only "$trunk" -- "$rel" \
-                2>/dev/null | grep -c '\.md$' || true)
-    echo "    ${ontrunk:-0} finding(s) on $trunk"
+    #
+    # WHAT COUNTS AS A FINDING: `$rel/*.md`, minus `README.md`, which is
+    # the directory's own preamble and not a lesson. The count is stated
+    # in the line itself because `tools/data check` reports 273 where the
+    # `.md` file count is 274, and a reader comparing the two numbers
+    # deserves to be told which one this is rather than left to guess.
+    finding_paths () {   # ref -> its finding files, one path per line
+        git -C "$croot" ls-tree -r --name-only "$1" -- "$rel" 2>/dev/null \
+          | grep '\.md$' | grep -v '/README\.md$' || true
+    }
+    ontrunk=$(finding_paths "$trunk" | wc -l | tr -d ' ')
+    echo "    ${ontrunk:-0} finding(s) on $trunk (*.md, README excluded)"
 
-    # `--diff-filter=A` against the merge base: findings this branch ADDS
-    # and the trunk has never seen. A plain diff would also count edits
-    # and deletions, and "changed a finding" is not the state this line
-    # is warning about.
-    unl_files=0; unl_branches=0; unl_rows=""
+    # DISTINCT FILES ABSENT FROM THE TRUNK — never a sum of per-branch
+    # additions.
+    #
+    # This loop used to run `--diff-filter=A $trunk...$cb` per branch and
+    # add the answers up, which is wrong twice over. A finding carried on
+    # eight branches was counted eight times; and because the three-dot
+    # diff measures against each branch's own merge base, a finding that
+    # had ALREADY LANDED still read as an addition on every branch that
+    # ever held it. On 2026-08-07 that combination survived a landing
+    # untouched: 57 findings went onto `main`, `main` moved 216 -> 273,
+    # this line went on saying "87 across 35" and went on naming the very
+    # branch whose 26 had just landed. The true remainder was 15.
+    #
+    # The commits half of this script learned the same lesson earlier
+    # (see `shared_with`) and this half was left summing. So: take each
+    # branch's finding files as a SET, union them, subtract the trunk's
+    # set. Set arithmetic cannot double-count and cannot be fooled by a
+    # stale merge base.
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    finding_paths "$trunk" | sort -u > "$tmp/trunk"
+    i=0; : > "$tmp/index"; : > "$tmp/absent"
     for cb in $(git -C "$croot" branch --format='%(refname:short)'); do
         [ "$cb" = "$trunk" ] && continue
         git -C "$croot" merge-base --is-ancestor "$cb" "$trunk" \
             2>/dev/null && continue
-        n=$(git -C "$croot" diff --diff-filter=A --name-only \
-              "$trunk...$cb" -- "$rel" 2>/dev/null | grep -c '\.md$' || true)
-        [ "${n:-0}" -gt 0 ] || continue
-        unl_files=$((unl_files + n))
-        unl_branches=$((unl_branches + 1))
-        unl_rows="$unl_rows$n $cb
-"
+        i=$((i + 1))
+        finding_paths "$cb" | sort -u | comm -23 - "$tmp/trunk" > "$tmp/b$i"
+        [ -s "$tmp/b$i" ] || { rm -f "$tmp/b$i"; continue; }
+        printf '%s %s\n' "$i" "$cb" >> "$tmp/index"
+        cat "$tmp/b$i" >> "$tmp/absent"
     done
+    unl_files=$(sort -u "$tmp/absent" | wc -l | tr -d ' ')
+    unl_branches=$(wc -l < "$tmp/index" | tr -d ' ')
     if [ "$unl_branches" -gt 0 ]; then
         echo "    *** $unl_files finding(s) written and NOT on $trunk, across $unl_branches branch(es) ***"
-        # Loudest first, and only the loudest: this repository carries a
-        # long tail of one-finding branches from finished threads, and a
-        # 38-line list buries the one that matters under the ones that
-        # do not. The total above is the complete claim.
-        printf '%s' "$unl_rows" | sort -rn | head -5 | while read -r n cb; do
+        # The per-branch column is UNIQUE-AT-RISK: findings on that branch
+        # and on no other branch and not on the trunk. That is the answer
+        # to "what is lost if this branch is deleted", which is the only
+        # question a per-branch breakdown is asked. A per-branch total
+        # would restate the double-count the line above just removed.
+        sort "$tmp/absent" | uniq -u > "$tmp/once"
+        while read -r n cb; do
+            u=$(comm -12 "$tmp/b$n" "$tmp/once" | wc -l | tr -d ' ')
+            printf '%s %s %s\n' "$u" "$(wc -l < "$tmp/b$n" | tr -d ' ')" "$cb"
+        done < "$tmp/index" | sort -rn | head -5 | while read -r u n cb; do
+            [ "$u" -gt 0 ] || continue
             c=$(git -C "$croot" rev-list --count "$trunk..$cb" \
                   2>/dev/null || echo '?')
-            echo "        $n on $cb ($c commit(s))"
+            echo "        $u unique to $cb, $n not on $trunk ($c commit(s))"
         done
+        # A branch whose every unlanded finding also lives elsewhere is
+        # safe to delete, and saying so is the point of the column.
+        [ -s "$tmp/once" ] || \
+            echo "        (none unique — every one of these is on more than one branch)"
         [ "$unl_branches" -gt 5 ] && \
             echo "        … and $((unl_branches - 5)) more branch(es)"
     fi

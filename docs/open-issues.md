@@ -1075,28 +1075,63 @@ Two things are still open:
   The keep-both hazards this repository has already paid for are all about
   conflicts; this one produced no conflict.
 
-## OPEN: `arc-status`'s findings total is a sum with duplicates (2026-08-07, round 7 integration)
+## FIXED: `arc-status`'s findings total was a sum with duplicates, and no landing could move it (2026-08-07, `claude/019-arc-status-findings`)
 
-**Verification level: TESTED (read, not measured against the corpus).**
+**Verification level: TESTED (against a synthetic corpus, and derived
+against the real one).**
 
-`019-multi-window-content` fixed exactly this shape for COMMITS in the
-same round: `shared_with` was added because `merge-base $b $INT` counts a
-lane cut from another lane as owning that lane's commits, and one branch
-with one commit of its own read as seventeen.
+`019-multi-window-content` fixed exactly this shape for COMMITS in round
+7: `shared_with` was added because `merge-base $b $INT` counts a lane cut
+from another lane as owning that lane's commits, and one branch with one
+commit of its own read as seventeen. **The findings counter below it was
+not fixed**, and round 8 recorded that and moved on.
 
-The findings counter below it was not fixed and still has the defect. It
-loops over every branch, counts `--diff-filter=A` against
-`$trunk...$cb`, and adds — so a finding written on a parent branch is
-counted again on every child cut from it. Derived against merge-bases the
-same figure that reads **82 findings across 34 branches** is **69 across
-29**.
+It cost a landing. A corpus lane swept all 166 local branches, found 74
+unique finding files absent from the parent's `main`, landed 57 and left
+15 (their `doc_ref` or `evidence` lives only on the source branch, so
+`tools/data check` refuses them) plus 2 stray PNGs. The parent's `main`
+went **216 → 273**, and `arc-status` could see it — it printed the new
+total. Its next line still said **87 across 35**, still named
+`claude/018-findings` as holding 26 that had just landed, and had **not
+moved by one**.
 
-The cure is the one the commit half already took: attribute a file to one
-branch, or report the union rather than the sum. Until then, quote the
-derived figure and not this line — and the line itself should say which
-it is, because a total nobody can tell is deduplicated is exactly the
-kind of enumerated number this repository has already been bitten by
-three times in one day.
+Two defects in the one loop, both from summing `--diff-filter=A` per
+branch:
+
+- **Duplicates.** A finding carried on eight branches was counted eight
+  times, so the backlog grew every time somebody cut a worktree.
+- **The number could not move.** The three-dot diff measures against each
+  branch's own merge base, so a finding COPIED onto the trunk — which is
+  how the landing lane lands them — still read as an addition on every
+  branch that ever held it. No amount of landing could reduce it.
+
+The second is the expensive one, and it is wrong in the direction that
+costs work: it tells a reader there is a large backlog when the real
+remainder is 15, and acting on it means redoing a landing that already
+happened.
+
+**The fix is set arithmetic.** Each branch's finding files as a set
+(`git ls-tree -r --name-only <branch> -- data/findings`, `*.md`, minus
+`README.md`), unioned, minus the trunk's set. Set arithmetic cannot
+double-count and cannot be fooled by a stale merge base. **87/35 became
+15/11**, reconciling with the landing lane's 15 excluded; its ~17 also
+counted the 2 PNGs, which are not findings. The line now names its own
+filter, so its 273 reconciles with `tools/data check` rather than with
+the raw `.md` count of 274.
+
+The per-branch breakdown is now **unique-at-risk** — on that branch, on
+no other, and not on the trunk — because "what is lost if this branch is
+deleted" is the only question a per-branch breakdown is asked, and a
+per-branch total would have restated the double-count just removed.
+
+Four cases added to `tools/mirror-gate-tests/test_arc_status_measurements.py`,
+watched to fail against five separate mutations (the per-branch sum;
+dropping the trunk subtraction; the literal original `--diff-filter=A`
+loop; counting `README.md`; printing branch totals in place of
+unique-at-risk). Each was named by the case written for it, and the
+diff-filter mutation is caught only by the landed-finding case — the two
+defects needed two tests, which is why one guard would not have been
+enough.
 
 ## OPEN: a fix landed on a file this arc archived, and there is no forward target (2026-08-07, round 7 integration)
 
