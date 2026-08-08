@@ -61,6 +61,29 @@ and the display guard is tested by **running** `spin-up-ppc`, not by
 reading it: a text assertion would survive an edit that moved the check
 after the boot, which is where it would stop mattering.
 
+## The lane that BUILDS it records it against its own block
+
+A person's stack is booted by a lane, on the reserved ports — and
+`spin-up-ppc` then calls `tools/lane-ports attach`, which files the VM's
+QMP socket and run directory under **the building lane's** block, not
+under 591. The ports are hers; the *claim* is the lane's.
+
+So after handing over, `tools/lane-ports reclaim` on that lane — run by a
+worktree sweep, or by the next session to inherit the branch — shuts down
+**her machine**, correctly, from a record that says it is the lane's.
+Nobody would be careless: the tool is doing exactly what the registry
+says.
+
+**Clear the two fields before you walk away** (`qmpSockets`, `runDirs` in
+`/private/tmp/now-lanes/<block>.json`) and leave a note in their place
+saying where the machine actually is. Her stack is not an unrecorded
+orphan when you do — `tools/lane-ports whose --port 16729` finds it
+through `lsof` and names the reserved range, which is the answer a person
+looking for it wants anyway.
+
+Observed 2026-08-07 while building the stack this page exists for: block
+591's VM was filed under block 578.
+
 ## Replacing a running human stack
 
 Order matters, and one step is not the order you would guess.
