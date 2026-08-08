@@ -2299,6 +2299,15 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return Self.visibilityDispatchOutcome(read.value)
 
         case .finderSelect(let item, let container):
+            /* UNCHANGED, deliberately. Fronting the Finder here starves the
+               guest application — see finderDeselect below — but a select
+               fronting the Finder is a DECIDED behaviour, measured on a
+               live machine 2026-08-05 and guarded by
+               `testTheFinderComesForwardForASelectionAndNotOverANewApplication`
+               with the reason "a selection nobody can see is not a
+               selection". That is a real trade-off between visibility and
+               scheduling, and it is not one to resolve from a log at 3am.
+               Michelle's call. */
             return await finder(
                 "select \(reference(item, in: container))")
         case .finderOpen(let item, let container):
@@ -2316,7 +2325,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 "open \(reference(item, in: container))",
                 activate: !ownApp)
         case .finderDeselect:
-            return await finder("select {}")
+            /* CLEARING a selection has nothing to show, so the visibility
+               argument that justifies fronting on a select does not reach
+               here — this case simply inherited the `activate: true`
+               default alongside its sibling.
+
+               Fronting is not free. It backgrounds the guest application,
+               which is the ONLY context permitted to give back its own
+               content-plane port hooks: `content_uninstall_context` skips
+               every row whose a5 is not the caller's, and the jGNE filter
+               that drives it runs in whatever process happens to pump.
+
+               Measured on the PowerBook 1400c, 2026-08-08: 22 hooks
+               installed against 1 uninstalled, four ports still hooked
+               with `a5 0x0`, and the guest logging "not scheduled for 14s"
+               while the host fronted the Finder at it. Michelle saw that
+               as the guest app repeatedly hiding itself. */
+            return await finder("select {}", activate: false)
 
         case .nothing, .unsupported:
             return nil                       // handled before we get here

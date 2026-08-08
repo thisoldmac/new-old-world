@@ -124,6 +124,50 @@ final class MirrorServeSeamTests: XCTestCase {
     /// The other half of the same call site: a folder open makes a FINDER
     /// window, and a selection nobody can see is not a selection — the
     /// Finder must come forward for it.
+    /// **Clearing a selection must not front the Finder.**
+    ///
+    /// A select fronting the Finder is decided behaviour — "a selection
+    /// nobody can see is not a selection" — but a DESELECT has nothing to
+    /// show, and it inherited `activate: true` from its sibling rather
+    /// than from anyone's decision.
+    ///
+    /// The cost is not cosmetic. Fronting the Finder backgrounds the guest
+    /// application, and that application is the ONLY context permitted to
+    /// give back its own content-plane port hooks: `content_uninstall_context`
+    /// skips every row whose a5 is not the caller's, and the jGNE filter
+    /// that drives it runs in whatever process happens to pump. Measured on
+    /// the PowerBook 1400c 2026-08-08: 22 hooks installed against 1
+    /// uninstalled, four ports still hooked at `a5 0x0`, and the guest
+    /// logging "not scheduled for 14s" while the host fronted the Finder
+    /// at it.
+    ///
+    /// Tested HERE rather than on `finderScript(activate:)`, for this
+    /// file's founding reason: a mutation at the CALL SITE once left nine
+    /// tests green.
+    func testClearingASelectionDoesNotFrontTheFinder() async throws {
+        let sent = SentCommands()
+        let (source, _, listener, guest) = try await sourceWithSeam(sent)
+        defer { guest.connection.cancel(); listener.stop() }
+
+        let front = MirrorObject.App(psn: "0.3", name: "Finder",
+                                     isFront: true)
+        source.perform(
+            Interaction(object: .desktop(front),
+                        gesture: .click(count: 1, mods: 0,
+                                        at: .init(x: 300, y: 300))))
+        try await waitUntil("the deselect reaches the seam") {
+            sent.all.contains { $0.verb == "script" }
+        }
+
+        let script = try XCTUnwrap(sent.scriptSource(0))
+        XCTAssertTrue(script.contains("select {}"), script)
+        XCTAssertFalse(
+            script.contains("activate"),
+            "clearing a selection has nothing to show, and fronting the "
+                + "Finder here backgrounds the guest — which is the only "
+                + "context that may give its own port hooks back: \(script)")
+    }
+
     func testOpeningAFolderBringsTheFinderForward() async throws {
         let sent = SentCommands()
         let (source, _, listener, guest) = try await sourceWithSeam(sent)
