@@ -63,6 +63,16 @@ The area is padded to six columns on both machines, so a `grep area` and
 an eye both line up. It is a **small closed vocabulary**; reach for an
 existing tag before coining one, and add a new tag here when you do.
 
+**Six columns is a limit, not a suggestion**, and `now_log`'s `%-6.6s`
+truncates rather than complains. `network` shipped as a seventh
+character that never reached the file: the line said `networ`, so the
+one thing the tag exists for — `grep network` over the log — found
+nothing, and the code and the log disagreed with nobody to say so. It is
+`net` now. `LogAreaRegistryTests` reads both the sources and the table
+below and fails on an unregistered tag or an over-long one, because this
+table is a hand-maintained enumeration and those rot in exactly this
+way (AGENTS.md, *Enumerated lists rot at merges*).
+
 | Area | Covers |
 |---|---|
 | `app` | process start/stop, and app-wide state (disk logging on/off) |
@@ -74,6 +84,9 @@ existing tag before coining one, and add a new tag here when you do.
 | `proc` | the process family: drive verbs (front/quit/shot), the list refresh |
 | `census` | a hardware-census probe's outcome |
 | `act` | the interaction plane's dispatched acts |
+| `mach` | the machine family: activate, the act self-test |
+| `net` | the Network page's refresh |
+| `chat` | the chat transcript's own sequencing faults |
 | `mirror` | the Mirror: the writer verdict, plane arm/disarm requests and outcomes, the Workshop page, and the resident's own counters read back |
 | `sw` | the software family: the `catsearch` probe, and `launch` outcomes (the `sw` listing itself is a read and stays quiet) |
 | `agent` | host only: the optional agent-integration surface — one line per capability a non-user face invoked, and the local endpoint's own failures |
