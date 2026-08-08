@@ -446,10 +446,20 @@ public struct SceneRenderer {
     private func drawIcon(_ ctx: GraphicsContext,
                           _ item: MirrorKit.Scene.DesktopItem,
                           at origin: CGPoint,
-                          selected: Bool = false) {
-        let box = CGRect(origin: origin,
-                         size: CGSize(width: Self.iconSize,
-                                      height: Self.iconSize))
+                          selected: Bool = false,
+                          replayed: DisplayReplay.Coverage? = nil) {
+        /* THE BOX THE FINDER DREW, not a constant 32. `bounds of` answers
+           16×16 for a LIST-view row and the Finder stacks those rows at a
+           19-point pitch, so a 32-point icon drawn at a row's top-left runs
+           through the row below it and over the name, date, size and kind
+           the machine itself wrote there. That is Michelle's "switching a
+           Finder window to list view prints icons in a list on top of the
+           list", and it is the same constant `FinderItems.clickPoint`
+           already stopped trusting for the same reason.
+           `HitTester.targetSize` owns the rule; this is the drawing half of
+           it, and the two must stay one number or a click lands where
+           nothing was drawn. */
+        let box = CGRect(origin: origin, size: Self.iconBoxSize(item))
         drawGenericIcon(ctx, box, item: item)
 
         // Selection is an INVERSION, not a backing box. The Finder darkens the
@@ -466,12 +476,37 @@ public struct SceneRenderer {
         // Name label: Geneva 9 (the real Finder label font, per the finding),
         // centered under the icon. Unselected it sits on a white patch; selected
         // the patch goes black and the text white, as the Finder draws it.
+        /* A LIST ROW HAS NO LABEL OF OURS. Its name is a COLUMN the machine
+           wrote, level with the row icon rather than under it; a centred
+           patch there is a second name in the wrong place, over the first.
+           Same discriminator `HitTester.targetSize` uses to decide whether
+           a label height belongs in the hit box at all. */
+        guard Self.itemDrawsItsOwnLabel(item) else { return }
         let label = item.name
         let w = CGFloat(FontBook.small?.width(label) ?? label.count * 6)
         let ascent = CGFloat(FontBook.small?.ascent ?? 9)
         let labelY = box.maxY + 1
         let patch = CGRect(x: box.midX - w / 2 - 2, y: labelY,
                            width: w + 4, height: ascent + 3)
+        /* RUNG 1 BEATS RUNG 3 FOR THE WORDS, and it is asked here rather
+           than for the whole cell because the two halves of an icon are not
+           the same claim. The ICON is art addressed by identity and the
+           machine cannot offer a better one through this renderer — its own
+           icon arrives as an unjoined blit, which carries geometry and no
+           pixels, so the strongest thing the replay can put in that box is a
+           generic stub or an "unavailable" hatch. The roster outranks both,
+           which is why the icon box excludes the replay outright
+           (`finderItemFrames`).
+
+           The NAME is the opposite. The Finder writes it as a real text run
+           — truncated with an ellipsis at the cell's width, wrapped onto two
+           lines, inverted when selected — and every one of those facts is
+           something this side would have to invent. So the label yields to
+           the machine's own run wherever there is one, through the same
+           `textCovers` test a semantic label uses, and draws only where the
+           replay was silent. Drawn unconditionally it was Michelle's
+           "Finder item icons seem to be drawing their label twice". */
+        if replayed?.textCovers(patch) == true { return }
         ctx.fill(Path(patch), with: .color(selected ? Platinum.g6 : .white))
         appText(label, ctx, x: box.midX - w / 2, baselineY: labelY + ascent,
                 color: selected ? .white : Platinum.g6, small: true)
@@ -1093,7 +1128,7 @@ public struct SceneRenderer {
                   item.ref.map({ !semanticControlRefs.contains($0) }) ?? true
             else { return nil }
             return rect(item.rect).offsetBy(dx: content.minX, dy: content.minY)
-        }
+        } + Self.finderItemFrames(win, content: content)
         /* WHAT THE REPLAY INKED, so a placeholder cannot claim a
            rectangle it already filled. See DisplayReplay.Coverage and
            docs/render-composition.md > "the rule for anyone adding a
@@ -1199,7 +1234,8 @@ public struct SceneRenderer {
             for item in items where item.placed {
                 drawIcon(iconCtx, item,
                          at: CGPoint(x: content.minX + CGFloat(item.x),
-                                     y: content.minY + CGFloat(item.y)))
+                                     y: content.minY + CGFloat(item.y)),
+                         replayed: replayCoverage)
             }
         }
         // Grow box sits on top of the content, at the window corner.
@@ -2097,6 +2133,108 @@ public struct SceneRenderer {
         switch kind {
         case "panel", "placard", "selectionBand", "separator": return true
         default: return false
+        }
+    }
+
+    /// **The third sibling of ``semanticOwnsDisplay`` and
+    /// ``dialogItemOwnsDisplay``, and the one that was missing.**
+    ///
+    /// Those two arbitrate the machine's own drawing against controls and
+    /// against DITL rows. Nothing arbitrated it against `win.items` — the
+    /// Finder roster — so a folder window holding both the machine's ink and
+    /// our icon roster drew both, and Michelle saw it directly while
+    /// driving on 2026-08-07: *"I can actually see the icon being selected
+    /// underneath it. it looks like we're not only rendering the label
+    /// twice, we're rendering the whole icon twice."* Same one mechanism
+    /// behind icons drawn twice, labels drawn twice, and icons landing over
+    /// list-view rows.
+    ///
+    /// ## Which side wins, and why it is not one side
+    ///
+    /// The cell is SPLIT, the way this renderer already splits a check box
+    /// into its mark and its label:
+    ///
+    /// * **The icon box is the roster's.** It is rung-3 art addressed by
+    ///   identity — the item's kind, type and creator picking a bitmap out
+    ///   of `IconAtlas`. The replay cannot better it: the Finder's own icon
+    ///   reaches this side as an unjoined blit, which by
+    ///   ``ProvenanceLadder``'s own rule "carries geometry and no pixels",
+    ///   so the strongest thing it can draw in that box is a generic
+    ///   document stub or the marked-unknown hatch. Excluding it there is
+    ///   not overruling the machine; the machine's pixels are not on offer,
+    ///   and the project's standing gate is that they never will be off the
+    ///   wire. **If a Finder icon blit is ever seen to JOIN, this is the
+    ///   line to revisit** — real ink would outrank the pack, and the
+    ///   exclusion would have to become a per-piece yield.
+    /// * **The name is the machine's.** It writes it as a real text run,
+    ///   ellipsised at the cell width, wrapped, inverted when selected —
+    ///   facts this side would have to invent. So the label is not excluded
+    ///   at all; it yields per piece through `Coverage.textCovers`, in
+    ///   ``drawIcon``.
+    ///
+    /// ## Absence stays absence
+    ///
+    /// This is arbitration, never suppression. A folder window with a roster
+    /// and no display list still draws every icon and every label — that is
+    /// the ordinary case today, and the pixel islands' removal means there
+    /// is nothing behind the roster to fall back on. An item that is not
+    /// placed, is invisible, or has no name is not drawn and claims nothing:
+    /// an unplaced item has no rectangle to claim, and a claim without a
+    /// drawing is exactly the defect `dialogItemOwnsDisplay` was written to
+    /// end.
+    static func finderItemOwnsDisplay(_ item: MirrorKit.Scene.DesktopItem)
+        -> Bool {
+        item.placed && !item.invisible && !item.name.isEmpty
+    }
+
+    /// The icon box this renderer will fill for `item`, content-local.
+    ///
+    /// The Finder's own drawn box (`bounds of`) when it gave one, capped at
+    /// the icon view's 32 so an oversized report cannot claim a window. The
+    /// 32×32 default is the icon view's measured cell and the only size a
+    /// record predating `bounds` can mean.
+    static func iconBoxSize(_ item: MirrorKit.Scene.DesktopItem) -> CGSize {
+        guard let w = item.w, let h = item.h, w > 0, h > 0 else {
+            return CGSize(width: Self.iconSize, height: Self.iconSize)
+        }
+        return CGSize(width: min(CGFloat(w), Self.iconSize),
+                      height: min(CGFloat(h), Self.iconSize))
+    }
+
+    /// Whether the roster draws a centred name UNDER `item` — true in the
+    /// icon views, false for a list row, whose name is a column beside it.
+    /// The same threshold `HitTester.targetSize` uses to decide whether a
+    /// label's height belongs in the item's hit box.
+    static func itemDrawsItsOwnLabel(_ item: MirrorKit.Scene.DesktopItem)
+        -> Bool {
+        guard let h = item.h, h > 0 else { return true }
+        return CGFloat(h) >= Self.iconSize
+    }
+
+    /// The rectangles a window's Finder roster owns against the replay.
+    ///
+    /// **Clipped to the icon field**, and that is not decoration: a scrolled
+    /// window reports positions that run off both ends of its content, and
+    /// an unclipped claim would punch holes in the info bar and the
+    /// scrollbars for items nobody can see. The guest clips them at exactly
+    /// this rectangle (`FinderItems.iconArea`) and so does the drawing a few
+    /// hundred lines above.
+    static func finderItemFrames(_ win: MirrorKit.Scene.Window,
+                                 content: CGRect) -> [CGRect] {
+        guard let items = win.items else { return [] }
+        let a = FinderItems.iconArea(win)
+        let field = CGRect(x: content.minX + CGFloat(a.l),
+                           y: content.minY + CGFloat(a.t),
+                           width: CGFloat(max(0, a.r - a.l)),
+                           height: CGFloat(max(0, a.b - a.t)))
+        return items.compactMap { item -> CGRect? in
+            guard Self.finderItemOwnsDisplay(item) else { return nil }
+            let box = CGRect(origin: CGPoint(x: content.minX + CGFloat(item.x),
+                                             y: content.minY + CGFloat(item.y)),
+                             size: Self.iconBoxSize(item))
+                .intersection(field)
+            guard !box.isNull, box.width > 0, box.height > 0 else { return nil }
+            return box
         }
     }
 

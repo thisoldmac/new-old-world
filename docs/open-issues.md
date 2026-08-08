@@ -494,6 +494,11 @@ One mechanism, four symptoms: icons drawn twice, labels drawn twice,
 icons appearing over list-view rows, and the cost — a 49-element window
 finding 7.5 seconds because the work is done twice.
 
+> **The fourth symptom is not this mechanism.** Measured 2026-08-07,
+> `claude/024-items-arbitration`: the three fidelity symptoms are this
+> defect and are fixed below. The 7.5 s is not. See the correction in
+> that entry — `decode_ms` is a bracket, and its own log says which half.
+
 Corroborated independently by the live flicker trace earlier the same
 day: the Finder's icon-grid boxes flipping `semantic ↔ absent` with a
 **0.83 s bounce nothing asked for**, and an **8.4 s lag** before the
@@ -524,6 +529,102 @@ onward the coordinator committed nine documentation commits **onto that
 lane's branch** without noticing. Nothing was lost, because round 9
 merged it. **Sixth firing of one-worktree-per-lane, and the first where
 the coordinator was the one who did it.**
+
+## FIXED: the Finder roster had no arbitration, and three of its four symptoms are gone — the fourth was never it (2026-08-07, `claude/024-items-arbitration`)
+
+`SceneRenderer` resolved the machine's display list against controls
+(`semanticOwnsDisplay`) and against DITL rows (`dialogItemOwnsDisplay`),
+five call sites between them, and against `win.items` not at all. So a
+folder window holding both the machine's ink and our Finder roster drew
+both. Michelle found it driving: *"I can actually see the icon being
+selected underneath it … we're rendering the whole icon twice."*
+
+### The rule chosen, and why it is not "one side wins"
+
+The cell is **split**, the way this renderer already splits a check box
+into its mark and its label. Neither half is a new mechanism.
+
+- **The icon box is the roster's**, and now joins `semanticFrames`. It is
+  rung-3 art addressed by identity — kind, type and creator picking a
+  bitmap out of `IconAtlas`. The replay cannot better it: the Finder's own
+  icon reaches this side as an **unjoined blit**, which by the
+  `ProvenanceLadder`'s own words "carries geometry and no pixels", so the
+  strongest thing it can put in that box is a generic document stub or the
+  marked-unknown hatch. Excluding it is not overruling the machine; the
+  machine's pixels are not on offer, and the pixel-islands gate is that
+  they never will be off the wire.
+- **The name is the machine's.** It writes it as a real text run —
+  ellipsised at the cell width, wrapped, inverted when selected — and each
+  of those is a fact this side would have to invent. The label is not
+  excluded at all; it yields per piece through `Coverage.textCovers`, the
+  same test a semantic label uses.
+
+**The exclusion is narrower than it looks, and that is by construction.**
+`DisplayReplay.semanticOwns` silences only a `bits` op, and only when the
+frame CONTAINS its whole destination. Text, lines and shapes pass through
+any exclusion — so the roster cannot take the machine's words even by
+accident. That was checked before the rule was chosen, not after.
+
+**If a Finder icon blit is ever seen to JOIN, this is the line to
+revisit**: real ink would outrank the pack, and the exclusion would have
+to become a per-piece yield. It is named in the source at the point of
+decision.
+
+Third fix, same rule: the icon is drawn in **the box the Finder drew**,
+not a constant 32. A list row is 16x16 at the Finder's 19-point pitch, so
+a 32-point icon ran through the row below it and over the columns the
+machine wrote — Michelle's "prints icons in a list on top of the list".
+`FinderItems.clickPoint` stopped trusting that constant for the same
+reason; `HitTester.targetSize` owns the rule and the drawing now reads it,
+because a click computed from one number and a drawing from another is how
+a click lands where nothing was drawn.
+
+### The correction: the 7.5 s was never this
+
+The ledger entry above lists the cost as the fourth symptom of this
+mechanism. **It is not, and the log already said so.** `decode_ms` is a
+bracket from delivery to publish, and `MirrorCycleClocks` splits it:
+
+    decode_ms=21233  dc_own_ms=3  dc_content_ms=21230
+
+Three milliseconds of that twenty-one seconds is this host's own decode,
+reduce and project. The rest is the P3 content join — guest round-trips.
+Rendering is not in the bracket at all; it happens after publish.
+
+Measured anyway, on **one fixture used for both readings** — a 24-item
+icon-view folder window carrying the machine's blit and label run per cell
+— 40 timed renders after 5 warm-up renders, three interleaved pairs:
+
+| | before | after |
+|---|--:|--:|
+| median | 7.83 / 7.83 / 8.38 ms | **7.08 / 7.35 / 7.45 ms** |
+| fastest sample | 6.98 / 6.91 / 7.43 ms | **6.15 / 6.39 / 6.60 ms** |
+
+Every pair moves the same way — about 8-11%, roughly the 24 hatches and
+24 label patches no longer painted. **Real, and three orders of magnitude
+short of her number.** So this arc's render slowness is the content join,
+and looking for it in the renderer is looking in the wrong half — which is
+exactly what the `dc_own_ms` / `dc_content_ms` split was added to prevent
+and what the field's NAME caused on 2026-08-06.
+
+### One guard was blind, and it is recorded rather than quietly fixed
+
+Fifteen mutations were run against the guards. Fourteen were caught. The
+fifteenth — widening the label yield from `textCovers` to `mostlyCovers` —
+**passed** a test whose own comment claimed to catch it, because both
+predicates yield to a run that fills the patch. The case that separates
+them is a machine that painted the label band and wrote nothing in it: one
+takes the name away, the other keeps it. That is now its own test
+(`testInkThatIsNotWordsDoesNotTakeTheName`), and it is the third render
+guard in this tree to pass the exact mutation it was written for.
+
+### Verification level
+
+**Tested**, not metal-verified and not watched on the emulator. Every
+claim above rests on offscreen renders and unit assertions here; nobody
+has driven a Finder window with this build. The three fidelity symptoms
+should be gone and the correction to the cost is measured, but a person
+looking at a real folder window is what would close it.
 
 ## LOOK: round 9 landed four lanes, and the two things that would have gone wrong were both caught by reading (2026-08-07, `claude/019-integration-9`)
 
