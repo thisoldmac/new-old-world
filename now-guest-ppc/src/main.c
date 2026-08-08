@@ -19,6 +19,7 @@
 #include "prefs.h"
 #include "wire.h"
 #include "observe.h"
+#include "mirror_log.h"
 #include "peek.h"
 #include "scene_collect.h"
 #include "act_cmds.h"
@@ -514,6 +515,13 @@ int main(void)
            measures something else; see now_peek_idle's header comment
            for the flap that taught this. */
         now_peek_idle();
+        /* The Mirror's slow observer: it reads the counters the resident
+           bumps INSIDE foreign processes and writes only what changed.
+           It is here, at task time, rather than in a hook, because a
+           hook is bounded and allocation-free by construction and a disk
+           write there would change the timing of the thing it measures.
+           mirror_log.h carries the boundary in full. */
+        now_mirror_log_idle();
         ask_about_replacing();
         /* NEVER SLEEP ZERO. A zero sleep tells WaitNextEvent to return
            at once, so this application spins and, on a cooperatively
@@ -582,6 +590,13 @@ int main(void)
        breadcrumb is forced to the platter; the disk cache would lose an
        ordinary line in the crash. A clean quit runs to "quit: clean"
        and then "stopped". */
+    /* Before the connection goes, because closing it releases every
+       wire-owned plane: this is the last moment the Mirror's own state is
+       still the state a crash would have been in. A launch whose log has
+       no `mirror teardown` line is one where teardown did not run — the
+       same reading docs/logging.md gives a file with no `stopped`. */
+    now_mirror_log_teardown();
+
     now_log(kLogInfo, "app", "quit: closing connection");
     now_log_flush();
     conn_shutdown();

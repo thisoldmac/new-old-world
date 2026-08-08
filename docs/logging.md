@@ -73,6 +73,8 @@ existing tag before coining one, and add a new tag here when you do.
 | `files` | share-side refusals and file operations |
 | `proc` | the process family: drive verbs (front/quit/shot), the list refresh |
 | `census` | a hardware-census probe's outcome |
+| `act` | the interaction plane's dispatched acts |
+| `mirror` | the Mirror: the writer verdict, plane arm/disarm requests and outcomes, the Workshop page, and the resident's own counters read back |
 | `sw` | the software family: the `catsearch` probe, and `launch` outcomes (the `sw` listing itself is a read and stays quiet) |
 | `agent` | host only: the optional agent-integration surface — one line per capability a non-user face invoked, and the local endpoint's own failures |
 
@@ -112,6 +114,62 @@ somebody sitting at it.
 
 The rule and its gate live in
 [agent-integration.md](agent-integration.md#every-agent-call-leaves-a-trace).
+
+## The `mirror` area, and the line nothing may cross
+
+The Mirror wrote **no log line at all** until 2026-08-08 — no `mirror`,
+`peek`, `plane`, `scene` or `content` tag existed anywhere in
+`now-guest-ppc/src`. The bill came in on 2026-08-07: Mirror crashed NOW
+reproducibly on the PowerBook 1400c, four guest logs from that session
+were recovered, and every one of them said only what NOW happened to be
+doing when it stopped. Six plausible mechanisms were read out of the
+source afterwards and **not one could be falsified**, which is this
+project's recurring shape — an instrument that cannot see the defect.
+
+What the area covers is in the registry above. What matters more is
+**where it may be written**, because the Mirror is the one feature in
+this tree with code running somewhere a log call would be worse than
+silence:
+
+- **The application side runs at task time.** The event loop, a wire
+  command being served, a click being handled. Everything the `mirror`
+  area writes is here (`now-guest-ppc/src/mirror/mirror_log.c`,
+  and its callers in `peek.c`, `mirror_module.c`, `main.c`).
+- **The resident side runs inside foreign processes, at draw time.** The
+  content plane's QuickDraw bottlenecks, the trap patches and the jGNE
+  filter are bounded and allocation-free by construction
+  (`ext/src/now_content.c` says so in its own comments). A disk write
+  there would change the timing of the thing being measured and could
+  take the Finder down with it.
+
+**So a fact that is only knowable inside a hook is surfaced as a COUNTER
+the resident bumps and the application reads.** That pattern already
+existed — `NowContentCounters` counts installs, uninstalls, repairs,
+`skipped_ports`, the three arm refusals and retires — and it was already
+being reported to the wire by `qdtrace status`. What was missing was
+anybody reading it *without being asked*: `now_mirror_log_idle` polls it
+from the main loop every two seconds and writes only the deltas. The
+numbers are surfaced, never recounted.
+
+`LoggingSpecTests.testTheResidentNeverLogs` is the gate. It reads
+`ext/src/*.c` and fails on a `now_log(` anywhere in it.
+
+**Every `mirror` line is edge-triggered**, and rotation is why that is
+load-bearing rather than tidy — see below. The writer verdict is compared
+against the last one before anything is written, an arm request that asks
+for what is already asked for is not an event, and identical consecutive
+settle failures collapse into a count.
+
+The verdict line exists for one failure in particular. `AGENTS.md`
+records that a binary not named exactly `New Old World` (creator `NOWo`)
+arms **no plane at all**, while the resident goes on reporting `active`
+with full capabilities and nothing anywhere names the cause; it took
+renaming a build to discover, and the rename took `requested` from 0 to
+15 with nothing else changed. It is now one line:
+
+```
+21:04:11 mirror ? writer: REFUSED - binary is not 'New Old World'/NOWo, no plane can arm
+```
 
 ## Levels, and what they cost
 
@@ -205,8 +263,15 @@ because the feature works and no path to it exists.
 
 A file per launch accumulates forever, on a disk with tens of megabytes
 free. Keep the newest ~20 at open, delete the rest. *(Specified here,
-not yet implemented — this is a real hazard on the guest, not a
-tidiness preference.)*
+**still not implemented** — re-verified 2026-08-08 by reading
+`nowlog.c`, which deletes nothing. This is a real hazard on the guest,
+not a tidiness preference.)*
+
+**Until it exists, verbosity is a disk budget and not only a taste
+question.** That is the second reason every `mirror` line is
+edge-triggered: an area that wrote a line per event-loop pass would
+break rule 1 on a machine with rotation, and would leak the disk on this
+one.
 
 ## Status
 
@@ -258,3 +323,9 @@ These are the standard. A change that logs is reviewed against them.
 10. **A new wire command is declared, answered and offered**, or
     `CommandRegistryTests` fails. Undeclared and unreachable is the
     quietest kind of broken.
+11. **Nothing in a resident component logs.** `ext/` runs inside foreign
+    processes at draw time and at interrupt level, bounded and
+    allocation-free by construction. A fact only knowable there becomes a
+    counter the application reads at task time — never a line the
+    resident writes. `LoggingSpecTests.testTheResidentNeverLogs` reads
+    `ext/src/*.c` and fails on `now_log(` anywhere in it.

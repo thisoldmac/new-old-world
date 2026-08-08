@@ -71,6 +71,52 @@ final class LoggingSpecTests: XCTestCase {
         }
     }
 
+    /// Rule 11, and the one boundary the Mirror's new `mirror` area may
+    /// not cross.
+    ///
+    /// `ext/` is the NOW Extension. Its QuickDraw bottlenecks, its trap
+    /// patches and its jGNE filter run **inside foreign processes, at draw
+    /// time**, and are bounded and allocation-free by construction —
+    /// `now_content.c` says so in its own comments. A disk write there
+    /// would change the timing of the thing being measured and could take
+    /// the Finder down with it, which is strictly worse than the silence
+    /// the `mirror` area was added to fix.
+    ///
+    /// So a fact only knowable inside a hook is surfaced as a COUNTER the
+    /// application reads at task time (`NowContentCounters`, read by
+    /// `now_mirror_log_idle`), never as a line the resident writes.
+    ///
+    /// **Reach, stated rather than implied.** Like the per-chunk check
+    /// above this is one literal, `now_log(`, read after comments are
+    /// stripped — a macro alias defeats it, and so would a resident that
+    /// wrote to a file by some other name. What it does catch is the
+    /// obvious and likely mistake: someone extending the plane's
+    /// instrumentation reaching for the call the rest of the tree uses.
+    /// Unlike the per-chunk check its file list is DERIVED, so a new
+    /// resident source is covered the day it lands.
+    func testTheResidentNeverLogs() throws {
+        let extDir = GateSource.repoRoot.appendingPathComponent("ext/src")
+        let sources = try FileManager.default
+            .contentsOfDirectory(atPath: extDir.path)
+            .filter { $0.hasSuffix(".c") }
+            .sorted()
+        XCTAssertFalse(sources.isEmpty,
+                       "ext/src has no C sources — this gate found nothing "
+                       + "to read, which is not the same as finding it clean")
+        for name in sources {
+            let text = try GateSource.guestC("ext/src/\(name)")
+            XCTAssertFalse(text.contains("now_log("), """
+                ext/src/\(name) is resident code: it runs inside foreign \
+                processes at draw time and at interrupt level, bounded and \
+                allocation-free by construction. A log call there changes \
+                the timing of the thing it measures and can take the Finder \
+                down with it. Surface the fact as a counter the application \
+                reads at task time instead — see docs/logging.md, rule 11, \
+                and now-guest-ppc/src/mirror/mirror_log.h.
+                """)
+        }
+    }
+
     /// Braces-balanced body of a C function, so the check reads the
     /// function rather than a window of lines around its name.
     ///

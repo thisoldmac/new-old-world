@@ -5,6 +5,8 @@
 
 #include "control_kind.h"
 #include "mirror_layout.h"
+#include "mirror_log.h"
+#include "nowlog.h"
 #include "mirror_probe.h"
 #include "mirror_show.h"
 #include "pump.h"
@@ -81,9 +83,11 @@ static OSErr mirror_create(WindowRef owner, const Rect *body)
     g_show_button = now_control_new(owner, &g_layout.show_button, title,
                                     false, 0, 0, 1, pushButProc, 0);
     if (g_show_button == NULL) {
+        now_mirror_log_page("create refused: out of memory");
         return memFullErr;
     }
     conn_set_host_show_note(show_note);
+    now_mirror_log_page("created");
     return noErr;
 }
 
@@ -96,10 +100,17 @@ static void mirror_dispose(void)
     g_show_button = NULL;
     g_owner = NULL;
     g_visible = false;
+    now_mirror_log_page("disposed");
 }
 
 static void mirror_show(Boolean visible)
 {
+    /* Compared before it is stored: the Workshop may reassert a page's
+       visibility, and a line per assertion would be a heartbeat rather
+       than the event of a person arriving at this page. */
+    if (visible != g_visible) {
+        now_mirror_log_page(visible ? "entered" : "left");
+    }
     g_visible = visible;
     if (g_show_button == NULL) {
         return;
@@ -186,7 +197,11 @@ static Boolean mirror_click(const EventRecord *event, Point local)
 
         if (now_wire_host_show(kMirrorHostSurface, err, sizeof err) != 0) {
             snprintf(g_show_status, sizeof g_show_status, "%.100s", err);
+            /* Rule 4: the string that explains the refusal goes to the
+               log, not only to a status line the next event overwrites. */
+            now_log(kLogWarn, "mirror", "show refused: %.60s", err);
         } else {
+            now_log(kLogInfo, "mirror", "show requested on the host");
             snprintf(g_show_status, sizeof g_show_status, "%s",
                      now_mirror_show_waiting_text());
         }
