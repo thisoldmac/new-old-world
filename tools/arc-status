@@ -30,7 +30,7 @@ fi
 # The lane set, enumerated ONCE. Five loops used to each write the same
 # glob, which is five places for a naming convention to change and four
 # of them to be missed.
-lanes=$(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)')
+lanes=$(git branch --list 'claude/0[12][0-9]-*' --format='%(refname:short)')
 
 # THE LANE THIS ONE SHARES THE MOST HISTORY WITH, and how much — printed
 # as "N commits (M shared with X)" so that nobody adds the column up.
@@ -85,7 +85,7 @@ echo
 # person deciding what to merge actually wants; both are printed,
 # because the first is still what a merge would bring across.
 echo "=== NOT LANDED — work that exists and is not in $INT"
-echo "    (branches matching claude/01[0-9]-*; see the last line for the rest)"
+echo "    (branches matching claude/0[12][0-9]-*; see the last line for the rest)"
 notlanded=0
 for b in $lanes; do
     [ "$b" = "$INT" ] && continue
@@ -115,7 +115,7 @@ done
 outside=0
 for b in $(git branch --format='%(refname:short)'); do
     [ "$b" = "$INT" ] && continue
-    case "$b" in claude/01[0-9]-*|main) continue ;; esac
+    case "$b" in claude/0[12][0-9]-*|main) continue ;; esac
     git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
     outside=$((outside + 1))
 done
