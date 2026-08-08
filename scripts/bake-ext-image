@@ -281,6 +281,29 @@ then
 fi
 
 echo
+echo "== bake: THE SECOND GATE — does the machine SURVIVE being used? =="
+# Rule 2 above asks WHICH resident is in the image. It cannot ask whether
+# the thing is usable, and on 2026-08-07 those came apart: a human clicked
+# Run Census in the Workshop and the guest died — the whole UI, because the
+# Workshop is the only window — and then the Finder crashed. The resident
+# was correct throughout. `mirror` would have answered `active` right up to
+# the moment the application stopped existing.
+#
+# THIS IS WHERE THE CHECK BELONGS, and the argument is one line: a guest is
+# already booted here, so the census costs seconds, where a stage in
+# scripts/test-all would cost every lane a two-to-three-minute boot on every
+# run forever. It also makes one sentence literal — the image cannot be
+# baked with a build that kills the Macintosh it is baked from.
+#
+# It is a REFUSAL, not a warning: nothing is installed and the VM is left up,
+# exactly like every other failure path here (rule 3).
+if ! python3 "$NOW/tools/census-survives.py" --port "$WIRE" --anchor "$ANCHOR" \
+        --wait 120 --qmp "$QMP" --build-dir "$OUT" --evidence-dir "$RUN"; then
+    echo "the census killed this guest; nothing installed, VM left running at $QMP." >&2
+    exit 1
+fi
+
+echo
 echo "== bake: quit the applications and let the guest shut ITSELF down =="
 # --wire makes the Finder's own Special > Shut Down the primary route,
 # with the staged applet as the fallback. That order is not a preference:

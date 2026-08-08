@@ -24,6 +24,216 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## FIXED and GATED: `census` killed the Macintosh, and no gate in this repository could have seen it (2026-08-07, `claude/024-census-crash`)
+
+Michelle drove the round-10 stack and reported it twice: "confirmed:
+running census crashes workshop", then "i just tried selecting the app
+switcher and it crashed finder". A screendump showed the desktop with
+NOW gone, the Finder frontmost, and **one orphaned window** left drawn on
+it — a bare frame with a single control and no content.
+
+**Reproduced first try** on this lane's own clone, and it is one probe:
+
+```
+overview .. ata   present          (nine probes, all fine)
+pccard            THE GUEST DIED   (cursor 0, page 1)
+```
+
+**The mechanism.** `census_trap_ready()` proves the Mixed Mode ROUTE is
+open — CallUniversalProc resolved, the thunks flushed, the PPC->68K
+switch built. It proves nothing about the DESTINATION, and the two were
+conflated. The PB1400c this code was written against has a PC Card
+Manager at `$AAF0`; a Power Mac G4 running the same Mac OS 9.1 does not,
+and `$AAF0` there is `_Unimplemented`. `ata` (`$AAF1`) is fine on the
+same machine, which is exactly why nine probes pass and the tenth is
+fatal. The file's own header says the dispatch is "proven", and it is —
+on a laptop that has the manager.
+
+`gather_scsi` beside it already had the shape right: it asks Gestalt for
+a bus and answers `absent` when the machine says no, "never a select into
+hardware that is not there". The two Mixed Mode probes had no
+equivalent. They do now — asking the TRAP TABLE rather than Gestalt,
+because this same file records `gestaltATAAttr` answering *falsely
+absent* on the 1400c, which is why these managers are reached by trap at
+all. A trap table cannot lie about its own contents.
+
+**It is worse than a crash, and this is the part worth carrying
+forward.** NOW died, and then the **anchor worker** — a separate process,
+which survives NOW dying every other time — stopped answering, and both
+graceful shutdown routes closed with it. The clone had to be power-cut.
+That is the same shape as the human's second symptom: the damage escaped
+the process that caused it. So the gate checks the anchor, not just NOW.
+
+**NOT the unbaked round-10 resident**, which was the standing hypothesis.
+Two extension changes landed in round 10 with typed deferrals rather than
+a bake, and this was the first tree holding them together. They are
+innocent: the defect is in `now-guest-ppc/src/census/`, application code
+unchanged for weeks, and the control is clean — the SAME resident
+(`230222d358c1`, capabilities 511) was staged before and after, and with
+one application-side change the census completes. The deferred bakes are
+still owed; they are simply not this.
+
+**Why 1,902 green tests missed it.** Every stage of `scripts/test-all`
+booted nothing. `scripts/test-native` compiles the guest's logic with the
+host `cc` and runs it here, so a Mixed Mode dispatch to a trap on a real
+Mac OS is not merely untested, it is unreachable. The metal gates are
+`XCTSkipUnless(NOW_METAL)` and aimed at the PowerBook. Every
+"emulator-verified" claim in this arc came from a lane driving a guest by
+hand.
+
+**The gate** is `tools/census-survives.py`, and it lives in two places
+for one reason each:
+
+- `scripts/bake-ext-image`, unconditional. A guest is **already booted
+  there**, so the sweep costs ~1 second where a `test-all` stage would
+  cost every lane a two-to-three-minute boot on every run forever. It
+  refuses, installs nothing, and leaves the VM up like every other
+  failure path in that script — so the image cannot be baked with a build
+  that kills the Macintosh it is baked from.
+- `scripts/test-all` stage 6, **opt-in** via `NOW_GUEST_LIVE` and failing
+  rather than skipping once opted in. For the other half of the problem:
+  a lane changing `now-guest-ppc/src/census/` has a VM up and never
+  bakes.
+
+It drives `census.request` with **cursors**, not the `census` command:
+the command is declared single-page and always gathers cursor 0, so a
+gate built on it would stop at page one and call a machine safe that is
+not.
+
+**Still open, and it is a hole rather than a caveat.** The App Switcher
+path is not covered. The gate checks that the Application Switcher
+*process* survives — it is in `ps`, so that much is checkable — but
+"selecting the app switcher", which is the sentence the human wrote,
+means pulling down the Application menu, and that needs the act plane
+armed against the Finder. Present is not usable. Nobody has reproduced
+the Finder crash independently of NOW dying first, so it remains
+unexplained on its own terms.
+
+## FIXED: no bake can be installed — the census ATA probe left the volume DIRTY (2026-08-07, found `claude/024-census-crash`, fixed `claude/024-bake-volume-clean`)
+
+**The shutdown route was never the bug and `tools/volclean.py` was right
+throughout.** `census_ata_identify` built a correct ATA Manager Drive
+Identify parameter block and left `ataPBFlags` zero, so `mATAFlagIORead`
+— the flag that tells the manager to drive the data-in phase — was never
+set. The call returns `noErr` with an empty 512-byte buffer and leaves
+the device mid-command; the cost lands minutes later on the Shutdown
+Manager's final "volume unmounted" write. One line in
+`now-guest-ppc/src/census/census_trap.c`.
+
+That also explains a symptom recorded as a drive's own quirk: the
+PB1400c's "the manager answers noErr with an EMPTY IDENTIFY buffer"
+(2026-07-22) was not the drive having nothing to say. Nobody had asked
+for the data. **The 1400c's `ata` row should be re-read on metal** — it
+may no longer say "present; drive returned no IDENTIFY data".
+
+Isolated by five emulator trials, one base image and one shutdown route
+throughout — no census **CLEAN**; the full 14-probe sweep **DIRTY**;
+`--probes ata` alone **DIRTY**; that probe narrowed to the single device
+id that actually answers **DIRTY** (so it is the SUCCESSFUL Identify, not
+the timeouts on the absent ids); `overview,volumes,drives,drivers`
+**CLEAN**. A static parameter block was tried first and changed nothing,
+which ruled out the queue-element theory. With the flag: `--probes ata`
+**CLEAN**, full sweep **CLEAN**, and a whole private
+`scripts/bake-ext-image` run completed and installed.
+
+Why it looked like a shutdown defect: the failing bakes were the first
+ones to run the new census gate, and every bake before them — three on
+6–7 August, all CLEAN — took the identical Finder route. The route's
+"powered OFF and QEMU exited on its own (6s) — the real thing" line was
+true every time. **Tested on the emulator; not metal-verified.**
+
+Two private bakes on 2026-08-07, both of them reaching the end and
+installing **nothing**:
+
+```
+  Finder Special(260) item 8 'Shut Down', psn 0.29949953
+  the guest powered OFF and QEMU exited on its own (6s) - the real thing, not a quit
+  qemu-img check: No errors were found on the image.
+  session.qcow2  [untitled] HFS+ (in wrapper): DIRTY — will run Disk First Aid
+```
+
+The first ran with two other QEMUs and an `xcodebuild` on the Mac, so
+contention was the obvious explanation. **The second ran on a quiet
+machine and failed identically**, which removes it. The route
+`scripts/bake-ext-image` documents as "the only route MEASURED to leave a
+clean volume" powers the machine off for real in six seconds and does not
+finish unmounting.
+
+This is not new and it is not caused by this branch. It is the same
+failure that on 2026-08-06 put three dirty images in as the oracle before
+`tools/volclean.py` existed to catch them; the oracle in place now is the
+hand-restored 3-August image. What has changed is that the guard works,
+so the failure is loud instead of silent — and the consequence is that
+**nobody can bake at all**. Every resident change is accumulating behind
+it, including round 10's two deferred ones.
+
+Both bakes passed the resident gate AND the new census gate before
+reaching this, so the census work is not what is blocked:
+
+```
+  resident VERIFIED: active, capabilities 511, fingerprint 230222d358c1
+  CENSUS GATE PASSED: every probe, every page, and the machine is
+  still answering.
+```
+
+The candidate disks are preserved at `/private/tmp/nowvm-bake-census/`
+for whoever picks this up. The base image measures `clean` before the
+run, so the bake dirties it; the question is what the Finder's Shut Down
+leaves unfinished on THIS base, and whether the applet fallback (whose
+own record is three unmounted volumes) does any better. Nobody should
+reach for `--force` here: a power cut is exactly what the dirty bit is
+reporting.
+
+*(The preserved candidate is the evidence that settled it, and it settled
+it without a boot: it still read DIRTY a day later, long after QEMU had
+exited and released the file, so the check could not have been reading
+too early. Its HFS+ header carried `writeCount` 28945 against the clean
+oracle's 28399 and a `modifyDate` at the moment of shutdown — the volume
+was written 546 times and right to the end, so the writes reached the
+qcow2 and only the one that sets the unmounted bit did not happen. Read
+the header, not just the bit.)*
+
+## MEASURED: a VM snapshot restores in ~0 seconds, and the first two runs said it did not work (2026-08-07, `claude/024-census-crash`)
+
+There are no integration tests in this repository that boot a VM, and
+never have been. The reason is cost: a cold boot of the PowerPC guest is
+two to three minutes. `tools/vmsnap-experiment.py` measured whether
+QEMU's `savevm`/`loadvm` can stand in, since three snapshots have sat
+unused in the stage image since July.
+
+| | |
+|---|---|
+| `savevm` | 0.2–0.3 s |
+| `loadvm` | ~0.0 s |
+| re-dial after restore | 3.3 s / 6.1 s / 24.2 s |
+| cold boot, for comparison | 2–3 minutes |
+
+All three cases pass: a snapshot taken mid-conversation, a snapshot taken
+with no host connected, and a restore over a machine whose Control Strip
+had been quit — which came **back**, so the restore rewinds the MACHINE
+and not merely the wire.
+
+**The first two runs said the opposite, and that is the finding.** Case A
+failed twice, deterministically, with the guest dialling and immediately
+closing. Case C failed differently: the connection open and the event
+loop not turning. Two symptoms, one cause, and it was **ours**. The guest
+retries its dial while no host is up, so connections pile up in the
+LISTENER'S ACCEPT BACKLOG; `loadvm` rewinds the guest and touches none of
+them, and the next `accept()` hands back a socket whose guest-side no
+longer exists — indistinguishable from a real dial until nobody answers.
+`GuestWire.rebind()` closes and reopens the listener before every
+restore.
+
+Unexamined, that would have become a designed-in belief that "snapshots
+do not work with a live connection" — a guest property that does not
+exist. **A harness bug wearing the failure message of a real one** is the
+same shape as the parser bug in `bake-ext-image` that once said "the
+resident is NOT this build" about a guest that had just identified itself
+correctly.
+
+Measured on one Mac against one guest, mac99/OS 9.1, wire 18993. A
+measurement, not a property.
+
 ## BROKEN: the reserved human block stops LANES colliding, not two agents both building her stack (2026-08-07, `claude/024-integration-10`)
 
 Block 590-599 is reserved so that **allocation** can never hand a lane

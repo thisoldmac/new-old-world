@@ -857,6 +857,49 @@ static int scsi_inquire(short id, CensusRow *row)
     return 1;
 }
 
+/* --- the rule the two trap probes broke ---------------------------------
+ *
+ * ASK WHETHER THE TRAP IS THERE BEFORE DISPATCHING INTO IT. gather_scsi
+ * below already had the shape right — it asks Gestalt for a SCSI bus and
+ * answers `absent` when the machine says no, "never a select into hardware
+ * that is not there". The two Mixed Mode probes had no equivalent: they
+ * checked that the ROUTE was open (census_trap_ready) and dispatched, and
+ * on 2026-08-07 a Power Mac G4 with no PC Card Manager took $AAF0 straight
+ * into _Unimplemented. NOW died mid-census, the anchor worker — a separate
+ * process — stopped answering, and the Finder crashed a moment later.
+ *
+ * Absence is a finding about the machine, so this is `absent` and not
+ * `refused`: the probe ran cleanly and the Mac said no. The two addresses
+ * go in the note because a claim like "this machine has no PC Card
+ * Manager" should carry the evidence it was made from, not ask to be
+ * believed. Gestalt is deliberately NOT the question here — the file
+ * header records that gestaltATAAttr answers falsely absent on the
+ * PB1400c, which is why these managers are reached by trap at all. The
+ * trap table cannot lie about its own contents. */
+static int trap_present(unsigned short trap_word, const char *manager,
+                        CensusPage *page)
+{
+    unsigned long at = 0, none = 0;
+    int state = census_trap_implemented(trap_word, &at, &none);
+
+    if (state == 1) {
+        return 1;
+    }
+    if (state == 0) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note,
+                 "no %s on this Mac: trap $%04X is unimplemented ($%08lX)",
+                 manager, trap_word, at);
+    } else {
+        page->outcome = kCensusRefused;
+        snprintf(page->note, sizeof page->note,
+                 "cannot read the trap table, so $%04X was not dispatched",
+                 trap_word);
+    }
+    (void)none;
+    return 0;
+}
+
 static void gather_scsi(long cursor, CensusPage *page)
 {
     long hw = 0;
@@ -935,6 +978,9 @@ static void gather_ata(long cursor, CensusPage *page)
                  "the ATA Manager cannot be reached (no Mixed Mode)");
         return;
     }
+    if (!trap_present(0xAAF1, "ATA Manager", page)) {
+        return;
+    }
     for (i = 0; i < (int)(sizeof k_ids / sizeof k_ids[0]); i++) {
         char label[kCensusRowNameCap];
         char raw[kCensusRowRawCap];
@@ -995,6 +1041,9 @@ static void gather_pccard(long cursor, CensusPage *page)
         page->outcome = kCensusRefused;
         snprintf(page->note, sizeof page->note,
                  "the PC Card Manager cannot be reached (no Mixed Mode)");
+        return;
+    }
+    if (!trap_present(0xAAF0, "PC Card Manager", page)) {
         return;
     }
     sig[0] = sig[1] = 0;
