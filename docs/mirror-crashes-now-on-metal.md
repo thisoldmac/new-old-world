@@ -288,3 +288,37 @@ cause, and once a real signal was discarded by over-correcting for
 exactly that. Neither direction is safe by default. The fix is the same
 in both: name the experiment that would tell the two apart, and run it
 before writing either one down as settled.
+
+## Second loss, same session — and it breaks the law stated above
+
+A second guest loss was caught by the same tail. The numbers differ from
+the first in ways that matter:
+
+| | first loss | second loss |
+|---|---|---|
+| full walks `ok` | 0 | **3** (windows 6) |
+| cycles actually sent (`requestMs > 0`) | 0 | **7** |
+| full walks `failed` | 24 | 21 |
+| last act before the loss | click `"after-dark-2x-1993.sit"` | **move New Old World** |
+
+**"24 of 24 full walks were never sent" is withdrawn as a property.** It
+was true of a single 24-cycle window and was written up as if it were a
+law of the full walk. The Mirror *does* complete full walks on metal —
+three of them, returning six windows — and it does send more cycles than
+it completes: seven sent, three ok, so four were sent and failed. Those
+are three distinct populations and the earlier reading collapsed them
+into one.
+
+**No single act is the trigger.** The first loss ended on a desktop-file
+click and the second on a window move. Any account that leans on the
+`.sit` click is fitting one sample.
+
+What survives from both runs:
+
+- The overwhelming majority of full-walk cycles produce nothing —
+  17 of 24 never sent even in the better run.
+- `idleMs` holds 758–804 regardless.
+- The reason is still `"failed"`, still not in the host's vocabulary, and
+  now it is hiding **two** different things: cycles that were never sent
+  and cycles that were sent and failed. Those cannot share a label.
+  `claude/026-cycle-outcome-reason` matters more, not less.
