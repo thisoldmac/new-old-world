@@ -495,3 +495,56 @@ is ample to run NOW without it.
   settings changed).
 
 Either outcome eliminates one of the two. One control panel and a reboot.
+
+## Instrument failure: the liveness tail cried wolf
+
+Michelle, of the fourth reported loss: **"that loss wasnt real."**
+
+The tail used above declared the guest dead on a **single** failed
+`session_health` sample. A transient miss therefore reads identically to a
+crash.
+
+**This exact defect is written down in this repository**, in
+`spikes/cursor-latency/README.md`, which was read at the start of this
+same session:
+
+> A single dropped socket is not a machine going down. The down-detection
+> here requires four *consecutive* failures. The first version believed
+> the first one, announced "went down (0s)", and the guest was still
+> sitting on the desktop 25 seconds later with everything running.
+
+The instrument was rebuilt with the defect its own documentation warns
+about, hours after that paragraph was read.
+
+### What is withdrawn
+
+- **"The guest died with no new act."** Based on a loss that did not
+  happen. Withdrawn entirely.
+- **Any claim that a particular metrics snapshot was taken "at the moment
+  of the crash."** The snapshots are real host state; the timing
+  attribution is not.
+- Of four reported losses, **two are corroborated** by Michelle's own
+  account at the machine (the Finder crash + wedge, and the later "crashed
+  finder and completely wedged"). **One is confirmed false.** One is
+  unconfirmed.
+
+### What survives, and why
+
+- **The escalation ladder.** It came from Michelle's reports at the
+  machine, not from the tail. Untouched.
+- **The cycle statistics.** Real host data read from the agent socket:
+  `(full, failed)` dominating, the `sent` counts, the act list. What is
+  gone is the claim that any given read sits at a crash boundary.
+- **"24 of 24 never sent is not a law."** That came from comparing two
+  real metrics reads to each other, not from any loss event.
+
+### The rule this earns
+
+**A liveness detector must require consecutive failures, and the number
+belongs in the code where a reader can see it.** One sample is a
+measurement of the network, not of the machine.
+
+More generally: every instrument built in a hurry to watch a defect is
+itself untested, and this session produced three wrong conclusions from
+trusted instruments before this one. An instrument's first output should
+be treated as a claim about the instrument.
