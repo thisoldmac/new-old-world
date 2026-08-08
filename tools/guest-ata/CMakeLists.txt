@@ -27,7 +27,6 @@ endif()
 add_application(NowAta
     TYPE "APPL"
     CREATOR "NOWa"
-    CONSOLE
     src/now_ata.c)
 
 target_compile_options(NowAta PRIVATE -mcpu=68000 -Wall -Wextra -Werror -Os)
