@@ -68,6 +68,65 @@
 #      networking, so killing by port kills the VM, and possibly not
 #      yours.
 set -euo pipefail
+
+# This script takes NO arguments - it is configured entirely by the
+# environment below. Until this guard, every argument was accepted and
+# silently ignored, which is two different failures wearing one face:
+#
+#   spin-up-ppc --help     booted a machine instead of answering
+#   spin-up-ppc --port N   booted on the LANE default and never said so
+#
+# The first is merely rude. The second is the port class this project has
+# already paid for twice - a number typed by a person, silently not
+# applied, and a guest that answers on an address nobody meant. A run that
+# ignores the flag you gave it is worse than one that refuses.
+usage () {
+    cat <<'USAGE'
+spin-up-ppc - stage this checkout's ext and app onto a fresh emulator
+clone, cold-boot so the INIT loads, and make the guest say what it is
+running.
+
+  usage: scripts/spin-up-ppc          (no arguments - see below)
+
+It takes no flags. Everything is set through the environment:
+
+  NOW_SPIN_PURPOSE    which base image to ask tools/base-image for
+                      (default: ppc-work)
+  NOW_SPIN_BASE       an explicit base image, overriding that lookup
+  NOW_SPIN_RUN        where the run directory goes (default: <now>/run/<anchor>)
+  NOW_SPIN_DISPLAY    1 to open a window, 0 for headless
+  NOW_SPIN_RESTRICT   1 to cut the guest off from anything but the host
+  NOW_ANCHOR_PORT     override the anchor port  ) normally DERIVED from your
+  NOW_WIRE_PORT       override the wire port    ) worktree by tools/lane-ports
+  NOW_HUMAN_STACK     1 to use the reserved human block instead of a lane's
+  NOW_EXT_BIN         the resident to stage     ) all default into the
+  NOW_APP_BIN         the app to stage          ) build tree that
+  NOW_SHUTDOWN_BIN    the shutdown instrument   ) scripts/build-guests fills
+  NOW_EXT_NAME        the resident's name in the System Folder
+  NOW_LAB_ROOT        the lab checkout, when the walk up cannot find it
+  NOW_DIAL_WAIT       seconds to wait for the guest to dial (default: 180)
+  NOW_PROBE_WAIT      seconds to wait for the probe reply (default: 90)
+  NOW_SHUTDOWN_WAIT   seconds to wait for a clean shutdown (default: 120)
+
+Your ports are derived, not asked for: tools/lane-ports hashes this
+worktree's path to a block nobody else can pick. Prefer that over
+NOW_ANCHOR_PORT / NOW_WIRE_PORT - a hand-picked port is what the derived
+scheme replaced.
+USAGE
+}
+case "${1:-}" in
+    -h|--help|help) usage; exit 0 ;;
+    '') : ;;
+    *)
+        usage >&2
+        printf '\n*** REFUSED: %s takes no arguments, and got: %s\n' \
+               "$(basename "$0")" "$*" >&2
+        printf '*** Nothing was cloned and no machine was booted.\n' >&2
+        printf '*** Set the environment instead - see above.\n' >&2
+        exit 64
+        ;;
+esac
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NOW="$(cd "$HERE/.." && pwd)"
 # The lab checkout is normally NOW's parent — but not from a worktree, which
