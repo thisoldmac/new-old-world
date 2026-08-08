@@ -445,3 +445,53 @@ Stated as a hypothesis with its own kill condition, deliberately. Three
 times in this session a true observation was promoted to a cause; the
 discipline that was missing each time was naming, in advance, the
 observation that would refute it.
+
+### CORRECTED: the actual machine, from Michelle
+
+The table above guessed. The real configuration:
+
+> 56mb / vm on / sonnet g3/466 with 1MB backside cache
+
+Two corrections, and the second is the larger one:
+
+- **Virtual Memory is ON.** Confirmed, not inferred. 56 MB of real memory
+  with VM on means active paging.
+- **It is not a 603e.** A **Sonnet G3/466** upgrade card — a PowerPC 750
+  with a 1 MB backside L2 cache. Processor upgrade cards are the most
+  cache-coherency-sensitive configuration in the classic Mac world, which
+  is why Sonnet ships an extension to manage exactly that.
+
+So the environment is:
+
+| | QEMU guest | PowerBook 1400c, as configured |
+|---|---|---|
+| RAM | 512 MB | **56 MB** |
+| Virtual Memory | off | **ON** |
+| CPU | emulated, no cache model | **G3/750 upgrade card, 1 MB backside cache** |
+
+And what runs in it: a **68K INIT**, under Apple's 68K emulator, **patching
+traps and building thunks**, calling neither `HoldMemory`/`LockMemory` nor
+any cache flush. **QEMU models none of those four things.**
+
+That is not a proof and is not written as one. It is that the machine is
+hostile in precisely the two places `ext/` is unguarded, which is no
+longer comfortably a coincidence.
+
+### The decisive test, replacing the one above
+
+Reading `VMAttr` is now redundant — Michelle answered it. The better test
+is an intervention:
+
+**Turn Virtual Memory OFF in the Memory control panel and reboot.** 56 MB
+is ample to run NOW without it.
+
+- **Crash goes away** → paging is the mechanism. The fix is holding every
+  structure the interrupt-time code touches (`gDragTask`, the liveness
+  TMTask, the content block).
+- **Crash persists** → paging is dead as an account, and the cache /
+  upgrade-card path is what remains — a far narrower search than
+  "somewhere in `ext/`", and one with its own intervention available
+  (disable the backside cache, or test with the Sonnet extension's
+  settings changed).
+
+Either outcome eliminates one of the two. One control panel and a reboot.
