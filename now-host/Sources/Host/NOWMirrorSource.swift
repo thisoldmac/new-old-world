@@ -2058,8 +2058,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 return
             }
         }
-        report(label + "…")
-        Task { @MainActor [weak self] in
+        /* THE SAME LANE the object-first door takes, and for the same
+           reason: this was a bare `Task` too, so an action sequence raced
+           whatever else the person had just clicked into the guest's single
+           act cell. Every gesture that reaches the machine goes through one
+           lane or it is not serialized at all. */
+        report(label + (directActLane.depth > 0 ? " — queued" : "…"))
+        let admitted = directActLane.submit { [weak self] in
             guard let self else { return }
             self.planCorrelation = nil
             self.planSettlement = "unknown"
@@ -2079,6 +2084,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         ? label + " ✓"
                         : "\(label) — \(self.planSettlement)")
             self.poll()
+        }
+        if !admitted {
+            let full = "not sent: \(directActLane.capacity) acts are already "
+                + "waiting for this Mac, which serves one at a time; try "
+                + "again when it has caught up"
+            ActLog.note(action: label,
+                        outcome: "NOT DISPATCHED: \(full)", ms: 0)
+            report("\(label) — \(full)")
         }
     }
 
