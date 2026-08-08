@@ -348,6 +348,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// container is cheap (0.3s for 33 items, measured) but not cheap
     /// enough to spend on every frame of a mirror.
     private var icons: [String: [MirrorKit.Scene.DesktopItem]] = [:]
+    private var finderPresentations:
+        [String: MirrorKit.Scene.FinderPresentation] = [:]
     private var iconLayout: String = "<none>"
     private var fetchingIcons = false
     private var iconTask: Task<Void, Never>?
@@ -569,6 +571,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         scene = nil
         sceneGuestKey = nil
         icons.removeAll()
+        finderPresentations.removeAll()
         iconLayout = "<none>"
         visibilityKey = "<none>"
         visibilityReadAt = nil
@@ -977,15 +980,29 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         if let desktop = icons[Self.desktopKey] { out.desktopItems = desktop }
         out.windows = out.windows.map { win in
             guard FinderItems.isFolderWindow(win),
-                  let items = icons[win.title] else { return win }
+                  let key = Self.finderWindowKey(win),
+                  let items = icons[key] else { return win }
             var w = win
             w.items = items
+            w.finder = finderPresentations[key]
+            /* Semantic Finder owns the interior categorically. A stale P3
+               display may have been cached by an older host run; carrying it
+               forward would put the dangerous path back underneath the new
+               one even though this run never armed Finder. */
+            w.display = nil
+            w.displayEpoch = nil
             return w
         }
         return out
     }
 
     private static let desktopKey = "\u{0}desktop"
+
+    private static func finderWindowKey(_ window: MirrorKit.Scene.Window)
+        -> String? {
+        guard let address = window.addr else { return nil }
+        return "\(window.incarnation ?? window.psn):\(address)"
+    }
 
     private static func iconLayoutKey(_ scene: MirrorKit.Scene) -> String {
         let folders = scene.windows.filter(FinderItems.isFolderWindow)
@@ -1073,6 +1090,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         iconTask = Task { @MainActor [weak self] in
             guard let self else { return }
             var fresh: [String: [MirrorKit.Scene.DesktopItem]] = [:]
+            var presentations:
+                [String: MirrorKit.Scene.FinderPresentation] = [:]
             var complete = true
             if let d = await self.readIcons(container: "desktop",
                                             generation: generation) {
@@ -1080,13 +1099,49 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             } else {
                 complete = false
             }
+            let duplicateTitles = Dictionary(grouping: folders, by: \.title)
+                .filter { $0.value.count > 1 }.keys
             for win in folders {
+                guard !duplicateTitles.contains(win.title) else {
+                    self.note("could not read Finder window \(win.title) - "
+                              + "duplicate titles are ambiguous to Finder "
+                              + "AppleScript; retained prior exact snapshot")
+                    complete = false
+                    continue
+                }
+                guard let surfaceKey = Self.finderWindowKey(win) else {
+                    self.note("could not read Finder window \(win.title) - "
+                              + "no exact WindowRecord identity")
+                    complete = false
+                    continue
+                }
                 let quoted = win.title.replacingOccurrences(of: "\"",
                                                             with: "\\\"")
-                if let items = await self.readIcons(
+                let containerStarted = Date()
+                if let snapshot = await self.readFinderSurface(
                     container: "window \"\(quoted)\"",
                     generation: generation) {
-                    fresh[win.title] = items
+                    fresh[surfaceKey] = snapshot.items
+                    var presentation = snapshot.presentation
+                    /* Finder's `selection` is global and describes the front
+                       container. Never join those names onto a background
+                       window where a same-named file would become selected. */
+                    if !win.front { presentation.selectedNames.removeAll() }
+                    presentations[surfaceKey] = presentation
+                    ActLog.note(
+                        action: "finder snapshot\n    "
+                            + BaselineLine.line("container", [
+                                ("window", surfaceKey),
+                                ("path", presentation.path),
+                                ("view", presentation.view.rawValue),
+                                ("pages", String(presentation.pages)),
+                                ("items", String(snapshot.items.count)),
+                                ("selected", String(
+                                    presentation.selectedNames.count)),
+                            ]),
+                        outcome: presentation.complete ? "complete" : "partial",
+                        ms: Int(Date().timeIntervalSince(containerStarted)
+                            * 1000))
                 } else {
                     complete = false
                 }
@@ -1123,6 +1178,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             }
             for (container, items) in fresh {
                 self.icons[container] = items
+            }
+            for (container, presentation) in presentations {
+                self.finderPresentations[container] = presentation
             }
             if complete { self.iconLayout = key }
             if let current = self.scene {
@@ -1199,29 +1257,54 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                                 limit: Int = iconPageSize) -> String {
         """
         tell application "Finder"
+        set viewWord to ""
+        set containerPath to ""
+        set selectedNames to {}
+        try
+        set viewWord to view of \(container)
+        end try
+        try
+        set containerPath to (item of \(container)) as text
+        end try
+        try
+        set selectedNames to name of every item of selection
+        end try
         set ns to name of every item of \(container)
         set ps to bounds of every item of \(container)
         set ks to kind of every item of \(container)
         end tell
         set totalCount to count ns
-        set out to "N" & tab & totalCount & return
+        set out to "N" & tab & totalCount & return & "V" & tab & viewWord & \
+        return & "P" & tab & containerPath & return
         set firstIndex to \(offset + 1)
         set lastIndex to \(offset + limit)
         if lastIndex > totalCount then set lastIndex to totalCount
         if firstIndex <= lastIndex then
         repeat with i from firstIndex to lastIndex
         set p to item i of ps
+        set chosen to selectedNames contains (item i of ns)
         set out to out & "I" & tab & (item i of ns) & tab & (item 1 of p) & \
         tab & (item 2 of p) & tab & (item 3 of p) & tab & (item 4 of p) & \
-        tab & (item i of ks) & return
+        tab & (item i of ks) & tab & chosen & return
         end repeat
         end if
         return out
         """
     }
 
+    struct FinderSurfaceRead {
+        var items: [MirrorKit.Scene.DesktopItem]
+        var presentation: MirrorKit.Scene.FinderPresentation
+    }
+
     func readIcons(container: String, generation: Int? = nil)
         async -> [MirrorKit.Scene.DesktopItem]? {
+        await readFinderSurface(container: container, generation: generation)?
+            .items
+    }
+
+    func readFinderSurface(container: String, generation: Int? = nil)
+        async -> FinderSurfaceRead? {
         /* Two vectorised passes, not one per icon. The first names every
            item and where the Finder drew it; the second asks the FILES
            for their type and creator, which is what picks the real icon
@@ -1243,6 +1326,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            mirror. */
         var roster: [MirrorKit.Scene.DesktopItem] = []
         var expectedTotal: Int?
+        var expectedPath: String?
+        var expectedView: MirrorKit.Scene.FinderPresentation.View?
+        var selectedNames = Set<String>()
+        var pages = 0
         var offset = 0
         while expectedTotal == nil || offset < expectedTotal! {
             guard complementIsCurrent(generation) else { return nil }
@@ -1272,6 +1359,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 return nil
             }
             expectedTotal = total
+            let metadata = Self.finderPageMetadata(text)
+            if let expectedPath, expectedPath != metadata.path { return nil }
+            if let expectedView, expectedView != metadata.view { return nil }
+            expectedPath = metadata.path
+            expectedView = metadata.view
+            selectedNames.formUnion(metadata.selectedNames)
+            pages += 1
             let page = Self.parseIcons(text)
             let expectedCount = min(Self.iconPageSize, total - offset)
             guard page.count == expectedCount else {
@@ -1334,8 +1428,34 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                                        : (read.value ?? "")),
                 uniquingKeysWith: { first, _ in first })
         }
-        return Self.applyingArt(roster, types: typesByName,
-                                aliasTargets: targetsByName)
+        return FinderSurfaceRead(
+            items: Self.applyingArt(roster, types: typesByName,
+                                    aliasTargets: targetsByName),
+            presentation: .init(path: expectedPath ?? "",
+                                view: expectedView ?? .unknown,
+                                selectedNames: selectedNames,
+                                pages: pages, complete: true))
+    }
+
+    static func finderPageMetadata(_ raw: String)
+        -> (path: String, view: MirrorKit.Scene.FinderPresentation.View,
+            selectedNames: Set<String>) {
+        let text = unquote(raw)
+        var path = ""
+        var view: MirrorKit.Scene.FinderPresentation.View = .unknown
+        var selected = Set<String>()
+        for line in text.components(separatedBy: CharacterSet.newlines) {
+            let f = line.components(separatedBy: "\t")
+            guard f.count >= 2 else { continue }
+            switch f[0] {
+            case "P": path = f[1]
+            case "V": view = .init(rawValue: f[1]) ?? .unknown
+            case "I" where f.count >= 8:
+                if f[7].lowercased() == "true" { selected.insert(f[1]) }
+            default: break
+            }
+        }
+        return (path, view, selected)
     }
 
     private func complementIsCurrent(_ generation: Int?) -> Bool {

@@ -96,10 +96,9 @@ import Foundation
 /// - A guest `script` source is capped at **2048 bytes** — a batched probe
 ///   over more than ~5 phrasings is refused with `too-large`.
 ///
-/// Nothing in this project reads the view today: `bounds` made the geometry
-/// right in every view, so a carried `view` would be a field with no reader,
-/// which is its own defect class. It is written down here so that the next
-/// lane that needs it does not spend a VM re-deriving it.
+/// The semantic Finder path now reads this word on every bounded page. Bounds
+/// still own geometry; view owns presentation — specifically whether the name
+/// belongs below a 32×32 icon or beside a 16×16 list/small-icon box.
 ///
 /// ### The standing hazard
 ///
@@ -115,10 +114,11 @@ public enum FinderItems {
     /// any more when the Finder was asked for one.
     public static let iconSize = 32
 
-    /// Cap on items reported per window. A folder with a thousand files would
-    /// blow the guest's 4 KB script-result buffer and cost seconds of Finder
-    /// time; the cap makes the truncation explicit instead.
-    public static let maxItemsPerWindow = 60
+    /// A safety ceiling, not the old single-result truncation cap. The host
+    /// reads eight rows per bounded Apple event, so ordinary directories over
+    /// sixty items are now complete. A truly enormous directory still gets a
+    /// named refusal rather than monopolising a cooperative Finder forever.
+    public static let maxItemsPerWindow = 512
 
     // MARK: - The script
 

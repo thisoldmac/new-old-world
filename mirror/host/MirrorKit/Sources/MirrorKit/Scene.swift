@@ -468,6 +468,10 @@ public struct Scene: Codable, Equatable, Sendable {
         /// point and being told the right file was selected. No major bump:
         /// a consumer that has never heard of the key ignores it.
         public var items: [DesktopItem]? = nil
+        /// Host-side semantic ownership for a Finder interior. This is not
+        /// part of the scene IR: it is produced asynchronously from the
+        /// Finder after the structural scene has already published.
+        public var finder: FinderPresentation? = nil
         /// The QuickDraw content plane: draw ops captured by QDPeek
         /// (`qdtrace`), port-local coords, replayed into the content area.
         /// nil when not traced. The renderer draws it in place of the empty
@@ -551,6 +555,34 @@ public struct Scene: Codable, Equatable, Sendable {
                producer can be in; taking it at its word would assert
                "walked, and here they are" over nothing. */
             return state == .complete ? .unknown : state
+        }
+    }
+
+    /// The semantic facts needed to draw a Finder container without asking
+    /// P3 to intercept Finder's drawing. Paths are HFS paths on the guest and
+    /// are deliberately not constrained to NOW's shared-tree file service.
+    public struct FinderPresentation: Equatable, Sendable {
+        public enum View: String, Equatable, Sendable {
+            case icon
+            case name
+            case smallIcon = "small icon"
+            case unknown
+        }
+
+        public var path: String
+        public var view: View
+        public var selectedNames: Set<String>
+        public var pages: Int
+        public var complete: Bool
+
+        public init(path: String, view: View,
+                    selectedNames: Set<String> = [], pages: Int = 1,
+                    complete: Bool = true) {
+            self.path = path
+            self.view = view
+            self.selectedNames = selectedNames
+            self.pages = pages
+            self.complete = complete
         }
     }
 

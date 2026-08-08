@@ -259,47 +259,50 @@ final class FinderItemArbitrationTests: XCTestCase {
                        "a roster-only folder window must still draw its icons")
     }
 
-    /// **The label is the machine's wherever the machine wrote one.**
-    ///
-    /// The Finder writes a name as a real text run — ellipsised at the cell
-    /// width, wrapped, inverted when selected — and every one of those facts
-    /// is something this side would have to invent. Our label used to be
-    /// painted over it unconditionally, on a white patch that erased the
-    /// machine's own glyphs: that is "Finder item icons draw their label
-    /// twice".
-    ///
-    /// The reading is taken against THE MACHINE — the same scene with the
-    /// roster removed — and not against an earlier render of ours.
-    ///
-    /// **Watched to fail against**: deleting the `textCovers` yield, and
-    /// against widening it to `mostlyCovers`.
-    func testTheMachinesOwnLabelSurvivesTheRoster() throws {
+    func testNameViewDrawsTheSemanticNameBesideTheRowIcon() throws {
+        var win = Self.folder(items: [
+            Self.item("Documents", x: 40, y: 60, w: 16, h: 16),
+        ])
+        win.finder = .init(path: "Macintosh HD:", view: .name)
+        let png = try RenderShot.png(scene: Self.scene([win]))
         let o = Self.contentOrigin
-        /* The machine's run sits where the Finder puts a label: centred
-           under a 32-point icon at (40, 60), so its baseline is a few points
-           below the box. */
+        let label = CGRect(x: o.x + 60, y: o.y + 60,
+                           width: 90, height: 16)
+        XCTAssertFalse(darkPixels(png, in: label).isEmpty,
+                       "list view cannot depend on Finder P3 to supply names")
+    }
+
+    func testFinderSnapshotSelectionChangesTheSemanticRow() throws {
+        var plain = Self.folder(items: [
+            Self.item("Documents", x: 40, y: 60, w: 16, h: 16),
+        ])
+        plain.finder = .init(path: "Macintosh HD:", view: .name)
+        var selected = plain
+        selected.finder?.selectedNames = ["Documents"]
+        let a = try RenderShot.png(scene: Self.scene([plain]))
+        let b = try RenderShot.png(scene: Self.scene([selected]))
+        let o = Self.contentOrigin
+        XCTAssertGreaterThan(
+            differences(a, b, in: CGRect(x: o.x + 40, y: o.y + 60,
+                                         width: 112, height: 18)), 0)
+    }
+
+    /// Finder semantics now own the whole interior. Historical display ops
+    /// must not alter a semantic render: accepting even the text subset would
+    /// silently restore the same P3 path that crashes Finder on the PB1400c.
+    func testHistoricalFinderDisplayCannotAlterTheSemanticInterior() throws {
+        let o = Self.contentOrigin
         let ops = [Self.blit([40, 60, 72, 92]),
                    Self.run("Documents", x: 22, y: 103)]
-        let inkOnly = Self.folder(items: nil, display: ops)
+        let semanticOnly = Self.folder(
+            items: [Self.item("Documents", x: 40, y: 60)])
         let both = Self.folder(items: [Self.item("Documents", x: 40, y: 60)],
                                display: ops)
-
-        let machine = darkPixels(try RenderShot.png(scene: Self.scene([inkOnly])),
-                                 in: CGRect(x: o.x + 10, y: o.y + 92,
-                                            width: 120, height: 16))
-        XCTAssertFalse(machine.isEmpty,
-                       "the fixture must actually put the machine's words on "
-                       + "screen, or this proves nothing")
-
-        let composed = darkPixels(try RenderShot.png(scene: Self.scene([both])),
-                                  in: CGRect(x: o.x + 10, y: o.y + 92,
-                                             width: 120, height: 16))
-        let lost = machine.subtracting(composed)
-        XCTAssertLessThanOrEqual(
-            Double(lost.count), Double(machine.count) * 0.15,
-            "the roster erased \(lost.count) of the machine's own \(machine.count) "
-            + "label pixels; where the machine wrote the name, its run is the "
-            + "one that stands")
+        let expected = try RenderShot.png(scene: Self.scene([semanticOnly]))
+        let actual = try RenderShot.png(scene: Self.scene([both]))
+        XCTAssertEqual(differences(expected, actual,
+                                   in: CGRect(x: o.x, y: o.y,
+                                              width: 320, height: 220)), 0)
     }
 
     /// **The yield is to WORDS, not to any ink at all** — and this is the

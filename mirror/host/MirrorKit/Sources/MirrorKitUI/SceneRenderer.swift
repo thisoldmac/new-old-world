@@ -432,10 +432,9 @@ public struct SceneRenderer {
         guard let items = scene.desktopItems else { return }
         for item in items where item.placed {
             let origin = CGPoint(x: item.x, y: item.y)
-            // The Finder shows selection by inverting the icon. We cannot read
-            // the guest's selection — it lives only in those pixels — so this
-            // draws what the mirror itself selected, and gives the click the
-            // immediate feedback that otherwise never arrives.
+            // Desktop selection is still optimistic host feedback. Folder
+            // windows carry Finder's own selection in `FinderPresentation`;
+            // desktop selection does not yet have a correlated snapshot.
             drawIcon(ctx, item, at: origin,
                      selected: selectedItem == item.name)
         }
@@ -1068,7 +1067,12 @@ public struct SceneRenderer {
         // contained by an exact semantic control/dialog rectangle. The replay
         // still carries whole-window background erases through those regions;
         // only control-local CopyBits/text/shapes yield to guest semantics.
-        let displayOwnsVisuals = !(win.display?.isEmpty ?? true)
+        /* Finder's interior has one owner: its semantic snapshot. Even a
+           stale display list from a pre-policy run must not re-enable the
+           metal-proven Finder P3 path underneath it. */
+        let finderOwnsInterior = win.app == "Finder" && win.items != nil
+        let displayOwnsVisuals = !finderOwnsInterior
+            && !(win.display?.isEmpty ?? true)
         /* A DITL resource-control row and its live ControlRecord share one
            ref. The DITL can only say "unknown resource", while P2 may later
            prove that exact control is a list or another drawable control.
@@ -1177,7 +1181,7 @@ public struct SceneRenderer {
             drawControl(contentCtx, control, contentOrigin: content.origin,
                         isDefault: false, windowFace: windowFace)
         }
-        if let display = win.display {
+        if !finderOwnsInterior, let display = win.display {
             DisplayReplay.draw(display, in: contentCtx, content: content,
                                excluding: semanticFrames,
                                ladder: Self.ladder(for: win, content: content,
@@ -1232,16 +1236,55 @@ public struct SceneRenderer {
                 width: CGFloat(max(0, area.r - area.l)),
                 height: CGFloat(max(0, area.b - area.t)))))
             for item in items where item.placed {
-                drawIcon(iconCtx, item,
-                         at: CGPoint(x: content.minX + CGFloat(item.x),
-                                     y: content.minY + CGFloat(item.y)),
-                         replayed: replayCoverage)
+                let selected = win.finder?.selectedNames.contains(item.name)
+                    == true || selectedItem == item.name
+                drawFinderItem(iconCtx, item,
+                               at: CGPoint(
+                                x: content.minX + CGFloat(item.x),
+                                y: content.minY + CGFloat(item.y)),
+                               view: win.finder?.view ?? .unknown,
+                               selected: selected,
+                               replayed: replayCoverage)
             }
         }
         // Grow box sits on top of the content, at the window corner.
         if !isDialog {
             drawGrowBox(ctx, win)
         }
+    }
+
+    /// A Finder item has three measured presentations. The box always comes
+    /// from Finder; view tells us whether the name belongs below it or beside
+    /// it. Before this field existed list and small-icon views both arrived as
+    /// 16x16 boxes, so the renderer could only omit the name and hope P3 drew
+    /// the columns — exactly the dependency this slice removes.
+    private func drawFinderItem(
+        _ ctx: GraphicsContext, _ item: MirrorKit.Scene.DesktopItem,
+        at origin: CGPoint, view: MirrorKit.Scene.FinderPresentation.View,
+        selected: Bool, replayed: DisplayReplay.Coverage?
+    ) {
+        if view == .icon || view == .unknown && Self.itemDrawsItsOwnLabel(item) {
+            drawIcon(ctx, item, at: origin, selected: selected,
+                     replayed: replayed)
+            return
+        }
+
+        let box = CGRect(origin: origin, size: Self.iconBoxSize(item))
+        drawGenericIcon(ctx, box, item: item)
+        if selected {
+            var inverted = ctx
+            inverted.blendMode = .multiply
+            inverted.fill(Path(box), with: .color(Platinum.g4))
+        }
+        let ascent = CGFloat(FontBook.small?.ascent ?? 9)
+        let width = CGFloat(FontBook.small?.width(item.name)
+                            ?? item.name.count * 6)
+        let label = CGRect(x: box.maxX + 4, y: box.minY,
+                           width: width + 4, height: ascent + 3)
+        ctx.fill(Path(label), with: .color(selected ? Platinum.g6 : .white))
+        appText(item.name, ctx, x: label.minX + 2,
+                baselineY: label.minY + ascent,
+                color: selected ? .white : Platinum.g6, small: true)
     }
 
     /// The Platinum title bar, drawn the way the machine draws it.

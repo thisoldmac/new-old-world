@@ -1552,6 +1552,27 @@ final class NOWMirrorIconParsingTests: XCTestCase {
                        + "computed from it is a click on the wrong file")
         XCTAssertTrue(script.contains("(item 3 of p)"), "the box's right edge")
         XCTAssertTrue(script.contains("(item 4 of p)"), "and its bottom")
+        XCTAssertTrue(script.contains("set viewWord to view of"))
+        XCTAssertTrue(script.contains("set containerPath to (item of"))
+        XCTAssertTrue(script.contains("name of every item of selection"))
+        XCTAssertFalse(script.lowercased().contains("activate"),
+                       "an observe-only complement must not front Finder")
+        XCTAssertFalse(script.lowercased().contains("entire contents"),
+                       "whole-disk browsing is bounded navigation, not search")
+    }
+
+    func testFinderPageCarriesWholeDiskPathViewAndSelection() {
+        let page = "\"N\t2\rV\tname\r"
+            + "P\tMacintosh HD:System Folder:\r"
+            + "I\tExtensions\t22\t43\t38\t59\tfolder\ttrue\r"
+            + "I\tFinder\t22\t62\t38\t78\tapplication\tfalse\r\""
+
+        let metadata = NOWMirrorSource.finderPageMetadata(page)
+        XCTAssertEqual(metadata.path, "Macintosh HD:System Folder:")
+        XCTAssertEqual(metadata.view, .name)
+        XCTAssertEqual(metadata.selectedNames, ["Extensions"])
+        XCTAssertEqual(NOWMirrorSource.parseIcons(page).map(\.name),
+                       ["Extensions", "Finder"])
     }
 
     /// The Macintosh HD list view, exactly as the Finder answered it: rows at
