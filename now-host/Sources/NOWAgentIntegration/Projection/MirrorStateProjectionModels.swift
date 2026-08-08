@@ -589,18 +589,38 @@ public struct AgentIntegrationMirrorCycleMetric:
     Codable, Equatable, Sendable {
     public let walk: String
     public let outcome: String
+    /// **The reason beside the word, for the cycles that have one.**
+    ///
+    /// `outcome` is a small closed vocabulary and `failed` is the bucket
+    /// in it — no Mac connected, a scene already in flight, a short
+    /// transfer, a delta that would not rebuild, and a watchdog's silence
+    /// all arrive as that one token. The host writes a distinct sentence
+    /// for each and, until 2026-08-07, spent it only on the window's
+    /// status line: an agent that asked for metrics got 14 of 24 cycles
+    /// reading `failed` with every clock at zero and no way to tell which
+    /// of five bugs it was looking at.
+    ///
+    /// Nil for `ok`, which needs no explaining. Written for a person and
+    /// carried verbatim — do not parse it, and do not read it as a sixth
+    /// outcome.
+    public let reason: String?
     public let idleMs: Int?
     public let requestMs: Int?
     public let decodeMs: Int?
     public let totalMs: Int
+    /// Nil unless the cycle published a scene. A cycle that produced no
+    /// scene has nothing to count, and the counts of the last one that
+    /// worked belong to that cycle's row rather than this one's.
     public let windows: Int?
     public let elements: Int?
 
-    public init(walk: String, outcome: String, idleMs: Int?,
+    public init(walk: String, outcome: String, reason: String? = nil,
+                idleMs: Int?,
                 requestMs: Int?, decodeMs: Int?, totalMs: Int,
                 windows: Int?, elements: Int?) {
         self.walk = walk
         self.outcome = outcome
+        self.reason = reason
         self.idleMs = idleMs
         self.requestMs = requestMs
         self.decodeMs = decodeMs
