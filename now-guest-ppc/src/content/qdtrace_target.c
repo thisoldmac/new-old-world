@@ -14,7 +14,7 @@ NowQDTarget now_qdtrace_pick_target(int has_a5,
         return kNowQDTargetFront;
     }
     if (has_a5) {
-        return kNowQDTargetA5;
+        return kNowQDTargetRawA5;
     }
     return kNowQDTargetNone;
 }
@@ -24,11 +24,16 @@ const char *now_qdtrace_target_route_name(NowQDTarget target)
     switch (target) {
     case kNowQDTargetSerial: return "serial";
     case kNowQDTargetFront:  return "front";
-    case kNowQDTargetA5:     return "a5";
+    case kNowQDTargetRawA5:  return "";
     case kNowQDTargetNone:
     case kNowQDTargetBadSerial:
     default:                 return "";
     }
+}
+
+int now_qdtrace_process_is_eligible(int is_finder)
+{
+    return !is_finder;
 }
 
 int now_qdtrace_target_may_redraw(NowQDTarget target, int same_process)

@@ -21,6 +21,19 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         value.windows[0].front = true
         value.windows[0].addr = address
         value.windows[0].display = nil
+        /* Most tests below exercise application P3 mechanics. The recorded
+           fixture happens to be Finder, which is now permanently excluded;
+           relabel the common fixture as an ordinary app and opt the two
+           Finder-policy tests back into Finder explicitly. */
+        let psn = value.windows[0].psn
+        value.windows[0].app = "SimpleText"
+        if let index = value.processes?.firstIndex(where: { $0.psn == psn }) {
+            value.processes?[index].name = "SimpleText"
+            value.processes?[index].signature = "ttxt"
+        }
+        if let index = value.apps.firstIndex(where: { $0.psn == psn }) {
+            value.apps[index].name = "SimpleText"
+        }
         return value
     }
 
@@ -676,7 +689,7 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
     /// on the wire. The pens asserted below are the same values plan 013
     /// quotes from the original measurement, captured again a day later
     /// through the whole new pipeline.
-    func testFinderCaptureComposesTheRealInteriorHostSide() throws {
+    func testHistoricalFinderFixtureStillExercisesApplicationComposition() throws {
         let url = try XCTUnwrap(Bundle.module.url(
             forResource: "qdtrace-drain-blitsrc-finder",
             withExtension: "json", subdirectory: "Fixtures"))
@@ -696,7 +709,7 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
 
         let display = try XCTUnwrap(update.scene.windows[0].display)
         let texts = display.filter { $0.op == "text" }
-        XCTAssertEqual(texts.count, 10, "every label the Finder drew")
+        XCTAssertEqual(texts.count, 10, "every label in the recorded fixture")
         func pen(_ label: String) -> [Int]? {
             texts.first { $0.text == label }?.pen
         }
@@ -1043,6 +1056,43 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         changed.addr = 0x2000
         XCTAssertTrue(NOWMirrorContentPlane.needsTarget(
             currentPSN: front.psn, currentWindow: 0x1000, front: changed))
+    }
+
+    func testFinderNeverRequestsQDTraceAndDropsHistoricalDisplay() throws {
+        var value = try scene()
+        value.windows[0].app = "Finder"
+        if let index = value.processes?.firstIndex(
+            where: { $0.psn == value.windows[0].psn }) {
+            value.processes?[index].name = "Finder"
+            value.processes?[index].signature = "MACS"
+        }
+        value.windows[0].display = [DisplayOp(op: "text", ticks: 1)]
+        var sent: [(String, [String: CommandArg]?)] = []
+        let model = NOWMirrorContentPlane(
+            listener: GuestListener(
+                identity: .init(version: "test", name: "Test Host")),
+            sendCommand: { verb, args, _ in sent.append((verb, args)) })
+        var update: NOWMirrorContentPlane.Update?
+
+        model.join(into: value) { update = $0 }
+
+        XCTAssertTrue(sent.isEmpty,
+                      "host must not perturb Finder merely to hear a refusal")
+        XCTAssertNil(update?.scene.windows[0].display)
+        XCTAssertTrue(update?.sentence.contains("P3 permanently excluded")
+                      == true)
+    }
+
+    func testFinderClassificationUsesProcessSignature() throws {
+        var value = try scene()
+        XCTAssertFalse(value.processes?.isEmpty ?? true)
+        value.windows[0].app = "localized Finder name"
+        value.windows[0].psn = "0.9"
+        value.processes?[0].psn = "0.9"
+        value.processes?[0].name = "Finder"
+        value.processes?[0].signature = "MACS"
+        XCTAssertTrue(NOWMirrorContentPlane.isFinder(value.windows[0],
+                                                     in: value))
     }
 
     func testOldVisibleWindowOfSameProcessCannotJoinAfterRetarget() throws {

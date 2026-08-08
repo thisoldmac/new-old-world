@@ -295,6 +295,39 @@ final class NOWMirrorContentPlane {
                         + "expected-stale draw ops"))
             return
         }
+        /* Finder is not a content-plane target. This is a permanent product
+           boundary, not a policy default: its interior is projected from
+           semantic directory state, and the PB1400c proved that P3 can crash
+           Finder. Keep the host-side gate even though the guest refuses too;
+           it avoids perturbing the machine merely to hear the refusal. */
+        if Self.isFinder(front, in: scene) {
+            let hadClaim = targetPSN != nil || armedAt != nil
+            targetPSN = nil
+            targetWindow = nil
+            armedAt = nil
+            cursor = 0
+            replacementFloor.removeAll()
+            let suppressed = Self.withoutFinderDisplay(scene)
+            guard hadClaim else {
+                completion(.init(scene: attachCached(to: suppressed),
+                                 sentence: "content: Finder is semantic; "
+                                     + "P3 permanently excluded"))
+                return
+            }
+            sendCommand("qdtrace", ["op": .text("stop")]) { [weak self] stop in
+                guard let self, self.sessionGeneration == generation else {
+                    return
+                }
+                completion(.init(
+                    scene: self.attachCached(to: suppressed),
+                    sentence: stop.ok
+                        ? "content: released the application target; Finder "
+                            + "is semantic and P3 is permanently excluded"
+                        : "content: Finder excluded; application release "
+                            + "was refused — " + Self.failure(stop)))
+            }
+            return
+        }
         let needsTarget = Self.needsTarget(
             currentPSN: targetPSN, currentWindow: targetWindow, front: front)
         let needsRenewal = armedAt.map {
@@ -1337,8 +1370,12 @@ final class NOWMirrorContentPlane {
     }
 
     private func attachCached(to scene: MirrorKit.Scene) -> MirrorKit.Scene {
-        var attached = scene
+        var attached = Self.withoutFinderDisplay(scene)
         for index in attached.windows.indices {
+            guard !Self.isFinder(attached.windows[index], in: attached) else {
+                attached.windows[index].contentPlane = .notAttempted
+                continue
+            }
             guard let address = attached.windows[index].addr else {
                 /* No exact guest address is the one case where NEITHER
                    answer is available: P3 cannot be armed on this window
@@ -1405,6 +1442,29 @@ final class NOWMirrorContentPlane {
     static func needsTarget(currentPSN: String?, currentWindow: UInt32?,
                             front: MirrorKit.Scene.Window) -> Bool {
         currentPSN != front.psn || currentWindow != front.addr
+    }
+
+    /// The roster's signature is authoritative. The name fallback preserves
+    /// the safety boundary for older scene producers that did not publish a
+    /// process roster; a false positive is a missing application trace, while
+    /// a false negative is the metal-proven Finder crash.
+    static func isFinder(_ window: MirrorKit.Scene.Window,
+                         in scene: MirrorKit.Scene) -> Bool {
+        if let row = scene.processes?.first(where: { $0.psn == window.psn }) {
+            return row.signature == "MACS" || row.name == "Finder"
+        }
+        return window.app == "Finder"
+    }
+
+    static func withoutFinderDisplay(_ scene: MirrorKit.Scene)
+        -> MirrorKit.Scene {
+        var out = scene
+        for index in out.windows.indices where isFinder(out.windows[index],
+                                                        in: out) {
+            out.windows[index].display = nil
+            out.windows[index].displayEpoch = nil
+        }
+        return out
     }
 
     private static func slot(psn: String?, window: UInt32?) -> String? {

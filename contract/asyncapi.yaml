@@ -5506,14 +5506,13 @@ components:
             description: Absent means status.
           a5:
             type: string
+            deprecated: true
             description: >
-              start only. Raw-A5 fallback for a caller that has already
-              resolved the ONE process to instrument. A STRING (decimal
-              or 0x-prefixed), not an integer: an A5 routinely has its top
-              bit set and the guest's `long` is 32 bits, so 0x80000000
-              would arrive as a negative number. Normal callers send the
-              process serial below and never handle an A5. Zero is refused
-              at the near end — the plane reads it as "hook nothing".
+              start only. Always refused with `raw-a5-disabled`. A raw A5
+              carries no process identity and therefore cannot enforce the
+              permanent Finder exclusion. Callers send a complete process
+              serial (or deliberately request `front:true`) and let the guest
+              resolve and classify the live process before arming.
           serialHi:
             type: integer
             description: >
@@ -5530,6 +5529,8 @@ components:
               start only. When true and no serial is supplied, target the
               process that is frontmost when the guest reads the request.
               Serial identity takes precedence; false is not a selector.
+              Finder is refused even when it is selected through this route;
+              Finder interiors are served semantically and never through P3.
           window:
             type: string
             description: >

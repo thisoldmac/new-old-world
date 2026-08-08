@@ -35,8 +35,8 @@ int main(void)
     check_str(now_qdtrace_target_route_name(target), "front", "front route");
 
     target = now_qdtrace_pick_target(1, 0, 0, 0, 0);
-    check(target, kNowQDTargetA5, "raw a5 fallback");
-    check_str(now_qdtrace_target_route_name(target), "a5", "a5 route");
+    check(target, kNowQDTargetRawA5, "raw a5 is an explicit refusal");
+    check_str(now_qdtrace_target_route_name(target), "", "no raw a5 route");
 
     check(now_qdtrace_pick_target(0, 0, 0, 0, 0), kNowQDTargetNone,
           "no selector");
@@ -52,8 +52,13 @@ int main(void)
           "serial wins over front and a5");
     check(now_qdtrace_pick_target(1, 0, 0, 1, 1), kNowQDTargetFront,
           "front wins over a5");
-    check(now_qdtrace_pick_target(1, 0, 0, 1, 0), kNowQDTargetA5,
-          "a5 remains reachable beside front false");
+    check(now_qdtrace_pick_target(1, 0, 0, 1, 0), kNowQDTargetRawA5,
+          "a5 remains an explicit refusal beside front false");
+
+    check(now_qdtrace_process_is_eligible(0), 1,
+          "ordinary application is eligible");
+    check(now_qdtrace_process_is_eligible(1), 0,
+          "Finder is permanently ineligible");
 
     check(now_qdtrace_target_may_redraw(kNowQDTargetSerial, 1), 1,
           "self selected by serial may redraw");
@@ -61,7 +66,7 @@ int main(void)
           "self selected as front may redraw");
     check(now_qdtrace_target_may_redraw(kNowQDTargetSerial, 0), 0,
           "foreign serial never redraws");
-    check(now_qdtrace_target_may_redraw(kNowQDTargetA5, 1), 0,
+    check(now_qdtrace_target_may_redraw(kNowQDTargetRawA5, 1), 0,
           "raw A5 never proves redraw ownership");
 
     if (failures != 0) {

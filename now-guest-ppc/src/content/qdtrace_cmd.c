@@ -23,6 +23,7 @@
 #include "json.h"
 #include "mirror_policy.h"
 #include "peek.h"
+#include "proc_roster.h"
 #include "qdtrace_target.h"
 
 #include <stdio.h>
@@ -183,6 +184,7 @@ static void run_start(const char *json, long id, char *out, long cap)
     int has_front = 0;
     int front_true = 0;
     NowQDTarget target;
+    NowProcRosterRow process;
     const char *route;
     char mode[16];
     long ttl;
@@ -244,6 +246,12 @@ static void run_start(const char *json, long id, char *out, long cap)
                                "front:true, or one already-resolved a5; "
                                "there is no arm-everything", out, cap);
         return;
+    case kNowQDTargetRawA5:
+        now_qdtrace_error_json(id, "raw-a5-disabled",
+                               "qdtrace start requires process identity; "
+                               "raw a5 cannot enforce the Finder exclusion",
+                               out, cap);
+        return;
     case kNowQDTargetSerial:
     case kNowQDTargetFront: {
         ProcessSerialNumber psn;
@@ -265,12 +273,24 @@ static void run_start(const char *json, long id, char *out, long cap)
             now_qdtrace_error_json(id, fail_code, fail_message, out, cap);
             return;
         }
+        if (!now_proc_roster_read(&psn, &process)) {
+            now_qdtrace_error_json(id, "process-unreadable",
+                                   "the selected process could not be "
+                                   "classified safely", out, cap);
+            return;
+        }
+        if (!now_qdtrace_process_is_eligible(
+                process.kind == kNowProcKindFinder)) {
+            now_qdtrace_error_json(id, "finder-content-disabled",
+                                   "Finder interiors are semantic; P3 is "
+                                   "permanently disabled for Finder",
+                                   out, cap);
+            return;
+        }
         serial_hi = (NowContentU32)psn.highLongOfPSN;
         serial_lo = (NowContentU32)psn.lowLongOfPSN;
         break;
     }
-    case kNowQDTargetA5:
-        break;
     }
     if (!now_json_find_string(json, "mode", mode, (long)sizeof mode)) {
         mode[0] = '\0';
