@@ -24,6 +24,58 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## BROKEN: the reserved human block stops LANES colliding, not two agents both building her stack (2026-08-07, `claude/024-integration-10`)
+
+Block 590-599 is reserved so that **allocation** can never hand a lane
+Michelle's ports. It works, and it is the wrong shape for the failure
+that actually happened.
+
+Round 10 built her stack on 16728/16729 at 20:46, verified it — display
+present, `actselftest` -> `abi-agreed`, guest connected to the host app,
+screendump showing a clean desktop — and cleared the lane's claim on it
+per `docs/handing-over-a-human-stack.md`. At **21:05**, mid-report,
+another session (`/private/tmp/claude-501/wt-mf-stack`, block 124, run
+dir `/private/tmp/nowvm-mf`) booted **its own** human stack on the same
+two reserved ports. Mine was shut down, its host app quit, and its run
+directory's `session.qcow2` removed. That session was doing exactly the
+right thing — including, by the look of the last screendump, the
+Finder-route shutdown that leaves a clean volume.
+
+**Nothing was misconfigured and nobody was careless.** Two sessions were
+each asked for a fresh stack for the same person, and the reserved range
+is explicitly *not* an allocation any lane can hold — so there is nothing
+for a second session to find held and back off from. `lane-ports whose
+--port 16729` would have shown the first stack through `lsof`, and
+nothing requires anyone to ask.
+
+### How it was noticed, which is the part worth keeping
+
+Not by an error. A `tools/qmp screendump` was redirected to `/dev/null`
+and its output compared with `cmp` — and because BOTH dumps had silently
+failed to be written, `cmp` compared two nonexistent files and returned
+"changed". The instrument reported motion because it had gone blind.
+Fourteenth instance of the pattern this arc keeps paying for; the only
+reason the teardown was found at all is that the next command printed the
+missing file.
+
+### What would actually close it
+
+Not another reserved range. A **claim on the human block that a second
+session can see and refuse against** — the same shape as the metal
+runbook's `MetalMachineGuard`, which asks whether the MACHINE is free
+rather than whether a name is taken. `lane-ports whose --port` already
+answers it from `lsof`; nothing calls it before booting into 590-599.
+`spin-up-ppc` could, in one check, on the range it already recognises as
+human.
+
+### And the record trap recurred in the same hour
+
+`/private/tmp/now-lanes/0124.json` files the new stack's QMP socket and
+run directory under **block 124**, exactly as
+`docs/handing-over-a-human-stack.md` warns. That page's cure is a manual
+two-field edit after handover, which is a rule, not a floor — and this is
+the third stack in one day to be filed against its builder's block.
+
 ## FIXED: the anchor passed as the wire buys a dirty volume and says nothing (2026-08-07, `claude/024-integration-10`)
 
 `tools/shutdown-guest.py` takes `--port` (QEMU's hostfwd to the anchor
