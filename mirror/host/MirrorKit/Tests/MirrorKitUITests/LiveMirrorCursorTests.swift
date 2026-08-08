@@ -210,7 +210,7 @@ final class LiveMirrorCursorTests: XCTestCase {
             id: "Note#0", app: "Note", psn: "1.2", title: "Note", kind: 2,
             rect: Rect(l: 100, t: 100, r: 400, b: 300), front: true, z: 0,
             visible: true, controls: [], text: nil, items: nil,
-            display: nil, island: nil)
+            display: nil)
         w.ref = "0x1000"
         w.dialogItems = [Scene.DialogItem(
             number: 1, title: "",

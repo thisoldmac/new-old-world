@@ -25,8 +25,7 @@ final class DragTargetingTests: XCTestCase {
         -> Scene.Window {
         .init(id: id, app: app, psn: "1.\(id)", title: title, kind: 20,
               rect: rect, front: true, z: 0, visible: true,
-              controls: controls, text: nil, items: items, display: nil,
-              island: nil)
+              controls: controls, text: nil, items: items, display: nil)
     }
 
     private static func scene(windows: [Scene.Window] = [],

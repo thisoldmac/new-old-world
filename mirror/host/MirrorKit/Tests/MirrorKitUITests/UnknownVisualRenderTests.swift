@@ -41,8 +41,7 @@ final class UnknownVisualRenderTests: XCTestCase {
         return Scene.Window(id: "1.0/Unknown#0", app: "Unknown", psn: "1.0",
                             title: "Unknown", kind: 0, rect: rect,
                             front: true, z: 0, visible: true, controls: [],
-                            text: nil, items: nil, display: [bits],
-                            island: nil)
+                            text: nil, items: nil, display: [bits])
     }
 
     /// The lattice is the marker. Sampling one pixel would pass on a flat

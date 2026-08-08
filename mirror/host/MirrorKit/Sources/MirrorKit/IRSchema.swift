@@ -137,10 +137,18 @@ public enum IRSchema {
     ]
 
     /// Stored properties of the IR value types, `Type.property`. Includes the
-    /// two shelves that are deliberately absent from the wire
-    /// (`Scene.Window.island`, `Scene.Window.items`) — they are part of the
-    /// frozen *declaration* precisely so that quietly re-adding either one to
+    /// shelves that are deliberately absent from the wire — they are part of
+    /// the frozen *declaration* precisely so that quietly re-adding one to
     /// `CodingKeys` shows up as a wire-path change and not as nothing.
+    ///
+    /// **2026-08-07 — three entries left this manifest**:
+    /// `Scene.Window.island` and the four `PixelIsland.*` properties. That
+    /// is a deletion from a FROZEN list, which normally moves the major, and
+    /// it does not here for one reason: not one of them was ever on the
+    /// wire. `v1Frozen` — the encoded field set, which is what a consumer
+    /// sees — is untouched. What was frozen was the *declaration*, to stop
+    /// the pixels being put on the wire by accident; removing the pixels
+    /// removes the thing that had to be guarded.
     public static let v1FrozenProperties: Set<String> = [
         "Scene.version", "Scene.seq", "Scene.source", "Scene.capturedAt",
         "Scene.screen", "Scene.apps", "Scene.processes", "Scene.menubar",
@@ -167,7 +175,7 @@ public enum IRSchema {
         "Scene.Window.title", "Scene.Window.kind", "Scene.Window.rect",
         "Scene.Window.front", "Scene.Window.z", "Scene.Window.visible",
         "Scene.Window.controls", "Scene.Window.text", "Scene.Window.items",
-        "Scene.Window.display", "Scene.Window.island",
+        "Scene.Window.display",
 
         "Scene.Control.ref", "Scene.Control.role", "Scene.Control.title",
         "Scene.Control.rect", "Scene.Control.enabled", "Scene.Control.visible",
@@ -193,9 +201,6 @@ public enum IRSchema {
         "DisplayOp.rect", "DisplayOp.ext", "DisplayOp.from", "DisplayOp.to",
         "DisplayOp.kind", "DisplayOp.origin", "DisplayOp.rgb", "DisplayOp.src",
         "DisplayOp.dst",
-
-        "PixelIsland.width", "PixelIsland.height", "PixelIsland.rgba",
-        "PixelIsland.originX", "PixelIsland.originY", "PixelIsland.scale",
     ]
 
     // MARK: - Additive extensions to v1 — append here, never delete
@@ -477,7 +482,8 @@ public enum IRSchema {
         "Scene.Selection.start", "Scene.Selection.end",
 
         /* THE THIRD HOST-INTERNAL SHELF (plan 018 slice 1), declared here
-           for the same reason `Scene.Window.island` is: it must never
+           for the same reason `Scene.Window.island` was (until that shelf
+           was removed outright on 2026-08-07): it must never
            reach the wire, and the way to keep it off is to freeze the
            DECLARATION so that quietly adding it to `CodingKeys` shows up
            as a wire-path change rather than as nothing. Every number in it
@@ -485,7 +491,7 @@ public enum IRSchema {
            added for any of it. */
         "Scene.Window.displayEpoch",
         /* THE FOURTH, and it is host-internal in the strongest sense of the
-           three above it: `island` and `displayEpoch` at least DESCRIBE the
+           shelves before it: `displayEpoch` at least DESCRIBES the
            guest, while this one describes what THIS HOST did — whether it
            ever armed P3 on this window. There is nothing for a guest to
            send, so the freeze is not a restraint here, it is the type's

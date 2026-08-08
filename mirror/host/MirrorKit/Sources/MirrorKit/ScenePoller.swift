@@ -118,7 +118,7 @@ public struct ScenePoller {
             // enumerate, so `all` buys background windows and loses the menus.
             //
             // Rather than choose, ask for both: one extra scope=front call
-            // (~2 ms against ~150 ms of island capture) supplies the menubar and
+            // (~2 ms) supplies the menubar and
             // the front attribution that `all` could not. Only when `all` came
             // back without a front app, so the common case pays nothing.
             if target.scope == "all" && scene.menubar == nil {
@@ -176,213 +176,32 @@ public struct ScenePoller {
             fetchDisplay(frontPSN: scene.windows[frontIdx].psn)
             scene.windows[frontIdx].display = displayOps
         }
-        // Islands are their own plane: the op stream is only a *hint* about
-        // when to re-read the front window, so islands work (captured once,
-        // then held) even with no qdtrace in reach.
-        if includeIslands {
-            attachIslands(&scene, poll: seq)
-        }
         return scene
     }
 
-    /// M3: fetch the front window's content as real pixels when it has changed,
-    /// else reuse the cached island. A capture is ~1s for a full window, so it
-    /// must not ride every poll — the guest tells us when to re-read: a window
-    /// redraw lands a content-sized `bits` blit in the trace (the Finder
-    /// composites offscreen and blits the result), so a big blit with a tick we
-    /// haven't fetched at = new content. A moved/resized window re-fetches too,
-    /// since its rect is part of the key.
-    public var includeIslands = false
+    /* THE PIXEL ISLANDS USED TO BE FETCHED HERE, and they are gone
+       (2026-08-07). `attachIslands` / `island(for:)` / `capture` asked the
+       guest for `capture` and put the returned framebuffer bytes on
+       `Scene.Window.island`, which the renderer then drew in place of the
+       content.
 
-    /// The held pixels and their lifecycle bookkeeping. Internal (not private)
-    /// so the keying and eviction rules can be tested without a guest.
-    var islands = IslandStore()
-    /// Pixels fetched for islands this session — the M3 bytes-per-frame meter.
-    public private(set) var islandBytesFetched = 0
+       The rule they broke, stated by Michelle the same day:
 
-    /// How many polls a window may be absent from the scene before its pixels
-    /// are dropped. Not zero on purpose: an app whose AXPeek sample errors
-    /// mid-interaction vanishes from `axtree` for a frame or two (that's what
-    /// LiveMirror's stale-window composite exists for), and a hidden app comes
-    /// back with the same windows. Evicting on the first miss would throw the
-    /// pixels away exactly when the mirror needs them most.
-    public var islandGracePolls: Int {
-        get { islands.gracePolls }
-        set { islands.gracePolls = newValue }
-    }
+         "the only time we should be using pixels from the guest is when we
+          have imported those assets as part of our assets pack, so the
+          pixels are provided by the host and not the wire."
 
-    /// Attach pixels to every window that has them, but re-capture only the
-    /// FRONT one. A full-window capture is ~1 s on the wire, so capturing every
-    /// window every poll is not an option — and it isn't needed: an interior
-    /// only changes while its app is drawing, which (cooperatively) means while
-    /// it is frontmost. So the lifecycle is: capture on launch/raise and while
-    /// focused, then *hold* the last image. A window we have seen never goes
-    /// back to blank.
-    ///
-    /// `poll` is the poll counter the eviction clock runs on — passed in rather
-    /// than read from `seq` so the lifecycle is drivable in a test.
-    mutating func attachIslands(_ scene: inout Scene, poll: Int) {
-        let keys = IslandStore.keys(for: scene.windows)
-        islands.touch(keys, seq: poll)
-        for i in scene.windows.indices {
-            // A window we have the SEMANTICS for does not need a photograph of
-            // itself, and a capture costs ~1 s. This is the Finder folder
-            // window, which is exactly the window islands were invented for —
-            // the invention outlived its reason.
-            if scene.windows[i].items != nil { continue }
-            if scene.windows[i].front {
-                scene.windows[i].island = island(for: scene.windows[i],
-                                                 key: keys[i])
-            } else if islands.pixels[keys[i]] == nil,
-                      !Self.isOccluded(scene.windows, index: i) {
-                // FIRST SIGHT. Retention can only hold what it has captured, so
-                // a window that was already open when we attached has no last
-                // state and would render as empty chrome until the human happens
-                // to click it. Michelle's spec is "updated when launched, on
-                // raise, and while focused" — an app launched under us IS front
-                // and gets captured, but a window that predates us never was.
-                // Capture it once, here, so it has something to hold.
-                //
-                // ONLY when nothing overlaps it. `capture` reads a SCREEN
-                // region, so a covered window would return whatever is on top of
-                // it — someone else's pixels, confidently mislabelled. That
-                // hazard is almost certainly why the original design captured
-                // the front window and nothing else. Occluded windows stay empty
-                // until they are raised, which is correct-by-construction: being
-                // raised is exactly what makes a capture truthful.
-                scene.windows[i].island = island(for: scene.windows[i],
-                                                 key: keys[i])
-            } else if let held = islands.pixels[keys[i]] {
-                // Stale-geometry decision: a window can be moved or resized
-                // while unfocused, so a held island may not match the current
-                // content rect. We attach it anyway, unscaled and anchored at
-                // the content origin (the renderer clips it) — never dropped,
-                // never stretched. Rationale: a resize doesn't change the
-                // *content* pixels, only how much of them is visible, so
-                // clipping is truthful for the shrink case and merely
-                // incomplete for the grow case; scaling would invent pixels the
-                // guest never drew (and Platinum's 1-bit art resamples into
-                // mush); dropping would regress the window to blank, which is
-                // the bug this is fixing. The mismatch is transient — the next
-                // raise re-captures at the new size, since the content rect is
-                // part of the capture key.
-                scene.windows[i].island = held
-            }
-        }
-        islands.evict(living: Set(keys), seq: poll)
-    }
+       Everything else in this file already obeys it: the display drain
+       carries GEOMETRY and identity, and the art comes from `IconAtlas` on
+       this side. `wire.captureRegion` was the one path that carried pixels,
+       and it was also the reason every render comparison against those
+       windows was comparing the guest's pixels with themselves.
 
-    private mutating func island(for win: Scene.Window,
-                                 key cacheKey: String) -> PixelIsland? {
-        let content = Self.contentRect(win)
-        let cw = content.r - content.l, ch = content.b - content.t
-        guard cw > 1, ch > 1 else { return nil }
-        let area = cw * ch
-        let seen = islands.tick[cacheKey] ?? 0
+       `isOccluded` / `contentRect` went with them — both existed only to
+       make a capture truthful, and neither had another caller.
 
-        // MoveBits fast-path: a scroll is a screen→screen blit — same size,
-        // src inside the content we already hold. Move our own pixels and ask
-        // the guest only for the band the move exposed, instead of re-reading
-        // the whole window (refinement 1).
-        if let cached = islands.pixels[cacheKey],
-           let mv = Self.newestMove(displayOps, content: content, since: seen) {
-            let (moved, exposed) = cached.shifted(dx: mv.dx, dy: mv.dy)
-            var island = moved
-            if let band = exposed, band.b > band.t {
-                // Band in GUEST coords, then patch back at island-local y.
-                if let fetched = try? capture(left: content.l + band.l,
-                                              top: content.t + band.t,
-                                              right: content.l + band.r,
-                                              bottom: content.t + band.b) {
-                    island = moved.patched(with: fetched, atX: band.l, y: band.t)
-                }
-            }
-            islands.pixels[cacheKey] = island
-            islands.tick[cacheKey] = mv.tick
-            islands.contentKey[cacheKey] = "\(content.l),\(content.t),\(content.r),\(content.b)@\(mv.tick)"
-            return island
-        }
-
-        // Otherwise: a content-sized blit is the guest repainting this window.
-        let lastBlitTick = displayOps.compactMap { op -> Int? in
-            guard op.op == "bits", let d = op.dst, d.count == 4,
-                  (d[2] - d[0]) * (d[3] - d[1]) > area / 2 else { return nil }
-            return op.ticks
-        }.max() ?? 0
-        let key = "\(content.l),\(content.t),\(content.r),\(content.b)@\(lastBlitTick)"
-        if islands.contentKey[cacheKey] == key, let cached = islands.pixels[cacheKey] {
-            return cached                                   // unchanged — reuse
-        }
-        guard let fetched = try? capture(left: content.l, top: content.t,
-                                         right: content.r, bottom: content.b) else {
-            return islands.pixels[cacheKey]             // keep the last good
-        }
-        islands.pixels[cacheKey] = fetched
-        islands.contentKey[cacheKey] = key
-        islands.tick[cacheKey] = lastBlitTick
-        return fetched
-    }
-
-    private mutating func capture(left: Int, top: Int,
-                                  right: Int, bottom: Int) throws -> PixelIsland {
-        let island = try wire.captureRegion(left: left, top: top,
-                                            right: right, bottom: bottom)
-        islandBytesFetched += island.rgba.count
-        return island
-    }
-
-    /// The newest screen→screen move among ops we haven't accounted for: same
-    /// size, actually displaced, and sourced from inside the content we hold.
-    static func newestMove(_ ops: [DisplayOp], content: Rect,
-                           since: Int) -> (dx: Int, dy: Int, tick: Int)? {
-        var best: (dx: Int, dy: Int, tick: Int)?
-        let cw = content.r - content.l, ch = content.b - content.t
-        for op in ops where op.op == "bits" && op.ticks > since {
-            guard let s = op.src, let d = op.dst, s.count == 4, d.count == 4 else { continue }
-            let sw = s[2] - s[0], sh = s[3] - s[1]
-            guard sw == d[2] - d[0], sh == d[3] - d[1] else { continue }   // same size
-            let dx = d[0] - s[0], dy = d[1] - s[1]
-            guard dx != 0 || dy != 0 else { continue }                     // actually moved
-            // src must be pixels we hold: inside the content, and a real slab
-            // of it (a 16x16 scrollbar-arrow composite is not a scroll).
-            guard s[0] >= 0, s[1] >= 0, s[2] <= cw + 4, s[3] <= ch + 4,
-                  sw * sh > (cw * ch) / 4 else { continue }
-            if best == nil || op.ticks > best!.tick { best = (dx, dy, op.ticks) }
-        }
-        return best
-    }
-
-    /// The window's content area in GUEST coords — the same inset the renderer
-    /// uses for its content rect (the transform is 1:1), so a captured island
-    /// lands pixel-aligned rather than needing its own calibration.
-
-    /// Is the window at `index` covered by any window in front of it?
-    ///
-    /// Scene order is front-first, so "in front of" means a lower index. Any
-    /// intersection at all counts: a partially covered window would capture a
-    /// seam of the window on top, and half-wrong pixels presented as a window's
-    /// contents are worse than an honest blank.
-    static func isOccluded(_ windows: [Scene.Window], index: Int) -> Bool {
-        let mine = contentRect(windows[index])
-        guard mine.width > 0, mine.height > 0 else { return true }
-        for j in 0..<index {
-            let other = windows[j]
-            guard other.visible, !HitTester.isDesktopBackdrop(other) else { continue }
-            let r = other.rect
-            let overlaps = r.l < mine.r && r.r > mine.l
-                        && r.t < mine.b && r.b > mine.t
-            if overlaps { return true }
-        }
-        return false
-    }
-
-    static func contentRect(_ win: Scene.Window) -> Rect {
-        let isDialog = win.kind == 2
-        return Rect(l: win.rect.l + (isDialog ? 6 : 1),
-                    t: win.rect.t + (isDialog ? 6 : 22),
-                    r: win.rect.r - (isDialog ? 6 : 1),
-                    b: win.rect.b - (isDialog ? 6 : 1))
-    }
+       Prior art for a later deliberate re-implementation:
+       `archive/pixel-islands-2026-08-07/`. */
 
     /* A `disksScript` / `diskItems` pair used to sit here: an unreferenced
        AppleScript asking `position of` every disk, and a parser for its

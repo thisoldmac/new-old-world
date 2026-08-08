@@ -85,10 +85,7 @@ final class IRFreezeTests: XCTestCase {
             closeBox: true, zoomBox: true,
             text: .init(content: "c", active: true),
             items: [item],
-            display: [op],
-            island: PixelIsland(width: 1, height: 1,
-                                rgba: Data([0, 0, 0, 255]),
-                                originX: 0, originY: 0, scale: 1))
+            display: [op])
 
         return Scene(
             version: IR.version, seq: 1, source: "axtree", capturedAt: 1,
@@ -160,18 +157,18 @@ final class IRFreezeTests: XCTestCase {
         assertSetsEqual(produced, expected, what: "declared IR property")
     }
 
-    /// `island` stays off the wire. Stated as its own assertion because it is
-    /// a *decision*, not a byproduct: re-adding it to `CodingKeys` should read
-    /// as breaking this promise, not as editing a list.
-    func testIslandIsNotOnTheWire() throws {
-        let data = try JSONEncoder().encode(Self.maximalScene())
-        let paths = try IRSchema.wirePaths(ofEncoded: data)
-        XCTAssertFalse(paths.contains("windows[].island"),
-                       "island pixels ride their own pager, not the scene IR")
-        // …and it is still declared, so the renderer keeps its shelf.
-        let props = IRSchema.declaredProperties(of: Self.maximalScene())
-        XCTAssertTrue(props.contains("Scene.Window.island"))
-    }
+    /* `testIslandIsNotOnTheWire` stood here and is DELETED, not weakened
+       (2026-08-07). It asserted two things about `Scene.Window.island`: that
+       it never encoded, and that it was still declared so the renderer kept
+       its shelf. The shelf is gone — the pixels it held came off the wire and
+       were composited into the render, which is the one thing this project
+       had decided the mirror must not do.
+
+       Nothing here replaces it, because the promise it guarded is now
+       structural rather than conditional: there is no pixel field to keep off
+       the wire. The live guard is `GuestPixelsGateTests`, which asks the
+       stronger question — whether any guest-originated pixels reach the
+       screen at all. */
 
     /// `displayEpoch` is the same decision one shelf later (plan 018): the
     /// content plane's own clock, host-internal, declared so it cannot be
@@ -268,9 +265,7 @@ final class IRFreezeTests: XCTestCase {
             result: try result(irVersion: IR.version))
         XCTAssertEqual(decoded.version, IR.version)
         XCTAssertEqual(decoded.windows.first?.title, "W")
-        // The excluded shelf does not survive the wire, by design.
-        XCTAssertNil(decoded.windows.first?.island)
-        // …but window items do, since they re-entered additively.
+        // Window items survive, since they re-entered additively.
         XCTAssertEqual(decoded.windows.first?.items?.first?.name, "n")
     }
 

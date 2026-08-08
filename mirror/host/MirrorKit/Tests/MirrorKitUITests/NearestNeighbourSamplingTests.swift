@@ -66,7 +66,10 @@ final class NearestNeighbourSamplingTests: XCTestCase {
            mis-writing one: a site that quietly disappears takes its
            coverage with it, and this file would otherwise read green
            over an empty list. */
-        XCTAssertEqual(total, 9,
+        /* 9 → 8 on 2026-08-07: the pixel-island draw in `SceneRenderer` was
+           removed with the rest of the wire-pixel path. The gate did its job
+           — the deletion was loud. */
+        XCTAssertEqual(total, 8,
                        "the number of drawn bitmaps in MirrorKitUI changed. "
                        + "That is fine — check the new one asks for "
                        + "nearest-neighbour, then update this number so the "

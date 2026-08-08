@@ -164,8 +164,11 @@ final class SceneWireTests: XCTestCase {
         let json = try XCTUnwrap(
             String(data: try encoder.encode(scene), encoding: .utf8))
 
+        // "island" was in this list and is dropped (2026-08-07): the field
+        // no longer exists, so asserting the encoder cannot emit it is an
+        // assertion that cannot fail — which reads as coverage and is none.
         for key in ["controls", "menus", "menubar", "text", "kind",
-                    "display", "desktopItems", "items", "island"] {
+                    "display", "desktopItems", "items"] {
             XCTAssertFalse(json.contains("\"\(key)\""), """
                 re-encoding put "\(key)" back into a scene the guest \
                 deliberately omitted it from

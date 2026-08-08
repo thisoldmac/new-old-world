@@ -56,8 +56,6 @@ struct Options {
     var battery = false         // the actuation battery
     var window = false          // the live mirror window (slice 6)
     var display = false         // QDPeek content plane (qdtrace) on the front window
-    var island: String?         // "l,t,r,b" → fetch that region's real pixels (M3)
-    var islands = false         // M3: fetch the front window's content as pixels
     var actScroll: String?      // "down|up|pageDown|pageUp|thumb:VALUE|wheel:N"
     var serve: String?          // socket path: the agent-facing mirror service
     var managedServe = false    // 0.7 Host-managed lifecycle (readiness/quit)
@@ -86,8 +84,6 @@ func parseArgs() -> Options? {
         case "--json": o.json = true
         case "--display": o.display = true
         case "--snapshot": o.snapshot = value()
-        case "--island": o.island = value()
-        case "--islands": o.islands = true
         case "--act-scroll": o.actScroll = value()
         case "--serve": o.serve = value()
         case "--managed-serve": o.managedServe = true
@@ -287,46 +283,12 @@ if let sock = options.serve, let target = options.target {
                   socketPath: sock).run()
 }
 
-// M3 pixel island: --island "l,t,r,b" [--out png]. Fetches ONE screen region's
-// real pixels off the guest (the W1 pager + PackBits codec) and writes it as a
-// PNG. This is the honest fallback for content with no semantics to read —
-// see PixelIsland.swift and the `finder-window-icons-are-offscreen-blits`
-// finding. Proves the pixel path end-to-end without the renderer.
-if let spec = options.island, let target = options.target {
-    let n = spec.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-    guard n.count == 4 else { fail("--island needs \"left,top,right,bottom\"") }
-    do {
-        let wire = WireClient(target: target)
-        let t0 = Date()
-        let island = try wire.captureRegion(left: n[0], top: n[1],
-                                            right: n[2], bottom: n[3])
-        let ms = Date().timeIntervalSince(t0) * 1000
-        print(String(format: "island %dx%d origin=(%d,%d) scale=%d — %.0f ms",
-                     island.width, island.height, island.originX,
-                     island.originY, island.scale, ms))
-        if let out = options.out {
-            guard let provider = CGDataProvider(data: island.rgba as CFData),
-                  let cg = CGImage(
-                    width: island.width, height: island.height,
-                    bitsPerComponent: 8, bitsPerPixel: 32,
-                    bytesPerRow: island.width * 4,
-                    space: CGColorSpaceCreateDeviceRGB(),
-                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
-                    provider: provider, decode: nil, shouldInterpolate: false,
-                    intent: .defaultIntent)
-            else { fail("island: CGImage failed") }
-            let rep = NSBitmapImageRep(cgImage: cg)
-            guard let png = rep.representation(using: .png, properties: [:])
-            else { fail("island: png encode failed") }
-            try png.write(to: URL(fileURLWithPath: out))
-            print("wrote \(out) (\(png.count) bytes)")
-        }
-        exit(0)
-    } catch {
-        FileHandle.standardError.write(Data("island failed: \(error)\n".utf8))
-        exit(1)
-    }
-}
+/* `--island "l,t,r,b"` used to sit here: fetch one screen region's real
+   pixels off the guest and write a PNG. Removed 2026-08-07 with the rest of
+   the pixel path — the host may only draw guest-originated pixels that came
+   in through the asset pack, never off the wire. Prior art:
+   archive/pixel-islands-2026-08-07/. */
+
 
 
 // Offscreen fixture render: no guest, no window.
@@ -415,8 +377,7 @@ if options.window {
 
     let controller = LiveMirrorController(target: target,
                                           qmpSocket: options.qmpSocket,
-                                          display: options.display,
-                                          islands: options.islands)
+                                          display: options.display)
     controller.start(interval: options.interval)
     let bridge = SnapshotBridge(controller: controller)
 
@@ -476,11 +437,9 @@ if options.actScroll != nil || options.actMenu != nil || options.actControl != n
     // Share one wire (single-connection worker) between poll and dispatch.
     let actWire = WireClient(target: target)
     var actPoller = ScenePoller(target: target, wire: actWire)
-    // Honour the content flags here too: ONE poller spans before → act → after,
-    // which is what makes a focus change verifiable (raise a window and the
-    // island lifecycle is exercised across the two polls, in one process).
+    // Honour the content flags here too: ONE poller spans before → act →
+    // after, which is what makes a focus change verifiable.
     actPoller.includeDisplay = options.display
-    actPoller.includeIslands = options.islands
     actPoller.detectScreen()
     let dispatcher = ActionDispatcher(target: target,
                                       qmpSocket: options.qmpSocket,
@@ -648,7 +607,6 @@ if options.actScroll != nil || options.actMenu != nil || options.actControl != n
 var poller = ScenePoller(target: target)
 poller.includeDesktopItems = true
 poller.includeDisplay = options.display
-poller.includeIslands = options.islands
 poller.detectScreen()
 let encoder = JSONEncoder()
 encoder.outputFormatting = [.sortedKeys]

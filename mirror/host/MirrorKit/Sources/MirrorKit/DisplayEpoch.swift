@@ -11,9 +11,9 @@ import Foundation
 /// window afresh). Nothing made the pair coherent, and nothing could even
 /// ask, because the display ops reached the renderer with no epoch at all.
 ///
-/// This is the missing stamp. It is HOST-INTERNAL render state — like
-/// `Scene.Window.island` it is deliberately absent from `CodingKeys`, so it
-/// never reaches the wire and the frozen IR is unaffected. Every value in it
+/// This is the missing stamp. It is HOST-INTERNAL render state, deliberately
+/// absent from `CodingKeys`, so it never reaches the wire and the frozen IR
+/// is unaffected. Every value in it
 /// is already carried by the drain records the guest sends; no contract
 /// field was needed for any of it.
 ///

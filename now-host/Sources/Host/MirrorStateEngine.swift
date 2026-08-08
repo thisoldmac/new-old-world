@@ -13,7 +13,6 @@ final class MirrorStateEngine: ObservableObject {
     private struct ContentContribution: Equatable {
         var rect: Rect
         var display: [DisplayOp]?
-        var island: PixelIsland?
     }
 
     let guestKey: GuestKey
@@ -335,10 +334,8 @@ final class MirrorStateEngine: ObservableObject {
                let contribution = content[identity],
                contribution.rect == scene.windows[index].rect {
                 scene.windows[index].display = contribution.display
-                scene.windows[index].island = contribution.island
             } else if !enabledPlanes.contains(.content) {
                 scene.windows[index].display = nil
-                scene.windows[index].island = nil
             }
         }
         return scene
@@ -383,7 +380,7 @@ final class MirrorStateEngine: ObservableObject {
             let window = scene.windows[index]
             guard let identity = identities[index],
                   replica.windows[identity]?.window.rect == window.rect,
-                  window.display != nil || window.island != nil else {
+                  window.display != nil else {
                 continue
             }
             var display = window.display
@@ -395,8 +392,7 @@ final class MirrorStateEngine: ObservableObject {
                Self.hasRenderableStructuredDrawing(prior) {
                 display!.append(contentsOf: prior.filter { $0.op != "bits" })
             }
-            let next = ContentContribution(
-                rect: window.rect, display: display, island: window.island)
+            let next = ContentContribution(rect: window.rect, display: display)
             if content[identity] != next {
                 content[identity] = next
                 changed = true

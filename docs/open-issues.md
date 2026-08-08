@@ -24,6 +24,205 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## FIXED and GATED: the render was drawing the guest's own pixels, and nobody decided to (2026-08-07, `claude/024-no-pixel-islands`)
+
+`ScenePoller` fetched the guest's real framebuffer bytes over the wire
+(`wire.captureRegion`) onto `Scene.Window.island`, and `SceneRenderer` drew
+them in place of the content for any window without a named item roster.
+NOW had gated over-the-wire pixels as a post-stability enrichment; the
+feature arrived anyway, as a passenger inside the 1 August wholesale
+vendoring of the Mirror subproject. Nobody crossed the gate — **the import
+had no step that asks what came with it**, and no individual diff looked
+wrong. The archaeology is
+[the-drive-and-the-islands.md](the-drive-and-the-islands.md).
+
+Michelle's ruling: the islands are prior art only, for a later deliberate
+re-implementation. Removed from the live product; kept whole and inert in
+`archive/pixel-islands-2026-08-07/` (`.txt`, so nothing can build it),
+following the `archive/mirror-port-2026-08-01` convention.
+
+**Nothing on the wire changed.** `island` was never encoded, the contract
+never mentioned it, and both guests are untouched.
+
+### What it did NOT void — derived, and the derivation contradicted the analysis
+
+The analysis feared it "potentially inflates every render score this arc
+has produced". It inflated **none of them**, and the check is one command:
+every `ScenePoller` in this tree is constructed in Mirror's own development
+tooling (`MirrorApp` ×3, `MirrorOracleKit`) and **`now-host` constructs
+none**, so NOW's host — whose scenes come off NOW's own wire, where `island`
+was never encoded — always had `island == nil`. The corpus agrees: 107 scene
+JSONs, 148 scene records, every one `source: "peek"`; zero `axtree` or
+`observe` scenes, which are the only planes `ScenePoller` produces; and no
+occurrence of the string `island` in any JSON under
+`~/Lab/Assets/now-mirror-assets/`.
+
+So Sweeps A–D, the integration rounds and Michelle's own drive all stand.
+What the islands voided was the *sibling project's* dev-tool output, which
+this arc never scored against. Recorded rather than quietly corrected,
+because the reasoning was sound and the conclusion was wrong: it reasoned
+from the code without checking which binary ran.
+
+### The rule is now gated, not remembered
+
+Michelle, 2026-08-07: *"the only time we should be using pixels from the
+guest is when we have imported those assets as part of our assets pack, so
+the pixels are provided by the host and not the wire… these rules need to
+be gated and not violated without explicit approval from me."*
+
+`GuestPixelsGateTests` (host suite) derives both sides from source at test
+time — origin (no render-path file may both handle pixels and hold the
+wire), carriage (no type reachable from `Scene` may be a bitmap), and
+separation (the deliberate, labelled screenshot path stays out of the
+render). Its own docs state what it does not cover. Override:
+`NOW_ALLOW_GUEST_PIXELS=1` **with** `NOW_ALLOW_GUEST_PIXELS_REASON`, which
+writes the reason into `docs/guest-pixel-overrides.json` so it lands in the
+same commit; the flag alone still refuses.
+
+Why it needs a gate at all: *"make it a high-fidelity mirror of the guest"*
+has a cheapest solution — show the real pixels — and that solution scores
+perfectly against every fidelity measure anyone can write while destroying
+both the product and the measurement. It is the shape of failure where the
+stated objective is satisfied by a route that removes the thing being
+measured.
+
+### STILL OPEN: the import hole, which is the actual root cause
+
+The gate closes the *rule*. It does not close the *route*: a wholesale
+vendoring still imports a sibling's decisions, and nothing asks what came
+with it.
+
+Half of this is closable by machine and half is not, and the split is worth
+being exact about:
+
+- **Closable.** A pre-commit check can notice that a commit adds a large
+  number of files under a path this repository has never tracked, and refuse
+  unless the commit body carries an inventory. That is mechanical and cheap.
+  It forces someone to *look*; it cannot tell them what to look for.
+- **Not closable as things stand.** Checking an inventory against "this
+  project's deferred decisions" needs those decisions to exist somewhere a
+  machine can read. [known-wrong.md](known-wrong.md) is the nearest thing —
+  the register of what NOW knowingly does not do, with who decided — and
+  **over-the-wire pixels was never a row in it.** So even a perfect import
+  inventory on 1 August would have had nothing to check against.
+
+The durable closure is therefore neither of those: it is that **a deferred
+decision worth keeping gets a gate at the moment it is deferred**, so an
+import that crosses it fails a test rather than needing to be noticed by a
+reader. `GuestPixelsGateTests` is that for this one decision, seven days
+late. What a person has to do meanwhile: when vendoring anything wholesale,
+read `known-wrong.md` beside the import and say in the commit body which
+of its rows the import touches.
+
+## BROKEN: what a human's own drive found, correlated against her logs (2026-08-07)
+
+Michelle drove the round-9 stack for ~32 minutes and reported fourteen
+symptoms. This entry records what her logs say about them, because a
+report is not a durable artifact and hers was the first sustained
+human drive of this arc.
+
+Sources: `~/Library/Logs/now-logs/2026-08-07 183049.log` (her session,
+91 lines) and `~/Library/Logs/NewOldWorld/acts.log` windowed to her guest
+build `2af13c079980`. **Beware the second one: it spans days.** A first
+pass read decodes of 75–109 s from it and attributed them to her; those
+belong to an earlier session. Window it by build, not by clock time —
+the lines carry no date.
+
+### The act plane has ONE request cell, and it is most of the sluggishness
+
+Her log, repeatedly, while she worked a scroll bar:
+
+> `ctlact part 20 … refused: another act is already in flight — this
+> Mac's act plane has one request cell and it is taken. Nothing was
+> written.`
+
+Nine refusals in ninety seconds. **Interaction does not queue, it
+refuses.** This is the mechanism behind "closing some finder windows
+takes way longer than it should" and the long wait to front SimpleText —
+neither is a render problem.
+
+A third outcome also appears ~25 times, distinct from success and from
+refusal: **`the guest answered without a dispatch row`**, on parts 10,
+20 and 21.
+
+### The scrollbar thumb was never dispatched at all
+
+Parts **20 and 21** (the arrows) appear ~25 times. Part **129**, the
+indicator, appears **zero times**. `ctlact` is a click verb and a thumb
+needs press-move-release. "Arrows work, slider doesn't" is not a broken
+slider — **nothing was ever sent for it.** That belongs to the drag
+vehicle, which has only ever been aimed at Finder icons.
+
+### Nothing confirmed, for the whole session
+
+Every `winact` reads `settlement=dispatched-but-unconfirmed (dispatch is
+not guest-visible effect)`. **Zero confirmations in 32 minutes.** That is
+the KW-06 honesty fix working as designed — and it means the host never
+learns an act landed, so a press has nothing to settle *on*. The likely
+reason the pressed state never resolves: its state machine's exit from
+*waiting* has no input on this path.
+
+### The render tail, measured on her session only
+
+| | median | p99 | max |
+|---|--:|--:|--:|
+| host decode | 23 ms | 3,152 ms | **7,527 ms** |
+| guest round-trip | 16 ms | 2,100 ms | **14,743 ms** |
+
+~22 s worst case combined, matching her "10–30 s to render the new scroll
+position". The structurally wrong number is **7.5 s to decode 3 windows
+and 49 elements** while the guest's own phase counters are in
+microseconds. The host is the bottleneck, not the wire and not the guest.
+
+### The Finder item roster does not arbitrate against the machine's ink
+
+**This is the highest-value finding and it was Michelle's own read.**
+
+`SceneRenderer` arbitrates the display list against **controls**
+(`semanticOwnsDisplay`) and against **dialog items**
+(`dialogItemOwnsDisplay`), and carries the comment *"P3 owns
+unstructured content, while P2 owns concrete drawing wholly."*
+
+**There is no equivalent for `win.items`.** The only exclusion involving
+`items` is against the pixel island (`if win.items == nil, let island
+= …`). So a window holding both the machine's drawn ink and our icon
+roster **draws both**.
+
+One mechanism, four symptoms: icons drawn twice, labels drawn twice,
+icons appearing over list-view rows, and the cost — a 49-element window
+finding 7.5 seconds because the work is done twice.
+
+Corroborated independently by the live flicker trace earlier the same
+day: the Finder's icon-grid boxes flipping `semantic ↔ absent` with a
+**0.83 s bounce nothing asked for**, and an **8.4 s lag** before the
+content plane followed a view switch.
+
+### Understood already, restated so the drive's list is complete
+
+- **Extensions Manager's empty list** — its rows live inside a
+  `userItem` the application draws itself. No ControlRecord, no DITL row,
+  so no state exists to report by any current route.
+- **Set Time Zone, Sherlock's components, control-panel icons** all show
+  *"Bitmap unavailable"* — the **loud** hatch, which is positive proof a
+  drain happened and the bitmap was not in it. Asset resolution, not the
+  plane.
+- **"Icon drag fails — nothing said where it is"** is the
+  `homeIsTrustworthy` refusal behaving correctly; the fix is upstream in
+  what makes a home trustworthy.
+- **No I-beam over Sherlock's text field** — the cursor rule keys on
+  `semanticKind == "editText"`, and that field is almost certainly
+  unclassified, which is the CDEF wall.
+
+### And the coordinator repeated the arc's own worst process defect
+
+The shared worktree `keen-clarke-4988fc` was checked out by the
+asset-packs lane while the coordinating session was using it. Its reflog
+holds `fe4d8179` — **the silent revert round 7 caught** — and from 14:50
+onward the coordinator committed nine documentation commits **onto that
+lane's branch** without noticing. Nothing was lost, because round 9
+merged it. **Sixth firing of one-worktree-per-lane, and the first where
+the coordinator was the one who did it.**
+
 ## LOOK: round 9 landed four lanes, and the two things that would have gone wrong were both caught by reading (2026-08-07, `claude/019-integration-9`)
 
 **Verification level: TESTED, and the gates were NOT armed.**

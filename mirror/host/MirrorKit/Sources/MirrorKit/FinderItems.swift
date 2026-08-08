@@ -4,7 +4,10 @@ import Foundation
 ///
 /// A folder window was the last surface the mirror showed as a photograph: an
 /// island of captured pixels, which an agent can see and cannot address. This
-/// is the model that replaces it.
+/// is the model that replaces it. The photograph itself was removed on
+/// 2026-08-07 (`archive/pixel-islands-2026-08-07/`), so there is no longer a
+/// fallback behind this model — where it is silent, the window is honestly
+/// blank rather than quietly showing the guest's own bytes back.
 ///
 /// ## Where the numbers come from (measured 2026-07-31, mac99, OS 9.1)
 ///
