@@ -111,3 +111,43 @@ fix is still correct but is not the ladder's cause.
 That raises this file's priority. It was filed as a stale-render
 annoyance. It is now on the path to "runs on metal", which Michelle has
 called the bare minimum for landing `main`.
+
+## …and on disconnection
+
+Michelle, immediately after:
+
+> and on disconnection.
+
+This is the one that closes the loop, and it is the most crash-relevant of
+the three, because **a crash IS a disconnection.** Every rung of the
+ladder passes through one.
+
+The sequence it implies:
+
+1. The guest crashes — the wire drops.
+2. The host's Mirror session is **not torn down**, because nothing treats
+   a disconnection as an end.
+3. NOW relaunches and reconnects.
+4. The new connection **inherits the previous session's state**.
+5. The next failure is worse than the last.
+
+That is a complete account of the host-side half of the escalation ladder,
+and it explains why only a host restart resets the rung: a restart is
+currently the sole thing that ends a Mirror session.
+
+So there are **three** events that must end a session, not one:
+
+| event | today | should |
+|---|---|---|
+| Stop | pauses | end the session, clear its state |
+| **Disconnection** | **session persists** | **end the session** |
+| Guest change / new connection | inherits | start fresh |
+
+The vocabulary rule applies to all three: after any of them there is no
+scene because none was asked for — `notFetched`, which is a different
+state from `empty`, and neither of them is "keep showing the last one".
+
+**Still a candidate, not a proven cause.** The confirmation is unchanged:
+once these three genuinely clear, the rung should reset without restarting
+the host. If it does not, the residue is somewhere else and this fix is
+correct anyway.
