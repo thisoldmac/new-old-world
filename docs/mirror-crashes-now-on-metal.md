@@ -810,3 +810,71 @@ runs cleanly and the counters balance, this shape is dead and the cache
 path is what remains.
 
 That is the first question to ask of the logs from the clean rung-1 crash.
+
+## MEASURED: the hooks leak, and they outlive the arm
+
+**2026-08-08, reboot #3, logging build, Mirror started deliberately from a
+fresh host.** Michelle: the guest did not crash immediately; it kept
+hiding itself, eventually crashed the Finder (which restarted), and wedged
+NOW.
+
+The logging build answered the question it was built for. From
+`2026-06-08 025002.log`, summing the `content hooks` lines:
+
+| | count |
+|---|---|
+| hooks installed | **22** |
+| hooks removed | **1** |
+
+`+10, +3, +6, +3` in; one lone `+1` out. Every other line reads `+0 out`.
+
+### The hooks outlive their arm
+
+```
+02:50:04  content active a5 0x2abf748 mode 2, 1 port(s) hooked
+02:50:25  content active a5 0x0       mode 0, 0 port(s) hooked
+02:50:30  content active a5 0x2abf748 mode 2, 1 port(s) hooked
+02:50:41  content active a5 0x0       mode 0, 1 port(s) hooked
+02:50:51  content active a5 0x0       mode 0, 4 port(s) hooked
+```
+
+**Four ports hooked with no armed A5.** The arm goes away; the hooks do
+not. Every draw through them is then refused as `wrong-a5`, continuously:
+`+35, +35, +40, +26, +32, +62` per sample interval.
+
+### It accumulates across application lifetimes
+
+The counters live in the **resident**, so they survive NOW dying.
+`2026-06-08 024516.log` opens at **session 7** carrying
+**`+16742 wrong-a5`** from previous runs, and installs `+5` more hooks in
+its first second.
+
+**That is the residue this file has been circling all night, now measured
+rather than argued.** It is also mechanism 1 of the six read out of the
+source and set aside — dismissed because the patch *entry point* lives in
+the resident and survives the app. That was true and irrelevant: what
+leaks is the *hooked port*, whose owning A5 can never return.
+
+### Not yet established
+
+- **That the leak causes the crash.** It is residue that grows with
+  exactly the shape the escalation ladder has, which is why it was
+  predicted, and prediction is not proof.
+- **Why `repaired` is nonzero on almost every sample** (`+3, +3, +4, +3,
+  +2`). Something is detecting damage and repairing it every few seconds,
+  continuously, and nothing here says what.
+- **Whether the single `+1 out` is the disarm path working once**, or
+  something else.
+
+### The hiding was the Mirror fronting the Finder
+
+Michelle reported the guest app "hiding itself" repeatedly. It was not
+hiding:
+
+```
+02:45:37  mach #109 activate 0.5111809 [already-front] Finder
+```
+
+The host issues `activate` on the Finder, which backgrounds NOW. Note
+`[already-front]` — the Finder was **already frontmost**, so the act was
+unnecessary as well as unbidden.
