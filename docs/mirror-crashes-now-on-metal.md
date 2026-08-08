@@ -81,3 +81,57 @@ worth less.
 Alongside it, and cheap: take `now-logs` off the desktop before
 rebooting, and if MacsBug is on that machine, a stack crawl at the crash
 is worth more than the rest of this document combined.
+
+## RESOLVED TO A HALF: the bisect ran, and the crash is in the resident
+
+**Michelle, 2026-08-08, with the NOW Extension removed and the PowerBook
+rebooted: Mirror connects and renders. It does not crash.**
+
+So the crash is in `ext/`, not in `now-guest-ppc`. One reboot did what an
+hour of reading the source could not, which is the whole argument for
+running the experiment before writing the theory.
+
+The six mechanisms listed above were all read out of `ext/src/now_content.c`
+and all found defended. They stay listed, because "the obvious defences
+are present and the crash is still in here" narrows the search rather
+than ending it — whatever this is, it is not one of the six shapes that
+extension code usually dies of.
+
+### What the resident-less run shows, split honestly
+
+With the INIT out, Michelle reports: the Workshop renders with the
+correct desktop under it, only the Workshop renders, it never updates
+with new content or state, and its render degrades over time.
+
+- **Only the Workshop, no foreign interiors — EXPECTED.** The content
+  plane lives in the resident. Without it there are no content records,
+  so no foreign window interior can be captured. The Workshop survives
+  because its structure and semantics come from the application's own
+  walk, and the desktop under it is host-side.
+- **Never updates — NOT expected, and a separate defect.** Structure and
+  semantics do not need the resident. If nothing refreshes, that is
+  app-side or host-side and would still be broken with the INIT
+  installed.
+- **Degrades over time — NOT expected, and a separate defect.** A render
+  with no content plane should be static. Decay has no source in the
+  resident's absence.
+
+Those last two are independent of the crash and of each other. They
+should not be filed under "the resident is missing", because removing the
+resident is exactly the condition that proves they are not its fault.
+
+### The charter violation this exposes
+
+[docs/resident-components.md](resident-components.md) states that a
+resident component is always optional and **the product degrades honestly
+without it**.
+
+It does not. With the resident absent, the Mirror shows a frozen and
+decaying picture and says nothing. The honest behaviour is to name the
+state: no content plane, structure only. This is the provenance ladder's
+own rule — an unmarked stale image is the failure the ladder exists to
+prevent — applied to the case where the whole plane is gone rather than
+one window's ink.
+
+That is arguably worth more than the crash fix. A crash is loud. This is
+the quiet hatch.
