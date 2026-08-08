@@ -151,3 +151,53 @@ state from `empty`, and neither of them is "keep showing the last one".
 once these three genuinely clear, the rung should reset without restarting
 the host. If it does not, the residue is somewhere else and this fix is
 correct anyway.
+
+## CONFIRMED ON METAL: two live sessions from one guest, 2026-08-08 ~07:05
+
+Poking the connected host's agent socket surface by surface, one guest,
+one host app (pid 54137), one listener on 5250:
+
+| burst | samples | `connectedAt` | `framesReceived` |
+|---|---|---|---|
+| sequential ×6, then concurrent ×6 | all agreed | **07:01:00** | 62 → 67 |
+| rapid ×16, minutes later | all agreed | **07:01:12** | **53** |
+
+**`framesReceived` went DOWN while `connectedAt` went FORWARD.** A single
+connection's frame counter cannot decrease. These are **two live sessions
+from the same guest**, and `health.guest` answers with whichever it
+picks — stable within a burst, different between bursts. `roster` reads
+`1` throughout because it collapses them by guest id.
+
+An independent process sampling every 4s saw the two alternate
+continuously, which is what first surfaced it.
+
+**This is the defect Michelle named, measured:** nothing ends a session on
+disconnection, so a redial leaves the old session alive beside the new
+one. See "…and on disconnection" above.
+
+### Two consequences
+
+- **The guest is polled by both.** At ~780 ms each, a 117 MHz PowerBook
+  has been serving two Mirror cadences at once. Nothing in any measurement
+  taken tonight accounted for that.
+- **Every metric quoted from `mirror_read` tonight came from an arbitrary
+  one of the two.** The cycle counts, the ok/failed splits, the ~780 ms
+  cadence in
+  [mirror-crashes-now-on-metal.md](mirror-crashes-now-on-metal.md) — each
+  is one session's view, presented as the machine's. They are not wrong so
+  much as **unattributed**, and the ok/failed ratios in particular cannot
+  be trusted to describe the whole.
+
+### How it was missed three times
+
+This alternation was seen three times earlier in the same session and
+dismissed each time: first called a host defect, then retracted, then
+blamed on the observing monitor. What settled it was **rapid sampling
+from one process** — a burst is internally consistent, so any single burst
+looks stable and any comparison ACROSS bursts looks like an instrument
+fault. The decisive evidence was not more samples but the pairing of
+`connectedAt` with `framesReceived`: one field moving forward while the
+other moved backward cannot be explained by sampling error.
+
+**A monotonic counter is worth more than a timestamp when asking whether
+two observations describe the same thing.**
