@@ -20116,3 +20116,50 @@ already paid for.
   the counts now gated on `cycleOutcome == "ok"`, such a cycle will also
   report the stale counts it used to; that is the same bug, unchanged in
   size, and it closes when `ok` does.
+
+## UNDECIDED, RESERVED FOR MICHELLE: may `finderSelect` front the Finder, when fronting starves the guest? (2026-08-08, `claude/026-no-unbidden-front`, lifted at round 15)
+
+`claude/026-no-unbidden-front` (`534f05be`) stopped `finderDeselect`
+fronting the Finder. It deliberately left `finderSelect` alone, and it
+said why in its commit message — a message, and nothing else. **That
+branch changes no file under `docs/`,** so merging it as written would
+have landed the fix and lost the question. This entry is that question,
+lifted at the round 15 merge.
+
+**The question.** `finderSelect` sends `select …` with `activate: true`,
+so selecting an item in the Mirror brings the Finder forward. Is that
+still the right trade, now that fronting has a measured cost?
+
+**The case for fronting, which is a DECIDED behaviour and not an
+oversight.** It was measured on a live machine on 2026-08-05 and is
+guarded by
+`testTheFinderComesForwardForASelectionAndNotOverANewApplication`, whose
+stated reason is *"a selection nobody can see is not a selection"*. A
+selection behind another window is invisible, and an invisible selection
+is arguably not one.
+
+**The case against, measured 2026-08-08 on the PowerBook 1400c.**
+Fronting the Finder backgrounds the guest application — and the guest is
+the **only context permitted to give back its own content-plane port
+hooks**. `content_uninstall_context` skips every row whose a5 is not the
+caller's, and the jGNE filter that drives it runs in whatever process
+happens to pump. So while the Finder is front, the guest's hooks cannot
+be released by anyone. The night's Mirror logging recorded **22 hooks
+installed against 1 uninstalled**, four ports still hooked at `a5 0x0`,
+and the guest logging *"not scheduled for 14s"*. Michelle experienced
+this as the guest app "kept hiding itself" — it was not hiding, the host
+was fronting the Finder at it.
+
+**Why it is not an agent's call.** Visibility versus scheduling is a
+genuine product trade-off with evidence on both sides, and the branch
+that found it said so plainly: *"not one to resolve from a log at 3am —
+Michelle's call."* A first draft of that commit changed `finderSelect`
+anyway and claimed nobody had asked; that was false, and the existing
+test is what said so.
+
+**What deciding it would look like.** Either the guard's reason stands
+and the starvation is paid for elsewhere (a scheduling window, or a
+release path that does not require the owning process to be front), or
+`finderSelect` stops fronting and the visibility guard is retired with a
+dated line saying why. Both are edits to a test that currently encodes a
+decision, so neither should happen quietly.
