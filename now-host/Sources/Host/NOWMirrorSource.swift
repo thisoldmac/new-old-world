@@ -367,6 +367,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var planRefusalReach = AgentIntegrationProjectionFailure
         .Reach.unknown
     private var mutationBroker: MirrorMutationBroker?
+    /// The lane for the acts the broker never sees — control clicks, moves,
+    /// resizes, keystrokes. They used to dispatch concurrently into a guest
+    /// with one act cell, which refused all but one of them. See
+    /// ``MirrorDirectActLane``.
+    private let directActLane = MirrorDirectActLane()
     /// Survives a guest change on purpose: the interesting comparison is
     /// often the acts either side of a reconnection.
     let actTimeline = MirrorActTimeline()
@@ -486,6 +491,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             pinnedGuestKey = nil
             shadowEngine = nil
             mutationBroker?.sessionChanged()
+            directActLane.reset()
             mutationBroker = nil
             lifecycleDidChange()
             return
@@ -511,6 +517,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.pinnedGuestKey = nil
             self.shadowEngine = nil
             self.mutationBroker?.sessionChanged()
+            self.directActLane.reset()
             self.mutationBroker = nil
             self.lifecycleDidChange()
             self.deferredLifecycleRefresh = Task { @MainActor [weak self] in
@@ -772,6 +779,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
               let mutationBroker, mutationBroker.depth > 0 else { return }
         let ended = mutationBroker.depth
         mutationBroker.sessionChanged()
+        directActLane.reset()
         actTimeline.depth = mutationBroker.depth
         ActLog.note(action: "(guest lost)",
                     outcome: "ended \(ended) act"
@@ -1911,8 +1919,20 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 report("\(label) — \(stale)")
                 return .refused(stale)
             }
-            report(label + "…")
-            Task { @MainActor [weak self] in
+            /* **ONE DIRECT ACT ON THE WIRE AT A TIME.** This was a bare
+               `Task`, so four quick clicks were four acts racing into a
+               guest whose act plane has one request cell — and it refused
+               all but one of them with `act-busy`. Michelle hit that nine
+               times in ninety seconds working a scroll bar on 2026-08-07,
+               and every one of those clicks was a control click, which is
+               precisely the kind that never reaches the broker's lane.
+               The guest's own interlock says a caller told "busy" can
+               decide; this is that side deciding. See
+               ``MirrorDirectActLane``. */
+            let enqueuedAt = Date()
+            let depthAtEntry = directActLane.depth
+            report(label + (depthAtEntry > 0 ? " — queued" : "…"))
+            let admitted = directActLane.submit { [weak self] in
                 guard let self else { return }
                 let started = Date()
                 let complaint = await self.serve(plan)
@@ -1926,15 +1946,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                    brokered ones would have described a machine whose
                    commonest gestures are free — and the acts that filled
                    the 2026-08-04 PowerBook log were almost all of this
-                   kind. There is no queue wait to report because this path
-                   never queues, and no settle time because nothing here
-                   claims an observed effect. */
+                   kind. There is no settle time because nothing here claims
+                   an observed effect.
+
+                   **There IS now a queue wait**, and it is reported: since
+                   2026-08-07 these acts take a lane of their own rather
+                   than racing each other into the guest's single act cell,
+                   so `enqueuedAt` is when the click was taken and
+                   `dispatchStartedAt` is when the wire was free for it.
+                   The gap between them is the wait this path used to spend
+                   as an `act-busy` refusal instead. */
                 self.actTimeline.record(.init(
                     kind: .released, operationID: "direct",
                     label: label,
                     outcome: complaint == nil ? .dispatched : .refused,
-                    queueDepthAtEntry: 0,
-                    enqueuedAt: started, dispatchStartedAt: started,
+                    queueDepthAtEntry: depthAtEntry,
+                    enqueuedAt: enqueuedAt, dispatchStartedAt: started,
                     dispatchReturnedAt: Date(), settledAt: nil,
                     releasedAt: Date()))
                 ActLog.note(action: "\(label)  plan=\(plan)",
@@ -1948,6 +1975,19 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     self.report(label + " ✓")
                 }
                 self.poll()                  // show the effect now
+            }
+            if !admitted {
+                /* The lane is full, and this is the one case where a direct
+                   act IS refused to dispatch: it was provably never sent,
+                   so the sentence has to say that rather than let a person
+                   read it as the machine declining. */
+                let full = "not sent: \(directActLane.capacity) acts are "
+                    + "already waiting for this Mac, which serves one at a "
+                    + "time; try again when it has caught up"
+                ActLog.note(action: "\(label)  plan=\(plan)",
+                            outcome: "NOT DISPATCHED: \(full)", ms: 0)
+                report("\(label) — \(full)")
+                return .refused(full)
             }
             /* The direct path's own answer arrives asynchronously and is
                NOT a refusal to dispatch — the act left. A complaint from
@@ -2018,8 +2058,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 return
             }
         }
-        report(label + "…")
-        Task { @MainActor [weak self] in
+        /* THE SAME LANE the object-first door takes, and for the same
+           reason: this was a bare `Task` too, so an action sequence raced
+           whatever else the person had just clicked into the guest's single
+           act cell. Every gesture that reaches the machine goes through one
+           lane or it is not serialized at all. */
+        report(label + (directActLane.depth > 0 ? " — queued" : "…"))
+        let admitted = directActLane.submit { [weak self] in
             guard let self else { return }
             self.planCorrelation = nil
             self.planSettlement = "unknown"
@@ -2039,6 +2084,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         ? label + " ✓"
                         : "\(label) — \(self.planSettlement)")
             self.poll()
+        }
+        if !admitted {
+            let full = "not sent: \(directActLane.capacity) acts are already "
+                + "waiting for this Mac, which serves one at a time; try "
+                + "again when it has caught up"
+            ActLog.note(action: label,
+                        outcome: "NOT DISPATCHED: \(full)", ms: 0)
+            report("\(label) — \(full)")
         }
     }
 

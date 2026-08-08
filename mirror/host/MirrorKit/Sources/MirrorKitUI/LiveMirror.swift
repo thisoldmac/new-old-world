@@ -747,6 +747,20 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
            anything has travelled. */
         var session = PressSession(ref: subject.ref, title: subject.title,
                                    frame: subject.frame)
+        /* **ARM BEFORE SENDING, because the answer can arrive first.** These
+           three lines used to sit AFTER `controller.perform`, and the
+           callback below opens with `guard var live = press` — so any driver
+           that answers synchronously found `press` still nil and the guard
+           returned. NOW's does exactly that for a refusal
+           (`NOWMirrorSource.perform(_:answer:)` calls `answer(.refused)` on
+           the spot), which is the one disposition this side can settle at
+           once. The refusal was therefore never applied: instead of the
+           button coming back up immediately with the reason beside it — what
+           the comment on that method promises — it stayed down for the whole
+           of `PressSession.patience`, and the reason went nowhere. */
+        session.dispatch(at: Date())
+        press = session
+        pressClock = Date()
         controller.perform(Interaction(object: object, gesture: gesture)) {
             answer in
             /* THE ONLY DOOR TO CONFIRMED, and the session type has no other.
@@ -761,9 +775,6 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             if let note = live.note { controller.note(note) }
             if live.isSettled { press = nil }
         }
-        session.dispatch(at: Date())
-        press = session
-        pressClock = Date()
     }
 
     /// Let the wait run down, and end it out loud.
