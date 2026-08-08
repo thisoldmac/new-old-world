@@ -24,6 +24,97 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## FIXED: the Mirror wrote no log line at all, so its crash could not be investigated (2026-08-08, `claude/026-mirror-logging`)
+
+**Derived rather than assumed**, and it is worth stating as a
+measurement: on 2026-08-08 the areas actually in use across
+`now-guest-ppc/src` were `sw`, `act`, `app`, `wire`, `proc`, `mach`,
+`put`, `get`, `send`, `network`, `files` and `chat`. No `mirror`, no
+`peek`, no `plane`, no `scene`, no `content`. The whole Mirror — the
+writer lease, five planes, every arm and every refusal — was silent.
+
+The bill arrived the night before. Mirror crashed NOW reproducibly on
+the PowerBook 1400c; four guest logs from that session were recovered,
+and every one of them said only what NOW happened to be doing when it
+stopped. Six plausible mechanisms were then read out of the source and
+**not one could be falsified.** The instrument could not see the defect,
+which is this project's recurring shape.
+
+### What is visible now, and which side each line is on
+
+That distinction is the point of the change, not a footnote.
+**Application, task time** — the event loop, a wire command being
+served, a click being handled:
+
+| where | what it now says |
+|---|---|
+| `peek.c :: maintain_writer` | the writer verdict: owned, no resident, resident too short, **not canonical**, another session |
+| `peek.c :: publish_claims_to` | every arm/disarm request as `0x… -> 0x…`, named by the owner that moved it |
+| `peek.c :: now_peek_settle` | all four exits — armed, no resident, request never published, resident never echoed |
+| `peek.c :: now_peek_disconnect` | the planes released when the link went |
+| `mirror_module.c` | the Workshop page created / entered / left / disposed, and `show` refusals with their reason |
+| `main.c` | the slow observer, and teardown |
+
+**Resident, draw time, inside foreign processes: nothing.** Not one
+line. The QuickDraw bottlenecks, trap patches and jGNE filter are
+bounded and allocation-free by construction, and a disk write there
+would change the timing of the thing being measured and could take the
+Finder down with it — strictly worse than the silence. Facts only
+knowable in a hook are surfaced as counters the application reads
+(`NowContentCounters`: installs, uninstalls, repairs, `skipped_ports`,
+`dropped`, the three arm refusals, retires), polled from the main loop
+every two seconds and written only as deltas. Surfaced, never recounted.
+
+The line that matters most is one sentence:
+
+```
+21:04:11 mirror ? writer: REFUSED - binary is not 'New Old World'/NOWo, no plane can arm
+```
+
+That is the failure `AGENTS.md` records as taking a rename to discover —
+no plane arms while the resident goes on reporting `active` with full
+capabilities, and nothing anywhere named the cause.
+
+### Three gates, all watched fail
+
+`LoggingSpecTests.testTheResidentNeverLogs` reads `ext/src/*.c` with a
+derived file list. **Half of it the linker already did, and that was
+measured rather than assumed**: the `now_log(` mutation compiled and
+failed to *link*, because the INIT has no such symbol. The File Manager
+half is the one nothing else catches — `FSWrite` and its neighbours are
+traps, so a resident keeping its own little log would link clean and
+then write to disk inside a bottleneck running in the Finder's context.
+
+`MirrorLoggingTests` keeps the arm path instrumented, and gates the area
+registry in `docs/logging.md` against both guests' sources.
+
+### STILL OPEN: rotation does not exist, and this is now the second reason it matters
+
+Re-verified by reading `nowlog.c`: it deletes nothing, ever. A file per
+launch accumulates forever on a disk with tens of megabytes free.
+`docs/logging.md` has specified the fix since July and nothing
+implements it. Until it exists, verbosity is a disk budget as well as a
+taste question — which is why every `mirror` line is edge-triggered and
+why identical settle failures collapse into a count.
+
+### STILL OPEN: nothing here has run on a Macintosh
+
+Both guests compile and the gate is green. **Builds**, in the ladder's
+terms — not Tested, not Metal-verified. Every claim above about what the
+log *will say* is a claim about what is written down, verified by
+reading the source with a test. The next metal attempt is what turns it
+into evidence, and that is the whole purpose of the change.
+
+### The area registry had four undocumented words in it
+
+Found by writing the gate, not by looking: `act`, `mach`, `chat` and
+`network` were all in use and none was a row in the table that calls
+itself a "small closed vocabulary". And `network` was seven characters
+against a `%-6.6s` format, so the log line read `networ` — a `grep
+network` over the log, the one thing a tag exists for, found nothing.
+It is `net` now, and an over-long tag is a failure rather than a silent
+truncation.
+
 ## FIXED and GATED: `census` killed the Macintosh, and no gate in this repository could have seen it (2026-08-07, `claude/024-census-crash`)
 
 Michelle drove the round-10 stack and reported it twice: "confirmed:
