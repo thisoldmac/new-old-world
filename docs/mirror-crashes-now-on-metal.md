@@ -760,3 +760,53 @@ that then crashed with a previously-unseen exception type, is a
 combination that has to be ruled in or out before anything else here is
 believed. Turning the Mirror off at launch is the control, and Michelle is
 running it.
+
+### Correction: the two error types are RUNGS, not rival signatures
+
+Michelle:
+
+> the clean app crash reports type 1 in a normal system error modal. this
+> most recent crash was a lot level finder error force-restart but the
+> system was already wedged before i could restart
+
+So they are not two competing signatures of one fault. They are the ladder:
+
+| rung | who dies | error | recovery |
+|---|---|---|---|
+| 1 | **NOW** | type 1, ordinary system error modal | relaunch |
+| 2–3 | **the Finder / the system** | type 10, low-level force-restart | already wedged; restart |
+
+The previous entry read them as two symptoms of one mechanism. They are
+one mechanism at two depths — the app dying, and then the system dying.
+
+### What that shape suggests, with its test
+
+**A line-1010 trap is an A-trap with no valid handler.** Getting one at
+*system* level, *after* NOW has already died, is the signature of **a trap
+whose patch points at code that is no longer there**.
+
+This was listed as mechanism 1 of the six read out of the source and set
+aside, on the grounds that patches are installed by the **resident**,
+which lives in the System heap and survives the application. That
+reasoning is still correct as far as it goes — but it only covers the
+patch *entry point*. It says nothing about whether the shim, once
+entered, reaches anything belonging to the dead application.
+
+**Do not promote this to a cause.** The same six-mechanism exercise
+produced nothing falsifiable, and three separate observations were wrongly
+promoted in this session. State it as what it is: a shape that fits, with
+a test that now exists.
+
+**The test shipped in the logging build.** It logs:
+
+- every plane **arm and disarm**, by owner;
+- **planes released when the link drops**;
+- the resident's `installs` / `uninstalls` deltas.
+
+If NOW dies without a disarm, and `installs` exceeds `uninstalls` across a
+crash, then something is left installed pointing into a process that no
+longer exists — and the numbers say so rather than an argument. If disarm
+runs cleanly and the counters balance, this shape is dead and the cache
+path is what remains.
+
+That is the first question to ask of the logs from the clean rung-1 crash.
