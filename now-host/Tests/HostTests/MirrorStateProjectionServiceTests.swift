@@ -1291,6 +1291,16 @@ extension MirrorStateProjectionServiceTests {
                 the answer it should get is P3's own `qdtrace status`, \
                 which is the machine's word rather than ours.
                 """),
+            "finder": .declined("""
+                The host's semantic Finder presentation cache: displayed HFS
+                path, view, selection and page completeness assembled after
+                the guest scene publishes. It is intentionally absent from
+                the scene IR and from this projection because it describes
+                this host's current Finder read, not guest-authored evidence.
+                Agents use the projected Finder items and guest-owned actions;
+                exporting the cache beside them would create a second,
+                host-private state contract.
+                """),
         ]
     }
 }

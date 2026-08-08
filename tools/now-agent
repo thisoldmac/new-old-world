@@ -27,6 +27,8 @@ refusal is the finding.
 for the intentions that have one, because a wall of JSON scrolling past
 during a drive is how a refusal goes unread.
 """
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -56,10 +58,9 @@ def socket_path() -> str:
     socket is.
     """
     tmp = os.environ.get("TMPDIR", "/tmp")
+    suffix = sanitised_suffix(os.environ.get("NOW_AGENT_SOCKET_SUFFIX"))
     return os.path.join(tmp,
-                        f"dev.newoldworld.now-agent-{os.geteuid()}"
-                        f"{sanitised_suffix(os.environ.get(
-                            'NOW_AGENT_SOCKET_SUFFIX'))}",
+                        f"dev.newoldworld.now-agent-{os.geteuid()}{suffix}",
                         "host.sock")
 
 

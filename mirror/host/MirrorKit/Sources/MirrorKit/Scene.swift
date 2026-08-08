@@ -453,10 +453,10 @@ public struct Scene: Codable, Equatable, Sendable {
         public var zoomBox: Bool? = nil
         /// Dialog TextEdit content (`kind==2` windows only today).
         public var text: TextContent?
-        /// Icon-view items for a Finder window, in WINDOW-LOCAL content
-        /// coords — the Finder's own live `position of`, which is scroll-
-        /// compensated (`FinderItems`). nil when not fetched, or when the
-        /// window is not a resolvable Finder folder window.
+        /// Items for a Finder window, in WINDOW-LOCAL content coords — the
+        /// Finder's own live `bounds of`, which stays faithful in icon, name,
+        /// and small-icon views (`FinderItems`). nil when not fetched, or when
+        /// the window is not a resolvable Finder folder window.
         ///
         /// **Additive within IR v1** (`IRSchema.v1Additions`, lane H2
         /// 2026-07-31). It was held out of the v1 freeze because the only
@@ -511,8 +511,9 @@ public struct Scene: Codable, Equatable, Sendable {
         /// machine is, so there is nothing for a guest to send.
         public var contentPlane: ContentPlaneAttention? = nil
 
-        /// The frozen IR is everything except the two host-internal shelves
-        /// above. Listing the keys explicitly is also what makes an
+        /// The frozen IR is everything except the three host-internal shelves
+        /// above (`finder`, `displayEpoch`, and `contentPlane`). Listing the
+        /// keys explicitly is also what makes an
         /// accidentally-added property fail to encode silently: a new field
         /// must be named here to reach the wire, and named in `IRSchema` to
         /// pass the freeze gate.

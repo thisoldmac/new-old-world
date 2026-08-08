@@ -6,10 +6,11 @@ import MirrorKitUI
 /// The coverage gate for host-side interior composition (plan 013 and its
 /// follow-up): every fixture here is a drain captured LIVE off a mac99
 /// guest on 2026-08-06, one per surface the mirror must compose —
-/// the three Finder views (composited, joined via blitsrc), two
-/// non-compositing control panels (window-port drawing, no join needed),
-/// and NOW's own window. Each test is the two halves meeting on real
-/// bytes; none of it has touched metal.
+/// archived Finder composites, two non-compositing control panels
+/// (window-port drawing, no join needed), and NOW's own window. Application
+/// captures still exercise composition on real bytes. Finder captures now
+/// prove the opposite product rule: the plane recognizes their identity and
+/// publishes none of their display stream. None of it has touched metal.
 ///
 /// The one NEGATIVE from the same runs is documented rather than gated:
 /// Appearance builds a transient world per widget blit, which beats the
@@ -49,6 +50,8 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         value.windows[0].addr = address
         value.windows[0].psn = psn
         value.windows[0].title = title
+        value.windows[0].app = Self.finderTitles.contains(title)
+            ? "Finder" : title
         value.windows[0].display = nil
         value.windows[0].controls = []
         value.windows[0].items = nil
@@ -119,41 +122,48 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
             drain,
             to: try scene(address: window, psn: psn, title: title,
                           content: contentSize(drain, window: window)))
-        XCTAssertNotNil(update.scene.windows[0].display,
-                        "\(fixture) composed nothing")
+        if update.scene.windows[0].app == "Finder" {
+            XCTAssertNil(update.scene.windows[0].display,
+                         "\(fixture) crossed Finder's permanent P3 boundary")
+        } else {
+            XCTAssertNotNil(update.scene.windows[0].display,
+                            "\(fixture) composed nothing")
+        }
         return update.scene
     }
+
+    private static let finderTitles: Set<String> = ["Desktop", "Macintosh HD"]
 
     private func texts(_ display: [DisplayOp]) -> [String] {
         display.filter { $0.op == "text" }.compactMap(\.text)
     }
 
-    // MARK: - The Finder's three views, all composited and joined
+    // MARK: - Archived Finder captures never enter the live content plane
 
-    func testFinderListViewComposesHeadersRowsAndDates() throws {
-        let display = try compose("qdtrace-drain-blitsrc-finder-list",
-                                  window: 0x00a03580, psn: "0.29949953",
-                                  title: "Macintosh HD")
-        let labels = texts(display)
+    func testFinderListViewCaptureIsRecognisedThenDiscarded() throws {
+        let raw = try capture("qdtrace-drain-blitsrc-finder-list")
+        let labels = texts(raw.records.map(\.op))
         for header in ["Name", "Date Modified", "Size"] {
             XCTAssertTrue(labels.contains(header), "missing header \(header)")
         }
-        XCTAssertTrue(labels.contains("System Folder"))
-        XCTAssertTrue(labels.contains { $0.hasPrefix("Tue, Jul 14, 2026") },
-                      "a row's real modification date crosses")
-        XCTAssertFalse(display.contains { $0.op == "bits"
-            && ($0.dst?.count == 4) && ($0.dst![2] - $0.dst![0]) > 300 },
-            "the full-window blit was replaced by the join")
+        let scene = try composed("qdtrace-drain-blitsrc-finder-list",
+                                 window: 0x00a03580, psn: "0.29949953",
+                                 title: "Macintosh HD")
+        XCTAssertNil(scene.windows[0].display)
+        XCTAssertNil(scene.windows[0].displayEpoch)
     }
 
-    func testFinderButtonViewComposesItsLabels() throws {
-        let display = try compose("qdtrace-drain-blitsrc-finder-buttons",
-                                  window: 0x00a03580, psn: "0.29949953",
-                                  title: "Macintosh HD")
-        let labels = texts(display)
+    func testFinderButtonViewCaptureIsRecognisedThenDiscarded() throws {
+        let raw = try capture("qdtrace-drain-blitsrc-finder-buttons")
+        let labels = texts(raw.records.map(\.op))
         for label in ["Applications (Mac OS 9)", "Documents", "TimBotTu"] {
             XCTAssertTrue(labels.contains(label), "missing \(label)")
         }
+        let scene = try composed("qdtrace-drain-blitsrc-finder-buttons",
+                                 window: 0x00a03580, psn: "0.29949953",
+                                 title: "Macintosh HD")
+        XCTAssertNil(scene.windows[0].display)
+        XCTAssertNil(scene.windows[0].displayEpoch)
     }
 
     // The icon view is the original payoff gate in
@@ -328,20 +338,30 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         let update = plane().apply(
             drain, to: try scene(address: window, psn: psn, title: title,
                                  content: [0, 0, width, height]))
-        XCTAssertNotNil(update.scene.windows[0].display,
-                        "\(fixture) composed nothing")
+        if update.scene.windows[0].app == "Finder" {
+            XCTAssertNil(update.scene.windows[0].display,
+                         "\(fixture) crossed Finder's permanent P3 boundary")
+        } else {
+            XCTAssertNotNil(update.scene.windows[0].display,
+                            "\(fixture) composed nothing")
+        }
         return update.scene
     }
 
-    /// Every sweep capture must still COMPOSE, whatever it looks like.
-    /// This is the one thing the survey can assert without a human
-    /// looking: a fixture that decodes and produces a display cannot
-    /// regress into one that produces nothing.
+    /// Every application sweep capture must still compose. Finder is the
+    /// categorical exception: its archived stream must decode but the live
+    /// plane must discard it before publication.
     func testEverySweepCaptureComposes() throws {
         for capture in Self.sweepCaptures {
-            let display = try XCTUnwrap(
-                composedSweep(capture).windows[0].display)
-            XCTAssertFalse(display.isEmpty, "\(capture.0) composed nothing")
+            let window = try composedSweep(capture).windows[0]
+            if window.app == "Finder" {
+                XCTAssertNil(window.display,
+                             "\(capture.0) crossed Finder's P3 boundary")
+            } else {
+                let display = try XCTUnwrap(window.display)
+                XCTAssertFalse(display.isEmpty,
+                               "\(capture.0) composed nothing")
+            }
         }
     }
 
@@ -564,11 +584,10 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
             "Capture this Mac, send a still, or stream its screen."))
     }
 
-    /// The hatch behind the Finder: a window captured under one arm must
-    /// stay composed (expected-stale) after the plane retargets to
-    /// another process — the accumulation is per-arm, the published
-    /// display is per-window.
-    func testCapturedWindowsStayComposedAcrossARetarget() throws {
+    /// An application window captured under one arm stays composed while a
+    /// later Finder drain is refused. Retargeting must neither erase the
+    /// application's evidence nor publish Finder's historical stream.
+    func testApplicationWindowSurvivesARefusedFinderRetarget() throws {
         let model = plane()
 
         /* Each capture composes into a window carrying ITS name: NOW's
@@ -598,8 +617,8 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         let now = try XCTUnwrap(update.scene.windows[nowIndex].display,
                                 "NOW's window lost its display on retarget")
         XCTAssertTrue(texts(now).contains("Screenshots"))
-        let finder = try XCTUnwrap(update.scene.windows[0].display)
-        XCTAssertTrue(texts(finder).contains("Documents"))
+        XCTAssertNil(update.scene.windows[0].display)
+        XCTAssertNil(update.scene.windows[0].displayEpoch)
 
         if let out = ProcessInfo.processInfo.environment["NOW_RENDER_OUT"] {
             let png = try RenderShot.png(scene: update.scene)

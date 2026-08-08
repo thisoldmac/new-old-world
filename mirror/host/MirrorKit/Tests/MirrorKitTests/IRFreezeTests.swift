@@ -69,7 +69,7 @@ final class IRFreezeTests: XCTestCase {
                 isDefault: true, provenance: "guest-ditl",
                 completeness: .complete))
 
-        let window = Scene.Window(
+        var window = Scene.Window(
             id: "0.1/W#0", app: "A", psn: "0.1", title: "W", kind: 2,
             rect: rect, front: true, z: 0, visible: true,
             controls: [control],
@@ -86,6 +86,9 @@ final class IRFreezeTests: XCTestCase {
             text: .init(content: "c", active: true),
             items: [item],
             display: [op])
+        window.finder = .init(
+            path: "Macintosh HD:System Folder:", view: .name,
+            selectedNames: ["Finder"], pages: 2, complete: true)
 
         return Scene(
             version: IR.version, seq: 1, source: "axtree", capturedAt: 1,
@@ -199,6 +202,20 @@ final class IRFreezeTests: XCTestCase {
                        "whether this host looked is not a fact about the guest")
         XCTAssertTrue(IRSchema.declaredProperties(of: scene)
             .contains("Scene.Window.contentPlane"))
+    }
+
+    /// Finder presentation is derived by this host after the structural
+    /// scene arrives. It belongs in the declared-shape freeze so it cannot
+    /// drift invisibly, but no guest or other IR consumer should receive it.
+    func testTheFinderPresentationIsNotOnTheWire() throws {
+        let scene = Self.maximalScene()
+        let paths = try IRSchema.wirePaths(
+            ofEncoded: try JSONEncoder().encode(scene))
+        XCTAssertFalse(paths.contains("windows[].finder"))
+        let declared = IRSchema.declaredProperties(of: scene)
+        XCTAssertTrue(declared.contains("Scene.Window.finder"))
+        XCTAssertTrue(declared.contains("Scene.FinderPresentation.path"))
+        XCTAssertTrue(declared.contains("Scene.FinderPresentation.complete"))
     }
 
     /// `windows[].items` came back ADDITIVELY (lane H2, 2026-07-31): on the

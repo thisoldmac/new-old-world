@@ -300,8 +300,18 @@ final class OwnerMapTests: XCTestCase {
         let sceneURL = try XCTUnwrap(Bundle.module.url(
             forResource: "now-scene-sweep18a-finder-icon",
             withExtension: "json", subdirectory: "Fixtures"))
-        let scene = try NOWMirrorSceneDecoder.decode(
+        var scene = try NOWMirrorSceneDecoder.decode(
             irVersion: 2, document: Data(contentsOf: sceneURL))
+        if let index = scene.windows.firstIndex(where: \.front) {
+            let psn = scene.windows[index].psn
+            scene.windows[index].app = "Fixture Application"
+            if let process = scene.processes?.firstIndex(where: {
+                $0.psn == psn
+            }) {
+                scene.processes?[process].name = "Fixture Application"
+                scene.processes?[process].signature = "TEST"
+            }
+        }
         let drain = try XCTUnwrap(QDTraceDecode.drain(
             try XCTUnwrap(JSONSerialization.jsonObject(
                 with: Data(contentsOf: url)) as? [String: Any])))
@@ -331,8 +341,9 @@ final class OwnerMapTests: XCTestCase {
         XCTAssertEqual(coverage.owners.count, coverage.inked.count,
                        "every inked rectangle must carry its owner; a gap "
                        + "here is a rectangle the map cannot explain")
-        // The Finder's interior composite did not join in this capture, so
-        // its own rectangle is an unknown and the map says so by name.
+        // The archived composite did not join in this capture, so its own
+        // rectangle is an unknown and the map says so by name. It is replayed
+        // under a non-Finder identity because live Finder P3 is prohibited.
         XCTAssertEqual(coverage.owner(of: CGRect(x: 2, y: 2,
                                                  width: 4, height: 4)),
                        .unknown)

@@ -120,6 +120,11 @@ public enum FinderItems {
     /// named refusal rather than monopolising a cooperative Finder forever.
     public static let maxItemsPerWindow = 512
 
+    /// The older all-windows poll is one Apple event with one result string,
+    /// so it keeps the measured sixty-item truncation limit. The NOW host's
+    /// semantic reader uses `maxItemsPerWindow` only with bounded pages.
+    public static let maxItemsPerSingleScript = 60
+
     // MARK: - The script
 
     /// Every Finder window: its name, its folder path, and its items with the
@@ -127,7 +132,9 @@ public enum FinderItems {
     ///
     /// One call for all windows, because a call costs ~1–2 s of Finder time
     /// (measured) — far too much to pay per window, let alone per poll.
-    public static func windowsScript(maxItems: Int = maxItemsPerWindow) -> String {
+    public static func windowsScript(
+        maxItems: Int = maxItemsPerSingleScript
+    ) -> String {
         [
             "tell application \"Finder\"",
             "set r to \"\"",

@@ -498,6 +498,17 @@ public enum IRSchema {
            whole nature. Declared so that putting it on the wire would show
            as a wire-path change (plan 019 slice C). */
         "Scene.Window.contentPlane",
+        /* THE FINDER SEMANTIC SHELF. Like `contentPlane`, this is assembled
+           by this host after the guest scene publishes and has no wire
+           representation. Freezing the declaration and its complete value
+           shape keeps a future CodingKeys edit from silently turning host
+           cache state into guest IR. */
+        "Scene.Window.finder",
+        "Scene.FinderPresentation.path",
+        "Scene.FinderPresentation.view",
+        "Scene.FinderPresentation.selectedNames",
+        "Scene.FinderPresentation.pages",
+        "Scene.FinderPresentation.complete",
         /* 2026-08-07. What an alias POINTS AT. Additive in the ordinary
            sense — absent when the producer did not ask, and a consumer
            that has never heard of it keeps the answer it had. It exists

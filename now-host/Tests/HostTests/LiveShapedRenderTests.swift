@@ -184,18 +184,29 @@ final class LiveShapedRenderTests: XCTestCase {
 
     // MARK: - One clock (plan 018 slice 1)
 
-    /// The Finder capture sweep A priced as the worst result in the run —
-    /// `Macintosh HD`, icon view, whose whole interior rendered as one
-    /// "Bitmap unavailable" hatch. Composed onto its OWN scene, as the app
-    /// draws it.
+    /// Sweep A's archived Finder capture is useful evidence about repaint
+    /// boundaries, but Finder itself may no longer enter P3. These three
+    /// composition-mechanics tests therefore replay its records under an
+    /// explicit non-Finder application identity. The Finder exclusion has
+    /// its own tests in `NOWMirrorContentPlaneTests`.
     private func composedFixture(drain drainName: String, scene sceneName: String)
         throws -> (scene: MirrorKit.Scene, plane: NOWMirrorContentPlane,
                    raw: QDTraceDecode.Drain) {
         let sceneURL = try XCTUnwrap(Bundle.module.url(
             forResource: sceneName, withExtension: "json",
             subdirectory: "Fixtures"))
-        let scene = try NOWMirrorSceneDecoder.decode(
+        var scene = try NOWMirrorSceneDecoder.decode(
             irVersion: 2, document: Data(contentsOf: sceneURL))
+        if let index = scene.windows.firstIndex(where: \.front) {
+            let psn = scene.windows[index].psn
+            scene.windows[index].app = "Fixture Application"
+            if let process = scene.processes?.firstIndex(where: {
+                $0.psn == psn
+            }) {
+                scene.processes?[process].name = "Fixture Application"
+                scene.processes?[process].signature = "TEST"
+            }
+        }
         let drainURL = try XCTUnwrap(Bundle.module.url(
             forResource: drainName, withExtension: "json",
             subdirectory: "Fixtures"))
@@ -239,7 +250,7 @@ final class LiveShapedRenderTests: XCTestCase {
     /// Watched failing by mutation: with `lastRepaintPass` returning `ops`
     /// unchanged, the published display carries both openers and the
     /// second assertion names it.
-    func testTheFindersFrameIsTheLastRepaintPassAlone() throws {
+    func testTheArchivedCompositeIsTheLastRepaintPassAlone() throws {
         let (scene, _, _) = try composedFixture(drain: Self.finderDrain,
                                                 scene: Self.finderScene)
         let window = try XCTUnwrap(scene.windows.first(where: \.front))
@@ -281,7 +292,7 @@ final class LiveShapedRenderTests: XCTestCase {
     /// one gets `nil` and renders semantics-only rather than waiting. That
     /// second half is the degradation rule, and it is asserted here
     /// because its absence would be a deadlock rather than a wrong pixel.
-    func testEveryWindowSaysWhetherItHasAClockAtAll() throws {
+    func testEveryApplicationWindowSaysWhetherItHasAClockAtAll() throws {
         let (scene, _, _) = try composedFixture(drain: Self.finderDrain,
                                                 scene: Self.finderScene)
         let front = try XCTUnwrap(scene.windows.first(where: \.front))
@@ -304,7 +315,7 @@ final class LiveShapedRenderTests: XCTestCase {
     /// The stability axis, made cheap: two independent planes fed the same
     /// bytes, and one plane fed them twice, must agree op for op. A
     /// renderer cannot be stable if the thing it renders is not.
-    func testTheSameCapturePublishesTheSameFrameEveryTime() throws {
+    func testTheSameApplicationCapturePublishesTheSameFrameEveryTime() throws {
         let first = try composedFixture(drain: Self.finderDrain,
                                         scene: Self.finderScene)
         let second = try composedFixture(drain: Self.finderDrain,

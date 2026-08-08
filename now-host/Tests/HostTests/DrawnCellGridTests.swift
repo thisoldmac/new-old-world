@@ -57,6 +57,9 @@ final class DrawnCellGridTests: XCTestCase {
         scene.windows[0].front = true
         scene.windows[0].addr = address
         scene.windows[0].psn = psn
+        scene.windows[0].app = fixture.contains("finder")
+            ? "Finder" : (fixture.contains("sherlock")
+                ? "Sherlock 2" : "Fixture Application")
         scene.windows[0].display = nil
         scene.windows[0].controls = []
         scene.windows[0].items = nil
@@ -197,7 +200,9 @@ final class DrawnCellGridTests: XCTestCase {
 
     // MARK: - The negatives
 
-    /// Five other live captures, none of which has a grid. This is the
+    /// Five other live captures, none of which has a grid. Finder's two
+    /// streams are now discarded categorically; the other three still
+    /// compose and prove the derivation does not find a grid in them. This is the
     /// assertion that would catch a derivation loose enough to find one
     /// anywhere: control panels and Finder views both blit the same
     /// destination repeatedly, and neither is a picker.
@@ -211,7 +216,13 @@ final class DrawnCellGridTests: XCTestCase {
         ]
         for (fixture, address, psn) in others {
             let win = try window(fixture, address: address, psn: psn)
-            XCTAssertNotNil(win.display, "\(fixture) composed nothing at all")
+            if fixture.contains("finder") {
+                XCTAssertNil(win.display,
+                             "\(fixture) crossed Finder's P3 boundary")
+            } else {
+                XCTAssertNotNil(win.display,
+                                "\(fixture) composed nothing at all")
+            }
             XCTAssertTrue(cells(win).isEmpty,
                           "\(fixture) grew a grid it does not have")
         }

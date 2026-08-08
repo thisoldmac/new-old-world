@@ -177,7 +177,12 @@ int now_transitions_start(const NowTransitionsStartReq *req,
                                          req->has_serial_hi,
                                          req->has_serial_lo,
                                          req->has_front, req->front_true);
-        out->route = now_qdtrace_target_route_name(target);
+        /* Raw A5 is deliberately unnamed by the qdtrace route helper because
+           P3 must refuse it. Transitions is the read-only application probe
+           that still accepts an already-resolved address, so it owns that
+           route name explicitly rather than reopening qdtrace's policy. */
+        out->route = target == kNowQDTargetRawA5
+            ? "a5" : now_qdtrace_target_route_name(target);
         switch (target) {
         case kNowQDTargetBadSerial:
             if (code != NULL) { *code = "bad-serial"; }
@@ -213,7 +218,7 @@ int now_transitions_start(const NowTransitionsStartReq *req,
             }
             process_name_of(&psn, out->process, (long)sizeof out->process);
             break;
-        case kNowQDTargetA5:
+        case kNowQDTargetRawA5:
             a5 = (unsigned long)req->a5;
             break;
         }
