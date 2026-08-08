@@ -77,6 +77,20 @@ final class MirrorRunControl: ObservableObject {
         source.stop()
     }
 
+    /// Runs while the outgoing guest is still the listener's command target,
+    /// so guest-owned claims can be withdrawn before focus moves.
+    func activeGuestWillChange() {
+        source.activeGuestWillChange()
+    }
+
+    /// Called from the same listener event path that re-points every other
+    /// guest-scoped model. Ending the old source first makes a direct switch
+    /// and a disconnect/reconnect pair share one session boundary.
+    func activeGuestDidChange() {
+        source.activeGuestDidChange()
+        resumeIfWanted()
+    }
+
     /// Called on every connection change. A Mirror that was running when
     /// the app last quit — or when the guest last dropped — comes back by
     /// itself, because "running" is a state of the product and not of the

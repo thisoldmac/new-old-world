@@ -236,13 +236,22 @@ final class MultiGuestFocusTests: XCTestCase {
             return guest
         }
         let jemGuest = try await dial("PowerBook 1400c")
-        _ = try await dial("PowerBook 180c")
-        defer { state.stopListening(); jemGuest.connection.cancel() }
+        let essGuest = try await dial("PowerBook 180c")
+        defer {
+            state.stopListening()
+            jemGuest.connection.cancel()
+            essGuest.connection.cancel()
+        }
 
         XCTAssertEqual(state.screenshots.connection.peerLabel,
                        "PowerBook 1400c")
 
-        XCTAssertTrue(state.selectGuest(try liveKey(state, "PowerBook 180c")))
+        let outgoingMirrorKey = try liveKey(state, "PowerBook 1400c")
+        state.mirrorRun.start()
+        XCTAssertEqual(state.mirrorSource.pinnedGuestKey, outgoingMirrorKey)
+
+        let incomingMirrorKey = try liveKey(state, "PowerBook 180c")
+        XCTAssertTrue(state.selectGuest(incomingMirrorKey))
         try await waitUntil("the models follow") {
             state.screenshots.connection.peerLabel == "PowerBook 180c"
         }
@@ -254,6 +263,22 @@ final class MultiGuestFocusTests: XCTestCase {
             XCTAssertEqual(label, "PowerBook 180c",
                            "a module left behind shows the wrong Mac's state")
         }
+        XCTAssertEqual(state.mirrorSource.pinnedGuestKey, incomingMirrorKey,
+                       "the Mirror must cross the same connection boundary")
+        XCTAssertNil(state.mirrorEngines.existing(for: outgoingMirrorKey),
+                     "the outgoing session engine must not survive a switch")
+        XCTAssertNotNil(state.mirrorEngines.existing(for: incomingMirrorKey))
+
+        essGuest.connection.cancel()
+        try await waitUntil("the active disconnect promotes the remaining Mac") {
+            state.screenshots.connection.peerLabel == "PowerBook 1400c"
+        }
+        XCTAssertEqual(state.mirrorSource.pinnedGuestKey, outgoingMirrorKey,
+                       "an active disconnect starts a fresh session on the "
+                           + "remaining Mac")
+        XCTAssertNil(state.mirrorSource.scene)
+        XCTAssertNil(state.mirrorEngines.existing(for: incomingMirrorKey))
+        XCTAssertNotNil(state.mirrorEngines.existing(for: outgoingMirrorKey))
     }
 
     func testAddressedSceneRequestDoesNotFollowTheActivePicker() async throws {

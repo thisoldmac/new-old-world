@@ -56,6 +56,8 @@ final class NOWMirrorContentPlane {
     }
 
     private let listener: GuestListener
+    private let sendCommand: GuestCommandSend
+    private var sessionGeneration = 0
     private(set) var targetPSN: String?
     private(set) var targetWindow: UInt32?
     private(set) var cursor = 0
@@ -219,16 +221,15 @@ final class NOWMirrorContentPlane {
     static let pagesPerCycle = 12
     private static let renewAfter: TimeInterval = 9 * 60
 
-    init(listener: GuestListener) {
+    init(listener: GuestListener, sendCommand: GuestCommandSend? = nil) {
         self.listener = listener
+        self.sendCommand = sendCommand ?? { verb, args, completion in
+            listener.runCommand(verb, typed: args, completion: completion)
+        }
     }
 
-    /// Bumped by every `guestChanged`, so a release settling late can tell
-    /// whether the content it is about to wipe is still its own.
-    private var armGeneration = 0
-
     func guestChanged() {
-        armGeneration &+= 1
+        sessionGeneration &+= 1
         targetPSN = nil
         targetWindow = nil
         cursor = 0
@@ -254,28 +255,21 @@ final class NOWMirrorContentPlane {
     /// Withdraw this named owner's request before clearing its cached display.
     /// qdtrace stop releases only kNowPeekOwnerContent; P1/P2/P4 are untouched.
     func disable(completion: @escaping (String?) -> Void) {
-        guard armedAt != nil || targetPSN != nil else {
-            guestChanged()
+        let hadClaim = armedAt != nil || targetPSN != nil
+        /* Local state ends synchronously. A stopped Mirror must become
+           not-fetched even when the guest never answers the release command.
+           The command below is still sent when there was a claim, but its
+           latency no longer keeps the dead session addressable. */
+        guestChanged()
+        guard hadClaim else {
             completion(nil)
             return
         }
-        /* **THE WIPE IS GENERATION-GUARDED, and the guard belongs HERE.**
-           Both call sites in `NOWMirrorSource` already guard their own
-           completions — but this closure clears the cache FIRST, inside
-           the `qdtrace` round trip, before either of them is consulted.
-           A Stop→Start pair that lands inside that round trip therefore
-           wiped the display the NEW run had already accumulated. Under
-           the old open/close window that took a deliberate double click;
-           under a Start/Stop control it is one impatient person, and the
-           symptom — window interiors blank for a cycle — reads exactly
-           like a render defect rather than a lifecycle one. */
-        let releasing = armGeneration
-        listener.runCommand("qdtrace", args: ["op": "stop"]) { [weak self] result in
+        sendCommand("qdtrace", ["op": .text("stop")]) { result in
             guard result.ok else {
                 completion(Self.failure(result))
                 return
             }
-            if let self, self.armGeneration == releasing { self.guestChanged() }
             completion(nil)
         }
     }
@@ -284,6 +278,7 @@ final class NOWMirrorContentPlane {
     /// timer or poller; the structural scene remains the cadence owner.
     func join(into scene: MirrorKit.Scene,
               completion: @escaping (Update) -> Void) {
+        let generation = sessionGeneration
         guard let front = scene.windows.first(where: \.front) else {
             targetPSN = nil
             targetWindow = nil
@@ -351,9 +346,11 @@ final class NOWMirrorContentPlane {
                of the same process — a retarget is a different window and
                inherits nothing. */
             carryForward = !needsTarget
-            prepare(front: front, scene: scene, completion: completion)
+            prepare(front: front, scene: scene, generation: generation,
+                    completion: completion)
         } else {
-            drain(scene: scene, completion: completion)
+            drain(scene: scene, generation: generation,
+                  completion: completion)
         }
     }
 
@@ -362,10 +359,12 @@ final class NOWMirrorContentPlane {
     /// mis-join them merely because an address was later reused.
     private func prepare(front: MirrorKit.Scene.Window,
                          scene: MirrorKit.Scene,
+                         generation: Int,
                          completion: @escaping (Update) -> Void) {
-        listener.runCommand("qdtrace", args: ["op": "status"]) {
+        sendCommand("qdtrace", ["op": .text("status")]) {
             [weak self] result in
-            guard let self else { return }
+            guard let self,
+                  self.sessionGeneration == generation else { return }
             guard result.ok,
                   case .object(let qd)? = result.outputObjects?["qdtrace"],
                   case .object(let ring)? = qd["ring"],
@@ -391,7 +390,7 @@ final class NOWMirrorContentPlane {
                         + "address, so P3 refused an all-windows arm"))
                 return
             }
-            self.listener.runCommand("qdtrace", typed: [
+            self.sendCommand("qdtrace", [
                 "op": .text("start"),
                 "serialHi": .number(serial.hi),
                 "serialLo": .number(serial.lo),
@@ -399,7 +398,8 @@ final class NOWMirrorContentPlane {
                 "mode": .text("record"),
                 "ttlTicks": .number(36_000),
             ]) { [weak self] start in
-                guard let self else { return }
+                guard let self,
+                      self.sessionGeneration == generation else { return }
                 guard start.ok else {
                     self.armedAt = nil
                     completion(.init(
@@ -427,8 +427,10 @@ final class NOWMirrorContentPlane {
     }
 
     private func drain(scene: MirrorKit.Scene,
+                       generation: Int,
                        completion: @escaping (Update) -> Void) {
         drainPage(scene: scene, pagesLeft: Self.pagesPerCycle,
+                  generation: generation,
                   completion: completion)
     }
 
@@ -451,11 +453,13 @@ final class NOWMirrorContentPlane {
     /// budget caps what one cycle may spend, and anything still pending
     /// is drained by the next cycle exactly as before.
     private func drainPage(scene: MirrorKit.Scene, pagesLeft: Int,
+                           generation: Int,
                            completion: @escaping (Update) -> Void) {
-        listener.runCommand("qdtrace", args: [
-            "op": "drain", "cursor": String(cursor),
+        sendCommand("qdtrace", [
+            "op": .text("drain"), "cursor": .text(String(cursor)),
         ]) { [weak self] result in
-            guard let self else { return }
+            guard let self,
+                  self.sessionGeneration == generation else { return }
             guard result.ok,
                   case .object(let object)? = result.outputObjects?["qdtrace"],
                   let decoded = QDTraceDecode.drain(Self.plain(object)) else {
@@ -471,6 +475,7 @@ final class NOWMirrorContentPlane {
                 return
             }
             self.drainPage(scene: scene, pagesLeft: pagesLeft - 1,
+                           generation: generation,
                            completion: completion)
         }
     }

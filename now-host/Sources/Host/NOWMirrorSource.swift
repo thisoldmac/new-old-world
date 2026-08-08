@@ -372,8 +372,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// with one act cell, which refused all but one of them. See
     /// ``MirrorDirectActLane``.
     private let directActLane = MirrorDirectActLane()
-    /// Survives a guest change on purpose: the interesting comparison is
-    /// often the acts either side of a reconnection.
+    /// These timelines describe exactly one session. Durable history lives in
+    /// the act log; the in-memory projection resets at every session boundary.
     let actTimeline = MirrorActTimeline()
     let cycleTimeline = MirrorCycleTimeline()
     private var cycleAsked: (at: Date, semantics: Bool, interaction: Bool)?
@@ -476,29 +476,29 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     func stop() {
-        runGeneration &+= 1
-        let stoppingGeneration = runGeneration
-        running = false
-        cycleGeneration = nil
-        pollRequestedAfterCycle = false
-        rearmTask?.cancel()
-        rearmTask = nil
-        iconTask?.cancel()
-        iconTask = nil
-        visibilityTask?.cancel()
-        visibilityTask = nil
-        fetchingIcons = false
-        guard let stoppingKey = pinnedGuestKey,
-              stoppingKey == cycleIO.activeKey() else {
-            ambient = "stopped; pinned Mac was not active"
-            pinnedGuestKey = nil
-            shadowEngine = nil
-            mutationBroker?.sessionChanged()
-            directActLane.reset()
-            mutationBroker = nil
-            lifecycleDidChange()
+        let stoppingKey = pinnedGuestKey
+        let canRelease = stoppingKey != nil
+            && stoppingKey == cycleIO.activeKey()
+        guard canRelease else {
+            endSession(message: "stopped; pinned Mac was not active",
+                       clearContentImmediately: true)
             return
         }
+        endSessionReleasingContent(message: "stopped")
+    }
+
+    /// Called immediately before the listener changes focus, while the
+    /// outgoing guest can still receive the content owner's explicit stop.
+    func activeGuestWillChange() {
+        guard let pinnedGuestKey,
+              pinnedGuestKey == cycleIO.activeKey() else { return }
+        endSessionReleasingContent(
+            message: "the selected Mac is changing; Mirror session ended")
+    }
+
+    private func endSessionReleasingContent(message: String) {
+        endSession(message: message, clearContentImmediately: false)
+        let stoppingGeneration = runGeneration
         /* P1/P2 and P4 are application-owned claims with a ten-second
            resident lease; stopping the poll stops renewing them, so they
            retire without a foreign-context teardown command. P3 is different:
@@ -510,26 +510,88 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                newer session. The old content release must not tear down or
                relabel that new binding. */
             guard !self.running,
-                  self.runGeneration == stoppingGeneration,
-                  self.pinnedGuestKey == stoppingKey else {
+                  self.runGeneration == stoppingGeneration else {
                 return
             }
             self.ambient = failure.map {
-                "stopped; Content claim release refused: \($0)"
-            } ?? "stopped"
-            self.pinnedGuestKey = nil
-            self.shadowEngine = nil
-            self.mutationBroker?.sessionChanged()
-            self.directActLane.reset()
-            self.mutationBroker = nil
+                "\(message); Content claim release refused: \($0)"
+            } ?? message
             self.lifecycleDidChange()
-            self.deferredLifecycleRefresh = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 11_000_000_000)
-                guard let self, !Task.isCancelled, !self.running else {
-                    return
-                }
-                self.lifecycleDidChange()
-            }
+        }
+    }
+
+    /// End the pinned session when the listener's active connection changes.
+    /// A later resume is a fresh start even when it is the same physical Mac.
+    func activeGuestDidChange() {
+        guard let pinnedGuestKey,
+              pinnedGuestKey != cycleIO.activeKey() else { return }
+        endSession(
+            message: cycleIO.activeKey() == nil
+                ? "the Mac disconnected; Mirror session ended"
+                : "the selected Mac changed; Mirror session ended",
+            clearContentImmediately: true)
+    }
+
+    /// The one destructive boundary for a Mirror session. A host restart used
+    /// to be the only operation that cleared all of this state, which made
+    /// every reproduction after a stop or redial inherit old frames, engines,
+    /// queue state, and measurements.
+    private func endSession(message: String,
+                            clearContentImmediately: Bool) {
+        let endedKey = pinnedGuestKey
+        runGeneration &+= 1
+        running = false
+        cycleGeneration = nil
+        pollRequestedAfterCycle = false
+        rearmTask?.cancel()
+        rearmTask = nil
+        deferredLifecycleRefresh?.cancel()
+        deferredLifecycleRefresh = nil
+        iconTask?.cancel()
+        iconTask = nil
+        visibilityTask?.cancel()
+        visibilityTask = nil
+        fetchingIcons = false
+        if clearContentImmediately { cycleIO.guestChanged() }
+
+        mutationBroker?.sessionChanged()
+        directActLane.reset()
+        mutationBroker = nil
+        if let endedKey { engineRegistry?.remove(endedKey) }
+        pinnedGuestKey = nil
+        shadowEngine = nil
+
+        scene = nil
+        sceneGuestKey = nil
+        icons.removeAll()
+        iconLayout = "<none>"
+        visibilityKey = "<none>"
+        visibilityReadAt = nil
+        settlementTracker = MirrorSettlementTracker()
+        planCorrelation = nil
+        planSettlement = "unknown"
+        planRefusalReach = .unknown
+        mutationWaiting = false
+        dragSession = nil
+        cycleAsked = nil
+        cycleDelivered = nil
+        cycleOutcome = "no-reply"
+        cycleReason = nil
+        cyclePhases = nil
+        cycleOwnWork = nil
+        cycleContentJoin = nil
+        lastCyclePublishedAt = nil
+        lastAct = ""
+        actGeneration &+= 1
+        actTimeline.reset()
+        cycleTimeline.reset()
+        ambient = message
+        lifecycleDidChange()
+
+        deferredLifecycleRefresh = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 11_000_000_000)
+            guard let self, !Task.isCancelled, !self.running else { return }
+            self.lifecycleDidChange()
         }
     }
 
@@ -998,7 +1060,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard let self else { return }
             var fresh: [String: [MirrorKit.Scene.DesktopItem]] = [:]
             var complete = true
-            if let d = await self.readIcons(container: "desktop") {
+            if let d = await self.readIcons(container: "desktop",
+                                            generation: generation) {
                 fresh[Self.desktopKey] = d
             } else {
                 complete = false
@@ -1007,12 +1070,17 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 let quoted = win.title.replacingOccurrences(of: "\"",
                                                             with: "\\\"")
                 if let items = await self.readIcons(
-                    container: "window \"\(quoted)\"") {
+                    container: "window \"\(quoted)\"",
+                    generation: generation) {
                     fresh[win.title] = items
                 } else {
                     complete = false
                 }
             }
+            /* A canceled read can outlive a guest switch. Do not let its
+               unwind clear the replacement run's in-flight bookkeeping. */
+            guard !Task.isCancelled,
+                  self.isCurrentRun(generation) else { return }
             self.fetchingIcons = false
             self.iconTask = nil
             ActLog.note(action: "complements\n    "
@@ -1024,8 +1092,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         ]),
                         outcome: complete ? "ok" : "partial",
                         ms: Int(Date().timeIntervalSince(started) * 1000))
-            guard !Task.isCancelled,
-                  self.isCurrentRun(generation) else { return }
             /* **The layout the roster was read FOR must still be the
                layout on screen.** Positions are window-content-local and
                scroll-compensated, so a roster that lands after the window
@@ -1140,7 +1206,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         """
     }
 
-    func readIcons(container: String)
+    func readIcons(container: String, generation: Int? = nil)
         async -> [MirrorKit.Scene.DesktopItem]? {
         /* Two vectorised passes, not one per icon. The first names every
            item and where the Finder drew it; the second asks the FILES
@@ -1165,6 +1231,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         var expectedTotal: Int?
         var offset = 0
         while expectedTotal == nil || offset < expectedTotal! {
+            guard complementIsCurrent(generation) else { return nil }
             let source = Self.iconItemsScript(container: container,
                                               offset: offset)
             /* `osaFailureIsAnError` because THIS pass is the one that must
@@ -1178,6 +1245,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                is all the mirror ever said about why. */
             let read = await readingOutput("script", ["source": .text(source)],
                                            osaFailureIsAnError: true)
+            guard complementIsCurrent(generation) else { return nil }
             let total = read.value.flatMap(Self.iconPageTotal)
             guard let text = read.value, !read.truncated, let total,
                   expectedTotal == nil || expectedTotal == total,
@@ -1215,7 +1283,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         end repeat
         return out
         """
+        guard complementIsCurrent(generation) else { return nil }
         let art = await readingOutput("script", ["source": .text(types)])
+        guard complementIsCurrent(generation) else { return nil }
         if art.value == nil || art.truncated {
             note("\(container): items read, but not their icon art"
                  + " - \(art.truncated ? "guest result truncated" : "\(art.error ?? "no reason given")")")
@@ -1236,9 +1306,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         let aliases = roster.filter(\.alias).map(\.name)
         var targetsByName: [String: MirrorKit.Scene.DesktopItem.AliasTarget] = [:]
         if !aliases.isEmpty {
+            guard complementIsCurrent(generation) else { return nil }
             let read = await readingOutput(
                 "script",
                 ["source": .text(Self.aliasTargetsScript(container: container))])
+            guard complementIsCurrent(generation) else { return nil }
             if read.value == nil || read.truncated {
                 note("\(container): \(aliases.count) alias(es) read, but not "
                      + "what they point at - "
@@ -1251,6 +1323,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
         return Self.applyingArt(roster, types: typesByName,
                                 aliasTargets: targetsByName)
+    }
+
+    private func complementIsCurrent(_ generation: Int?) -> Bool {
+        guard !Task.isCancelled else { return false }
+        return generation.map(isCurrentRun) ?? true
     }
 
     /// What every alias in a container points at.
@@ -1562,10 +1639,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             var offset = 0
             var complete = true
             while expectedTotal == nil || offset < expectedTotal! {
+                guard self.complementIsCurrent(generation) else { return }
                 let read = await self.readingOutput(
                     "script", ["source": .text(Self.visibilityScript(
                         offset: offset))],
                     osaFailureIsAnError: true)
+                guard self.complementIsCurrent(generation) else { return }
                 if let error = read.error {
                     self.note("visibility census refused at offset "
                               + "\(offset): \(error)")
@@ -1588,6 +1667,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 offset += page.rowCount
                 if total == 0 { break }
             }
+            /* A canceled read can outlive a guest switch. Do not let its
+               unwind clear the replacement run's task reference. */
+            guard !Task.isCancelled,
+                  self.isCurrentRun(generation) else { return }
             self.visibilityTask = nil
             ActLog.note(action: "complements\n    "
                         + BaselineLine.line("visibility", [
@@ -1599,8 +1682,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         ]),
                         outcome: complete ? "ok" : "partial",
                         ms: Int(Date().timeIntervalSince(started) * 1000))
-            guard !Task.isCancelled,
-                  self.isCurrentRun(generation) else { return }
             _ = self.shadowEngine?.enrichVisibility(
                 observed, complete: complete
                     && observed.count == expectedTotal,

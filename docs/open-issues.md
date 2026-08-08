@@ -24,6 +24,38 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## FIXED HOST-SIDE, NOT METAL-VERIFIED: Stop, disconnect, and guest replacement left a Mirror session alive (2026-08-08, `codex/mirror-session-teardown`)
+
+The reported host could hold two live Mirror sessions from one guest, and
+Stop left the old scene, engine, Finder complements, queued work, and
+measurements addressable. Every later reproduction was therefore
+confounded until the host process restarted. The complete evidence and
+the correction to the first interpretation are in
+[mirror-stop-should-disconnect.md](mirror-stop-should-disconnect.md).
+
+All three events now cross the same destructive session boundary. Stop
+clears host state synchronously even if the guest never answers its
+resident-claim release; an active disconnect ends the pinned session; and
+a replacement active guest gets a fresh engine rather than the prior
+session's state. Persisted run intent remains separate: if the person did
+not click Stop, Mirror starts fresh when an active connection returns.
+
+The focused host pass ran 104 Mirror, content-plane, container, and
+multi-guest tests with no failures. This is **Tested**, not
+Metal-verified. The current metal symptom remains open: opening Mirror
+forces Finder front for 10–20 seconds and Finder then crashes. Michelle
+has not recently seen the earlier Error 1 guest-application crash. The
+lifecycle repair makes the next run attributable; it does not claim to
+explain or fix the Finder crash.
+
+A G3 Wallstreet on Mac OS 9.2.2 reproduced the forced-front and ping-pong
+without an immediate crash. Its guest log shows the live content target
+alternating between exactly two A5 worlds with hook churn at each move, then
+cleanly disarming to A5 zero. It contains no `mach activate` line. This moves
+the next diagnostic to the automatic interactive Finder AppleScript
+complements: disable only icon-roster and visibility reads, retain structural
+scene/content observation, and see whether the unsolicited fronting stops.
+
 ## FIXED: the Mirror wrote no log line at all, so its crash could not be investigated (2026-08-08, `claude/026-mirror-logging`)
 
 **Derived rather than assumed**, and it is worth stating as a

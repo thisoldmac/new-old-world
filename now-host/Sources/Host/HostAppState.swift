@@ -333,7 +333,10 @@ final class HostAppState: ObservableObject {
     /// item is a no-op rather than a silent nothing.
     @discardableResult
     func selectGuest(_ key: GuestKey) -> Bool {
-        listener.selectGuest(key)
+        listener.selectGuest(key) { [weak self] in
+            guard let self, self.madeMirrorSource else { return }
+            self.mirrorRun.activeGuestWillChange()
+        }
     }
 
     init(registry: ModuleRegistry,
@@ -484,6 +487,12 @@ final class HostAppState: ObservableObject {
         let connection = Self.guestState(from: state, key: listener.activeKey)
         for model in guestScopedModels {
             model.connection = connection
+        }
+        /* Do not construct the Mirror merely because a connection changed.
+           Once it exists, however, its pinned GuestKey is session state and
+           must cross the same boundary as every model above. */
+        if madeMirrorSource {
+            mirrorRun.activeGuestDidChange()
         }
         // The console's completions came from THIS guest's `help`, and the
         // next one may serve a different set — NOW-68K serves three commands

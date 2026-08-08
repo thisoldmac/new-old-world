@@ -44,6 +44,13 @@ final class MirrorActTimeline: ObservableObject {
         records.last { $0.operationID == operationID }
     }
 
+    /// A reconnect cannot inherit queue depth or act timings from the
+    /// connection it replaced. The durable log remains the historical record.
+    func reset() {
+        records.removeAll()
+        depth = 0
+    }
+
     /// Everything the Mirror page shows, for the headless client. Newest
     /// last, matching the page's own order.
     func projected(cycles: MirrorCycleTimeline, running: Bool)

@@ -30,6 +30,39 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         return try XCTUnwrap(QDTraceDecode.drain(object))
     }
 
+    func testAStatusReplyFromAnEndedSessionCannotRearmContent() throws {
+        struct Sent {
+            var args: [String: CommandArg]?
+            var completion: (CommandResult) -> Void
+        }
+        var sent: [Sent] = []
+        var updates = 0
+        let listener = GuestListener(
+            identity: .init(version: "test", name: "Test Host"))
+        let model = NOWMirrorContentPlane(
+            listener: listener,
+            sendCommand: { _, args, completion in
+                sent.append(.init(args: args, completion: completion))
+            })
+
+        model.join(into: try scene()) { _ in updates += 1 }
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertEqual(sent[0].args?["op"], .text("status"))
+
+        model.guestChanged()
+        sent[0].completion(.init(
+            id: 1, ok: true,
+            outputObjects: ["qdtrace": .object([
+                "cmd": .string("status"),
+                "ring": .object(["writeCursor": .number(4096)]),
+            ])]))
+
+        XCTAssertEqual(sent.count, 1,
+                       "the stale status must not send qdtrace start")
+        XCTAssertEqual(updates, 0,
+                       "the ended join must not publish into a new session")
+    }
+
     func testDrawOpsJoinOnlyByExactGuestWindowAddress() throws {
         let model = plane()
         let update = model.apply(try drain("""

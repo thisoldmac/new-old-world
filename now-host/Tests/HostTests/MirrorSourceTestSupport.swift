@@ -31,6 +31,8 @@ final class MirrorCycleHarness {
     ] = []
     var joinedScenes: [Scene] = []
     var joinCompletions: [(NOWMirrorContentPlane.Update) -> Void] = []
+    var holdContentRelease = false
+    var contentReleaseCompletions: [(String?) -> Void] = []
 
     init(activeKey: GuestKey) { self.activeKey = activeKey }
 
@@ -46,7 +48,10 @@ final class MirrorCycleHarness {
                 self.sceneCompletions.append(completion)
             },
             guestChanged: {},
-            disableContent: { completion in completion(nil) },
+            disableContent: { completion in
+                self.contentReleaseCompletions.append(completion)
+                if !self.holdContentRelease { completion(nil) }
+            },
             joinContent: { scene, completion in
                 self.joinedScenes.append(scene)
                 self.joinCompletions.append(completion)

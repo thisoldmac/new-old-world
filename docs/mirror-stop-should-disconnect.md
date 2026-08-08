@@ -1,7 +1,8 @@
 # Stopping the Mirror should disconnect it, not pause it
 
 **Reported by Michelle, 2026-08-08, during the first metal session in
-weeks.** Filed, not fixed.
+weeks. Fixed host-side on `codex/mirror-session-teardown`; tested, not
+metal-verified.**
 
 ## What actually happened
 
@@ -49,8 +50,8 @@ is.
 > We can have a pause button if we need to pause. We already pause when
 > switching modules with mirror running.
 
-Stop currently pauses. That is why a stale desktop survives a target
-switch: nothing tore the session down, so the last render stayed
+Stop paused in the reported build. That is why a stale desktop survived a
+target switch: nothing tore the session down, so the last render stayed
 addressable and got composited under the new machine's windows.
 
 So the fix is not a render-time identity guard bolted onto a session that
@@ -72,12 +73,47 @@ windows (`empty`).
 
 ## Status
 
-- **Not fixed.** Filed.
+- **Fixed host-side and tested; not metal-verified.** Stop, loss of the
+  active connection, and direct replacement of the active guest now cross
+  one destructive boundary. It drops the pinned key and session engine,
+  clears scene/content/Finder complements, cancels pending cycle work, and
+  resets the in-memory act and cycle timelines. If Mirror was running when
+  a connection dropped, its persisted run intent starts a fresh session
+  when an active guest is available again.
+- The content plane clears locally before asking the guest to release its
+  resident claim. A dead guest can no longer keep a stopped session visible,
+  and a late release reply cannot clear a newer run.
+- Regression coverage pins all three boundaries and the live
+  `HostAppState` active-guest event path. It also holds a Finder roster
+  request across Stop and proves the cancelled task sends no later script.
+  The focused Mirror pass ran 104
+  tests with no failures on 2026-08-08.
 - Severity is ordinary: a stale render across a target switch, with
   correct targeting throughout. It is worth patching, and it is not the
   safety defect the first draft of this file claimed.
-- Unrelated, same session: [the Mirror crash on
-  metal](mirror-crashes-now-on-metal.md).
+- **Still open on metal:** opening Mirror currently forces Finder front for
+  10–20 seconds and then Finder crashes. Michelle has not recently seen the
+  earlier Error 1 guest-application crash. The host fix above removes the
+  confounded session history; it does not claim to fix the Finder crash.
+  See [the Mirror crash on metal](mirror-crashes-now-on-metal.md).
+
+### The Wallstreet separates the misbehaviour from the crash
+
+Michelle reproduced the forced-front and ping-pong behaviour on a G3
+Wallstreet running Mac OS 9.2.2 without an immediate Finder crash. Its guest
+log shows one continuous content claim repeatedly retargeting between exactly
+two A5 worlds (`0x07673940` and `0x07987a90`), with each move causing hook
+install/uninstall/repair churn. At the end, the explicit content disarm reaches
+`active a5 0x0 mode 0`.
+
+That is evidence of a live front-process/target loop, not stopped-session
+residue. The log contains no `mach activate` line. Opening Mirror does,
+however, start automatic interactive Finder AppleScript reads for the icon
+roster and process-visibility complement. Those reads are now the narrow
+candidate to remove in one diagnostic build while leaving structural scenes
+and content observation intact. If the fronting stops, the candidate is
+confirmed; if it continues, the cause is below or outside that complement
+lane. The dead-PRAM timestamp carries no timing evidence and is ignored.
 
 ## This is probably not a polish item — it may be half the crash ladder
 
@@ -137,7 +173,7 @@ currently the sole thing that ends a Mirror session.
 
 So there are **three** events that must end a session, not one:
 
-| event | today | should |
+| event | reported build | fixed host behavior |
 |---|---|---|
 | Stop | pauses | end the session, clear its state |
 | **Disconnection** | **session persists** | **end the session** |

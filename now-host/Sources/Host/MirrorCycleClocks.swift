@@ -252,6 +252,12 @@ final class MirrorCycleTimeline: ObservableObject {
         records.last { $0.walk == walk }
     }
 
+    /// A timeline describes one Mirror session. Keeping its rows across a
+    /// stop or reconnection makes the next run's measurements unattributed.
+    func reset() {
+        records.removeAll()
+    }
+
     static func write(_ clocks: MirrorCycleClocks) {
         ActLog.note(action: "cycle\n    " + clocks.baselineLine,
                     outcome: clocks.outcome,

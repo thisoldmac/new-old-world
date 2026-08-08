@@ -371,8 +371,13 @@ final class GuestListener: ObservableObject {
     /// switch would show one guest's rows under the other's name. That
     /// is the next slice, listed in docs/local/multi-guest-plan.md.
     @discardableResult
-    func selectGuest(_ key: GuestKey) -> Bool {
+    func selectGuest(_ key: GuestKey,
+                     beforeSwitch: (() -> Void)? = nil) -> Bool {
         guard sessions[key] != nil, activeKey != key else { return false }
+        /* The outgoing guest is still the command target here. A caller
+           ending guest-owned state gets one ordered chance to release it
+           before pending requests are failed and focus moves. */
+        beforeSwitch?()
         // Requests already in flight belong to the guest we are leaving
         // and would otherwise settle against whatever answers next.
         failAllPending("Switched to another \(MachineNaming.commonNoun)")

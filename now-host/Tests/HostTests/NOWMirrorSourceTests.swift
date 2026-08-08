@@ -281,6 +281,49 @@ final class NOWMirrorSourceTests: XCTestCase {
                        + "ten-second lease")
     }
 
+    /// Cancellation cannot recall the Apple event already inside the guest,
+    /// but it must stop the multi-pass roster from sending another one after
+    /// that reply arrives. Otherwise a stopped or replaced Mirror keeps
+    /// querying whichever Mac the listener selects next.
+    func testStoppingDuringAFinderReadSendsNoFollowUpScript() async throws {
+        let key = GuestKey.synthetic("held-finder-read")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        var scripts = 0
+        var held: ((CommandResult) -> Void)?
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io,
+            sendCommand: { verb, _, completion in
+                guard verb == "script" else { return }
+                scripts += 1
+                held = completion
+            })
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        let joined = try XCTUnwrap(harness.joinedScenes.first)
+        harness.joinCompletions[0](.init(scene: joined, sentence: "joined"))
+
+        for _ in 0..<20 where held == nil { await Task.yield() }
+        let firstReply = try XCTUnwrap(held, "the desktop roster never began")
+        XCTAssertEqual(scripts, 1)
+
+        source.stop()
+        firstReply(.init(
+            id: 1, ok: true,
+            output: ["script": [["output", "\"N\\t0\\r\""],
+                                ["osaErr", "0"],
+                                ["truncated", "false"]]],
+            error: nil))
+        for _ in 0..<20 { await Task.yield() }
+
+        XCTAssertEqual(scripts, 1,
+                       "a canceled roster sent its type/art pass after Stop")
+    }
+
     /// The other half of the same repair, and the reason it is safe.
     ///
     /// The cycle-hold was buying one real thing: a Finder roster read for
@@ -458,6 +501,164 @@ final class NOWMirrorSourceTests: XCTestCase {
         source.planePolicyDidChange()
         XCTAssertEqual(harness.sceneRequests.count, 2,
                        "the restarted run can poll after the old lane drains")
+    }
+
+    /// Stop is an end, not a pause. The last frame and the measurements
+    /// that described its session must not remain available to a later run.
+    func testStopEndsTheSessionAndClearsItsPublishedState() throws {
+        let key = GuestKey.synthetic("stopped-session")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        let registry = MirrorStateEngineRegistry()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: registry,
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        harness.completeJoin(0)
+        XCTAssertNotNil(source.scene)
+        XCTAssertEqual(source.cycleTimeline.records.count, 1)
+        XCTAssertNotNil(registry.existing(for: key))
+
+        source.stop()
+
+        XCTAssertFalse(source.running)
+        XCTAssertNil(source.pinnedGuestKey)
+        XCTAssertNil(source.scene,
+                     "a stopped Mirror publishes not-fetched, not the last frame")
+        XCTAssertTrue(source.cycleTimeline.records.isEmpty,
+                      "a later reproduction must not inherit old timings")
+        XCTAssertTrue(source.actTimeline.records.isEmpty)
+        XCTAssertEqual(source.actTimeline.depth, 0)
+        XCTAssertNil(registry.existing(for: key),
+                     "a later start must build a fresh session engine")
+    }
+
+    /// A lost wire ends the run immediately, but does not erase the person's
+    /// persisted request to run. A successor connection starts from nothing.
+    func testDisconnectEndsTheSessionAndReconnectStartsFresh() throws {
+        let old = GuestKey.synthetic("disconnected-session")
+        let next = GuestKey.synthetic("reconnected-session")
+        let harness = MirrorCycleHarness(activeKey: old)
+        let listener = testListener()
+        let registry = MirrorStateEngineRegistry()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: registry,
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+        let suiteName = "test.mirror.disconnect.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let run = MirrorRunControl(source: source, defaults: defaults)
+
+        run.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: old)))
+        harness.completeJoin(0)
+        XCTAssertNotNil(source.scene)
+
+        harness.activeKey = nil
+        run.activeGuestDidChange()
+
+        XCTAssertTrue(run.wantsRunning,
+                      "a dropped wire is not the person's Stop decision")
+        XCTAssertFalse(source.running)
+        XCTAssertNil(source.scene)
+        XCTAssertNil(registry.existing(for: old))
+
+        harness.activeKey = next
+        run.activeGuestDidChange()
+
+        XCTAssertTrue(source.running)
+        XCTAssertEqual(source.pinnedGuestKey, next)
+        XCTAssertNil(source.scene,
+                     "the replacement has not published a frame yet")
+        XCTAssertNil(registry.existing(for: old))
+        XCTAssertNotNil(registry.existing(for: next))
+    }
+
+    /// Selecting another live guest is a replacement without an intervening
+    /// nil connection. It must still cross the same teardown boundary.
+    func testGuestReplacementStartsANewSessionWithoutOldState() throws {
+        let old = GuestKey.synthetic("outgoing-guest")
+        let next = GuestKey.synthetic("incoming-guest")
+        let harness = MirrorCycleHarness(activeKey: old)
+        let listener = testListener()
+        let registry = MirrorStateEngineRegistry()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: registry,
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+        let suiteName = "test.mirror.replacement.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let run = MirrorRunControl(source: source, defaults: defaults)
+
+        run.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: old)))
+        harness.completeJoin(0)
+        harness.holdContentRelease = true
+
+        run.activeGuestWillChange()
+        XCTAssertFalse(source.running)
+        XCTAssertEqual(harness.contentReleaseCompletions.count, 1,
+                       "the outgoing guest gets an explicit content stop")
+        harness.activeKey = next
+
+        run.activeGuestDidChange()
+
+        XCTAssertTrue(source.running)
+        XCTAssertEqual(source.pinnedGuestKey, next)
+        XCTAssertNil(source.scene)
+        XCTAssertNil(registry.existing(for: old))
+        XCTAssertNotNil(registry.existing(for: next))
+
+        harness.completeScene(1, with: .success(try fixtureDelivery(for: next)))
+        harness.completeJoin(1)
+        let replacementScene = source.scene
+        harness.contentReleaseCompletions[0]("late outgoing refusal")
+
+        XCTAssertTrue(source.running)
+        XCTAssertEqual(source.scene, replacementScene,
+                       "the old release cannot clear the replacement")
+        XCTAssertFalse(source.ambient.contains("late outgoing refusal"),
+                       "the old release cannot relabel the replacement")
+    }
+
+    func testDelayedStopReleaseCannotChangeAnImmediateRestart() throws {
+        let key = GuestKey.synthetic("stop-start-release")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        harness.completeJoin(0)
+        harness.holdContentRelease = true
+
+        source.stop()
+        source.start()
+        harness.completeScene(1, with: .success(try fixtureDelivery(for: key)))
+        harness.completeJoin(1)
+        let restartedScene = source.scene
+
+        harness.contentReleaseCompletions[0]("late stop refusal")
+
+        XCTAssertTrue(source.running)
+        XCTAssertEqual(source.scene, restartedScene)
+        XCTAssertFalse(source.ambient.contains("late stop refusal"))
     }
 
     func testOnlyConfirmedSettlementEarnsTheGreenCheckmark() {
