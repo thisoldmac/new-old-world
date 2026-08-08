@@ -1388,6 +1388,34 @@ static Boolean content_probe_row_valid(short i)
 {
     GrafPtr port = gPorts[i].port;
 
+    /* ADDRESS FIRST, because everything below this line is a dereference
+       and this function is the choke point both walks reach through — the
+       repair pass and content_uninstall_context.
+
+       Callers guard with `gPorts[i].a5 == a5`, which fails open when both
+       are 0, and rows carrying a5 0 are ordinary: the plane spends real
+       time disarmed with ports still hooked, and the probe and window
+       walks install with a local a5. So this function is reached with rows
+       whose port may belong to a process that is gone.
+
+       It is also reached for rows that ARE ours and have moved:
+       `LockPixels` relocates the PixMap RECORD, which is the very thing
+       the last comparison here reads.
+
+       content_probe_addr_ok is this file's own answer and is used exactly
+       this way in the GWorld candidate walk. Returning false for an
+       unreadable row is the honest verdict AND the safe one — the callers
+       already treat false as "stale, forget it", which is what it is.
+
+       Why here rather than at the call sites: two earlier attempts at this
+       crash guarded the callers instead, and the repair pass — which runs
+       every few seconds on a timer, visible as the `repaired` counter
+       ticking +2 and +3 in Michelle's logs all night — went on
+       dereferencing through this function unchanged. */
+    if (!content_probe_addr_ok((NowPeekU32)port, sizeof(GrafPort))
+        || !content_probe_addr_ok(gPorts[i].pixmap, sizeof(Ptr))) {
+        return false;
+    }
     return port != NULL
         && gPorts[i].pixmap != 0
         && content_port_is_color(port)

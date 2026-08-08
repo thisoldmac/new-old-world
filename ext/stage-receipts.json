@@ -131,6 +131,16 @@
         "ext/src/now_content.c"
       ],
       "reason": "Second iteration of the metal crash fix, handed to Michelle mid-session at 04:00. Bake before landing."
+    },
+    {
+      "at": "2026-08-08T04:17:07-0400",
+      "branch": "claude/026-logging-build",
+      "extDigest": "5893f4f6a8e44bab7e3c3461da726fe59c46f2c5",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c"
+      ],
+      "reason": "Third iteration of the metal crash fix, 04:10. Bake before landing."
     }
   ]
 }
