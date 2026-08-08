@@ -19911,3 +19911,46 @@ derivation nobody ran; the difference is that a machine took this one.
 - `scripts/test-all`'s header still says the MirrorKit stage is "165
   tests"; it is 258 now. Prose restating a number is a second place to be
   wrong, and this is one.
+
+## FIXED: a stale `arc-status` answered confidently instead of refusing (2026-08-08, `claude/026-corpus-reach`)
+
+`tools/arc-status` is the tool a coordinator runs before telling a person
+where the arc stands. It is not on `main` and is absent from **400 of the
+449 branches** here, so briefs fetch it by naming a branch — and the
+standing arc-trigger check has for weeks named
+`git show claude/019-integration-5:tools/arc-status`.
+
+That copy globs `claude/01[0-9]-*`, in five separate places. Run it today
+and it enumerates the 019 lanes, omits every `02x` lane, and prints a
+table headed *"work that exists"*. Nothing in the output says the set is
+short. Of the 49 branches carrying this file, **40 carry the narrow
+glob**; 9 carry the widened one from `ed5da741` ("fix(arc-status): the
+arc rolled past 019 and the trigger did not").
+
+This is the project's most-repeated shape: **an instrument whose normal
+mode of operation is the one condition under which the defect cannot
+appear.** A widened glob can see a narrow one's blind spot; a narrow glob
+cannot see its own, and a partial answer from a tool people quote as
+derived truth is worse than no answer.
+
+Correcting the pinned branch name in the docs was necessary and is not
+sufficient — the next arc rolls to `03x` and every copy pinned today goes
+quietly wrong again, this one included. So the tool now **refuses**: it
+derives the newest arc number from the branch names present, by a scan
+that deliberately does not use `$LANE_GLOB` (a check written in terms of
+the thing under test cannot fail), and if its glob cannot match that arc
+it exits 65 printing both globs and where to fetch a current copy. Older
+arcs the glob excludes are reported as a note and do not refuse — that is
+a scope decision, not a defect.
+
+**Watched fail.** The narrow glob was reintroduced as `LANE_GLOB` and the
+refusal fired naming `claude/01[0-9]-*` against a derived newest arc of
+`026`, exit 65; the widened glob restored and the tool ran clean. The
+glob also had two remaining hardcoded copies in the body (a printed
+heading and a `case` pattern); both now read `$LANE_GLOB`, so a future
+widening is one edit and cannot half-apply.
+
+**What is NOT fixed:** the standing arc-trigger check itself lives outside
+this repository, and this lane cannot edit it. Until it is changed, it
+will still hand out the `019-integration-5` name — the refusal is what
+stops that from being silent, not a substitute for correcting it.

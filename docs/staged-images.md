@@ -442,6 +442,15 @@ The first two are safe to cite anywhere. `tools/lane-ports` nearly is.
 instruction that names it is wrong for most worktrees — which is how it
 became the third instance of the same mistake in one day.
 
+**And naming a branch to fetch it from has its own failure, which is
+worse.** A missing tool announces itself; a stale one does not. The copy
+on `claude/019-integration-5` — the one the standing arc-trigger check
+still names — globs `claude/01[0-9]-*` and is silently blind to every
+`02x` lane. 40 of the 49 branches carrying the file carry that glob
+(derived 2026-08-08). The tool now refuses to run when its glob cannot
+see the newest arc; see
+[arc-coordination.md](arc-coordination.md) > "Where to fetch it".
+
 Two more traps worth knowing before you reach for the parent checkout:
 
 - **`tools/shutdown-guest` (no `.py`) is a different tool.** It lives in
