@@ -432,3 +432,149 @@ an unexplained-looking decision has a reason:
 - **A ring record's `port` is the window identity key**, and the blit
   join currently looks up with the *bits record's* generation rather than
   the generation the held ops were recorded under.
+
+---
+
+# AMENDED 2026-08-07, late — two Mirror features, and continuity behind them
+
+Michelle, after the cursor-latency spike returned:
+
+> what im thinking for this is that we prove it out in mirror first. both
+> in terms of moving the guest cursor to mirror the host cursor while its
+> over the mirror and in terms of the drag between two systems transfer.
+> the actual screen edges part can wait until we're actually working on
+> continuity itself, but if we're able to solve those two problems and
+> make it usable on metal, we're in a really really good place for
+> continuity.
+
+**Agreed, and the ordering removes the riskiest part from the
+experiment.** The edge crossing is a *mode with a handback* — state that
+can go stale silently, which is the failure family this project has paid
+for most (the 10 s owner lease, the 3 s writer lease, the arm word
+cleared at t=3 s). Cursor-over-the-mirror needs no mode: the pointer is
+over the view or it is not, and that is observable every frame rather
+than remembered. It also gets exercised continuously instead of only in a
+demo path.
+
+**Not scheduled yet.** The island removal comes first. This section
+exists so the arc has somewhere to put the spike's results and so the two
+features are specified before anyone starts.
+
+## What the spike already proved, and what it refuted
+
+`spikes/cursor-latency/` — emulator-measured, nothing on metal.
+
+- **Position is solved.** ≤ 1 tick (1/60 s) staleness under every load
+  condition, **zero out of order and zero lost across 4,500 commands**.
+  Above 60/s the surplus is coalesced and never replayed, so the tail
+  does not degrade.
+- **It refuted this arc's stated assumption**, which had been carried
+  forward as known-good: *write position and let the OS draw.* **False on
+  Mac OS 9.** `MTemp` / `RawMouse` / `MouseLocation` plus `CrsrNew ←
+  CrsrCouple` plus `CursorDeviceMoveTo` moves the *position* — `GetMouse`
+  returns it, SimpleText picks an I-beam for it — and **the drawn arrow
+  does not move.** Only `HideCursor`/`ShowCursor` moves it, and that
+  needs task time an interrupt-level writer never has.
+- **The picture mechanism it found instead is the transferable idea:**
+  rather than trying to *get* task time, patch the traps where task time
+  already is. `GetMouse`, `StillDown` and `Button` are called thousands
+  of times a second by every tracking loop, in the tracking
+  application's own context. Chain-only trampolines; the writer owes at
+  most one picture per tick. Measured **59.3 redraws/second under a
+  drag**, lag p50 0, max 1 tick.
+- **Bounded limitation, named:** an application that reaches no event
+  loop and calls none of those three traps freezes the picture while
+  position keeps tracking. That is lucky in the right direction — a drag
+  is precisely what calls them.
+
+**One thing the sweep shows that its own summary does not draw out:** 15
+and 30 positions/second both measure max staleness **1 tick with zero
+coalescing**. The extra 30 packets/second buy nothing. Since the metal
+worry is packet *rate* — sixty interrupts and sixty trips through Open
+Transport on a 117 MHz machine, against bandwidth that is a non-issue at
+roughly 2% of the link — **start the 1400c at 30/s.**
+
+## Feature A — the guest's cursor mirrors the host's, over the Mirror
+
+The host already knows where its pointer is when it is over the Mirror
+view. The spike proves a position stream lands within a tick. This is
+those two facts joined.
+
+- **Absolute positions only**, coalesced and never replayed. Settled
+  design; do not revisit.
+- **The position/picture split is not optional here** — position must
+  precede any click, and the trap-patch mechanism is what makes the arrow
+  follow. Both halves, or the guest's own applications hit-test against a
+  pointer the user cannot see.
+- **The yield rule needs revisiting, not reusing.** P8's *"don't fight a
+  human"* rule exists because a person at the guest competes for the
+  pointer. Here the host **is** the person. A rule that defers to the
+  guest's own hand will fight the feature — and its first version already
+  poisoned an entire boot from one bad comparison.
+- **Cursor shape is out of scope** and stays its own slice (43 extracted
+  `CURS` resources, needs a capture-side verb).
+
+## Feature B — drag between the two machines
+
+Extends the drag work already in this arc rather than starting over.
+Michelle's design, from the continuity discussion:
+
+> just a bit that is flipped while a file is being dragged, maybe basic
+> info like its name, host renders a generic dragged icon and commits the
+> transfer when released (similar process in reverse)
+
+**The host owns the visual during flight**, which is what makes this
+tractable: the guest never tracks a path, so the drag cell's
+one-destination limit and its struct size stop mattering.
+
+**The hard part is the drop target, and it must be designed in.**
+"Which guest folder did that land in" is object resolution, and a wrong
+answer **files a file into the wrong folder**. This is not hypothetical:
+`local-finder-drag.py`'s destination search avoided desktop *icons* but
+not open *windows*, and its first pick on a real desk overlapped
+`Macintosh HD` by five rows — dropping there does not rearrange anything,
+it files the item into that folder. It was caught before anything was
+pressed. **Refuse rather than guess belongs in the design, not added
+after the first misfile.**
+
+## The destination, recorded so the two features are aimed
+
+> i use my macbook pro to move the cursor off the edge of the screen. it
+> appears on the powerbook. i open a finder window and drag that window
+> back over to the mbp where it renders using mirror's chrome, i drop a
+> file from my mbp desktop into that finder window, double click it and
+> that file opens on the powerbook
+
+Most of that chain exists. What does not:
+
+| step | state |
+|---|---|
+| cursor off the edge → guest | continuity part 2 — **deferred** |
+| open a Finder window | works |
+| drag that window to the host, rendered with Mirror's chrome | **new** — one guest window promoted to its own host window; `Detach` is the seed |
+| drop a host file into it | **new** — needs the drop-target resolution above |
+| double-click → opens on the guest | `open` verb exists |
+
+## Integration costs, known now rather than discovered later
+
+- **CursorRig declares itself exclusive** and refuses to install beside
+  another resident, publishing `refused` with a reason rather than being
+  silently absent. Folding it into NOW means **merging with NOW's
+  extension**, not running beside it — trap-chain surgery, and the
+  resting-ext work already documented why un-patching is asymmetric.
+- **Nothing in the spike has run on metal.** The packet-rate sweep is the
+  first thing to run on the 1400c; the picture mechanism is the second.
+- **The spike's sprite oracle is the honest use of guest pixels** and is
+  worth preserving as the pattern: it diffs QMP framebuffer dumps *from
+  outside* to answer "did the arrow move", because the guest's own
+  counters cannot see pixels. Same bytes as a pixel island, used as an
+  **oracle for a measurement** rather than composited into a product
+  render. That is the line `docs/the-drive-and-the-islands.md` draws, and
+  the rig landed on the right side of it without being told.
+
+## Continuity itself
+
+**Specced once the Mirror arc lands**, not before. Its remaining unknown
+is part two — the guest recognising *host is driving → cursor at the
+screen edge → hand back* — which is the mode this ordering deliberately
+defers.
