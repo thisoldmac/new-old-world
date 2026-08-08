@@ -167,4 +167,19 @@ if [ "$which" = both ] || [ "$which" = 68k ]; then
         tools/guest-gworld "${NOW68K_TOOLCHAIN:-}" gworld
 fi
 
+# The ATA instrument, fourth rig applet. It asks one Macintosh's drive to
+# IDENTIFY twice - once with ataPBFlags zero and once with
+# bATAFlagIORead set - so a single run is a claim about the FLAG rather
+# than about this build. It exists because census_ata_identify left that
+# flag clear, so the ATA Manager never drove the data-in phase: the call
+# returned noErr with an empty buffer, left the device mid-command, and
+# cost every shutdown its final "volume unmounted" write. The source
+# comment in now-guest-ppc/src/census/census_probes.c still records an
+# "EMPTY IDENTIFY buffer" from the 1400c on 2026-07-22 - which was never
+# the drive having nothing to say. Nobody had asked for the data.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "guest-ata (NOW ATA, rig instrument)" \
+        tools/guest-ata "${NOW68K_TOOLCHAIN:-}" ata
+fi
+
 exit $rc
