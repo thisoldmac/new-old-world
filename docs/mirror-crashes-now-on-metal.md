@@ -594,3 +594,62 @@ failures is only the first:
 That third point is this repository's vocabulary rule (`empty` vs
 `unknown` vs `notFetched`) applied to liveness, and the tail violated it
 by reporting an unknown as a death.
+
+## VM OFF: the paging account is dead, and the ladder is partly HOST-side
+
+Michelle, after rebooting with Virtual Memory disabled:
+
+> ok reboot with vm off. i did something this time that i should have done
+> last time and restarted the host app. back to the initial failure of
+> error 1 immediately on connecting mirror. i bet if i kept going, i could
+> repro the whole ladder
+
+### Result 1 — the hypothesis is refuted, on its own stated condition
+
+**Virtual Memory off, and the crash still happens immediately: exception
+type 1 on connecting the Mirror.**
+
+The account written above — interrupt-time Time Manager code touching
+pageable memory, with no `HoldMemory` anywhere in `ext/` — predicted the
+crash would stop. It did not. **That account is dead**, and it was killed
+by the test it named for itself rather than by argument. One reboot.
+
+What remains from that analysis is the other half: the **Sonnet G3/466
+upgrade card with 1 MB backside cache**, against a resident that patches
+traps and builds thunks and never flushes an instruction cache. That is
+now the leading candidate by elimination rather than by preference, and it
+has its own intervention — disable the backside cache and retry.
+
+### Result 2 — restarting the HOST reset the ladder
+
+This is the larger finding and Michelle reported it in passing.
+
+She restarted the **host app**, and was returned to **rung 1**: the clean
+immediate crash, not the Finder crash or the wedge. Previously the ladder
+only escalated.
+
+**If a host restart resets the rung, the escalation is not purely guest
+residue.** Everything above frames the ladder as something accumulating on
+the Macintosh across crashes; a host restart cannot clear that. So at
+least part of what escalates lives in the host app, which is known to
+carry state across guest deaths on purpose — `NOWMirrorSource` keeps
+`actTimeline` across a guest change, with the comment *"Survives a guest
+change on purpose: the interesting comparison is often the acts either
+side of a reconnection."*
+
+That reframes the search. It was "what does the resident leave behind when
+NOW dies." It is now at least partly "what does the HOST carry into the
+next connection."
+
+### The test that splits it
+
+The two halves are separable by which side is restarted:
+
+| restart | if the rung resets | if it does not |
+|---|---|---|
+| host app only | host-side state | guest-side |
+| guest (NOW) only, host untouched | guest-side | host-side |
+
+Michelle has done the first and the rung reset. **The second has not been
+run** — and the pair together says which side accumulates, or whether both
+do.
