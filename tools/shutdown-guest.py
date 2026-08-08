@@ -572,6 +572,34 @@ def main():
                          "first one.")
     a = ap.parse_args()
 
+    # THE ANCHOR IS NOT THE WIRE, and passing one for the other costs the
+    # clean route SILENTLY. `--port` is QEMU's hostfwd to the guest's
+    # anchor worker; `--wire` is the host listener the guest DIALS OUT to.
+    # Give the anchor to --wire and this script tries to bind a port QEMU
+    # itself already holds, reports "[Errno 48] Address already in use" as
+    # though no guest were there, falls back to the applet, and leaves the
+    # volume marked mounted. Every counter reads healthy and the only
+    # symptom is a dirty image nobody can attribute later.
+    #
+    # Done 2026-08-07 by round 10's integration lane, on a VM whose own
+    # `ports` file listed both numbers side by side. The two ports are
+    # adjacent by construction (tools/lane-ports: anchor, then wire), so
+    # they are easy to transpose and impossible to tell apart from the
+    # error text. Refusing costs the caller one character.
+    if a.wire is not None and a.wire == a.port:
+        print(f"--wire {a.wire} is the SAME port as --port {a.port}, and "
+              f"they are different things:\n"
+              f"  --port {a.port} is QEMU's hostfwd to the anchor worker\n"
+              f"  --wire is the host listener NOW's guest dials out to, "
+              f"which is a DIFFERENT port\n"
+              f"QEMU already holds {a.port}, so binding it as the wire "
+              f"cannot succeed — this would degrade to the applet "
+              f"fallback and leave the volume dirty without saying so.\n"
+              f"The run directory's `ports` file has both, anchor first; "
+              f"`tools/lane-ports` prints them by name.",
+              file=sys.stderr)
+        return 64
+
     if not qmp_alive(a.sock):
         print(f"nothing answering QMP at {a.sock}; no machine to shut down",
               file=sys.stderr)
