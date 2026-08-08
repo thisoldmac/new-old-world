@@ -111,6 +111,36 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "Round 8 integration merge of claude/019-cursor-follows-act on top of claude/019-drag-break-4. Both lanes changed the resident (now_ext_act.c shared between them, plus now_ext_drag.c and now_ext_cursor.c) and both deferred their own bake with a typed reason; this merge is the first tree that holds them together, so the source it would bake from is one neither lane has driven. The --shared bake is RESERVED FOR MICHELLE and named as such in docs/plans/2026-08-07-023-recovery.md: bake-ext-image --shared refuses while any QEMU runs, the guard counts hers, and the last bake wins over every other lane still cloning the oracle. Separately the installed oracle already matches NO receipt on this branch (on-disk c466baa9, the hand-restored 3-August image) and its volumeClean is 'dirty', so nothing cloned from it is attributable today regardless of this merge. Integration does not have the standing to resolve either. peek_table.h is comment-only on this merge and peek_table_test passes; no struct size moved."
+    },
+    {
+      "at": "2026-08-08T03:50:23-0400",
+      "branch": "claude/026-logging-build",
+      "extDigest": "096ad3a3c2882fb1447aac797fbe5207f700d045",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c"
+      ],
+      "reason": "Metal debug build for Michelle, mid-session at 03:50. The fix is the crash she is reproducing on the PowerBook right now and she needs the INIT to test it; a bake refuses while her VM and host app are running, and the shared oracle is hers to replace. Bake before this lands."
+    },
+    {
+      "at": "2026-08-08T04:06:32-0400",
+      "branch": "claude/026-logging-build",
+      "extDigest": "6497f54aba63460faf8e83d25965c650e0e50299",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c"
+      ],
+      "reason": "Second iteration of the metal crash fix, handed to Michelle mid-session at 04:00. Bake before landing."
+    },
+    {
+      "at": "2026-08-08T04:17:07-0400",
+      "branch": "claude/026-logging-build",
+      "extDigest": "5893f4f6a8e44bab7e3c3461da726fe59c46f2c5",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c"
+      ],
+      "reason": "Third iteration of the metal crash fix, 04:10. Bake before landing."
     }
   ]
 }

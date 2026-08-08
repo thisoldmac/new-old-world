@@ -112,6 +112,10 @@ short gNowContentQDExtBusy = 0;
 extern void now_content_qdext_patch(void);
 
 static short content_slot_for(GrafPtr port, NowPeekU32 a5);
+/* Declared here as well as at its definition: the blit-source row walk
+   below needs it, and it sits a thousand lines above the existing
+   declaration. */
+static Boolean content_probe_addr_ok(NowPeekU32 addr, unsigned long size);
 
 /* Called from the shim on every $AB1D dispatch, with the selector word
    the caller loaded into d0. Counts and nothing else: E1 exists to find
@@ -514,12 +518,74 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
             rows[i].row_bytes = 0;
             rows[i].pm_l = rows[i].pm_t = 0;
             rows[i].pm_r = rows[i].pm_b = 0;
-            if (gPorts[i].offscreen && gPorts[i].pixmap != 0) {
+            /* ONLY this context's rows may be dereferenced. The loop above
+               walks EVERY row, and a row whose a5 is not ours belongs to a
+               process that may be gone — its port, its PixMap handle and
+               that handle's master pointer are all in a heap that no longer
+               exists. Reading them is a bus error, and the three reads
+               below are exactly that: `*(Handle)`, `cand->`, `pm->`.
+
+               `content_uninstall_context` has guarded its walk this way
+               since it was written (`gPorts[i].a5 != a5` → skip). This
+               loop never did, and orphaned rows are not hypothetical:
+               they are ordinary. A crashed application cannot run the
+               uninstall — only the owning context may — so every death
+               leaves rows behind whose owner can never return.
+
+               Measured on Michelle's PowerBook 1400c, 2026-08-08. A
+               session opened carrying `content active a5 0x0 mode 0,
+               3 port(s) hooked` and `+159 wrong-a5` from earlier runs,
+               survived arming observe (0x3), act (0x5) and scene (0x7),
+               and died on the FIRST content arm (0x7 -> 0xf) — the arm
+               that turns this loop on. Exception type 1.
+
+               A skipped row keeps the zeros set above, which the join
+               already reads as "carries geometry and no pixels" — the
+               honest answer for a window this context cannot see. */
+            /* The a5 check alone is not enough, and assuming it was is why
+               a first attempt at this did not stop the crash. It keeps us
+               off ANOTHER process's memory; it says nothing about whether
+               OUR OWN row is still valid. `LockPixels` relocates the PixMap
+               RECORD, so a row this context installed can hold a handle
+               whose master pointer has moved since — same fault, same
+               process.
+
+               `content_probe_addr_ok` is this file's own answer to that
+               question and is already used exactly this way in the GWorld
+               candidate walk below (`content_probe_addr_ok(ph, ...)` then
+               `(pm, sizeof(PixMap))`). It rejects anything below 0x1000,
+               anything odd, and anything outside the CURRENT Application
+               or System zone — so a pointer belonging to a process that is
+               gone fails it by construction.
+
+               Three reads, three checks, in the order they are made. */
+            /* `gArmedA5 != 0` FIRST, and it is not redundant — it is the
+               hole the first version of this guard left open. Rows can be
+               installed carrying a5 0 (content_install_port is called with
+               a local a5 from the probe and window walks, not only from the
+               guarded path), and the plane spends real time disarmed with
+               ports still hooked. In that state `gPorts[i].a5 == gArmedA5`
+               is 0 == 0 — TRUE — so the guard passed and the dereference
+               happened anyway.
+
+               Measured: with only the a5 comparison, Michelle's 1400c
+               armed content cleanly and ran 19 seconds before dying, its
+               log ending on `content active a5 0x0 mode 0, 3 port(s)
+               hooked` with `+2 in`. A guard that fails open in precisely
+               the state the machine ends up in is not a guard. */
+            if (gPorts[i].offscreen && gPorts[i].pixmap != 0
+                && gArmedA5 != 0
+                && gPorts[i].a5 == gArmedA5
+                && content_probe_addr_ok(gPorts[i].pixmap, sizeof(Ptr))
+                && content_probe_addr_ok((NowPeekU32)gPorts[i].port,
+                                         sizeof(GrafPort))) {
                 CGrafPtr cand = (CGrafPtr)gPorts[i].port;
                 PixMap *pm = (PixMap *)*(Handle)gPorts[i].pixmap;
 
                 rows[i].pixmap_deref = (NowPeekU32)pm;
-                if (pm != NULL) {
+                if (pm != NULL
+                    && content_probe_addr_ok((NowPeekU32)pm,
+                                             sizeof(PixMap))) {
                     rows[i].port_version =
                         (NowContentU16)(unsigned short)cand->portVersion;
                     rows[i].rect_l = cand->portRect.left;
@@ -1322,6 +1388,34 @@ static Boolean content_probe_row_valid(short i)
 {
     GrafPtr port = gPorts[i].port;
 
+    /* ADDRESS FIRST, because everything below this line is a dereference
+       and this function is the choke point both walks reach through — the
+       repair pass and content_uninstall_context.
+
+       Callers guard with `gPorts[i].a5 == a5`, which fails open when both
+       are 0, and rows carrying a5 0 are ordinary: the plane spends real
+       time disarmed with ports still hooked, and the probe and window
+       walks install with a local a5. So this function is reached with rows
+       whose port may belong to a process that is gone.
+
+       It is also reached for rows that ARE ours and have moved:
+       `LockPixels` relocates the PixMap RECORD, which is the very thing
+       the last comparison here reads.
+
+       content_probe_addr_ok is this file's own answer and is used exactly
+       this way in the GWorld candidate walk. Returning false for an
+       unreadable row is the honest verdict AND the safe one — the callers
+       already treat false as "stale, forget it", which is what it is.
+
+       Why here rather than at the call sites: two earlier attempts at this
+       crash guarded the callers instead, and the repair pass — which runs
+       every few seconds on a timer, visible as the `repaired` counter
+       ticking +2 and +3 in Michelle's logs all night — went on
+       dereferencing through this function unchanged. */
+    if (!content_probe_addr_ok((NowPeekU32)port, sizeof(GrafPort))
+        || !content_probe_addr_ok(gPorts[i].pixmap, sizeof(Ptr))) {
+        return false;
+    }
     return port != NULL
         && gPorts[i].pixmap != 0
         && content_port_is_color(port)

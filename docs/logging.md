@@ -342,3 +342,45 @@ These are the standard. A change that logs is reviewed against them.
     counter the application reads at task time — never a line the
     resident writes. `LoggingSpecTests.testTheResidentNeverLogs` reads
     `ext/src/*.c` and fails on `now_log(` anywhere in it.
+
+## Note on the content-plane crash fix (939fb887)
+
+The guard added to the blit-source row builder is **provably
+behaviour-preserving**, which is worth stating because it is the strongest
+thing that can be said about a fix that cannot be tested natively.
+
+`now_content_blit_source` in `ext/src/now_content_logic.c` — the pure
+logic, already compiled by the host `cc` — starts its loop with:
+
+```c
+if (!rows[i].offscreen || rows[i].a5 != armed_a5 || rows[i].pixmap == 0) {
+    continue;
+}
+```
+
+So a row whose `a5` is not the armed context **was always skipped by the
+consumer**. The caller nevertheless dereferenced that row's PixMap handle,
+its port and its PixMap to fill in `port_version`, `rect_*`, `base`,
+`row_bytes` and `pm_*` — fields the join then discarded.
+
+Those reads were **waste as well as danger**. Removing them cannot change
+any output; it only removes a read of memory belonging to a process that
+may be gone.
+
+### Why there is no native test for it
+
+The bug lives in the row-building loop, which needs `CGrafPtr`, `Handle`
+and `PixMap` — Toolbox types the native harness does not have. The pure
+seam below it is already correct, so a test written there would pass
+before and after the fix: it would be a test of the half that was never
+broken.
+
+Stating that plainly rather than adding a green test that proves nothing.
+What would make it testable is extracting the row-building decision
+("may this row be dereferenced?") the way `now_content_logic.c` already
+extracts the join — worth doing, not done here, and not something to
+attempt in the same change as a crash fix on an unbaked resident.
+
+The evidence that it is the right fix is not a test; it is the guest's own
+log, which armed observe, act and scene without incident and died on the
+first content arm — the arm that turns this loop on.
