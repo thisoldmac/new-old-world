@@ -24,6 +24,46 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## FIXED: the anchor passed as the wire buys a dirty volume and says nothing (2026-08-07, `claude/024-integration-10`)
+
+`tools/shutdown-guest.py` takes `--port` (QEMU's hostfwd to the anchor
+worker) and `--wire` (the host listener the guest dials out to). They are
+different ports, they are **adjacent by construction** in
+`tools/lane-ports`, and they sit side by side in a run directory's
+`ports` file. Give the anchor to `--wire` and the script tries to bind a
+port QEMU itself holds, reports
+
+```
+  no guest dialled port 17072 ([Errno 48] Address already in use)
+  the Finder route did not take; falling back to the applet
+```
+
+and takes the applet fallback — which shuts the machine down and leaves
+the volume marked mounted. `tools/volclean.py` then reads DIRTY.
+
+**The failure text cannot distinguish "wrong port" from "dead guest"**,
+so the diagnosis lands on the guest and the transposition is never
+suspected. Round 10 did this while pruning a stale VM; the image was a
+session clone on its way to deletion, so it cost nothing, and on a shared
+image it is the dirty-image class arriving through the tool written to
+prevent it.
+
+Now refused (exit 64) when the two are equal, naming both and what each
+one is. Watched fail by mutation in both directions.
+
+`docs/handing-over-a-human-stack.md` already stated the invocation
+correctly. It was written down and nothing checked it — the gate is the
+floor under the sentence, not a replacement for it.
+
+### STILL OPEN: the applet fallback's dirty volume is unmeasured as a rate
+
+The fallback is documented as "does not reliably FINISH one — three
+images preserved after it were still marked mounted". This is a fourth
+instance and the first with a named cause that was not the guest's. How
+often the applet leaves a volume dirty when it is the CORRECT route
+chosen for the right reason — a guest with no act plane — is still not a
+number anybody has.
+
 ## FIXED and GATED: the render was drawing the guest's own pixels, and nobody decided to (2026-08-07, `claude/024-no-pixel-islands`)
 
 `ScenePoller` fetched the guest's real framebuffer bytes over the wire
