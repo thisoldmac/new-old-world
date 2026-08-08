@@ -109,6 +109,50 @@ armed against the Finder. Present is not usable. Nobody has reproduced
 the Finder crash independently of NOW dying first, so it remains
 unexplained on its own terms.
 
+## BROKEN: no bake can be installed — the shutdown route powers the Mac off and leaves the volume DIRTY (2026-08-07, `claude/024-census-crash`)
+
+Two private bakes today, both of them reaching the end and installing
+**nothing**:
+
+```
+  Finder Special(260) item 8 'Shut Down', psn 0.29949953
+  the guest powered OFF and QEMU exited on its own (6s) - the real thing, not a quit
+  qemu-img check: No errors were found on the image.
+  session.qcow2  [untitled] HFS+ (in wrapper): DIRTY — will run Disk First Aid
+```
+
+The first ran with two other QEMUs and an `xcodebuild` on the Mac, so
+contention was the obvious explanation. **The second ran on a quiet
+machine and failed identically**, which removes it. The route
+`scripts/bake-ext-image` documents as "the only route MEASURED to leave a
+clean volume" powers the machine off for real in six seconds and does not
+finish unmounting.
+
+This is not new and it is not caused by this branch. It is the same
+failure that on 2026-08-06 put three dirty images in as the oracle before
+`tools/volclean.py` existed to catch them; the oracle in place now is the
+hand-restored 3-August image. What has changed is that the guard works,
+so the failure is loud instead of silent — and the consequence is that
+**nobody can bake at all**. Every resident change is accumulating behind
+it, including round 10's two deferred ones.
+
+Both bakes passed the resident gate AND the new census gate before
+reaching this, so the census work is not what is blocked:
+
+```
+  resident VERIFIED: active, capabilities 511, fingerprint 230222d358c1
+  CENSUS GATE PASSED: every probe, every page, and the machine is
+  still answering.
+```
+
+The candidate disks are preserved at `/private/tmp/nowvm-bake-census/`
+for whoever picks this up. The base image measures `clean` before the
+run, so the bake dirties it; the question is what the Finder's Shut Down
+leaves unfinished on THIS base, and whether the applet fallback (whose
+own record is three unmounted volumes) does any better. Nobody should
+reach for `--force` here: a power cut is exactly what the dirty bit is
+reporting.
+
 ## MEASURED: a VM snapshot restores in ~0 seconds, and the first two runs said it did not work (2026-08-07, `claude/024-census-crash`)
 
 There are no integration tests in this repository that boot a VM, and
