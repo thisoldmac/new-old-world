@@ -322,3 +322,66 @@ What survives from both runs:
   now it is hiding **two** different things: cycles that were never sent
   and cycles that were sent and failed. Those cannot share a label.
   `claude/026-cycle-outcome-reason` matters more, not less.
+
+## The escalation ladder, now seen twice
+
+Michelle, third loss of the session:
+
+> just crashed finder on the pb and completely wedged this time.
+> consistent with the earlier run which wedged the system when i tried
+> repro the finder crash. did not click desktop this time
+
+Two independent runs have produced the same monotone escalation:
+
+| attempt | result |
+|---|---|
+| crash NOW | **clean** — NOW dies, nothing else |
+| crash NOW again, then click the app switcher | **the Finder dies**, restarts |
+| try to reproduce the Finder crash | **the whole machine wedges** |
+
+### What this rules out, and what it favours
+
+- **The desktop click is out.** Ruled out by her own control: she did not
+  click the desktop this time and got the same result. Two runs also
+  ended on different final acts (a `.sit` click, a window move). Any
+  account resting on a particular act is fitting one sample.
+- **A single bad code path does not do this.** One faulty branch produces
+  the same failure every time it is taken. A failure that gets *worse*
+  with repetition — clean, then a neighbour dies, then the machine stops
+  — is the signature of **residue that accumulates across crashes**.
+
+That is the **cumulative** branch of the discriminator recorded above,
+and it now has two independent runs behind it rather than one reading of
+one log. It is still not proof: nobody has clicked the app switcher after
+a single clean crash, which remains the one click that would settle it.
+
+### Where a cumulative account would look first
+
+Stated as a place to look, **not** as a mechanism — it was read out of the
+source earlier and deliberately not promoted:
+
+The content plane's port unhook can only run **from the armed
+application's own context** (`now_content.c`, the restore is guarded on
+`gPorts[i].a5 != a5`). A crashed application never runs it. So each death
+leaves rows whose `a5` names a process that no longer exists, and those
+rows are never reclaimable — their owner cannot return. A later run gets
+fewer slots, and `content_install_port` refuses a port whose `grafProcs`
+is already non-NULL, counting it in `skipped_ports`.
+
+**The resident already counts what would prove or kill this.**
+`NowContentBlock.counters` carries `installs`, `uninstalls` and
+`skipped_ports`, and `hooked_ports` carries the live total. If hooking
+leaks across crashes, `installs` minus `uninstalls` grows with each one
+and `skipped_ports` climbs on every subsequent run.
+
+**Read those three counters after each crash in a series.** That is a
+measurement, not an argument, and it does not need a rebuild — it needs
+the numbers surfaced somewhere a person can see them, which is precisely
+what `claude/026-mirror-logging` is for.
+
+### Host-side at the wedge
+
+24 of 24 `(full, failed, 6)`, **0 sent**. The guest is gone. The
+sent-versus-never-sent split varies run to run (7 sent in the second
+loss, 0 in the first and third) — so that ratio is a symptom of how far
+things had already degraded, not a constant.
