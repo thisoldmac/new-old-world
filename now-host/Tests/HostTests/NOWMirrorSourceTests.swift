@@ -1114,6 +1114,84 @@ final class NOWMirrorSourceTests: XCTestCase {
             for: .activateWindow(psn: "0.1", ref: "now-window-9"),
             in: scene))
     }
+
+    /// **A cycle that failed must say WHICH failure, and must not carry
+    /// the last good cycle's counts.**
+    ///
+    /// Measured on the live PowerBook on 2026-08-07:
+    /// `mirror_read --intention metrics` returned 24 cycles, 14 of them
+    /// `outcome: "failed", requestMs: 0, totalMs: 0` — and each of those
+    /// 14 also carried a window and an element count, because the last
+    /// PROVEN scene deliberately stands through a failure and the record
+    /// read its counts off it. Two defects in one row: the word `failed`
+    /// is a bucket holding at least five distinct conditions whose
+    /// distinguishing sentence the host had already written and spent
+    /// only on the window's status line, and the counts beside it
+    /// described a different cycle.
+    ///
+    /// This drives both halves through the real source: one good cycle to
+    /// establish a standing scene, then a failed one, then the projection
+    /// the agent socket actually serves.
+    func testAFailedCycleCarriesItsOwnReasonAndNoOtherCyclesCounts() throws {
+        let key = GuestKey.synthetic("cycle-reason")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        harness.completeJoin(0)
+
+        let good = try XCTUnwrap(source.cycleTimeline.records.first)
+        XCTAssertEqual(good.outcome, "ok")
+        let seenWindows = try XCTUnwrap(good.windows)
+        XCTAssertGreaterThan(seenWindows, 0,
+                             "the good cycle must really have counted "
+                             + "something, or the next assertion is vacuous")
+        XCTAssertNil(good.reason, "an `ok` cycle has nothing to explain")
+
+        /* The exact local refusal that produced the live reading: the lane
+           answers synchronously, so every clock is zero and the word
+           `failed` is all that is left of it. */
+        let refusal = "A scene is already on its way. "
+            + "Ask again when it arrives."
+        source.planePolicyDidChange()
+        harness.completeScene(1, with: .failure(.init(message: refusal)))
+
+        let bad = try XCTUnwrap(source.cycleTimeline.records.last)
+        XCTAssertEqual(bad.outcome, "failed")
+        XCTAssertEqual(bad.reason, refusal,
+                       "the sentence the host already wrote must ride "
+                       + "beside the bucket word, verbatim")
+        XCTAssertNil(bad.windows,
+                     "the standing scene belongs to the cycle that proved "
+                     + "it; this one published nothing and counted nothing")
+        XCTAssertNil(bad.elements)
+
+        /* And the same two facts through the projection the agent reads,
+           because a value that survives to the record and dies at the
+           socket is the defect this test was written for. */
+        let metrics = source.actTimeline.projected(
+            cycles: source.cycleTimeline, running: true)
+        let projected = try XCTUnwrap(metrics.cycles.last)
+        XCTAssertEqual(projected.outcome, "failed")
+        XCTAssertEqual(projected.reason, refusal)
+        XCTAssertNil(projected.windows)
+        XCTAssertNil(projected.elements)
+        XCTAssertEqual(metrics.cycles.first?.outcome, "ok")
+        XCTAssertNil(metrics.cycles.first?.reason)
+
+        /* The wire is JSON, and a field that is not encoded is a field
+           that did not survive. */
+        let encoded = try XCTUnwrap(String(
+            data: try JSONEncoder().encode(projected), encoding: .utf8))
+        XCTAssertTrue(encoded.contains("already on its way"), encoded)
+    }
 }
 
 /// The icon reader, pinned against what the machine actually returned.

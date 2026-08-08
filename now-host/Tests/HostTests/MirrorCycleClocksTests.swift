@@ -200,6 +200,58 @@ final class MirrorCycleClocksTests: XCTestCase {
             + "guest's typed refusal into a host timeout with no reason")
     }
 
+    /// **Every word of the outcome vocabulary must reach the socket
+    /// unchanged.**
+    ///
+    /// `starved`, `wrong-mac`, `declined` and `failed` are four different
+    /// bugs on the other Macintosh — one is a machine nobody is
+    /// scheduling, one is a scene from the wrong Mac, one is the guest
+    /// answering no, one is this side never asking — and an agent that
+    /// cannot tell them apart is looking at the wrong half of the system.
+    /// The projection is a hand-written conversion, so nothing but a test
+    /// stops a word being flattened on the way through it.
+    func testEveryNonOkOutcomeSurvivesTheMetricsProjectionVerbatim() {
+        for word in ["no-reply", "wrong-mac", "starved", "declined",
+                     "failed"] {
+            let clocks = MirrorCycleClocks(
+                requestedAt: Date(timeIntervalSince1970: 0),
+                deliveredAt: nil,
+                publishedAt: Date(timeIntervalSince1970: 0),
+                idleBefore: nil, semantics: true, interaction: true,
+                outcome: word, reason: "because \(word)",
+                windows: nil, elements: nil)
+
+            XCTAssertEqual(clocks.projected.outcome, word,
+                           "the projection flattened `\(word)`")
+            XCTAssertEqual(clocks.projected.reason, "because \(word)",
+                           "and the sentence behind it must ride along, "
+                           + "because `failed` alone is five bugs")
+        }
+    }
+
+    /// The reason is prose and `NOWBASE` values are space-free by
+    /// construction — `BaselineLine` says in its own comment that
+    /// pretending otherwise "would invite somebody to put a message in
+    /// one". So the sentence goes to the metric and the line keeps its
+    /// grammar.
+    func testTheReasonStaysOffTheGreppableMeasurementLine() {
+        let clocks = MirrorCycleClocks(
+            requestedAt: Date(timeIntervalSince1970: 0),
+            deliveredAt: nil,
+            publishedAt: Date(timeIntervalSince1970: 0),
+            idleBefore: nil, semantics: false, interaction: false,
+            outcome: "failed",
+            reason: "A scene is already on its way.",
+            windows: nil, elements: nil)
+
+        XCTAssertTrue(clocks.baselineLine.contains("outcome=failed"),
+                      clocks.baselineLine)
+        XCTAssertFalse(clocks.baselineLine.contains("already"),
+                       "a sanitised sentence would be an unreadable field "
+                       + "in a grammar built to be diffed: "
+                       + clocks.baselineLine)
+    }
+
     func testTimelineIsBounded() {
         let timeline = MirrorCycleTimeline(log: { _ in })
         for _ in 0..<(MirrorCycleTimeline.capacity + 3) {

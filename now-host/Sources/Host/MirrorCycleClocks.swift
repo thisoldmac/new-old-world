@@ -33,8 +33,39 @@ struct MirrorCycleClocks: Equatable {
     /// `ok`, or the reason it produced no scene. A failed cycle still
     /// spent the guest's time and still belongs in the record.
     var outcome: String
+    /// **The sentence behind the word**, verbatim from
+    /// `GuestListener.SceneFailure.message`.
+    ///
+    /// `outcome` has five words in it and one of them — `failed` — is a
+    /// bucket: no Mac connected, a scene already in flight, a short
+    /// transfer, a delta that would not rebuild, and the watchdog's
+    /// silence all land in it. The host computes a typed, written reason
+    /// for each of those and spends it on `ambient`, which only the
+    /// window sees. An agent reading `mirror_read --intention metrics`
+    /// got the bucket and nothing else: on 2026-08-07 a live drive
+    /// returned 14 of 24 cycles reading `failed` with every clock at
+    /// zero, and nothing in the reply could say which of five bugs that
+    /// was.
+    ///
+    /// It is carried, never parsed. The vocabulary of `outcome` is
+    /// unchanged — this is the reason travelling beside it, not a sixth
+    /// word.
+    ///
+    /// **Deliberately absent from `baselineLine`.** `BaselineLine`
+    /// values are space-free by construction and its own comment warns
+    /// against inviting "somebody to put a message in one"; a sanitised
+    /// prose sentence would be an unreadable field in a grammar built to
+    /// be diffed.
+    var reason: String?
     /// What arrived, when it arrived: enough to see a rewalk's size
     /// rather than only its duration.
+    ///
+    /// **Nil unless this cycle published a scene.** They used to be read
+    /// off the last GOOD scene on every cycle, so a run of failures
+    /// reported the window and element counts of whatever had last
+    /// worked — numbers that describe a different cycle, in the row of
+    /// the one that never asked. `-` says the cycle produced nothing to
+    /// count, which is what happened.
     var windows: Int?
     var elements: Int?
     /// **Where the guest spent the `request` half of this cycle**, from
@@ -178,7 +209,7 @@ struct MirrorCycleClocks: Equatable {
 
     /// One conversion for both faces — see `MirrorActClocks.projected`.
     var projected: AgentIntegrationMirrorCycleMetric {
-        .init(walk: walk, outcome: outcome,
+        .init(walk: walk, outcome: outcome, reason: reason,
               idleMs: Self.msValue(idleBefore),
               requestMs: Self.msValue(request),
               decodeMs: Self.msValue(decode),

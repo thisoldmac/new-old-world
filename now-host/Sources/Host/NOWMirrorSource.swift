@@ -379,6 +379,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var cycleAsked: (at: Date, semantics: Bool, interaction: Bool)?
     private var cycleDelivered: Date?
     private var cycleOutcome = "no-reply"
+    /// The failure's own sentence, kept beside the outcome word so it can
+    /// reach a face that has no status line. See `MirrorCycleClocks.reason`.
+    private var cycleReason: String?
     /// This cycle's guest-side breakdown, if the producer reported one.
     /// Cleared with the rest of the cycle so a slow scene's phases can
     /// never be charged to the next cycle that failed to answer.
@@ -550,6 +553,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                       interaction: planes.contains(.interaction))
         cycleDelivered = nil
         cycleOutcome = "no-reply"
+        cycleReason = nil
         cycleTimeoutsAtStart = listener.commandTimeouts
         cycleIO.requestScene(
             pinnedGuestKey, planes.contains(.semantics),
@@ -585,6 +589,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                    they go and check a machine that is fine. It is the
                    commonest failure this surface has — one modal produces
                    it — so it gets its own sentence and says what to do. */
+                /* **Before the branch, because every branch below it
+                   loses something.** `starved`, `declined` and `failed`
+                   are three words for five or more distinct conditions,
+                   and the sentence that tells them apart is already
+                   written here — it just used to go only to `ambient`,
+                   which the agent socket cannot read. */
+                self.cycleReason = failure.message
                 if self.isStarved {
                     self.ambient = "the Mac is not answering — it is still "
                         + "there, but something on it is not letting go "
@@ -816,6 +827,15 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private func recordCycleClocks() {
         guard let asked = cycleAsked else { return }
         let published = Date()
+        /* **Counts belong to the cycle that produced them.** `scene` is
+           the last PROVEN one and it deliberately stands through a
+           failure — so reading its windows and elements here put the last
+           good walk's numbers in the row of a cycle that never asked. On
+           2026-08-07 a live drive showed 14 such rows, each carrying a
+           window and element count beside three zeroed clocks, which
+           reads as data and is not. `-` is the honest answer: this cycle
+           published no scene, so it counted nothing. */
+        let producedScene = cycleOutcome == "ok" ? scene : nil
         cycleTimeline.record(.init(
             requestedAt: asked.at,
             deliveredAt: cycleDelivered,
@@ -826,7 +846,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             semantics: asked.semantics,
             interaction: asked.interaction,
             outcome: cycleOutcome,
-            windows: scene?.windows.count,
+            reason: cycleReason,
+            windows: producedScene?.windows.count,
             /* Controls, dialog items AND the Finder's own items: what a
                walk actually had to enumerate. The third term was missing
                until 2026-08-05, so a whole drive against a desktop showing
@@ -834,7 +855,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                same omission the snapshot projection had, found in the same
                pairing. An instrument with the producer's blind spot
                cannot measure the blind spot. */
-            elements: scene?.windows.reduce(0) {
+            elements: producedScene?.windows.reduce(0) {
                 $0 + $1.controls.count + ($1.dialogItems?.count ?? 0)
                     + ($1.items?.count ?? 0)
             },
@@ -844,6 +865,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guestTimeouts: listener.commandTimeouts - cycleTimeoutsAtStart))
         lastCyclePublishedAt = published
         cycleAsked = nil
+        /* Cleared with the rest of the cycle, for the reason `cyclePhases`
+           is: a reason left standing would be charged to the next cycle
+           that failed differently. */
+        cycleReason = nil
         cyclePhases = nil
         cycleOwnWork = nil
         cycleContentJoin = nil
