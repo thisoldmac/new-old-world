@@ -514,7 +514,32 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
             rows[i].row_bytes = 0;
             rows[i].pm_l = rows[i].pm_t = 0;
             rows[i].pm_r = rows[i].pm_b = 0;
-            if (gPorts[i].offscreen && gPorts[i].pixmap != 0) {
+            /* ONLY this context's rows may be dereferenced. The loop above
+               walks EVERY row, and a row whose a5 is not ours belongs to a
+               process that may be gone — its port, its PixMap handle and
+               that handle's master pointer are all in a heap that no longer
+               exists. Reading them is a bus error, and the three reads
+               below are exactly that: `*(Handle)`, `cand->`, `pm->`.
+
+               `content_uninstall_context` has guarded its walk this way
+               since it was written (`gPorts[i].a5 != a5` → skip). This
+               loop never did, and orphaned rows are not hypothetical:
+               they are ordinary. A crashed application cannot run the
+               uninstall — only the owning context may — so every death
+               leaves rows behind whose owner can never return.
+
+               Measured on Michelle's PowerBook 1400c, 2026-08-08. A
+               session opened carrying `content active a5 0x0 mode 0,
+               3 port(s) hooked` and `+159 wrong-a5` from earlier runs,
+               survived arming observe (0x3), act (0x5) and scene (0x7),
+               and died on the FIRST content arm (0x7 -> 0xf) — the arm
+               that turns this loop on. Exception type 1.
+
+               A skipped row keeps the zeros set above, which the join
+               already reads as "carries geometry and no pixels" — the
+               honest answer for a window this context cannot see. */
+            if (gPorts[i].offscreen && gPorts[i].pixmap != 0
+                && gPorts[i].a5 == gArmedA5) {
                 CGrafPtr cand = (CGrafPtr)gPorts[i].port;
                 PixMap *pm = (PixMap *)*(Handle)gPorts[i].pixmap;
 
