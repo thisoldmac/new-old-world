@@ -19911,3 +19911,74 @@ derivation nobody ran; the difference is that a machine took this one.
 - `scripts/test-all`'s header still says the MirrorKit stage is "165
   tests"; it is 258 now. Prose restating a number is a second place to be
   wrong, and this is one.
+
+## FIXED: `mirror_read --intention metrics` reported `failed` and never said which failure (2026-08-07, `claude/026-cycle-outcome-reason`)
+
+Driving the live PowerBook 1400c over the host agent socket,
+`now-agent mirror_read --intention metrics` returned 24 cycles of which
+**14 read `outcome: "failed", requestMs: 0, totalMs: 0`** — every clock
+zero, the request never sent, and no way from outside to tell what had
+happened.
+
+**`failed` is a real word in the vocabulary, and it is the bucket in
+it.** The brief that opened this lane enumerated `NOWMirrorSource`'s
+outcome assignments and concluded `failed` was not among them; it is —
+line 597 is a two-line ternary and the enumeration stopped at the line
+break. So there was no collapse of `starved` or `wrong-mac` into a
+placeholder: those two survive to the socket and always did, and a test
+now pins that (`testEveryNonOkOutcomeSurvivesTheMetricsProjectionVerbatim`).
+
+The real loss was one layer down. `GuestListener.SceneFailure` carries a
+`message` written for a person, and **at least five distinct conditions
+arrive through it wearing the same word**: no Mac connected, a scene
+already in flight, a transfer that arrived short, a delta that would not
+rebuild, and the 20-second watchdog's silence. The host spent that
+sentence on `ambient` — the one line under the Mirror window — and the
+agent socket cannot read a window. An agent asking the machine what was
+wrong got the bucket.
+
+So the sentence now rides beside the word, verbatim, as
+`MirrorCycleClocks.reason` → `AgentIntegrationMirrorCycleMetric.reason`.
+No outcome word was added and none changed meaning. It stays **off** the
+`NOWBASE cycle` line: `BaselineLine`'s values are space-free by
+construction and its own comment warns against inviting "somebody to put
+a message in one".
+
+### The second defect in the same row: counts belonging to another cycle
+
+Each of those 14 rows also carried a window count and an element count.
+They were read off `scene`, which is the last **proven** scene and
+deliberately STANDS through a failure — blanking the Mirror on one poll
+is how a busy lane looks like a crash. Correct for the picture; wrong for
+the record, because it put the last good walk's numbers in the row of a
+cycle that never asked, beside three zeroed clocks, where they read as
+data.
+
+They are now nil unless the cycle published a scene, rendering as `-`,
+which is the grammar this file already uses for "nothing to count". The
+alternative considered and rejected was marking them inherited: that
+needs a new field and a fourth word for absence, and
+`empty` / `unknown` / `notFetched` is the vocabulary this project has
+already paid for.
+
+### Still open
+
+- **Not metal-verified.** Tested only — the guard is watched failing
+  against three separate mutations (drop the reason in the projection;
+  flatten every non-`ok` outcome to `failed`; restore the stale counts),
+  each confirmed to build and to be named by the test. Nobody has re-run
+  the live drive that produced the 14 rows.
+- **`no-reply` looks unreachable as a RECORDED outcome.** It is the
+  initial value at `NOWMirrorSource.swift:381` and :552, and every path
+  that reaches `recordCycleClocks` overwrites it first — the watchdog's
+  silence arrives as a `SceneFailure` and lands on `failed`. Not touched
+  here, because removing a word from a vocabulary is not a transport fix.
+- **A cycle whose scene did not DECODE still records `outcome: "ok"`.**
+  `cycleOutcome` is set to `ok` when the delivery arrives (:568); the two
+  decode-failure catches near :763 fall through to `finishCycle` without
+  correcting it, so an unreadable IR version is measured as a successful
+  cycle. Found while reading for this fix, deliberately not fixed in it —
+  it changes what `ok` means, which this lane was told not to do. With
+  the counts now gated on `cycleOutcome == "ok"`, such a cycle will also
+  report the stale counts it used to; that is the same bug, unchanged in
+  size, and it closes when `ok` does.
