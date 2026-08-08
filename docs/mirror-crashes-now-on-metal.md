@@ -548,3 +548,49 @@ More generally: every instrument built in a hurry to watch a defect is
 itself untested, and this session produced three wrong conclusions from
 trusted instruments before this one. An instrument's first output should
 be treated as a claim about the instrument.
+
+### The false loss, explained — and it is a second defect, not the same one
+
+Michelle:
+
+> i opened now after reboot with the host mirror still connectd. stopped
+> the mirror. and you flagged a crash when i quit now to reboot.
+
+So the reported loss was **a deliberate quit.** The tail has no concept of
+an intentional shutdown: it sees the wire go away and calls it a death.
+
+That is a *separate* defect from believing a single failed sample. Fixing
+the sample count would not have caught this one — a quit produces
+consecutive failures too, legitimately, forever.
+
+**Consequence: the tail produced no trustworthy signal at all.** Over a
+session with repeated deliberate reboots, every restart reads as a crash.
+The unconfirmed second loss should be assumed to be a quit as well, absent
+evidence otherwise. Everything real in this document came from Michelle at
+the machine.
+
+### What a detector would actually need
+
+The information exists and was being thrown away. The guest's own logs
+distinguish the cases in plain text:
+
+```
+wire  ? disconnected from 10.91.5.15:5250: Maxbook Pro disconnected
+wire  ? disconnected from 10.91.5.15:5250: Connection refused (OT -3158)
+```
+
+A peer that says goodbye is not a peer that vanished. So a liveness
+detector for this system needs three things, and the count of consecutive
+failures is only the first:
+
+1. **Consecutive failures**, with the threshold visible in the code.
+2. **The disconnect REASON**, not merely the absence of a connection — a
+   clean close and a dropped wire are different events.
+3. **Corroboration before the word "crash" is used.** Absence of a guest
+   is `notFetched`-shaped: we cannot see it. Saying it *died* is a claim
+   about a cause, and this session says that claim needs evidence the
+   instrument did not have.
+
+That third point is this repository's vocabulary rule (`empty` vs
+`unknown` vs `notFetched`) applied to liveness, and the tail violated it
+by reporting an unknown as a death.
