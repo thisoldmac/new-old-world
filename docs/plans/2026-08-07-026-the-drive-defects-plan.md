@@ -44,9 +44,38 @@ is the standing rules and it is short.
 so a window with both draws both.
 
 Closes: icons drawn twice (she can see the selected one underneath),
-labels drawn twice, icons over list-view rows, and the decode cost —
-**p99 3,152 ms, max 7,527 ms for 3 windows and 49 elements** while the
-guest's own phase counters are in microseconds.
+labels drawn twice, and icons over list-view rows.
+
+**CORRECTED 2026-08-07, late — it does NOT close the decode cost, and the
+original claim here was wrong.** This plan (and the coordinator) attributed
+**p99 3,152 ms / max 7,527 ms** to the double-draw. `decode_ms` is a
+bracket from delivery to publish, and `MirrorCycleClocks` splits it.
+From Michelle's own log:
+
+```
+decode_ms=21233   dc_own_ms=3   dc_content_ms=21230
+```
+
+**Three milliseconds of twenty-one seconds is this host's decode.** The
+rest is the **P3 content join** — guest round-trips. Rendering is not in
+that bracket at all. The split was in the same line and nobody read it.
+
+**LANDED** on `claude/024-items-arbitration`. The rule: the cell is
+**split**, the way the renderer already splits a check box into its mark
+and its label. The **icon box joins `semanticFrames`** so the replay is
+excluded there — justified because the Finder's icon arrives as an
+*unjoined blit* that "carries geometry and no pixels", so excluding it is
+not overruling the machine; the machine's pixels were never on offer. The
+**name stays the machine's** as a real text run.
+
+Measured on one fixture, 40 renders after warm-up: **7.8 ms → 7.1 ms
+median, ~8–11%.** Real, and three orders of magnitude short of what she
+felt.
+
+**And the icons-over-list-rows cause was neither one this plan named:**
+the icon was drawn at a constant 32 points rather than the box the Finder
+drew. A list row is 16×16 at a 19-point pitch, so a 32-point icon ran
+through the row below and over the machine's columns.
 
 ## Group B — the act plane has ONE request cell
 
@@ -54,8 +83,16 @@ Her log, nine times in ninety seconds: *"another act is already in
 flight — this Mac's act plane has one request cell and it is taken.
 Nothing was written."* **Interaction does not queue, it refuses.**
 
-Closes: Finder windows slow to close, SimpleText slow to front, general
-sluggishness under any rapid interaction.
+Closes: Finder windows slow to close, SimpleText slow to front, and
+sluggishness under *rapid* interaction — an act arriving while another is
+in flight is refused, not queued.
+
+**It does NOT explain the 10–30 second scroll redraw.** See the correction
+under group A: that time is the **P3 content join**, and it is its own
+defect rather than part of this one. **Measure `dc_content_ms` before and
+after anything changed here**, and if the join is the cost, say so and
+split it out rather than folding it in. Attributing felt slowness to the
+nearest known defect is how the 7,527 ms claim happened.
 
 **Also here, and distinct:** every `winact` reads
 `dispatched-but-unconfirmed`. **Zero confirmations in 32 minutes.** That
