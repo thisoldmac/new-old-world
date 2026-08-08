@@ -239,3 +239,52 @@ Two claims made during this session were wrong and are withdrawn:
 Both were true observations promoted to causes because they sat near the
 thing being looked for. Recorded because the pattern recurred three times
 in one night, twice after saying the lesson had been learned.
+
+## The sequence, corrected again — and the confound in it
+
+Michelle, after the measured run above:
+
+> the earlier initial failure was an exception type 1 from now, where it
+> initially crashed cleanly, then crashed finder following the reproduced
+> crash and upon clicking app switcher.
+
+So, precisely:
+
+1. **Crash #1** — exception **type 1** from NOW. **Clean**: NOW died and
+   nothing else did.
+2. **Crash #2** — the same crash, reproduced.
+3. **Click the app switcher** → **the Finder crashes.**
+
+### Two readings, and nobody has separated them
+
+- **Cumulative:** the first crash leaves something behind, and it takes a
+  second one before the app switcher finds it.
+- **Unconditional:** *any* crash leaves it, and the app switcher would
+  have killed the Finder after the first one too — nobody clicked it
+  then.
+
+**The experiment that separates them costs one click.** After the next
+single clean crash, click the app switcher immediately, before
+reproducing anything.
+
+- Finder dies → unconditional. One crash is enough; the app switcher is
+  the trigger, and the "second crash" in this record is a coincidence of
+  what got clicked when.
+- Finder survives → cumulative, and the crash leaves residue that
+  accumulates. That is a much narrower search: something not cleaned up
+  on the first death that a second death compounds.
+
+### A note on this document's own history
+
+This asymmetry was flagged as "the strongest clue in the report", then
+**retracted** on the strength of Michelle's note that the Finder crash
+happened "in both cases … when clicking app switcher after the crash".
+That was read as *both crashes*; she meant *both sessions* — the
+pre-census VM one and tonight's metal one.
+
+So the retraction was the error, not the original observation. Worth
+keeping visible: three times tonight a true observation was promoted to a
+cause, and once a real signal was discarded by over-correcting for
+exactly that. Neither direction is safe by default. The fix is the same
+in both: name the experiment that would tell the two apart, and run it
+before writing either one down as settled.
