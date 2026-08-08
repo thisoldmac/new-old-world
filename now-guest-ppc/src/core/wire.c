@@ -57,6 +57,10 @@ enum {
        second. Nothing legitimate lands between one second and ten, which
        is why the threshold can be this far from both. */
     kStarvedPassTicks = 60 * 10,
+    /* Diagnostic threshold only. A normal scene is sub-second even on the
+       PowerBook; two seconds is already a visible application stall and far
+       below the 13-25 second gaps this instrument exists to attribute. */
+    kSlowSceneLogMs = 2000,
     kBackoffMinTicks = 60 * 2,        /* 2s, doubling... */
     kBackoffMaxTicks = 60 * 30,       /* ...to 30s */
     kRetryFloorTicks = 60 * 1,        /* the contract's only cadence rule */
@@ -2076,6 +2080,24 @@ static void serve_scene(const char *request)
      * the processes it has never been inside. */
 
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
+    /* A long scene and cooperative starvation have looked identical in the
+       wire log: both surface later as "not scheduled". The scene already
+       measures its own phases, so name a slow walk at its source. This is
+       diagnostic only; it does not yield while foreign addresses are live or
+       invent a cancellation protocol the serial wire does not have. */
+    if (scene->latency_ms >= kSlowSceneLogMs) {
+        now_log(kLogWarn, "mirror",
+                "slow scene %ldms: enum %lums bind %lums windows %lums "
+                "controls %lums menu %lums semantics %lums refs %lums",
+                scene->latency_ms,
+                now_scene_phase_us(kNowScenePhaseEnumerate) / 1000UL,
+                now_scene_phase_us(kNowScenePhaseBind) / 1000UL,
+                now_scene_phase_us(kNowScenePhaseWindows) / 1000UL,
+                now_scene_phase_us(kNowScenePhaseControls) / 1000UL,
+                now_scene_phase_us(kNowScenePhaseMenubar) / 1000UL,
+                now_scene_phase_us(kNowScenePhaseSemantics) / 1000UL,
+                now_scene_phase_us(kNowScenePhaseRefs) / 1000UL);
+    }
     /* Correlate subsequent acts with the normal-context observation a
        person actually saw. This is evidence only; resident guards do not
        trust the scene sequence. */

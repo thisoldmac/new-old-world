@@ -56,7 +56,26 @@ the next diagnostic to the automatic interactive Finder AppleScript
 complements: disable only icon-roster and visibility reads, retain structural
 scene/content observation, and see whether the unsolicited fronting stops.
 
-### TESTED, NOT METAL-VERIFIED: the suspect mechanisms are now separate guest policy domains
+### METAL-VERIFIED: P3 drawing trace crashes Finder on the PowerBook 1400c
+
+The four guest policy domains isolated the failure on 2026-08-08. Structure,
+Finder details, and foreground discovery were exercised independently without
+a crash. Enabling **Trace drawing contents** armed P3 at 17:42:11; the resident
+retargeted from A5 `0x319e38c` to `0x22c096c`, then disarmed. Finder's process
+identity changed from `0.8257537` before that interval to `0.9633793` after it,
+which is Finder relaunch evidence while NOW itself continued logging. The
+setting remains off by default and is labelled experimental. The prior
+wrong-context and stale-port guards are therefore insufficient; do not treat
+P3 as safe merely because its application-layer reader is read-only.
+
+The same run contained 13–25 second main-loop gaps after P3 was off. Because it
+mixed direct Finder use and Mirror driving, those lines cannot distinguish a
+slow scene inside NOW from another cooperative process monopolising the Mac.
+Slow scenes now log their measured enumerate/bind/window/control/menu/semantic/
+reference phases at the source. A subsequent metal run can therefore attribute
+the gap without adding unsafe yields inside a foreign-memory walk.
+
+### TESTED: the suspect mechanisms are now separate guest policy domains
 
 The Mirror page now owns four persisted checkboxes with enforcement at the
 guest boundary: passive application-structure observation, automatic Finder
@@ -78,8 +97,9 @@ observed after Mirror starts may appear only as Process Manager rows/window
 skeletons until they naturally pump or are deliberately brought forward. The
 PowerPC guest, 68K guest, NOW Extension, and rig helpers build; focused native
 Mirror tests and host tests cover the policy object, legacy fallback, host
-projection, complement suppression, and typed script purpose. None of these
-settings has yet been watched on the Wallstreet or PB1400c.
+projection, complement suppression, and typed script purpose. The isolation
+controls have now been watched on the Wallstreet and PB1400c; the P3 result and
+remaining liveness ambiguity are recorded above.
 
 ## FIXED: the Mirror wrote no log line at all, so its crash could not be investigated (2026-08-08, `claude/026-mirror-logging`)
 

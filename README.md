@@ -142,8 +142,10 @@ passive structure observation, Finder enrichment, drawing-content tracing,
 and foreground discovery. Only passive structure is enabled by default while
 the PB1400 Finder crash is investigated. The guest enforces each setting and
 the host consumes it; disabling Finder enrichment therefore prevents the
-automatic AppleScripts rather than merely hiding their results. This is
-**built and tested, not metal-verified**.
+automatic AppleScripts rather than merely hiding their results. Metal testing
+has now isolated the crash to drawing-content tracing: P3 remains experimental,
+off by default, and has crashed/restarted Finder on the PowerBook 1400c. The
+other three policy domains ran there without a crash in the same session.
 
 **The slow loops had a second cause on our own side, and it is now
 fixed — by spending a safety argument.** The guest's act client waits for

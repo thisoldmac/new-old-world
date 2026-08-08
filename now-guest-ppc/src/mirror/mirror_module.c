@@ -341,9 +341,16 @@ static void mirror_idle(void)
     }
     g_next_poll = TickCount() + kMirrorPollTicks;
     now_mirror_probe(&latest);
-    if (memcmp(&latest, &g_facts, sizeof latest) != 0) {
+    {
+        int display_changed = !now_mirror_display_equal(&latest, &g_facts);
+
+        /* Keep the complete current snapshot even when its volatile fields
+           do not affect the page. A later freshness transition is then
+           compared against the latest evidence rather than a stale copy. */
         g_facts = latest;
-        InvalWindowRect(g_owner, &g_body);
+        if (display_changed) {
+            InvalWindowRect(g_owner, &g_body);
+        }
     }
 }
 

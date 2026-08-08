@@ -240,11 +240,43 @@ void now_mirror_rest_text(const MirrorFacts *facts, char *out, long cap)
     if (n == 0) {
         /* The block is not listed as a holding when it is the only one:
            it is allocated on every machine that has the plane at all, so
-           naming it here would make the resting state look busy. The
-           count beside it is what proves the filter is running rather
-           than stopped. */
-        snprintf(out, (size_t)cap,
-                 "Nothing but the event hook (%lu passes)",
-                 facts->gne_passes);
+           naming it here would make the resting state look busy. Zero versus
+           nonzero keeps the diagnostic distinction without turning a live
+           pass counter into a once-per-second repaint clock. */
+        snprintf(out, (size_t)cap, "Nothing but the event hook (%s)",
+                 facts->gne_passes == 0 ? "not yet observed" : "running");
     }
+}
+
+int now_mirror_display_equal(const MirrorFacts *a, const MirrorFacts *b)
+{
+    int i;
+
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
+    if (a->lifecycle != b->lifecycle
+        || a->resident_major != b->resident_major
+        || a->resident_minor != b->resident_minor
+        || a->capabilities != b->capabilities
+        || a->requested_bits != b->requested_bits
+        || a->active_bits != b->active_bits
+        || a->has_build_identity != b->has_build_identity
+        || a->has_rest_state != b->has_rest_state
+        || a->rest_state != b->rest_state
+        || (a->gne_passes == 0) != (b->gne_passes == 0)
+        || strcmp(a->reason, b->reason) != 0) {
+        return 0;
+    }
+    for (i = 0; i < kMirrorPlaneCount; ++i) {
+        const MirrorPlaneFact *left = &a->planes[i];
+        const MirrorPlaneFact *right = &b->planes[i];
+
+        if (left->state != right->state
+            || left->format != right->format
+            || strcmp(left->reason, right->reason) != 0) {
+            return 0;
+        }
+    }
+    return 1;
 }

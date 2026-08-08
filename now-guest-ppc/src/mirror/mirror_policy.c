@@ -82,7 +82,7 @@ const char *now_mirror_policy_name(MirrorPolicyDomain domain)
     static const char *names[] = {
         "Observe application structure",
         "Read Finder details",
-        "Trace drawing contents",
+        "Trace drawing contents (experimental)",
         "Allow foreground discovery"
     };
 

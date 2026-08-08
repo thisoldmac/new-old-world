@@ -150,16 +150,16 @@ static void test_rest_words(void)
     facts.gne_passes = 1174;
     now_mirror_rest_text(&facts, out, sizeof out);
     check(strstr(out, "Nothing but the event hook") != NULL
-              && strstr(out, "1174") != NULL,
-          "at rest, the line is positive and carries the pass count");
+              && strstr(out, "running") != NULL,
+          "at rest, a nonzero pass count says the event hook is running");
 
     /* The count is the denominator: zero passes on a resident that claims
        to be active is the interesting reading, and it must survive into
        the sentence rather than being rounded away. */
     facts.gne_passes = 0;
     now_mirror_rest_text(&facts, out, sizeof out);
-    check(strstr(out, "0 passes") != NULL,
-          "a filter that never ran reports zero rather than hiding it");
+    check(strstr(out, "not yet observed") != NULL,
+          "a filter that never ran stays distinct without a live counter");
 
     /* Worst first: the thing that cannot be undone leads the line, and it
        is the only place "restart" is claimed. */
@@ -177,6 +177,36 @@ static void test_rest_words(void)
           "a busy resident never reads as resting");
 }
 
+static void test_display_change_detection(void)
+{
+    MirrorFacts before;
+    MirrorFacts after;
+
+    memset(&before, 0, sizeof before);
+    before.lifecycle = kMirrorLifecycleActive;
+    before.has_rest_state = 1;
+    before.gne_passes = 10;
+    before.planes[kMirrorPlaneStructure].state = kMirrorPlaneActiveCurrent;
+    before.planes[kMirrorPlaneStructure].format = 3;
+    after = before;
+
+    after.heartbeat = 99;
+    after.liveness_ticks = 100;
+    after.channel_sends = 101;
+    after.planes[kMirrorPlaneStructure].generation = 102;
+    after.gne_passes = 103;
+    check(now_mirror_display_equal(&before, &after),
+          "volatile resident counters do not repaint unchanged text");
+
+    after.gne_passes = 0;
+    check(!now_mirror_display_equal(&before, &after),
+          "event hook not-run to running is a visible transition");
+    after = before;
+    after.planes[kMirrorPlaneStructure].state = kMirrorPlaneActiveStale;
+    check(!now_mirror_display_equal(&before, &after),
+          "a plane state transition repaints the page");
+}
+
 int main(void)
 {
     printf("mirror_layout_test\n");
@@ -184,6 +214,7 @@ int main(void)
     test_lifecycle_words();
     test_plane_words();
     test_rest_words();
+    test_display_change_detection();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;

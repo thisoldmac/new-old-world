@@ -17,8 +17,8 @@ enum {
     kMirrorLifecycleRows = 5,
     kMirrorNoteLines = 1,
     kMirrorPolicyRowHeight = 18,
-    /* The one control on this page: the ask that opens the host's own
-       Mirror window. Platinum's standard push-button height is 20 and a
+    /* The push button that opens the host's own Mirror window. Platinum's
+       standard push-button height is 20 and a
        button wants a comfortable label width; both are here rather than
        in the module so the geometry has one home the native test can
        compile. */
@@ -54,5 +54,12 @@ void now_mirror_status_text(const MirrorFacts *facts, char *out, long cap);
    the module, like every other string on this page, so the host `cc`
    compiles it and the native test can read what a person would read. */
 void now_mirror_rest_text(const MirrorFacts *facts, char *out, long cap);
+
+/* True when two snapshots would draw the same application-owned pixels.
+   Resident heartbeat, liveness and generation counters deliberately do not
+   participate: they are acquisition evidence, not text on this page, and
+   comparing the whole struct made their normal motion repaint the page once
+   per poll. */
+int now_mirror_display_equal(const MirrorFacts *a, const MirrorFacts *b);
 
 #endif /* NOW_MIRROR_LAYOUT_H */
