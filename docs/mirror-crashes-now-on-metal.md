@@ -878,3 +878,68 @@ hiding:
 The host issues `activate` on the Finder, which backgrounds NOW. Note
 `[already-front]` — the Finder was **already frontmost**, so the act was
 unnecessary as well as unbidden.
+
+## THE LEAD TO START FROM: the plane re-arms into whichever process pumps
+
+Michelle's 04:11 log, on the second fix attempt. The last three lines
+before it dies:
+
+```
+04:11:28  content active a5 0x2b821f8  mode 2, 1 port(s) hooked
+04:11:41  content active a5 0x0        mode 0, 1 port(s) hooked
+04:11:47  content active a5 0x32be0ac  mode 2, 5 port(s) hooked
+04:11:47  content hooks +4 in, +0 out, +0 repaired
+```
+
+**Three different armed A5s in nineteen seconds**, and the last one is not
+NOW. `0x2b821f8` is the application that asked. `0x32be0ac` is another
+process — and the plane armed into it and hooked five of its ports.
+
+The mechanism is structural: `now_content_gne` is driven from the jGNE
+filter, so it runs **in whatever process calls `GetNextEvent`**, and
+`now_content.c:1822` does `gArmedA5 = a5` with that process's A5. The
+armed context is therefore not "the process that requested the plane" but
+"the process that pumped most recently".
+
+The port table then holds rows from more than one A5 at once, and every
+walk over it is crossing contexts.
+
+### This connects the host defect to the crash — which I said it did not
+
+Twice in this session the Finder being forced to the front was described
+as host-side and unrelated. It is the trigger:
+
+1. The host issues an unbidden `activate` (measured: `[already-front]`,
+   so not even necessary).
+2. The Finder comes forward and starts pumping `GetNextEvent`.
+3. The content plane re-arms into **the Finder's** A5.
+4. The table now mixes the requesting application's rows with the
+   Finder's.
+5. The machine dies seconds later.
+
+That also explains the timing — twenty to thirty seconds after arming,
+never instantly — and why the Finder is always involved.
+
+### The question to answer first, and it is a design question
+
+**Should the plane follow whichever process pumps, or refuse to arm
+outside the process that requested it?**
+
+Three guard attempts were made against this crash in one night, each
+narrowing where the dereference happens, none addressing this. Guards on
+the walks are worth having and two of them are independently correct, but
+they are treating a table that should never have held two contexts at
+once. Decide the ownership rule first; the walks follow from it.
+
+**Attempts made, for whoever picks this up:**
+
+| # | change | result on metal |
+|---|---|---|
+| 1 | `a5` guard on the blit-source row walk | moved the crash from the arm to ~19s after it |
+| 2 | + `gArmedA5 != 0`, + `content_probe_addr_ok` on all three reads | same crash, same timing |
+| 3 | guard inside `content_probe_row_valid`, the choke point both walks use | **built, never deployed** |
+
+Attempt 3 is `~/Desktop/NOW-content-fix-3.zip`, commit `5e8c97df`. It is
+correct on its own terms — that function dereferences a port and a handle
+with no address check and is reached by both walks — but it should not be
+expected to fix this.
