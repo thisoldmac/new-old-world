@@ -118,7 +118,9 @@ static int g_settle_repeats;
 static void settle_flush_repeats(void)
 {
     if (g_settle_repeats > 0) {
-        now_log(kLogWarn, "mirror", "settle 0x%lx: %.24s x%d more",
+        /* The same reason text as the line it repeats, so one grep finds
+           both the event and how many times it went on happening. */
+        now_log(kLogWarn, "mirror", "settle 0x%lx failed: %.48s x%d more",
                 g_settle_caps, g_settle_why, g_settle_repeats);
     }
     g_settle_repeats = 0;
