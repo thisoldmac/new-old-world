@@ -385,3 +385,63 @@ what `claude/026-mirror-logging` is for.
 sent-versus-never-sent split varies run to run (7 sent in the second
 loss, 0 in the first and third) — so that ratio is a symptom of how far
 things had already degraded, not a constant.
+
+## Michelle's reframing: what is DIFFERENT between the PowerBook and the VM?
+
+> i think the question is just what is different between my powerbook and
+> the vm in the context of what our ext is touching when we use mirror
+
+The right question, and it narrows to things where **QEMU is forgiving and
+silicon is not**.
+
+### What the resident does
+
+- **Runs code at interrupt time.** Time Manager tasks: `now_ext_drag.c:197`
+  `PrimeTime((QElemPtr)&gDragTask.task, …)`, plus the liveness TM vehicle
+  (`now_liveness_tm.S`).
+- **Patches traps** via `NSetTrapAddress` (`now_ext_act.c:168`,
+  `now_content.c:1776`).
+
+### What it never does
+
+- **No `HoldMemory` / `LockMemory` anywhere in `ext/`.**
+- **No `MakeDataExecutable` / `FlushCodeCache` / `FlushInstructionCache`
+  anywhere in `ext/`.**
+
+### The machine difference
+
+| | QEMU guest | PowerBook 1400c |
+|---|---|---|
+| RAM | 512 MB (`-m 512`) | 64 MB maximum |
+| Virtual Memory | almost certainly **off** | on 64 MB, almost certainly **on** |
+| CPU caches | not modelled | real 603e, split I/D |
+
+**Interrupt-time code must never touch pageable memory** — a hard Classic
+Mac OS rule. With VM off nothing is pageable, so the rule cannot be
+violated; that is the emulator's configuration. With VM on, a Time Manager
+task firing while its `TMTask` or the content block is paged out is a
+**bus error — exception type 1**, which is the error actually reported.
+
+The cache gap has the same shape: QEMU models no cache, so a patch
+installed without a flush runs correctly there and can execute stale bytes
+on a 603e.
+
+Both are also consistent with the escalation ladder: more patches
+installed and reinstalled across crashes is more surface for either to
+bite. A single faulty branch would not get worse with repetition.
+
+### The test, and it is one command
+
+**Run `census` on the PowerBook and read `VMAttr`.** The selectors already
+exist (`census_selectors.h:474-477`): "VM Present", "VM Has Lock Memory
+For Output", "VM Filemapping On", "VM Has Paging Control". Compare against
+the emulator.
+
+- VM on for the PowerBook, off for the VM → that is the difference, and
+  the fix is holding every structure the interrupt-time code touches.
+- VM off on both → this account is dead, and the cache gap is next.
+
+Stated as a hypothesis with its own kill condition, deliberately. Three
+times in this session a true observation was promoted to a cause; the
+discipline that was missing each time was naming, in advance, the
+observation that would refute it.
