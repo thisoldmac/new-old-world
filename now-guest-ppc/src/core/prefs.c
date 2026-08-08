@@ -110,6 +110,17 @@ typedef struct {
     short sidebar_collapsed;
 } PrefsRecordV20;
 
+/* Format 21 added the Mirror page and changed only module numbering.
+   Format 22 is its first persisted behavior: four independent gates for
+   observation strategies with very different safety profiles. */
+typedef struct {
+    PrefsRecordV20 v20;               /* format = 22 */
+    short mirror_structure;
+    short mirror_finder_complements;
+    short mirror_content;
+    short mirror_foreground_cycle;
+} PrefsRecordV22;
+
 /* Format 16 reuses the V15 layout, bumping only the number to mark that
    Networking joined as nav id 9 (Logs and Connection shifted down
    again). It adds no persisted field, like formats 10, 11 and 14 before
@@ -208,6 +219,14 @@ static void set_defaults(NowPrefs *prefs)
        Rich is likewise what is already on screen, so a file that predates
        the field changes nothing about how the rail looks. */
     prefs->sidebar_compact = false;
+    prefs->sidebar_collapsed = false;
+    /* Passive structure is the useful safe baseline. The other three are
+       opt-in while the PB1400 Finder crash is isolated: none may spring to
+       life merely because an older preference record lacks the field. */
+    prefs->mirror_structure = true;
+    prefs->mirror_finder_complements = false;
+    prefs->mirror_content = false;
+    prefs->mirror_foreground_cycle = false;
 }
 
 static Boolean valid_depth(short depth)
@@ -220,7 +239,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV20);
+    long count = sizeof(PrefsRecordV22);
+    PrefsRecordV22 v22;
     PrefsRecordV20 v20;
     PrefsRecordV19 v19;
     PrefsRecordV15 v15;
@@ -238,9 +258,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v20, 0, sizeof v20);
-    err = FSRead(ref, &count, &v20);
+    memset(&v22, 0, sizeof v22);
+    err = FSRead(ref, &count, &v22);
     FSClose(ref);
+    v20 = v22.v20;
     v19 = v20.v19;
     v15 = v19.v15;
     v13 = v15.v13;
@@ -426,6 +447,14 @@ void now_prefs_load(NowPrefs *prefs)
         if (record.format >= 20 && count >= (long)sizeof(PrefsRecordV20)) {
             prefs->sidebar_collapsed = v20.sidebar_collapsed != 0;
         }
+        if (record.format >= 22 && count >= (long)sizeof(PrefsRecordV22)) {
+            prefs->mirror_structure = v22.mirror_structure != 0;
+            prefs->mirror_finder_complements =
+                v22.mirror_finder_complements != 0;
+            prefs->mirror_content = v22.mirror_content != 0;
+            prefs->mirror_foreground_cycle =
+                v22.mirror_foreground_cycle != 0;
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -438,7 +467,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV20);
+    long count = sizeof(PrefsRecordV22);
+    PrefsRecordV22 v22;
     PrefsRecordV20 v20;
     PrefsRecordV19 v19;
     PrefsRecordV15 v15;
@@ -450,8 +480,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 21;               /* Mirror at nav id 12, pushing the
-                                         pinned group down one */
+    record.format = 22;               /* Mirror policy fields; format 21
+                                         was the module-id renumber only */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -507,7 +537,13 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     memset(&v20, 0, sizeof v20);
     v20.v19 = v19;
     v20.sidebar_collapsed = prefs->sidebar_collapsed ? 1 : 0;
-    err = FSWrite(ref, &count, &v20);
+    memset(&v22, 0, sizeof v22);
+    v22.v20 = v20;
+    v22.mirror_structure = prefs->mirror_structure ? 1 : 0;
+    v22.mirror_finder_complements = prefs->mirror_finder_complements ? 1 : 0;
+    v22.mirror_content = prefs->mirror_content ? 1 : 0;
+    v22.mirror_foreground_cycle = prefs->mirror_foreground_cycle ? 1 : 0;
+    err = FSWrite(ref, &count, &v22);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }

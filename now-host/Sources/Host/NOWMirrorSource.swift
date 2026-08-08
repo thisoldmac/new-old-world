@@ -308,6 +308,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private let sendCommand: GuestCommandSend
     private let interval: TimeInterval
     private let planePolicy: @MainActor (GuestKey) -> Set<MirrorPlaneID>
+    private let finderComplementPolicy: @MainActor (GuestKey) -> Bool
     private let finderRefreshOverride: (@MainActor (
         MirrorKit.Scene, Int, @escaping () -> Void
     ) -> Void)?
@@ -410,6 +411,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
              _ in
              Set(MirrorPlaneID.allCases)
          },
+         finderComplementPolicy: @escaping @MainActor (GuestKey) -> Bool = {
+             _ in true
+         },
          finderRefreshOverride: (@MainActor (
              MirrorKit.Scene, Int, @escaping () -> Void
          ) -> Void)? = nil,
@@ -429,6 +433,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
         self.interval = interval
         self.planePolicy = planePolicy
+        self.finderComplementPolicy = finderComplementPolicy
         self.finderRefreshOverride = finderRefreshOverride
         self.visibilityRefreshOverride = visibilityRefreshOverride
         self.lifecycleDidChange = lifecycleDidChange
@@ -1019,6 +1024,15 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// by re-checking the layout key at apply time, which is the actual
     /// correctness condition rather than a proxy for it.
     private func refreshComplements(_ scene: MirrorKit.Scene) {
+        guard let key = pinnedGuestKey,
+              finderComplementPolicy(key) else {
+            iconTask?.cancel()
+            iconTask = nil
+            visibilityTask?.cancel()
+            visibilityTask = nil
+            fetchingIcons = false
+            return
+        }
         let run = runGeneration
         refreshIconsIfStale(scene, generation: run) { [weak self] in
             guard let self, self.isCurrentRun(run) else { return }
@@ -1243,8 +1257,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                own desktop - reported "incomplete or changing item roster".
                `desktopItems` has never read on any drive and that sentence
                is all the mirror ever said about why. */
-            let read = await readingOutput("script", ["source": .text(source)],
-                                           osaFailureIsAnError: true)
+            let read = await readingFinderComplement(
+                source, osaFailureIsAnError: true)
             guard complementIsCurrent(generation) else { return nil }
             let total = read.value.flatMap(Self.iconPageTotal)
             guard let text = read.value, !read.truncated, let total,
@@ -1284,7 +1298,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         return out
         """
         guard complementIsCurrent(generation) else { return nil }
-        let art = await readingOutput("script", ["source": .text(types)])
+        let art = await readingFinderComplement(types)
         guard complementIsCurrent(generation) else { return nil }
         if art.value == nil || art.truncated {
             note("\(container): items read, but not their icon art"
@@ -1307,9 +1321,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         var targetsByName: [String: MirrorKit.Scene.DesktopItem.AliasTarget] = [:]
         if !aliases.isEmpty {
             guard complementIsCurrent(generation) else { return nil }
-            let read = await readingOutput(
-                "script",
-                ["source": .text(Self.aliasTargetsScript(container: container))])
+            let read = await readingFinderComplement(
+                Self.aliasTargetsScript(container: container))
             guard complementIsCurrent(generation) else { return nil }
             if read.value == nil || read.truncated {
                 note("\(container): \(aliases.count) alias(es) read, but not "
@@ -1640,9 +1653,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             var complete = true
             while expectedTotal == nil || offset < expectedTotal! {
                 guard self.complementIsCurrent(generation) else { return }
-                let read = await self.readingOutput(
-                    "script", ["source": .text(Self.visibilityScript(
-                        offset: offset))],
+                let read = await self.readingFinderComplement(
+                    Self.visibilityScript(offset: offset),
                     osaFailureIsAnError: true)
                 guard self.complementIsCurrent(generation) else { return }
                 if let error = read.error {
@@ -2681,6 +2693,19 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// to raise: the Finder art pass is split from the item pass precisely so
     /// its error takes down only the types, and promoting that to an error
     /// would refetch every roster forever.
+    /// Automatic Finder enrichment has a typed purpose on the wire. The
+    /// guest can therefore refuse this class before opening OSA without
+    /// disabling a deliberate Script command or a user-requested Finder act.
+    private func readingFinderComplement(
+        _ source: String, osaFailureIsAnError: Bool = false
+    ) async -> (value: String?, error: String?, truncated: Bool) {
+        await readingOutput(
+            "script",
+            ["source": .text(source),
+             "purpose": .text("mirror-finder-complement")],
+            osaFailureIsAnError: osaFailureIsAnError)
+    }
+
     private func readingOutput(_ verb: String,
                                _ args: [String: CommandArg],
                                row: String = "output",

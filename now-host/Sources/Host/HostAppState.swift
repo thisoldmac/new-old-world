@@ -125,6 +125,9 @@ final class HostAppState: ObservableObject {
             planePolicy: { [unowned self] key in
                 self.mirror.requestedPlaneIDs(for: key)
             },
+            finderComplementPolicy: { [unowned self] key in
+                self.mirror.finderComplementsAllowed(for: key)
+            },
             lifecycleDidChange: {
                 [weak self] in self?.mirror.refreshLifecycle()
             })

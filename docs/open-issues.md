@@ -56,6 +56,31 @@ the next diagnostic to the automatic interactive Finder AppleScript
 complements: disable only icon-roster and visibility reads, retain structural
 scene/content observation, and see whether the unsolicited fronting stops.
 
+### TESTED, NOT METAL-VERIFIED: the suspect mechanisms are now separate guest policy domains
+
+The Mirror page now owns four persisted checkboxes with enforcement at the
+guest boundary: passive application-structure observation, automatic Finder
+details, drawing-content tracing, and explicit foreground discovery. New and
+upgraded preference files start with only passive structure enabled. Turning
+content off withdraws an existing P3 request; turning structure off releases
+the scene-owned anchor/tree/act claims; a disabled `cycle` refuses before
+`SetFrontProcess`; and a Finder complement refuses before OSA opens.
+
+The host reads the same policy in the schema-1 `mirror` reply, filters its
+plane requests through it, and does not schedule Finder complements while the
+guest gate is off. Automatic Finder scripts carry the typed purpose
+`mirror-finder-complement`, so this gate does not disable a deliberate Script
+command or a Finder mutation the person asked for.
+
+This creates the diagnostic run requested by the PB1400 evidence without
+removing capability: structure on, the other three off. Applications not yet
+observed after Mirror starts may appear only as Process Manager rows/window
+skeletons until they naturally pump or are deliberately brought forward. The
+PowerPC guest, 68K guest, NOW Extension, and rig helpers build; focused native
+Mirror tests and host tests cover the policy object, legacy fallback, host
+projection, complement suppression, and typed script purpose. None of these
+settings has yet been watched on the Wallstreet or PB1400c.
+
 ## FIXED: the Mirror wrote no log line at all, so its crash could not be investigated (2026-08-08, `claude/026-mirror-logging`)
 
 **Derived rather than assumed**, and it is worth stating as a

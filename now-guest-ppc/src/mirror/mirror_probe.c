@@ -270,6 +270,7 @@ void now_mirror_probe(MirrorFacts *facts)
     const NowPeekTable *table;
 
     memset(facts, 0, sizeof *facts);
+    now_mirror_policy_get(&facts->policy);
     status = now_peek_status(&caps);
     switch (status) {
     case kNowPeekNeedsRestart:

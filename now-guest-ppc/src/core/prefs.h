@@ -102,6 +102,16 @@ typedef struct {
        third value of it: collapsing and then expanding must give back
        the density the person chose, not forget it. */
     Boolean sidebar_collapsed;
+
+    /* Mirror observation policy, owned by the Mirror page and enforced at
+       each operation's guest-side boundary. These are four independent
+       permissions rather than one broad switch because passive anchor
+       capture, Finder AppleScript, QuickDraw tracing and SetFrontProcess
+       have materially different risk. */
+    Boolean mirror_structure;
+    Boolean mirror_finder_complements;
+    Boolean mirror_content;
+    Boolean mirror_foreground_cycle;
 } NowPrefs;
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
@@ -113,7 +123,8 @@ typedef struct {
    v16/v17 (no new fields; Networking then iCloud renumber the pinned
    pair), v18 (Chat, likewise), and v19 (adds the sidebar order and
    density, and renumbers the pinned group again for the Preferences
-   page). */
+   page), v20 (the collapsed sidebar), v21 (Mirror's module-id
+   renumbering), and v22 (the four Mirror policy domains). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

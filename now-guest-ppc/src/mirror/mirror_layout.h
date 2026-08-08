@@ -15,7 +15,8 @@ enum {
        extension: with nothing running, what is still hooked? The four
        above it are all about what the resident CAN do. */
     kMirrorLifecycleRows = 5,
-    kMirrorNoteLines = 2,
+    kMirrorNoteLines = 1,
+    kMirrorPolicyRowHeight = 18,
     /* The one control on this page: the ask that opens the host's own
        Mirror window. Platinum's standard push-button height is 20 and a
        button wants a comfortable label width; both are here rather than
@@ -31,6 +32,9 @@ typedef struct MirrorLayout {
     Rect lifecycle_rows[kMirrorLifecycleRows];
     Rect plane_heading;
     Rect plane_rows[kMirrorPlaneCount];
+    Rect policy_heading;
+    Rect policy_rows[kMirrorPolicyCount];
+    Rect policy_status;
     Rect note[kMirrorNoteLines];
     /* Where the "Show Mirror on Host" button goes, and the status line
        under it that carries the host's own answer. */

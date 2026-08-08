@@ -65,6 +65,10 @@ int main(void)
           "source identity is exact lowercase SHA-1 hex");
     check(strstr(buf, "\"buildFingerprint\":\"0000001000000011000000120000001300000014\"") != NULL,
           "resident build identity travels beside source identity");
+    check(strstr(buf, "\"policy\":{\"structure\":false,"
+                      "\"finderComplements\":false,\"content\":false,"
+                      "\"foregroundCycle\":false}") != NULL,
+          "guest policy is a typed domain object, not inferred from planes");
     check(strstr(buf, "\"id\":\"structure\"") != NULL,
           "P1 structure is present");
     check(strstr(buf, "\"id\":\"semantics\"") != NULL,
@@ -111,6 +115,17 @@ int main(void)
           "plane freshness is explicit");
     check(strstr(buf, "resident heartbeat is stale") != NULL,
           "plane degradation carries its proving reason");
+
+    healthy(&facts);
+    facts.policy.structure = 1;
+    facts.policy.finder_complements = 0;
+    facts.policy.content = 1;
+    facts.policy.foreground_cycle = 0;
+    now_mirror_json(&facts, 11, buf, (long)sizeof buf);
+    check(strstr(buf, "\"policy\":{\"structure\":true,"
+                      "\"finderComplements\":false,\"content\":true,"
+                      "\"foregroundCycle\":false}") != NULL,
+          "each policy domain travels independently");
 
     healthy(&facts);
     {

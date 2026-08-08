@@ -29,8 +29,15 @@ static void test_layout(void)
         check(layout.plane_rows[i - 1].bottom <= layout.plane_rows[i].top,
               "plane rows do not overlap");
     }
-    check(layout.note[1].bottom <= body.bottom,
-          "read-only policy note fits the Workshop");
+    for (i = 1; i < kMirrorPolicyCount; ++i) {
+        check(layout.policy_rows[i - 1].bottom <= layout.policy_rows[i].top,
+              "policy controls do not overlap");
+    }
+    check(layout.policy_rows[kMirrorPolicyCount - 1].bottom
+              <= layout.show_button.top,
+          "policy controls precede host button");
+    check(layout.note[0].bottom <= body.bottom,
+          "policy note fits the Workshop");
 }
 
 static void test_lifecycle_words(void)

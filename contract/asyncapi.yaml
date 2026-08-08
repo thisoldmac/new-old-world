@@ -5391,6 +5391,13 @@ components:
               floor. The ceiling is hard because this Mac answers
               serially — a script's timeout is every other caller's
               wait.
+          purpose:
+            type: string
+            enum: [mirror-finder-complement]
+            description: >
+              Marks automatic Finder enrichment issued by Mirror. When the
+              guest's Finder-complements policy is off, such a request is
+              refused before OSA opens. Omit for a deliberate script command.
       x-line: The script source, which is the whole rest of the line.
       output:
         type: object
@@ -6314,14 +6321,17 @@ components:
     mirror:
       description: >
         The guest's read-only lifecycle view of the ONE optional NOW
-        Extension and its four data planes. The guest owns observed resident
+        Extension and its data planes. The guest owns observed resident
         facts: installation/load state, exact resident build, capability and
         format words, application request bits, resident active bits,
         generation/freshness, and any refusal or degradation it can prove.
-        It does not own host policy and therefore never reports a plane as
-        user-enabled or user-disabled.
+        It also owns four local safety gates: passive structure observation,
+        automatic Finder complements, drawing-content tracing, and explicit
+        foreground discovery. These are application preferences, not resident
+        facts and not host policy.
 
-        The host joins these facts with its per-machine policy. Unsupported
+        The host joins these facts and guest gates with its per-machine policy;
+        both sides must permit an operation before it is scheduled. Unsupported
         planes remain unsupported even when an old preference says enabled;
         an unanchored machine identity gets session-only safe defaults. The
         unified shape deliberately replaces the old AXPeek/QDPeek/Portal and
@@ -6329,8 +6339,8 @@ components:
         diagnosed as missing those retired components.
       args: {}
       x-line: >
-        Takes nothing. Every field is an observed guest fact and is the same
-        fact the Workshop page shows. Policy is host-only and absent here.
+        Takes nothing. Every field is either an observed guest fact or one of
+        the four guest-owned policy gates shown on the Workshop's Mirror page.
       output:
         type: object
         properties:
@@ -6494,6 +6504,19 @@ components:
                               type: integer
                             ageTicks:
                               type: integer
+              policy:
+                type: object
+                description: >
+                  Guest-owned safety gates. A current guest always reports
+                  these; hosts accept absence for guests built before the
+                  fields existed. False means the guest refuses that class of
+                  work even when host policy enables it.
+                required: [structure, finderComplements, content, foregroundCycle]
+                properties:
+                  structure: { type: boolean }
+                  finderComplements: { type: boolean }
+                  content: { type: boolean }
+                  foregroundCycle: { type: boolean }
               planes:
                 type: array
                 description: >

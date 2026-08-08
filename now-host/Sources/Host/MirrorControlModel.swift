@@ -120,6 +120,7 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
             lifecycle: wireFacts?.resident.lifecycle ?? .absent,
             connected: connection.canCapture,
             policyEnabled: policyEnabled(plane.id),
+            guestEnabled: wireFacts?.policy.allows(plane.id) ?? true,
             pendingTimedOut: pendingSince[plane.id].map {
                 Date().timeIntervalSince($0) >= Self.pendingTimeout
             } ?? false)
@@ -128,7 +129,8 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
     func canToggle(_ plane: MirrorWirePlane) -> Bool {
         guard plane.id.isUserPolicy, plane.supported, connection.canCapture,
               let lifecycle = wireFacts?.resident.lifecycle else { return false }
-        return lifecycle == .active || lifecycle == .degraded
+        return (lifecycle == .active || lifecycle == .degraded)
+            && (wireFacts?.policy.allows(plane.id) ?? true)
     }
 
     var requestedPlaneIDs: Set<MirrorPlaneID> {
@@ -148,14 +150,24 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
             return [.structure]
         }
         return Set(facts.planes.compactMap { plane in
-            plane.supported && policyEnabled(plane.id, for: guest)
+            plane.supported && facts.policy.allows(plane.id)
+                && policyEnabled(plane.id, for: guest)
                 ? plane.id : nil
-        }).union([.structure])
+        })
+    }
+
+    func finderComplementsAllowed(for key: GuestKey) -> Bool {
+        if let active = guestProbe.activeGuest, active.key == key,
+           let wireFacts {
+            factsByGuest[key] = wireFacts
+        }
+        return factsByGuest[key]?.policy.finderComplements ?? false
     }
 
     private func updatePendingDeadlines(for facts: MirrorWireFacts, now: Date) {
         let pending = Set<MirrorPlaneID>(facts.planes.compactMap { plane in
-            guard plane.supported, policyEnabled(plane.id),
+            guard plane.supported, facts.policy.allows(plane.id),
+                  policyEnabled(plane.id),
                   plane.state == .requested,
                   facts.resident.lifecycle == .active
                     || facts.resident.lifecycle == .degraded else { return nil }

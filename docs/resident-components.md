@@ -121,11 +121,15 @@ Rules the table carries:
   make crash expiry and replacement explicit. No content or action helper may
   bypass that aggregator with a direct arm-bit write.
 
-The four production planes are Structure (P1, required while Mirror is open),
-Semantics (P2), Content (P3), and Interaction (P4). P2-P4 are optional user
-policy claims, independently armable for diagnosis. A disabled plane cannot
-clear another plane or another owner's claim. Capability, declared length,
-format, freshness, and owner lease must all agree before a plane is trusted.
+The five production planes are Structure (P1), Semantics (P2), Content (P3),
+Interaction (P4), and Transitions (P5). Their host projection remains
+independently selectable, but the guest also owns four safety domains which do
+not pretend to be plane bits: passive structure observation, automatic Finder
+complements, content tracing, and explicit foreground discovery. Both the
+guest gate and the host's per-machine policy must permit work before it starts.
+A disabled domain cannot clear another plane or another owner's claim.
+Capability, declared length, format, freshness, owner lease, and guest policy
+must all agree before a plane is trusted.
 
 P3 transports bounded structured drawing and explicit visual-exception bounds,
 not framebuffer bytes. Bitmap, PICT, CopyBits-only, or manually drawn regions

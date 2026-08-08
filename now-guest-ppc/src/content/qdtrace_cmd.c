@@ -21,6 +21,7 @@
 
 #include "arm_target.h"
 #include "json.h"
+#include "mirror_policy.h"
 #include "peek.h"
 #include "qdtrace_target.h"
 
@@ -187,6 +188,12 @@ static void run_start(const char *json, long id, char *out, long cap)
     long ttl;
     int verdict;
 
+    if (!now_mirror_policy_enabled(kMirrorPolicyContent)) {
+        now_qdtrace_error_json(id, "content-policy-disabled",
+                               "drawing-content tracing is disabled in "
+                               "Mirror settings", out, cap);
+        return;
+    }
     if (block == NULL) {
         now_qdtrace_error_json(id, "content-plane-absent",
                                "the NOW Extension publishes no content "
@@ -360,6 +367,17 @@ static void run_stop(long id, char *out, long cap)
     /* Same claim discipline: the hooks come OUT in the target's own
        context, at its next jGNE pass. This says the request was
        withdrawn. */
+}
+
+void now_qdtrace_stop_for_policy(void)
+{
+    NowContentBlock *block = now_qdtrace_block();
+
+    if (block != NULL) {
+        now_qdtrace_disarm(block);
+    }
+    now_peek_release(kNowPeekOwnerContent,
+                     (unsigned long)kNowPeekTableCapContent);
 }
 
 void now_qdtrace_run(const char *request_json, long id, char *out, long cap)

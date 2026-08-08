@@ -14,6 +14,7 @@
    contract/peek_table.h knows it. AGENTS.md names the alternative as the
    defect this project has paid most for. */
 #include "peek_table.h"
+#include "mirror_policy.h"
 
 enum {
     kMirrorFactsSchema = 1,
@@ -206,6 +207,10 @@ typedef struct MirrorFacts {
     unsigned long source_manifest[kMirrorIdentityWords];
     unsigned long build_fingerprint[kMirrorIdentityWords];
     char reason[kMirrorReasonMax];
+    /* Application-owned permission gates. Unlike the plane rows, these
+       remain reportable when the extension is absent: the preferences file
+       belongs to this application, not to the resident. */
+    MirrorPolicy policy;
     MirrorAnchorFacts anchors;
     MirrorPlaneFact planes[kMirrorPlaneCount];
 } MirrorFacts;

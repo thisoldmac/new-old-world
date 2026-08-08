@@ -9,6 +9,7 @@
 #include "cmd_line.h"
 #include "input_args.h"
 #include "json.h"
+#include "mirror_policy.h"
 #include "peek.h"
 #include "peek_table.h"
 
@@ -442,8 +443,19 @@ void now_input_run_script(const char *request_json, long id,
     OSErr             err;
     InputRows         rows;
     char              message[80];
+    char              purpose[40];
 
     source[0] = '\0';
+    purpose[0] = '\0';
+    (void)now_json_find_string(request_json, "purpose", purpose,
+                               (long)sizeof purpose);
+    if (strcmp(purpose, "mirror-finder-complement") == 0
+        && !now_mirror_policy_enabled(kMirrorPolicyFinderComplements)) {
+        reply_error(out, cap, id, "finder-complements-disabled",
+                    "automatic Finder details are disabled in Mirror "
+                    "settings");
+        return;
+    }
     /* find_TEXT for the same reason as aesend's path: an AppleScript
        source is authored text, not a protocol token, and it routinely
        carries a file or window name a person typed. Left undecoded, a

@@ -137,6 +137,14 @@ owned by a *foreign* application turns out to be far less than that —
 measured, a **20× tax and no starvation at all** (scene median 21 ms
 idle → 413 ms), and acts work straight through it.
 
+The classic Mac's Mirror page now separates four guest-owned safety domains:
+passive structure observation, Finder enrichment, drawing-content tracing,
+and foreground discovery. Only passive structure is enabled by default while
+the PB1400 Finder crash is investigated. The guest enforces each setting and
+the host consumes it; disabling Finder enrichment therefore prevents the
+automatic AppleScripts rather than merely hiding their results. This is
+**built and tested, not metal-verified**.
+
 **The slow loops had a second cause on our own side, and it is now
 fixed — by spending a safety argument.** The guest's act client waits for
 a target to take an armed act in two phases of 5 s each, and that wait

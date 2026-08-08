@@ -199,7 +199,14 @@ long now_mirror_json(const MirrorFacts *facts, long id, char *out, long cap)
         }
     }
     if (n < cap) {
-        n += snprintf(out + n, (size_t)(cap - n), "},\"planes\":[");
+        n += snprintf(out + n, (size_t)(cap - n),
+                      "},\"policy\":{\"structure\":%s,"
+                      "\"finderComplements\":%s,\"content\":%s,"
+                      "\"foregroundCycle\":%s},\"planes\":[",
+                      facts->policy.structure ? "true" : "false",
+                      facts->policy.finder_complements ? "true" : "false",
+                      facts->policy.content ? "true" : "false",
+                      facts->policy.foreground_cycle ? "true" : "false");
     }
     for (i = 0; i < kMirrorPlaneCount && n < cap; ++i) {
         const MirrorPlaneFact *plane = &facts->planes[i];

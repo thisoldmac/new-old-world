@@ -70,6 +70,29 @@ struct MirrorWirePlane: Codable, Equatable, Identifiable, Sendable {
     var reason: String?
 }
 
+/// Safety policy owned by the classic Mac. Missing means a guest built before
+/// these fields existed, whose established behavior allowed every domain.
+struct MirrorGuestPolicy: Codable, Equatable, Sendable {
+    var structure: Bool
+    var finderComplements: Bool
+    var content: Bool
+    var foregroundCycle: Bool
+
+    static let legacyAllowed = Self(structure: true,
+                                    finderComplements: true,
+                                    content: true,
+                                    foregroundCycle: true)
+
+    func allows(_ plane: MirrorPlaneID) -> Bool {
+        switch plane {
+        case .structure, .semantics, .interaction, .transitions:
+            return structure
+        case .content:
+            return content
+        }
+    }
+}
+
 /* In an extension so the memberwise initialiser survives. Declared
    inside the struct it suppressed the memberwise one, and every call
    site that builds a plane field by field stopped compiling. */
@@ -92,11 +115,13 @@ extension MirrorWirePlane {
 struct MirrorWireFacts: Codable, Equatable, Sendable {
     var schema: Int
     var resident: MirrorWireExtension
+    var policy: MirrorGuestPolicy
     var planes: [MirrorWirePlane]
 
     private enum CodingKeys: String, CodingKey {
         case schema
         case resident = "extension"
+        case policy
         case planes
     }
 
@@ -114,6 +139,8 @@ struct MirrorWireFacts: Codable, Equatable, Sendable {
                 forKey: .resident, in: c,
                 debugDescription: "mirror facts did not describe NWex")
         }
+        policy = try c.decodeIfPresent(MirrorGuestPolicy.self,
+                                       forKey: .policy) ?? .legacyAllowed
         let reported = try c.decode([MirrorWirePlane].self, forKey: .planes)
         /* A guest built before a plane existed knows nothing of it and
            honestly sends a shorter list. Refusing that is the NEWER side
@@ -142,9 +169,11 @@ struct MirrorWireFacts: Codable, Equatable, Sendable {
     }
 
     init(schema: Int, resident: MirrorWireExtension,
+         policy: MirrorGuestPolicy = .legacyAllowed,
          planes: [MirrorWirePlane]) {
         self.schema = schema
         self.resident = resident
+        self.policy = policy
         self.planes = planes
     }
 }
@@ -153,6 +182,7 @@ enum MirrorPlanePresentation: Equatable, Sendable {
     case unsupported
     case disconnected
     case userDisabled
+    case guestDisabled
     case unavailable(MirrorExtensionLifecycle)
     case refused(String)
     case degraded(String)
@@ -166,6 +196,7 @@ enum MirrorPlanePresentation: Equatable, Sendable {
         case .unsupported: return "Unsupported"
         case .disconnected: return "Disconnected"
         case .userDisabled: return "Off"
+        case .guestDisabled: return "Off on Mac"
         case .unavailable(let lifecycle):
             switch lifecycle {
             case .absent: return "Extension absent"
@@ -186,6 +217,8 @@ enum MirrorPlanePresentation: Equatable, Sendable {
     var explanation: String? {
         switch self {
         case .refused(let reason), .degraded(let reason): return reason
+        case .guestDisabled:
+            return "This observation domain is disabled in the Mac's Mirror settings."
         default: return nil
         }
     }
@@ -196,12 +229,14 @@ enum MirrorPlaneReducer {
                         lifecycle: MirrorExtensionLifecycle,
                         connected: Bool,
                         policyEnabled: Bool,
+                        guestEnabled: Bool = true,
                         pendingTimedOut: Bool = false) -> MirrorPlanePresentation {
         if !plane.supported { return .unsupported }
         if !connected { return .disconnected }
         guard lifecycle == .active || lifecycle == .degraded else {
             return .unavailable(lifecycle)
         }
+        if !guestEnabled { return .guestDisabled }
         if !policyEnabled { return .userDisabled }
         switch plane.state {
         case .unsupported:

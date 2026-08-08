@@ -13,6 +13,7 @@
 #include "anchor_acquire.h"
 #include "anchor_acquire_logic.h"
 #include "axprocess.h"
+#include "mirror_policy.h"
 #include "peek.h"
 
 /* How long the whole cycle may take. A ceiling on a person's patience
@@ -168,6 +169,12 @@ int now_peek_anchor_cycle(NowAnchorCycleReport *out)
         return 0;
     }
     memset(out, 0, sizeof *out);
+
+    if (!now_mirror_policy_enabled(kMirrorPolicyForegroundCycle)) {
+        note(out, "foreground discovery is disabled in Mirror settings; "
+                  "nothing was disturbed");
+        return 0;
+    }
 
     if (now_peek_table() == NULL) {
         note(out, "the NOW Extension is not active on this machine");

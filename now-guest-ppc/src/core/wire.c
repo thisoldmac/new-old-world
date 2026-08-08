@@ -17,6 +17,7 @@
 #include "console_model.h"   /* the exec plane runs the Console's dispatch */
 #include "json.h"
 #include "loopstat.h"
+#include "mirror_policy.h"
 #include "nowlog.h"
 #include "pixels.h"
 #include "contract.h"
@@ -437,6 +438,14 @@ static unsigned long g_scene_plane_caps;
 
 static void renew_scene_planes(void)
 {
+    if (!now_mirror_policy_enabled(kMirrorPolicyStructure)) {
+        now_peek_release(kNowPeekOwnerScene,
+                         (unsigned long)(kNowPeekCapAnchors
+                                         | kNowPeekCapTree
+                                         | kNowPeekTableCapAct));
+        g_scene_plane_caps = 0;
+        return;
+    }
     if (g_scene_plane_caps == 0) {
         return;
     }
@@ -2006,7 +2015,7 @@ static void serve_scene(const char *request)
        Held across requests, every application that pumps between two
        scenes gets one, which is what makes a mirror show the machine
        rather than this application. */
-    {
+    if (now_mirror_policy_enabled(kMirrorPolicyStructure)) {
         unsigned long requested = (unsigned long)kNowPeekCapAnchors;
         unsigned long optional = (unsigned long)(kNowPeekCapTree
                                                   | kNowPeekTableCapAct);
@@ -2019,6 +2028,16 @@ static void serve_scene(const char *request)
            the claim rather than only the next scene. See
            renew_scene_planes(). */
         g_scene_plane_caps = requested;
+    } else {
+        /* Structure-off is not a thin structural request. It is no
+           foreign-memory observation at all: withdraw every scene-owned
+           claim and let scene_collect report only what Process Manager and
+           this application's own context can prove. */
+        now_peek_release(kNowPeekOwnerScene,
+                         (unsigned long)(kNowPeekCapAnchors
+                                         | kNowPeekCapTree
+                                         | kNowPeekTableCapAct));
+        g_scene_plane_caps = 0;
     }
 
     /* THEN WAIT FOR THE PLANE, briefly, rather than walking blind.
@@ -2035,8 +2054,10 @@ static void serve_scene(const char *request)
      * the walk proceeds either way - a scene that says "not observed" is
      * still the honest answer when the plane genuinely is not armed. The
      * arm handshake is unchanged; this only stops asking before it. */
-    (void)now_peek_settle((unsigned long)kNowPeekCapAnchors,
-                          kNowSceneArmSettleTicks);
+    if (g_scene_plane_caps != 0) {
+        (void)now_peek_settle((unsigned long)kNowPeekCapAnchors,
+                              kNowSceneArmSettleTicks);
+    }
 
     /* AND NOTHING MORE, ON THIS PATH. A wake sweep was tried here and
      * REMOVED after it was measured: on a freshly booted machine

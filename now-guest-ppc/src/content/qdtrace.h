@@ -394,6 +394,11 @@ void now_qdtrace_error_json(long id, const char *code, const char *message,
    ours - see the note in qdtrace_cmd.c. */
 void now_qdtrace_run(const char *request_json, long id, char *out, long cap);
 
+/* Withdraw an existing request when the person turns the content domain
+   off. This is intentionally separate from the command reply: a local
+   checkbox has no synthetic command id and must still make "off" immediate. */
+void now_qdtrace_stop_for_policy(void);
+
 /* The block, found through the shared table, or NULL. Toolbox: it probes
    Gestalt through peek.c on every call. */
 NowContentBlock *now_qdtrace_block(void);

@@ -85,6 +85,23 @@ final class MirrorPlaneDomainTests: XCTestCase {
         XCTAssertEqual(MirrorPlaneReducer.resolve(
             plane: plane(.semantics), lifecycle: .active,
             connected: true, policyEnabled: true), .activeCurrent)
+        XCTAssertEqual(MirrorPlaneReducer.resolve(
+            plane: plane(.semantics), lifecycle: .active,
+            connected: true, policyEnabled: true, guestEnabled: false),
+            .guestDisabled,
+            "the Mac's safety gate is distinct from host preference")
+    }
+
+    func testGuestPolicyDomainsStayIndependent() {
+        let policy = MirrorGuestPolicy(
+            structure: true, finderComplements: false,
+            content: false, foregroundCycle: true)
+        XCTAssertTrue(policy.allows(.structure))
+        XCTAssertTrue(policy.allows(.semantics))
+        XCTAssertTrue(policy.allows(.interaction))
+        XCTAssertFalse(policy.allows(.content))
+        XCTAssertFalse(policy.finderComplements)
+        XCTAssertTrue(policy.foregroundCycle)
     }
 
     func testLifecycleFailureMakesSupportedPlaneUnavailable() {
@@ -274,6 +291,19 @@ final class MirrorPlaneDomainTests: XCTestCase {
         XCTAssertNotNil(filled.reason)
         XCTAssertTrue(facts.planes[0].supported,
                       "the rows the guest did send are untouched")
+        XCTAssertEqual(facts.policy, .legacyAllowed,
+                       "an older guest keeps its established behavior")
+    }
+
+    func testCurrentGuestPolicyDecodesWithoutChangingSchema() throws {
+        let json = #"{"schema":1,"extension":{"selector":"NWex","lifecycle":"active","expectedMajor":1},"policy":{"structure":true,"finderComplements":false,"content":false,"foregroundCycle":false},"planes":[{"id":"structure","purpose":"Window structure","capability":1,"supported":true,"format":3,"requested":false,"active":false,"freshness":"unavailable","state":"inactive","generation":0}]}"#
+        let facts = try JSONDecoder().decode(
+            MirrorWireFacts.self, from: Data(json.utf8))
+
+        XCTAssertTrue(facts.policy.structure)
+        XCTAssertFalse(facts.policy.finderComplements)
+        XCTAssertFalse(facts.policy.content)
+        XCTAssertFalse(facts.policy.foregroundCycle)
     }
 
     func testAScrambledPlaneOrderIsStillRefused() throws {

@@ -290,15 +290,17 @@ final class NOWMirrorSourceTests: XCTestCase {
         let harness = MirrorCycleHarness(activeKey: key)
         let listener = testListener()
         var scripts = 0
+        var firstArgs: [String: CommandArg]?
         var held: ((CommandResult) -> Void)?
         let source = NOWMirrorSource(
             listener: listener, engineRegistry: MirrorStateEngineRegistry(),
             act: testAct(listener), interval: 3_600,
             visibilityRefreshOverride: { _, _, completion in completion() },
             cycleIO: harness.io,
-            sendCommand: { verb, _, completion in
+            sendCommand: { verb, args, completion in
                 guard verb == "script" else { return }
                 scripts += 1
+                if firstArgs == nil { firstArgs = args }
                 held = completion
             })
 
@@ -310,6 +312,10 @@ final class NOWMirrorSourceTests: XCTestCase {
         for _ in 0..<20 where held == nil { await Task.yield() }
         let firstReply = try XCTUnwrap(held, "the desktop roster never began")
         XCTAssertEqual(scripts, 1)
+        XCTAssertEqual(firstArgs?["purpose"],
+                       .text("mirror-finder-complement"),
+                       "automatic Finder work must be distinguishable from "
+                       + "a deliberate Script command on the guest")
 
         source.stop()
         firstReply(.init(
@@ -322,6 +328,31 @@ final class NOWMirrorSourceTests: XCTestCase {
 
         XCTAssertEqual(scripts, 1,
                        "a canceled roster sent its type/art pass after Stop")
+    }
+
+    func testGuestPolicyCanSuppressFinderComplementsBeforeAnyScript() throws {
+        let key = GuestKey.synthetic("finder-policy-off")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        var complementStarted = false
+        var scripts = 0
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderComplementPolicy: { _ in false },
+            finderRefreshOverride: { _, _, _ in complementStarted = true },
+            visibilityRefreshOverride: { _, _, _ in complementStarted = true },
+            cycleIO: harness.io,
+            sendCommand: { verb, _, _ in
+                if verb == "script" { scripts += 1 }
+            })
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        harness.completeJoin(0)
+
+        XCTAssertFalse(complementStarted)
+        XCTAssertEqual(scripts, 0)
     }
 
     /// The other half of the same repair, and the reason it is safe.
