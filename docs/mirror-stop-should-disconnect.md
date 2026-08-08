@@ -78,3 +78,36 @@ windows (`empty`).
   safety defect the first draft of this file claimed.
 - Unrelated, same session: [the Mirror crash on
   metal](mirror-crashes-now-on-metal.md).
+
+## This is probably not a polish item — it may be half the crash ladder
+
+Michelle, 2026-08-08, after the VM-off run:
+
+> yeah the host mirror needs to actually be shut off and cleared when it
+> is stopped, not merely paused
+
+Two observations from that same session, hours apart, line up:
+
+1. She **stopped the Mirror** after a guest reboot. The crash ladder did
+   **not** reset — she was still on a later rung.
+2. She **restarted the host app**. The ladder **reset to rung 1**, the
+   clean immediate crash.
+
+**Stop does not clear what a restart clears.** That is this defect stated
+as an experiment rather than as a complaint, and it arrives from the other
+direction: not "the desktop looked stale" but "the machine's failure mode
+depends on host state that Stop was supposed to have discarded."
+
+See [mirror-crashes-now-on-metal.md](mirror-crashes-now-on-metal.md) —
+the escalation ladder is partly host-side, because a host restart cannot
+clear anything accumulating on the Macintosh.
+
+**Stated as a candidate, not a cause.** What would confirm it: once Stop
+genuinely disconnects and clears, stopping the Mirror should reset the
+rung exactly as restarting the host does today. If it does not, the
+host-side residue lives somewhere Stop was never going to touch, and this
+fix is still correct but is not the ladder's cause.
+
+That raises this file's priority. It was filed as a stale-render
+annoyance. It is now on the path to "runs on metal", which Michelle has
+called the bare minimum for landing `main`.
