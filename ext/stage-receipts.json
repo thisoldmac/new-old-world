@@ -121,6 +121,16 @@
         "ext/src/now_content.c"
       ],
       "reason": "Metal debug build for Michelle, mid-session at 03:50. The fix is the crash she is reproducing on the PowerBook right now and she needs the INIT to test it; a bake refuses while her VM and host app are running, and the shared oracle is hers to replace. Bake before this lands."
+    },
+    {
+      "at": "2026-08-08T04:06:32-0400",
+      "branch": "claude/026-logging-build",
+      "extDigest": "6497f54aba63460faf8e83d25965c650e0e50299",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c"
+      ],
+      "reason": "Second iteration of the metal crash fix, handed to Michelle mid-session at 04:00. Bake before landing."
     }
   ]
 }

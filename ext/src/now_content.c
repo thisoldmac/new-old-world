@@ -112,6 +112,10 @@ short gNowContentQDExtBusy = 0;
 extern void now_content_qdext_patch(void);
 
 static short content_slot_for(GrafPtr port, NowPeekU32 a5);
+/* Declared here as well as at its definition: the blit-source row walk
+   below needs it, and it sits a thousand lines above the existing
+   declaration. */
+static Boolean content_probe_addr_ok(NowPeekU32 addr, unsigned long size);
 
 /* Called from the shim on every $AB1D dispatch, with the selector word
    the caller loaded into d0. Counts and nothing else: E1 exists to find
@@ -538,13 +542,50 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
                A skipped row keeps the zeros set above, which the join
                already reads as "carries geometry and no pixels" — the
                honest answer for a window this context cannot see. */
+            /* The a5 check alone is not enough, and assuming it was is why
+               a first attempt at this did not stop the crash. It keeps us
+               off ANOTHER process's memory; it says nothing about whether
+               OUR OWN row is still valid. `LockPixels` relocates the PixMap
+               RECORD, so a row this context installed can hold a handle
+               whose master pointer has moved since — same fault, same
+               process.
+
+               `content_probe_addr_ok` is this file's own answer to that
+               question and is already used exactly this way in the GWorld
+               candidate walk below (`content_probe_addr_ok(ph, ...)` then
+               `(pm, sizeof(PixMap))`). It rejects anything below 0x1000,
+               anything odd, and anything outside the CURRENT Application
+               or System zone — so a pointer belonging to a process that is
+               gone fails it by construction.
+
+               Three reads, three checks, in the order they are made. */
+            /* `gArmedA5 != 0` FIRST, and it is not redundant — it is the
+               hole the first version of this guard left open. Rows can be
+               installed carrying a5 0 (content_install_port is called with
+               a local a5 from the probe and window walks, not only from the
+               guarded path), and the plane spends real time disarmed with
+               ports still hooked. In that state `gPorts[i].a5 == gArmedA5`
+               is 0 == 0 — TRUE — so the guard passed and the dereference
+               happened anyway.
+
+               Measured: with only the a5 comparison, Michelle's 1400c
+               armed content cleanly and ran 19 seconds before dying, its
+               log ending on `content active a5 0x0 mode 0, 3 port(s)
+               hooked` with `+2 in`. A guard that fails open in precisely
+               the state the machine ends up in is not a guard. */
             if (gPorts[i].offscreen && gPorts[i].pixmap != 0
-                && gPorts[i].a5 == gArmedA5) {
+                && gArmedA5 != 0
+                && gPorts[i].a5 == gArmedA5
+                && content_probe_addr_ok(gPorts[i].pixmap, sizeof(Ptr))
+                && content_probe_addr_ok((NowPeekU32)gPorts[i].port,
+                                         sizeof(GrafPort))) {
                 CGrafPtr cand = (CGrafPtr)gPorts[i].port;
                 PixMap *pm = (PixMap *)*(Handle)gPorts[i].pixmap;
 
                 rows[i].pixmap_deref = (NowPeekU32)pm;
-                if (pm != NULL) {
+                if (pm != NULL
+                    && content_probe_addr_ok((NowPeekU32)pm,
+                                             sizeof(PixMap))) {
                     rows[i].port_version =
                         (NowContentU16)(unsigned short)cand->portVersion;
                     rows[i].rect_l = cand->portRect.left;
