@@ -170,3 +170,72 @@ by `now_peek_claim(requested)` — is where to look next.
 Note the shape of that pair: a release of everything optional that was
 not requested, then a claim. Two writes to the lease set per scene
 request, and the plane goes through a transition on every one.
+
+## MEASURED, 2026-08-08 ~06:16, driving the live PowerBook over the agent socket
+
+The host agent socket was read while Michelle opened the Mirror. Identity
+confirmed first: `Powerbook 1400c`, `guest-3`, listening port 5250 — metal,
+not the emulator. A liveness tail sampled `session_health` every 3s.
+
+### The full sequence, in order
+
+1. **Before the Mirror opens:** cycles are `walk: structure`, `windows: 1`,
+   `elements: 67`. 10 of 24 `ok`, 14 `failed`.
+2. **The Mirror opens:** the walk changes to `walk: full`, `windows: 5`.
+3. **Every full walk fails.** All 24 held cycles read
+   `(full, failed, 5)` with `requestMs: 0, totalMs: 0, decodeMs: 0` — the
+   request was **never sent**. Not a slow guest; a host that did not ask.
+4. **Four acts dispatch**, in this order:
+
+   | act | outcome |
+   |---|---|
+   | move New Old World | dispatched (546 ms) |
+   | move New Old World | dispatched (245 ms) |
+   | click the close box of New Old World | **confirmed** (via the broker) |
+   | click `"after-dark-2x-1993.sit"` | dispatched (539 ms) |
+
+   Note the asymmetry: the close box went through `MirrorMutationBroker`
+   and came back **confirmed**; the desktop-file click took the direct
+   lane and only ever reached **dispatched**.
+5. **The guest is lost.** The tail fired `GUEST LOST`. It returned at
+   `connectedAt 06:16:45` with `framesReceived` reset to 4.
+6. **Michelle, at the machine:** *"guest app crashed finder then wedged
+   itself after finder restarted. needed to force quit and restart guest
+   app."*
+
+### What that adds
+
+- **The failure is host-side, and it is total.** 24 of 24 full walks were
+  never sent. Structure walks worked. Whatever refuses to send, it began
+  when the walk went full.
+- **The wedge is a THIRD event, not the crash.** NOW crashes → the Finder
+  crashes → the Finder restarts → *then* NOW wedges and needs a force
+  quit. A wedge after a Finder restart is a different failure from the
+  crash that preceded it, and the two should not be filed as one.
+- **`idleMs` stays 758–804 throughout**, structure or full. The ~780 ms
+  poll cadence is unchanged by any of this.
+
+### The one thing blocking the diagnosis
+
+`outcome: "failed"` is not a real outcome. The host's own vocabulary
+(`NOWMirrorSource.swift:552-597`) is `no-reply`, `wrong-mac`, `starved`,
+`refusedByGuest`, `ok`. Twenty-four cycles failed and the surface will not
+say which. `claude/026-cycle-outcome-reason` exists to fix exactly that,
+and it is now the critical path: **re-run this read after it lands and the
+answer is one word.**
+
+### Retraction
+
+Two claims made during this session were wrong and are withdrawn:
+
+- That `connectedAt` moving and `framesReceived` dropping showed a host
+  defect in guest-record handling. **It was reconnects.** A new connection
+  resets the frame counter; that is correct. Samples taken across separate
+  commands were compared in the wrong order.
+- That two of four earlier guest logs "dying immediately after the files
+  refusal" was a lead. The refusal appears in nearly every session and one
+  survives it by twelve minutes.
+
+Both were true observations promoted to causes because they sat near the
+thing being looked for. Recorded because the pattern recurred three times
+in one night, twice after saying the lesson had been learned.
