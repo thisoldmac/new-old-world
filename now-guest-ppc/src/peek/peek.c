@@ -1,6 +1,9 @@
 #include "peek.h"
 
 #include "commands.h"
+/* The Mirror's own account of itself. Every call below is edge-triggered
+   and task time; see mirror_log.h for why that boundary is the design. */
+#include "mirror_log.h"
 
 #include <Files.h>
 #include <Folders.h>
@@ -156,8 +159,17 @@ static int maintain_writer(NowPeekTable *table, NowPeekU32 now)
     ProcessSerialNumber psn;
     NowPeekWriterLease *writer;
 
-    if (!writer_region_ready(table) || !current_app_identity(&psn)) {
-        return 0;                    /* dev-named app: read-only NWex */
+    if (!writer_region_ready(table)) {
+        now_mirror_log_writer(kMirrorWriterNoRegion, 0);
+        return 0;
+    }
+    if (!current_app_identity(&psn)) {
+        /* Dev-named app: read-only NWex. This branch is why mirror_log.c
+           exists — it arms nothing while the resident goes on reporting
+           active with full capabilities, and until now it said so
+           nowhere at all (AGENTS.md, "no writer"). */
+        now_mirror_log_writer(kMirrorWriterNotCanonical, 0);
+        return 0;
     }
     writer = &table->writer;
     if (g_session_nonce_hi != 0 || g_session_nonce_lo != 0) {
@@ -165,10 +177,13 @@ static int maintain_writer(NowPeekTable *table, NowPeekU32 now)
             && writer->session_nonce_lo == g_session_nonce_lo
             && writer->owner_epoch == g_session_epoch) {
             writer->heartbeat_ticks = now;        /* renew, publish last */
+            now_mirror_log_writer(kMirrorWriterOwned,
+                                  (unsigned long)g_session_epoch);
             return 1;                 /* resident independently gates use */
         }
     }
     if (writer_current(table, now)) {
+        now_mirror_log_writer(kMirrorWriterOtherSession, 0);
         return 0;                    /* another current session owns it */
     }
 
@@ -193,14 +208,22 @@ static int maintain_writer(NowPeekTable *table, NowPeekU32 now)
     now_peek_leases_begin_session(&g_leases, g_session_epoch);
     g_leases_ready = 1;
     g_published_caps = 0;
+    now_mirror_log_writer(kMirrorWriterOwned, (unsigned long)g_session_epoch);
     return 1;                        /* resident may settle echo next pass */
 }
+
+/* Which owner last moved a lease. The union is what reaches the table,
+   so the change is the event — but "who asked" is the question the log
+   could not answer at all, and it is known only here. */
+static int g_last_actor = (int)kNowPeekOwnerCount;
 
 static void publish_claims_to(NowPeekTable *table, NowPeekU32 now)
 {
     NowPeekU32 wanted = now_peek_leases_union(&g_leases, now);
 
     if (wanted != g_published_caps || table->arm_request != wanted) {
+        now_mirror_log_request(g_last_actor, (unsigned long)g_published_caps,
+                               (unsigned long)wanted);
         table->arm_request = wanted;
         g_published_caps = wanted;
     }
@@ -235,6 +258,8 @@ const NowPeekTable *now_peek_table(void)
         if (maintain_writer(table, now) && g_leases_ready) {
             publish_claims_to(table, now);
         }
+    } else {
+        now_mirror_log_writer(kMirrorWriterNoResident, 0);
     }
     return table;
 }
@@ -257,7 +282,10 @@ void now_peek_claim_until(NowPeekOwner owner, unsigned long caps,
 
     if (table != NULL) {
         (void)maintain_writer(table, now);
+    } else {
+        now_mirror_log_writer(kMirrorWriterNoResident, 0);
     }
+    g_last_actor = (int)owner;
     if (!g_leases_ready) {
         now_peek_leases_init(&g_leases, g_session_epoch);
         g_leases_ready = 1;
@@ -278,10 +306,17 @@ int now_peek_settle(unsigned long caps, unsigned long max_ticks)
         EventRecord ev;
         const NowPeekTable *table = now_peek_table();  /* republishes */
 
+        /* Each exit below is a DIFFERENT reason a plane did not arm, and
+           telling them apart from the outside was impossible: all four
+           are the same bare 0 to the caller, and none of them reached the
+           log at all. That is what made six crash mechanisms
+           unfalsifiable on 2026-08-07. */
         if (table == NULL) {
+            now_mirror_log_settle(caps, 0, "no resident");
             return 0;                 /* no resident: nothing to wait for */
         }
         if ((table->arm_active & (NowPeekU32)caps) == (NowPeekU32)caps) {
+            now_mirror_log_settle(caps, 1, NULL);
             return 1;
         }
         if ((table->arm_request & (NowPeekU32)caps) != (NowPeekU32)caps) {
@@ -289,9 +324,11 @@ int now_peek_settle(unsigned long caps, unsigned long max_ticks)
                the writer (a dev-named binary) or the resident has taken
                the request away. Waiting for an echo of a request nobody
                made is how a bounded wait becomes a stall on every call. */
+            now_mirror_log_settle(caps, 0, "request not published");
             return 0;
         }
         if ((unsigned long)TickCount() >= deadline) {
+            now_mirror_log_settle(caps, 0, "resident never echoed in time");
             return 0;
         }
         /* Give up the processor without dequeuing anything - mask zero,
@@ -307,6 +344,7 @@ void now_peek_release(NowPeekOwner owner, unsigned long caps)
     if ((int)owner < 0 || (int)owner >= (int)kNowPeekOwnerCount) {
         return;
     }
+    g_last_actor = (int)owner;
     now_peek_leases_release(&g_leases, owner, (NowPeekU32)caps);
     publish_claims();
 }
@@ -318,6 +356,7 @@ unsigned long now_peek_session_epoch(void)
 
 void now_peek_disconnect(void)
 {
+    now_mirror_log_disconnect((unsigned long)g_published_caps);
     now_peek_leases_disconnect(&g_leases);
     publish_claims();
 }

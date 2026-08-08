@@ -527,7 +527,7 @@ static Boolean network_click(const EventRecord *event, Point local)
             /* Both Refresh buttons re-run the same probe: the two
                sections come from one call each and there is nothing to
                gain from asking for half of it. */
-            now_log(kLogInfo, "network", "refresh requested");
+            now_log(kLogInfo, "net", "refresh requested");
             reprobe();
             recompute();
             sync_scrollbar();
