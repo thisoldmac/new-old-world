@@ -109,10 +109,41 @@ armed against the Finder. Present is not usable. Nobody has reproduced
 the Finder crash independently of NOW dying first, so it remains
 unexplained on its own terms.
 
-## BROKEN: no bake can be installed — the shutdown route powers the Mac off and leaves the volume DIRTY (2026-08-07, `claude/024-census-crash`)
+## FIXED: no bake can be installed — the census ATA probe left the volume DIRTY (2026-08-07, found `claude/024-census-crash`, fixed `claude/024-bake-volume-clean`)
 
-Two private bakes today, both of them reaching the end and installing
-**nothing**:
+**The shutdown route was never the bug and `tools/volclean.py` was right
+throughout.** `census_ata_identify` built a correct ATA Manager Drive
+Identify parameter block and left `ataPBFlags` zero, so `mATAFlagIORead`
+— the flag that tells the manager to drive the data-in phase — was never
+set. The call returns `noErr` with an empty 512-byte buffer and leaves
+the device mid-command; the cost lands minutes later on the Shutdown
+Manager's final "volume unmounted" write. One line in
+`now-guest-ppc/src/census/census_trap.c`.
+
+That also explains a symptom recorded as a drive's own quirk: the
+PB1400c's "the manager answers noErr with an EMPTY IDENTIFY buffer"
+(2026-07-22) was not the drive having nothing to say. Nobody had asked
+for the data. **The 1400c's `ata` row should be re-read on metal** — it
+may no longer say "present; drive returned no IDENTIFY data".
+
+Isolated by five emulator trials, one base image and one shutdown route
+throughout — no census **CLEAN**; the full 14-probe sweep **DIRTY**;
+`--probes ata` alone **DIRTY**; that probe narrowed to the single device
+id that actually answers **DIRTY** (so it is the SUCCESSFUL Identify, not
+the timeouts on the absent ids); `overview,volumes,drives,drivers`
+**CLEAN**. A static parameter block was tried first and changed nothing,
+which ruled out the queue-element theory. With the flag: `--probes ata`
+**CLEAN**, full sweep **CLEAN**, and a whole private
+`scripts/bake-ext-image` run completed and installed.
+
+Why it looked like a shutdown defect: the failing bakes were the first
+ones to run the new census gate, and every bake before them — three on
+6–7 August, all CLEAN — took the identical Finder route. The route's
+"powered OFF and QEMU exited on its own (6s) — the real thing" line was
+true every time. **Tested on the emulator; not metal-verified.**
+
+Two private bakes on 2026-08-07, both of them reaching the end and
+installing **nothing**:
 
 ```
   Finder Special(260) item 8 'Shut Down', psn 0.29949953
@@ -152,6 +183,15 @@ leaves unfinished on THIS base, and whether the applet fallback (whose
 own record is three unmounted volumes) does any better. Nobody should
 reach for `--force` here: a power cut is exactly what the dirty bit is
 reporting.
+
+*(The preserved candidate is the evidence that settled it, and it settled
+it without a boot: it still read DIRTY a day later, long after QEMU had
+exited and released the file, so the check could not have been reading
+too early. Its HFS+ header carried `writeCount` 28945 against the clean
+oracle's 28399 and a `modifyDate` at the moment of shutdown — the volume
+was written 546 times and right to the end, so the writes reached the
+qcow2 and only the one that sets the unmounted bit did not happen. Read
+the header, not just the bit.)*
 
 ## MEASURED: a VM snapshot restores in ~0 seconds, and the first two runs said it did not work (2026-08-07, `claude/024-census-crash`)
 
