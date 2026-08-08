@@ -19832,3 +19832,82 @@ worktree, a branch off the intended base, and `git cherry-pick -x` of
 the three by hash. The other lanes' branches were left alone —
 rewriting a branch another session is actively committing to is worse
 than the mess it would tidy.
+
+## 2026-08-08 — round 11's ledger entry: both census fixes are in one tree, and the file two lanes could not read is now landed
+
+Round 11 merged three lanes into `claude/024-integration-11` off
+`claude/024-integration-10`. `scripts/test-all` exited **0**; the host
+suite ran twice inside it at 1902 tests / 0 failures (54 then 72
+skipped — one command, two configurations, not variance), and a third
+standalone `scripts/test-host` also read 1902 / 0. **TESTED, not
+metal-verified**, and stage 6 skipped by design: nothing in this round
+reached a Macintosh.
+
+### What landed
+
+- `claude/024-bake-volume-clean` (7 commits) — and it **carries
+  `claude/024-census-crash` as a first-parent ancestor**, which is the
+  fact worth recording. The two census fixes were never separable: `git
+  merge-base --is-ancestor` answered yes, so one merge put the `pccard`
+  trap-existence check and the `ata` `ataPBFlags` fix in the same tree,
+  and a second merge of `024-census-crash` would have been a no-op
+  against a lane that had already taken it. Merging both blindly was the
+  hazard the brief named and the ancestry check is what answers it.
+- `claude/024-items-arbitration` (3 commits) — `SceneRenderer`'s
+  Finder-roster arbitration, split cell: icon box into `semanticFrames`,
+  name yielded to the machine's own text run.
+- `claude/019-drive-findings` (7 commits) — `docs/lane-context.md`, the
+  drive-defects plan, the integration-suite spec, `tools/guest-ata/`.
+
+`claude/025-drive-defects` was **deliberately not merged**: it is another
+session's live work on `SceneRenderer.swift`, in flight from
+`integration-10`. Landing this round is the only channel by which the
+arbitration change reaches it, since an independent session cannot be
+messaged.
+
+### The census gate reported six files gone and none of them was a loss
+
+`tools/merge-census-gate pending` refused nothing across all three
+merges — 0 dropped, 0 imported self-reverts — but the third printed **54
+removed-by-a-side and 6 files gone**, all of them the pixel islands
+(`PixelIsland.swift`, `IslandStore.swift` and four test files). That is
+exactly the verdict the gate declines to refuse on, and the reason is in
+its own text: a deliberate deletion and a revert are the same bytes. Read
+by hand rather than trusted: `019-drive-findings` was cut before
+`866faa34 feat(mirror): rip out the pixel islands`, so it still carries
+them; the integration line deleted them on purpose and the merge kept
+them deleted. **The gate's non-refusing output is the half that still
+needs a reader**, and this round is a worked example of what reading it
+looks like.
+
+### `docs/open-issues.md` union-resolved, audited in Python
+
+Both `024-bake-volume-clean` and `024-items-arbitration` append here, and
+git auto-merged them. Audited by heading rather than by eye: 538 headings
+on the base, 541 after merge 1, 543 on the items lane, **546 merged with
+nothing lost from either side**, and the line count is the exact sum
+(19,523 + 210 + 101 = 19,834). The five duplicate headings the audit
+found — `### Broken`, `### Unverified` and friends — are **pre-existing
+in the base**, one per ledger entry, and were checked against it rather
+than assumed.
+
+### The derived tables did not move, and that is a measurement
+
+`tools/derived-doc-gate check` passed and `rederive` rewrote nothing:
+49 / 23 inbound message types, a 47-verb registry served 44 by the
+PowerPC guest and 13 by NOW-68K, 14 / 14 census probes. Expected for this
+round — the census fixes changed what the `ata` and `pccard` probes DO,
+not which probes exist, and `SceneRenderer` is host-side and below the
+contract entirely. A derivation unmoved by a merge looks identical to a
+derivation nobody ran; the difference is that a machine took this one.
+
+### Still open
+
+- **Nothing in this arc is metal-verified**, including both census
+  fixes. The `ata` fix is the one that matters most and can only be
+  proven by a bake or a real machine; **this round baked nothing**.
+- `tools/guest-ata/` is **Builds only** — it is not in
+  `scripts/build-guests`, so no gate cross-compiles it.
+- `scripts/test-all`'s header still says the MirrorKit stage is "165
+  tests"; it is 258 now. Prose restating a number is a second place to be
+  wrong, and this is one.
