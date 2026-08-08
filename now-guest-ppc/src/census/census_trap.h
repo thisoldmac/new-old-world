@@ -19,6 +19,22 @@
    caller answers `refused`). Cheap and idempotent. */
 int census_trap_ready(void);
 
+/* IS THIS TRAP ACTUALLY THERE? census_trap_ready() only says the Mixed
+   Mode ROUTE is open; it says nothing about the destination, and on
+   2026-08-07 that distinction killed a Macintosh. The PB1400c has a PC
+   Card Manager at $AAF0, a Power Mac G4 does not, and dispatching to an
+   unimplemented trap took down NOW, then the anchor worker, then the
+   Finder. Every trap dispatch in this file must pass through here first.
+
+   Answers 1 implemented, 0 unimplemented, -1 the trap table could not be
+   read — and -1 means DO NOT DISPATCH, because "we could not check"
+   must never resolve to "go ahead" for an operation whose failure mode
+   is a dead machine. `at` and `unimplemented` receive the two addresses
+   compared, so the probe can put the evidence in its own note rather
+   than asking anyone to take this on trust. */
+int census_trap_implemented(unsigned short trap_word,
+                            unsigned long *at, unsigned long *unimplemented);
+
 /* ATA IDENTIFY DEVICE for `device_id` (bus | device<<8) into `buf` (512
    bytes). Returns the trap result: 0 = the ATA Manager answered. `buf`
    holds the raw IDENTIFY response - on some drives the manager answers

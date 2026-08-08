@@ -8,6 +8,7 @@
 #   3. MirrorKit      - the vendored Mirror host package, 165 tests, ~15s
 #   4. guest builds   - both cross-compilers (skipped without Retro68)
 #   5. host gate      - 556 tests plus both Xcode configurations
+#   6. live guest     - the census, against a REAL guest (opt-in, see below)
 #
 # Cheapest first is the whole design. A broken frame codec should cost
 # two seconds to discover, not the four minutes it takes xcodebuild to
@@ -19,6 +20,23 @@
 # read green for three days while seven of those tests were red. That is
 # the same hole as "every other gate can be green while neither guest
 # compiles": a gate is only as wide as the tools it invokes.
+#
+# STAGE 6 IS OPT-IN, AND ONCE OPTED IN IT FAILS RATHER THAN SKIPS. Every
+# stage above this line boots nothing: 1-5 read text, compile, and run host
+# code. That is why `census` could kill the Workshop on 2026-08-07 while
+# 1,902 tests were green — the probe that did it dispatches a 68K trap that
+# does not exist on that Mac, and no amount of host-side testing can reach
+# that. Its home is scripts/bake-ext-image, where a guest is already booted
+# and the check costs seconds; this stage exists for the OTHER half, a lane
+# changing now-guest-ppc/src/census/ that has a VM up and never bakes.
+#
+#     NOW_GUEST_LIVE=<wire port> [NOW_GUEST_ANCHOR=<anchor port>] #     NOW_GUEST_QMP=<run>/qmp.sock scripts/test-all
+#
+# Unset skips, and says so. Set, a guest that does not answer is a FAILURE:
+# a gate that reads green having never reached a machine is worse than no
+# gate (AGENTS.md > Testing, on the metal gates this borrows its shape
+# from). It asserts WHICH guest answered, because under user-mode
+# networking any session's VM on this Mac can reach your listener.
 #
 # What this does NOT run: the metal suites. They need hardware, they are
 # opt-in through NOW_METAL, and once opted in they FAIL rather than skip
@@ -78,18 +96,18 @@ if [ "$hooks_armed" = no ] && [ -z "${TBT_ALLOW_UNARMED_HOOKS:-}" ]; then
     exit 1
 fi
 
-echo "==> [1/5] staged-image discipline gates"
+echo "==> [1/6] staged-image discipline gates"
 # First because it is cheap, and because a broken image gate is the one
 # failure that makes every LATER result unattributable rather than wrong:
 # it decides whether anybody can say which resident a measurement came from.
 "$script_dir/../tools/image-discipline-tests" || fail "staged-image gates"
 
 echo
-echo "==> [2/5] native tests"
+echo "==> [2/6] native tests"
 "$script_dir/test-native" || fail "native tests"
 
 echo
-echo "==> [3/5] MirrorKit gate"
+echo "==> [3/6] MirrorKit gate"
 # 165 XCTest lines is more than a green run should print, so it is logged
 # rather than shown — but a SKIP is pulled back out and echoed. A gate that
 # quietly declines to run is exactly how this stage came to be missing, so
@@ -105,17 +123,36 @@ else
 fi
 
 echo
-echo "==> [4/5] guest cross-builds"
+echo "==> [4/6] guest cross-builds"
 "$script_dir/build-guests" || fail "guest cross-builds"
 
 echo
-echo "==> [5/5] host gate"
+echo "==> [5/6] host gate"
 "$script_dir/test-host" >/dev/null 2>&1 || {
     # Re-run showing output: the host gate is verbose enough that hiding
     # it on the happy path is worth the second run on the sad one.
     "$script_dir/test-host" || fail "host gate"
 }
 echo "==> host gate passed"
+
+echo
+echo "==> [6/6] live-guest gate"
+if [ -z "${NOW_GUEST_LIVE:-}" ]; then
+    echo "==> SKIP: no NOW_GUEST_LIVE — nothing in this run reached a Macintosh."
+    echo "    Stages 1-5 boot nothing. Set NOW_GUEST_LIVE=<wire port> against a"
+    echo "    guest you have up (scripts/spin-up-ppc leaves one) to run the"
+    echo "    census against it. scripts/bake-ext-image runs it unconditionally."
+else
+    live_args="--port $NOW_GUEST_LIVE"
+    [ -n "${NOW_GUEST_ANCHOR:-}" ] && live_args="$live_args --anchor $NOW_GUEST_ANCHOR"
+    [ -n "${NOW_GUEST_QMP:-}" ] && live_args="$live_args --qmp $NOW_GUEST_QMP"
+    [ -n "${NOW_GUEST_BUILD_DIR:-}" ] && live_args="$live_args --build-dir $NOW_GUEST_BUILD_DIR"
+    # No `|| true` anywhere on this line. Opted in, a guest that cannot be
+    # reached is the failure, not a reason to pass.
+    python3 "$script_dir/../tools/census-survives.py" $live_args \
+        || fail "live-guest gate (census)"
+    echo "==> live-guest gate passed"
+fi
 
 echo
 if [ "$hooks_armed" = yes ]; then
