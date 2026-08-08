@@ -3,12 +3,18 @@ title: Semantic Finder and safe application content
 type: feat
 date: 2026-08-08
 artifact_contract: ce-unified-plan/v1
-artifact_readiness: implementation-ready
+artifact_readiness: implemented
 product_contract_source: ce-plan-bootstrap
 execution: code
 ---
 
 # Semantic Finder and safe application content
+
+**Status:** Implemented and tested on the host; not yet metal-verified. The
+strict aggregate gate remains intentionally blocked while another New Old
+World host owns the configured metal port, but the same host gate passed with
+the repository's explicit busy-machine override. Guest cross-builds and the
+focused native and host suites pass.
 
 ## Goal Capsule
 

@@ -392,14 +392,13 @@ mutation, against sweep B's own Memory capture and scene.
   the guest's screendump rather than asked of the machine;
   `GetThemeBrushAsColor` can answer it and there is nowhere on the wire
   to put the answer yet. See docs/open-issues.md.
-- **The Finder's interior is still a gap when its world is not hooked.** The
-  Finder composites offscreen and blits the whole interior in one op. When
-  the world is hooked at birth the blit joins and the interior renders —
-  `qdtrace-drain-blitsrc-finder` holds that case. When the world was born
-  before arming, nothing names the blit, no ops were held, the scene carries
-  no `finderItems`, and the honest answer is one marked rectangle. That is a
-  CAPTURE gap, and the ladder's contribution is that it can now be stated
-  rather than guessed at.
+- **Finder is no longer on this ladder.** Metal isolated a Finder restart to
+  P3 drawing trace on the PB1400c, so Finder is permanently refused before the
+  resident request is written. Its interior is owned categorically by the
+  semantic Finder snapshot: path, view, enumeration order, live bounds and
+  selection. Historical Finder display ops are discarded rather than ranked
+  underneath it. The committed Finder drain remains a fixture for application
+  composition mechanics; it is not an allowed live Finder route.
 - **Truncating to the last pass drops what that pass did not repaint.** The
   Finder's last pass is `bits [0,0,404,203]`, which does not cover the
   horizontal scrollbar strip an earlier pass drew — so that strip is lost

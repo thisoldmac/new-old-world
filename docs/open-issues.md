@@ -75,6 +75,33 @@ Slow scenes now log their measured enumerate/bind/window/control/menu/semantic/
 reference phases at the source. A subsequent metal run can therefore attribute
 the gap without adding unsafe yields inside a foreign-memory walk.
 
+### FIXED HOST/GUEST, NOT YET METAL-VERIFIED: Finder can no longer arm P3
+
+The correction is now structural rather than a recommended setting. The host
+recognises Finder from the process roster (with the legacy name fallback),
+never sends `qdtrace start`, releases a prior application target when Finder
+comes front, and strips any historical Finder display. The PowerPC guest then
+enforces the same boundary: it accepts only a complete PSN or deliberate
+`front:true`, resolves and classifies that process through the shared roster,
+and refuses Finder before the resident claim or arm cells are written. Raw A5
+is now a named refusal because it cannot prove which process it names.
+
+Finder interiors instead come from bounded semantic snapshots. Each exact
+window carries its HFS path, measured view word, Finder enumeration order,
+live item bounds and front-window selection. Exact WindowRecord identity
+replaces the title-keyed cache; duplicate titles and missing exact identity
+retain the previous complete snapshot rather than guessing. List and
+small-icon names now render beside their 16-pixel boxes without P3. The
+provider can follow Finder navigation anywhere on the guest disk and never
+uses the Files module's share-root contract; it remains scoped to the displayed
+container and contains no `entire contents` search.
+
+Native qdtrace target tests, 36 focused host content tests, 45 host source
+tests, and 10 renderer arbitration tests pass. This is **Tested**. The next
+PB1400c run still owes the claim that Finder stays alive and does not front
+from observation, and a separate non-Finder application run owes evidence that
+P3 remains useful under its narrower target boundary.
+
 ### TESTED: the suspect mechanisms are now separate guest policy domains
 
 The Mirror page now owns four persisted checkboxes with enforcement at the

@@ -173,6 +173,25 @@ says so at the point of claim rather than in a footnote.
   been driven**; only the whole causal chain beneath it. And the
   watchdog has never been watched firing. Plan
   [014](plans/2026-08-06-014-feat-a-frame-that-does-not-wait-for-the-finder-plan.md).
+
+- **Finder interiors no longer use P3** (2026-08-08, **tested, not
+  metal-verified after the change**). The PB1400c proved that tracing Finder's
+  drawing can restart Finder. `qdtrace start` now accepts only a classified
+  process selector, permanently refuses Finder, and rejects raw A5 because it
+  cannot carry the identity needed to enforce that rule. The host has the same
+  gate and strips historical Finder display state.
+
+  Finder folder windows are now semantic surfaces. Their asynchronous bounded
+  pages carry the displayed HFS path, measured view word (`icon`, `name`, or
+  `small icon`), Finder enumeration order, live item bounds, and front-window
+  selection. Cache joins use process incarnation plus exact WindowRecord
+  address, not title; duplicate titles refuse rather than cross-join. Name and
+  small-icon views draw their names host-side instead of depending on P3 text.
+  Navigation is not limited to the Files module's shared tree: any directory
+  Finder opens on the guest can be read. The safety boundary is current
+  container only — no `entire contents` search, the operation that previously
+  wedged hardware for about twelve minutes. Ordinary application P3 remains
+  experimental and off by default.
 - **The guest is woken by its socket, not by a timer expiring**
   (2026-08-06, emulator-verified; **a metal pass is owed and this is the
   change most likely to behave differently there**). A request arriving
@@ -1090,4 +1109,3 @@ metal-verified through 4 MiB, but generic download remains a separate,
 unimplemented command/policy/receipt/MCP design. CodeKitten may later consume
 the generic commands but owns all project meaning; V0.5 adds no
 project-specific or host-filesystem access.
-

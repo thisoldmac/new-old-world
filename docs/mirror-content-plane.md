@@ -26,6 +26,15 @@ measured by NOW.
 > is [render-composition.md](render-composition.md). All emulator, no
 > metal.
 
+> **Safety boundary added 2026-08-08:** Finder is permanently excluded from
+> this plane. A PB1400c run isolated Finder's restart to P3 drawing tracing.
+> The guest now classifies every PSN before arming and refuses Finder; raw A5
+> is refused because it carries no identity. The host independently never asks
+> and never attaches a Finder display. Finder interiors are rendered from
+> bounded semantic current-container reads instead. This correction is
+> **tested, not yet metal-verified after the change**. Ordinary applications
+> remain eligible so the mechanism described below still matters for them.
+
 Source documents, now superseded by this one:
 `mirror/docs/QUICKDRAW-CONTENT-PLANE.md` (the design brief),
 `QDPEEK-SPEC.md` (the build contract), `TIMBUKTU-QD-FINDINGS.md` and
