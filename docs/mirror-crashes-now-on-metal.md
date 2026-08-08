@@ -653,3 +653,49 @@ The two halves are separable by which side is restarted:
 Michelle has done the first and the rung reset. **The second has not been
 run** — and the pair together says which side accumulates, or whether both
 do.
+
+### With VM off: a clean, repeatable rung 1 — and the ladder no longer appears
+
+Michelle:
+
+> ok now i cant repro. i just keep getting error 1.
+
+So with Virtual Memory off and the host app restarted, the machine gives a
+**deterministic, isolated exception type 1 on connecting the Mirror**, and
+does not escalate.
+
+**That is the most debuggable state this crash has been in.** One action,
+one failure, no Finder death, no wedge, no cascade to unwind between
+attempts. Whatever else is true, diagnosis should proceed from here rather
+than from the ladder.
+
+### Two readings, not yet separated
+
+- **VM off removed the ESCALATION** while leaving the base crash. That
+  would partially resurrect the paging account — refuted above as the
+  cause of the crash, but still available as the cause of the *residue*
+  that made each failure worse.
+- **The ladder is simply not being triggered.** Rung 2 requires clicking
+  the app switcher after a crash; rung 3 requires an attempt to reproduce
+  the Finder crash. And she established hours earlier that **restarting
+  the host resets the rung** — so restarting the host between attempts
+  holds the machine at rung 1 by construction.
+
+The second reading is not a quibble: it is a confound she created herself
+by fixing something, and it is invisible unless stated.
+
+### The sequence that separates them
+
+One run, **no restarts of anything**:
+
+1. Connect the Mirror. Take the error-1 crash.
+2. **Click the app switcher.** Do not touch the host app.
+3. Attempt to reproduce.
+
+- Finder dies → the ladder is intact and VM was never part of it. The
+  paging account stays dead.
+- Finder survives → VM off changed the residue, and paging returns as an
+  explanation for the escalation though not for the crash.
+
+Recorded before the run, with both outcomes named, because that is the one
+practice this session has that worked.
