@@ -699,3 +699,64 @@ One run, **no restarts of anything**:
 
 Recorded before the run, with both outcomes named, because that is the one
 practice this session has that worked.
+
+## Error type 10, and a Mirror that started itself
+
+Michelle, on the logging build, 2026-08-08:
+
+> rebooted. relaunched host and guest apps. host *started* with mirror on
+> (i didnt realize, i was on another tab). guest app started hiding itself
+> while i was trying to use it. i was able to unhide it but it kept
+> happening. realized that the host might be trying to use mirror. opened
+> mirror module on host. guest finder crashed with error type 10 and
+> wedged. rebooting again, making sure that the host mirror is off this
+> time (that behavior host side is very problematic)
+
+Three findings, and they are separable.
+
+### 1. A SECOND exception type: 10, not 1
+
+Every earlier crash was **exception type 1** — a bus error. This one is
+**type 10**, a **line-1010 trap: an unimplemented A-trap**. That is the
+68K emulator reaching a trap with no valid handler.
+
+**A trap-table entry pointing at something that is not valid code produces
+exactly this.** The resident patches traps (`NSetTrapAddress` in
+`now_ext_act.c:168` and `now_content.c:1776`) and hand-builds thunks. This
+project already carries the finding `carbon-upp-is-not-a-cast-on-cfm` for
+a neighbouring mistake.
+
+Two different exception types, both landing on the trap-patch machinery,
+is a sharper signal than either alone. It is also consistent with the
+surviving cache hypothesis: a stale instruction cache on the Sonnet G3's
+backside cache means executing bytes that are not the code that was
+written, and *which* wrong bytes decides whether you get a bus error or an
+unimplemented trap.
+
+### 2. The host started with the Mirror ON, unattended
+
+She did not turn it on and was on another tab. **A Mirror that starts
+itself is a Mirror nobody is watching**, which is how a machine gets
+driven by an instrument while a person is using it.
+
+Michelle: *"that behavior host side is very problematic"*.
+
+### 3. The guest app was hiding itself — the Mirror was ACTING
+
+This is the one that should not be filed as a UI complaint. The guest app
+repeatedly hid itself while she was using it; unhiding it did not stick.
+
+`mirror_drive`'s gesture vocabulary includes **`hide` and `hideOthers`**.
+An unattended Mirror was **issuing acts she never asked for**, against a
+machine she was working on.
+
+That is a different class from every other defect here. Everything else is
+the Mirror failing to *show* something honestly. This is the Mirror
+*doing* something unbidden — and the crash followed shortly after.
+
+**Whether the unbidden acts are the crash's cause is not established.**
+But an auto-started Mirror driving hide/hideOthers at a machine, on a run
+that then crashed with a previously-unseen exception type, is a
+combination that has to be ruled in or out before anything else here is
+believed. Turning the Mirror off at launch is the control, and Michelle is
+running it.
