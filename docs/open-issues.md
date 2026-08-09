@@ -48,13 +48,44 @@ with the current extracted pack and with `NOW_MIRROR_ASSETS=none`; the native
 guest suite passes after changing its legacy parity census to read archived
 source deliberately and its human-action census from the active package.
 
-This is a pre-merge checkpoint, not a landing receipt. The full repository
-gate, host artifact, shared-image bake, emulator/metal observations, and final
-MCP-branch reconciliation are recorded later in this entry. Nothing has moved
-`main`. The parent corpus update is committed separately as `3f923561`, adding
-the A5-world and cursor-position findings and preserving the semantic Finder
-lineage. Corpus impact passes; the corpus-wide checker still has 16 unrelated
-pre-existing unresolved `doc:now/...` references.
+The MCP barrage handoff was reconciled from clean commit `b02090f1`, including
+the positive-size upload fix, protocol-v11 guest-reference semantics, complete
+42-tool conformance receipt, and updated coverage. The combined full gate then
+passed before independent compound-engineering review. That review produced
+bounded correctness fixes at `b40a8fb5`, behavior-preserving simplifications
+at `3e7ab897`, and a corrected gate/bake dependency in this plan's published
+receipt. The final payload gate at `781f6281` passed 28 image-discipline checks,
+149 native tests, MirrorKit, all PPC/68K/resident/instrument cross-builds, and
+the host Debug/Release gate. Live and metal stages skipped as designed. The
+MirrorKit gate enforced the discovered external
+`pack-2026-08-07b/Resources` pack and repeated its suite with
+`NOW_MIRROR_ASSETS=none`.
+
+The signed host artifact for that payload revision is
+`/private/tmp/now-host-781f6281/New Old World.app`. An exact-revision private
+PPC image passed resident identity (`active`, capabilities 511, source manifest
+`f0ce0fa3ea33`, fingerprint `18203af3657f`), the full 14-probe survival census,
+container verification, and clean-HFS shutdown. It is
+`~/Lab/Assets/os91-qemu/agent-stage/now-stage-mirror-premerge-final-781f6281.qcow2`,
+630,587,392 bytes, SHA-256
+`a3dba627d43d14dc3a0171c3eb98974558844669c3de2639d4abb644bcd41d7a`.
+The first private attempt was correctly refused because its shutdown left HFS
+dirty; no dirty candidate was installed.
+
+The shared oracle remains the earlier clean bake from `573dc086`, SHA-256
+`46da2706697cb7be2a7fe987fd9c87bcff515788dd4eb1491c167fbae5ef584a`.
+No guest, resident, contract, or guest-build source changed after that bake;
+the resident fingerprint is identical. Promotion of the exact-revision image
+to the shared oracle was deliberately not forced while a foreign Claude-owned
+QEMU clone at `/private/tmp/claude-501/wt-int12/run/79151/` remained active.
+That is an operational handoff item, not a hidden green bake. The final combined
+host has not been reverified on the PB1400c; the prior metal observations retain
+their original evidence level.
+
+Nothing moved `main`. The parent corpus update is committed separately as
+`3f923561`, adding the A5-world and cursor-position findings and preserving the
+semantic Finder lineage. Corpus impact passes; the corpus-wide checker still
+has 16 unrelated pre-existing unresolved `doc:now/...` references.
 
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: positive-size MCP guest uploads always refused on this host (2026-08-09, `codex/now-mcp-audit-barrage`)
 

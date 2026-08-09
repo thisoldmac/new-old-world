@@ -1,8 +1,10 @@
 # Mirror pre-merge consolidation
 
-**Status:** In progress. This plan prepares `codex/mirror-session-teardown` for
-Michelle to land; it does not authorize moving `main`, pushing, or opening a
-pull request.
+**Status:** Implemented through merge-ready source and exact-revision private
+runtime evidence. Shared-image promotion remains blocked on a foreign active
+QEMU clone and final PB1400c acceptance remains unrun. This plan prepares
+`codex/mirror-session-teardown` for Michelle to land; it does not authorize
+moving `main`, pushing, or opening a pull request.
 
 **Planning baseline:** `codex/mirror-session-teardown` at `d979c6ee`, clean on
 2026-08-09. Current `main` is `7d906f15`; the branch is 1,365 commits ahead and
@@ -593,3 +595,37 @@ PB1400c (or the unavailable metal gate is named explicitly); the concurrent MCP
 work has been reconciled; the combined tree has received its final independent
 review; and every remaining limitation is named plainly enough that landing
 does not imply it was fixed. Michelle performs the landing separately.
+
+## Execution receipt (2026-08-09)
+
+- Current `main` (`7d906f15`) was merged without moving the shared checkout.
+- Production `MirrorKit`/`MirrorKitUI`, asset tooling, standalone archive,
+  graduated research, parent findings (`3f923561`), and ownership guards are
+  committed.
+- The completed MCP audit branch (`b02090f1`) is reconciled. Its combined gate
+  passed before compound review.
+- Compound code review produced `b40a8fb5`; the final simplify pass produced
+  `3e7ab897`. Independent document review corrected this plan's ordering and
+  did not reopen settled Finder/P3 scope.
+- The final payload gate passed at `781f6281`: 28 staged-image checks, 149
+  native tests, MirrorKit, all guest/resident/instrument cross-builds, and the
+  host Debug/Release gate. Live/metal skipped. The selected external pack was
+  `pack-2026-08-07b/Resources`; the asset-free repeat also passed.
+- The developer-signed host artifact is
+  `/private/tmp/now-host-781f6281/New Old World.app`.
+- The exact-revision private image is
+  `~/Lab/Assets/os91-qemu/agent-stage/now-stage-mirror-premerge-final-781f6281.qcow2`
+  (630,587,392 bytes; SHA-256
+  `a3dba627d43d14dc3a0171c3eb98974558844669c3de2639d4abb644bcd41d7a`).
+  It is container-clean and HFS-clean; the guest reported lifecycle `active`,
+  capabilities 511, source manifest `f0ce0fa3ea33`, and build fingerprint
+  `18203af3657f`; the full 14-probe survival census passed.
+- The shared oracle still names the earlier clean `573dc086` bake, SHA-256
+  `46da2706697cb7be2a7fe987fd9c87bcff515788dd4eb1491c167fbae5ef584a`.
+  No guest/resident/build source changed after it, but exact-revision promotion
+  was not forced over the foreign active QEMU clone at
+  `/private/tmp/claude-501/wt-int12/run/79151/`.
+- Final PB1400c acceptance is unrun. Prior metal observations remain evidence
+  for their exact earlier builds, not this reviewed head.
+- `main`, the shared checkout, remote refs, tags, and pull requests were not
+  changed.
