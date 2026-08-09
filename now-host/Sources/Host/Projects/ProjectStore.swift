@@ -285,7 +285,8 @@ final class ProjectStore {
                 contentDigest: copied, manifest: try manifest(at: source),
                 stagedAt: Date())
             let candidate = ProjectCandidate(receipt: receipt, lifecycle: .hostStaged,
-                                             buildID: nil, updatedAt: Date())
+                                             buildID: nil, guestDigest: nil,
+                                             updatedAt: Date())
             try saveCandidate(candidate)
             return candidate
         } catch {
@@ -309,7 +310,7 @@ final class ProjectStore {
     func recordBuild(candidateID: ProjectCandidateID, buildID: String,
                      succeeded: Bool) throws -> ProjectCandidate {
         var candidate = try loadCandidate(candidateID)
-        guard candidate.lifecycle == .guestTransferred else {
+        guard candidate.lifecycle == .guestVerified else {
             throw ProjectStoreError.unavailable("The candidate is not awaiting a build.")
         }
         candidate.lifecycle = succeeded ? .buildSucceeded : .buildFailed
@@ -327,6 +328,24 @@ final class ProjectStore {
                 "The candidate is not awaiting guest transfer.")
         }
         candidate.lifecycle = .guestTransferred
+        candidate.updatedAt = Date()
+        try saveCandidate(candidate)
+        return candidate
+    }
+
+    func recordGuestVerification(candidateID: ProjectCandidateID,
+                                 digest: String) throws -> ProjectCandidate {
+        var candidate = try loadCandidate(candidateID)
+        guard candidate.lifecycle == .guestTransferred else {
+            throw ProjectStoreError.unavailable(
+                "The candidate is not awaiting guest verification.")
+        }
+        guard isSHA256(digest), digest == candidate.receipt.contentDigest else {
+            throw ProjectStoreError.unavailable(
+                "The guest candidate digest does not match the staged source.")
+        }
+        candidate.lifecycle = .guestVerified
+        candidate.guestDigest = digest
         candidate.updatedAt = Date()
         try saveCandidate(candidate)
         return candidate

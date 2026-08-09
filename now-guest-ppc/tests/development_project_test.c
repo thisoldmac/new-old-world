@@ -34,12 +34,18 @@ int main(void)
     assert(project.build.actions[0].kind == kDevActionCompile);
 
     assert(!dev_project_parse(
-        "CKPROJECT 1\nid=x\nname=X\ntarget=app\nconfiguration=debug\n"
+        "CKPROJECT 1\nid=project-name\nname=X\ntarget=app\n"
+        "configuration=debug\ntoolchain=mpw@1\nproduct=Build/X\n"
+        "file=Sources/Main.c\n", &project, reason, sizeof reason));
+    assert(strstr(reason, "project id") != NULL);
+
+    assert(!dev_project_parse(
+        "CKPROJECT 1\nid=0123456789abcdef0123456789abcdef\nname=X\ntarget=app\nconfiguration=debug\n"
         "toolchain=mpw@1\nproduct=../Outside\nfile=Sources/Main.c\n",
         &project, reason, sizeof reason));
     assert(strstr(reason, "product path") != NULL);
     assert(!dev_project_parse(
-        "CKPROJECT 2\nid=x\nname=X\ntarget=app\nconfiguration=debug\n"
+        "CKPROJECT 2\nid=0123456789abcdef0123456789abcdef\nname=X\ntarget=app\nconfiguration=debug\n"
         "toolchain=mpw@1\nproduct=Build/X\nfile=Sources/Main.c\n",
         &project, reason, sizeof reason));
     return 0;

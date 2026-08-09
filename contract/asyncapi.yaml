@@ -3815,14 +3815,21 @@ components:
         required: [action, candidateID]
         additionalProperties: false
         properties:
-          action: { enum: [prepare, status, discard] }
+          action: { enum: [prepare, finalize, status, discard] }
           candidateID:
             type: string
             pattern: "^candidate-[0-9a-f]{16}$"
           projectID:
             type: string
             pattern: "^[0-9a-f]{32}$"
-      x-line: "prepare candidateID projectID, or status/discard candidateID."
+          expectedDigest:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+          expectedFiles:
+            type: integer
+            minimum: 1
+            maximum: 128
+      x-line: "prepare candidateID projectID, finalize candidateID digest count, or status/discard candidateID."
       output:
         type: object
         properties:

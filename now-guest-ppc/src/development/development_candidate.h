@@ -11,6 +11,8 @@ int dev_candidate_prepare(const char *candidate_id, const char *project_id,
                           char *reason, long reason_cap);
 int dev_candidate_folder(const char *candidate_id,
                          FSSpec *folder, long *dir_id);
+int dev_candidate_accepting_folder(const char *candidate_id,
+                                   FSSpec *folder, long *dir_id);
 int dev_candidate_discard(const char *candidate_id,
                           char *reason, long reason_cap);
 

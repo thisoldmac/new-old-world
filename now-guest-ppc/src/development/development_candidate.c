@@ -1,12 +1,24 @@
 #include "development_candidate.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "development_sha256.h"
 #include "json.h"
 #include "prefs.h"
 
-enum { kCandidateIDLength = 26, kProjectIDLength = 32 };
+enum {
+    kCandidateIDLength = 26,
+    kProjectIDLength = 32,
+    kCandidateMaxFiles = 128,
+    kCandidatePathCap = 512
+};
+
+typedef struct CandidateFile {
+    FSSpec spec;
+    char path[kCandidatePathCap];
+} CandidateFile;
 
 static int lower_hex(const char *text, long count)
 {
@@ -81,6 +93,20 @@ int dev_candidate_folder(const char *candidate_id,
     CopyCStringToPascal(candidate_id, name);
     if (FSMakeFSSpec(parent.vRefNum, parent_id, name, folder) != noErr) return 0;
     return folder_id(folder, dir_id) == noErr;
+}
+
+static int marker_spec(const FSSpec *folder, long dir_id, FSSpec *marker)
+{
+    return FSMakeFSSpec(folder->vRefNum, dir_id,
+        (ConstStr255Param)"\p.NOW Verified", marker) == noErr;
+}
+
+int dev_candidate_accepting_folder(const char *candidate_id,
+                                   FSSpec *folder, long *dir_id)
+{
+    FSSpec marker;
+    return dev_candidate_folder(candidate_id, folder, dir_id)
+        && !marker_spec(folder, *dir_id, &marker);
 }
 
 int dev_candidate_prepare(const char *candidate_id, const char *project_id,
@@ -164,6 +190,158 @@ int dev_candidate_discard(const char *candidate_id,
     return 1;
 }
 
+static int pstr_to_path(const unsigned char *name, char *out, long cap)
+{
+    long i;
+    if (name[0] == 0 || name[0] >= cap) return 0;
+    for (i = 0; i < name[0]; ++i) {
+        unsigned char ch = name[i + 1];
+        if (ch >= 128 || ch == ':' || ch == '/') return 0;
+        out[i] = (char)ch;
+    }
+    out[name[0]] = '\0';
+    return 1;
+}
+
+static int collect_files(short vref, long dir_id, const char *prefix,
+                         CandidateFile *files, int *count,
+                         char *reason, long reason_cap)
+{
+    short index;
+    for (index = 1; index <= 512; ++index) {
+        CInfoPBRec pb;
+        Str255 name;
+        char component[64];
+        char relative[kCandidatePathCap];
+        int n;
+        memset(&pb, 0, sizeof pb);
+        name[0] = 0;
+        pb.hFileInfo.ioNamePtr = name;
+        pb.hFileInfo.ioVRefNum = vref;
+        pb.hFileInfo.ioDirID = dir_id;
+        pb.hFileInfo.ioFDirIndex = index;
+        if (PBGetCatInfoSync(&pb) != noErr) break;
+        if (!pstr_to_path(name, component, sizeof component)) {
+            snprintf(reason, (size_t)reason_cap,
+                     "A candidate name is not portable CKPROJECT text.");
+            return 0;
+        }
+        /* Match the host history digest: private dot-files do not belong to
+           project source and the verification marker must not hash itself. */
+        if (component[0] == '.') continue;
+        n = snprintf(relative, sizeof relative, "%s%s%s", prefix,
+                     prefix[0] ? "/" : "", component);
+        if (n <= 0 || n >= (int)sizeof relative) {
+            snprintf(reason, (size_t)reason_cap,
+                     "A candidate path exceeds the bounded project path.");
+            return 0;
+        }
+        if ((pb.hFileInfo.ioFlAttrib & ioDirMask) != 0) {
+            if (!collect_files(vref, pb.dirInfo.ioDrDirID, relative,
+                               files, count, reason, reason_cap)) return 0;
+        } else {
+            if (*count >= kCandidateMaxFiles) {
+                snprintf(reason, (size_t)reason_cap,
+                         "The candidate exceeds 128 project files.");
+                return 0;
+            }
+            files[*count].spec.vRefNum = vref;
+            files[*count].spec.parID = dir_id;
+            memcpy(files[*count].spec.name, name, name[0] + 1);
+            strcpy(files[*count].path, relative);
+            ++*count;
+        }
+    }
+    return 1;
+}
+
+static int compare_file(const void *left, const void *right)
+{
+    return strcmp(((const CandidateFile *)left)->path,
+                  ((const CandidateFile *)right)->path);
+}
+
+static int file_digest(const FSSpec *spec, char hex[65])
+{
+    DevSHA256 sha;
+    unsigned char digest[32];
+    unsigned char bytes[2048];
+    short ref = -1;
+    OSErr err;
+    dev_sha256_init(&sha);
+    err = FSpOpenDF(spec, fsRdPerm, &ref);
+    if (err != noErr) return 0;
+    do {
+        long count = sizeof bytes;
+        err = FSRead(ref, &count, bytes);
+        if (count > 0) dev_sha256_update(&sha, bytes, (size_t)count);
+    } while (err == noErr);
+    FSClose(ref);
+    if (err != eofErr) return 0;
+    dev_sha256_final(&sha, digest);
+    dev_sha256_hex(digest, hex);
+    return 1;
+}
+
+static int tree_digest(const FSSpec *folder, long dir_id,
+                       char hex[65], int *file_count,
+                       char *reason, long reason_cap)
+{
+    CandidateFile *files;
+    DevSHA256 tree;
+    unsigned char digest[32];
+    int count = 0;
+    int i;
+    files = (CandidateFile *)NewPtr(sizeof(CandidateFile) * kCandidateMaxFiles);
+    if (files == NULL) {
+        snprintf(reason, (size_t)reason_cap,
+                 "There is not enough memory to verify the candidate.");
+        return 0;
+    }
+    if (!collect_files(folder->vRefNum, dir_id, "", files, &count,
+                       reason, reason_cap)) {
+        DisposePtr((Ptr)files); return 0;
+    }
+    qsort(files, (size_t)count, sizeof files[0], compare_file);
+    dev_sha256_init(&tree);
+    for (i = 0; i < count; ++i) {
+        char file_hex[65];
+        static const unsigned char zero = 0;
+        static const unsigned char newline = '\n';
+        if (!file_digest(&files[i].spec, file_hex)) {
+            snprintf(reason, (size_t)reason_cap,
+                     "A candidate data fork changed or became unreadable.");
+            DisposePtr((Ptr)files); return 0;
+        }
+        dev_sha256_update(&tree, files[i].path, strlen(files[i].path));
+        dev_sha256_update(&tree, &zero, 1);
+        dev_sha256_update(&tree, file_hex, 64);
+        dev_sha256_update(&tree, &newline, 1);
+    }
+    dev_sha256_final(&tree, digest);
+    dev_sha256_hex(digest, hex);
+    *file_count = count;
+    DisposePtr((Ptr)files);
+    return 1;
+}
+
+static int write_marker(const FSSpec *folder, long dir_id,
+                        const char *digest)
+{
+    FSSpec marker;
+    short ref = -1;
+    long count = 64;
+    OSErr err = FSMakeFSSpec(folder->vRefNum, dir_id,
+        (ConstStr255Param)"\p.NOW Verified", &marker);
+    if (err != fnfErr) return 0;
+    err = FSpCreate(&marker, 'NOWD', 'TEXT', smSystemScript);
+    if (err == noErr) err = FSpOpenDF(&marker, fsRdWrPerm, &ref);
+    if (err == noErr) err = FSWrite(ref, &count, digest);
+    if (ref >= 0) FSClose(ref);
+    if (err != noErr || count != 64) { FSpDelete(&marker); return 0; }
+    return 1;
+}
+
 static void error_reply(char *out, long cap, long id,
                         const char *code, const char *message)
 {
@@ -181,13 +359,19 @@ void now_development_stage_command(const char *request_json, long id,
     char action[20];
     char candidate_id[40];
     char project_id[40];
+    char expected_digest[70];
+    char measured_digest[65];
     char reason[180];
     FSSpec folder;
     long dir_id;
     int ok = 0;
+    int measured_files = 0;
+    long expected_files;
     action[0] = '\0';
     candidate_id[0] = '\0';
     project_id[0] = '\0';
+    expected_digest[0] = '\0';
+    strcpy(reason, "The candidate request is malformed or no longer accepting files.");
     if (!now_json_find_string(request_json, "action", action, sizeof action)) {
         char line[128];
         char *first;
@@ -213,9 +397,28 @@ void now_development_stage_command(const char *request_json, long id,
                          sizeof candidate_id);
     now_json_find_string(request_json, "projectID", project_id,
                          sizeof project_id);
+    now_json_find_string(request_json, "expectedDigest", expected_digest,
+                         sizeof expected_digest);
+    expected_files = now_json_find_int(request_json, "expectedFiles", -1);
     if (strcmp(action, "prepare") == 0) {
         ok = dev_candidate_prepare(candidate_id, project_id, &folder, &dir_id,
                                    reason, sizeof reason);
+    } else if (strcmp(action, "finalize") == 0) {
+        ok = lower_hex(expected_digest, 64)
+            && expected_files >= 1 && expected_files <= kCandidateMaxFiles
+            && dev_candidate_accepting_folder(candidate_id, &folder, &dir_id)
+            && tree_digest(&folder, dir_id, measured_digest, &measured_files,
+                           reason, sizeof reason);
+        if (ok && (measured_files != expected_files
+                   || strcmp(measured_digest, expected_digest) != 0)) {
+            snprintf(reason, sizeof reason,
+                     "Guest candidate measurement does not match the host receipt.");
+            ok = 0;
+        }
+        if (ok && !write_marker(&folder, dir_id, measured_digest)) {
+            strcpy(reason, "The verified candidate could not be sealed.");
+            ok = 0;
+        }
     } else if (strcmp(action, "status") == 0) {
         ok = dev_candidate_folder(candidate_id, &folder, &dir_id);
         if (!ok) strcpy(reason, "The candidate was not found.");
@@ -223,11 +426,20 @@ void now_development_stage_command(const char *request_json, long id,
         ok = dev_candidate_discard(candidate_id, reason, sizeof reason);
     } else {
         error_reply(out, cap, id, "invalid-arguments",
-                    "development-stage requires prepare, status or discard.");
+                    "development-stage requires prepare, finalize, status or discard.");
         return;
     }
     if (!ok) {
         error_reply(out, cap, id, "candidate-unavailable", reason);
+        return;
+    }
+    if (strcmp(action, "finalize") == 0) {
+        snprintf(out, (size_t)cap,
+            "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+            "\"output\":{\"development-stage\":[[\"Candidate\",\"%s\"],"
+            "[\"State\",\"verified\"],[\"Digest\",\"%s\"],"
+            "[\"Files\",\"%d\"]]}}", id, candidate_id,
+            measured_digest, measured_files);
         return;
     }
     snprintf(out, (size_t)cap,

@@ -4630,8 +4630,8 @@ static void serve_file_offer(const char *request)
         FSSpec candidate;
         long candidate_dir;
         if (cloud_born
-            || !dev_candidate_folder(development_candidate,
-                                     &candidate, &candidate_dir)) {
+            || !dev_candidate_accepting_folder(development_candidate,
+                                               &candidate, &candidate_dir)) {
             file_refuse(id, "candidate-unavailable",
                         "the inactive Development candidate is unavailable");
             rx_outcome("Not received: Development candidate unavailable");

@@ -196,6 +196,10 @@ final class ProjectStoreTests: XCTestCase {
         XCTAssertEqual(try store.recordGuestTransfer(
             candidateID: candidate.receipt.candidateID).lifecycle,
                        .guestTransferred)
+        XCTAssertEqual(try store.recordGuestVerification(
+            candidateID: candidate.receipt.candidateID,
+            digest: candidate.receipt.contentDigest).lifecycle,
+                       .guestVerified)
         let built = try store.recordBuild(
             candidateID: candidate.receipt.candidateID,
             buildID: "build-0123456789abcdef", succeeded: true)
@@ -227,6 +231,9 @@ final class ProjectStoreTests: XCTestCase {
             projectID: created.projectID, workspaceID: workspace.workspaceID)
         _ = try store.recordGuestTransfer(
             candidateID: candidate.receipt.candidateID)
+        _ = try store.recordGuestVerification(
+            candidateID: candidate.receipt.candidateID,
+            digest: candidate.receipt.contentDigest)
         _ = try store.recordBuild(candidateID: candidate.receipt.candidateID,
                                   buildID: "build-0123456789abcdef",
                                   succeeded: true)
@@ -268,6 +275,9 @@ final class ProjectStoreTests: XCTestCase {
             projectID: created.projectID, workspaceID: workspace.workspaceID)
         _ = try store.recordGuestTransfer(
             candidateID: candidate.receipt.candidateID)
+        _ = try store.recordGuestVerification(
+            candidateID: candidate.receipt.candidateID,
+            digest: candidate.receipt.contentDigest)
         _ = try store.recordBuild(candidateID: candidate.receipt.candidateID,
                                   buildID: "build-fedcba9876543210",
                                   succeeded: true)

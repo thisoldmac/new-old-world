@@ -64,6 +64,7 @@ enum ProjectWorkspaceLifecycle: String, Codable, Equatable, Sendable {
 enum ProjectCandidateLifecycle: String, Codable, Equatable, Sendable {
     case hostStaged
     case guestTransferred
+    case guestVerified
     case buildSucceeded
     case buildFailed
     case promoted
@@ -97,6 +98,7 @@ struct ProjectCandidate: Codable, Equatable, Sendable {
     let receipt: ProjectCandidateReceipt
     var lifecycle: ProjectCandidateLifecycle
     var buildID: String?
+    var guestDigest: String?
     var updatedAt: Date
 }
 

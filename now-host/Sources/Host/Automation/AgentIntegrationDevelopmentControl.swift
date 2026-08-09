@@ -185,16 +185,44 @@ final class AgentIntegrationDevelopmentControl {
             return .refused(.init(code: "now-development-stage-unsettled",
                                   message: error.localizedDescription))
         }
+        let finalized = await command(
+            "development-stage",
+            args: ["action": "finalize", "candidateID": candidateID,
+                   "expectedDigest": candidate.receipt.contentDigest,
+                   "expectedFiles": String(candidate.receipt.manifest.count)])
+        guard currentSessionID() == sessionID else {
+            return .refused(.init(
+                code: "now-development-outcome-unknown",
+                message: "The paired guest changed while candidate verification was settling."))
+        }
+        guard finalized.ok else {
+            return refusal(finalized,
+                           fallback: "The inactive candidate did not verify on the guest.")
+        }
+        guard let digest = value("Digest", in: finalized,
+                                 group: "development-stage"),
+              digest == candidate.receipt.contentDigest else {
+            return .refused(.init(
+                code: "now-development-candidate-mismatch",
+                message: "The guest did not return the exact staged source digest."))
+        }
+        do {
+            _ = try projectStore.recordGuestVerification(
+                candidateID: candidate.receipt.candidateID, digest: digest)
+        } catch {
+            return .refused(.init(code: "now-development-stage-unsettled",
+                                  message: error.localizedDescription))
+        }
         let rows = [
             AgentIntegrationGuestRow(label: "Candidate", value: candidateID),
-            .init(label: "State", value: "transferred; aggregate guest digest pending"),
+            .init(label: "State", value: "verified and inactive"),
             .init(label: "Files", value: String(candidate.receipt.manifest.count)),
-            .init(label: "Host digest", value: candidate.receipt.contentDigest),
+            .init(label: "Digest", value: digest),
         ]
         return .completed(.init(
             verb: "development-stage",
             groups: [.init(name: "development-stage", rows: rows)],
-            note: "The candidate is inactive. Build may inspect it; promotion remains unavailable until guest aggregate verification lands.",
+            note: "The sealed guest candidate matches the host staging receipt and remains inactive.",
             observedAt: Date()))
     }
 
@@ -281,5 +309,10 @@ final class AgentIntegrationDevelopmentControl {
                     $0.count > 1 ? $0.last ?? "" : "", scalars: 2_048))
             })],
             observedAt: Date()))
+    }
+
+    private func value(_ label: String, in result: CommandResult,
+                       group: String) -> String? {
+        result.output?[group]?.first(where: { $0.first == label })?.last
     }
 }
