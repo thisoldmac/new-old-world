@@ -81,7 +81,12 @@ final class AgentIntegrationHostAdapter {
        contend with the stream that draws the scene it is acting on. */
     private lazy var actControl = AgentIntegrationActControl(
         listener: listener,
-        currentSessionID: { [unowned self] in connectedSessionID() })
+        currentSessionID: { [unowned self] in connectedSessionID() },
+        sendCommand: { [unowned self] verb, args, completion in
+            self.listener.runScheduledCommand(
+                verb, typed: args, purpose: .interaction(verb),
+                workClass: .humanInteractive, completion: completion)
+        })
     private lazy var artifactTransfer = AgentIntegrationArtifactTransfer(
         listener: listener,
         approvals: artifactApprovals,

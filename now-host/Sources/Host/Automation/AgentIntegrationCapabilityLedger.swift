@@ -135,7 +135,10 @@ final class AgentIntegrationCapabilityLedger {
             // Whichever arrives first wins; the loser must not resume a
             // continuation twice, which is a crash rather than a bug.
             let gate = OnceGate()
-            listener.runCommand("help", line: "") { result in
+            listener.runScheduledCommand(
+                "help", line: "", purpose: .command("capability help"),
+                workClass: .ambient, coalescingKey: "capability-help") {
+                result in
                 guard gate.claim() else { return }
                 continuation.resume(returning: result)
             }

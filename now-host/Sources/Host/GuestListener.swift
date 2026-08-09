@@ -790,6 +790,20 @@ final class GuestListener: ObservableObject {
             }
     }
 
+    func runScheduledCommand(
+        _ name: String, args: [String: String]? = nil,
+        line: String? = nil, purpose: GuestWorkPurpose,
+        workClass: GuestWorkClass, coalescingKey: String? = nil,
+        completion: @escaping (CommandResult) -> Void
+    ) {
+        runScheduledCommand(
+            name, typed: args?.mapValues(CommandArg.text), purpose: purpose,
+            workClass: workClass, coalescingKey: coalescingKey
+        ) { result in
+            completion(result)
+        }
+    }
+
     /// Runs one line on the connected Mac and hands back what it printed.
     ///
     /// The line goes out EXACTLY as given — this function does not trim it,
@@ -821,6 +835,24 @@ final class GuestListener: ObservableObject {
     /// premature "timeout" on a command that was working.
     func exec(_ line: String,
               completion: @escaping (ExecOutcome) -> Void) {
+        workScheduler.submitCallback(
+            .console, as: .humanInteractive,
+            onCancel: {
+                completion(.init(text: "", ok: false,
+                                 code: "session-changed",
+                                 message: "The Mac changed before the command was sent"))
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.execAdmitted(line) { outcome in
+                    finish()
+                    completion(outcome)
+                }
+            }
+    }
+
+    private func execAdmitted(
+        _ line: String, completion: @escaping (ExecOutcome) -> Void
+    ) {
         guard let session, case .connected = state else {
             completion(ExecOutcome(text: "", ok: false, code: "disconnected",
                                    message: "No \(MachineNaming.commonNoun) is connected"))
@@ -901,6 +933,27 @@ final class GuestListener: ObservableObject {
     /// here now so tests and the later view share one path.
     func requestCensus(probe: String, cursor: Int? = nil,
                        completion: @escaping (CensusReport) -> Void) {
+        workScheduler.submitCallback(
+            .command("census \(probe)"), as: .foreground,
+            onCancel: {
+                completion(.init(
+                    id: 0, probe: probe, outcome: "failed", rows: [],
+                    more: false, cursor: nil, total: nil,
+                    note: "The Mac changed before the census page was sent"))
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.requestCensusAdmitted(probe: probe, cursor: cursor) {
+                    report in
+                    finish()
+                    completion(report)
+                }
+            }
+    }
+
+    private func requestCensusAdmitted(
+        probe: String, cursor: Int?,
+        completion: @escaping (CensusReport) -> Void
+    ) {
         guard let session, case .connected = state else {
             completion(CensusReport(
                 id: 0, probe: probe, outcome: "failed", rows: [],

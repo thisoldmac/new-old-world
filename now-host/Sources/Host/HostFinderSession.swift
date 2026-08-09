@@ -767,7 +767,10 @@ final class HostFinderSession {
     private func sendGuestGeometryRequests(_ requests: [[String: CommandArg]],
                                            id: String) {
         guard let request = requests.first else { return }
-        listener.runCommand("winact", typed: request) { [weak self] result in
+        listener.runScheduledCommand(
+            "winact", typed: request,
+            purpose: .interaction("sync Finder geometry"),
+            workClass: .humanInteractive) { [weak self] result in
             guard let self else { return }
             guard result.ok else {
                 self.status = "Guest window geometry refused: "
@@ -785,7 +788,10 @@ final class HostFinderSession {
         let args: [String: CommandArg] = [
             "window": .text(ref), "action": .text(action),
         ]
-        listener.runCommand("winact", typed: args) { [weak self] result in
+        listener.runScheduledCommand(
+            "winact", typed: args,
+            purpose: .interaction("sync Finder window \(action)"),
+            workClass: .humanInteractive) { [weak self] result in
             guard !result.ok else { return }
             self?.status = "Guest window \(action) refused: "
                 + (result.error?.message ?? "unknown error")
@@ -843,9 +849,11 @@ final class HostFinderSession {
 
     private func closeGuestWindow(for window: HostFinderDomain.Window) {
         if let ref = guestRefByWindowID[window.id] {
-            listener.runCommand("winact", typed: [
-                "window": .text(ref), "action": .text("close"),
-            ]) { _ in }
+            listener.runScheduledCommand(
+                "winact", typed: [
+                    "window": .text(ref), "action": .text("close"),
+                ], purpose: .interaction("close Finder window"),
+                workClass: .humanInteractive) { _ in }
             return
         }
         guard let full = HostFinderDomain.fullPath(
@@ -861,7 +869,10 @@ final class HostFinderSession {
         _ source: String,
         completion: ((String?) -> Void)? = nil
     ) {
-        listener.runCommand("script", args: ["source": source]) {
+        listener.runScheduledCommand(
+            "script", args: ["source": source],
+            purpose: .interaction("sync Finder"),
+            workClass: .humanInteractive) {
             [weak self] result in
             let failure: String?
             if !result.ok {
@@ -1005,7 +1016,10 @@ final class HostFinderSession {
     private func launch(path: String, root: String?) {
         guard let full = HostFinderDomain.fullPath(root: root, relative: path)
         else { status = "The guest did not name the shared volume"; onChange(); return }
-        listener.runCommand("launch", args: ["path": full]) { [weak self] result in
+        listener.runScheduledCommand(
+            "launch", args: ["path": full],
+            purpose: .interaction("open Finder item"),
+            workClass: .humanInteractive) { [weak self] result in
             guard let self else { return }
             self.status = result.ok ? "Opened \(path)" : "Open failed: \(result.error?.message ?? "unknown error")"
             self.onChange()

@@ -491,7 +491,9 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
         /* No local watchdog here, unlike the agent path: a person watching a
            spinner can see that nothing has come back, which is the same
            reason the console's own wait is generous. */
-        listener.runCommand(verb) { [weak self] result in
+        listener.runScheduledCommand(
+            verb, purpose: .command("diagnostics \(verb)"),
+            workClass: .foreground) { [weak self] result in
             guard let self,
                   self.generation[verb] == gen,
                   let idx = self.states.firstIndex(where: { $0.id == verb })
@@ -552,7 +554,10 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
     func askWhatThisMacServes() {
         guard isConnected, !askedForCommands else { return }
         askedForCommands = true
-        listener.runCommand("help", line: "") { [weak self] result in
+        listener.runScheduledCommand(
+            "help", line: "", purpose: .command("diagnostics help"),
+            workClass: .foreground, coalescingKey: "diagnostics-help") {
+            [weak self] result in
             guard let self else { return }
             // The first column of `help`'s list form is the command names —
             // the one structural promise that output makes (contract,

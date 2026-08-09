@@ -106,8 +106,9 @@ final class AgentIntegrationCatalogSearch {
         await withCheckedContinuation { continuation in
             var settled = false
             var timeoutTask: Task<Void, Never>?
-            listener.runCommand(
-                AgentIntegrationCatalogSearchPolicy.verb
+            listener.runScheduledCommand(
+                AgentIntegrationCatalogSearchPolicy.verb,
+                purpose: .command("catalog search"), workClass: .foreground
             ) { [weak self] result in
                 if settled {
                     /* The sweep that timed out has landed. Releasing here is

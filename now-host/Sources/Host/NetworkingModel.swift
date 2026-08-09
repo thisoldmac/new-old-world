@@ -176,7 +176,9 @@ final class NetworkingModel: ObservableObject, GuestScopedModel {
         isLoading = true
         refusal = nil
 
-        listener.runCommand("net") { [weak self] result in
+        listener.runScheduledCommand(
+            "net", purpose: .command("network status"),
+            workClass: .foreground) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 self.isLoading = false

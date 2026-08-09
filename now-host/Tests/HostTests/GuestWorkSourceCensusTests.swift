@@ -58,6 +58,46 @@ final class GuestWorkSourceCensusTests: XCTestCase {
                 + offenders.sorted().joined(separator: ", "))
     }
 
+    func testDirectCommandCallsExistOnlyInsideAlreadyAdmittedActAdapters()
+        throws {
+        let root = GateSource.repoRoot
+            .appendingPathComponent("now-host/Sources/Host")
+        let enumerator = FileManager.default.enumerator(
+            at: root, includingPropertiesForKeys: nil)
+        let allowed = Set([
+            "now-host/Sources/Host/NOWMirrorSource.swift",
+            "now-host/Sources/Host/Automation/AgentIntegrationActControl.swift",
+        ])
+        var offenders: [String] = []
+        while let url = enumerator?.nextObject() as? URL {
+            guard url.pathExtension == "swift",
+                  url.lastPathComponent != "GuestListener.swift" else {
+                continue
+            }
+            let text = try String(contentsOf: url, encoding: .utf8)
+            guard text.contains("listener.runCommand(") else { continue }
+            let relative = url.path.replacingOccurrences(
+                of: GateSource.repoRoot.path + "/", with: "")
+            if !allowed.contains(relative) { offenders.append(relative) }
+        }
+        XCTAssertEqual(
+            offenders.sorted(), [],
+            "direct command work bypasses GuestWorkScheduler in "
+                + offenders.sorted().joined(separator: ", "))
+    }
+
+    func testConsoleAndCensusHaveOneAdmittedTransportSend() throws {
+        let text = try GateSource.raw(listener)
+        XCTAssertEqual(
+            text.components(separatedBy:
+                "session.send(.execRequest(").count - 1, 1)
+        XCTAssertTrue(text.contains("private func execAdmitted("))
+        XCTAssertEqual(
+            text.components(separatedBy:
+                "session.send(.censusRequest(").count - 1, 1)
+        XCTAssertTrue(text.contains("private func requestCensusAdmitted("))
+    }
+
     func testMirrorSceneAndContentEnterTheUnifiedScheduler() throws {
         let source = try GateSource.raw(
             "now-host/Sources/Host/NOWMirrorSource.swift")

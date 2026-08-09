@@ -239,7 +239,9 @@ final class MirrorGuestWireProbe: MirrorGuestProbing {
 
     func readMirrorFacts(
         completion: @escaping (Result<MirrorWireFacts, MirrorProbeFailure>) -> Void) {
-        listener.runCommand("mirror") { result in
+        listener.runScheduledCommand(
+            "mirror", purpose: .command("Mirror lifecycle"),
+            workClass: .structuralRepair) { result in
             guard result.ok else {
                 completion(.failure(MirrorProbeFailure(
                     result.error?.message ?? "The Mac refused mirror facts.")))

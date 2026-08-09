@@ -142,7 +142,9 @@ final class AgentIntegrationGuestLogTail {
                `run_tail` reaches it precisely when no typed `lines` is
                present. Absent when the caller did not choose, so the default
                of 20 stays the guest's number and not a copy of it here. */
-            listener.runCommand("tail", line: lines.map(String.init)) {
+            listener.runScheduledCommand(
+                "tail", line: lines.map(String.init),
+                purpose: .command("tail"), workClass: .foreground) {
                 guard !settled else { return }
                 settled = true
                 timeoutTask?.cancel()

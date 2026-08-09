@@ -129,8 +129,9 @@ final class AgentIntegrationMachineFacts {
         await withCheckedContinuation { continuation in
             var settled = false
             var timeoutTask: Task<Void, Never>?
-            listener.runCommand(
-                AgentIntegrationMachineFactsPolicy.verb
+            listener.runScheduledCommand(
+                AgentIntegrationMachineFactsPolicy.verb,
+                purpose: .command("machine facts"), workClass: .foreground
             ) { result in
                 guard !settled else { return }
                 settled = true
