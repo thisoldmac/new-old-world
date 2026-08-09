@@ -232,7 +232,7 @@ final class MirrorContainerTests: XCTestCase {
                the zoom stops, and a gate that reads raw text would fire
                on the explanation of why it must not know about them. */
             let text = try GateSource.hostSwift(
-                "mirror/host/MirrorKit/Sources/MirrorKitUI/\(name)")
+                "now-host/Packages/MirrorKit/Sources/MirrorKitUI/\(name)")
             /* Named for the HOST's type rather than for the word: a
                renderer that has heard of `MirrorZoom` has been given the
                UI's scale, whereas `.zoom` on its own is the Platinum
@@ -246,7 +246,7 @@ final class MirrorContainerTests: XCTestCase {
                            + "Zoom is a frame in the container.")
         }
         let view = try GateSource.hostSwift(
-            "mirror/host/MirrorKit/Sources/MirrorKitUI/SceneView.swift")
+            "now-host/Packages/MirrorKit/Sources/MirrorKitUI/SceneView.swift")
         XCTAssertTrue(view.contains("renderer.scale = 1"),
                       "RenderShot must keep rasterising at 1:1; a Retina 2× "
                       + "resample would silently move every pixel gate and "

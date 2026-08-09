@@ -77,7 +77,7 @@ final class ItemDragSeamTests: XCTestCase {
     /// for the four hours before anyone read the guard.
     func testTheAbsentDriverRefusesInWords() throws {
         let view = try read(
-            "mirror/host/MirrorKit/Sources/MirrorKitUI/LiveMirror.swift")
+            "now-host/Packages/MirrorKit/Sources/MirrorKitUI/LiveMirror.swift")
         XCTAssertTrue(
             view.contains("cannot hold the mouse button"),
             "LiveMirror no longer says why an item drag was refused. A drag "

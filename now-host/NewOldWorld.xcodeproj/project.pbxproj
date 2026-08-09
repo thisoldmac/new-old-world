@@ -268,7 +268,7 @@
 		};
 		A1000202 /* XCLocalSwiftPackageReference "MirrorKit" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../mirror/host/MirrorKit;
+			relativePath = Packages/MirrorKit;
 		};
 /* End XCLocalSwiftPackageReference section */
 

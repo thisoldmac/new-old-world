@@ -1,12 +1,11 @@
 #!/bin/sh
-# The MirrorKit gate: the vendored Mirror host package's own suite, plus a
-# build of the whole package.
+# The MirrorKit gate: NOW's production semantic core and renderer libraries,
+# plus their independently-owned fixture suite.
 #
 #     scripts/test-mirrorkit [/absolute/scratch/directory]
 #
-# `mirror/` is vendored into NOW as ordinary tracked files, and
-# `mirror/host/MirrorKit` is a full SwiftPM package with 165 tests of its
-# own — the scene IR, the fixture corpus, hit-testing, the wire resync.
+# `now-host/Packages/MirrorKit` is a full SwiftPM package with its own scene
+# IR, fixture corpus, hit-testing, renderer, and wire-resync tests.
 #
 # It was ungated. Nothing in this tree ran it: `scripts/test-host` points
 # at `now-host`, `scripts/test-native` compiles C, `scripts/build-guests`
@@ -16,9 +15,8 @@
 # the same reason: no gate invoked the tool that would have noticed.
 #
 # `swift test` and `swift build` both, for the reason test-host runs
-# xcodebuild beside `swift test`: the tests depend on MirrorKit and
-# MirrorKitUI, so a break in MirrorApp — the executable a human actually
-# launches — compiles nowhere the suite can see it.
+# xcodebuild beside `swift test`: the host consumes the library products, but
+# their standalone package boundary must remain buildable too.
 #
 # Scratch lives outside the repository (AGENTS.md > Testing). Pass a
 # directory to keep it; otherwise a temporary one is made and removed.
@@ -26,7 +24,7 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(dirname "$script_dir")
-package="$repo_root/mirror/host/MirrorKit"
+package="$repo_root/now-host/Packages/MirrorKit"
 
 if [ "$#" -gt 1 ]; then
     echo "usage: $0 [/absolute/scratch/directory]" >&2
@@ -38,7 +36,7 @@ fi
 # one rotted in the first place, so the reason is always printed.
 if [ ! -f "$package/Package.swift" ]; then
     echo "==> SKIP: MirrorKit gate — $package/Package.swift not found."
-    echo "    The vendored mirror/ tree is absent from this checkout."
+    echo "    The production MirrorKit package is absent from this checkout."
     exit 0
 fi
 if ! command -v swift >/dev/null 2>&1; then
@@ -94,7 +92,7 @@ if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
     fi
 fi
 
-echo "==> swift build (MirrorKit, MirrorKitUI, MirrorApp)"
+echo "==> swift build (MirrorKit, MirrorKitUI)"
 swift build --package-path "$package" --scratch-path "$scratch_root/swift"
 
 echo "==> swift test (MirrorKitTests, MirrorKitUITests)"

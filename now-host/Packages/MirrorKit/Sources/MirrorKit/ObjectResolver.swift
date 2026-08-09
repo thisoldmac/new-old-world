@@ -1,0 +1,295 @@
+import Foundation
+
+/// **A point on the screen becomes a thing with a name.**
+///
+/// Built on `HitTester` rather than beside it. That geometry — z-order
+/// across windows, the title-bar strip a dialog does not have, controls
+/// in content-relative space, icons under a scroll bar that is still a
+/// scroll bar — is measured, tested and hard-won, and a second
+/// implementation of it would drift the day after it was written.
+///
+/// What this adds is **identity**. `HitTester` answers with a rendering
+/// key (`windowID`) because that is all a renderer needs; an act needs
+/// the reference the guest minted, the PSN behind it, and the name the
+/// Finder knows an icon by. This looks those up in the scene the hit
+/// came from and hands back an object a driver can actually address.
+public enum ObjectResolver {
+
+    /// The object under a point, or nil when the scene says there is
+    /// nothing there at all — which is different from "the desktop",
+    /// and only happens when the scene has no desktop backdrop to
+    /// speak of.
+    public static func object(at point: Point,
+                              in scene: Scene) -> MirrorObject? {
+        resolve(HitTester.hitTest(scene, x: point.x, y: point.y),
+                in: scene)
+    }
+
+    /// The same, from a hit already taken. Kept separate so a caller
+    /// that hit-tests for its own reasons (hover feedback, a drag's
+    /// start point) does not pay for it twice.
+    public static func resolve(_ target: HitTester.Target,
+                               in scene: Scene) -> MirrorObject? {
+        switch target {
+
+        case .titlebar(let id, _, _, _):
+            return window(id, part: .titleBar, in: scene)
+
+        case .widget(let id, let kind, _, _):
+            switch kind {
+            case .close:    return window(id, part: .closeBox, in: scene)
+            case .zoom:     return window(id, part: .zoomBox, in: scene)
+            case .collapse: return window(id, part: .collapseBox, in: scene)
+            }
+
+        case .growBox(let id, _, _):
+            return window(id, part: .growBox, in: scene)
+
+        case .content(let id, _, _, _, _):
+            return window(id, part: .content, in: scene)
+
+        case .control(let id, let ctl):
+            return control(ctl, in: id, part: nil, scene: scene)
+
+        case .dialogItem(let id, let item):
+            return dialogItem(item, in: id, scene: scene)
+
+        case .scrollbar(let id, let ctl, let part, _, _):
+            return control(ctl, in: id, part: part, scene: scene)
+
+        case .menuTitle(let index):
+            return menu(index, in: scene).map(MirrorObject.menu)
+
+        case .menubarBackground:
+            /* Unreported menubar chrome has no guest object that may be
+               invented. In particular, do not rebuild the Application menu
+               from the process roster: that loses its command rows. */
+            return nil
+
+        case .desktopItem(let name, let x, let y):
+            return .finderItem(.init(name: name, container: nil,
+                                     point: Point(x: x, y: y)))
+
+        case .windowItem(let id, let name, let x, let y):
+            return .finderItem(.init(name: name,
+                                     container: windowShape(id, part: .content,
+                                                            in: scene),
+                                     point: Point(x: x, y: y)))
+
+        case .desktop:
+            /* THE OBJECT THAT MAKES EMPTY SPACE ADDRESSABLE, and it
+               carries WHOSE desktop it is. The owner is the process
+               drawing the backdrop - the Finder - and naming it is what
+               lets a click there do what a click on a Mac's desktop
+               does: bring the Finder forward. */
+            return .desktop(desktopOwner(in: scene))
+        }
+    }
+
+    /// **What a keystroke happens to.**
+    ///
+    /// Typing is an interaction like any other and therefore needs a
+    /// subject. On a Macintosh that subject is whatever the front
+    /// application will route a key event to, and from out here the
+    /// closest honest name for it is the front window - or, when the
+    /// front application has none, the application itself.
+    ///
+    /// It resolves to `.desktop` only when nothing is running that could
+    /// take a key, which on a live machine does not happen; the case
+    /// exists so this function has no failure mode a caller must handle.
+    public static func focus(in scene: Scene) -> MirrorObject {
+        if let front = scene.windows.first(where: {
+            $0.front && $0.visible && !HitTester.isDesktopBackdrop($0)
+        }) {
+            return .window(.init(id: front.id,
+                                 ref: front.ref.flatMap { $0.isEmpty ? nil : $0 },
+                                 psn: front.psn, title: front.title,
+                                 rect: front.rect, kind: front.kind,
+                                 isFront: true, part: .content))
+        }
+        if let app = scene.apps.first(where: { $0.front }) {
+            return .app(.init(psn: app.psn, name: app.name, isFront: true))
+        }
+        return .desktop(desktopOwner(in: scene))
+    }
+
+    /// The row of an open menu, which no hit test produces because a
+    /// drawn menu is the mirror's own overlay rather than anything in
+    /// the scene. Resolved from the menu and the row a person is on.
+    public static func menuItem(_ item: Scene.MenuItem,
+                                in menu: Scene.Menu,
+                                index: Int,
+                                apps: [Scene.AppRef] = []) -> MirrorObject {
+        /* The Application menu's lower half is not a list of commands.
+           Each row IS a running process, and choosing one means "bring
+           this application forward" - which the wire can say directly,
+           by process serial number.
+         *
+           Sent as a menu command it did nothing: watched twice on
+           2026-08-03, once as Hide Finder and once as choosing Finder
+           from the list, both reporting a tick the machine never
+           honoured. Whatever is wrong with commanding menu -16489, the
+           application does not need that route, and taking it was the
+           gesture-first mistake in miniature - addressing the ROW
+           instead of the thing the row names.
+
+           Matched by title, because that is what the menu shows and what
+           the person read. A row that names nothing running stays a menu
+           command, except for the three system-owned visibility controls,
+           whose subject is the front process or the running set. */
+        if menu.id == applicationMenuID, !item.separator,
+           let app = apps.first(where: { $0.name == item.title }) {
+            return .app(.init(psn: app.psn, name: app.name,
+                              isFront: app.front,
+                              incarnation: app.incarnation))
+        }
+        if menu.id == applicationMenuID, !item.separator {
+            let front = apps.first(where: { $0.front }).map {
+                MirrorObject.App(psn: $0.psn, name: $0.name, isFront: true,
+                                 incarnation: $0.incarnation)
+            }
+            let kind: MirrorObject.ApplicationMenuAction.Kind?
+            if let front, item.title == "Hide \(front.name)" {
+                kind = .hide(front)
+            } else if let front, item.title == "Hide Others" {
+                kind = .hideOthers(except: front)
+            } else if item.title == "Show All" {
+                kind = .showAll
+            } else {
+                kind = nil
+            }
+            if let kind {
+                return .applicationMenuAction(.init(
+                    title: item.title, isEnabled: item.enabled, kind: kind,
+                    menu: shape(menu), index: index))
+            }
+        }
+        return .menuItem(.init(menu: shape(menu), index: index,
+                               title: item.title, cmd: item.cmd,
+                               isEnabled: item.enabled,
+                               isSeparator: item.separator,
+                               isAppleMenuItemsEntry:
+                                   isAppleMenuItemsEntry(item, in: menu)))
+    }
+
+    /// **Which Apple-menu rows are files rather than commands.**
+    ///
+    /// On Mac OS 8/9 the Apple menu is one About item, a separator, then
+    /// the contents of the Apple Menu Items folder. Only the front
+    /// application serves the About row; everything below the separator is
+    /// a file the FINDER opens, and no application's menu dispatch does
+    /// anything with it unless it calls `OpenDeskAcc` itself.
+    ///
+    /// That is why this exists. NOW's guest has no Apple-menu case in
+    /// `handle_menu_choice` at all, so choosing Control Panels, Sherlock 2
+    /// or Apple System Profiler while NOW was frontmost dispatched a menu
+    /// command into its main loop and fell off the end of the switch —
+    /// measured 2026-08-06 in `acts.log`, where those three rows each
+    /// answered in 18–50 ms with settlement `unknown` (the self branch of
+    /// `menuact`) while the Finder's own File > Quit took ~800 ms and
+    /// settled `dispatched-but-unconfirmed` (the foreign act plane). The
+    /// act reached the guest and was dispatched; there was simply nothing
+    /// at the other end of it.
+    ///
+    /// The separator is required, not assumed: a menu that does not have
+    /// this shape yields false for every row and keeps the command route,
+    /// because guessing an Apple Menu Items filename for a row that is not
+    /// one would ask the Finder to open something that does not exist.
+    public static func isAppleMenuItemsEntry(_ item: Scene.MenuItem,
+                                             in menu: Scene.Menu) -> Bool {
+        guard menu.apple, !item.separator,
+              let divider = menu.items.first(where: { $0.separator })
+        else { return false }
+        return item.index > divider.index
+    }
+
+    /// The system's Application menu. Named once, here and in
+    /// `HitTester`, because two spellings of a magic number is how the
+    /// menu bar and the hit test drift apart.
+    public static let applicationMenuID = -16489
+
+    /// The process that owns the desktop backdrop, which is the Finder
+    /// on every machine this has ever run on - found by asking which
+    /// process draws the backdrop rather than by matching its name. A
+    /// self-scene does not carry the Finder's backdrop window, so its
+    /// Process Manager signature is the authoritative fallback.
+    static func desktopOwner(in scene: Scene) -> MirrorObject.App? {
+        let backdropPSN = scene.windows
+            .first(where: HitTester.isDesktopBackdrop)?.psn
+        let finderProcess = scene.processes?.first(where: {
+            $0.signature == "MACS"
+        })
+        guard let psn = backdropPSN ?? finderProcess?.psn,
+              let app = scene.apps.first(where: { $0.psn == psn })
+                  ?? scene.processes?.first(where: { $0.psn == psn })
+                      .map({ Scene.AppRef(psn: $0.psn, name: $0.name,
+                                          front: $0.front, error: nil) })
+        else { return nil }
+        return .init(psn: app.psn, name: app.name, isFront: app.front,
+                     incarnation: app.incarnation)
+    }
+
+    // MARK: - Lookups
+
+    private static func window(_ id: String, part: MirrorObject.WindowPart,
+                               in scene: Scene) -> MirrorObject? {
+        windowShape(id, part: part, in: scene).map(MirrorObject.window)
+    }
+
+    private static func windowShape(_ id: String,
+                                    part: MirrorObject.WindowPart,
+                                    in scene: Scene) -> MirrorObject.Window? {
+        guard let w = scene.windows.first(where: { $0.id == id }) else {
+            return nil
+        }
+        return .init(id: w.id, ref: w.ref.flatMap { $0.isEmpty ? nil : $0 },
+                     psn: w.psn, title: w.title, rect: w.rect,
+                     kind: w.kind, isFront: w.front, part: part)
+    }
+
+    private static func control(_ ctl: Scene.Control, in windowID: String,
+                                part: Scrollbar.Part?,
+                                scene: Scene) -> MirrorObject? {
+        guard let win = windowShape(windowID, part: .content, in: scene) else {
+            return nil
+        }
+        let semantics = ctl.semantic
+        let authorized = scene.version >= 2
+            && semantics?.authorizesAction == true
+        return .control(.init(ref: ctl.ref, role: ctl.role, title: ctl.title,
+                              rect: ctl.rect, value: ctl.value,
+                              min: ctl.min, max: ctl.max,
+                              isEnabled: ctl.enabled, window: win,
+                              part: part,
+                              isSemanticallyActionable: authorized,
+                              semanticAction: semantics?.action,
+                              semanticKnowledge: semantics?.knowledge.rawValue,
+                              semanticDefinition: semantics?.definition,
+                              semanticCdef: semantics?.cdef))
+    }
+
+    private static func dialogItem(_ item: Scene.DialogItem,
+                                   in windowID: String,
+                                   scene: Scene) -> MirrorObject? {
+        guard let win = windowShape(windowID, part: .content, in: scene)
+        else { return nil }
+        return .dialogItem(.init(
+            number: item.number, ref: item.ref, title: item.title,
+            rect: item.rect, isEnabled: item.enabled, window: win,
+            semanticKind: item.semantic.kind,
+            semanticAction: item.semantic.action,
+            isSemanticallyActionable: scene.version >= 2
+                && item.semantic.authorizesAction))
+    }
+
+    private static func menu(_ index: Int,
+                             in scene: Scene) -> MirrorObject.Menu? {
+        guard let menus = scene.menubar?.menus,
+              index >= 0, index < menus.count else { return nil }
+        return shape(menus[index])
+    }
+
+    private static func shape(_ m: Scene.Menu) -> MirrorObject.Menu {
+        .init(id: m.id, title: m.title, left: m.left, isApple: m.apple)
+    }
+}

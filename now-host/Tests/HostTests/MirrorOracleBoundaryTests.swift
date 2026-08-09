@@ -17,23 +17,23 @@ final class MirrorOracleBoundaryTests: XCTestCase {
                        "the production host must remain QEMU-independent")
     }
 
-    func testQMPClientAndDispatcherLiveOnlyInOracleTarget() {
+    func testQMPClientAndDispatcherAreAbsentFromProductionPackage() {
         let sources = nowRoot.appendingPathComponent(
-            "mirror/host/MirrorKit/Sources")
+            "now-host/Packages/MirrorKit/Sources")
         for name in ["QmpClient.swift", "ActionDispatcher.swift"] {
             XCTAssertFalse(FileManager.default.fileExists(atPath:
                 sources.appendingPathComponent("MirrorKit/\(name)").path))
             XCTAssertFalse(FileManager.default.fileExists(atPath:
                 sources.appendingPathComponent("MirrorKitUI/\(name)").path))
-            XCTAssertTrue(FileManager.default.fileExists(atPath:
-                sources.appendingPathComponent("MirrorOracleKit/\(name)").path))
         }
+        XCTAssertFalse(FileManager.default.fileExists(atPath:
+            sources.appendingPathComponent("MirrorOracleKit").path))
     }
 
     func testProductionMirrorModelsDoNotNameTheDevelopmentOracle() throws {
         let productionSources = [
-            "mirror/host/MirrorKit/Sources/MirrorKit/MirrorTarget.swift",
-            "mirror/host/MirrorKit/Sources/MirrorKit/ActionModel.swift",
+            "now-host/Packages/MirrorKit/Sources/MirrorKit/MirrorTarget.swift",
+            "now-host/Packages/MirrorKit/Sources/MirrorKit/ActionModel.swift",
         ]
         for relativePath in productionSources {
             let source = try String(contentsOf:

@@ -93,8 +93,8 @@ final class GuestPixelsGateTests: XCTestCase {
     /// shelf added there would reach the screen exactly as `island` did.
     private func renderPathSources() throws -> [(name: String, text: String)] {
         var out: [(String, String)] = []
-        for dir in ["mirror/host/MirrorKit/Sources/MirrorKit",
-                    "mirror/host/MirrorKit/Sources/MirrorKitUI"] {
+        for dir in ["now-host/Packages/MirrorKit/Sources/MirrorKit",
+                    "now-host/Packages/MirrorKit/Sources/MirrorKitUI"] {
             let url = nowRoot.appendingPathComponent(dir)
             for file in try FileManager.default
                 .contentsOfDirectory(atPath: url.path).sorted()
@@ -196,7 +196,7 @@ final class GuestPixelsGateTests: XCTestCase {
     private func pixelCarryingTypes() throws -> [String: String] {
         var carriers: [String: String] = [:]      // type name -> the property
         let dir = nowRoot.appendingPathComponent(
-            "mirror/host/MirrorKit/Sources/MirrorKit")
+            "now-host/Packages/MirrorKit/Sources/MirrorKit")
         let decl = try NSRegularExpression(
             pattern: #"(?:struct|final class|class)\s+([A-Z]\w*)"#)
         let buffer = try NSRegularExpression(
@@ -244,7 +244,7 @@ final class GuestPixelsGateTests: XCTestCase {
     func testNoTypeReachableFromTheSceneCarriesRawPixels() throws {
         let carriers = try pixelCarryingTypes()
         let sceneURL = nowRoot.appendingPathComponent(
-            "mirror/host/MirrorKit/Sources/MirrorKit/Scene.swift")
+            "now-host/Packages/MirrorKit/Sources/MirrorKit/Scene.swift")
         let scene = try String(contentsOf: sceneURL, encoding: .utf8)
         let property = try NSRegularExpression(
             pattern: #"(?:var|let)\s+(\w+)\s*:\s*\[?([A-Z]\w*)\]?\??"#)

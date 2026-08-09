@@ -15,25 +15,14 @@ let package = Package(
         // import needing a `#if canImport` guard.
         .library(name: "NOWAgentIntegration",
                  targets: ["NOWAgentIntegration"]),
-        // MirrorKit and MirrorKitUI were vendored here — a port of
-        // `timbottu/mirror`'s own package, so NOW's host app could draw and
-        // drive the mirror itself. It never worked, and the answer is not a
-        // better port: Mirror is vendored WHOLE at `now/mirror/`, keeping its
-        // own wire, its own INITs and its own agent surface. Nothing in this
-        // package builds it — it is a separate SwiftPM package, and the
-        // Mirror module here starts and stops one instance of it
-        // (`MirrorControlModel`).
+        // MirrorKit and MirrorKitUI are production-owned libraries. The
+        // retired standalone Mirror application and its oracle adapter live
+        // only in archive/; NOW's host owns the runtime lifecycle and wire.
     ],
-    // Mirror is vendored WHOLE at now/mirror/ and keeps its own
-    // package. NOW takes MirrorKit as a dependency of its TESTS
-    // first, for one reason: NOW's scene calls itself Mirror's IR
-    // v1 - the envelope says irVersion 1 - and until 2026-08-02
-    // nothing had ever decoded one with the type that IR belongs
-    // to. Five required fields were missing, and every one was
-    // found by restaging an emulator, six minutes a cycle. A
-    // decode is a millisecond.
+    // Keep the semantic core beside the host which owns it. The package stays
+    // separate so its renderer and fixture corpus retain an independent gate.
     dependencies: [
-        .package(path: "../mirror/host/MirrorKit"),
+        .package(path: "Packages/MirrorKit"),
     ],
     targets: [
         .target(name: "NOWAgentIntegration",

@@ -32,19 +32,14 @@ import NOWAgentIntegration
 ///   is the shape the defect has actually taken four times, not the only
 ///   shape it could take.
 /// - **It gates the HOST side only** — `now-host/Sources` and
-///   `mirror/host/MirrorKit/Sources`. It says nothing about the guests'
+///   `now-host/Packages/MirrorKit/Sources`. It says nothing about the guests'
 ///   C, where a screen literal would also be wrong; the PowerPC guest's
 ///   two `SetRect(…, 800, 600)` fallbacks were fixed in the same commit
 ///   by routing every measurement through `core/screen_bounds.c`, and
 ///   nothing here would notice them coming back.
-/// - **It exempts tests and fixtures entirely**, and with them the
-///   `MirrorApp` dev CLI, whose `--render-ops` and `--display-demo`
-///   paths build synthetic scenes and are entitled to state the surface
-///   they render onto. A fixture that says 832×624 is stating *its own*
-///   screen and is correct to; which of those are fixtures and which are
-///   assumptions is a judgement no scan can make, so this does not try.
-///   `MirrorApp`'s one LIVE path is covered by the poller pairing check
-///   instead.
+/// - **It exempts tests and fixtures entirely.** A fixture that says 832×624
+///   is stating its own screen and is correct to; which fixture dimensions
+///   are assumptions is a judgement no text scan can make.
 /// - **Zero passes.** `ScreenSize.unknown` has to be written down
 ///   somewhere, so the scan objects only to a *plausible* size.
 /// - **The prompt half proves the string, not the plumbing.** It proves
@@ -61,7 +56,7 @@ final class GuestScreenIsOneAnswerGateTests: XCTestCase {
 
     private static let productionRoots = [
         "now-host/Sources",
-        "mirror/host/MirrorKit/Sources",
+        "now-host/Packages/MirrorKit/Sources",
     ]
 
     private func swiftFiles(under relative: String) throws -> [String] {
@@ -83,14 +78,7 @@ final class GuestScreenIsOneAnswerGateTests: XCTestCase {
                 GateSource.repoRoot.path.count + 1))
             guard !file.hasPrefix(".claude/"),
                   !file.hasPrefix("archive/"),
-                  !file.contains("/Tests/"),
-                  /* MirrorApp is a dev CLI, and its `--render-ops` /
-                     `--display-demo` paths BUILD scenes rather than
-                     receive them: their screen is the fixture's own
-                     surface, which the fixture is entitled to state.
-                     Its one live path is covered instead by
-                     `testEveryLivePollerAsksTheGuestItsScreen`. */
-                  !file.contains("/MirrorApp/") else { continue }
+                  !file.contains("/Tests/") else { continue }
             out.append(file)
         }
         return out.sorted()
@@ -101,7 +89,7 @@ final class GuestScreenIsOneAnswerGateTests: XCTestCase {
     /// this gate hunts for, instead of quietly ending the hunt.
     private func screenSizeTypeName() throws -> String {
         let scene = try GateSource.hostSwift(
-            "mirror/host/MirrorKit/Sources/MirrorKit/Scene.swift")
+            "now-host/Packages/MirrorKit/Sources/MirrorKit/Scene.swift")
         let pattern = #"struct\s+(\w*ScreenSize\w*)\s*:"#
         let re = try NSRegularExpression(pattern: pattern)
         let ns = scene as NSString
@@ -216,25 +204,21 @@ final class GuestScreenIsOneAnswerGateTests: XCTestCase {
                        832)
     }
 
-    /// **A poller that never asked publishes `unknown` forever.**
+    /// **Any poller introduced here must ask before it publishes.**
     /// `ScenePoller.screen` starts unknown by design — nothing has asked
-    /// the machine yet — so the construction is only half of it. Derived
-    /// by pairing, per file, rather than by naming the five call sites.
+    /// the machine yet — so the construction is only half of it. NOW's live
+    /// source currently obtains the screen through its own wire projection;
+    /// zero `ScenePoller` constructions is therefore a valid production tree.
     func testEveryLivePollerAsksTheGuestItsScreen() throws {
         var missing: [String] = []
-        var checked = 0
         for root in Self.productionRoots {
             for file in try swiftFiles(under: root)
             where !file.hasSuffix("ScenePoller.swift") {
                 let text = try GateSource.hostSwift(file)
                 guard text.contains("ScenePoller(") else { continue }
-                checked += 1
                 if !text.contains("detectScreen()") { missing.append(file) }
             }
         }
-        XCTAssertGreaterThan(checked, 0,
-                             "no file constructs a ScenePoller; this "
-                                + "pairing check just stopped checking")
         XCTAssertEqual(
             missing, [],
             "a ScenePoller is built and never asked the guest how big "
