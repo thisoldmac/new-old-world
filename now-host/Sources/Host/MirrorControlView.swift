@@ -195,11 +195,12 @@ struct MirrorControlView: View {
     private var hostFinderCard: some View {
         GroupBox("Finder") {
             VStack(alignment: .leading, spacing: 8) {
-                Toggle("Emulate Finder Window Interiors", isOn: Binding(
+                Toggle("Emulate Finder Window Interiors (Experimental)",
+                       isOn: Binding(
                     get: { source.emulateFinderWindows },
                     set: { source.emulateFinderWindows = $0 }
                 ))
-                Text("The guest owns which Finder windows exist and their chrome; this Mac renders and operates their interiors from semantic file data.")
+                Text("Experimental: the guest owns which Finder windows exist and their chrome; this Mac renders and operates their interiors from semantic file data. Some Finder behaviors remain incomplete.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

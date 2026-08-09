@@ -305,6 +305,13 @@ Focused tests cover the control-panel route, host-only view retention,
 optimistic synchronization and guest-to-host reconciliation. Metal remains
 owed.
 
+**LANDING STATUS 2026-08-09:** **Emulate Finder Window Interiors is
+Experimental.** The host UI and README say so explicitly. Its semantic model,
+ownership boundary and focused tests are useful enough to retain, but file
+opening, visible selection, view synchronization and other Finder interaction
+work have not collectively passed a PowerBook acceptance run. Guest-owned
+Finder rendering remains the non-experimental path while this mode develops.
+
 **CORRECTION 2026-08-09, authority must not seed state.** Enabling emulation
 no longer synthesizes a root-volume window or sends a guest open. The host
 starts with no emulated folder windows, adopts folders already present in the
