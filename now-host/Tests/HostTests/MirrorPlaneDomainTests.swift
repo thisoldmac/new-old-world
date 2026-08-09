@@ -373,7 +373,8 @@ final class MirrorPlaneDomainTests: XCTestCase {
         let directBody = source[direct.lowerBound..<legacy.lowerBound]
         let policy = try XCTUnwrap(directBody.range(
             of: "guard currentPlanePolicy.contains(.interaction)"))
-        let dispatch = try XCTUnwrap(directBody.range(of: "Task {"))
+        let dispatch = try XCTUnwrap(directBody.range(
+            of: "workScheduler.submit(.interaction"))
         XCTAssertLessThan(policy.lowerBound, dispatch.lowerBound,
                           "P4 policy must refuse before asynchronous dispatch")
         XCTAssertTrue(directBody.contains("NOT DISPATCHED"))

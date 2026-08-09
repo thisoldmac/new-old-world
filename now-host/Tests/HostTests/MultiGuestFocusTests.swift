@@ -367,15 +367,37 @@ final class MultiGuestFocusTests: XCTestCase {
             let guest = FakeGuest(port: port)
             var asks = 0
             guest.onMessage = { message in
-                guard case .softwareList(let request) = message else { return }
-                asks += 1
-                try? guest.send(.softwareListing(SoftwareListing(
-                    id: request.id, domain: request.domain,
-                    entries: [SoftwareEntry(
-                        name: app, path: "HD:Applications:\(app)",
-                        type: "APPL", creator: "????", sizeK: 100,
-                        off: nil, running: nil, version: nil)],
-                    more: false, cursor: nil, note: nil)))
+                switch message {
+                case .fileList(let request):
+                    try? guest.send(.fileListing(FileListing(
+                        id: request.id, path: request.path, entries: [],
+                        more: false, cursor: nil, root: "HD:Shared:")))
+                case .processList(let request):
+                    try? guest.send(.processListing(ProcessListing(
+                        id: request.id, processes: [], more: false,
+                        cursor: nil)))
+                case .commandRequest(let request):
+                    try? guest.send(.commandResult(CommandResult(
+                        id: request.id, ok: request.name == "help",
+                        output: request.name == "help"
+                            ? ["help": [["software.list", "a family"]]]
+                            : nil,
+                        error: request.name == "help" ? nil : .init(
+                            code: "unknown-command",
+                            message: "\(request.name): no such command"))))
+                case .softwareList(let request):
+                    let isInventory = request.domain == "apps"
+                    if isInventory { asks += 1 }
+                    try? guest.send(.softwareListing(SoftwareListing(
+                        id: request.id, domain: request.domain,
+                        entries: isInventory ? [SoftwareEntry(
+                            name: app, path: "HD:Applications:\(app)",
+                            type: "APPL", creator: "????", sizeK: 100,
+                            off: nil, running: nil, version: nil)] : [],
+                        more: false, cursor: nil, note: nil)))
+                default:
+                    break
+                }
             }
             guest.start()
             try guest.send(.hello(Hello(

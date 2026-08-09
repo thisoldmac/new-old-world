@@ -1539,6 +1539,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// evidence while the next ordinary poll performs any guest arm/release.
     func planePolicyDidChange() {
         guard let key = pinnedGuestKey, let engine = shadowEngine else { return }
+        if !cycleIO.isGuestConnected(key) {
+            /* A dead session cannot answer the act currently holding the
+               admission lane, and making the health-check scene queue behind
+               that act is a circular wait. End the broker's operations with
+               their typed sessionChanged outcome, then invalidate the old
+               scheduler generation so the cycle that reports the disconnect
+               can be admitted immediately. The real listener performs the
+               same reset when its active session disappears; this covers the
+               interval in which the cycle plane learns first. */
+            noticeDeadGuest()
+            workScheduler.reset(sessionID: key.text)
+        }
         let changed = engine.setEnabledPlanes(planePolicy(key))
         if changed, let projected = engine.snapshot?.scene {
             scene = projectedScene(fallback: projected)
