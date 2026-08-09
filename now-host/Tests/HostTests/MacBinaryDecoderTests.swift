@@ -3,6 +3,13 @@ import XCTest
 @testable import Host
 
 final class MacBinaryDecoderTests: XCTestCase {
+    func testWriteFailureNamesTheFork() {
+        XCTAssertEqual(
+            MacBinaryFile.DecodeError.couldNotWriteFork("resource")
+                .errorDescription,
+            "The resource fork could not be written to the setup image.")
+    }
+
     func testDecoderRestoresNameMetadataAndBothForks() throws {
         let dataFork = Data([1, 2, 3, 4, 5])
         let resourceFork = Data([6, 7, 8])

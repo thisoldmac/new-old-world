@@ -57,7 +57,7 @@ each produced the named failure. The new setup-image integration test builds
 and mounts the actual filesystem, then verifies both forks and Finder metadata;
 changing the NDIF Finder type from `rohd` to `dImg` produced its named failure.
 
-`scripts/test-all` exits 0 at follow-up checkpoint `a9ad5dbf`: staged-image
+`scripts/test-all` exits 0 after the HFS/NDIF checkpoint: staged-image
 discipline 28/28,
 native tests 149/149, MirrorKit, all guest/resident/instrument cross-builds,
 the complete host suites, and the Xcode app target in Debug and Release all

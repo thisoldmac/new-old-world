@@ -22,7 +22,7 @@ struct MacBinaryFile: Equatable {
             case .invalidName:
                 return "The package has no usable classic Mac file name."
             case .couldNotWriteFork(let name):
-                return "The (name) fork could not be written to the setup image."
+                return "The \(name) fork could not be written to the setup image."
             case .couldNotWriteFinderInfo:
                 return "The Finder type and creator could not be written to "
                     + "the setup image."
