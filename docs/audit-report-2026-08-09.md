@@ -183,7 +183,7 @@ facade from prose-byte counts alone.
   narrow client profiles, not as session-dynamic disclosure. No server facade
   change is justified by the measured client behavior.
 
-### [F-013] Inventory paths look actionable to the launch tool (severity: low, effort: XS)
+### [F-013] Inventory paths look actionable to the launch tool (severity: low, effort: XS) — resolved
 
 - **Dimension:** structure-maintainability
 - **Evidence:** in the fixed cross-model A1, both GPT-5.6 Luna and
@@ -198,10 +198,10 @@ facade from prose-byte counts alone.
   paths are never accepted or returned.” The path is returned by inventory;
   it is simply not a launch key. Two capable actors made the same cross-tool
   handoff error in an otherwise trivial four-call workflow.
-- **Proposed change:** keep the safe exact-name/reference contract, but make
-  the launch descriptor say explicitly to pass the exact inventory `name`,
-  never its `path`, and explain that opaque references come only from an
-  ambiguous-name refusal.
+- **Resolution:** the launch descriptor now says to pass the exact inventory
+  `name`, not its `path`, and explains that opaque references come only from
+  an ambiguous-name refusal. The registry guard was watched fail on all four
+  missing handoff phrases before the descriptor changed, then passed.
 - **Blast radius:** one descriptor and one registry guard; no arguments,
   dispatch, guest behavior, or compatibility changes.
 

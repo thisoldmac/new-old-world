@@ -164,7 +164,7 @@ public enum LaunchSoftwareProjection: HostProjection {
         return [
             "title": "Launch New Old World Guest Application",
             "description":
-                "Launches only an exact, current application selected from the running NOW host's paired guest catalog. A name with zero or multiple exact matches does not launch; an opaque candidate reference is revalidated before use. Guest paths are never accepted or returned.",
+                "Launches only an exact, current application selected from the running NOW host's paired guest catalog. To launch an entry from now_software_inventory(domain: apps), pass its exact name, not its path. A name with zero or multiple exact matches does not launch; an opaque candidate reference is returned only by an ambiguous-name refusal and is revalidated before use.",
             "inputSchema": [
                 "type": "object",
                 "properties": [

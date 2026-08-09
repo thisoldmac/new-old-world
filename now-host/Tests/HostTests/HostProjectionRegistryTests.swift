@@ -122,6 +122,23 @@ final class HostProjectionRegistryTests: XCTestCase {
             pixels.contains("semantic evidence cannot answer"), pixels)
     }
 
+    /// Application inventory returns both a human-readable HFS path and the
+    /// exact name the launch projection accepts. The adjacent tool must make
+    /// that handoff explicit: otherwise a caller naturally feeds the most
+    /// specific-looking field to a boundary that intentionally refuses it.
+    func testLaunchExplainsHowToUseAnInventoryResult() {
+        let launch = LaunchSoftwareProjection.mcpDescriptor["description"]
+            as? String ?? ""
+        XCTAssertTrue(
+            launch.contains("now_software_inventory"), launch)
+        XCTAssertTrue(
+            launch.contains("exact name"), launch)
+        XCTAssertTrue(
+            launch.contains("not its path"), launch)
+        XCTAssertTrue(
+            launch.contains("ambiguous-name refusal"), launch)
+    }
+
     /// A requirement is a guest command or message family that the ledger
     /// resolves. A typo does not fail anywhere: `state(of:)` falls through
     /// to the command table, misses, and reports the capability
