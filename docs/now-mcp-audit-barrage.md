@@ -525,7 +525,8 @@ post-barrage design pass. The action grammar no longer needs to wait for it.
 ### Final repository gate
 
 At closeout, `scripts/test-all` passed end to end on 2026-08-09 and was rerun
-successfully after the routing-skill follow-up:
+successfully after both the routing-skill and semantic-action-contract
+follow-ups:
 
 - staged-image discipline: 28 passed;
 - native guest tests: 149 passed;

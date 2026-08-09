@@ -15,7 +15,8 @@ audited internally. Final `scripts/test-all` passed: 28 image-discipline tests,
 in both asset modes, and Debug/Release app builds. The optional live-guest
 stage skipped; a separate identity-checked live conformance run reached all 42
 advertised tools with zero failed or uncovered rows. This remains tested plus
-separately VM-verified, not metal-verified.
+separately VM-verified, not metal-verified. The full gate was rerun after the
+F-009 schema, decoder, guidance, tests, and live-barrage documentation landed.
 
 ## Summary
 
