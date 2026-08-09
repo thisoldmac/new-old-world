@@ -5,6 +5,7 @@
 
 #include "control_kind.h"
 #include "development_layout.h"
+#include "development_toolchain_mac.h"
 #include "fileshare.h"
 #include "prefs.h"
 #include "pump.h"
@@ -147,10 +148,16 @@ static int choose_root(Boolean toolchain)
     }
     now_prefs_load(&prefs);
     if (toolchain) {
+        DevToolchain measured;
         prefs.toolchain_vref = vref;
         prefs.toolchain_dir = dir;
         strncpy(prefs.toolchain_root, path, sizeof prefs.toolchain_root - 1);
-        prefs.toolchain_qualified = false;
+        prefs.toolchain_qualified =
+            dev_toolchain_measure(vref, dir, &measured) == noErr;
+        if (!prefs.toolchain_qualified) {
+            strcpy(g_problem,
+                   "The folder must contain ToolServer and Tools:MrC.");
+        }
     } else {
         prefs.projects_vref = vref;
         prefs.projects_dir = dir;
@@ -160,7 +167,7 @@ static int choose_root(Boolean toolchain)
         strcpy(g_problem, "The folder was chosen but could not be remembered.");
         return -1;
     }
-    g_problem[0] = '\0';
+    if (!toolchain || prefs.toolchain_qualified) g_problem[0] = '\0';
     InvalWindowRect(g_owner, toolchain ? &g_r.toolchain_status
                                       : &g_r.projects_path);
     return 1;
