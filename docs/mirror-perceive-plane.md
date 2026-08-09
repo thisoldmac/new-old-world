@@ -222,7 +222,20 @@ that is *about metal*.
 - **A list row is a semantic target.** `bounds of every item` supplies a
   16-pixel glyph in name view, but the host-owned list presents each visible
   row as the named item. Clicking the label or the rest of that row resolves
-  to a select-by-name act, never to an invented coordinate in empty content.
+  to the same named item, never to an invented coordinate in empty content.
+  Renderer and hit tester share one view inference path, including old guests
+  that report an unknown view word; a row can therefore never be painted as a
+  list and handled as generic window content.
+- **Selection is a host-owned exact set with guest settlement.** Click,
+  control/right-click, shift-click and rubber-band gestures update the set
+  synchronously. Command-A, Command-O, inline rename and Escape operate on that
+  same set. The guest then receives a bulk Finder script naming the exact
+  container and items; stale names refuse before the script is sent.
+- **A thumb drag is one resident gesture.** Press, motion and release share a
+  lane that buffers motion or release arriving before `dragpress` has settled,
+  so a fast local drag cannot produce `no drag held` or strand the guest mouse
+  button. Wheel input is bounded to three line-control acts per captured event
+  and previews the same delta locally.
 - **Two windows with the same title get no items** rather than each other's.
   AppleScript addresses them by title even though the host joins the answer
   to an exact WindowRecord identity.

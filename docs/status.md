@@ -203,15 +203,23 @@ says so at the point of claim rather than in a footnote.
   The Finder interior is now host-owned as interaction state too, not merely
   a semantic layer painted after a guest snapshot. A folder window becomes a
   blank host Finder surface immediately; each roster page adds individually
-  rendered asset-pack or generic icons as it arrives. Selection is projected
-  locally per window and name-view rows target their full visible row while
-  the guest receives the same select-by-name act. Scroll arrows, pages, and
-  thumb drags translate the cached items and thumb on the host immediately,
-  then yield when the guest reports its new control value. Scroll and window
-  movement no longer invalidate the directory roster or start another Finder
-  AppleScript; resize and view-header changes do. Completed rosters are tracked
-  per container, so a failed desktop read cannot make a successful front
-  folder repeat forever. These additions are tested, not metal-verified.
+  rendered asset-pack or generic icons as it arrives. Selection is an exact
+  per-window set projected locally before the guest act: ordinary click
+  replaces, control-click or right-click toggles, shift-click extends from an
+  anchor, and dragging empty content makes a rubber-band selection. Name-view
+  rows target their full visible row, using the same inferred view as the
+  renderer, so a row cannot fall through to generic window activation.
+  Command-A selects all, Command-O opens the exact selection, Return or Enter
+  begins an inline rename, and Escape cancels it or clears the selection. Scroll arrows,
+  pages, wheel steps, and resident thumb drags translate the cached items and
+  thumb on the host immediately, then yield when the guest reports its new
+  control value. Scroll and window movement no longer invalidate the directory
+  roster or start another Finder AppleScript; resize, view-header changes, and
+  a successful rename do. Completed rosters are tracked per container, so a
+  failed desktop read cannot make a successful front folder repeat forever.
+  Existing item drag remains single-item even when several items are selected;
+  grouped Finder drags and host context menus are later slices. These additions
+  are tested, not metal-verified.
 - **The guest is woken by its socket, not by a timer expiring**
   (2026-08-06, emulator-verified; **a metal pass is owed and this is the
   change most likely to behave differently there**). A request arriving

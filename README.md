@@ -148,7 +148,11 @@ off by default, and has crashed/restarted Finder on the PowerBook 1400c. Finder
 is now permanently excluded at both host and guest command boundaries; raw-A5
 arming is refused because it cannot enforce process identity. Finder interiors
 instead use bounded, current-container semantic reads carrying the guest HFS
-path, view, order, live bounds and selection. That path is **tested, not yet
+path, view, order, live bounds and selection. The host owns Finder interaction
+too: icon and list selections update immediately, control/right-click toggles,
+shift-click and rubber-band gestures extend the selection, the wheel and thumb
+scroll locally while their guest acts settle, and Return/Enter, Escape and
+Command-O drive rename, cancel/deselect and open. That path is **tested, not yet
 metal-verified**. P3 remains available to ordinary applications so its existing
 rendering work can be evaluated without exposing Finder again.
 

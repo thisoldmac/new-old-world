@@ -109,21 +109,35 @@ later. Completed reads are tracked per container, so a failed desktop or
 background read cannot continuously restart a successful front-window read.
 
 Scroll is no longer a roster invalidation. The host translates cached boxes by
-the guest's live scrollbar delta and projects a pending arrow/page/thumb move
-immediately while the same act travels to the guest. Selection is likewise
-local-first and scoped to the exact window. Name-view hit testing covers the
-visible semantic row instead of only its 16x16 glyph, but still sends a
-select-by-name act. Finder owns window existence, frontness, geometry, view,
-and eventual control state; the host owns the interior presentation. This
-latency and interaction correction is **Tested, not yet metal-verified**.
+the guest's live scrollbar delta and projects arrow, page, wheel and resident
+thumb-drag moves immediately while the same acts travel to the guest. Selection
+is an exact local-first set scoped to the exact window: click replaces,
+control/right-click toggles, shift-click ranges from an anchor, and an empty
+content drag rubber-bands across the same semantic item rects used for drawing.
+Name-view hit testing covers the visible semantic row instead of only its 16x16
+glyph. Renderer and hit tester now share view inference, so legacy or unknown
+metadata cannot make a drawn list row fall through to the generic "window is
+already front" path. Command-A selects all, Command-O opens the set,
+Return/Enter starts an inline rename, and Escape cancels or deselects; each operation is
+optimistic locally and then sends one exact Finder AppleScript through the
+bounded direct-act lane. Finder owns window existence, frontness, geometry,
+view, and eventual control state; the host owns the interior presentation.
+This latency and interaction correction is **Tested, not yet
+metal-verified**.
+
+Two interaction edges remain deliberately open. A right-click currently has
+classic control-click selection semantics but no host context menu, and an item
+drag still moves only the item under the pointer even when the local selection
+contains several items. Neither limitation can make a list row select the
+window instead.
 
 Paging remains scoped to the one displayed container. Opening another folder
 starts a read for that directory; a later host-side expandable list must apply
 the same rule when a row expands. No parent read prewalks its children and no
 volume is recursively paged.
 
-Native qdtrace target tests, 36 focused host content tests, 45 host source
-tests, and 10 renderer arbitration tests pass. This is **Tested**. The next
+The 269-test MirrorKit gate and 52 focused host interaction/source tests pass.
+This is **Tested**. The next
 PB1400c run still owes the claim that Finder stays alive and does not front
 from observation, and a separate non-Finder application run owes evidence that
 P3 remains useful under its narrower target boundary.
