@@ -1,8 +1,8 @@
 # NOW MCP audit and barrage
 
-> Review draft, 2026-08-09. Mapping and local tests are complete; no VM or
-> model barrage has run yet. The review gate near the end freezes the task set
-> before the live work begins.
+> Active audit, 2026-08-09. Mapping and focused local tests are complete. A
+> private, identity-checked PPC baseline has run; the bounded first-contact
+> pass and the scored barrage remain in progress.
 
 This document maps NOW's agent surface, puts its integrated Mirror plane beside
 the two current TimBotTu MCP designs, records CodeKitten's non-MCP automation
@@ -88,14 +88,31 @@ to destructive operations.
 | Guest filesystem reads | `now_guest_files_capabilities`, `now_guest_files_list`, `now_guest_files_stat`, `now_guest_files_download` | read | persisted root-relative guest policy; bounded results; caller cannot choose a modern-host destination | guest-files projection, policy, download, socket tests |
 | Guest filesystem mutation and upload | `now_guest_files_mutate`, `now_guest_files_upload_begin`, `now_guest_files_upload_append`, `now_guest_files_upload_commit` | write | typed move/trash/restore/mkdir or private staged create-only upload | mutation, upload, bounds, socket, audit, and consent tests |
 
-### Mirror is integrated, but not flattened away
+### The state engine and Mirror are siblings
 
-NOW's Mirror is “disjoint” in implementation ownership only in the useful
-sense: scene retention, projections, action planning, cycle clocks, and the
-journal remain a coherent host subsystem. It is not a separate MCP service.
-The nine `now_mirror_*` projections give that subsystem dedicated schemas and
-annotations while using the same machine selector, consent gate, socket,
-dispatch, and audit path as every other NOW tool.
+"Mirror" is the human product sitting on the state engine, not the agent's
+conceptual boundary. Scene retention, semantic projections, action planning,
+cycle clocks, and the journal form a shared semantic state engine. Human-facing
+Mirror and agent-facing projections are siblings over it. The agent should not
+need to know the Mirror product's vocabulary in order to understand desktop or
+application state.
+
+```mermaid
+flowchart LR
+    G["Guest state"] --> E["Semantic UI state engine"]
+    E --> H["Human-facing Mirror"]
+    E --> A["Agent-facing state projections"]
+    H --> X["Shared semantic executor"]
+    A --> X
+    X --> G
+```
+
+In the audited baseline the nine agent projections still carried
+`now_mirror_*` names. They did use the same machine selector, consent gate,
+socket, dispatch, audit path, state engine, and executor as every other NOW
+tool; the defect was agent-facing terminology and first-contact ordering, not a
+second MCP or a second state engine. This branch preserves a measured baseline
+before changing those names. The state engine and human Mirror remain intact.
 
 This differs materially from TBT 0.7. There, `mirror_call(method, params)` is
 one generic MCP tool and `mirror.sock` is a standalone service with its own
@@ -139,6 +156,32 @@ exercise its refusal without trying to manufacture authority.
 This is **tested locally**, not VM-verified or metal-verified. The referenced
 stable thread recorded a green `scripts/test-all`; this audit reran the focused
 228-test slice above, not the whole repository gate.
+
+### Pre-cleanup Luna baseline
+
+The private PPC run used lane `16136/16137`, base image SHA-256
+`c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70`, and a
+guest that identified itself as `Power Mac G4`, Mac OS 9.1.0, build
+`0aa097ba0c1b 2026-08-09T07:04:59Z`. The staged resident separately matched the
+run's source manifest `03b7d9519617` and build fingerprint `c90c4d4ff77f`.
+This is VM-verified first-contact evidence, not physical-hardware evidence.
+
+| Probe | Result | Calls before answer | Qualitative read |
+|---|---:|---:|---|
+| H0, connected Mac and readiness | 17 s, correct | one: `now_session_health` | good first tool choice and a direct answer; it did not quote the guest build even though the result carried it |
+| H1, visible desktop and front application | 37 s, substantively correct | five shell calls, then health + direct element walk + screen capture | poor surface-first behavior: it loaded global TBT emulator guidance, inspected an unrelated TBT runtime, and escalated to pixels without trying retained semantic state |
+
+H1 is intentionally retained as an environment-level baseline. NOW was the
+only configured MCP server, but the worker's global classic-Mac harness skill
+was still discoverable and routed it toward TimBotTu. `--ignore-user-config`
+removes configured MCP servers; it does not remove installed skills. The scored
+barrage therefore also uses a temporary auth-only Codex home. That control is
+not a product advantage: it simply separates friction in NOW's own MCP surface
+from unrelated global guidance.
+
+The raw `codex exec --json` streams, stderr, and timing metadata remain under
+`docs/local/now-mcp-barrage-2026-08-09/baseline/`. They contain the emitted
+event stream and token accounting, not private hidden chain-of-thought.
 
 ## Comparative surfaces
 
@@ -253,10 +296,11 @@ identity before accepting any result and shuts the VM down through the harness.
 
 Each Luna worker will be a fresh non-interactive Codex process using
 `gpt-5.6-luna` and an empty working directory. `--ignore-user-config` removes
-TBT, Atlas, filesystem, and every other configured MCP from the worker. The
-only configured server will be the required NOW stdio companion, pointed at
-the private run's socket suffix. The worker receives no repository and no NOW
-architecture briefing.
+TBT, Atlas, filesystem, and every other configured MCP from the worker. An
+auth-only temporary Codex home also removes installed skill instructions from
+the controlled runs. The only configured server will be the required NOW stdio
+companion, pointed at the private run's socket suffix. The worker receives no
+repository and no NOW architecture briefing.
 
 `codex exec --json` writes the observable event stream: emitted reasoning
 summaries, MCP calls and results, other tool events, and the final answer. The
