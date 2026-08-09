@@ -395,6 +395,11 @@ final class HostFinderSession {
     }
 
     func openDesktop(_ names: [String]) -> Bool {
+        /* An emulated desktop can feed a guest-owned Finder window. Only
+           consume the open locally when interior emulation can present the
+           resulting window; otherwise the source must fall through to the
+           ordinary guest Finder act. */
+        guard enabled else { return false }
         active = true
         var handled = false
         let rootName = desktopRootLabel?.trimmingCharacters(

@@ -258,6 +258,26 @@ final class HostFinderSessionTests: XCTestCase {
         XCTAssertTrue(session.windows.isEmpty)
     }
 
+    func testEmulatedDesktopDoesNotSwallowOpensForGuestOwnedWindows()
+        async throws {
+        defaults.set(false, forKey: HostFinderSession.preferenceKey)
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        session.observe(screen: .init(w: 640, h: 480))
+        _ = try await answerNextList(
+            guest, path: "Desktop Folder",
+            entries: [entry("Projects", kind: "folder")])
+        try await waitUntil("desktop catalog") {
+            session.project(self.scene()).desktopItems?.contains {
+                $0.name == "Projects"
+            } == true
+        }
+
+        XCTAssertFalse(session.openDesktop(["Projects"]))
+        XCTAssertTrue(session.windows.isEmpty,
+                      "guest-owned Finder must receive this open instead")
+    }
+
     func testRebuildClearsOpenWindowsAndStartsFromAnEmptyCache() async throws {
         let guest = try await connectedGuest()
         let session = HostFinderSession(listener: listener, defaults: defaults)
