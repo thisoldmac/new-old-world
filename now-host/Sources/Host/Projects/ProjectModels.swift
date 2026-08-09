@@ -243,6 +243,10 @@ enum ProjectDigest {
                                                            .isSymbolicLinkKey])
             let relative = url.pathComponents.suffix(walk.level)
                 .joined(separator: "/")
+            if relative == "Build" || relative.hasPrefix("Build/") {
+                if values.isRegularFile != true { walk.skipDescendants() }
+                continue
+            }
             if values.isSymbolicLink == true {
                 throw ProjectStoreError.linkEscape(relative)
             }

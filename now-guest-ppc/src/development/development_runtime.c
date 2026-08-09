@@ -35,6 +35,7 @@ typedef struct DevRuntime {
     DevBuildService service;
     DevProject project;
     DevToolchain toolchain;
+    char candidate_id[40];
     FSSpec project_folder;
     long project_dir;
     char project_root[512];
@@ -119,6 +120,9 @@ static void build_reply(long id, char *out, long cap)
     pos = row(out, cap, pos, "Actions", action, 1);
     pos = row(out, cap, pos, "Project",
               g_runtime.project.id[0] ? g_runtime.project.id : "none", 1);
+    pos = row(out, cap, pos, "Candidate",
+              g_runtime.candidate_id[0]
+                  ? g_runtime.candidate_id : "active", 1);
     pos = row(out, cap, pos, "Toolchain",
               g_runtime.toolchain.id[0] ? g_runtime.toolchain.id : "none", 1);
     pos = row(out, cap, pos, "Product",
@@ -551,6 +555,12 @@ void now_development_runtime_idle(void)
             g_runtime.service.job.exit_code = fnfErr;
             strcpy(g_runtime.last_status,
                    "Build actions passed, but the declared product is missing.");
+        } else if (g_runtime.candidate_id[0]
+                   && !dev_candidate_mark_built(g_runtime.candidate_id)) {
+            g_runtime.service.job.state = kDevJobFailed;
+            g_runtime.service.job.exit_code = ioErr;
+            strcpy(g_runtime.last_status,
+                   "Build passed, but the verified candidate could not be sealed as built.");
         } else strcpy(g_runtime.last_status, "Build succeeded; product measured.");
     }
 }
@@ -614,6 +624,7 @@ void now_development_build_command(const char *request_json, long id,
                         "The inactive candidate is absent or invalid.");
             return;
         }
+        strcpy(g_runtime.candidate_id, candidate_id);
     } else if (!find_project(project_id, &g_runtime.project_folder,
                              &g_runtime.project_dir, &g_runtime.project,
                              reason, sizeof reason)) {

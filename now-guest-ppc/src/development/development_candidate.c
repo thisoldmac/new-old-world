@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "development_sha256.h"
+#include "development_project.h"
 #include "json.h"
 #include "prefs.h"
 
@@ -228,7 +229,8 @@ static int collect_files(short vref, long dir_id, const char *prefix,
         }
         /* Match the host history digest: private dot-files do not belong to
            project source and the verification marker must not hash itself. */
-        if (component[0] == '.') continue;
+        if (component[0] == '.'
+            || (prefix[0] == '\0' && strcmp(component, "Build") == 0)) continue;
         n = snprintf(relative, sizeof relative, "%s%s%s", prefix,
                      prefix[0] ? "/" : "", component);
         if (n <= 0 || n >= (int)sizeof relative) {
@@ -283,9 +285,9 @@ static int file_digest(const FSSpec *spec, char hex[65])
     return 1;
 }
 
-static int tree_digest(const FSSpec *folder, long dir_id,
-                       char hex[65], int *file_count,
-                       char *reason, long reason_cap)
+static int project_tree_digest(const FSSpec *folder, long dir_id,
+                               char hex[65], int *file_count,
+                               char *reason, long reason_cap)
 {
     CandidateFile *files;
     DevSHA256 tree;
@@ -326,19 +328,178 @@ static int tree_digest(const FSSpec *folder, long dir_id,
 }
 
 static int write_marker(const FSSpec *folder, long dir_id,
-                        const char *digest)
+                        ConstStr255Param marker_name, const char *text)
 {
     FSSpec marker;
     short ref = -1;
-    long count = 64;
+    long count = (long)strlen(text);
     OSErr err = FSMakeFSSpec(folder->vRefNum, dir_id,
-        (ConstStr255Param)"\p.NOW Verified", &marker);
+        marker_name, &marker);
     if (err != fnfErr) return 0;
     err = FSpCreate(&marker, 'NOWD', 'TEXT', smSystemScript);
     if (err == noErr) err = FSpOpenDF(&marker, fsRdWrPerm, &ref);
-    if (err == noErr) err = FSWrite(ref, &count, digest);
+    if (err == noErr) err = FSWrite(ref, &count, text);
     if (ref >= 0) FSClose(ref);
-    if (err != noErr || count != 64) { FSpDelete(&marker); return 0; }
+    if (err != noErr || count != (long)strlen(text)) {
+        FSpDelete(&marker); return 0;
+    }
+    return 1;
+}
+
+int dev_candidate_mark_built(const char *candidate_id)
+{
+    FSSpec folder;
+    FSSpec verified;
+    long dir_id;
+    return dev_candidate_folder(candidate_id, &folder, &dir_id)
+        && marker_spec(&folder, dir_id, &verified)
+        && write_marker(&folder, dir_id,
+                        (ConstStr255Param)"\p.NOW Built", "ok");
+}
+
+static OSErr cat_move(const FSSpec *spec, long to_dir)
+{
+    CMovePBRec pb;
+    Str63 name;
+    memcpy(name, spec->name, spec->name[0] + 1);
+    memset(&pb, 0, sizeof pb);
+    pb.ioNamePtr = name;
+    pb.ioVRefNum = spec->vRefNum;
+    pb.ioDirID = spec->parID;
+    pb.ioNewDirID = to_dir;
+    return PBCatMoveSync(&pb);
+}
+
+static int project_id_in_folder(const FSSpec *folder, long dir_id,
+                                char project_id[33])
+{
+    FSSpec manifest;
+    short ref = -1;
+    long eof, count;
+    char *text;
+    DevProject project;
+    char reason[120];
+    OSErr err = FSMakeFSSpec(folder->vRefNum, dir_id,
+        (ConstStr255Param)"\pProject.ckp", &manifest);
+    if (err != noErr || FSpOpenDF(&manifest, fsRdPerm, &ref) != noErr) return 0;
+    err = GetEOF(ref, &eof);
+    if (err != noErr || eof <= 0 || eof >= 131072) { FSClose(ref); return 0; }
+    text = (char *)NewPtr(eof + 1);
+    if (text == NULL) { FSClose(ref); return 0; }
+    count = eof;
+    err = FSRead(ref, &count, text);
+    FSClose(ref);
+    if (err == eofErr && count == eof) err = noErr;
+    text[eof] = '\0';
+    if (err != noErr || !dev_project_parse(text, &project,
+                                            reason, sizeof reason)) {
+        DisposePtr((Ptr)text); return 0;
+    }
+    DisposePtr((Ptr)text);
+    strcpy(project_id, project.id);
+    return 1;
+}
+
+static int find_active_project(const char *project_id, FSSpec *folder,
+                               long *dir_id)
+{
+    NowPrefs prefs;
+    short index;
+    now_prefs_load(&prefs);
+    for (index = 1; index <= 256; ++index) {
+        CInfoPBRec pb;
+        Str255 name;
+        char found[33];
+        memset(&pb, 0, sizeof pb);
+        name[0] = 0;
+        pb.dirInfo.ioNamePtr = name;
+        pb.dirInfo.ioVRefNum = prefs.projects_vref;
+        pb.dirInfo.ioDrDirID = prefs.projects_dir;
+        pb.dirInfo.ioFDirIndex = index;
+        if (PBGetCatInfoSync(&pb) != noErr) break;
+        if ((pb.dirInfo.ioFlAttrib & ioDirMask) == 0 || name[1] == '.') continue;
+        folder->vRefNum = prefs.projects_vref;
+        folder->parID = prefs.projects_dir;
+        memcpy(folder->name, name, name[0] + 1);
+        if (folder_id(folder, dir_id) == noErr
+            && project_id_in_folder(folder, *dir_id, found)
+            && strcmp(found, project_id) == 0) return 1;
+    }
+    return 0;
+}
+
+int dev_candidate_promote(const char *candidate_id, const char *base_digest,
+                          char current_digest[65], char promoted_digest[65],
+                          char *reason, long reason_cap)
+{
+    NowPrefs prefs;
+    FSSpec candidate, verified, built, active, backups, moved;
+    long candidate_dir, active_dir, backups_dir;
+    char project_id[33];
+    char backup_name[32];
+    Str255 backup_p;
+    int files;
+    OSErr err;
+    now_prefs_load(&prefs);
+    if (!lower_hex(base_digest, 64)
+        || !dev_candidate_folder(candidate_id, &candidate, &candidate_dir)
+        || !marker_spec(&candidate, candidate_dir, &verified)
+        || FSMakeFSSpec(candidate.vRefNum, candidate_dir,
+            (ConstStr255Param)"\p.NOW Built", &built) != noErr
+        || !project_id_in_folder(&candidate, candidate_dir, project_id)
+        || !find_active_project(project_id, &active, &active_dir)) {
+        snprintf(reason, (size_t)reason_cap,
+                 "Promotion requires one built candidate and its active project.");
+        return 0;
+    }
+    if (!project_tree_digest(&active, active_dir, current_digest, &files,
+                             reason, reason_cap)) return 0;
+    if (strcmp(current_digest, base_digest) != 0) {
+        snprintf(reason, (size_t)reason_cap,
+                 "The active guest project diverged from the workspace base.");
+        return 0;
+    }
+    if (!project_tree_digest(&candidate, candidate_dir, promoted_digest, &files,
+                             reason, reason_cap)) return 0;
+    if (ensure_folder(prefs.projects_vref, prefs.projects_dir,
+                      ".NOW Backups", &backups, &backups_dir) != noErr) {
+        strcpy(reason, "The promotion backup folder is unavailable."); return 0;
+    }
+    snprintf(backup_name, sizeof backup_name, "backup-%s", candidate_id + 10);
+    CopyCStringToPascal(backup_name, backup_p);
+    err = FSpRename(&active, backup_p);
+    if (err == noErr) {
+        memcpy(moved.name, backup_p, backup_p[0] + 1);
+        moved.vRefNum = active.vRefNum; moved.parID = active.parID;
+        err = cat_move(&moved, backups_dir);
+    }
+    if (err == noErr) {
+        err = FSpRename(&candidate, active.name);
+        if (err == noErr) {
+            memcpy(moved.name, active.name, active.name[0] + 1);
+            moved.vRefNum = candidate.vRefNum; moved.parID = candidate.parID;
+            err = cat_move(&moved, prefs.projects_dir);
+        }
+    }
+    if (err != noErr) {
+        FSSpec rollback;
+        Str255 candidate_p;
+        CopyCStringToPascal(candidate_id, candidate_p);
+        rollback.vRefNum = candidate.vRefNum;
+        rollback.parID = candidate.parID;
+        memcpy(rollback.name, active.name, active.name[0] + 1);
+        FSpRename(&rollback, candidate_p);
+        rollback.vRefNum = active.vRefNum;
+        rollback.parID = backups_dir;
+        memcpy(rollback.name, backup_p, backup_p[0] + 1);
+        if (cat_move(&rollback, prefs.projects_dir) == noErr) {
+            rollback.parID = prefs.projects_dir;
+            FSpRename(&rollback, active.name);
+        }
+        snprintf(reason, (size_t)reason_cap,
+                 "Promotion failed and the prior active project was restored.");
+        return 0;
+    }
     return 1;
 }
 
@@ -360,7 +521,9 @@ void now_development_stage_command(const char *request_json, long id,
     char candidate_id[40];
     char project_id[40];
     char expected_digest[70];
+    char base_digest[70];
     char measured_digest[65];
+    char current_digest[65];
     char reason[180];
     FSSpec folder;
     long dir_id;
@@ -371,6 +534,8 @@ void now_development_stage_command(const char *request_json, long id,
     candidate_id[0] = '\0';
     project_id[0] = '\0';
     expected_digest[0] = '\0';
+    base_digest[0] = '\0';
+    current_digest[0] = '\0';
     strcpy(reason, "The candidate request is malformed or no longer accepting files.");
     if (!now_json_find_string(request_json, "action", action, sizeof action)) {
         char line[128];
@@ -399,6 +564,8 @@ void now_development_stage_command(const char *request_json, long id,
                          sizeof project_id);
     now_json_find_string(request_json, "expectedDigest", expected_digest,
                          sizeof expected_digest);
+    now_json_find_string(request_json, "baseGuestDigest", base_digest,
+                         sizeof base_digest);
     expected_files = now_json_find_int(request_json, "expectedFiles", -1);
     if (strcmp(action, "prepare") == 0) {
         ok = dev_candidate_prepare(candidate_id, project_id, &folder, &dir_id,
@@ -407,18 +574,24 @@ void now_development_stage_command(const char *request_json, long id,
         ok = lower_hex(expected_digest, 64)
             && expected_files >= 1 && expected_files <= kCandidateMaxFiles
             && dev_candidate_accepting_folder(candidate_id, &folder, &dir_id)
-            && tree_digest(&folder, dir_id, measured_digest, &measured_files,
-                           reason, sizeof reason);
+            && project_tree_digest(&folder, dir_id, measured_digest,
+                                   &measured_files, reason, sizeof reason);
         if (ok && (measured_files != expected_files
                    || strcmp(measured_digest, expected_digest) != 0)) {
             snprintf(reason, sizeof reason,
                      "Guest candidate measurement does not match the host receipt.");
             ok = 0;
         }
-        if (ok && !write_marker(&folder, dir_id, measured_digest)) {
+        if (ok && !write_marker(&folder, dir_id,
+                                (ConstStr255Param)"\p.NOW Verified",
+                                measured_digest)) {
             strcpy(reason, "The verified candidate could not be sealed.");
             ok = 0;
         }
+    } else if (strcmp(action, "promote") == 0) {
+        ok = dev_candidate_promote(candidate_id, base_digest,
+                                   current_digest, measured_digest,
+                                   reason, sizeof reason);
     } else if (strcmp(action, "status") == 0) {
         ok = dev_candidate_folder(candidate_id, &folder, &dir_id);
         if (!ok) strcpy(reason, "The candidate was not found.");
@@ -426,10 +599,21 @@ void now_development_stage_command(const char *request_json, long id,
         ok = dev_candidate_discard(candidate_id, reason, sizeof reason);
     } else {
         error_reply(out, cap, id, "invalid-arguments",
-                    "development-stage requires prepare, finalize, status or discard.");
+                    "development-stage requires prepare, finalize, promote, status or discard.");
         return;
     }
     if (!ok) {
+        if (strcmp(action, "promote") == 0
+            && lower_hex(current_digest, 64)) {
+            char escaped[220];
+            now_json_escape(reason, escaped, sizeof escaped);
+            snprintf(out, (size_t)cap,
+                "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                "\"error\":{\"code\":\"guest-diverged\",\"message\":\"%s\"},"
+                "\"output\":{\"development-stage\":[[\"Current digest\",\"%s\"]]}}",
+                id, escaped, current_digest);
+            return;
+        }
         error_reply(out, cap, id, "candidate-unavailable", reason);
         return;
     }
@@ -440,6 +624,15 @@ void now_development_stage_command(const char *request_json, long id,
             "[\"State\",\"verified\"],[\"Digest\",\"%s\"],"
             "[\"Files\",\"%d\"]]}}", id, candidate_id,
             measured_digest, measured_files);
+        return;
+    }
+    if (strcmp(action, "promote") == 0) {
+        snprintf(out, (size_t)cap,
+            "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+            "\"output\":{\"development-stage\":[[\"Candidate\",\"%s\"],"
+            "[\"State\",\"promoted\"],[\"Previous digest\",\"%s\"],"
+            "[\"Promoted digest\",\"%s\"]]}}", id, candidate_id,
+            current_digest, measured_digest);
         return;
     }
     snprintf(out, (size_t)cap,

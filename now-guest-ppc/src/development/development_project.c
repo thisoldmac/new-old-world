@@ -145,6 +145,8 @@ int dev_project_parse(const char *text, DevProject *project,
         } else if (strcmp(key, "file") == 0) {
             if (project->file_count >= kDevProjectMaxFiles
                 || !dev_project_path_valid(value)
+                || strcmp(value, "Build") == 0
+                || strncmp(value, "Build/", 6) == 0
                 || !copy_value(project->files[project->file_count],
                                kDevBuildPathCap, value)) return fail(
                     reason, reason_cap, "invalid source path");

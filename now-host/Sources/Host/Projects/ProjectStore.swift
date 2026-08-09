@@ -310,10 +310,35 @@ final class ProjectStore {
     func recordBuild(candidateID: ProjectCandidateID, buildID: String,
                      succeeded: Bool) throws -> ProjectCandidate {
         var candidate = try loadCandidate(candidateID)
+        let terminal: ProjectCandidateLifecycle = succeeded
+            ? .buildSucceeded : .buildFailed
+        if candidate.lifecycle == terminal, candidate.buildID == buildID {
+            return candidate
+        }
         guard candidate.lifecycle == .guestVerified else {
             throw ProjectStoreError.unavailable("The candidate is not awaiting a build.")
         }
-        candidate.lifecycle = succeeded ? .buildSucceeded : .buildFailed
+        guard candidate.buildID == nil || candidate.buildID == buildID else {
+            throw ProjectStoreError.unavailable(
+                "The build receipt does not match the candidate's active job.")
+        }
+        candidate.lifecycle = terminal
+        candidate.buildID = buildID
+        candidate.updatedAt = Date()
+        try saveCandidate(candidate)
+        return candidate
+    }
+
+    func recordBuildStarted(candidateID: ProjectCandidateID,
+                            buildID: String) throws -> ProjectCandidate {
+        var candidate = try loadCandidate(candidateID)
+        guard candidate.lifecycle == .guestVerified else {
+            throw ProjectStoreError.unavailable(
+                "The candidate is not verified for a build.")
+        }
+        guard buildID.hasPrefix("build-"), buildID.count <= 40 else {
+            throw ProjectStoreError.unavailable("The build identity is malformed.")
+        }
         candidate.buildID = buildID
         candidate.updatedAt = Date()
         try saveCandidate(candidate)
@@ -594,6 +619,10 @@ final class ProjectStore {
                                                            .isSymbolicLinkKey])
             let path = url.pathComponents.suffix(walk.level)
                 .joined(separator: "/")
+            if path == "Build" || path.hasPrefix("Build/") {
+                if values.isRegularFile != true { walk.skipDescendants() }
+                continue
+            }
             if values.isSymbolicLink == true { throw ProjectStoreError.linkEscape(path) }
             guard values.isRegularFile == true else { continue }
             let data = try Data(contentsOf: url)

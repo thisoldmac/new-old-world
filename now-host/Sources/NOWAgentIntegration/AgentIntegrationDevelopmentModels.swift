@@ -4,6 +4,7 @@ public enum AgentIntegrationDevelopmentOperation: String, Codable, Sendable {
     case stage
     case stageStatus = "stage-status"
     case stageDiscard = "stage-discard"
+    case promote
     case buildStart = "build-start"
     case buildStatus = "build-status"
     case buildCancel = "build-cancel"
@@ -52,7 +53,7 @@ public struct AgentIntegrationDevelopmentRequest: Codable, Equatable, Sendable {
         switch operation {
         case .stage:
             return projectID != nil && candidateID == nil && productRef == nil
-        case .stageStatus, .stageDiscard:
+        case .stageStatus, .stageDiscard, .promote:
             return candidateID != nil && projectID == nil
                 && workspaceID == nil && productRef == nil
         case .buildStart:

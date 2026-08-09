@@ -56,6 +56,10 @@ struct CKProjectDocument: Equatable, Sendable {
         }
         for (key, value) in records where ["product", "file", "entry", "include"].contains(key) {
             try ProjectPath.validate(value)
+            if key == "file", value == "Build" || value.hasPrefix("Build/") {
+                throw ProjectStoreError.invalidProject(
+                    "Build is reserved for generated artifacts, not source files.")
+            }
         }
         for (_, value) in records where value.count > 4096 {
             throw ProjectStoreError.invalidProject("A record exceeds 4096 characters.")

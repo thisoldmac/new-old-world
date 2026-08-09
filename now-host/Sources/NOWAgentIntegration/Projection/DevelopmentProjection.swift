@@ -34,7 +34,7 @@ public enum DevelopmentProjection: HostProjection {
                 "properties": [
                     "operation": [
                         "type": "string",
-                        "enum": ["stage", "stage-status", "stage-discard",
+                    "enum": ["stage", "stage-status", "stage-discard", "promote",
                                  "build-start", "build-status", "build-cancel",
                                  "run", "open-in-codekitten"],
                     ],

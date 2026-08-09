@@ -31,12 +31,14 @@ final class AgentIntegrationDevelopmentControl {
             return await stage(request, sessionID: sessionID)
         case .stageStatus, .stageDiscard:
             return await candidateCommand(request, sessionID: sessionID)
+        case .promote:
+            return await promote(request, sessionID: sessionID)
         default:
             break
         }
         let route: (verb: String, group: String, args: [String: String])
         switch request.operation {
-        case .stage, .stageStatus, .stageDiscard:
+        case .stage, .stageStatus, .stageDiscard, .promote:
             preconditionFailure("Candidate operations settle above")
         case .buildStart:
             var args = ["action": "start"]
@@ -79,6 +81,39 @@ final class AgentIntegrationDevelopmentControl {
         guard let cells = result.output?[route.group] else {
             return .refused(.init(code: "now-development-invalid",
                                   message: "The paired guest returned no Development rows."))
+        }
+        if let projectStore {
+            let values = Dictionary(uniqueKeysWithValues: cells.compactMap {
+                row -> (String, String)? in
+                guard row.count >= 2 else { return nil }
+                return (row[0], row[row.count - 1])
+            })
+            if request.operation == .buildStart,
+               let rawCandidate = request.candidateID,
+               let candidateID = ProjectCandidateID(rawValue: rawCandidate),
+               let buildID = values["Job"] {
+                do {
+                    _ = try projectStore.recordBuildStarted(
+                        candidateID: candidateID, buildID: buildID)
+                } catch {
+                    return .refused(.init(code: "now-development-build-unsettled",
+                                          message: error.localizedDescription))
+                }
+            } else if request.operation == .buildStatus,
+                      let rawCandidate = values["Candidate"],
+                      let candidateID = ProjectCandidateID(rawValue: rawCandidate),
+                      let buildID = values["Job"],
+                      let state = values["State"],
+                      ["succeeded", "failed", "cancelled"].contains(state) {
+                do {
+                    _ = try projectStore.recordBuild(
+                        candidateID: candidateID, buildID: buildID,
+                        succeeded: state == "succeeded")
+                } catch {
+                    return .refused(.init(code: "now-development-build-unsettled",
+                                          message: error.localizedDescription))
+                }
+            }
         }
         let rows = cells.prefix(16).map {
             AgentIntegrationGuestRow(
@@ -242,6 +277,63 @@ final class AgentIntegrationDevelopmentControl {
            let projectStore,
            let id = ProjectCandidateID(rawValue: request.candidateID!) {
             try? projectStore.discardCandidate(candidateID: id)
+        }
+        return report(result, verb: "development-stage",
+                      group: "development-stage")
+    }
+
+    private func promote(
+        _ request: AgentIntegrationDevelopmentRequest, sessionID: UUID
+    ) async -> AgentIntegrationGuestRowReportResult {
+        guard let projectStore,
+              let id = ProjectCandidateID(rawValue: request.candidateID!) else {
+            return .refused(.init(code: "now-development-candidate-unavailable",
+                                  message: "The host candidate receipt is unavailable."))
+        }
+        let candidate: ProjectCandidate
+        do {
+            candidate = try projectStore.candidate(candidateID: id)
+        } catch {
+            return .refused(.init(code: "now-development-candidate-unavailable",
+                                  message: error.localizedDescription))
+        }
+        guard candidate.lifecycle == .buildSucceeded,
+              let base = candidate.receipt.baseGuestDigest else {
+            return .refused(.init(
+                code: "now-development-promotion-refused",
+                message: "Promotion requires a successful guest-home candidate build with a verified base."))
+        }
+        let result = await command(
+            "development-stage",
+            args: ["action": "promote", "candidateID": id.rawValue,
+                   "baseGuestDigest": base])
+        guard currentSessionID() == sessionID else {
+            return .refused(.init(code: "now-development-outcome-unknown",
+                                  message: "The paired guest changed while promotion was settling."))
+        }
+        guard result.ok else {
+            if let current = value("Current digest", in: result,
+                                   group: "development-stage") {
+                _ = try? projectStore.observeGuest(
+                    projectID: candidate.receipt.projectID, digest: current)
+            }
+            return refusal(result, fallback: "The guest refused promotion.")
+        }
+        guard let previous = value("Previous digest", in: result,
+                                   group: "development-stage"),
+              let promoted = value("Promoted digest", in: result,
+                                   group: "development-stage"),
+              promoted == candidate.receipt.contentDigest else {
+            return .refused(.init(
+                code: "now-development-promotion-unsettled",
+                message: "The guest promoted a tree that does not match the staged receipt."))
+        }
+        do {
+            _ = try projectStore.promoteCandidate(
+                candidateID: id, currentGuestDigest: previous)
+        } catch {
+            return .refused(.init(code: "now-development-promotion-unsettled",
+                                  message: error.localizedDescription))
         }
         return report(result, verb: "development-stage",
                       group: "development-stage")

@@ -31,6 +31,11 @@ Paths always use `/` separators and are relative to the directory containing
 trailing `/` are invalid. A consumer must additionally refuse any filesystem
 alias or symbolic-link traversal that would leave the project root.
 
+`Build/` is the reserved top-level artifact directory. A `product` may name an
+item beneath it, but a `file` record may not. Source manifests and project tree
+digests exclude `Build/`, so ToolServer transcripts, objects and products do
+not turn a verified source revision into apparent out-of-band source drift.
+
 `build-action` is a pipe-delimited declarative record. Its first component is
 one of `compile`, `rez`, `link`, `copy`, `stage`, or `metadata`; remaining
 components are typed project- or toolchain-relative operands defined by the

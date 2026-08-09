@@ -15,6 +15,10 @@ int dev_candidate_accepting_folder(const char *candidate_id,
                                    FSSpec *folder, long *dir_id);
 int dev_candidate_discard(const char *candidate_id,
                           char *reason, long reason_cap);
+int dev_candidate_mark_built(const char *candidate_id);
+int dev_candidate_promote(const char *candidate_id, const char *base_digest,
+                          char current_digest[65], char promoted_digest[65],
+                          char *reason, long reason_cap);
 
 void now_development_stage_command(const char *request_json, long id,
                                    char *out, long cap);

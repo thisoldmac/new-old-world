@@ -33,6 +33,16 @@ final class ProjectStoreTests: XCTestCase {
                        "Memory Meter")
         XCTAssertThrowsError(try CKProjectDocument.parse(
             Data(contentsOf: base.appendingPathComponent("invalid-traversal.ckp"))))
+        XCTAssertThrowsError(try CKProjectDocument.parse(Data("""
+            CKPROJECT 1
+            id=0123456789abcdef0123456789abcdef
+            name=Bad Source
+            target=application
+            configuration=debug
+            toolchain=mpw@3.6
+            product=Build/Product
+            file=Build/Generated.c
+            """.utf8)))
     }
 
     func testCreateAndApplyProduceRecoverableGitHistory() throws {
@@ -210,6 +220,23 @@ final class ProjectStoreTests: XCTestCase {
         XCTAssertEqual(promoted.home, .host)
         XCTAssertEqual(try store.candidate(
             candidateID: candidate.receipt.candidateID).lifecycle, .promoted)
+    }
+
+    func testBuildArtifactsDoNotChangeSourceDigestOrCandidateManifest() throws {
+        let store = try ProjectStore(root: try root())
+        let created = try store.create(
+            name: "Artifacts", home: .host, projectDocument: document,
+            files: [ProjectFileChange(path: "Sources/Main.c",
+                                      contents: Data("source".utf8))])
+        let working = store.testingWorkingURL(projectID: created.projectID)
+        let before = try ProjectDigest.tree(at: working)
+        let build = working.appendingPathComponent("Build")
+        try FileManager.default.createDirectory(at: build,
+                                                withIntermediateDirectories: true)
+        try Data("generated".utf8).write(to: build.appendingPathComponent("Product"))
+        XCTAssertEqual(try ProjectDigest.tree(at: working), before)
+        XCTAssertEqual(try store.stageCandidate(projectID: created.projectID)
+            .receipt.manifest.map(\.path), ["Project.ckp", "Sources/Main.c"])
     }
 
     func testGuestPromotionRefusesDivergenceAndPreservesWorkspace() throws {
