@@ -379,6 +379,60 @@ def _(tmp):
     must("conflict markers" in out.stderr, out.stderr)
 
 
+@case("main ref gate blocks fast-forward resident changes until shared bake")
+def _(tmp):
+    r = Repo(tmp, "mainref")
+    base = r.git("rev-parse", "main").stdout.strip()
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"THE PROMOTED ORACLE")
+
+    # Build the exact bypass this hook exists for: a committed lane whose
+    # resident is unbaked, advanced with a ref operation rather than a merge
+    # commit. pre-commit and pre-merge-commit cannot see `git branch -f`.
+    r.git("checkout", "-qb", "lane")
+    r.write("ext/src/now_ext.c", "int resident(void) { return 77; }\n")
+    r.git("add", "--", "ext/src/now_ext.c")
+    r.git("commit", "-qm", "unbaked resident")
+
+    os.makedirs(os.path.join(r.path, ".githooks"))
+    hook = os.path.join(r.path, ".githooks", "reference-transaction")
+    shutil.copy(os.path.join(ROOT, ".githooks", "reference-transaction"),
+                hook)
+    os.chmod(hook, 0o755)
+    r.git("config", "core.hooksPath", ".githooks")
+
+    bad = r.git("branch", "-f", "main", "lane")
+    must(bad.returncode != 0,
+         "an unbaked fast-forward main update must be refused")
+    must("changed without a verified shared bake and promotion" in bad.stderr,
+         bad.stderr)
+    must(r.git("rev-parse", "main").stdout.strip() == base,
+         "a refused reference transaction must leave main untouched")
+
+    # A private bake is still not a promotion. This is a distinct failure:
+    # the digest agrees, but the image every other lane clones was not moved.
+    r.receipts([receipt(r.digest(), img, sha_of(img), scope="throwaway")])
+    r.git("add", "--", "ext/stage-receipts.json")
+    r.git("commit", "-qm", "private bake only")
+    private = r.git("branch", "-f", "main", "lane")
+    must(private.returncode != 0,
+         "a private bake must not satisfy the main promotion gate")
+    must("not promoted to the shared oracle" in private.stderr,
+         private.stderr)
+
+    # The same candidate source, now carrying a shared bake receipt, is the
+    # one allowed route. The gate reads the candidate commit tree rather than
+    # this checkout's index or current branch name.
+    r.receipts([receipt(r.digest(), img, sha_of(img), scope="shared")])
+    r.git("add", "--", "ext/stage-receipts.json")
+    r.git("commit", "-qm", "shared bake promoted")
+    good = r.git("branch", "-f", "main", "lane")
+    must(good.returncode == 0, good.stdout + good.stderr)
+    must(r.git("rev-parse", "main").stdout.strip()
+         == r.git("rev-parse", "lane").stdout.strip(),
+         "the verified shared-bake candidate must advance main")
+
+
 # --------------------------------------------------------------------------
 # 4. Provenance: the verdict a run prints, including the one today's oracle
 #    earns.
@@ -640,7 +694,8 @@ def _(tmp):
                 os.path.join(r.path, "tools", "hooks-doctor"))
     os.chmod(os.path.join(r.path, "tools", "hooks-doctor"), 0o755)
     os.makedirs(os.path.join(r.path, ".githooks"))
-    for hook in ("pre-commit", "pre-merge-commit", "post-merge"):
+    for hook in ("pre-commit", "pre-merge-commit",
+                 "reference-transaction", "post-merge"):
         shutil.copy(os.path.join(ROOT, ".githooks", hook),
                     os.path.join(r.path, ".githooks", hook))
         os.chmod(os.path.join(r.path, ".githooks", hook), 0o755)

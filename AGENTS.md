@@ -304,10 +304,13 @@ a shared bake over. The rules that must not be restated anywhere else:
   `main`.** `TBT_DEFER_EXT_BAKE=1` with `TBT_DEFER_EXT_BAKE_REASON="…"`
   allows the *commit* and writes the reason into `ext/stage-receipts.json`,
   so it lands in the same commit as the work it excuses. It does not allow
-  the *landing*: `merge-check` refuses on `main` when the resident source
-  arriving is covered by no bake, quoting the deferral's own reason back.
-  Lane-to-lane merges are untouched. As with `TBT_ALLOW_MAIN=1`, the
-  enforcement is the floor and not the rule.
+  the *landing*: `.githooks/reference-transaction` checks the exact old and
+  proposed `main` trees and refuses any resident-source change not covered by
+  a verified **shared** bake receipt. It sees merge commits, fast-forwards,
+  `git fetch . branch:main`, and forced ref updates—the paths commit and merge
+  hooks cannot see—and a branch deferral cannot override it. Lane-to-lane
+  updates are untouched. As with `TBT_ALLOW_MAIN=1`, the enforcement is the
+  floor and not the rule.
 - **A note is not a bake.** An image can reach the oracle's path by hand —
   that is how the current one got there. `tools/ext-bake-gate note-image
   --reason "…"` records who put it there and why, and says in its own
