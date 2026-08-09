@@ -96,9 +96,8 @@ struct EndedGuestSession: Equatable, Sendable {
 ///   useless as a name — and on loopback it cannot even tell two Macs
 ///   apart, which is what `idIsAnchored` says out loud.
 ///
-/// `name` is a fourth thing and deliberately not an identity: it is what
-/// the machine calls itself, it carries the deployed binary's version, and
-/// it is shown and never compared.
+/// `name` is what the machine reported; `displayName` is the host-owned title
+/// that defaults from it and may be edited without changing identity.
 struct ConnectionRow: Identifiable, Equatable, Sendable {
     /// Where this machine stands with the host.
     enum Presence: Equatable, Sendable {
@@ -119,6 +118,7 @@ struct ConnectionRow: Identifiable, Equatable, Sendable {
     /// What the machine calls itself — live for a connected row, and the
     /// last name it used for a remembered one.
     let name: String
+    let displayName: String
     let address: String
     let liveSessionID: String?
     /// The last session this machine had, when the pane watched it end.
@@ -218,7 +218,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
         guard rows.count > 1 else {
             return "1 \(MachineNaming.commonNoun) connected"
         }
-        let driving = rows.first { $0.presence == .driving }?.machineID
+        let driving = rows.first { $0.presence == .driving }?.displayName
         guard let driving else {
             return "\(rows.count) \(MachineNaming.commonNounPlural) connected"
         }
@@ -251,7 +251,8 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 machineID: guest.id.slug,
                 presence: guest.isActive ? .driving : .connected,
                 name: guest.name,
-                address: guest.address.text,
+                displayName: guest.displayName ?? guest.name,
+                address: guest.address.endpointText,
                 liveSessionID: guest.sessionID,
                 lastSessionID: ended[guest.id.slug]?.sessionID,
                 since: guest.connectedAt,
@@ -278,7 +279,9 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 machineID: record.id.slug,
                 presence: .known,
                 name: record.lastName,
-                address: record.address,
+                displayName: record.displayName ?? record.lastName,
+                address: GuestAddress(text: record.address,
+                                      port: record.lastPort).endpointText,
                 liveSessionID: nil,
                 lastSessionID: last,
                 since: record.lastSeen,
@@ -445,6 +448,38 @@ final class ConnectionsModel: ObservableObject {
             renameProblem = Self.explain(why, proposed: proposed)
             return false
         }
+    }
+
+    /// Changes the title people see without touching the stable machine id.
+    /// Remembered rows are valid targets because the registry owns the title.
+    @discardableResult
+    func renameDisplayName(_ row: ConnectionRow, to proposed: String) -> Bool {
+        renameProblem = nil
+        let outcome: Result<String, GuestRegistry.DisplayNameFailure>
+        if let key = row.key {
+            outcome = listener.renameGuestDisplayName(key, to: proposed)
+        } else if let registryKey = row.registryKey {
+            outcome = listener.registry.renameDisplayName(
+                registryKey, to: proposed)
+        } else {
+            outcome = .failure(.notFound)
+        }
+        switch outcome {
+        case .success:
+            refresh()
+            return true
+        case .failure(.notFound):
+            renameProblem = "That machine is no longer available."
+        case .failure(.empty):
+            renameProblem = "Enter a name for this machine."
+        case .failure(.tooLong):
+            renameProblem = "Machine names may be at most 80 characters."
+        }
+        return false
+    }
+
+    func clearRenameProblem() {
+        renameProblem = nil
     }
 
     /// The failure in the words of what to do about it. `taken` names the

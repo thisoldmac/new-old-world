@@ -68,6 +68,11 @@ final class GuestRegistry {
         var autoAssigned: Bool
         var lastSeen: Date
         var lastName: String
+        /// Host-owned title. Nil only for records written before display
+        /// names existed; those are upgraded on their next connection.
+        var displayName: String? = nil
+        /// Most recently observed remote TCP port, for presentation only.
+        var lastPort: UInt16? = nil
 
         var key: Key {
             Key(address: address, fingerprint: fingerprint, slot: slot)
@@ -81,6 +86,12 @@ final class GuestRegistry {
         /// Another machine already holds it. Named, so the human can go
         /// and free it rather than guess.
         case taken(by: String)
+    }
+
+    enum DisplayNameFailure: Error, Equatable {
+        case notFound
+        case empty
+        case tooLong
     }
 
     /// Where the book lives between launches. `UserDefaults` because the
@@ -137,16 +148,23 @@ final class GuestRegistry {
             $0.address == address.text && $0.fingerprint == print
                 && $0.slot == slot
         }) {
+            if records[index].displayName == nil {
+                records[index].displayName = nextDisplayName(
+                    basedOn: name, excluding: index)
+            }
             records[index].lastSeen = now
             records[index].lastName = name ?? Session.unnamedGuest
+            records[index].lastPort = address.port
             save()
             return records[index]
         }
 
+        let displayName = nextDisplayName(basedOn: name)
         let record = Record(
             id: nextOrdinal(), address: address.text, fingerprint: print,
             slot: slot, autoAssigned: true, lastSeen: now,
-            lastName: name ?? Session.unnamedGuest)
+            lastName: name ?? Session.unnamedGuest,
+            displayName: displayName, lastPort: address.port)
         records.append(record)
         save()
         return record
@@ -168,6 +186,21 @@ final class GuestRegistry {
         }
         records[index].id = wanted
         records[index].autoAssigned = false
+        save()
+        return .success(wanted)
+    }
+
+    /// Changes only the human-facing title. Stable addressing remains on
+    /// `GuestID`, so spaces and punctuation here never enter a session id.
+    @discardableResult
+    func renameDisplayName(_ key: Record.Key, to proposed: String)
+        -> Result<String, DisplayNameFailure> {
+        let wanted = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty else { return .failure(.empty) }
+        guard wanted.count <= 80 else { return .failure(.tooLong) }
+        guard let index = records.firstIndex(where: { $0.key == key })
+        else { return .failure(.notFound) }
+        records[index].displayName = wanted
         save()
         return .success(wanted)
     }
@@ -233,6 +266,24 @@ final class GuestRegistry {
     private static func ordinal(_ id: GuestID) -> Int? {
         guard id.slug.hasPrefix("guest-") else { return nil }
         return Int(id.slug.dropFirst("guest-".count))
+    }
+
+    private func nextDisplayName(basedOn proposed: String?,
+                                 excluding excludedIndex: Int? = nil) -> String {
+        let trimmed = proposed?.trimmingCharacters(
+            in: .whitespacesAndNewlines) ?? ""
+        let base = trimmed.isEmpty ? Session.unnamedGuest : trimmed
+        let taken: Set<String> = Set(records.enumerated().compactMap {
+            index, record in
+            guard index != excludedIndex else { return nil }
+            return (record.displayName ?? record.lastName).lowercased()
+        })
+        guard taken.contains(base.lowercased()) else { return base }
+        var suffix = 2
+        while taken.contains("\(base)-\(suffix)".lowercased()) {
+            suffix += 1
+        }
+        return "\(base)-\(suffix)"
     }
 
     private func load() {

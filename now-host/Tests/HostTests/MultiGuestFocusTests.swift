@@ -374,11 +374,8 @@ final class MultiGuestFocusTests: XCTestCase {
             holder,
             guests: [jem, ess],
             target: self, action: #selector(noop))
-        // Handle first, then what the machine calls itself: the id is
-        // what a person has to type, and the name is what changes.
         XCTAssertEqual(menu.items.map(\.title),
-                       ["pb1400c — PowerBook 1400c",
-                        "pb180c — PowerBook 180c"])
+                       ["PowerBook 1400c", "PowerBook 180c"])
         XCTAssertEqual(menu.items.map(\.state), [.off, .on])
         // The item carries its SESSION id. The title cannot be the
         // identity any more — two Macs may report the same name — so what
@@ -398,6 +395,7 @@ final class MultiGuestFocusTests: XCTestCase {
         let first = Self.guest(id: "guest-1", name: "NOW Guest 0.14",
                                address: "10.91.5.180", active: true)
         let second = Self.guest(id: "guest-2", name: "NOW Guest 0.14",
+                                displayName: "NOW Guest 0.14-2",
                                 address: "10.91.5.181", active: false)
         let menu = MainMenu.fillDriveMenu(
             holder, guests: [first, second],
@@ -409,12 +407,14 @@ final class MultiGuestFocusTests: XCTestCase {
             menu.items[1].representedObject as? String)
     }
 
-    private static func guest(id: String, name: String, address: String,
+    private static func guest(id: String, name: String,
+                              displayName: String? = nil, address: String,
                               active: Bool) -> ConnectedGuest {
         let key = GuestKey(machine: GuestID(id)!, session: UUID())
         return ConnectedGuest(
             key: key, id: GuestID(id)!, idIsAutoAssigned: true,
             idIsAnchored: true, name: name,
+            displayName: displayName ?? name,
             address: GuestAddress(text: address), version: nil,
             operatingSystem: nil, connectedAt: Date(), isActive: active)
     }

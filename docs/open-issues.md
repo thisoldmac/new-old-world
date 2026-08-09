@@ -28,13 +28,19 @@ the right. Remembered rows are visibly secondary. The list's plus action
 opens the listening setup, while minus closes and forgets exactly a selected
 live session or forgets exactly a selected remembered record. Pressing Return
 in the port field follows the same validated Start Listening action as the
-button.
+button. Each row is headed by a host-owned display name, defaulted from the
+machine's reported name; collisions receive `-2`, `-3`, and so on. The remote
+IP and port are the subrow. A pencil beside the detail title and the row/detail
+context menus rename that display name without changing the stable machine id;
+the same menus expose Delete and the listener's Start/Stop action.
 
 **Tested here:** `scripts/test-all` passes: 82 native tests, the complete host
 suite, and the Debug and Release app builds. Focused host tests cover
 active-versus-remembered removal, exact remembered-record removal,
 session-scoped health and logs, the plural module name, and Return starting
-the listener. Two-guest socket tests remove either session and prove the
+the listener. Display-name tests cover default and duplicate allocation,
+persistence across reconnect, editing live and remembered rows, and preserving
+the session and stable machine identities. Two-guest socket tests remove either session and prove the
 remaining guest is still promoted or still answers. Guest cross-builds were
 skipped because this worktree has no Retro68 toolchain.
 

@@ -365,6 +365,7 @@ final class GuestListener: ObservableObject {
                 idIsAutoAssigned: machine?.autoAssigned ?? true,
                 idIsAnchored: live.guestAddress.distinguishesMachines,
                 name: live.guestName,
+                displayName: machine?.displayName,
                 address: live.guestAddress,
                 version: record.guestVersion,
                 build: record.guestBuild,
@@ -440,6 +441,24 @@ final class GuestListener: ObservableObject {
             }
             publishActive()
             events.publish(.guestRenamed(key, id: renamed))
+        }
+        return outcome
+    }
+
+    /// Retitles a machine without changing the stable id held by callers.
+    @discardableResult
+    func renameGuestDisplayName(_ key: GuestKey, to proposed: String)
+        -> Result<String, GuestRegistry.DisplayNameFailure> {
+        guard let record = machineBySession[key] else {
+            return .failure(.notFound)
+        }
+        let outcome = registry.renameDisplayName(record.key, to: proposed)
+        if case .success(let renamed) = outcome {
+            for (session, held) in machineBySession
+                where held.key == record.key {
+                machineBySession[session]?.displayName = renamed
+            }
+            publishActive()
         }
         return outcome
     }

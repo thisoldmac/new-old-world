@@ -2,9 +2,9 @@ import SwiftUI
 import NOWAgentIntegration
 
 /// Connections are an inventory on the left and the selected machine on the
-/// right. A live row selection also moves the host's active request plane, so
-/// the row, the sidebar guest menu, and every module always name one guest.
-/// Remembered rows remain inspectable and removable but cannot be driven.
+/// right. Selection inspects; the explicit drive control and sidebar guest
+/// menu move the host's active request plane. Remembered rows remain
+/// inspectable and removable but cannot be driven.
 struct ConnectionsModuleView: View {
     @ObservedObject var model: ConnectionsModel
     @ObservedObject var settings: SettingsModel
@@ -15,6 +15,7 @@ struct ConnectionsModuleView: View {
     @State private var adding = false
     @State private var connectedBeforeAdding: Set<String> = []
     @State private var pendingRemoval: ConnectionRow?
+    @State private var renamingRow: ConnectionRow?
 
     var body: some View {
         HSplitView {
@@ -49,6 +50,11 @@ struct ConnectionsModuleView: View {
         } message: {
             Text(removalMessage)
         }
+        .sheet(item: $renamingRow) { row in
+            DisplayNameEditor(row: row, model: model) {
+                renamingRow = nil
+            }
+        }
     }
 
     private var connectionList: some View {
@@ -62,6 +68,7 @@ struct ConnectionsModuleView: View {
                         ForEach(model.snapshot.connected) { row in
                             ConnectionListRow(row: row)
                                 .tag(row.id)
+                                .contextMenu { connectionMenu(for: row) }
                         }
                     }
                 }
@@ -71,6 +78,7 @@ struct ConnectionsModuleView: View {
                             ConnectionListRow(row: row)
                                 .foregroundStyle(.secondary)
                                 .tag(row.id)
+                                .contextMenu { connectionMenu(for: row) }
                         }
                     }
                 }
@@ -81,7 +89,7 @@ struct ConnectionsModuleView: View {
                     Image(systemName: "plus")
                 }
                 .help("Add a guest")
-                Button(action: requestRemoval) {
+                Button { requestRemoval() } label: {
                     Image(systemName: "minus")
                 }
                 .disabled(selectedRow == nil)
@@ -107,7 +115,10 @@ struct ConnectionsModuleView: View {
                         focusPort: adding,
                         selectedGuest: selectedRow?.key)
                     if let row = selectedRow {
-                        ConnectionCard(row: row, model: model)
+                        ConnectionCard(row: row, model: model) {
+                            beginRenaming(row)
+                        }
+                        .contextMenu { connectionMenu(for: row) }
                         ConnectionListenerLog(
                             listener: listener,
                             sessionIDs: Set([
@@ -149,9 +160,11 @@ struct ConnectionsModuleView: View {
         }
         guard let row = selectedRow else { return model.snapshot.headline }
         switch row.presence {
-        case .driving: return "\(row.machineID) — attached to all modules"
-        case .connected: return "\(row.machineID) — connected"
-        case .known: return "\(row.machineID) — remembered, not connected"
+        case .driving:
+            return "\(row.displayName) — attached to all modules"
+        case .connected: return "\(row.displayName) — connected"
+        case .known:
+            return "\(row.displayName) — remembered, not connected"
         }
     }
 
@@ -219,8 +232,28 @@ struct ConnectionsModuleView: View {
         adding = true
     }
 
-    private func requestRemoval() {
-        pendingRemoval = selectedRow
+    private func requestRemoval(_ row: ConnectionRow? = nil) {
+        pendingRemoval = row ?? selectedRow
+    }
+
+    private func beginRenaming(_ row: ConnectionRow) {
+        selectedID = row.id
+        adding = false
+        model.clearRenameProblem()
+        renamingRow = row
+    }
+
+    @ViewBuilder
+    private func connectionMenu(for row: ConnectionRow) -> some View {
+        Button("Rename…") { beginRenaming(row) }
+        Button("Delete", role: .destructive) { requestRemoval(row) }
+        Divider()
+        switch listener.state {
+        case .idle, .failed:
+            Button("Start Listening", action: onStart)
+        case .listening, .connected:
+            Button("Stop Listening", action: onStop)
+        }
     }
 
     private func confirmRemoval() {
@@ -243,7 +276,7 @@ struct ConnectionsModuleView: View {
 
     private var removalTitle: String {
         guard let row = pendingRemoval else { return "Remove Guest?" }
-        return "Remove \(row.machineID)?"
+        return "Remove \(row.displayName)?"
     }
 
     private var removalMessage: String {
@@ -266,8 +299,8 @@ private struct ConnectionListRow: View {
             Image(systemName: row.presence == .known
                   ? "desktopcomputer" : "desktopcomputer.and.macbook")
             VStack(alignment: .leading, spacing: 1) {
-                Text(row.machineID)
-                Text(row.name)
+                Text(row.displayName)
+                Text(row.address)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -287,23 +320,25 @@ private struct ConnectionListRow: View {
 private struct ConnectionCard: View {
     let row: ConnectionRow
     @ObservedObject var model: ConnectionsModel
-
-    @State private var renaming = false
-    @State private var proposed = ""
+    let onRename: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(row.machineID)
-                    .font(.title3.weight(.semibold).monospaced())
+                Text(row.displayName)
+                    .font(.title3.weight(.semibold))
+                Button(action: onRename) {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.borderless)
+                .help("Rename this machine")
                 if row.presence == .driving {
                     Badge(text: "Driving", tint: .accentColor)
                 }
                 if row.idIsAutoAssigned {
-                    Badge(text: "Unnamed", tint: .secondary,
-                          help: "The host assigned this id. It addresses "
-                              + "the machine; it says nothing about it. "
-                              + "Name it and the id becomes yours.")
+                    Badge(text: "Automatic ID", tint: .secondary,
+                          help: "The host assigned the stable machine id. "
+                              + "The editable display name is independent.")
                 }
                 if !row.idIsAnchored {
                     Badge(text: "Id is a guess", tint: .orange,
@@ -318,7 +353,8 @@ private struct ConnectionCard: View {
                 controls
             }
 
-            Text(row.name)
+            Text(row.address)
+                .font(.callout.monospaced())
                 .foregroundStyle(.secondary)
 
             identities
@@ -346,45 +382,8 @@ private struct ConnectionCard: View {
                               + "goes to the machine chosen here. The "
                               + "others stay connected.")
                 }
-                Button(row.idIsAutoAssigned ? "Name…" : "Rename…") {
-                    proposed = row.machineID
-                    renaming = true
-                }
-                .help("The id an agent types to address this machine. "
-                      + "Naming it is what makes it durable.")
-            }
-            .popover(isPresented: $renaming, arrowEdge: .bottom) {
-                rename
             }
         }
-    }
-
-    private var rename: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Machine id")
-                .font(.headline)
-            Text("Letters, numbers and hyphens. This is what a person or "
-                 + "an agent types to reach this machine.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 280, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            TextField("machine-id", text: $proposed)
-                .frame(width: 280)
-                .onSubmit { commit() }
-            HStack {
-                Spacer()
-                Button("Cancel") { renaming = false }
-                Button("Name") { commit() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(proposed.isEmpty)
-            }
-        }
-        .padding(16)
-    }
-
-    private func commit() {
-        if model.rename(row, to: proposed) { renaming = false }
     }
 
     /// The three identities, side by side and labelled, because the whole
@@ -433,6 +432,9 @@ private struct ConnectionCard: View {
             if let os = row.operatingSystem {
                 Fact("OS", value: os)
             }
+            if row.name != row.displayName {
+                Fact("Reported name", value: row.name)
+            }
             Fact("Agent access", value: Self.access(row.agentAccess))
         }
         .font(.callout)
@@ -463,6 +465,49 @@ private struct ConnectionCard: View {
             }
         }
         .padding(.top, 2)
+    }
+}
+
+private struct DisplayNameEditor: View {
+    let row: ConnectionRow
+    @ObservedObject var model: ConnectionsModel
+    let dismiss: () -> Void
+    @State private var proposed: String
+
+    init(row: ConnectionRow, model: ConnectionsModel,
+         dismiss: @escaping () -> Void) {
+        self.row = row
+        self.model = model
+        self.dismiss = dismiss
+        _proposed = State(initialValue: row.displayName)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Rename Machine")
+                .font(.headline)
+            TextField("Machine name", text: $proposed)
+                .frame(width: 320)
+                .onSubmit(commit)
+            if let problem = model.renameProblem {
+                Text(problem)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", action: dismiss)
+                Button("Rename", action: commit)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(proposed.trimmingCharacters(
+                        in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+    }
+
+    private func commit() {
+        if model.renameDisplayName(row, to: proposed) { dismiss() }
     }
 }
 

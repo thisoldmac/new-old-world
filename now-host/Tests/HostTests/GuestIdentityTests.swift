@@ -15,6 +15,53 @@ final class GuestIdentityTests: XCTestCase {
 
     private func registry() -> GuestRegistry { GuestRegistry() }
 
+    func testDisplayNamesDefaultToTheMachineNameAndNumberDuplicates() {
+        let book = registry()
+        let first = book.identify(
+            address: GuestAddress(text: "10.0.0.1"),
+            name: "PowerBook 1400c", operatingSystem: "9.1",
+            occupiedSlots: [])
+        let second = book.identify(
+            address: GuestAddress(text: "10.0.0.2"),
+            name: "PowerBook 1400c", operatingSystem: "9.1",
+            occupiedSlots: [])
+        let third = book.identify(
+            address: GuestAddress(text: "10.0.0.3"),
+            name: "PowerBook 1400c", operatingSystem: "9.1",
+            occupiedSlots: [])
+
+        XCTAssertEqual(first.displayName, "PowerBook 1400c")
+        XCTAssertEqual(second.displayName, "PowerBook 1400c-2")
+        XCTAssertEqual(third.displayName, "PowerBook 1400c-3")
+    }
+
+    func testACustomDisplayNamePersistsAcrossReconnects() {
+        let book = registry()
+        let first = book.identify(
+            address: GuestAddress(text: "10.0.0.1", port: 49152),
+            name: "PowerBook 1400c", operatingSystem: "9.1",
+            occupiedSlots: [])
+
+        XCTAssertEqual(book.renameDisplayName(first.key, to: "Desk Mac"),
+                       .success("Desk Mac"))
+        let reconnected = book.identify(
+            address: GuestAddress(text: "10.0.0.1", port: 49153),
+            name: "PowerBook 1400c", operatingSystem: "9.1",
+            occupiedSlots: [])
+
+        XCTAssertEqual(reconnected.displayName, "Desk Mac")
+        XCTAssertEqual(reconnected.lastPort, 49153)
+    }
+
+    func testObservedEndpointFormatsIPAndPort() {
+        XCTAssertEqual(
+            GuestAddress(text: "10.0.0.1", port: 49152).endpointText,
+            "10.0.0.1:49152")
+        XCTAssertEqual(
+            GuestAddress(text: "fe80::1", port: 49152).endpointText,
+            "[fe80::1]:49152")
+    }
+
     func testForgettingAMachineRemovesOnlyThatRememberedRecord() {
         let registry = registry()
         let first = registry.identify(
@@ -296,7 +343,8 @@ final class GuestIdentityTests: XCTestCase {
         let row = try XCTUnwrap(listener.guests.first)
         XCTAssertEqual(row.address.text, "127.0.0.1")
         XCTAssertEqual(row.name, "NOW Guest 0.14")
-        XCTAssertEqual(row.label, "\(row.id.slug) — NOW Guest 0.14")
+        XCTAssertEqual(row.displayName, "NOW Guest 0.14")
+        XCTAssertEqual(row.label, "NOW Guest 0.14")
         XCTAssertTrue(row.sessionID.hasPrefix("\(row.id.slug)-"))
         XCTAssertEqual(GuestKey.parse(row.sessionID), row.key)
     }
@@ -317,6 +365,24 @@ final class GuestIdentityTests: XCTestCase {
         XCTAssertEqual(after.sessionID, before.sessionID,
                        "a caller holding this session id must keep being "
                            + "able to present it")
+    }
+
+    func testRenamingTheDisplayNameRepublishesWithoutChangingIdentity()
+        async throws {
+        let listener = try await startedListener()
+        defer { listener.stop() }
+        let guest = try await dial(listener, name: "PowerBook 1400c")
+        try await waitUntil("connected") { listener.guests.count == 1 }
+        defer { guest.connection.cancel() }
+        let before = try XCTUnwrap(listener.guests.first)
+
+        XCTAssertEqual(
+            listener.renameGuestDisplayName(before.key, to: "Desk Mac"),
+            .success("Desk Mac"))
+        let after = try XCTUnwrap(listener.guests.first)
+        XCTAssertEqual(after.displayName, "Desk Mac")
+        XCTAssertEqual(after.id, before.id)
+        XCTAssertEqual(after.sessionID, before.sessionID)
     }
 
     // MARK: - Addressing the agent projection

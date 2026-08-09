@@ -30,6 +30,7 @@ final class ConnectionsModelTests: XCTestCase {
             idIsAutoAssigned: autoAssigned,
             idIsAnchored: anchored,
             name: name,
+            displayName: id,
             address: GuestAddress(text: address),
             version: "0.14",
             build: "b12",
@@ -47,7 +48,7 @@ final class ConnectionsModelTests: XCTestCase {
             id: GuestID(id)!, address: address,
             fingerprint: "now|9.1", slot: 0, autoAssigned: false,
             lastSeen: Date(timeIntervalSince1970: 500 + seen),
-            lastName: name)
+            lastName: name, displayName: id)
     }
 
     /// Stands in for the host's own `addressingRefusal` with the same
@@ -429,6 +430,24 @@ final class ConnectionsModelTests: XCTestCase {
 
         XCTAssertFalse(model.rename(row, to: "quadra"))
         XCTAssertEqual(model.renameProblem, "q950 is not connected.")
+    }
+
+    func testARememberedMachineDisplayNameCanStillBeEdited() throws {
+        let registry = GuestRegistry()
+        let saved = registry.identify(
+            address: GuestAddress(text: "10.91.5.34", port: 49152),
+            name: "PowerBook 1400c", operatingSystem: "9.1",
+            occupiedSlots: [])
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            registry: registry)
+        let model = ConnectionsModel(listener: listener, resolve: { _ in nil })
+        let row = try XCTUnwrap(model.snapshot.known.first)
+
+        XCTAssertTrue(model.renameDisplayName(row, to: "Desk Mac"))
+        XCTAssertEqual(model.snapshot.known.first?.displayName, "Desk Mac")
+        XCTAssertEqual(registry.known.first?.id, saved.id,
+                       "display renaming must not retitle the stable id")
     }
 
     // MARK: - The model against a real listener

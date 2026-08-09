@@ -90,6 +90,17 @@ final class ConnectionsPaneTests: XCTestCase {
                        "invalid Return must not start on the old port")
     }
 
+    func testConnectionRowsExposeNativeRenameAndContextActions() throws {
+        let source = try GateSource.hostSwift(
+            "now-host/Sources/Host/ConnectionsModuleView.swift")
+        XCTAssertTrue(source.contains("Image(systemName: \"pencil\")"))
+        XCTAssertTrue(source.contains(".contextMenu"))
+        XCTAssertTrue(source.contains("Button(\"Rename…\""))
+        XCTAssertTrue(source.contains("Button(\"Delete\""))
+        XCTAssertTrue(source.contains("Button(\"Start Listening\""))
+        XCTAssertTrue(source.contains("Button(\"Stop Listening\""))
+    }
+
     // MARK: - The retired id still resolves
 
     /// **A saved selection of the retired id lands on the merged page.**
@@ -258,6 +269,7 @@ final class ConnectionsPaneTests: XCTestCase {
             idIsAutoAssigned: false,
             idIsAnchored: true,
             name: "NOW 0.14",
+            displayName: id,
             address: GuestAddress(text: "10.91.5.34"),
             version: "0.14",
             build: "b12",
@@ -271,6 +283,7 @@ final class ConnectionsPaneTests: XCTestCase {
         GuestRegistry.Record(
             id: GuestID(id)!, address: "10.91.5.34",
             fingerprint: "now|9.1", slot: 0, autoAssigned: false,
-            lastSeen: Date(timeIntervalSince1970: 500), lastName: "NOW 0.13")
+            lastSeen: Date(timeIntervalSince1970: 500),
+            lastName: "NOW 0.13", displayName: id)
     }
 }
