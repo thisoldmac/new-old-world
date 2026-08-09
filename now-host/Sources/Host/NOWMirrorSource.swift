@@ -1493,7 +1493,27 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// same pass and is deliberately NOT read here.
     static func iconItemsScript(container: String, offset: Int,
                                 limit: Int = iconPageSize) -> String {
-        """
+        let desktopSystemItems = container == "desktop" ? """
+        try
+        repeat with d in disks
+        set dn to name of d
+        if ns does not contain dn then
+        set end of ns to dn
+        set end of ps to bounds of d
+        set end of ks to "disk"
+        end if
+        end repeat
+        end try
+        try
+        set tn to name of trash
+        if ns does not contain tn then
+        set end of ns to tn
+        set end of ps to bounds of trash
+        set end of ks to "trash"
+        end if
+        end try
+        """ : ""
+        return """
         tell application "Finder"
         set viewWord to ""
         set containerPath to ""
@@ -1510,6 +1530,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         set ns to name of every item of \(container)
         set ps to bounds of every item of \(container)
         set ks to kind of every item of \(container)
+        \(desktopSystemItems)
         end tell
         set totalCount to count ns
         set out to "N" & tab & totalCount & return & "V" & tab & viewWord & \
@@ -2147,6 +2168,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             name: name,
             kind: kind.contains("folder") ? "folder"
                 : kind.contains("disk") ? "disk"
+                : kind.contains("trash") ? "trash"
                 : kind.contains("application") ? "application" : "file",
             type: nil, creator: nil,
             x: x, y: y, placed: true,

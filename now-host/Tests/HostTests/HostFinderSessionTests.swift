@@ -323,6 +323,22 @@ final class HostFinderSessionTests: XCTestCase {
                        "guest-owned volume geometry must remain exact")
     }
 
+    func testDesktopRosterAsksFinderForDisksAndTrash() {
+        let script = NOWMirrorSource.iconItemsScript(
+            container: "desktop", offset: 0)
+        XCTAssertTrue(script.contains("repeat with d in disks"))
+        XCTAssertTrue(script.contains("bounds of d"))
+        XCTAssertTrue(script.contains("bounds of trash"))
+        XCTAssertFalse(NOWMirrorSource.iconItemsScript(
+            container: "window \"Macintosh HD\"", offset: 0)
+            .contains("repeat with d in disks"),
+            "system icons belong only to the desktop roster")
+
+        XCTAssertEqual(NOWMirrorSource.rosterItem(
+            name: "Trash", kind: "trash", x: 10, y: 20,
+            w: 32, h: 32).kind, "trash")
+    }
+
     func testFinderInteriorUsesObservedGuestWindowShell() async throws {
         defaults.set(true, forKey: HostFinderSession.lifecycleSyncPreferenceKey)
         defaults.set(true, forKey: HostFinderSession.geometrySyncPreferenceKey)
