@@ -276,6 +276,7 @@ final class HostAppState: ObservableObject {
         listener.chatService = model.wireService
         return model
     }()
+    private(set) lazy var development = DevelopmentModel(store: try? ProjectStore())
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var networking = NetworkingModel(listener: listener)
