@@ -334,6 +334,10 @@ final class NOWMirrorSourceTests: XCTestCase {
                        .text("mirror-finder-complement"),
                        "automatic Finder work must be distinguishable from "
                        + "a deliberate Script command on the guest")
+        XCTAssertEqual(firstArgs?["timeout"],
+                       .number(NOWMirrorSource.finderSliceTimeoutMs),
+                       "an automatic Finder page must never inherit the "
+                       + "guest's generic 15-second script ceiling")
 
         source.stop()
         firstReply(.init(

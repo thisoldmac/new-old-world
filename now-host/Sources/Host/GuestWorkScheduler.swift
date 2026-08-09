@@ -79,6 +79,7 @@ final class GuestWorkScheduler {
     typealias CallbackWork = @MainActor (
         GuestWorkToken, @escaping @MainActor () -> Void
     ) -> Void
+    typealias Cancel = @MainActor () -> Void
     typealias ClockSink = @MainActor (MirrorWorkClocks) -> Void
 
     private struct Entry {
@@ -89,6 +90,7 @@ final class GuestWorkScheduler {
         let sequence: UInt64
         let enqueuedAt: Date
         let start: CallbackWork
+        let cancel: Cancel?
     }
 
     private(set) var sessionID: String
@@ -131,9 +133,11 @@ final class GuestWorkScheduler {
     func submit(_ purpose: GuestWorkPurpose,
                 as workClass: GuestWorkClass,
                 coalescingKey: String? = nil,
+                onCancel: Cancel? = nil,
                 work: @escaping Work) -> GuestWorkToken {
         submitCallback(purpose, as: workClass,
-                       coalescingKey: coalescingKey) { token, finish in
+                       coalescingKey: coalescingKey,
+                       onCancel: onCancel) { token, finish in
             Task { @MainActor in
                 await work(token)
                 finish()
@@ -149,6 +153,7 @@ final class GuestWorkScheduler {
     func submitCallback(_ purpose: GuestWorkPurpose,
                         as workClass: GuestWorkClass,
                         coalescingKey: String? = nil,
+                        onCancel: Cancel? = nil,
                         start: @escaping CallbackWork) -> GuestWorkToken {
         nextSequence &+= 1
         let token = GuestWorkToken(traceID: UUID().uuidString,
@@ -157,12 +162,16 @@ final class GuestWorkScheduler {
         let entry = Entry(token: token, workClass: workClass,
                           purpose: purpose, coalescingKey: coalescingKey,
                           sequence: nextSequence, enqueuedAt: enqueuedAt,
-                          start: start)
+                          start: start, cancel: onCancel)
         if let coalescingKey {
-            queue.removeAll {
-                $0.coalescingKey == coalescingKey
-                    && $0.workClass == workClass
+            var replaced: [Entry] = []
+            queue.removeAll { candidate in
+                let matches = candidate.coalescingKey == coalescingKey
+                    && candidate.workClass == workClass
+                if matches { replaced.append(candidate) }
+                return matches
             }
+            replaced.forEach { $0.cancel?() }
         }
         queue.append(entry)
         if Self.debug {
@@ -183,9 +192,11 @@ final class GuestWorkScheduler {
     /// from admitting work or changing the replacement session.
     func reset(sessionID: String) {
         generation &+= 1
+        let cancelled = queue
         active = nil
         queue.removeAll(keepingCapacity: true)
         self.sessionID = sessionID
+        cancelled.forEach { $0.cancel?() }
         didChange?()
     }
 

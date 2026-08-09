@@ -2110,7 +2110,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 guard self.complementIsCurrent(generation) else { return }
                 let read = await self.readingFinderComplement(
                     Self.visibilityScript(offset: offset),
-                    osaFailureIsAnError: true)
+                    osaFailureIsAnError: true,
+                    workClass: (self.mutationBroker?.depth ?? 0) > 0
+                        ? .humanDependency : .ambient)
                 guard self.complementIsCurrent(generation) else { return }
                 if let error = read.error {
                     self.note("visibility census refused at offset "
@@ -2599,7 +2601,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         _ attempt: @escaping @MainActor () async -> MirrorMutationAttempt
     ) async -> MirrorMutationAttempt {
         await withCheckedContinuation { continuation in
-            workScheduler.submit(.interaction(label), as: .humanInteractive) {
+            workScheduler.submit(
+                .interaction(label), as: .humanInteractive,
+                onCancel: {
+                    continuation.resume(returning: .init(
+                        complaint: "the guest session changed before dispatch",
+                        effectMayHaveLanded: false))
+                }) {
                 _ in
                 continuation.resume(returning: await attempt())
             }
@@ -3338,14 +3346,32 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Automatic Finder enrichment has a typed purpose on the wire. The
     /// guest can therefore refuse this class before opening OSA without
     /// disabling a deliberate Script command or a user-requested Finder act.
+    nonisolated static let finderSliceTimeoutMs = 1_800
+
     private func readingFinderComplement(
-        _ source: String, osaFailureIsAnError: Bool = false
+        _ source: String, osaFailureIsAnError: Bool = false,
+        workClass: GuestWorkClass = .ambient
     ) async -> (value: String?, error: String?, truncated: Bool) {
-        await readingOutput(
-            "script",
-            ["source": .text(source),
-             "purpose": .text("mirror-finder-complement")],
-            osaFailureIsAnError: osaFailureIsAnError)
+        await withCheckedContinuation { continuation in
+            workScheduler.submit(
+                .finder("complement page"), as: workClass,
+                onCancel: {
+                    continuation.resume(returning: (
+                        nil, "session-changed: Finder read cancelled", false))
+                }) { [weak self] _ in
+                    guard let self else {
+                        return continuation.resume(returning: (
+                            nil, "mirror-closed: Finder read cancelled", false))
+                    }
+                    continuation.resume(returning: await self.readingOutput(
+                        "script",
+                        ["source": .text(source),
+                         "purpose": .text("mirror-finder-complement"),
+                         "timeout": .number(
+                            Self.finderSliceTimeoutMs)],
+                        osaFailureIsAnError: osaFailureIsAnError))
+                }
+        }
     }
 
     private func readingOutput(_ verb: String,
