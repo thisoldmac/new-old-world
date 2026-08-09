@@ -310,20 +310,20 @@ Neither half is sufficient: the Swift gate cannot execute a renderer, and
 the native test cannot see whether the guest still calls it.
 
 **What is still owed.** The fallback passes `request_json = NULL`, so no
-verb reached that way can be given an argument from the console. **Sixteen
-of the eighteen** therefore render a correct, useful refusal — `winact
+verb reached that way can be given an argument from the console. **Twenty
+of the twenty-three** therefore render a correct, useful refusal — `winact
 requires action: one of select, close, move, resize, zoom` — and remain
 untypeable. It is a grammar, not a renderer, and it was not fixed here;
 [open-issues.md](open-issues.md) carries the entry.
 
-The eighteen partition three ways, and the partition is the parity
+The twenty-three partition three ways, and the partition is the parity
 test's own lists rather than a count in this sentence — read them there
 if these disagree (`now-host/Tests/HostTests/CommandParityTests.swift`):
 
 | set | how many | verbs | what it means |
 |---|---|---|---|
-| `reachedByFallback` | 2 | `putstat`, `mouseloc` | take no arguments, so the fallback is a complete face. **Working**, as of 2026-08-06. |
-| `notTypeable` | 10 | `winact`, `textget`, `textset`, `ctlact`, `ditemact`, `menuact`, `handle`, `observe`, `axtree`, `elements` | a person cannot usefully type one — each takes an opaque reference, a coordinate a scene supplies, or answers with references nobody can read back. Each entry is checked against the contract's own `x-line`, which must say NOT TYPEABLE, so the exemption cannot outlive its declaration. |
+| `reachedByFallback` | 3 | `putstat`, `mouseloc`, `desktop` | take no arguments, so the fallback is a complete face. **Working**, as of 2026-08-08. |
+| `notTypeable` | 14 | `winact`, `cursoract`, `textget`, `textset`, `ctlact`, `ditemact`, `dragpress`, `dragmove`, `dragrelease`, `menuact`, `handle`, `observe`, `axtree`, `elements` | a person cannot usefully type one — each takes an opaque reference, a coordinate a scene supplies, or answers with references nobody can read back. Each entry is checked against the contract's own `x-line`, which must say NOT TYPEABLE, so the exemption cannot outlive its declaration. |
 | `consoleDebt` | 6 | `axsnap`, `activate`, `actselftest`, `script`, `aesend`, `qdtrace` | a person **could** usefully type these and cannot. A debt, not a resting place. |
 
 *(Corrected 2026-08-06: this paragraph said "twelve" and cited

@@ -142,6 +142,63 @@ PB1400c run still owes the claim that Finder stays alive and does not front
 from observation, and a separate non-Finder application run owes evidence that
 P3 remains useful under its narrower target boundary.
 
+**UPDATE 2026-08-08, semantic Finder consolidation.** Desktop icons now use
+the same host-owned Finder state and interaction model as folder windows; they
+are not a separately retained picture. This also closes two plausible causes
+of the reported “desktop icons disappear after Mirror has been unfocused”
+regression. The desktop layout key depends only on screen geometry, so the raw
+and enriched spellings of the same roster cannot oscillate the cache and
+restart its complement read. And a transient complete-but-empty desktop answer
+cannot erase a retained complete nonempty roster in the same session. The host
+logs and retains the stronger snapshot until a later nonempty answer, a new
+session, or the person's explicit **Rebuild State** action. The unfocused case
+still needs to be watched on metal; the guard is Tested, not a claim that the
+reported symptom has been reproduced here.
+
+View changes now project immediately from the retained directory roster and
+per-view layout cache while type/creator icon art fills in through bounded
+eight-item pages. Optimistic selection covers desktop, icon and list views.
+Confirmed item rearranges update the local semantic position before a fresh
+roster/layout reconciliation, and scroll remains local-first. This makes the
+interior a Finder implementation over semantic items rather than a delayed
+copy of Finder's pixels. It can browse any displayed directory on the whole
+guest disk; “bounded” means one open container at a time, not a shared-tree or
+volume-root restriction, and it never recursively pages the volume.
+
+The right-aligned Application menu is now projected from the live application
+roster when the scene does not carry Finder's system-owned menu. Application
+selection, Hide, Hide Others and Show All therefore remain available without
+P3 or foreground cycling. Hide Others and Show All are host-side compositions
+over the guest's existing per-process `hide` operation; the host gate covers
+the composition and read-back interpretation, but no PowerBook run has yet
+proved all three visibility operations end to end. Semantic Finder acts also
+place the guest cursor through the new cursor-only `cursoract` resident
+operation after a successful file action; that path builds and its guard is
+mutation-tested, but the new resident has not yet been baked or metal-driven.
+
+The host Mirror inspector now discovers complete extracted asset packs from
+the documented Lab store, selects the newest valid pack by default, and offers
+a persisted **Mirror Artwork** picker. It stores a discovered pack identity,
+not a hard-coded pack path; an environment override remains authoritative and
+picker changes take effect at next launch because art is process-cached. Pack
+extraction and arbitrary-path selection remain subsequent work.
+
+### UNVERIFIED: NOW may grow during a long Mirror session
+
+About This Computer showed **New Old World: 7.4 MB** during the 2026-08-08
+PB1400c semantic-Finder run. That screenshot alone is not leak evidence: the
+guest's `SIZE` resource requests a fixed 6 MiB preferred application partition
+(3 MiB minimum), and About This Computer includes the application's partition
+and loaded code-fragment overhead rather than reporting only live heap blocks.
+No before/after series was captured.
+
+The next metal run should record the number after launch, after Mirror settles,
+after repeated Start/Stop and Rebuild State cycles, and after Mirror has been
+backgrounded long enough to reproduce the desktop-roster symptom. A stable
+7.4 MB closes this as expected partition accounting; monotonic growth across
+those same operations opens a real allocation audit. Do not add heap polling to
+the already timing-sensitive scene loop until the coarse number actually moves.
+
 ### TESTED: the suspect mechanisms are now separate guest policy domains
 
 The Mirror page now owns four persisted checkboxes with enforcement at the
@@ -11791,6 +11848,15 @@ Until something is watched working, Hide is UNBUILT rather than broken. Its
 other half — that it should not hold the shared lane for 15 s rediscovering
 a route already known to fail — was fixed on 2026-08-05; that changed the
 cost of failing and nothing about whether Hide works.
+
+**UPDATE 2026-08-08:** the host no longer depends on Finder/P3 to supply the
+system-owned Application menu. It synthesizes the menu from the live process
+roster and sends Hide through the guest's Process Manager verb. Hide Others
+and Show All are explicit compositions of that same exact per-process route,
+with each result read back rather than treating dispatch as success. The
+projection and composition are Tested; the underlying visibility mutation is
+still not metal-verified, so the historical end-to-end status above does not
+silently become green.
 
 ## P5, THE TRANSITION TAIL: RESIDENT WRITES, NOTHING DELIVERS YET (2026-08-05)
 

@@ -64,13 +64,23 @@ this order:
 | # | Source | Notes |
 |---|---|---|
 | 1 | `$NOW_MIRROR_ASSETS` | An explicit directory. Wins over everything. `NOW_MIRROR_ASSETS=none` forces the absent path — see below. |
-| 2 | `~/Lab/Assets/now-mirror-assets/pack-*/Resources` | The documented store, newest `pack-` first, beside the qcow2 images. A path on a desk rather than a fact about the software, which is why it is not first. |
-| 3 | the checkout's own `Resources/` | `tools/extract-assets-offline`'s default output. For a developer who has just run it and is building from the same tree. |
+| 2 | the persisted selection among valid `~/Lab/Assets/now-mirror-assets/pack-*/Resources` packs | The host's **Mirror Artwork** picker stores only the discovered pack identity. It never compiles one extracted pack's name or absolute path into the app. |
+| 3 | newest valid pack in `~/Lab/Assets/now-mirror-assets/pack-*/Resources` | The default when no selection exists, or when the selected pack was removed. This currently targets the existing emulator extraction without hard-coding which extraction that is. |
+| 4 | the checkout's own `Resources/` | `tools/extract-assets-offline`'s default output. For a developer who has just run it and is building from the same tree. |
 | — | absent | A first-class state. Not an error, and not silent. |
 
 A directory only counts as a pack if it holds `manifest.json`, which
 the extractor writes last — so a killed extraction does not resolve as
 a present pack with most of its art missing.
+
+The picker is deliberately a minimal scaffold for custom pack selection,
+not the extraction UI itself. It enumerates only complete packs from the
+documented store, persists the chosen directory identity, and offers an
+Automatic choice that returns to newest-valid-pack resolution. An explicit
+`NOW_MIRROR_ASSETS` still owns the process and disables the picker. Because
+decoded art and the pack root are cached for the process lifetime, a picker
+change applies on the next host launch; the UI says so rather than pretending
+an already-rendering process changed provenance underneath its caches.
 
 **The pack is never bundled into the build.** `Package.swift` declares
 no resources for `MirrorKitUI` at all. That is not an oversight: a

@@ -225,7 +225,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **47 verbs.** Sixteen of
+The registry is `x-commands` in the contract: **48 verbs.** Sixteen of
 them landed on 2026-07-31 and are grouped at the foot of the table; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
@@ -277,6 +277,7 @@ number here has been found wrong by re-deriving it.
 | `handle` | take one reference back to a live element, or refuse | ✅ | ❌ |
 | `elements` | the act plane's door onto that walk, aimed at one process | ✅ | ❌ |
 | `winact` | move, resize, zoom or close one window | ✅ | ❌ |
+| `cursoract` | place the drawn cursor inside one exactly addressed window without clicking or fronting it | ✅ | ❌ |
 | `textget` | read one addressed text element | ✅ | ❌ |
 | `textset` | replace one addressed text element's contents | ✅ | ❌ |
 | `ctlact` | act on one control — optionally at a NAMED POINT inside it, because a tab strip's centre is one particular tab and a list's centre is one particular row | ✅ | ❌ |
@@ -302,7 +303,7 @@ both duplicates were PPC-✅ and the totals happened to survive. A check
 that a duplicate cannot fail is not checking what it claims to; the
 verbs are derived below.)*
 
-Eleven of those seventeen — the act plane and the reference layer — are one
+Twelve of those eighteen — the act plane and the reference layer — are one
 mechanism and are served together or not at all. They are PowerPC-only
 today by derivation rather than by an ISA check: they read another
 process's window records through the anchor plane, and nothing on the
@@ -433,17 +434,17 @@ produced the first live sighting of the sampler's own stated limit — a
 backgrounded and its event passes never saw the change. See
 [open-issues.md](open-issues.md).
 
-**PPC serves 44 of 47.** `put` is console-only there and `cancel` is
+**PPC serves 45 of 48.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 47** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 48** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The **thirty-four** it does not, derived with `comm -23` over
+`front`. The **thirty-five** it does not, derived with `comm -23` over
 the sorted registry and its own table rather than listed from memory:
-`activate`, `actselftest`, `aesend`, `axsnap`, `axtree`, `catsearch`,
+`activate`, `actselftest`, `aesend`, `axsnap`, `axtree`, `catsearch`, `cursoract`,
 `ctlact`, `cycle`, `desktop`, `ditemact`, `dragmove`, `dragpress`,
 `dragrelease`, `elements`, `gestalt`, `handle`, `hide`, `key`,
 `menuact`, `mirror`, `mouseloc`, `net`, `observe`, `putstat`, `qdtrace`,
@@ -1316,18 +1317,18 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 6ef3e9a0f98d8978aafb5486ba826bdbdb6ea428
+sources-sha1: 842c6b78735696a09ad35797bbd18d701ae0de0e
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=2cfac62c73d551f528ca57266caa5fa724aee8fd21486c054e79b332399fdfdf lines=47 published
+derive x-commands-registry sha256=dcbff7909f3d815b2153a13307d6e0a539e2b9f8867fa50ea1f56ce7dd56ddfc lines=48 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
          f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=a50feab1794656fbff9a897f1c1e3bb27aee0b26761d46edb6fcba3ad8e61223 lines=44 published
+derive ppc-verbs sha256=2bf9d842cd04b191e3e7aac83b5c68a221bb95f9605b10ccf60a0d6e79f957f5 lines=45 published
     grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
         now-guest-ppc/src/commands/commands.c \
       | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
@@ -1349,4 +1350,6 @@ rederived: 2026-08-07T20:20:55-0400 69c3c7e0 unchanged
 rederived: 2026-08-07T23:45:38-0400 c8a61884 unchanged
 rederived: 2026-08-08T01:33:41-0400 6610538c unchanged
 rederived: 2026-08-08T12:59:17-0400 449efbee unchanged
+rederived: 2026-08-08T21:47:29-0400 0ca7eb51 sources, x-commands-registry 47->48, ppc-verbs 44->45
+rederived: 2026-08-08T21:56:10-0400 0ca7eb51 unchanged
 -->

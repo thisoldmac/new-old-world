@@ -311,6 +311,7 @@ final class CommandParityTests: XCTestCase {
     /// `testTheNotTypeableExemptionsAreTheContractsOwn`.
     private static let notTypeable: [String: String] = [
         "winact": "takes an opaque window reference",
+        "cursoract": "takes an opaque window reference and a point inside it",
         "textget": "takes an opaque element reference",
         "textset": "takes an opaque element reference",
         "ctlact": "takes an opaque element reference and a part code",

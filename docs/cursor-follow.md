@@ -5,6 +5,29 @@ been drawn while every act and every drag happened somewhere else. This
 is what changed, why the obvious explanation was wrong, and what is still
 unknown.
 
+## Semantic Finder has a cursor route too (2026-08-08)
+
+Host-owned Finder interiors do not click pixels. Selection, open, rename and
+other item operations travel as exact Finder Apple events, so they bypass the
+resident act path that ordinarily moves P8 to the last action. That made the
+guest cursor appear frozen even while the host mirror successfully selected
+items.
+
+`cursoract(window,h,v)` closes that seam without inventing a click. It accepts
+one observation-minted window reference and one point inside that exact
+window, resolves the owning process and A5 world in the application, and asks
+the resident hook only to call `now_ext_cursor_place`. It does not select or
+front the window and arms no click-intercepting patch. The host sends it only
+after the semantic Finder operation succeeds, against either the exact folder
+window or the desktop backdrop reference; a cursor failure is logged as an
+adjunct and cannot rewrite a successful file operation as failed.
+
+The guard is **Tested** and mutation-proven: replacing its cursor verdict with
+refusal makes `now_act_guard_test` fail on the cursor handoff assertion. Both
+guests and the extension **Build**. The new resident has not yet been baked
+into the shared emulator image or watched on the PowerBook, so this route is
+not emulator- or metal-verified.
+
 It matters more than it sounds. A screendump was evidence of what the
 machine looked like and never evidence of *where we acted*; software that
 draws relative to the pointer was a permanent special case; and a person

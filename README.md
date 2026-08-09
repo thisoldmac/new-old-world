@@ -39,12 +39,12 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Hardware census (14 probes) | yes | 14 probes, 5 of them honestly `absent`/`partial` on this hardware. **Until 2026-08-07 the `pccard` probe killed the guest on any Mac without a PC Card Manager** — the trap dispatch checked that its route was open and never that the trap existed. Gated now: `tools/census-survives.py` sweeps all 14 against a real guest inside every bake. | metal-verified (PPC, PB1400c); emulator-verified on mac99/OS 9.1 after the fix; **68K's probes have never run at all** |
 | Two Macs on one port, with a picker for which one you are driving | yes | yes | tested; **never run against real hardware** |
 | iCloud: the host's Drive, Photos and Contacts served to the guest's iCloud page — drive browser with history and breadcrumbs, live filter-as-you-type, photo preview and download at chosen resolution, contact cards | yes | no | metal-verified (PPC) for Drive and the granted services; the newest layout pass is tested only — [docs/icloud.md](docs/icloud.md) |
-| Window **interiors** — application QuickDraw records plus semantic Finder directories | yes, with the optional NOW Extension for application drawing; Finder never uses it | no — no resident for System 7.1 | **tested:** Finder is denied before P3 arms; its host-owned interior pages semantic icons, selects rows, and scrolls locally while acts settle. Application P3 remains emulator-verified only. The Finder exclusion and new interaction path have not yet been re-run on metal |
+| Window **interiors** — application QuickDraw records plus semantic Finder directories and desktop | yes, with the optional NOW Extension for application drawing; Finder never uses it | no — no resident for System 7.1 | **tested:** Finder is denied before P3 arms; its host-owned desktop and folder interiors draw semantic items, project selection/view/scroll immediately, and reconcile acts against the guest. Finder reads only the displayed directory, and icon art is enriched in bounded pages. Application P3 remains emulator-verified only. The Finder exclusion and new interaction path have not yet been re-run on metal |
 | Offscreen worlds joined to the window they land in — including a world created, drawn and disposed inside one event pass | yes | no | emulator-verified (guest side); the host's composition is tested against committed captures — **the live host app has never been watched composing** |
 | Rendering that interior: measured Platinum accent ramps, real per-application icons, inverted selection, scrollbar arrows, derived cell grids, and placeholders graded to the evidence | host-side | host-side | tested against committed captures; judged by eye in [docs/fidelity-sweep-2026-08-06.md](docs/fidelity-sweep-2026-08-06.md), which is a baseline taken **before** the icon pack could resolve — the after-picture has not been measured |
 | Showing the Mirror in an already-running host — from the host's Window menu, from an agent over the socket, and from a button on the guest's own Mirror page | asks (button + `showmirror`) | no — out of scope for the arc, not a limit of the machine | emulator-verified (2026-08-06), against the WINDOW-only lifecycle this predates; since 019 the same faces start the poll and then show it wherever the person left it. Original run: against a host launched **without** `--open-mirror` and a guest on mac99/OS 9.1, the Mirror was opened by the guest's own button and, on a second run, by `now_mirror_open` over the agent socket — each time going from "no published Mirror snapshot" to a live polling engine. The console verb answered too. **The menu item is tested only** — driving it means scripting macOS, which is the habit this row exists to make unnecessary |
 | The Mirror as a module in the host app, detachable into its own window, with zoom stops at 50/100/200/400% and fit | n/a | n/a | **tested**; one `LiveMirrorView` over one `NOWMirrorSource` in both containers, so an attached and a detached view cannot disagree. Running and where-it-is-shown are separate persisted axes: backgrounding the module does NOT stop the poll, because `now_mirror_drive` and the fidelity sweep read the same source with no window in the picture. Every bitmap is sampled nearest-neighbour, so each power-of-two stop is pixel-exact — that one is defended by a gate that reads the source, because no similarity score can see a blurred hairline |
-| Per-application icons and the Platinum theme's own colours, extracted from a real System | host-side | host-side | tested; the pack is a run-time dependency outside git, and the suite runs a second time without it — [docs/asset-pack.md](docs/asset-pack.md) |
+| Per-application icons and the Platinum theme's own colours, extracted from a real System | host-side | host-side | tested; the pack is a run-time dependency outside git. The host discovers valid packs, defaults to the newest one, and exposes a persisted picker rather than compiling one desk's pack path or identity. The suite runs a second time without it — [docs/asset-pack.md](docs/asset-pack.md) |
 
 The cells that say "no" are not oversights.
 [docs/contract-coverage.md](docs/contract-coverage.md) is the inventory
@@ -149,12 +149,18 @@ is now permanently excluded at both host and guest command boundaries; raw-A5
 arming is refused because it cannot enforce process identity. Finder interiors
 instead use bounded, current-container semantic reads carrying the guest HFS
 path, view, order, live bounds and selection. The host owns Finder interaction
-too: icon and list selections update immediately, control/right-click toggles,
+too, including desktop icons: icon and list selections update immediately, control/right-click toggles,
 shift-click and rubber-band gestures extend the selection, the wheel and thumb
 scroll locally while their guest acts settle, and Return/Enter, Escape and
 Command-O drive rename, cancel/deselect and open. That path is **tested, not yet
-metal-verified**. P3 remains available to ordinary applications so its existing
-rendering work can be evaluated without exposing Finder again.
+metal-verified**. View switches reuse retained directory state while bounded
+icon-art pages fill in, rather than blocking the presentation on a new full
+Finder draw. The right-aligned application menu is synthesized from the live
+process roster when Finder omits its rows, including Hide, Hide Others, Show
+All, and application switching. A **Rebuild State** button discards the retained
+guest projection when an escape hatch is needed. P3 remains available to
+ordinary applications so its existing rendering work can be evaluated without
+exposing Finder again.
 
 **The slow loops had a second cause on our own side, and it is now
 fixed — by spending a safety argument.** The guest's act client waits for

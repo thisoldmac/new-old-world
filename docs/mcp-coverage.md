@@ -637,6 +637,7 @@ to exist:
 | `pci` | probe | none | deliberate | The Name Registry device tree. **`absent` on both** — the 1400c is pre-PCI and no 68K Mac has a Name Registry — which is a fact about the hardware and the clearest case for why `absent` is not `refused` ([contract-coverage.md](contract-coverage.md)). |
 | `scsi` | probe | none | deliberate | An INQUIRY bus scan: the contract's one declared exception to passive-by-rule, paced at one target per page. PPC answers; **NOW-68K answers `refused`** because active bus I/O is never unattended there. This is the probe a caller must read the outcome of rather than the rows ([contract-coverage.md](contract-coverage.md)). |
 | `activate` | command | ppc | deliberate | The same capability as `front`, addressed by process serial instead of by name — and `now_bring_to_front` already needs the `process.front` **family** for the reason that row gives. One capability, one route per face ([command-parity.md](command-parity.md)). What `activate` adds over `front` is real but is a GUEST-side property: it takes the identity an observation minted, so a driver that has just walked the machine does not have to go back to a name that may match twice. The host's own action dispatcher sends it directly for exactly that reason. That is a second route for one capability, which is what this column exists to refuse. |
+| `cursoract` | command | ppc | deliberate | An internal cursor-follow adjunct for host-owned Finder semantics, not a separately useful agent capability. Finder selection/open/rename travel as exact Apple events and therefore bypass the resident act route that normally places P8; the host follows a successful semantic action with this observation-bound, no-click placement so the guest sprite shows where the action occurred. A caller cannot usefully mint its opaque window argument outside the same projection, and exposing it would create a second public route for pointer positioning without an operation to accompany it. The ownership and failure rule are in [cursor-follow.md](cursor-follow.md): cursor failure is logged and cannot rewrite a successful Finder mutation. |
 | `actselftest` | command | ppc | unnoticed | Proves the act plane's trap calling convention from inside one process, and it is the only instrument that reads the CALLER's side of the call — every other one reads ours. It matters more than its size, because a patch whose result lands in the wrong slot **does not crash, it lies**: every counter the plane owns reports success while the application reads a value we never wrote. Nobody has decided either way. What a row would have to settle first: whether an agent about to drive the act plane should be able to ask "is this machine's ABI the one you were built against" before it acts — the case for is that a silent wrong answer is the failure mode this plane actually has; the case against is that a host could simply call it once per session itself and never expose it. |
 | `ditemact` | command | ppc | planned | U5/KTD11 of the [NOW Mirror UX completion plan](plans/2026-08-03-001-now-mirror-ux-completion-plan.md): prove the keyboard-and-mouse Mirror path first, then add MCP parity as a thin adapter over the same typed operation. The command selects one observation-minted, revalidated 1-based DITL item through the application's Dialog Manager path; projecting it before the direct UI is watched would invert that acceptance order. |
 | `dragpress` | command | ppc | unnoticed | Presses the mouse button on an element and LEAVES IT DOWN, handing the gesture to the resident's Time Manager drag vehicle. Landed 2026-08-07 with the vehicle itself; nobody has decided whether an agent should be able to ask for it. **What a row would have to settle first, and it is not the usual question:** every other capability on this surface either reads a machine or asks an application to do something it already knows how to do. This one moves a PHYSICAL POINTER on somebody's Macintosh and holds its button down — so the question is not whether it is useful but whether a caller who is not looking at the screen should be able to start a gesture a person at that machine will be fighting. The resident's dead-man bounds the damage in TIME (it releases whether or not anyone asks, and clamps its own deadlines so a caller cannot switch it off), which is exactly the property that would make a row defensible; it does not bound it in SPACE. Deciding this means deciding all three drag verbs together, not one. |
@@ -1118,14 +1119,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 5e4198faa2d60fe82ad941096f16c7f36c3f6aba
+sources-sha1: 305f6be9c44f6e7747484fcdeda89c410a3ca985
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=307e511d3de26faab3dcd6c48e1fb8ce78f5f5349ea406d4c5c3cecbc0de830c lines=3
+derive disposition-census sha256=1a03208fe7ba4297f9e6f15efa69083e4e1f09cf16364e7a58f7c676b4925d06 lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c
@@ -1160,4 +1161,5 @@ rederived: 2026-08-07T20:20:55-0400 69c3c7e0 unchanged
 rederived: 2026-08-07T23:45:38-0400 c8a61884 unchanged
 rederived: 2026-08-08T01:33:41-0400 6610538c unchanged
 rederived: 2026-08-08T12:59:17-0400 449efbee unchanged
+rederived: 2026-08-08T21:56:10-0400 0ca7eb51 sources, disposition-census 3->3
 -->
