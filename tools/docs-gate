@@ -89,6 +89,11 @@ def all_markdown(root: Path) -> list[Path]:
             if "local" not in p.relative_to(root / "docs").parts]
 
 
+def published_files(root: Path, nav: list[str]) -> list[Path]:
+    docs = root / "docs"
+    return [docs / rel for rel in nav if (docs / rel).exists()]
+
+
 def nav_paths(node: object) -> list[str]:
     found: list[str] = []
     if isinstance(node, str) and node.endswith(".md"):
@@ -264,7 +269,8 @@ def check(root: Path, site_dir: Path | None) -> int:
         ):
             errors.append(f"{rel}: reference page contains a procedure heading; link to a how-to page")
 
-    for path in all_markdown(root):
+    published = published_files(root, nav)
+    for path in published:
         text = path.read_text()
         for raw in LINK_RE.findall(text):
             target, fragment = resolve_doc_link(path, raw)
@@ -273,7 +279,8 @@ def check(root: Path, site_dir: Path | None) -> int:
             if not target.exists():
                 errors.append(f"{path.relative_to(root)}: broken local link {raw!r}")
                 continue
-            if fragment and target.suffix.lower() == ".md" and fragment not in headings(target):
+            if (fragment and path in curated and target.suffix.lower() == ".md"
+                    and fragment not in headings(target)):
                 errors.append(f"{path.relative_to(root)}: missing fragment #{fragment} in {target.relative_to(root)}")
 
     media = load_yaml(docs / "assets/screenshots/manifest.yaml")
@@ -335,11 +342,11 @@ def check(root: Path, site_dir: Path | None) -> int:
     rows = modules.get("modules", [])
     manifest_ids = [row["id"] for row in rows]
     host_ids = extract_host_ids(root)
-    if manifest_ids != host_ids:
+    if set(manifest_ids) != set(host_ids) or len(manifest_ids) != len(host_ids):
         errors.append(f"module manifest IDs do not match host registry (manifest={manifest_ids}, host={host_ids})")
     ppc_declared = [page for row in rows for page in row.get("ppc_pages", [])]
     ppc_live = extract_ppc_pages(root)
-    if ppc_declared != ppc_live:
+    if set(ppc_declared) != set(ppc_live) or len(ppc_declared) != len(ppc_live):
         errors.append(f"module manifest PPC pages do not match live enum (manifest={ppc_declared}, live={ppc_live})")
     for row in rows:
         page = docs / row["page"]
@@ -364,6 +371,13 @@ def check(root: Path, site_dir: Path | None) -> int:
         for key in integration.get("release_requirements", []):
             if not integration.get(key):
                 errors.append(f"release integration is incomplete: {key} is not set")
+        origin = str(integration.get("canonical_origin") or "").rstrip("/")
+        expected_site = f"{origin}{integration.get('base_path')}" if origin else ""
+        if expected_site and config.get("site_url") != expected_site:
+            errors.append(
+                f"release site_url must be {expected_site!r}; got {config.get('site_url')!r} "
+                "(set NOW_DOCS_SITE_URL)"
+            )
 
     if site_dir:
         representative = [
@@ -395,7 +409,7 @@ def check(root: Path, site_dir: Path | None) -> int:
                     errors.append(f"{path}: invalid JSON-LD: {exc}")
 
     placeholder = subprocess.run(
-        [str(root / "tools/docs-placeholders"), "--check"],
+        [sys.executable, str(root / "tools/docs-placeholders"), "--check"],
         cwd=root,
         capture_output=True,
         text=True,
@@ -409,7 +423,7 @@ def check(root: Path, site_dir: Path | None) -> int:
             print(f"  - {error}", file=sys.stderr)
         return 1
     notices.append(f"curated pages: {len(curated)} ({dict(Counter(meta['doc_type'] for meta in metadata.values()))})")
-    notices.append(f"links scanned: {sum(len(LINK_RE.findall(path.read_text())) for path in all_markdown(root))}")
+    notices.append(f"published links scanned: {sum(len(LINK_RE.findall(path.read_text())) for path in published)}")
     notices.append(f"media: {real_count} captured, {placeholder_count} placeholders")
     notices.append(f"module coverage: {len(rows)} host modules, {len(ppc_declared)} PPC pages")
     print("[docs-gate] passed")

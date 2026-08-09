@@ -29,6 +29,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  documentation:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - name: Install pinned documentation toolchain
+        run: python -m pip install -r docs/requirements.txt
+      - name: Verify source, generated reference, and rendered site
+        run: NOW_DOCS_PYTHON=python scripts/test-docs
+
   native:
     name: Native guest tests
     runs-on: macos-14

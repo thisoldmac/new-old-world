@@ -5,10 +5,12 @@ required_ci_check: Documentation
 canonical_origin: null
 website_repository: null
 security_contact: null
+security_expires: null
 release_requirements:
   - canonical_origin
   - website_repository
   - security_contact
+  - security_expires
 notes:
   - The NOW website source and Git remote are not present in this checkout.
   - scripts/test-docs validates the standalone artifact in normal mode.

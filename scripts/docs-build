@@ -3,8 +3,15 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 site_dir=${NOW_DOCS_SITE_DIR:-"$root/build-docs/site"}
+python=${NOW_DOCS_PYTHON:-python3}
+if [ -x "$root/.docs-venv/bin/python" ]; then
+    python="$root/.docs-venv/bin/python"
+fi
 
 cd "$root"
-python3 -m mkdocs build --strict --clean --site-dir "$site_dir"
-"$root/tools/docs-gate" --site-dir "$site_dir"
+"$python" -m mkdocs build --strict --clean --quiet --site-dir "$site_dir"
+"$python" "$root/tools/docs-gate" --site-dir "$site_dir"
+if [ -n "${NOW_DOCS_RELEASE:-}" ]; then
+    "$python" "$root/tools/docs-release-assets" --site-dir "$site_dir"
+fi
 printf '%s\n' "Documentation site: $site_dir"

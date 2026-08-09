@@ -12,6 +12,12 @@ Most of the tree, as it turns out.
 **`scripts/test-all` is the one command.** It runs everything below in
 order, cheapest first, and stops at the first failure naming it.
 
+The web documentation is part of that gate. For a focused run, install the
+pinned packages from `docs/requirements.txt` into `.docs-venv` and run
+`scripts/test-docs`. A user-visible capability updates its module page and
+`docs/module-manifest.yaml` in the same change; a contract change runs
+`scripts/docs-contract` and commits the generated projection.
+
 - **The host application** is an ordinary Swift package plus an Xcode
   project. `scripts/test-host` runs the suites and both build systems on
   any recent macOS. No guest required.
@@ -101,6 +107,10 @@ coverage in a directory listing and proves nothing.
 - **Update `docs/contract-coverage.md` in the same commit** as any change
   to what a guest serves. Derive it with the `grep` commands in the file;
   do not hand-edit a row from memory.
+- **Keep the published guide synchronized.** Curated pages declare their
+  source dependencies and media slots in front matter. Run
+  `tools/derived-doc-gate rederive <page>` for every changed derived page,
+  then `scripts/test-docs`.
 - **Say what you did not verify.** A PR that names its own gaps is worth
   more than one that implies coverage it does not have.
 

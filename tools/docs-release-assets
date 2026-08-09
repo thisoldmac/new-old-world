@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Write RFC 9116 and crawler assets only for a configured release."""
+
+from __future__ import annotations
+
+import argparse
+from datetime import datetime
+from pathlib import Path
+import sys
+
+import yaml
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--site-dir", required=True)
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parent.parent
+    config = yaml.safe_load((root / "docs/site-integration.yaml").read_text())
+    missing = [key for key in config["release_requirements"] if not config.get(key)]
+    if missing:
+        print("release integration is incomplete: " + ", ".join(missing), file=sys.stderr)
+        return 1
+    try:
+        expires = datetime.fromisoformat(str(config["security_expires"]).replace("Z", "+00:00"))
+    except ValueError:
+        print("security_expires must be an ISO 8601 timestamp", file=sys.stderr)
+        return 1
+    if expires.tzinfo is None:
+        print("security_expires must include a timezone", file=sys.stderr)
+        return 1
+
+    origin = str(config["canonical_origin"]).rstrip("/")
+    site = Path(args.site_dir)
+    well_known = site / ".well-known"
+    well_known.mkdir(parents=True, exist_ok=True)
+    (well_known / "security.txt").write_text(
+        f"Contact: {config['security_contact']}\n"
+        f"Expires: {config['security_expires']}\n"
+        f"Canonical: {origin}/.well-known/security.txt\n"
+        f"Policy: {origin}/docs/developer-guide/reference/security/\n"
+    )
+    (site / "robots.txt").write_text(
+        "User-agent: *\nAllow: /\n" f"Sitemap: {origin}/docs/sitemap.xml\n"
+    )
+    print("Release assets: RFC 9116 security.txt and robots.txt")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

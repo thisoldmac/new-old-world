@@ -4,13 +4,24 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 site_dir=$(mktemp -d "${TMPDIR:-/tmp}/now-docs-site.XXXXXX")
 trap 'rm -rf "$site_dir"' EXIT HUP INT TERM
+python=${NOW_DOCS_PYTHON:-python3}
+if [ -x "$root/.docs-venv/bin/python" ]; then
+    python="$root/.docs-venv/bin/python"
+fi
+
+if ! "$python" -c 'import mkdocs, yaml' >/dev/null 2>&1; then
+    echo "Documentation dependencies are missing." >&2
+    echo "Run: uv venv .docs-venv && uv pip install --python .docs-venv/bin/python -r docs/requirements.txt" >&2
+    exit 1
+fi
 
 cd "$root"
-"$root/tools/docs-placeholders" --check
-"$root/tools/docs-gate"
+"$python" "$root/tools/docs-placeholders" --check
+"$python" "$root/tools/docs-gate"
+"$python" "$root/tools/docs-gate-selftest"
 "$root/scripts/docs-contract" --check
-python3 -m mkdocs build --strict --clean --site-dir "$site_dir"
-"$root/tools/docs-gate" --site-dir "$site_dir"
+"$python" -m mkdocs build --strict --clean --quiet --site-dir "$site_dir"
+"$python" "$root/tools/docs-gate" --site-dir "$site_dir"
 "$root/tools/derived-doc-gate" check-all
 
 echo "Documentation gate passed"

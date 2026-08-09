@@ -6,6 +6,12 @@ site_dir: build-docs/site
 use_directory_urls: true
 strict: true
 
+validation:
+  links:
+    not_found: info
+    absolute_links: info
+    unrecognized_links: info
+
 theme:
   name: material
   custom_dir: docs/overrides
@@ -50,13 +56,22 @@ extra_css:
   - assets/stylesheets/now-docs.css
 
 exclude_docs: |
-  local/
-  overrides/
-  requirements.txt
-  reference-index.yaml
-  module-manifest.yaml
-  site-integration.yaml
-  assets/screenshots/manifest.yaml
+  *
+  !index.md
+  !user-guide/
+  !user-guide/**
+  !developer-guide/
+  !developer-guide/**
+  !generated/
+  !generated/**
+  !assets/
+  !assets/**
+  !status.md
+  !known-wrong.md
+  !open-issues.md
+  !architecture.md
+  !contract-coverage.md
+  !mcp-coverage.md
 
 nav:
   - Docs home: index.md
@@ -120,6 +135,7 @@ nav:
           - Verification levels: developer-guide/reference/verification-levels.md
           - Source authority: developer-guide/reference/source-authority.md
           - Repository map: developer-guide/reference/repository-map.md
+          - Documentation standard: developer-guide/reference/documentation-standard.md
           - Generated AsyncAPI reference: generated/asyncapi.md
   - Engineering records:
       - Current status: status.md

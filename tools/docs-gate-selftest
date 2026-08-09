@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""Mutation evidence for the documentation source gate."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def run_gate(test_root: Path) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["NOW_DOCS_GATE_ROOT"] = str(test_root)
+    return subprocess.run(
+        [sys.executable, str(ROOT / "tools/docs-gate")],
+        cwd=test_root,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+
+def replace(path: Path, old: str, new: str) -> str:
+    original = path.read_text()
+    if old not in original:
+        raise RuntimeError(f"selftest fixture moved: {old!r} not found in {path}")
+    path.write_text(original.replace(old, new, 1))
+    return original
+
+
+def expect_mutation(test_root: Path, name: str, path: Path, old: str, new: str, needle: str) -> None:
+    original = replace(path, old, new)
+    try:
+        result = run_gate(test_root)
+        output = result.stdout + result.stderr
+        if result.returncode == 0 or needle not in output:
+            raise RuntimeError(
+                f"{name}: expected refusal containing {needle!r}; exit={result.returncode}\n{output}"
+            )
+        print(f"[docs-gate-selftest] {name}: refused by name")
+    finally:
+        path.write_text(original)
+
+
+def main() -> int:
+    with tempfile.TemporaryDirectory(prefix="now-docs-gate-") as raw:
+        test_root = Path(raw)
+        shutil.copytree(ROOT / "docs", test_root / "docs")
+        shutil.copytree(ROOT / "contract", test_root / "contract")
+        shutil.copy2(ROOT / "mkdocs.yml", test_root / "mkdocs.yml")
+        for name in (
+            "AGENTS.md", "README.md", "CONTRIBUTING.md", "SECURITY.md",
+            "now-host", "now-guest-ppc", "now-guest-68k", "ext", "scripts", "tools",
+        ):
+            (test_root / name).symlink_to(ROOT / name, target_is_directory=(ROOT / name).is_dir())
+
+        baseline = run_gate(test_root)
+        if baseline.returncode:
+            raise RuntimeError("baseline gate failed:\n" + baseline.stdout + baseline.stderr)
+
+        expect_mutation(
+            test_root, "navigation coverage", test_root / "mkdocs.yml",
+            "      - Overview: user-guide/index.md\n", "", "curated page is absent from navigation",
+        )
+        expect_mutation(
+            test_root, "broken link", test_root / "docs/index.md",
+            "# New Old World documentation", "# New Old World documentation\n\n[missing](no-such-page.md)",
+            "broken local link",
+        )
+        expect_mutation(
+            test_root, "image alt text", test_root / "docs/user-guide/tutorials/first-connection.md",
+            "![The four pre-alpha artifacts identified by destination and optional status]",
+            "![]", "image has empty alt text",
+        )
+        expect_mutation(
+            test_root, "image dimensions", test_root / "docs/assets/screenshots/overview/host.svg",
+            'width="980"', 'width="981"', "SVG is 981x650",
+        )
+        expect_mutation(
+            test_root, "placeholder freshness", test_root / "docs/assets/screenshots/overview/host.svg",
+            "SCREENSHOT NEEDED", "SCREENSHOT STALE", "stale or missing placeholders",
+        )
+        expect_mutation(
+            test_root, "module inventory", test_root / "docs/module-manifest.yaml",
+            "  - id: screen\n", "  - id: screen-renamed\n", "do not match host registry",
+        )
+        expect_mutation(
+            test_root, "AsyncAPI reference", test_root / "contract/asyncapi.yaml",
+            '#/components/messages/fileProgress', '#/components/messages/doesNotExist',
+            "dangling local $ref",
+        )
+        expect_mutation(
+            test_root, "Diataxis page type", test_root / "docs/user-guide/reference/requirements.md",
+            "# Requirements", "# Requirements\n\n## Steps", "reference page contains a procedure heading",
+        )
+        expect_mutation(
+            test_root, "source dependency", test_root / "docs/developer-guide/index.md",
+            "source_dependencies: [AGENTS.md, contract/asyncapi.yaml, scripts/test-all]",
+            "source_dependencies: [AGENTS.md, contract/nope.yaml, scripts/test-all]",
+            "source dependency does not exist",
+        )
+
+    print("[docs-gate-selftest] all 9 source mutations refused")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

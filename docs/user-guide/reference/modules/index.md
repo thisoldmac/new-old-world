@@ -6,7 +6,7 @@ doc_type: reference
 audience: user
 lifecycle: current
 authority: [docs/module-manifest.yaml, docs/contract-coverage.md]
-source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c]
+source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
 media_ids: []
 last_verified: 2026-08-09
 ---
@@ -35,9 +35,11 @@ manifest. Capability coverage and proof remain separate questions; each page
 states both.
 
 <!-- derived-doc v1
-sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c
-sources-sha1: pending
-derive module-map sha256=pending lines=14
-    tools/docs-gate module-inventory
+sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
+sources-sha1: e53767a359ebb3514eb9fa668ff3911c5fc6a425
+derive module-map sha256=cc0ab1776e68f234416b59a648261f6dbfa2ba5e8c3aeb38ac8031ca5a55375e lines=14
+    scripts/docs-inventory
 rederived: pending
+rederived: 2026-08-09T16:10:26-0400 e74b3ab1 sources, module-map 14->14
+rederived: 2026-08-09T16:15:30-0400 e74b3ab1 sources
 -->
