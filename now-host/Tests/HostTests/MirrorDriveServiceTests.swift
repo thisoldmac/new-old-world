@@ -93,6 +93,9 @@ final class MirrorDriveServiceTests: XCTestCase {
         XCTAssertTrue(operation.awaitsObservation,
                       "the record is coming and it settles by observation; "
                           + "false here is what tells a caller to give up")
+        XCTAssertTrue(operation.reason?.contains(
+            "now_semantic_ui_journal") ?? false)
+        XCTAssertFalse(operation.reason?.contains("now_mirror_") ?? true)
     }
 
     /// And a brokered act is fetched by the id `perform` returned, rather

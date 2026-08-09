@@ -152,7 +152,11 @@ actor NOWMCPServer {
     private static let firstContactGuide = """
         NOW controls one or more classic Macintosh guests through an already-running New Old World host. This agent surface is experimental and its names may change.
 
-        Start with now_list_machines and deliberately select a stable machine id or exact session id. Then prefer evidence in this order: structured product state (processes, software, files); retained now_semantic_ui_* state for desktop and application context; typed semantic actions followed by a wait or fresh read; a targeted direct element probe only when retained state is incomplete; pixels only for a genuinely visual fact or after semantic evidence fails. Do not infer success from an accepted action. Do not invent an approval receipt: modern-host artifact delivery requires one minted by a person in NOW.
+        Start with now_list_machines to discover the roster and the machine the host is already driving. A guest argument asserts that machine's stable id or exact session id; it does not switch the host to another connected machine. The person using NOW controls that selection.
+
+        Prefer evidence in this order: structured product state (processes, software, files); retained now_semantic_ui_* state for desktop and application context; typed semantic actions followed by a wait or fresh read; a targeted direct element probe only when retained state is incomplete; pixels only for a genuinely visual fact or after semantic evidence fails. Do not infer success from an accepted action.
+
+        Artifact delivery has two separate authority lanes. now_transfer_approved_artifact redeems a receipt minted when a person approves a host-selected file in NOW. now_guest_files_upload_begin, now_guest_files_upload_append, and now_guest_files_upload_commit transfer bytes the caller already possesses under the guest's full-access policy; they neither mint nor redeem an approval receipt.
         """
 
     private func notInitialized(id: Any) -> Data {

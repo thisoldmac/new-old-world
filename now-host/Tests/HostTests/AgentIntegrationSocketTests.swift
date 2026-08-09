@@ -768,6 +768,22 @@ final class AgentIntegrationSocketTests: XCTestCase {
         }
     }
 
+    func testVersionTenMachineNameSemanticsAreRejected() throws {
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "version": 10,
+            "requestID": UUID().uuidString,
+            "operation": "session_health",
+        ])
+
+        XCTAssertThrowsError(
+            try AgentIntegrationLocalCodec.decodeRequest(raw)
+        ) { error in
+            XCTAssertEqual(
+                error as? AgentIntegrationLocalTransportError,
+                .invalidMessage("Unsupported local protocol version"))
+        }
+    }
+
     func testSocketRoundTripsOnlyAnArtifactApprovalReceipt()
         async throws {
         let (endpoint, root) = try temporaryEndpoint()

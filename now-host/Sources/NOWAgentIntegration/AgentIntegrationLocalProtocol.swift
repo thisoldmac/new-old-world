@@ -1,6 +1,12 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
+    /// Version 11 separates the host-owned machine title from the name the
+    /// guest reported at hello. `AgentIntegrationGuestReference.name` now
+    /// carries the title shown in NOW and `reportedName` carries the guest's
+    /// own value. A v10 companion must fail closed instead of silently
+    /// interpreting the edited host title as guest identity.
+    ///
     /// Version 10 adds the guest-provided menubar and rows to the Mirror
     /// snapshot DTO. The same bounded scene can carry 96 menu items, so the
     /// local envelope grows to the MCP face's existing 64 KiB ceiling rather
@@ -30,7 +36,7 @@ public enum AgentIntegrationLocalProtocol {
     /// asked about another.
     ///
     /// Version 6 added the read-only session capability report.
-    public static let version = 10
+    public static let version = 11
     public static let maximumMessageBytes = 64 * 1024
 }
 

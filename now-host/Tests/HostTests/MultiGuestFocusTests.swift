@@ -477,13 +477,16 @@ final class MultiGuestFocusTests: XCTestCase {
         let first = Self.guest(id: "guest-1", name: "NOW Guest 0.14",
                                address: "10.91.5.180", active: true)
         let second = Self.guest(id: "guest-2", name: "NOW Guest 0.14",
-                                displayName: "NOW Guest 0.14-2",
+                                displayName: "NOW Guest 0.14",
                                 address: "10.91.5.181", active: false)
         let menu = MainMenu.fillDriveMenu(
             holder, guests: [first, second],
             target: self, action: #selector(noop))
         XCTAssertEqual(menu.items.count, 2)
-        XCTAssertNotEqual(menu.items[0].title, menu.items[1].title)
+        XCTAssertEqual(menu.items.map(\.title), [
+            "NOW Guest 0.14 — guest-1",
+            "NOW Guest 0.14 — guest-2",
+        ])
         XCTAssertNotEqual(
             menu.items[0].representedObject as? String,
             menu.items[1].representedObject as? String)

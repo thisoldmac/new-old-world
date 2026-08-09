@@ -348,13 +348,19 @@ final class GuestIdentityTests: XCTestCase {
         XCTAssertTrue(row.sessionID.hasPrefix("\(row.id.slug)-"))
         XCTAssertEqual(GuestKey.parse(row.sessionID), row.key)
 
+        XCTAssertEqual(
+            listener.renameGuestDisplayName(row.key, to: "Desk Mac"),
+            .success("Desk Mac"))
+        let renamed = try XCTUnwrap(listener.guests.first)
+
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         guard case .available(let health) = adapter.sessionHealth(),
               let reference = health.roster.first else {
             return XCTFail("expected a connected machine in agent discovery")
         }
-        XCTAssertEqual(reference.name, row.label,
+        XCTAssertEqual(reference.name, renamed.label,
                        "the agent and Connections page must use one title")
+        XCTAssertEqual(reference.name, "Desk Mac")
         XCTAssertEqual(reference.reportedName, row.name)
     }
 

@@ -37,8 +37,14 @@ enum MCPConformanceRecipes {
         var uploadID: String?
         var mirrorSnapshotID: Int?
         var censusProbe: String?
-        /// A folder this run made and may safely act on.
-        var scratchFolder: String?
+        /// A bounded HFS-safe folder this run alone may create and use.
+        let scratchFolder: String
+
+        init(scratchFolder: String? = nil) {
+            self.scratchFolder = scratchFolder
+                ?? "NOW Conformance "
+                    + String(UUID().uuidString.prefix(8))
+        }
     }
 
     enum Arguments {
@@ -333,19 +339,26 @@ enum MCPConformanceRecipes {
             }
             return .send(["path": path], .real)
         },
-        "now_guest_files_mutate": .fixed(
+        "now_guest_files_mutate": Recipe(
             "mkdir, into a folder named for this run. The only mutation "
                 + "shape that creates rather than moves or destroys — a "
-                + "trash or a move would act on a file somebody put there.",
-            ["mutation": "mkdir", "path": "NOW Conformance"]),
-        "now_guest_files_upload_begin": .fixed(
+                + "trash or a move would act on a file somebody put there."
+        ) { context in
+            .send(["mutation": "mkdir", "path": context.scratchFolder],
+                  .real)
+        },
+        "now_guest_files_upload_begin": Recipe(
             "A four-byte file, by its real sha256. This row mints the "
                 + "uploadID the two below take, so it runs before them and "
-                + "they chain off it.",
-            ["destinationPath": "NOW Conformance:probe.txt",
-             "bytes": uploadProbe.count,
-             "container": "data",
-             "sha256": uploadProbeSHA256]),
+                + "they chain off it."
+        ) { context in
+            .send([
+                "destinationPath": context.scratchFolder + ":probe.txt",
+                "bytes": uploadProbe.count,
+                "container": "data",
+                "sha256": uploadProbeSHA256,
+            ], .real)
+        },
         "now_guest_files_upload_append": Recipe(
             "The four bytes, at offset zero, against the upload the row "
                 + "above opened."

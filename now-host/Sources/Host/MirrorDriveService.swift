@@ -97,7 +97,7 @@ struct MirrorDriveService {
                 id: "held", outcome: "queued",
                 reason: "held behind the observation in flight; it enters "
                     + "the lane when the cycle clears. Read "
-                    + "now_mirror_read --intention journal for its record.",
+                    + "now_semantic_ui_journal for its record.",
                 settled: false, awaitsObservation: true))
 
         case .direct:

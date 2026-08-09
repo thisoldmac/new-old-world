@@ -35,6 +35,45 @@ public enum SessionHealthProjection: HostProjection {
         "Reads host-owned listener state and sends the guest no message, "
         + "so it is available whatever the guest implements."
 
+    private static var guestReferenceSchema: [String: Any] {
+        [
+            "type": "object",
+            "properties": [
+                "id": [
+                    "type": "string",
+                    "description":
+                        "Stable host-assigned machine id used for addressing.",
+                ],
+                "sessionID": [
+                    "type": "string",
+                    "description":
+                        "Exact connection id; stale after that connection ends.",
+                ],
+                "name": [
+                    "type": "string",
+                    "description":
+                        "Host-owned title shown in NOW's Connections page.",
+                ],
+                "reportedName": [
+                    "type": ["string", "null"],
+                    "description":
+                        "Name the guest reported at hello, when present.",
+                ],
+                "idIsAutoAssigned": ["type": "boolean"],
+                "idIsAnchored": [
+                    "type": "boolean",
+                    "description":
+                        "False when stable identity across reconnect is uncertain.",
+                ],
+            ],
+            "required": [
+                "id", "sessionID", "name", "reportedName",
+                "idIsAutoAssigned", "idIsAnchored",
+            ],
+            "additionalProperties": false,
+        ]
+    }
+
     public static var mcpDescriptor: [String: Any] {
         [
             "title": "Connected Macintosh Machines",
@@ -45,10 +84,49 @@ public enum SessionHealthProjection: HostProjection {
                 "type": "object",
                 "properties": [
                     "available": ["type": "boolean"],
-                    "health": ["type": "object"],
-                    "unavailable": ["type": "object"],
+                    "health": [
+                        "type": "object",
+                        "properties": [
+                            "state": [
+                                "type": "string",
+                                "enum": [
+                                    "notListening", "listening",
+                                    "connected", "failed",
+                                ],
+                            ],
+                            "observedAt": [
+                                "type": "string", "format": "date-time",
+                            ],
+                            "guest": [
+                                "oneOf": [
+                                    ["type": "null"],
+                                    [
+                                        "type": "object",
+                                        "properties": [
+                                            "reference": [
+                                                "oneOf": [
+                                                    guestReferenceSchema,
+                                                    ["type": "null"],
+                                                ],
+                                            ],
+                                            "name": ["type": "string"],
+                                        ],
+                                        "required": ["reference", "name"],
+                                    ],
+                                ],
+                            ],
+                            "roster": [
+                                "type": "array",
+                                "items": guestReferenceSchema,
+                            ],
+                        ],
+                        "required": ["state", "observedAt", "roster"],
+                    ],
+                    "unavailable":
+                        HostProjectionSchema.unavailableFailure,
                 ],
                 "required": ["available"],
+                "additionalProperties": false,
             ],
             "annotations": HostProjectionSchema.readOnlyAnnotations,
         ]

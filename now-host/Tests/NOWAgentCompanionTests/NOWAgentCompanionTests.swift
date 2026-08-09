@@ -73,6 +73,9 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertTrue(instructions.contains("now_semantic_ui_*"))
         XCTAssertTrue(instructions.contains("pixels only"))
         XCTAssertTrue(instructions.contains("approval receipt"))
+        XCTAssertTrue(instructions.contains("does not switch the host"))
+        XCTAssertTrue(instructions.contains("now_guest_files_upload_begin"))
+        XCTAssertTrue(instructions.contains("caller already possesses"))
 
         _ = await server.handle(try JSONSerialization.data(withJSONObject: [
             "jsonrpc": "2.0",
@@ -118,6 +121,59 @@ final class NOWAgentCompanionTests: XCTestCase {
         let content = try XCTUnwrap(
             messages.first?["content"] as? [String: Any])
         XCTAssertEqual(content["text"] as? String, instructions)
+    }
+
+    func testFirstContactMethodsRequireInitialization() async throws {
+        let server = NOWMCPServer(
+            client: StubAgentIntegrationClient(), audit: AuditSinkSpy())
+        let calls: [(String, [String: Any])] = [
+            ("resources/list", [:]),
+            ("resources/read", [
+                "uri": NOWMCPServer.firstContactResourceURI,
+            ]),
+            ("prompts/list", [:]),
+            ("prompts/get", [
+                "name": NOWMCPServer.firstContactPromptName,
+            ]),
+        ]
+
+        for (offset, call) in calls.enumerated() {
+            let id = 20 + offset
+            let response = try Self.object(await server.handle(
+                try Self.request(id: id, method: call.0, params: call.1)))
+            let error = try XCTUnwrap(response["error"] as? [String: Any])
+            XCTAssertEqual(error["code"] as? Int, -32002, call.0)
+            XCTAssertEqual(response["id"] as? Int, id, call.0)
+        }
+    }
+
+    func testFirstContactRejectsMalformedResourceAndPromptRequests()
+        async throws {
+        let server = try await initializedServer(
+            client: StubAgentIntegrationClient())
+        let calls: [(String, [String: Any])] = [
+            ("resources/list", ["cursor": "again"]),
+            ("prompts/list", ["cursor": "again"]),
+            ("resources/read", ["uri": "now://unknown"]),
+            ("resources/read", [
+                "uri": NOWMCPServer.firstContactResourceURI,
+                "extra": true,
+            ]),
+            ("prompts/get", ["name": "unknown"]),
+            ("prompts/get", [
+                "name": NOWMCPServer.firstContactPromptName,
+                "arguments": "not-an-object",
+            ]),
+        ]
+
+        for (offset, call) in calls.enumerated() {
+            let id = 30 + offset
+            let response = try Self.object(await server.handle(
+                try Self.request(id: id, method: call.0, params: call.1)))
+            let error = try XCTUnwrap(response["error"] as? [String: Any])
+            XCTAssertEqual(error["code"] as? Int, -32602, call.0)
+            XCTAssertEqual(response["id"] as? Int, id, call.0)
+        }
     }
 
     func testListsOnlyApprovedBoundedTools() async throws {
@@ -309,6 +365,28 @@ final class NOWAgentCompanionTests: XCTestCase {
             guestFileList["outputSchema"] as? [String: Any])
         XCTAssertEqual(
             (guestFileOutput["oneOf"] as? [[String: Any]])?.count, 2)
+
+        let machines = try XCTUnwrap(tools.first {
+            $0["name"] as? String == "now_list_machines"
+        })
+        let machineOutput = try XCTUnwrap(
+            machines["outputSchema"] as? [String: Any])
+        let machineProperties = try XCTUnwrap(
+            machineOutput["properties"] as? [String: Any])
+        let health = try XCTUnwrap(
+            machineProperties["health"] as? [String: Any])
+        let healthProperties = try XCTUnwrap(
+            health["properties"] as? [String: Any])
+        let roster = try XCTUnwrap(
+            healthProperties["roster"] as? [String: Any])
+        let reference = try XCTUnwrap(roster["items"] as? [String: Any])
+        let referenceProperties = try XCTUnwrap(
+            reference["properties"] as? [String: Any])
+        XCTAssertNotNil(referenceProperties["id"])
+        XCTAssertNotNil(referenceProperties["sessionID"])
+        XCTAssertNotNil(referenceProperties["name"])
+        XCTAssertNotNil(referenceProperties["reportedName"])
+        XCTAssertNotNil(referenceProperties["idIsAnchored"])
     }
 
     func testHostAbsentReturnsTypedUnavailableWithoutLaunchingIt()

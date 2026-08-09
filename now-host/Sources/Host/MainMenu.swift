@@ -253,10 +253,17 @@ enum MainMenu {
             holder.isEnabled = false
             return menu
         }
+        let labelCounts = Dictionary(grouping: guests, by: \.label)
+            .mapValues { $0.count }
         for guest in guests {
             /* The registry makes default display names unique, and a person's
-               chosen name is the same one shown on the Connections page. */
-            let entry = NSMenuItem(title: guest.label, action: action,
+               chosen name is the same one shown on the Connections page.
+               A person may deliberately reuse one, so only duplicate rows
+               carry the stable id that tells them apart. */
+            let title = labelCounts[guest.label, default: 0] > 1
+                ? "\(guest.label) — \(guest.id.slug)"
+                : guest.label
+            let entry = NSMenuItem(title: title, action: action,
                                    keyEquivalent: "")
             entry.representedObject = guest.sessionID
             entry.target = target

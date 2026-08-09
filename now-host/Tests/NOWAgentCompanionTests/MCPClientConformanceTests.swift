@@ -77,6 +77,24 @@ final class MCPClientConformanceTests: XCTestCase {
             driver's own recipe is not.
             """)
 
+        if Self.live {
+            let mustSucceed = Set([
+                "now_guest_files_mutate",
+                "now_guest_files_upload_begin",
+                "now_guest_files_upload_append",
+                "now_guest_files_upload_commit",
+            ])
+            let notServed = rows.filter {
+                mustSucceed.contains($0.tool) && $0.verdict != .served
+            }
+            XCTAssertTrue(notServed.isEmpty, """
+                The live create-and-upload chain must succeed, not merely \
+                return an explained refusal. Non-served rows: \
+                \(notServed.map { "\($0.tool): \($0.detail)" }
+                    .joined(separator: ", "))
+                """)
+        }
+
         /* Not an assertion, and deliberately: an uncovered row is a finding
            to be READ, and failing on it would push the next person to
            invent an argument rather than name the gap. It is printed in the
@@ -91,6 +109,27 @@ final class MCPClientConformanceTests: XCTestCase {
                     .joined(separator: "\n"))
                 """)
         }
+    }
+
+    func testUploadRecipesShareOneFreshBoundedScratchDestination() {
+        let first = MCPConformanceRecipes.Context()
+        let second = MCPConformanceRecipes.Context()
+
+        XCTAssertNotEqual(first.scratchFolder, second.scratchFolder)
+        XCTAssertLessThanOrEqual(first.scratchFolder.count, 31)
+        XCTAssertFalse(first.scratchFolder.contains(":"))
+
+        guard case .send(let mutate, .real) =
+                MCPConformanceRecipes.all["now_guest_files_mutate"]?
+                    .build(first),
+              case .send(let begin, .real) =
+                MCPConformanceRecipes.all["now_guest_files_upload_begin"]?
+                    .build(first) else {
+            return XCTFail("expected real mkdir and upload recipes")
+        }
+        XCTAssertEqual(mutate["path"] as? String, first.scratchFolder)
+        XCTAssertEqual(begin["destinationPath"] as? String,
+                       first.scratchFolder + ":probe.txt")
     }
 
     // MARK: Whose machine answered
