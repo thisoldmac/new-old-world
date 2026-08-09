@@ -789,8 +789,8 @@ final class GuestListener: ObservableObject {
                 guard let self else { finish(); return }
                 self.runCommand(name, typed: args, line: line,
                                 watchdogSeconds: watchdogSeconds) { result in
-                    finish()
                     completion(result)
+                    finish()
                 }
             }
     }
@@ -852,8 +852,8 @@ final class GuestListener: ObservableObject {
             }) { [weak self] _, finish in
                 guard let self else { finish(); return }
                 self.execAdmitted(line) { outcome in
-                    finish()
                     completion(outcome)
+                    finish()
                 }
             }
     }
@@ -952,8 +952,8 @@ final class GuestListener: ObservableObject {
                 guard let self else { finish(); return }
                 self.requestCensusAdmitted(probe: probe, cursor: cursor) {
                     report in
-                    finish()
                     completion(report)
+                    finish()
                 }
             }
     }
@@ -1273,10 +1273,11 @@ final class GuestListener: ObservableObject {
     /// Lists one page of a folder in the guest's share. Paths are
     /// relative to the guest's share root; "" is the root.
     func listFiles(path: String, cursor: Int? = nil,
+                   workClass: GuestWorkClass = .foreground,
                    completion: @escaping (Result<FileListing,
                                                  FileFailure>) -> Void) {
         workScheduler.submitCallback(
-            .files, as: .foreground,
+            .files, as: workClass,
             onCancel: {
                 completion(.failure(.init(
                     code: "session-changed",
@@ -1284,8 +1285,8 @@ final class GuestListener: ObservableObject {
             }) { [weak self] _, finish in
                 guard let self else { finish(); return }
                 self.listFilesAdmitted(path: path, cursor: cursor) { result in
-                    finish()
                     completion(result)
+                    finish()
                 }
             }
     }
@@ -1325,8 +1326,8 @@ final class GuestListener: ObservableObject {
             }) { [weak self] _, finish in
                 guard let self else { finish(); return }
                 self.listProcessesAdmitted(cursor: cursor) { result in
-                    finish()
                     completion(result)
+                    finish()
                 }
             }
     }
@@ -1368,8 +1369,8 @@ final class GuestListener: ObservableObject {
                 guard let self else { finish(); return }
                 self.listSoftwareAdmitted(domain: domain, cursor: cursor) {
                     result in
-                    finish()
                     completion(result)
+                    finish()
                 }
             }
     }
@@ -1416,8 +1417,8 @@ final class GuestListener: ObservableObject {
                 guard let self else { finish(); return }
                 self.driveProcessAdmitted(
                     psnHigh: psnHigh, psnLow: psnLow, verb: verb) { result in
-                        finish()
                         completion(result)
+                        finish()
                     }
             }
     }
@@ -1994,8 +1995,8 @@ final class GuestListener: ObservableObject {
                 guard let self else { finish(); return }
                 self.requestCaptureAdmitted(depth: depth, tuning: tuning) {
                     result in
-                    finish()
                     completion(result)
+                    finish()
                 }
             }
     }

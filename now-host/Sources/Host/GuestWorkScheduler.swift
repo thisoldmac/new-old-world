@@ -149,6 +149,10 @@ final class GuestWorkScheduler {
     /// That preserves the transport's existing request-registration contract:
     /// a caller can install its pending completion before returning, while the
     /// supplied `finish` still marks the later reply as the release boundary.
+    /// A callback that may enqueue a dependent continuation runs that callback
+    /// before `finish`, so the scheduler can choose the continuation against
+    /// already-waiting enrichment at the boundary instead of blindly starting
+    /// the older background entry first.
     @discardableResult
     func submitCallback(_ purpose: GuestWorkPurpose,
                         as workClass: GuestWorkClass,
