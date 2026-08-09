@@ -195,8 +195,8 @@ private struct ConnectionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(row.machineID)
-                    .font(.title3.weight(.semibold).monospaced())
+                Text(row.label)
+                    .font(.title3.weight(.semibold))
                 if row.presence == .driving {
                     Badge(text: "Driving", tint: .accentColor)
                 }
@@ -219,8 +219,10 @@ private struct ConnectionCard: View {
                 controls
             }
 
-            Text(row.name)
-                .foregroundStyle(.secondary)
+            if row.name != row.label {
+                Text("Reported as \(row.name)")
+                    .foregroundStyle(.secondary)
+            }
 
             identities
 

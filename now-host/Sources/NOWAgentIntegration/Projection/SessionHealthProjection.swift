@@ -6,7 +6,7 @@ import Foundation
 /// what it answers IS a fact about the host: whether it is listening, and
 /// whether something is paired. It sends the guest no message.
 public enum SessionHealthProjection: HostProjection {
-    public static let capability = HostCapabilityID("now_session_health")
+    public static let capability = HostCapabilityID("now_list_machines")
 
     public static let requires: [String] = []
 
@@ -37,9 +37,9 @@ public enum SessionHealthProjection: HostProjection {
 
     public static var mcpDescriptor: [String: Any] {
         [
-            "title": "New Old World Session Health",
+            "title": "Connected Macintosh Machines",
             "description":
-                "Reports the running NOW host and paired guest session state without changing either application.",
+                "Lists every Macintosh connected to the running NOW host, identifies the one currently driven, and reports host/session readiness without changing either application. Machine names match the human Connections page; stable ids and exact session ids remain separate.",
             "inputSchema": HostProjectionSchema.emptyInput,
             "outputSchema": [
                 "type": "object",

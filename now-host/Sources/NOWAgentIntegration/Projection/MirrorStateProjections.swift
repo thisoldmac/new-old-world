@@ -20,6 +20,7 @@ private enum MirrorStateProjectionSchema {
         [
             "title": title,
             "description": description,
+            "x-now-stability": "experimental",
             "inputSchema": [
                 "type": "object",
                 "properties": properties,
@@ -49,7 +50,7 @@ private enum MirrorStateProjectionReach {
 }
 
 public enum MirrorStatusProjection: HostProjection {
-    public static let capability = HostCapabilityID("now_mirror_status")
+    public static let capability = HostCapabilityID("now_semantic_ui_status")
     public static let requires: [String] = []
     public static let exposes: [String] = []
     public static let acceptedArguments: Set<String> = []
@@ -57,8 +58,8 @@ public enum MirrorStatusProjection: HostProjection {
     public static let availabilityNote = MirrorStateProjectionReach.availability
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
-            title: "New Old World Mirror Status",
-            description: "Returns the current Mirror snapshot identity, sequence, digest, completeness, and generations without polling the guest again.",
+            title: "Experimental Semantic UI Status",
+            description: "Experimental. Returns the retained semantic UI snapshot identity, sequence, digest, completeness, and generations without polling the guest again.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,
@@ -82,7 +83,7 @@ public enum MirrorStatusProjection: HostProjection {
 /// slowly from one queued behind an act that will time out — which is the
 /// exact ambiguity that made the 2026-08-04 PowerBook drive unreadable.
 public enum MirrorMetricsProjection: HostProjection {
-    public static let capability = HostCapabilityID("now_mirror_metrics")
+    public static let capability = HostCapabilityID("now_semantic_ui_metrics")
     public static let requires: [String] = []
     public static let exposes: [String] = []
     public static let acceptedArguments: Set<String> = []
@@ -90,8 +91,8 @@ public enum MirrorMetricsProjection: HostProjection {
     public static let availabilityNote = MirrorStateProjectionReach.availability
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
-            title: "New Old World Mirror Metrics",
-            description: "Returns the Mirror's act clocks (queue wait, dispatch, settle, total, and the lane depth each act entered behind) and its scene cycle clocks (idle, request, decode, per walk kind), without polling the guest.",
+            title: "Experimental Semantic UI Metrics",
+            description: "Experimental. Returns semantic action clocks and scene-cycle clocks without polling the guest.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,
@@ -112,7 +113,7 @@ public enum MirrorMetricsProjection: HostProjection {
 /// is the difference between "not armed" and "cannot arm", which reads
 /// identically in an act's refusal and calls for opposite repairs.
 public enum MirrorLifecycleProjection: HostProjection {
-    public static let capability = HostCapabilityID("now_mirror_lifecycle")
+    public static let capability = HostCapabilityID("now_semantic_ui_lifecycle")
     public static let requires: [String] = []
     public static let exposes: [String] = []
     public static let acceptedArguments: Set<String> = []
@@ -120,8 +121,8 @@ public enum MirrorLifecycleProjection: HostProjection {
     public static let availabilityNote = MirrorStateProjectionReach.availability
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
-            title: "New Old World Mirror Lifecycle",
-            description: "Returns the NOW Extension's lifecycle and build fingerprint, its capability/requested/active plane bits, and the host's plane policy — the provenance any Mirror measurement has to be read against.",
+            title: "Experimental Semantic UI Lifecycle",
+            description: "Experimental. Returns the NOW Extension lifecycle, build fingerprint, plane bits, and host policy that qualify retained semantic UI evidence.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,
@@ -137,12 +138,12 @@ public enum MirrorLifecycleProjection: HostProjection {
 
 /// **Every operation this session, and which face drove it.**
 ///
-/// `now_mirror_metrics` says how long an act took; this says what was
+/// `now_semantic_ui_metrics` says how long an act took; this says what was
 /// asked, of what, by whom, and how it ended. The `source` field is the
 /// one that makes a hand-driven act and an MCP-driven one distinguishable
 /// after the fact.
 public enum MirrorJournalProjection: HostProjection {
-    public static let capability = HostCapabilityID("now_mirror_journal")
+    public static let capability = HostCapabilityID("now_semantic_ui_journal")
     public static let requires: [String] = []
     public static let exposes: [String] = []
     public static let acceptedArguments: Set<String> = []
@@ -150,8 +151,8 @@ public enum MirrorJournalProjection: HostProjection {
     public static let availabilityNote = MirrorStateProjectionReach.availability
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
-            title: "New Old World Mirror Journal",
-            description: "Returns the Mirror's bounded operation journal: every act this session with its source (human or mcp), target, postcondition, outcome and reason.",
+            title: "Experimental Semantic UI Journal",
+            description: "Experimental. Returns the shared bounded semantic-operation journal with source, target, postcondition, outcome, and reason.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,
@@ -175,11 +176,11 @@ public enum MirrorJournalProjection: HostProjection {
 ///
 /// A reply is an OPERATION RECORD, not an effect. `dispatched` means the
 /// request reached the Mac; only a `confirmed*` outcome says a later
-/// observation saw the postcondition hold. Poll `now_mirror_metrics` for
+/// observation saw the postcondition hold. Poll `now_semantic_ui_metrics` for
 /// the operation's id to watch it settle — the same record the Mirror
 /// page's Acts card is showing.
 public enum MirrorDriveProjection: HostProjection {
-    public static let capability = HostCapabilityID("now_mirror_drive")
+    public static let capability = HostCapabilityID("now_semantic_ui_act")
     public static let requires: [String] = []
     public static let exposes: [String] = []
     public static let acceptedArguments: Set<String> = [
@@ -193,8 +194,8 @@ public enum MirrorDriveProjection: HostProjection {
         + "does; settlement comes from a later guest observation."
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
-            title: "New Old World Mirror Drive",
-            description: "Drives the connected classic Mac through the native Mirror's own executor: window select/close/zoom by published entity id, process activate, a menu item by menu and index, Hide/Hide Others/Show All, a keystroke, typed text, or a Finder item opened or selected by name. Returns the operation record; a dispatch is not an effect.",
+            title: "Experimental Semantic UI Action",
+            description: "Experimental. Acts through the shared semantic executor using entities from the retained snapshot. Returns an operation record; dispatch is not proof of effect, so wait or re-read state to verify.",
             properties: [
                 "gesture": ["type": "string"],
                 "entityID": ["type": "string"],
@@ -238,7 +239,7 @@ public enum MirrorDriveProjection: HostProjection {
               let gesture = AgentIntegrationMirrorDriveGesture(
                 rawValue: raw) else {
             return .invalidArguments(
-                "now_mirror_drive requires a known gesture")
+                "now_semantic_ui_act requires a known gesture")
         }
         return .value(.init(await client.mirrorDrive(.init(
             gesture: gesture,
@@ -272,7 +273,7 @@ public enum MirrorDriveProjection: HostProjection {
 /// work. Idempotent because asking twice leaves exactly one Mirror in
 /// front of you — the already-open case raises it and says so.
 public enum MirrorOpenProjection: HostProjection {
-    public static let capability = HostCapabilityID("now_mirror_open")
+    public static let capability = HostCapabilityID("now_semantic_ui_start")
     public static let requires: [String] = []
     public static let exposes: [String] = []
     public static let acceptedArguments: Set<String> = []
@@ -289,8 +290,8 @@ public enum MirrorOpenProjection: HostProjection {
         + "publishes an empty state no call can get out of."
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
-            title: "New Old World Open Mirror",
-            description: "Opens the native Mirror window on the running New Old World host, or raises it if it is already open, and starts its poll. Call this before the other now_mirror_* rows on a host that was launched without --open-mirror: they read a state engine that only runs while the window is open. Takes no arguments and sends the classic Mac nothing.",
+            title: "Start Experimental Semantic UI State",
+            description: "Experimental. Starts the host's retained semantic UI state engine. The human Mirror is a sibling view over the same engine; this operation may show that view but sends the classic Mac nothing. Call before other now_semantic_ui_* tools if state is not running.",
             properties: [:],
             annotations: [
                 "readOnlyHint": false,
@@ -311,7 +312,7 @@ public enum MirrorOpenProjection: HostProjection {
 }
 
 public enum MirrorSnapshotProjection: HostProjection {
-    public static let capability = HostCapabilityID("now_mirror_snapshot")
+    public static let capability = HostCapabilityID("now_semantic_ui_snapshot")
     public static let requires: [String] = []
     public static let exposes: [String] = []
     public static let acceptedArguments: Set<String> = []
@@ -319,8 +320,8 @@ public enum MirrorSnapshotProjection: HostProjection {
     public static let availabilityNote = MirrorStateProjectionReach.availability
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
-            title: "New Old World Mirror Snapshot",
-            description: "Returns the immutable state projection the native Mirror reads: snapshot and session identity, digest, coverage, freshness, stable process/window entities (each process carrying `presence`: `headless` for a process that declares it has no user interface, `windowed`, `empty` when we looked and it has no windows open right now, and `unknown` — with `presenceReason` — when we did not or could not establish it), guest-provided menubar rows, and per-window surfaces — geometry, controls, dialog items, Finder items, and the content plane's QuickDraw draw ops for replay. Bounded lists always report their true total (itemTotal, displayTotal, contentTotal) beside what was returned.",
+            title: "Experimental Semantic UI Snapshot",
+            description: "Experimental. Returns the immutable retained semantic UI projection: identity, coverage, freshness, stable process/window entities, menubar rows, geometry, controls, dialogs, Finder items, and bounded content evidence. Prefer this over pixels for desktop and application context.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,
@@ -335,7 +336,7 @@ public enum MirrorSnapshotProjection: HostProjection {
 }
 
 public enum MirrorFindProjection: HostProjection {
-    public static let capability = HostCapabilityID("now_mirror_find")
+    public static let capability = HostCapabilityID("now_semantic_ui_find")
     public static let requires: [String] = []
     public static let exposes: [String] = []
     public static let acceptedArguments: Set<String> = ["query"]
@@ -343,8 +344,8 @@ public enum MirrorFindProjection: HostProjection {
     public static let availabilityNote = MirrorStateProjectionReach.availability
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
-            title: "Find an Entity in the New Old World Mirror",
-            description: "Finds stable process or window entities in the current Mirror snapshot. It searches only the already-published immutable projection and creates no second observer.",
+            title: "Find an Experimental Semantic UI Entity",
+            description: "Experimental. Finds stable process or window entities in retained semantic UI state without creating a second observer.",
             properties: ["query": ["type": "string", "minLength": 1,
                                       "maxLength": 128]],
             required: ["query"])
@@ -359,7 +360,7 @@ public enum MirrorFindProjection: HostProjection {
         guard let query = (arguments.object ?? [:])["query"] as? String,
               !query.isEmpty, query.count <= 128 else {
             return .invalidArguments(
-                "now_mirror_find requires query with 1 to 128 characters")
+                "now_semantic_ui_find requires query with 1 to 128 characters")
         }
         return .value(.init(await client.mirrorRead(.init(
             intention: .find, query: query))))
@@ -367,7 +368,7 @@ public enum MirrorFindProjection: HostProjection {
 }
 
 public enum MirrorWaitProjection: HostProjection {
-    public static let capability = HostCapabilityID("now_mirror_wait")
+    public static let capability = HostCapabilityID("now_semantic_ui_wait")
     public static let requires: [String] = []
     public static let exposes: [String] = []
     public static let acceptedArguments: Set<String> = [
@@ -377,8 +378,8 @@ public enum MirrorWaitProjection: HostProjection {
     public static let availabilityNote = MirrorStateProjectionReach.availability
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
-            title: "Wait for New Old World Mirror State",
-            description: "Waits for the existing Mirror engine to publish a snapshot newer than the supplied ID. It never creates a guest poll; timeout is a bounded non-green result.",
+            title: "Wait for Experimental Semantic UI State",
+            description: "Experimental. Waits for retained semantic UI state newer than the supplied snapshot ID. It never creates a second guest poll; timeout is a bounded non-green result.",
             properties: [
                 "afterSnapshotID": ["type": "integer", "minimum": 1],
                 "timeoutMs": ["type": "integer", "minimum": 1,
@@ -397,12 +398,12 @@ public enum MirrorWaitProjection: HostProjection {
               values["timeoutMs"] == nil
                 || values["timeoutMs"] is Int else {
             return .invalidArguments(
-                "now_mirror_wait requires a positive afterSnapshotID and an optional integer timeoutMs")
+                "now_semantic_ui_wait requires a positive afterSnapshotID and an optional integer timeoutMs")
         }
         let timeout = values["timeoutMs"] as? Int ?? 5_000
         guard (1...15_000).contains(timeout) else {
             return .invalidArguments(
-                "now_mirror_wait timeoutMs must be between 1 and 15000")
+                "now_semantic_ui_wait timeoutMs must be between 1 and 15000")
         }
         return .value(.init(await client.mirrorRead(.init(
             intention: .wait, afterSnapshotID: after,

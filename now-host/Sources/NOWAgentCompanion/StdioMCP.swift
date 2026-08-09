@@ -68,7 +68,7 @@ enum NOWAgentCompanionMain {
                for the life of the session and sends one small line at a
                time, so this loop sat on a 76-byte `initialize` waiting for
                4020 more bytes that were never coming — and answered
-               nothing. Not one of the forty-one tools, not seven: the
+               nothing. Not one registry tool, not a sampled handful: the
                whole surface, to every client that behaves the way the
                transport says clients behave.
 

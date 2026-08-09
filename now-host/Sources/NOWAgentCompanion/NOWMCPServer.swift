@@ -152,7 +152,7 @@ actor NOWMCPServer {
     private static let firstContactGuide = """
         NOW controls one or more classic Macintosh guests through an already-running New Old World host. This agent surface is experimental and its names may change.
 
-        Start by discovering the connected machines and deliberately selecting a stable machine id or exact session id. Then prefer evidence in this order: structured product state (processes, software, files); retained semantic UI state for desktop and application context; typed semantic actions followed by a wait or fresh read; a targeted direct element probe only when retained state is incomplete; pixels only for a genuinely visual fact or after semantic evidence fails. Do not infer success from an accepted action. Do not invent an approval receipt: modern-host artifact delivery requires one minted by a person in NOW.
+        Start with now_list_machines and deliberately select a stable machine id or exact session id. Then prefer evidence in this order: structured product state (processes, software, files); retained now_semantic_ui_* state for desktop and application context; typed semantic actions followed by a wait or fresh read; a targeted direct element probe only when retained state is incomplete; pixels only for a genuinely visual fact or after semantic evidence fails. Do not infer success from an accepted action. Do not invent an approval receipt: modern-host artifact delivery requires one minted by a person in NOW.
         """
 
     private func notInitialized(id: Any) -> Data {
@@ -264,7 +264,7 @@ actor NOWMCPServer {
     }
 
     private static let guestSelectorHelp = """
-        Which connected Mac this call is about. A machine id (for example         pb1400c) means whatever is connected to that machine now and         follows a reconnection; a session id (machine id, a hyphen and a         UUID, as reported by now_session_health) means one connection and         fails once it has ended rather than being answered by its         successor. Omit to address the machine the host is currently         driving. Naming a connected machine the host is not driving is         refused, never answered by the other one.
+        Which connected Mac this call is about. A machine id (for example         pb1400c) means whatever is connected to that machine now and         follows a reconnection; a session id (machine id, a hyphen and a         UUID, as reported by now_list_machines) means one connection and         fails once it has ended rather than being answered by its         successor. Omit to address the machine the host is currently         driving. Naming a connected machine the host is not driving is         refused, never answered by the other one.
         """
 
     private func callTool(_ request: [String: Any], id: Any) async -> Data {

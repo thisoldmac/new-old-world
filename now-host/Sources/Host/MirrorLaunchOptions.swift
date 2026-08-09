@@ -7,7 +7,7 @@ import Foundation
 ///
 /// `--open-mirror` exists for the headless client. The Mirror's poll, its
 /// state engine and every measurement it publishes only begin when the window
-/// opens, so until now an agent reading `now_mirror_metrics` could get an
+/// opens, so until now an agent reading `now_semantic_ui_metrics` could get an
 /// honest empty answer that no call of its own could ever change — the one
 /// state a headless run cannot get itself out of. Opening at launch is not a
 /// second mechanism: it is the same `NOWMirrorWindow.show` a click performs.

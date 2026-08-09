@@ -119,6 +119,8 @@ struct ConnectionRow: Identifiable, Equatable, Sendable {
     /// What the machine calls itself — live for a connected row, and the
     /// last name it used for a remembered one.
     let name: String
+    /// Host-owned title used by both this page and agent discovery.
+    let displayName: String
     let address: String
     let liveSessionID: String?
     /// The last session this machine had, when the pane watched it end.
@@ -153,6 +155,7 @@ struct ConnectionRow: Identifiable, Equatable, Sendable {
     var id: String { liveSessionID ?? "known:\(machineID)" }
 
     var isConnected: Bool { presence != .known }
+    var label: String { displayName }
 }
 
 /// Everything the pane draws, derived in one place from state the host
@@ -248,6 +251,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 machineID: guest.id.slug,
                 presence: guest.isActive ? .driving : .connected,
                 name: guest.name,
+                displayName: guest.label,
                 address: guest.address.text,
                 liveSessionID: guest.sessionID,
                 lastSessionID: ended[guest.id.slug]?.sessionID,
@@ -274,6 +278,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 machineID: record.id.slug,
                 presence: .known,
                 name: record.lastName,
+                displayName: record.displayName ?? record.lastName,
                 address: record.address,
                 liveSessionID: nil,
                 lastSessionID: last,

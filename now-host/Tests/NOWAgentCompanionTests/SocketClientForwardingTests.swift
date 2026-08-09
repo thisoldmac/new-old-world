@@ -20,12 +20,12 @@ import XCTest
 ///
 /// That happened. On 2026-08-07 a surface audit found `observeElements`,
 /// `mirrorDrive` and `tailGuestLog` all landing on their protocol defaults,
-/// so `now_observe_elements`, `now_mirror_drive` and `now_guest_log_tail`
+/// so `now_observe_elements`, `now_semantic_ui_act` and `now_guest_log_tail`
 /// answered "no lane" from a healthy host — and because
 /// `ObserveElementsProjection` is the ONLY producer of the `now-element-…`
 /// references the act rows take, `now_window_act`, `now_control_act`,
 /// `now_text_get` and `now_text_set` were unreachable for want of a legal
-/// argument. Seven of forty-one tools. Every one of them worked from
+/// argument. A small cross-domain slice of the registry. Every one worked from
 /// `tools/now-agent`, which is what made it survive: the developer road was
 /// fine and only the product's road was broken.
 ///

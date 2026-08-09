@@ -161,7 +161,7 @@ final class NOWAgentAuditTests: XCTestCase {
 
         let answered = await server.handle(try request(
             id: 2, method: "tools/call",
-            params: ["name": "now_session_health", "arguments": [:]]))
+            params: ["name": "now_list_machines", "arguments": [:]]))
         let data = try XCTUnwrap(answered)
         let response = try XCTUnwrap(
             JSONSerialization.jsonObject(with: data) as? [String: Any])

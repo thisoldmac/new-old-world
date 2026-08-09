@@ -413,6 +413,7 @@ final class GuestListener: ObservableObject {
                 idIsAutoAssigned: machine?.autoAssigned ?? true,
                 idIsAnchored: live.guestAddress.distinguishesMachines,
                 name: live.guestName,
+                displayName: machine?.displayName,
                 address: live.guestAddress,
                 version: record.guestVersion,
                 build: record.guestBuild,

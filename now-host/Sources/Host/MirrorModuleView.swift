@@ -38,7 +38,7 @@ import SwiftUI
 ///
 /// Whether it is *running* is orthogonal to all of this. The poll keeps
 /// going while another module is showing, while this pane is destroyed,
-/// and while nobody is looking at all — because `now_mirror_drive` and
+/// and while nobody is looking at all — because `now_semantic_ui_act` and
 /// the fidelity sweep read the same source with no window in the picture,
 /// and a drive that starts refusing because somebody clicked Console is a
 /// defect nothing on either machine names.

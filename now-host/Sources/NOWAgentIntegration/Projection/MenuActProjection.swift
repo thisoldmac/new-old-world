@@ -140,7 +140,7 @@ public enum MenuActProjection: HostProjection {
                         "maximum":
                             AgentIntegrationActPolicy.maximumCoordinate,
                         "description":
-                            "The x of that menu's title in the menu bar, as an observation reports it — now_mirror_snapshot's menubar rows carry it. Required and not derived: this is the act's identity check. A menu press carries no handle, so the press itself is the identity — without this there is no way to tell this act's press from the user's own, and a host that guessed the position could match theirs. A menubar row that reports NO left cannot be pressed: send nothing rather than a zero, which is four pixels from the Apple menu's title and is refused.",
+                            "The x of that menu's title in the menu bar, as an observation reports it — now_semantic_ui_snapshot's menubar rows carry it. Required and not derived: this is the act's identity check. A menu press carries no handle, so the press itself is the identity — without this there is no way to tell this act's press from the user's own, and a host that guessed the position could match theirs. A menubar row that reports NO left cannot be pressed: send nothing rather than a zero, which is four pixels from the Apple menu's title and is refused.",
                     ],
                     "serialHi": [
                         "type": "integer",

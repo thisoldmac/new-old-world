@@ -69,7 +69,8 @@ final class NOWAgentCompanionTests: XCTestCase {
             initializeResult["instructions"] as? String)
         XCTAssertNotNil(capabilities["resources"])
         XCTAssertNotNil(capabilities["prompts"])
-        XCTAssertTrue(instructions.contains("retained semantic UI state"))
+        XCTAssertTrue(instructions.contains("now_list_machines"))
+        XCTAssertTrue(instructions.contains("now_semantic_ui_*"))
         XCTAssertTrue(instructions.contains("pixels only"))
         XCTAssertTrue(instructions.contains("approval receipt"))
 
@@ -146,6 +147,20 @@ final class NOWAgentCompanionTests: XCTestCase {
             HostProjectionCatalog.projections.map {
                 $0.capability.rawValue
             })
+        XCTAssertNotNil(tools.first {
+            $0["name"] as? String == "now_list_machines"
+        })
+        XCTAssertFalse(tools.contains {
+            ($0["name"] as? String)?.hasPrefix("now_mirror_") == true
+        })
+        let semanticUI = tools.filter {
+            ($0["name"] as? String)?.hasPrefix(
+                "now_semantic_ui_") == true
+        }
+        XCTAssertEqual(semanticUI.count, 9)
+        XCTAssertTrue(semanticUI.allSatisfy {
+            $0["x-now-stability"] as? String == "experimental"
+        })
         let processTool = try XCTUnwrap(tools.first {
             $0["name"] as? String == "now_list_processes"
         })
@@ -306,7 +321,7 @@ final class NOWAgentCompanionTests: XCTestCase {
         let response = try Self.object(await server.handle(try Self.request(
             id: 2,
             method: "tools/call",
-            params: ["name": "now_session_health", "arguments": [:]])))
+            params: ["name": "now_list_machines", "arguments": [:]])))
         let result = try XCTUnwrap(response["result"] as? [String: Any])
         let structured = try XCTUnwrap(
             result["structuredContent"] as? [String: Any])
@@ -460,7 +475,7 @@ final class NOWAgentCompanionTests: XCTestCase {
             id: 2,
             method: "tools/call",
             params: [
-                "name": "now_session_health",
+                "name": "now_list_machines",
                 "arguments": ["path": "/tmp"],
             ])))
         let error = try XCTUnwrap(response["error"] as? [String: Any])
@@ -505,7 +520,7 @@ final class NOWAgentCompanionTests: XCTestCase {
         let response = try Self.object(await server.handle(try Self.request(
             id: 2,
             method: "tools/call",
-            params: ["name": "now_session_health", "arguments": [:]])))
+            params: ["name": "now_list_machines", "arguments": [:]])))
         let result = try XCTUnwrap(response["result"] as? [String: Any])
         let structured = try XCTUnwrap(
             result["structuredContent"] as? [String: Any])
@@ -530,7 +545,7 @@ final class NOWAgentCompanionTests: XCTestCase {
                             id: id,
                             method: "tools/call",
                             params: [
-                                "name": "now_session_health",
+                                "name": "now_list_machines",
                                 "arguments": [:],
                             ])))
                 }

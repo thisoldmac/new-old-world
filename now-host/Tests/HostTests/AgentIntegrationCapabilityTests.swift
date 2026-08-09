@@ -128,7 +128,7 @@ final class AgentIntegrationCapabilityTests: XCTestCase {
         XCTAssertEqual(state(report, family: "file.list"), .unavailable)
 
         // Health never touches the guest, so it survives any guest.
-        XCTAssertEqual(state(report, tool: "now_session_health"),
+        XCTAssertEqual(state(report, tool: "now_list_machines"),
                        .available)
         // Newly possible: this guest serves process.list.
         XCTAssertEqual(state(report, tool: "now_list_processes"),

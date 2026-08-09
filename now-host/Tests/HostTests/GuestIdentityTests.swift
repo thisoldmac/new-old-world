@@ -15,6 +15,21 @@ final class GuestIdentityTests: XCTestCase {
 
     private func registry() -> GuestRegistry { GuestRegistry() }
 
+    func testDisplayNamesDefaultFromHelloAndNumberDuplicates() {
+        let book = registry()
+        let first = book.identify(
+            address: GuestAddress(text: "10.0.0.1"),
+            name: "PowerBook 1400c", operatingSystem: "9.1",
+            occupiedSlots: [])
+        let second = book.identify(
+            address: GuestAddress(text: "10.0.0.2"),
+            name: "PowerBook 1400c", operatingSystem: "9.1",
+            occupiedSlots: [])
+
+        XCTAssertEqual(first.displayName, "PowerBook 1400c")
+        XCTAssertEqual(second.displayName, "PowerBook 1400c-2")
+    }
+
     func testAFirstSightMachineIsAddressableWithNoConfiguration() {
         let book = registry()
         let record = book.identify(
@@ -229,9 +244,19 @@ final class GuestIdentityTests: XCTestCase {
         let row = try XCTUnwrap(listener.guests.first)
         XCTAssertEqual(row.address.text, "127.0.0.1")
         XCTAssertEqual(row.name, "NOW Guest 0.14")
-        XCTAssertEqual(row.label, "\(row.id.slug) — NOW Guest 0.14")
+        XCTAssertEqual(row.displayName, "NOW Guest 0.14")
+        XCTAssertEqual(row.label, "NOW Guest 0.14")
         XCTAssertTrue(row.sessionID.hasPrefix("\(row.id.slug)-"))
         XCTAssertEqual(GuestKey.parse(row.sessionID), row.key)
+
+        let adapter = AgentIntegrationHostAdapter(listener: listener)
+        guard case .available(let health) = adapter.sessionHealth(),
+              let reference = health.roster.first else {
+            return XCTFail("expected a connected machine in agent discovery")
+        }
+        XCTAssertEqual(reference.name, row.label,
+                       "the agent and Connections page must use one title")
+        XCTAssertEqual(reference.reportedName, row.name)
     }
 
     func testRenamingAMachineRelabelsItsRowButNotItsLiveSessionId()

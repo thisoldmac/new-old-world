@@ -25,7 +25,7 @@ new permanent product constants.
 
 | Surface | Public agent protocol | Public endpoint | Agent surface | Runtime owner behind it | Mirror relationship |
 |---|---|---|---|---|---|
-| NOW | MCP over stdio | client launches `NOWAgentCompanion` | 42 dedicated tools; no resources or prompts | already-running NOW host, reached over private same-UID Unix socket | nine dedicated tools over the host's native Mirror engine and executor |
+| NOW | MCP over stdio | client launches `NOWAgentCompanion` | 42 dedicated tools, one fixed first-contact resource, one prompt, and automatic server instructions | already-running NOW host, reached over private same-UID Unix socket | nine experimental semantic-UI tools over the same state engine and executor as human-facing Mirror |
 | TBT classic / 0.6.4 line | MCP over stdio | client launches `timbottu-mcp-classic` | 29 normal tools, 5 fixed resources, 6 resource templates, 4 prompts | configured Runner, which creates bounded Session/Worker execution | no integrated Mirror surface in this MCP |
 | TBT 0.7 / next | Streamable HTTP primarily; stdio parity entrypoint | `http://127.0.0.1:5251/mcp`; `timbottu-mcp-stdio` | 10 tools, 5 fixed resources, 5 resource templates, 2 prompts | Host domain graph over private same-user Unix socket | one generic `mirror_call` tool reaches a separate `mirror.sock` service |
 | CodeKitten | none | none | no MCP tools, resources, or prompts | versioned file carrier now; TCP carrier present but fail-closed | none |
@@ -56,7 +56,7 @@ MCP transport and not a hosted endpoint.
 | Layer | Contract | Boundary and notable limits |
 |---|---|---|
 | MCP transport | newline-delimited JSON-RPC 2.0 over stdin/stdout | one JSON message per line; 64 KiB frame cap; supported MCP versions `2025-11-25`, `2025-06-18`, `2025-03-26`, and `2024-11-05` |
-| MCP surface | `initialize`, `notifications/initialized`, `tools/list`, `tools/call` | tools only; closed argument schemas; structured replies and typed refusals |
+| MCP surface | initialize/initialized, ping, tools list/call, resources list/read, prompts list/get | closed tool schemas; structured replies and typed refusals; one server-owned first-contact guide exposed automatically and through discovery |
 | Local host IPC | private per-UID Unix socket, `host.sock` | same-user and filesystem-mode checks; companion never launches the host |
 | Projection registry | `HostProjectionCatalog` and `HostProjectionDispatch` | one transport-neutral catalog injects the optional `guest` selector, enforces consent, and emits an audit event |
 | Machine addressing | optional `guest` selector | machine ID follows reconnects; session ID pins one exact session; omission means the currently driven guest; a connected but non-driven named machine is refused rather than silently redirected |
@@ -76,13 +76,13 @@ to destructive operations.
 
 | Domain | Tools | Character | Authority path | Principal test evidence |
 |---|---|---|---|---|
-| Session and discovery | `now_session_health`, `now_session_capabilities` | read | host listener and live capability ledger | companion protocol tests, capability tests, socket tests |
+| Session and discovery | `now_list_machines`, `now_session_capabilities` | read | host listener and live capability ledger; machine titles share the Connections page's host-owned naming authority | companion protocol tests, capability tests, socket tests, guest identity tests |
 | Hardware | `now_hardware_census`, `now_machine_facts` | read | guest census family and `gestalt` command | projection, census, contract-coverage tests |
 | Processes | `now_list_processes`, `now_bring_to_front`, `now_request_quit` | read + write | guest process families; opaque references are revalidated | process projection tests, consent tests, socket tests |
 | Software | `now_software_inventory`, `now_launch_software`, `now_reveal_item` | read + write | live guest catalog plus exact bounded selection | software projection and companion argument tests |
 | Semantic UI | `now_observe_elements`, `now_window_act`, `now_control_act`, `now_menu_act`, `now_text_get`, `now_text_set` | read + write | guest semantic commands; observations mint opaque element references | projection strictness, forwarding parity, command-coverage tests |
-| Mirror lifecycle and reads | `now_mirror_open`, `now_mirror_status`, `now_mirror_snapshot`, `now_mirror_find`, `now_mirror_wait`, `now_mirror_metrics`, `now_mirror_lifecycle`, `now_mirror_journal` | read, except opening changes host state | native per-session Mirror state engine | Mirror open, plane, clocks, state-engine, projection-service tests |
-| Mirror drive | `now_mirror_drive` | write | shared Mirror plan executor and journal; gesture chooses the guest verb | Mirror act projection and executor tests |
+| Retained semantic UI state (experimental) | `now_semantic_ui_start`, `now_semantic_ui_status`, `now_semantic_ui_snapshot`, `now_semantic_ui_find`, `now_semantic_ui_wait`, `now_semantic_ui_metrics`, `now_semantic_ui_lifecycle`, `now_semantic_ui_journal` | read, except starting changes host state | native per-session state engine shared with human-facing Mirror | state-engine open, plane, clocks, lifecycle, and projection-service tests |
+| Semantic UI action (experimental) | `now_semantic_ui_act` | write | shared semantic plan executor and journal; gesture chooses the guest verb | act projection, face-parity, and executor tests |
 | Screen, diagnostics, and logs | `now_guest_log_tail`, `now_capture_screen`, `now_stream_screen`, `now_catalog_search`, `now_framebuffer_probe`, `now_capture_diagnostics`, `now_transfer_diagnostics` | read, with stream lifecycle state | bounded guest commands and capture/stream families | capture, stream, diagnostics, forwarding, contract tests |
 | Approved host-to-guest transfer | `now_transfer_approved_artifact`, `now_transfer_cancel` | write | existing one-at-a-time transfer lane; delivery requires a receipt minted by a person in the host UI | approval-receipt, transfer, socket, audit, and consent tests |
 | Guest filesystem reads | `now_guest_files_capabilities`, `now_guest_files_list`, `now_guest_files_stat`, `now_guest_files_download` | read | persisted root-relative guest policy; bounded results; caller cannot choose a modern-host destination | guest-files projection, policy, download, socket tests |
@@ -260,18 +260,26 @@ outside this audit.
 
 ## Review findings and bounded cleanups
 
-### Keep in this NOW branch
+### Applied before the scored barrage
 
-1. Remove or neutralize current-source comments that say “forty-one tools.”
-   Registry-derived docs already state that prose counts go stale. Historical
-   issue and plan records should remain historical.
-2. Change the conformance verdict for `now_transfer_approved_artifact` from
-   generic `uncovered` to an explicit `human-gated` classification while
-   retaining the legal refusal exercise. This would make the authority boundary
-   visible without pretending the agent can mint a receipt.
-3. Preserve the barrage as a small repeatable runner plus machine-readable run
-   records only if the first manual batch proves the rubric useful. Do not build
-   a framework before the first evidence exists.
+1. Removed current-source prose counts that had already drifted from 41 to 42.
+   Historical issue and plan records remain historical.
+2. Classified `now_transfer_approved_artifact` as `human-gated`, not
+   `uncovered`. Default conformance now reports 42 advertised, 41 typed
+   refusals, zero failures, one human-gated, and zero uncovered.
+3. Added automatic first-contact instructions, the same guide as one fixed MCP
+   resource, and a prompt. They state machine selection, the semantic evidence
+   ladder, independent verification, and the human approval boundary.
+4. Replaced the agent-facing `now_mirror_*` vocabulary with nine explicitly
+   experimental `now_semantic_ui_*` tools. No compatibility aliases preserve
+   the old conceptual leak or enlarge the catalog.
+5. Made `now_list_machines` the obvious discovery entry point and shared its
+   human-facing machine title with the Connections page. Stable machine id,
+   exact session id, and guest-reported name remain separate fields.
+
+The barrage stays manual and machine-readable until its first batch proves a
+runner would be useful. Deeper consolidation of direct probes, retained state,
+and action hierarchy waits for the measured results.
 
 ### Record, but do not cross the repository boundary here
 

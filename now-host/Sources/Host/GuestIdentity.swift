@@ -221,6 +221,9 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     /// What the guest calls itself. Version-bearing, guest-asserted, for
     /// humans only.
     var name: String
+    /// Host-owned title, defaulted from `name`. Nil only in old fixtures or
+    /// while a persisted record written before display names is upgraded.
+    var displayName: String? = nil
     var address: GuestAddress
     var version: String?
     /// The build this machine reported at `hello`, when it reported one.
@@ -239,10 +242,8 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     /// successor".
     var sessionID: String { key.text }
 
-    /// How this machine is written where a person reads it: the handle
-    /// first, because that is what they will have to type, and what the
-    /// machine calls itself after it, because that is what changes.
-    var label: String { "\(id.slug) — \(name)" }
+    /// The title used everywhere a person or agent chooses a machine.
+    var label: String { displayName ?? name }
 }
 
 /// **Which machine's art belongs to this guest** — the asset-pack key,

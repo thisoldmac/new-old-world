@@ -113,7 +113,7 @@ final class MirrorFaceParityTests: XCTestCase {
 
     /// **The reply MCP got for the act that settled.**
     ///
-    /// Live on 2026-08-05, `now_mirror_drive --gesture finderOpen` was
+    /// Live on 2026-08-05, `now_semantic_ui_act --gesture finderOpen` was
     /// answered `{"id": "direct", "outcome": "dispatched"}` while the
     /// Mirror page cycled normally against the same guest. The suspicion
     /// recorded at the time was that `shadowEngine` was nil on the MCP
@@ -280,7 +280,7 @@ final class MirrorFaceParityTests: XCTestCase {
         }
 
         /// A double-click on a Finder icon on the desktop — the gesture
-        /// `now_mirror_drive --gesture finderOpen` resolves to, built the
+        /// `now_semantic_ui_act --gesture finderOpen` resolves to, built the
         /// same way `MirrorDriveService` builds it.
         func finderOpen(_ name: String) -> Interaction {
             .init(object: .finderItem(.init(name: name, container: nil,

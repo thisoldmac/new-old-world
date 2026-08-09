@@ -63,7 +63,7 @@ final class HostProjectionAuditTests: XCTestCase {
         let spy = AuditSpy()
         let dispatch = HostProjectionDispatch(face: .mcp, audit: spy)
         let outcome = await dispatch.invoke(
-            "now_session_health",
+            "now_list_machines",
             arguments: .init(raw: ["unexpected": 1]),
             guest: nil,
             through: SilentAuditClient())
@@ -74,7 +74,7 @@ final class HostProjectionAuditTests: XCTestCase {
         let event = await spy.recorded().first
         XCTAssertEqual(event?.outcome, .refused)
         XCTAssertEqual(event?.reason,
-                       "now_session_health accepts no arguments")
+                       "now_list_machines accepts no arguments")
         XCTAssertEqual(event?.level, .warn)
     }
 
@@ -202,7 +202,7 @@ final class HostProjectionAuditTests: XCTestCase {
     /// selection of any kind. The codec refuses one that smuggles a path in
     /// beside the event.
     func testAnAuditReportCarryingASelectionIsRefused() throws {
-        var object = try auditObject(capability: "now_session_health")
+        var object = try auditObject(capability: "now_list_machines")
         object["guestFilePath"] = "Lab:secret"
         XCTAssertThrowsError(
             try AgentIntegrationLocalCodec.decodeRequest(

@@ -59,6 +59,9 @@ final class GuestRegistry {
         var autoAssigned: Bool
         var lastSeen: Date
         var lastName: String
+        /// Host-owned title. Nil only for records written before display
+        /// names existed; those are upgraded on their next connection.
+        var displayName: String? = nil
     }
 
     /// What a rename could not do, in the caller's words.
@@ -117,6 +120,10 @@ final class GuestRegistry {
             $0.address == address.text && $0.fingerprint == print
                 && $0.slot == slot
         }) {
+            if records[index].displayName == nil {
+                records[index].displayName = nextDisplayName(
+                    basedOn: name, excluding: index)
+            }
             records[index].lastSeen = now
             records[index].lastName = name ?? Session.unnamedGuest
             save()
@@ -126,7 +133,8 @@ final class GuestRegistry {
         let record = Record(
             id: nextOrdinal(), address: address.text, fingerprint: print,
             slot: slot, autoAssigned: true, lastSeen: now,
-            lastName: name ?? Session.unnamedGuest)
+            lastName: name ?? Session.unnamedGuest,
+            displayName: nextDisplayName(basedOn: name))
         records.append(record)
         save()
         return record
@@ -190,6 +198,22 @@ final class GuestRegistry {
         var n = 1
         while records.contains(where: { $0.id.slug == "guest-\(n)" }) { n += 1 }
         return GuestID("guest-\(n)")!
+    }
+
+    private func nextDisplayName(basedOn proposed: String?,
+                                 excluding excludedIndex: Int? = nil) -> String {
+        let trimmed = proposed?.trimmingCharacters(
+            in: .whitespacesAndNewlines) ?? ""
+        let base = trimmed.isEmpty ? Session.unnamedGuest : trimmed
+        let taken: Set<String> = Set(records.enumerated().compactMap {
+            index, record in
+            guard index != excludedIndex else { return nil }
+            return (record.displayName ?? record.lastName).lowercased()
+        })
+        guard taken.contains(base.lowercased()) else { return base }
+        var suffix = 2
+        while taken.contains("\(base)-\(suffix)".lowercased()) { suffix += 1 }
+        return "\(base)-\(suffix)"
     }
 
     private func load() {
