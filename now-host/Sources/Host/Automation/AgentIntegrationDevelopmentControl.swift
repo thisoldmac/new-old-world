@@ -62,11 +62,11 @@ final class AgentIntegrationDevelopmentControl {
             route = ("development-open", "development-open",
                      ["projectID": request.projectID!])
         }
-        var result: CommandResult = await withCheckedContinuation { continuation in
-            listener.runCommand(route.verb, args: route.args) {
-                continuation.resume(returning: $0)
-            }
-        }
+        let workClass: GuestWorkClass = request.operation == .openInCodeKitten
+            || request.operation == .buildCancel
+            ? .humanInteractive : .foreground
+        var result = await command(route.verb, args: route.args,
+                                   workClass: workClass)
         if request.operation == .openInCodeKitten {
             var attempts = 0
             while result.ok,
@@ -84,11 +84,8 @@ final class AgentIntegrationDevelopmentControl {
                         message: "The paired guest changed while CodeKitten was launching."))
                 }
                 try? await Task.sleep(nanoseconds: 250_000_000)
-                result = await withCheckedContinuation { continuation in
-                    listener.runCommand(route.verb, args: route.args) {
-                        continuation.resume(returning: $0)
-                    }
-                }
+                result = await command(route.verb, args: route.args,
+                                       workClass: workClass)
             }
         }
         guard currentSessionID() == sessionID else {
@@ -512,10 +509,14 @@ final class AgentIntegrationDevelopmentControl {
                       group: "development-stage")
     }
 
-    private func command(_ verb: String, args: [String: String]) async
+    private func command(_ verb: String, args: [String: String],
+                         workClass: GuestWorkClass = .foreground) async
         -> CommandResult {
         await withCheckedContinuation { continuation in
-            listener.runCommand(verb, args: args) {
+            listener.runScheduledCommand(
+                verb, args: args, purpose: .command(verb),
+                workClass: workClass
+            ) {
                 continuation.resume(returning: $0)
             }
         }

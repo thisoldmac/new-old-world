@@ -1652,6 +1652,32 @@ final class GuestListener: ObservableObject {
         bytes: Data,
         completion: @escaping (Result<PutReceipt, FileFailure>) -> Void
     ) {
+        workScheduler.submitCallback(
+            .bulk("publish project candidate"), as: .bulk,
+            onCancel: {
+                completion(.failure(.init(
+                    code: "session-changed",
+                    message: "The Mac changed before the candidate file was sent")))
+            }
+        ) { [weak self] _, finish in
+            guard let self else { finish(); return }
+            self.putDevelopmentCandidateFileAdmitted(
+                candidateID: candidateID, name: name, into: path,
+                bytes: bytes
+            ) { result in
+                completion(result)
+                finish()
+            }
+        }
+    }
+
+    private func putDevelopmentCandidateFileAdmitted(
+        candidateID: String,
+        name: String,
+        into path: String,
+        bytes: Data,
+        completion: @escaping (Result<PutReceipt, FileFailure>) -> Void
+    ) {
         let checksum = TransferIdentity.crc32(bytes)
         startPut(
             name: name, into: path, container: "data",

@@ -83,8 +83,10 @@ final class AgentIntegrationDevelopmentEnvironment {
         await withCheckedContinuation { continuation in
             var settled = false
             var timeoutTask: Task<Void, Never>?
-            listener.runCommand(
-                AgentIntegrationDevelopmentEnvironmentPolicy.verb
+            let verb = AgentIntegrationDevelopmentEnvironmentPolicy.verb
+            listener.runScheduledCommand(
+                verb, purpose: .command(verb), workClass: .foreground,
+                watchdogSeconds: commandTimeout
             ) { result in
                 guard !settled else { return }
                 settled = true
