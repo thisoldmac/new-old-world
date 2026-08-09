@@ -69,6 +69,7 @@ add_application(now-guest-ppc
     src/mirror/mirror_module.c
     src/development/development_contract.c
     src/development/development_build.c
+    src/development/development_project.c
     src/development/development_command.c
     src/development/development_toolchain_mac.c
     src/development/development_layout.c
