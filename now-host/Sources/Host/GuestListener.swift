@@ -120,6 +120,10 @@ final class GuestListener: ObservableObject {
     /// sites would be one forgotten assignment away from a page that never
     /// repaints — the failure being fixed here, reintroduced in the fix.
     let events: HostEventBus
+    let workTimeline = MirrorWorkTimeline()
+    private(set) lazy var workScheduler = GuestWorkScheduler(
+        sessionID: activeKey?.text ?? "disconnected",
+        clocks: { [weak self] clocks in self?.workTimeline.replace(clocks) })
 
     @Published private(set) var state: State = .idle {
         didSet {
@@ -326,6 +330,7 @@ final class GuestListener: ObservableObject {
     private(set) var activeKey: GuestKey? {
         didSet {
             guard activeKey != oldValue else { return }
+            workScheduler.reset(sessionID: activeKey?.text ?? "disconnected")
             events.publish(.focusChanged(to: activeKey))
         }
     }
