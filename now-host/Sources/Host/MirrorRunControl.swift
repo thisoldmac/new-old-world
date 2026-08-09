@@ -7,7 +7,7 @@ import Combine
 /// `windowWillClose` stopped it, which was defensible while a window was
 /// the only way to look at a mirror. It stopped being defensible the
 /// moment the Mirror gained a second container and a headless face.
-/// `now_mirror_drive`, `now_mirror_status` and the whole fidelity sweep
+/// `now_semantic_ui_act`, `now_semantic_ui_status` and the whole fidelity sweep
 /// read the source with no window involved and every one of them refuses
 /// while `running` is false — so a container deciding the poll's fate
 /// means an agent's drive starting to refuse because somebody switched

@@ -527,7 +527,8 @@ final class AgentIntegrationHostAdapter {
         AgentIntegrationGuestReference(
             id: guest.id.slug,
             sessionID: guest.sessionID,
-            name: guest.name,
+            name: guest.label,
+            reportedName: guest.name,
             idIsAutoAssigned: guest.idIsAutoAssigned,
             idIsAnchored: guest.idIsAnchored)
     }

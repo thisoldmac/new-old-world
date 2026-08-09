@@ -6,8 +6,8 @@ final class MirrorStateProjectionTests: XCTestCase {
         let names = HostProjectionCatalog.projections.map {
             $0.capability.rawValue
         }
-        for name in ["now_mirror_status", "now_mirror_snapshot",
-                     "now_mirror_find", "now_mirror_wait"] {
+        for name in ["now_semantic_ui_status", "now_semantic_ui_snapshot",
+                     "now_semantic_ui_find", "now_semantic_ui_wait"] {
             XCTAssertEqual(names.filter { $0 == name }.count, 1)
         }
         for row in [

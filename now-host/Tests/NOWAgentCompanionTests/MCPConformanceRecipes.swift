@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// **A legal argument for every advertised tool.**
@@ -42,6 +43,7 @@ enum MCPConformanceRecipes {
 
     enum Arguments {
         case send([String: Any], MCPConformance.ArgumentKind)
+        case humanGated(String)
         case uncovered(String)
     }
 
@@ -80,6 +82,14 @@ enum MCPConformanceRecipes {
     /// a `now-…` reference, so its unminted form is spelled separately.
     static let neverIssuedUploadID = "00000000-0000-4000-8000-000000000000"
 
+    /// One value owns the upload recipe's bytes, length, digest and chunk.
+    /// Remembering the digest separately let the live conformance run stage
+    /// four bytes and then fail its own integrity check.
+    static let uploadProbe = Data("now\n".utf8)
+    static let uploadProbeSHA256 = SHA256.hash(data: uploadProbe).map {
+        String(format: "%02x", $0)
+    }.joined()
+
     /// One entry per capability. The gate checks this dictionary's keys
     /// against `tools/list` **both ways**, so a capability added without a
     /// recipe fails naming itself, and a recipe for a capability that no
@@ -88,7 +98,7 @@ enum MCPConformanceRecipes {
 
         // MARK: Session
 
-        "now_session_health": .fixed(
+        "now_list_machines": .fixed(
             "Needs nothing. The one row whose success is proof the socket "
                 + "answered at all."),
         "now_session_capabilities": .fixed(
@@ -119,7 +129,7 @@ enum MCPConformanceRecipes {
         // MARK: Mirror
 
         /* First of the family, and that is a chain rather than tidiness:
-           every other `now_mirror_*` row reads a state engine that only
+           every other `now_semantic_ui_*` row reads a state engine that only
            runs while the Mirror is open, and a conformance host launched
            without `--open-mirror` has none. Its own descriptor says so.
 
@@ -129,16 +139,16 @@ enum MCPConformanceRecipes {
            of which could see the other. The gate named it on the merge —
            which is the whole reason it checks the surface BOTH ways
            instead of sampling. */
-        "now_mirror_open": .fixed(
+        "now_semantic_ui_start": .fixed(
             "Needs nothing. Opening a Mirror loses no work and asking "
                 + "twice leaves one, so a conformance run may take it."),
-        "now_mirror_status": .fixed("Needs nothing."),
-        "now_mirror_snapshot": .fixed("Needs nothing."),
-        "now_mirror_find": .fixed(
+        "now_semantic_ui_status": .fixed("Needs nothing."),
+        "now_semantic_ui_snapshot": .fixed("Needs nothing."),
+        "now_semantic_ui_find": .fixed(
             "A query that matches whatever is there. Finding nothing is a "
                 + "served answer, not a refusal.",
             ["query": "e"]),
-        "now_mirror_wait": Recipe(
+        "now_semantic_ui_wait": Recipe(
             "Waits for the snapshot AFTER the one this run has in hand, "
                 + "with the shortest timeout the schema allows — a "
                 + "conformance run may not hold a lane open."
@@ -147,10 +157,10 @@ enum MCPConformanceRecipes {
                    "timeoutMs": 1000], context.mirrorSnapshotID == nil
                     ? .synthetic : .real)
         },
-        "now_mirror_metrics": .fixed("Needs nothing."),
-        "now_mirror_lifecycle": .fixed("Needs nothing."),
-        "now_mirror_journal": .fixed("Needs nothing."),
-        "now_mirror_drive": .fixed(
+        "now_semantic_ui_metrics": .fixed("Needs nothing."),
+        "now_semantic_ui_lifecycle": .fixed("Needs nothing."),
+        "now_semantic_ui_journal": .fixed("Needs nothing."),
+        "now_semantic_ui_act": .fixed(
             "cancel: the one gesture that acts on the HOST's lane rather than "
                 + "the machine, so it needs no entity and no published "
                 + "scene. Every other gesture would move something this "
@@ -285,14 +295,15 @@ enum MCPConformanceRecipes {
         // MARK: Transfers
 
         "now_transfer_approved_artifact": Recipe(
-            "**Uncovered.** An approval receipt is minted by a person "
+            "**Human-gated.** An approval receipt is minted by a person "
                 + "approving a transfer in the host's own UI, and nothing on "
                 + "this surface can produce one — there is no MCP row that "
                 + "offers an artifact for approval. A syntactic receipt "
                 + "would exercise the pattern check and nothing else, so it "
-                + "is named as a gap instead of dressed up as a refusal."
+                + "is named as an authority boundary instead of dressed up "
+                + "as a refusal."
         ) { _ in
-            .uncovered(
+            .humanGated(
                 "no MCP row mints an approvalReceipt; it comes from a "
                     + "person approving a transfer in the host UI")
         },
@@ -332,11 +343,9 @@ enum MCPConformanceRecipes {
                 + "uploadID the two below take, so it runs before them and "
                 + "they chain off it.",
             ["destinationPath": "NOW Conformance:probe.txt",
-             "bytes": 4,
+             "bytes": uploadProbe.count,
              "container": "data",
-             // sha256("now\n")
-             "sha256": "1a3cbde04b1e91e1e3f4e26b5b41d8c2a2b7b6c0b6e10b3d"
-                 + "a2b3fd41f7c78c1b"]),
+             "sha256": uploadProbeSHA256]),
         "now_guest_files_upload_append": Recipe(
             "The four bytes, at offset zero, against the upload the row "
                 + "above opened."
@@ -344,11 +353,11 @@ enum MCPConformanceRecipes {
             guard let uploadID = context.uploadID else {
                 return .send(["uploadID": neverIssuedUploadID,
                               "offset": 0,
-                              "data": Data("now\n".utf8)
-                                  .base64EncodedString()], .synthetic)
+                              "data": uploadProbe.base64EncodedString()],
+                             .synthetic)
             }
             return .send(["uploadID": uploadID, "offset": 0,
-                          "data": Data("now\n".utf8).base64EncodedString()],
+                          "data": uploadProbe.base64EncodedString()],
                          .real)
         },
         "now_guest_files_upload_commit": Recipe(
@@ -369,13 +378,13 @@ enum MCPConformanceRecipes {
     /// runs afterwards in the surface's own order, so a new capability needs
     /// no edit unless something chains off it.
     static let producersFirst = [
-        "now_session_health",
+        "now_list_machines",
         "now_session_capabilities",
         "now_list_processes",
         // Before every other Mirror row, for the reason its recipe gives:
         // they read an engine that does not run until this has been asked.
-        "now_mirror_open",
-        "now_mirror_snapshot",
+        "now_semantic_ui_start",
+        "now_semantic_ui_snapshot",
         "now_observe_elements",
         "now_software_inventory",
         "now_guest_files_list",

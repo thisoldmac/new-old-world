@@ -165,7 +165,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
 
     /* THE MIRROR'S MUTATION HALF, missing here from the day `mirror_drive`
        landed until 2026-08-07. `mirrorRead` above was written and this was
-       not, so `now_mirror_drive` answered the protocol default — "This
+       not, so `now_semantic_ui_act` answered the protocol default — "This
        client cannot drive the host Mirror" — from a host whose socket had
        served the operation the whole time. A sentence about a missing lane,
        standing in for a missing forwarder, is the worst shape a refusal can

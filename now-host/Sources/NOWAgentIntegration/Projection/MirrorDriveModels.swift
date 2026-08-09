@@ -61,7 +61,7 @@ public enum AgentIntegrationMirrorDriveGesture: String, Codable, Sendable {
 public struct AgentIntegrationMirrorDriveRequest:
     Codable, Equatable, Sendable {
     public let gesture: AgentIntegrationMirrorDriveGesture
-    /// An entity id exactly as `now_mirror_snapshot` published it —
+    /// An entity id exactly as `now_semantic_ui_snapshot` published it —
     /// `window:…` or `process:…`. The whole point of addressing this way
     /// is that an agent names what it can see, rather than a second
     /// reference minted somewhere else.
@@ -132,7 +132,7 @@ public struct AgentIntegrationMirrorDriveRequest:
 /// **A dispatch is not an effect.** `dispatched` means the request reached
 /// the Mac; only an outcome carrying `confirmed` says a later observation
 /// saw the postcondition hold. That rule is older than this surface and
-/// survives it — poll with `now_mirror_act` again, or watch the snapshot.
+/// survives it — read `now_semantic_ui_journal`, or watch the snapshot.
 ///
 /// `id` is the journal's id for anything the broker took. Three values are
 /// not ids, and each says which of the host's endings the act reached:

@@ -356,6 +356,10 @@ private struct ConnectionCard: View {
             Text(row.address)
                 .font(.callout.monospaced())
                 .foregroundStyle(.secondary)
+            if row.name != row.displayName {
+                Text("Reported as \(row.name)")
+                    .foregroundStyle(.secondary)
+            }
 
             identities
 

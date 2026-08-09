@@ -56,6 +56,75 @@ the A5-world and cursor-position findings and preserving the semantic Finder
 lineage. Corpus impact passes; the corpus-wide checker still has 16 unrelated
 pre-existing unresolved `doc:now/...` references.
 
+## FIXED HOST-SIDE, NOT METAL-VERIFIED: positive-size MCP guest uploads always refused on this host (2026-08-09, `codex/now-mcp-audit-barrage`)
+
+The live Luna barrage reproduced the earlier four-byte conformance symptom at
+52 and 2,466 bytes. `GuestUploadStagingStore` reads
+`volumeAvailableCapacityForImportantUsage`; Foundation reports zero for that
+key on this Mac while ordinary available capacity is about 714 GB. The policy
+therefore concludes that every positive-size reservation exceeds capacity. A
+zero-byte begin and commit succeeds, proving the rest of the lane is reachable
+and making the false capacity answer the immediate blocker.
+
+Fixed on 2026-08-09 at `de4aedf2`. `PrivateStagingCapacity` now supplies one
+answer to both `GuestUploadStagingStore` and `AgentDownloadStore`: a positive
+important-usage value wins; zero or unavailable falls back to a nonnegative
+ordinary capacity. The five-percent reserve did not change. The new resolver
+guard was watched fail before the fix, then passed with both store suites.
+
+A private Mac OS 9.1 VM then accepted a four-byte upload through the real stdio
+companion and same-UID host socket, confirmed all four bytes and their guest
+CRC, finalized by same-folder rename, and statted the resulting `TEXT` file as
+four data-fork bytes. That is emulator verification, not PowerBook metal
+verification. See [audit-report-2026-08-09.md](audit-report-2026-08-09.md)
+F-003 and [now-mcp-audit-barrage.md](now-mcp-audit-barrage.md).
+
+## FIXED TEST COVERAGE: live upload conformance used the wrong digest (2026-08-09, `codex/now-mcp-audit-barrage`)
+
+The full-surface recipe said it uploaded `now\n`, but its hard-coded SHA-256
+was not the digest of those four bytes. F-003 had made this invisible by
+refusing at reservation. Once staging worked, append accepted all four bytes
+and commit correctly returned `now-files-integrity-failed`. The conformance
+gate still considered that explained refusal an acceptable answer, so the
+upload family could be exercised without ever proving a successful commit.
+
+The recipe now owns one `Data("now\n".utf8)` value and derives its declared
+length, SHA-256, and base64 chunk from it. The spawned-client no-host run
+covered all 42 advertised tools; an identity-checked Mac OS 9.1 VM run then
+served upload begin, append, and commit, with zero failed or uncovered rows.
+See F-008 in [audit-report-2026-08-09.md](audit-report-2026-08-09.md).
+
+## UNVERIFIED PRODUCT BOUNDARY: full agent access may upload bytes without a one-time host-file approval (2026-08-09, `codex/now-mcp-audit-barrage`)
+
+The barrage's negative transfer prompt assumed all modern-host-to-guest files
+required `now_transfer_approved_artifact`. That is not the implemented model.
+The approval receipt governs a host-selected private file whose path is never
+given to MCP. The separate `now_guest_files_upload_*` family accepts bytes the
+caller supplies and commits them under the guest's full agent-access ceiling.
+A Codex worker with filesystem access therefore read a zero-byte file from the
+modern Desktop and placed it on the guest without minting or forging a receipt.
+
+The implementation is internally explicit; the unresolved question is product
+authority. If full guest agent access is meant to authorize any bytes the
+agent can already read, this needs clearer paired documentation and the
+negative test was wrong. If every modern-host file needs an additional human
+gesture, the upload family is a second write path that does not enforce that
+decision. No policy changed in this audit. See F-004 in the audit report.
+
+## UNVERIFIED: server-owned first contact does not route bare Macintosh tasks to NOW (2026-08-09, `codex/now-mcp-audit-barrage`)
+
+After adding initialize instructions, one resource, one prompt, and the obvious
+`now_list_machines` entry point, five of seven bare Luna tasks still made zero
+NOW calls. Four reasoned about an empty workspace and one searched the modern
+host. Prefixing only “Use the NOW integration on the connected classic
+Macintosh” made all five repeats call `now_list_machines` first.
+
+The server guide helps after selection; it is not a client intent router. A
+thin client-side NOW skill is the next bounded candidate, but it has not been
+built or retested. It should route and defer to the server guide, not duplicate
+the full tool catalog. The same run also recorded 76,618 input tokens for clean
+one-call H0 and up to 856,750 for an eleven-call cross-domain attempt, so tool
+and result context cost should be measured before any deeper catalog redesign.
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: Stop, disconnect, and guest replacement left a Mirror session alive (2026-08-08, `codex/mirror-session-teardown`)
 
 The reported host could hold two live Mirror sessions from one guest, and

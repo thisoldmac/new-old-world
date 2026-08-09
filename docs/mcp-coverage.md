@@ -76,7 +76,7 @@ reach a Macintosh.** On 2026-08-07 a surface audit found that
 `SocketAgentIntegrationClient` — the client every MCP call travels through —
 never overrode `observeElements`, `mirrorDrive` or `tailGuestLog`. All three
 landed on the protocol default in `AgentIntegrationClient`, so
-`now_observe_elements`, `now_mirror_drive` and `now_guest_log_tail` answered
+`now_observe_elements`, `now_semantic_ui_act` and `now_guest_log_tail` answered
 "no lane" from a healthy host; and because the observation is the **only**
 producer of the `now-element-…` references the act rows take,
 `now_window_act`, `now_control_act`, `now_text_get` and `now_text_set` were
@@ -138,21 +138,21 @@ The test compares both against the code literally.
 
 | MCP tool | Requires | Exposes | Guest plane |
 |---|---|---|---|
-| `now_session_health` | — | — | none; host listener state |
+| `now_list_machines` | — | — | none; host listener state |
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
 | `now_hardware_census` | `census.request` | `census.request` | message family |
 | `now_machine_facts` | `gestalt` | `gestalt` | command |
 | `now_list_processes` | `process.list` | `process.list` | message family |
 | `now_observe_elements` | `elements` | `elements` | command |
-| `now_mirror_open` | — | — | none; starts the host's own Mirror and brings it into view, asking the Mac nothing. The row every other `now_mirror_*` assumed away: they read a state engine that only runs while the Mirror is RUNNING, and until this landed the only ways to start one in a running host were a click on the host's own screen and `--open-mirror` at launch. Since 019 running and where-it-is-shown are separate axes, so this starts the poll first and then shows it — in the Mirror module's pane, or in the detached window if that is where the person left it |
-| `now_mirror_status` | — | — | none; reads the native Mirror state engine without another guest request |
-| `now_mirror_snapshot` | — | — | none; reads the native Mirror state engine without another guest request |
-| `now_mirror_find` | — | — | none; queries the native Mirror state engine without another guest request |
-| `now_mirror_wait` | — | — | none; waits for the native Mirror state engine without another guest request |
-| `now_mirror_metrics` | — | — | none; reads the host's own act and scene-cycle clocks, and asks the Mac nothing |
-| `now_mirror_lifecycle` | — | — | none; reports the resident facts the host already read, and asks the Mac nothing |
-| `now_mirror_journal` | — | — | none; reads the host's own operation journal, and asks the Mac nothing |
-| `now_mirror_drive` | — | — | command; the verb depends on the gesture the plan resolves to (`winact`, `menuact`, `key`, or a Finder script), so the row declares no requirement: demanding all four would make a keystroke unavailable on a guest that serves `key` and not `script`. The executor's own refusal names the missing half. |
+| `now_semantic_ui_start` | — | — | none; starts the host's semantic UI state engine and may show its human Mirror sibling, asking the Mac nothing |
+| `now_semantic_ui_status` | — | — | none; reads the native Mirror state engine without another guest request |
+| `now_semantic_ui_snapshot` | — | — | none; reads the native Mirror state engine without another guest request |
+| `now_semantic_ui_find` | — | — | none; queries the native Mirror state engine without another guest request |
+| `now_semantic_ui_wait` | — | — | none; waits for the native Mirror state engine without another guest request |
+| `now_semantic_ui_metrics` | — | — | none; reads the host's own act and scene-cycle clocks, and asks the Mac nothing |
+| `now_semantic_ui_lifecycle` | — | — | none; reports the resident facts the host already read, and asks the Mac nothing |
+| `now_semantic_ui_journal` | — | — | none; reads the host's own operation journal, and asks the Mac nothing |
+| `now_semantic_ui_act` | — | — | command; the verb depends on the gesture the plan resolves to (`winact`, `menuact`, `key`, or a Finder script), so the row declares no requirement: demanding all four would make a keystroke unavailable on a guest that serves `key` and not `script`. The executor's own refusal names the missing half. |
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_stream_screen` | `stream.start`, `stream.stop`, `stream.refresh` | `stream.start`, `stream.stop`, `stream.refresh` | message family |
@@ -606,7 +606,7 @@ to exist:
 | `capture.accept` | message | ppc | deliberate | Answering a guest-initiated capture offer is the paired host's own handshake obligation, not a capability an agent asks for — [command-parity.md](command-parity.md) ("the MCP is a client, not a face"). |
 | `capture.cancel` | message | ppc | deliberate | Abandoning a capture in flight, and the caller-facing half of it **is** reachable: `now_capture_screen`'s `abandon` releases the connection's one transfer lane. What a caller directs there is the host's WAIT, not this message — `GuestListener.cancelCapture` settles the request locally whether or not the guest honours the wire message, and the answer never reports which happened. Requiring it would also make a capability both guests serve read as PowerPC-only, which rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md) refuses: degrade the answer, not the message. |
 | `capture.refuse` | message | ppc | deliberate | The refusal half of the same handshake, and the same reason — [command-parity.md](command-parity.md). |
-| `host.shown` | message | ppc | deliberate | The host's answer to a guest-initiated `host.show` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The host-surface family runs guest-to-host by definition — its subject is a WINDOW on the modern machine, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for ([command-parity.md](command-parity.md), and the `guestAsksHostSurface` / `hostServesHostSurface` operations in the contract). The agent-facing reading of the same act is `now_mirror_open`, which is a projection over the HOST rather than over a guest. |
+| `host.shown` | message | ppc | deliberate | The host's answer to a guest-initiated `host.show` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The host-surface family runs guest-to-host by definition — its subject is a WINDOW on the modern machine, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for ([command-parity.md](command-parity.md), and the `guestAsksHostSurface` / `hostServesHostSurface` operations in the contract). The agent-facing reading of the same act is `now_semantic_ui_start`, which is a projection over the HOST rather than over a guest. |
 | `chat.catalog` | message | ppc | deliberate | The host's answer to a guest-initiated `chat.models` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The chat family runs guest-to-host by definition — its subject is the host's own model harness, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for; the MCP is a client of guests, not of the host's own services ([command-parity.md](command-parity.md), and the `guestAsksChat` / `hostServesChat` operations in the contract). The agent-facing reading of the same harness is the chat face itself, not a projection. |
 | `chat.delta` | message | ppc | deliberate | The streamed half of the host's answer to `chat.send` — same definitional direction as `chat.catalog`, same citation ([command-parity.md](command-parity.md)). |
 | `chat.result` | message | ppc | deliberate | The terminal half of the same turn, same reason ([command-parity.md](command-parity.md)). |
@@ -669,7 +669,7 @@ to exist:
 | `quit` | command | both | deliberate | `now_request_quit` needs the `process.quit` **family**, not this command: the opaque-reference and PSN-revalidation model has nothing to stand on without it, and is not relaxed to make a tool work ([agent-integration.md](agent-integration.md)). |
 | `screenshot` | command | both | deliberate | The console spelling of `capture.request`, which is projected as `now_capture_screen`. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"), the same rule that keeps `ls` and `ps` off this surface. |
 | `sw` | command | both | deliberate | The console spelling of `software.list`, which is projected as `now_software_inventory` — so the same rule as `ls`, `ps` and `census`: one capability, one route per face ([command-parity.md](command-parity.md), "two ways to name a target is not two faces"). It was `planned` beside the message row until 2026-07-30, and closing the message is what settled the verb. **One thing this verb has that the family does not**, recorded rather than left to be discovered: `sw` with no domain runs an OVERVIEW — per-domain counts rather than items — and `software.list` has no domainless form to project it with. That is a separate capability with a separate shape, and whether it belongs on this surface is a decision for whoever wants it, not one this row makes by omission. |
-| `vers` | command | ppc | deliberate | Build identity. `hello` already carries name, version and OS, and `now_session_health` reports all three ([agent-integration.md](agent-integration.md)). |
+| `vers` | command | ppc | deliberate | Build identity. `hello` already carries name, version and OS, and `now_list_machines` reports all three ([agent-integration.md](agent-integration.md)). |
 
 ### The unnoticed rows, named together
 
@@ -974,7 +974,7 @@ the fourth verdict exists.
 Three answers the live run surfaced that no derivation over declarations
 could have, recorded here and in `open-issues.md`:
 
-- `now_mirror_lifecycle` refused with *"No Mac is connected, so no
+- `now_semantic_ui_lifecycle` refused with *"No Mac is connected, so no
   resident has answered"* **while a Mac was connected** — a false
   sentence from a healthy host, which is the class of defect this plan is
   named for.
@@ -985,6 +985,19 @@ could have, recorded here and in `open-issues.md`:
 
 None was chased here.
 
+### Exercised again, 2026-08-09
+
+After the discovery cleanup and F-003 capacity fix, the same derived driver
+called all 42 advertised tools through a real spawned stdio companion against
+an identity-checked Mac OS 9.1 VM (`Power Mac G4`, build
+`0aa097ba0c1b`). It reported 29 served, 12 explained refusals, one explicitly
+human-gated row, zero failed, and zero uncovered. The upload recipe itself had
+carried the wrong digest for its four bytes; after deriving length, digest and
+chunk from one payload, `now_guest_files_upload_begin`,
+`now_guest_files_upload_append`, and `now_guest_files_upload_commit` all
+served in that run. This is transport-and-reply coverage on an emulator, not a
+claim that every served mutation was observed semantically or on metal.
+
 ## Status
 
 **Tested, not metal-verified.** The tables are a derivation over source and a
@@ -993,21 +1006,23 @@ dispatch answers — never that any of it has run. `contract-coverage.md`'s
 "how far each served thing is proven" is the axis for that and is not
 duplicated here.
 
-**Seven rows are now emulator-verified, and they are the only ones.** On
-2026-08-07, against Mac OS 9 under QEMU, each of `now_guest_log_tail`,
-`now_observe_elements`, `now_mirror_drive`, `now_window_act`,
+**Seven rows retain direct effect evidence from the 2026-08-07 run.** Against
+Mac OS 9 under QEMU, each of `now_guest_log_tail`,
+`now_observe_elements`, `now_semantic_ui_act`, `now_window_act`,
 `now_control_act`, `now_text_get` and `now_text_set` was called through the
 MCP transport — the companion executable over JSON-RPC, not a test seam —
 and four of them were watched taking effect on the machine: the walk minted
 `now-element-…` references for a Finder window's scrollbars, `now_window_act`
 moved that window to exactly the coordinates it was given, `now_control_act`
-was dispatched against one of those scrollbars, and `now_mirror_drive`
+was dispatched against one of those scrollbars, and `now_semantic_ui_act`
 zoomed the window. `now_text_get` and `now_text_set` reached the guest and
 were refused **by the guest, in its own words** — *"that reference names a
 control, not a text element"* — which proves the reference vocabulary is
 shared but is not a completed reading; a window carrying a discoverable
 `TEHandle` was not open on that machine. Nothing here has run on real
-hardware.
+hardware. The broader 2026-08-09 run above proves every advertised row
+answered and the three-stage upload completed; it does not retroactively add
+direct-effect evidence to the other rows.
 
 **The completed text reading was taken later the same day**, on
 `claude/019-conformance`, through the companion binary over JSON-RPC. A
@@ -1059,7 +1074,7 @@ so a named refusal is the right answer for all of them. The one
 reason its recipe states.
 
 Two things had to be fixed before that line could be produced, and both
-were merge artefacts rather than defects in either lane: `now_mirror_open`
+were merge artefacts rather than defects in either lane: `now_semantic_ui_start`
 had no conformance recipe (`018-open-mirror` landed the row before
 `019-conformance` forked), and its reply is a **fourth** spelling of
 availability — `showing` beside `available`, `hostAvailable` and `ok`.
@@ -1163,4 +1178,5 @@ rederived: 2026-08-08T01:33:41-0400 6610538c unchanged
 rederived: 2026-08-08T12:59:17-0400 449efbee unchanged
 rederived: 2026-08-08T21:56:10-0400 0ca7eb51 sources, disposition-census 3->3
 rederived: 2026-08-09T04:12:08-0400 3159abaf sources
+rederived: 2026-08-09T04:56:02-0400 ecdf1284 unchanged
 -->

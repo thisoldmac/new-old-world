@@ -347,6 +347,15 @@ final class GuestIdentityTests: XCTestCase {
         XCTAssertEqual(row.label, "NOW Guest 0.14")
         XCTAssertTrue(row.sessionID.hasPrefix("\(row.id.slug)-"))
         XCTAssertEqual(GuestKey.parse(row.sessionID), row.key)
+
+        let adapter = AgentIntegrationHostAdapter(listener: listener)
+        guard case .available(let health) = adapter.sessionHealth(),
+              let reference = health.roster.first else {
+            return XCTFail("expected a connected machine in agent discovery")
+        }
+        XCTAssertEqual(reference.name, row.label,
+                       "the agent and Connections page must use one title")
+        XCTAssertEqual(reference.reportedName, row.name)
     }
 
     func testRenamingAMachineRelabelsItsRowButNotItsLiveSessionId()

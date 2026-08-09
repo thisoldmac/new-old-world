@@ -230,8 +230,8 @@ enum MainMenu {
     /// to: the key was derived from the name by one rule, so title and key
     /// agreed by construction. They cannot agree any more — two Macs may
     /// call themselves the same thing, and a redeploy renames one — so the
-    /// title is now free to be what a person needs to read (`pb1400c —
-    /// NOW-68K 0.14`) while the identity travels beside it.
+    /// title is now free to use the same host-owned human name as the
+    /// Connections page while the exact session identity travels beside it.
     ///
     /// Empty is a state worth drawing rather than hiding: "No Old World
     /// Macs Connected", disabled, says the wire is idle. A submenu that
@@ -254,9 +254,8 @@ enum MainMenu {
             return menu
         }
         for guest in guests {
-            /* Handle first, then what the machine calls itself. Two Macs
-               reporting the same name are two rows with two handles, so a
-               person can tell them apart and type the one they meant. */
+            /* The registry makes default display names unique, and a person's
+               chosen name is the same one shown on the Connections page. */
             let entry = NSMenuItem(title: guest.label, action: action,
                                    keyEquivalent: "")
             entry.representedObject = guest.sessionID

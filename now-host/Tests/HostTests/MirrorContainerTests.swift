@@ -9,7 +9,7 @@ import AppKit
 /// Until 019 a window WAS the poll: `show()` started it and
 /// `windowWillClose` stopped it. That was defensible while a window was
 /// the only way to look at a mirror, and it stopped being defensible the
-/// moment the Mirror gained a pane and a headless face — `now_mirror_drive`
+/// moment the Mirror gained a pane and a headless face — `now_semantic_ui_act`
 /// and the fidelity sweep read the same source with no window in the
 /// picture, and every one of them refuses while `running` is false.
 ///
@@ -186,7 +186,7 @@ final class MirrorContainerTests: XCTestCase {
         let started = try XCTUnwrap(
             body.range(of: "mirrorRun.start()"),
             "showMirror must START the Mirror. Every face — the guest's "
-            + "button, the Window menu, now_mirror_open, --open-mirror — "
+            + "button, the Window menu, now_semantic_ui_start, --open-mirror — "
             + "ends here, and none of them can be left showing a Mirror "
             + "that is not running.")
         let shown = try XCTUnwrap(
@@ -215,7 +215,7 @@ final class MirrorContainerTests: XCTestCase {
             XCTAssertFalse(text.contains("onDisappear"),
                            "\(path) reacts to going away. The Mirror's poll "
                            + "is deliberately independent of whether anybody "
-                           + "is looking: every now_mirror_* projection and "
+                           + "is looking: every now_semantic_ui_* projection and "
                            + "the whole fidelity sweep refuse while it is "
                            + "stopped, and none of them owns a window.")
         }

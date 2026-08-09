@@ -9,7 +9,7 @@ import MirrorKit
 /// what the snapshot showed it and being told no such window exists. That
 /// is the shared-header lesson in `docs/mirror-measurement-method.md`
 /// wearing different clothes, and it was very nearly shipped here: the
-/// first wiring of `now_mirror_drive` resolved `window:<psn>:<sceneID>`
+/// first wiring of `now_semantic_ui_act` resolved `window:<psn>:<sceneID>`
 /// against ids published as `window:<process incarnation>:<window
 /// incarnation>`.
 enum MirrorEntityID {

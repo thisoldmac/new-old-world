@@ -10,9 +10,8 @@ import Foundation
 /// presents it after a silent reconnect is told the session ended rather
 /// than being retargeted at its successor — the same shape as the process
 /// and quit references already on this surface, which are refused when
-/// stale rather than reinterpreted. `name` is what the machine calls
-/// itself, which is guest-asserted, carries the version, and is therefore
-/// a label and never a handle.
+/// stale rather than reinterpreted. `name` is the host-owned title a person
+/// sees in NOW; `reportedName` is what the guest called itself at hello.
 ///
 /// **No address.** The host observes the guest's peer address and uses it
 /// internally to anchor the id, and it does not travel to a companion
@@ -26,6 +25,7 @@ public struct AgentIntegrationGuestReference:
     public let id: String
     public let sessionID: String
     public let name: String
+    public let reportedName: String?
     /// True while the id is the host's own ordinal and nobody has named
     /// this machine. It addresses the machine; it just says nothing about
     /// it.
@@ -36,10 +36,12 @@ public struct AgentIntegrationGuestReference:
     public let idIsAnchored: Bool
 
     public init(id: String, sessionID: String, name: String,
+                reportedName: String? = nil,
                 idIsAutoAssigned: Bool, idIsAnchored: Bool) {
         self.id = id
         self.sessionID = sessionID
         self.name = name
+        self.reportedName = reportedName
         self.idIsAutoAssigned = idIsAutoAssigned
         self.idIsAnchored = idIsAnchored
     }

@@ -190,7 +190,7 @@ struct MirrorDriveService {
                         + "menu \(request.menuID ?? 0)'s title sits, and "
                         + "that position is what tells this act's press "
                         + "from the person's at the machine. Read "
-                        + "now_mirror_snapshot again: a menu bar that "
+                        + "now_semantic_ui_snapshot again: a menu bar that "
                         + "places its menus can be pressed."))
             }
             let shape = MirrorObject.Menu(
@@ -262,7 +262,7 @@ struct MirrorDriveService {
                 return .refused(.init(
                     code: "now-mirror-drive-no-such-dialog-item",
                     message: "That window publishes no dialog item "
-                        + "\(number). Read now_mirror_snapshot: its "
+                        + "\(number). Read now_semantic_ui_snapshot: its "
                         + "surfaces list every item this window carries."))
             }
             return .resolved(.init(
@@ -386,7 +386,7 @@ struct MirrorDriveService {
         -> AgentIntegrationUnavailable {
         .init(code: "now-mirror-drive-no-such-\(kind)",
               message: "The published Mirror snapshot has no \(kind) "
-                  + "\(id ?? "(unnamed)"). Read now_mirror_snapshot again; "
+                  + "\(id ?? "(unnamed)"). Read now_semantic_ui_snapshot again; "
                   + "the machine may have moved on.")
     }
 }

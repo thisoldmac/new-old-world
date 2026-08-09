@@ -112,7 +112,7 @@ final class MCPClientConformanceTests: XCTestCase {
         guard Self.live else { return }
         let reply = try client.request(
             "tools/call",
-            params: ["name": "now_session_health", "arguments": [:]],
+            params: ["name": "now_list_machines", "arguments": [:]],
             timeout: Self.callTimeout)
         let structured = (reply["result"] as? [String: Any])?[
             "structuredContent"] as? [String: Any]
@@ -176,6 +176,10 @@ final class MCPClientConformanceTests: XCTestCase {
                 continue  // assertRecipesCoverExactly already failed.
             }
             switch recipe.build(context) {
+            case .humanGated(let reason):
+                rows.append(.init(tool: tool, verdict: .humanGated,
+                                  argumentKind: .none, detail: reason,
+                                  elapsed: 0))
             case .uncovered(let reason):
                 rows.append(.init(tool: tool, verdict: .uncovered,
                                   argumentKind: .none, detail: reason,
@@ -325,7 +329,7 @@ final class MCPClientConformanceTests: XCTestCase {
         var counts: [MCPConformance.Verdict: Int] = [:]
         for row in rows { counts[row.verdict, default: 0] += 1 }
         let summary = [MCPConformance.Verdict.served, .refused, .failed,
-                       .uncovered]
+                       .humanGated, .uncovered]
             .map { "\($0.rawValue) \(counts[$0] ?? 0)" }
             .joined(separator: ", ")
         out += "\n\(summary)\n"
@@ -340,7 +344,7 @@ final class MCPClientConformanceTests: XCTestCase {
     /// reaches whichever host happens to hold the per-uid socket — which
     /// on this desk is routinely a different session's host, driving a
     /// different branch's Macintosh. Watched: the "no host" run came back
-    /// with `now_session_health` served, from a stack this run had never
+    /// with `now_list_machines` served, from a stack this run had never
     /// heard of.
     ///
     /// So the default points the companion at an endpoint nothing binds,

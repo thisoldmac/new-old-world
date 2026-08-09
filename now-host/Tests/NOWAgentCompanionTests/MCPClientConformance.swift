@@ -203,7 +203,8 @@ extension MCPConformance {
 
     /// What one tool did when a client called it.
     ///
-    /// Four cases and not three. `uncovered` is the fourth because a row
+    /// Five cases and not three. `humanGated` keeps a deliberate authority
+    /// boundary distinct from `uncovered`, which remains a coverage finding.
     /// this surface cannot construct a legal argument for is a **finding**,
     /// and folding it into "refused" would hide it behind a pass.
     enum Verdict: String {
@@ -214,6 +215,8 @@ extension MCPConformance {
         /// No answer, an unparseable one, or an answer that contradicts a
         /// healthy host.
         case failed
+        /// A person must mint the authority needed to call this row.
+        case humanGated = "human-gated"
         /// No legal argument exists on this surface. Named, never skipped.
         case uncovered
     }
@@ -328,7 +331,7 @@ extension MCPConformance {
            envelope below carries — semantically identical to `available`,
            and the fourth spelling of one question on this surface after
            `available`, `hostAvailable` and `ok`. It was found by the round-3
-           integration merge, because `now_mirror_open` (018-open-mirror) and
+           integration merge, because `now_semantic_ui_start` (018-open-mirror) and
            this driver (019-conformance) had never met: the driver read it as
            "a structured result in no shape this driver can read", which is
            the correct verdict about a surface with four names for one thing.
@@ -341,7 +344,7 @@ extension MCPConformance {
             return refusal(structured["unavailable"] as? [String: Any],
                            kind: "unavailable")
         }
-        /* `now_session_health` and the guest Files family keep their own
+        /* `now_list_machines` and the guest Files family keep their own
            envelopes; both say availability with a boolean beside a reason. */
         if let available = structured["available"] as? Bool {
             if available { return (.served, "available") }

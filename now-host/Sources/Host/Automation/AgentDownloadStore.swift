@@ -86,12 +86,8 @@ final class AgentDownloadStore {
         } else {
             let root = self.rootURL
             self.availableBytes = {
-                let values = try root.resourceValues(forKeys: [
-                    .volumeAvailableCapacityForImportantUsageKey,
-                ])
-                guard let available =
-                    values.volumeAvailableCapacityForImportantUsage,
-                      available >= 0 else {
+                guard let available = try PrivateStagingCapacity
+                    .availableBytes(at: root) else {
                     throw Failure(
                         code: "now-download-host-space-unknown",
                         message:

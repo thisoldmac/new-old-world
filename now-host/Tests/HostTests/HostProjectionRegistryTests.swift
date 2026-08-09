@@ -37,13 +37,13 @@ final class HostProjectionRegistryTests: XCTestCase {
                 DuplicateHealthProjection.self,
             ])
             XCTFail(
-                "A second projection claiming now_session_health "
+                "A second projection claiming now_list_machines "
                     + "registered without complaint.")
         } catch let error as HostProjectionRegistry.DuplicateCapability {
             XCTAssertEqual(
                 error.capability, SessionHealthProjection.capability)
             XCTAssertTrue(
-                error.description.contains("now_session_health"),
+                error.description.contains("now_list_machines"),
                 "The failure should name the capability that collided; "
                     + "that is the useful half. Got: \(error.description)")
         } catch {

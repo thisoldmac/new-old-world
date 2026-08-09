@@ -235,8 +235,9 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     /// What the guest calls itself. Version-bearing, guest-asserted, for
     /// humans only.
     var name: String
-    /// Host-owned title, defaulted from `name` and independently editable.
-    /// Nil only in fixtures or while reading a pre-display-name record.
+    /// Host-owned title used wherever a person or agent chooses a machine.
+    /// It defaults from `name` and is independently editable. Nil only in
+    /// fixtures or while reading a pre-display-name record.
     var displayName: String? = nil
     /// Host port this machine's connection was accepted on. Unlike the
     /// remote source port in `address`, this is stable and useful to a person.
@@ -259,8 +260,9 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     /// successor".
     var sessionID: String { key.text }
 
-    /// The host-owned title shown to a person, falling back to the name
-    /// reported at hello while legacy records acquire a display name.
+    /// The host-owned title used wherever a person or agent chooses a
+    /// machine, falling back to the name reported at hello while legacy
+    /// records acquire a display name.
     var label: String { displayName ?? name }
 }
 
