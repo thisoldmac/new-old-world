@@ -622,6 +622,7 @@ to exist:
 | `capture.cancel` | message | ppc | deliberate | Abandoning a capture in flight, and the caller-facing half of it **is** reachable: `now_capture_screen`'s `abandon` releases the connection's one transfer lane. What a caller directs there is the host's WAIT, not this message — `GuestListener.cancelCapture` settles the request locally whether or not the guest honours the wire message, and the answer never reports which happened. Requiring it would also make a capability both guests serve read as PowerPC-only, which rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md) refuses: degrade the answer, not the message. |
 | `capture.refuse` | message | ppc | deliberate | The refusal half of the same handshake, and the same reason — [command-parity.md](command-parity.md). |
 | `host.shown` | message | ppc | deliberate | The host's answer to a guest-initiated `host.show` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The host-surface family runs guest-to-host by definition — its subject is a WINDOW on the modern machine, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for ([command-parity.md](command-parity.md), and the `guestAsksHostSurface` / `hostServesHostSurface` operations in the contract). The agent-facing reading of the same act is `now_semantic_ui_start`, which is a projection over the HOST rather than over a guest. |
+| `mirror.invalidate` | message | none | deliberate | An unsolicited generation hint emitted by the PowerPC guest and consumed by the host's Mirror scheduler, not a request either guest serves or a state answer a caller asks it to produce. The caller-facing surface reads the resulting authoritative state engine through `now_semantic_ui_status`, `snapshot`, `wait`, and `metrics`; exposing the raw hint would create a second, weaker route whose sampled or gap quality is explicitly not evidence that state changed. The ownership and fallback rule are [mirror-drive-loop.md](mirror-drive-loop.md) rule 2o and [plan 029](plans/2026-08-09-029-fix-mirror-interaction-latency-and-coherent-state-plan.md) U4. |
 | `chat.catalog` | message | ppc | deliberate | The host's answer to a guest-initiated `chat.models` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The chat family runs guest-to-host by definition — its subject is the host's own model harness, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for; the MCP is a client of guests, not of the host's own services ([command-parity.md](command-parity.md), and the `guestAsksChat` / `hostServesChat` operations in the contract). The agent-facing reading of the same harness is the chat face itself, not a projection. |
 | `chat.delta` | message | ppc | deliberate | The streamed half of the host's answer to `chat.send` — same definitional direction as `chat.catalog`, same citation ([command-parity.md](command-parity.md)). |
 | `chat.result` | message | ppc | deliberate | The terminal half of the same turn, same reason ([command-parity.md](command-parity.md)). |
@@ -1149,14 +1150,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 3318642178cc7a887ebd3e10fa46c7e940f0880c
+sources-sha1: 46eeb9d3ac96c4004b0d42bee0de7e9572666dc5
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=1a03208fe7ba4297f9e6f15efa69083e4e1f09cf16364e7a58f7c676b4925d06 lines=3
+derive disposition-census sha256=8765a37512265678bb0d00509485d1ca748d5644ae40e9910b5bc4ff5e79c4f7 lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c
@@ -1195,4 +1196,8 @@ rederived: 2026-08-08T21:56:10-0400 0ca7eb51 sources, disposition-census 3->3
 rederived: 2026-08-09T04:12:08-0400 3159abaf sources
 rederived: 2026-08-09T04:56:02-0400 ecdf1284 unchanged
 rederived: 2026-08-09T04:56:23-0400 04313f08 unchanged
+rederived: 2026-08-09T16:17:39-0400 451d757c sources
+rederived: 2026-08-09T17:11:01-0400 5c773d12 disposition-census 3->3
+rederived: 2026-08-09T17:11:40-0400 5c773d12 unchanged
+rederived: 2026-08-09T17:29:58-0400 b5f126e7 unchanged
 -->

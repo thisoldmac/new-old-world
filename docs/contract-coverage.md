@@ -187,6 +187,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `scene.request` — `windows[].closeBox` / `windows[].zoomBox` (2026-08-07) | ✅ | ❌ | **A declared asymmetry that NOW-68K cannot close, and the reason is the row three above rather than anything about a 68030.** The two keys are the WindowRecord's own `goAwayFlag` and `spareFlag` (`axwalk.c :: kNowAxWinGoAway` / `kNowAxWinSpare`, one byte each at 112 and 113), emitted by `scene_json.c` beside `kind` and asked of Carbon for NOW's own window (`scene_self.c :: GetWindowAttributes`). They ride the scene family, which NOW-68K does not serve at all — it has no `scene/` and no `axwalk/` — so there is nothing there to teach. **Unlike `backgroundOnly`, the underlying FACT is PowerPC-only too**: nothing in the 68K guest reads a foreign WindowRecord, so it has no second route to the same answer. Closing this means giving NOW-68K a scene producer, and the flags would arrive with it for free — the offsets are System-7-era and identical on a 68K Mac |
 | `scene.begin` / `scene.end` | — | — | **The ANSWERER's half, and neither guest handles one inbound.** The PPC guest SENDS them (`wire.c:1786` and the transfer it brackets); a host never sends them to a guest, so these can never grow guest-handling ticks. The answer's transfer pair. `scene.begin` gained `digest` / `delta` / `baseline` / `wholeBytes` on 2026-08-06 |
 | `scene.same` | — | — | Same: SENT by the PPC guest (`wire.c:1826`), handled by neither. The no-change answer, added 2026-08-06: a control frame with no transfer, sent only in answer to a request that quoted `since`. See [scene-deltas.md](scene-deltas.md) |
+| `mirror.invalidate` | — | — | Optional symmetric event, currently SENT by the PPC guest from ordinary wire service and handled by the host; neither guest handles one inbound. It carries monotonic domain generations and sampled/gap/unknown evidence quality, never replacement state. NOW-68K emits none and old peers continue cadence polling |
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 | `cloud.report` / `cloud.listing` / `cloud.card` / `cloud.refuse` | ✅ | ❌ | the ASKER's half: the PPC guest consumes these as answers for its iCloud page and SENDS `cloud.services` / `cloud.list` / `cloud.detail` / `cloud.get` / `cloud.preview`. No guest serves the family — its subject is the host's own iCloud (contract `guestAsksCloud`), so these rows can never grow guest ticks |
 | `chat.catalog` / `chat.delta` / `chat.status` / `chat.result` | ✅ | ❌ | the ASKER's half of the chat family (contract `guestAsksChat`): the PPC guest SENDS `chat.models` / `chat.send` / `chat.cancel` / `chat.reset` — from its Chat page and its console-only `chat` verb — and consumes these as answers; the host serves the family from its harness (`ChatWireService`). `chat.models` is TWO asks in one message and `chat.catalog` two answer shapes: without a provider it lists providers; with one it pages that provider's models (cursor/more, asked lazily on selection), each row carrying a HOST-MINTED `ref` that `chat.send` returns — a provider's model name never crosses the wire. Like cloud, its subject is the host's own model harness, so this row can never grow guest-SERVING ticks. 68K never asks, deliberately: the page is PPC-only and the family is a luxury a 384 KB partition does not buy |
@@ -1316,7 +1317,7 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: b6c63cda25ac411ce01f5d5b46d700ec45f78032
+sources-sha1: fabd700ebcc683f168c3e591ecd0b1139702efc5
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1354,4 +1355,8 @@ rederived: 2026-08-08T21:56:10-0400 0ca7eb51 unchanged
 rederived: 2026-08-09T04:12:08-0400 3159abaf sources
 rederived: 2026-08-09T04:56:02-0400 ecdf1284 unchanged
 rederived: 2026-08-09T04:56:23-0400 04313f08 unchanged
+rederived: 2026-08-09T16:17:39-0400 451d757c sources
+rederived: 2026-08-09T17:11:01-0400 5c773d12 unchanged
+rederived: 2026-08-09T17:11:40-0400 5c773d12 unchanged
+rederived: 2026-08-09T17:29:58-0400 b5f126e7 unchanged
 -->

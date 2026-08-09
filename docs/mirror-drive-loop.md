@@ -188,6 +188,17 @@ on which no foreign process binds (`actselftest` →
    isolated with `NOW_PREFS_SUFFIX=<slug>`, which moves settings *and* the
    guest registry — note that the listen port then lives in
    `dev.newoldworld.now.settings.<slug>`, not in the bundle id's domain.
+2o. **Priority starts at the next safe boundary; it is not preemption.** The
+   session's `GuestWorkScheduler` puts queued human gestures ahead of ambient
+   scene, Finder and content work that has not started. It cannot interrupt a
+   classic Toolbox traversal or script already executing with foreign state
+   live. Read `now_semantic_ui_metrics.scheduler` and its bounded `work` rows:
+   `admissionWaitMs` names host queueing, `guestRoundTripMs` names the admitted
+   wire/guest bracket, and settlement/publication are later brackets. A long
+   total with a short admission wait is not a queue-priority failure.
+   `mirror.invalidate` is likewise a hint to observe, not replacement state;
+   P5 samples the armed A5 world and cadence polling remains the liveness
+   fallback.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no

@@ -1,7 +1,9 @@
 # Mirror interaction latency, priority, and coherent state
 
-**Status:** Proposed. This is the complete implementation roadmap; no behavior
-change is implemented by this document.
+**Status:** Implemented and Tested locally through the U6 local gate on
+2026-08-09. U6's emulator and PowerBook 1400c runtime campaign remains
+unverified; therefore the 2,000 ms metal budget is still an acceptance target,
+not a result.
 
 **Planning baseline:** local `main` at `2598e40e` on 2026-08-09. This clone
 has no configured remote, so the baseline is the verified local `main` head.
@@ -116,6 +118,24 @@ state are live.
     lossy sampler of front-process, window-list, menu-list, and heartbeat
     changes for one armed A5 world. Its cursor, dropped count, arm scope, and
     expiry make it useful invalidation evidence, not a complete machine model.
+
+## Implementation record
+
+| Unit | Result | Verification at this revision |
+|---|---|---|
+| U0 attribution | A per-session `MirrorWorkClocks` ledger separates admission, guest round-trip, settlement, publication, and guest-handler time; the same bounded facts reach `now_semantic_ui_metrics` | Deterministic host fixtures; no current PB1400c baseline |
+| U1 scheduler | One `GuestWorkScheduler` prioritises FIFO human work above queued structural, ambient, and bulk slices; session replacement cancels unsent work | Focused scheduler, listener, family, and source-census tests |
+| U2 actions | Direct and brokered Mirror actions enter that scheduler; the obsolete `MirrorDirectActLane` is deleted; settlement remains correlated separately from admission | Focused action, broker, source, and settlement tests |
+| U3 bounded work | Automatic Finder work is one page per admission with an explicit 1,800 ms deadline and front-container ordering | Focused Finder/source tests; target hardware timing unverified |
+| U4 invalidations | Optional symmetric `mirror.invalidate` generations are produced from a normal-context coordinator over P5's bounded tail and consumed as coalesced refresh hints; cadence polling remains fallback | Contract/codec, guest native, guest build, and host tests; sampler cost and wake campaign unverified |
+| U5 publication | The existing session engine joins contributions by exact base/session/identity, rejects stale enrichment, and publishes an exact generation set and reason | MirrorKit/state/projection tests |
+| U6 acceptance | `scripts/test-all` passed its staged-image, native, MirrorKit, guest-build, and host stages; the live-guest stage explicitly skipped because `NOW_GUEST_LIVE` was unset | Local gate complete; emulator drive and PB1400c distribution campaign pending |
+
+The implementation did not add a monolithic guest snapshot. `NowScene` remains
+the structural aggregate; Finder, visibility, content, and semantics retain
+their different evidence times and completeness. The host joins them with
+generation-stamped envelopes, preserving provenance without making one larger
+uninterruptible classic-Mac operation.
 
 ## Architecture decisions
 

@@ -261,6 +261,52 @@ one for every entry. F-013 now states the handoff locally and pins it in the
 registry without changing an argument or guest behavior. The guard was watched
 fail before the descriptor changed, then passed.
 
+## TESTED HOST/GUEST, NOT EMULATOR- OR METAL-VERIFIED: Mirror work now has priority, attribution, and invalidation generations (2026-08-09, `codex/mirror-latency-state-plan`)
+
+Mirror request-shaped work previously entered several independent paths. A
+human gesture could wait behind a queued Finder complement or scene without
+the host naming the blocker, while direct and brokered acts could race the
+same resident request cell. The historical 9–12 second `act_yield` defect
+remains a separate closed cause; the matching number alone does not show that
+it returned.
+
+One session-owned scheduler now admits Mirror gestures, scenes, content
+drains, Finder pages, capture and the principal list/process request families.
+Human gestures remain FIFO with each other and outrank ambient work that has
+not started. Active classic-Mac work is not preempted: it completes at its
+safe boundary, and automatic Finder observation is one page per slice with an
+explicit 1,800 ms timeout. A bounded work ledger reports admission, guest
+round-trip, settlement and publication separately through the existing
+Mirror metrics projection, including the current blocker and oldest human
+wait.
+
+The PowerPC guest drains P5 transition evidence through one normal-context
+coordinator and emits optional `mirror.invalidate` generation hints. The host
+attributes each event to the transport session that delivered it, coalesces
+follow-up observation, and invalidates its delta baseline on gap/unknown
+evidence. P5 observes only the currently armed A5 world: a front switch away
+from that target is sampled evidence, not a complete event stream. The cadence
+poll remains the compatibility and liveness authority.
+
+The host did not move state ownership to the guest or create a second snapshot
+model. Its existing session-pinned engine records exact structure, semantics,
+Finder, visibility and content generations plus the reason for each immutable
+publication, and refuses old enrichment from a changed base.
+
+This work is **Tested locally**, not emulator-verified or Metal-verified. The
+full `scripts/test-all` gate passed: 28 staged-image checks, 150 native tests,
+MirrorKit, both guest families plus the extension and auxiliary cross-builds,
+the host suites, and Debug and Release app builds. Its live-guest stage
+explicitly skipped because `NOW_GUEST_LIVE` was unset. Priority ordering and
+transition-gap guards were also watched failing against their claimed
+mutations before the unmodified tests passed.
+
+The open acceptance item is the exact-revision native Mirror campaign: close,
+front, double-click/open, selection, scroll, menu and drag during deliberately
+slow ambient slices, with paired guest evidence and distributions. In
+particular, the plan's claim that ambient work contributes no more than 2,000
+ms to a PB1400c interaction remains unproven.
+
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: Stop, disconnect, and guest replacement left a Mirror session alive (2026-08-08, `codex/mirror-session-teardown`)
 
 The reported host could hold two live Mirror sessions from one guest, and
