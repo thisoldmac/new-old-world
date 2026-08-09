@@ -114,6 +114,10 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     @Published var lastNotice: String?
     @Published private(set) var transfer: TransferState?
     @Published var selection: FileRow.ID?
+    /// Set only for the lifetime of a local one-folder drag. The sidebar
+    /// reads source-owned state instead of accepting arbitrary text from
+    /// the pasteboard.
+    var draggedFolderPath: String?
 
     /// Where downloads land. Separate from the screenshots landing pad:
     /// files are files.
@@ -162,9 +166,28 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// editing, so the browser and the module agree on one at a time.
     @Published var renaming: FileRow.ID?
 
-    /// A folder being named before it exists, so it is a sheet rather
-    /// than a row that is not there yet.
-    @Published var newFolderName: String?
+    struct NewFolderPrompt: Identifiable, Equatable {
+        let id = UUID()
+        let initialName: String
+    }
+
+    /// Presentation state only. The sheet owns the editable draft so a
+    /// late TextField update cannot resurrect a prompt that was dismissed
+    /// before the guest's successful reply arrived.
+    @Published private(set) var newFolderPrompt: NewFolderPrompt?
+
+    func beginNewFolder() {
+        newFolderPrompt = NewFolderPrompt(initialName: "untitled folder")
+    }
+
+    func cancelNewFolder() {
+        newFolderPrompt = nil
+    }
+
+    func createFolderFromPrompt(named name: String) {
+        newFolderPrompt = nil
+        createFolder(named: name)
+    }
 
     func reportChangeFailure(_ message: String) {
         lastError = message
@@ -291,6 +314,27 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// when both asked for the same folder.
     private var listingGeneration = 0
 
+    private lazy var promiseExporter = GuestFilePromiseExporter(
+        listPage: { [weak self] path, cursor, completion in
+            guard let self else {
+                completion(.failure(FilesError.wire(
+                    "The file browser is no longer available.")))
+                return
+            }
+            self.listener.listFiles(path: path, cursor: cursor) { result in
+                completion(result.mapError { FilesError.wire($0.message) })
+            }
+        },
+        fetchFile: { [weak self] row, destination, completion in
+            guard let self else {
+                completion(.failure(FilesError.wire(
+                    "The file browser is no longer available.")))
+                return
+            }
+            self.fetchOneForPromise(row, to: destination,
+                                    completion: completion)
+        })
+
     init(
         listener: GuestListener,
         defaults: UserDefaults = .standard,
@@ -371,7 +415,9 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         lastNotice = nil
         transfer = nil
         renaming = nil
-        newFolderName = nil
+        newFolderPrompt = nil
+        promiseExporter.cancelAll(
+            reason: "The connected guest changed while files were being copied.")
         pendingChange = nil
         overwritePrompt = nil
         /* A queue of files is the one thing here that must NOT survive the
@@ -769,8 +815,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
 
     /// What a person may drag into the sidebar: a folder this browser can
     /// currently SEE is a folder. Nil is a refusal, and refusing is the
-    /// point — the sidebar accepts a dragged string, and a string is not
-    /// evidence of anything.
+    /// point — a path alone is not evidence of anything.
     func pinnableName(for path: String) -> String? {
         guard !path.isEmpty else { return nil }   // the root is always there
         if path == self.path { return ClassicLocations.leafName(of: path) }
@@ -1187,14 +1232,20 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         clearQueue()
     }
 
-    /// Pulls a file for a drag to the Finder. The Finder asks for the
-    /// bytes only when the drop lands, so this is the moment the file
-    /// actually crosses — and the one transfer lane still applies, so a
-    /// promise asked for mid-transfer is refused rather than queued
-    /// behind something the Finder is not waiting for.
+    /// Pulls an item for a drag to the Finder. AppKit may redeem every
+    /// promise in a multi-row drag concurrently, while the guest has one
+    /// transfer lane. The exporter serializes those requests and expands
+    /// folders over the existing paged listing contract.
     func fetchForPromise(_ row: FileRow, to destination: URL,
-                         container: String? = nil,
                          completion: @escaping (Result<Void, Error>) -> Void) {
+        promiseExporter.enqueue(row, to: destination, completion: completion)
+    }
+
+    private func fetchOneForPromise(
+        _ row: FileRow,
+        to destination: URL,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
         guard transfer == nil else {
             completion(.failure(FilesError.busy))
             return
@@ -1203,7 +1254,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                                  received: 0, expected: row.sizeBytes,
                                  index: nil, total: nil)
         listener.getFile(
-            path: row.path, container: container,
+            path: row.path, container: nil,
             stagingDirectory: destination.deletingLastPathComponent()) {
             [weak self] result in
             guard let self else { return }
@@ -1288,8 +1339,6 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// classic side allows leading dots; make the name safe for APFS
     /// without renaming beyond recognition.
     private func sanitized(_ name: String) -> String {
-        var out = name.replacingOccurrences(of: "/", with: ":")
-        if out.hasPrefix(".") { out = "_" + out.dropFirst() }
-        return out.isEmpty ? "Untitled" : out
+        LocalFileName.sanitized(name)
     }
 }

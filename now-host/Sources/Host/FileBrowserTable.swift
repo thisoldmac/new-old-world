@@ -2,6 +2,14 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum GuestFilePromiseType {
+    static func type(for item: FileRow) -> UTType {
+        if item.isFolder { return .folder }
+        return UTType(filenameExtension:
+            (item.name as NSString).pathExtension) ?? .data
+    }
+}
+
 /// The browser's table, in AppKit.
 ///
 /// SwiftUI's Table cannot be a drag SOURCE for files: dragging a row
@@ -32,10 +40,9 @@ struct FileBrowserTable: NSViewRepresentable {
         /* A drag out of here carries a file PROMISE, not a URL, so the
            table has to accept promise types or a drag that started in
            this very view is never offered to validateDrop — which is
-           why dragging a row onto a folder did nothing. Folders drag
-           under a private type, since they have no promise. */
+           why dragging a row onto a folder did nothing. */
         table.registerForDraggedTypes(
-            [.fileURL, Coordinator.localRow]
+            [.fileURL]
             + NSFilePromiseReceiver.readableDraggedTypes.map {
                 NSPasteboard.PasteboardType($0)
             })
@@ -369,7 +376,7 @@ struct FileBrowserTable: NSViewRepresentable {
         }
 
         @objc private func newFolder() {
-            parent.model.newFolderName = "untitled folder"
+            parent.model.beginNewFolder()
         }
 
         @objc private func commitRename(_ sender: NSTextField) {
@@ -415,35 +422,13 @@ struct FileBrowserTable: NSViewRepresentable {
 
         // MARK: - Dragging out (file promises)
 
-        /// Marks a drag as one of ours. A folder has nothing to promise
-        /// the Finder but can still be moved inside the share, so it
-        /// travels under this alone.
-        static let localRow =
-            NSPasteboard.PasteboardType("dev.newoldworld.now.row")
-
         /// The narrow column the download glyph lives in.
         static let actionColumn = "download"
 
         func tableView(_ tableView: NSTableView,
                        pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
             guard let item = item(at: row) else { return nil }
-            if item.isFolder {
-                // Draggable within the share; dragging one OUT would
-                // need a recursive pull, which the Finder will not get.
-                let entry = NSPasteboardItem()
-                entry.setString(item.id, forType: Coordinator.localRow)
-                /* And its path as plain text, which is what the locations
-                   sidebar reads. SwiftUI's drop destinations speak
-                   UTTypes; this private type is not one, and inventing an
-                   exported UTI for a drag that never leaves the window
-                   would be a lot of declaration for one string. The
-                   sidebar does not trust the string — it checks the path
-                   against a folder this browser can currently see. */
-                entry.setString(item.path, forType: .string)
-                return entry
-            }
-            let type = UTType(filenameExtension:
-                (item.name as NSString).pathExtension) ?? .data
+            let type = GuestFilePromiseType.type(for: item)
             let provider = NSFilePromiseProvider(fileType: type.identifier,
                                                  delegate: self)
             promised[ObjectIdentifier(provider)] = item
@@ -520,6 +505,8 @@ struct FileBrowserTable: NSViewRepresentable {
                        willBeginAt point: NSPoint,
                        forRowIndexes rowIndexes: IndexSet) {
             dragging = rowIndexes.compactMap { item(at: $0) }
+            parent.model.draggedFolderPath = dragging.count == 1
+                && dragging[0].isFolder ? dragging[0].path : nil
         }
 
         func tableView(_ tableView: NSTableView,
@@ -527,6 +514,7 @@ struct FileBrowserTable: NSViewRepresentable {
                        endedAt point: NSPoint,
                        operation: NSDragOperation) {
             dragging = []
+            parent.model.draggedFolderPath = nil
         }
 
         func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo,

@@ -1,0 +1,257 @@
+import Foundation
+
+/// Fulfils Finder file promises without ever opening a second guest transfer
+/// lane. AppKit creates one promise per dragged row and may ask all of them at
+/// once; this queue makes that concurrency explicit and walks folder promises
+/// recursively over the existing `file.list` / `file.get` contract.
+@MainActor
+final class GuestFilePromiseExporter {
+    typealias ListPage = (
+        _ path: String,
+        _ cursor: Int?,
+        _ completion: @escaping (Result<FileListing, Error>) -> Void
+    ) -> Void
+    typealias FetchFile = (
+        _ row: FileRow,
+        _ destination: URL,
+        _ completion: @escaping (Result<Void, Error>) -> Void
+    ) -> Void
+
+    private struct Request {
+        let id = UUID()
+        var row: FileRow
+        var destination: URL
+        var completion: (Result<Void, Error>) -> Void
+        var createdDestination = false
+    }
+
+    private final class Budget {
+        var count = 0
+    }
+
+    enum ExportError: LocalizedError {
+        case cancelled(String)
+        case malformedListing(String)
+        case tooManyItems(Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .cancelled(let reason): return reason
+            case .malformedListing(let reason): return reason
+            case .tooManyItems(let limit):
+                return "That folder contains more than \(limit) items."
+            }
+        }
+    }
+
+    /// Same bounded shape as a folder sent in the other direction. A drag
+    /// that expands into hours of wire traffic is refused before it grows
+    /// without limit in this process.
+    static let itemLimit = FilesModuleModel.dropFileLimit
+
+    private let listPage: ListPage
+    private let fetchFile: FetchFile
+    private let fileManager: FileManager
+    private var pending: [Request] = []
+    private var active: Request?
+    private var generation = 0
+
+    init(listPage: @escaping ListPage,
+         fetchFile: @escaping FetchFile,
+         fileManager: FileManager = .default) {
+        self.listPage = listPage
+        self.fetchFile = fetchFile
+        self.fileManager = fileManager
+    }
+
+    func enqueue(_ row: FileRow, to destination: URL,
+                 completion: @escaping (Result<Void, Error>) -> Void) {
+        pending.append(Request(row: row, destination: destination,
+                               completion: completion))
+        startNextIfIdle()
+    }
+
+    /// A queued drag belongs to the guest that was visible when it began.
+    /// Switching machines invalidates the active traversal and every promise
+    /// behind it rather than letting their paths resolve on a different disk.
+    func cancelAll(reason: String) {
+        generation += 1
+        let failure = ExportError.cancelled(reason)
+        if let active {
+            if active.createdDestination {
+                try? fileManager.removeItem(at: active.destination)
+            }
+            active.completion(.failure(failure))
+        }
+        for request in pending {
+            request.completion(.failure(failure))
+        }
+        active = nil
+        pending = []
+    }
+
+    private func startNextIfIdle() {
+        guard active == nil, !pending.isEmpty else { return }
+        let request = pending.removeFirst()
+        active = request
+        let token = generation
+        if request.row.isFolder {
+            exportFolder(request, token: token)
+        } else {
+            fetchFile(request.row, request.destination) { [weak self] result in
+                self?.finish(request, result: result, token: token)
+            }
+        }
+    }
+
+    private func exportFolder(_ request: Request, token: Int) {
+        do {
+            try fileManager.createDirectory(
+                at: request.destination, withIntermediateDirectories: false)
+            if active?.id == request.id {
+                active?.createdDestination = true
+            }
+        } catch {
+            finish(request, result: .failure(error), token: token)
+            return
+        }
+        exportDirectory(path: request.row.path,
+                        destination: request.destination,
+                        budget: Budget(), token: token) { [weak self] result in
+            self?.finish(request, result: result, token: token)
+        }
+    }
+
+    private func exportDirectory(
+        path: String,
+        destination: URL,
+        budget: Budget,
+        token: Int,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        readAllPages(path: path, cursor: nil, accumulated: [], token: token) {
+            [weak self] result in
+            guard let self, token == self.generation else { return }
+            switch result {
+            case .failure(let error):
+                completion(.failure(error))
+            case .success(let entries):
+                self.export(entries, at: 0, parentPath: path,
+                            destination: destination, budget: budget,
+                            token: token, completion: completion)
+            }
+        }
+    }
+
+    private func readAllPages(
+        path: String,
+        cursor: Int?,
+        accumulated: [FileEntry],
+        token: Int,
+        completion: @escaping (Result<[FileEntry], Error>) -> Void
+    ) {
+        listPage(path, cursor) { [weak self] result in
+            guard let self, token == self.generation else { return }
+            switch result {
+            case .failure(let error):
+                completion(.failure(error))
+            case .success(let listing):
+                guard listing.path == path else {
+                    completion(.failure(ExportError.malformedListing(
+                        "The guest listed \(listing.path) while \(path) was requested.")))
+                    return
+                }
+                let entries = accumulated + listing.entries
+                guard listing.more else {
+                    completion(.success(entries))
+                    return
+                }
+                guard let next = listing.cursor,
+                      next > (cursor ?? 0) else {
+                    completion(.failure(ExportError.malformedListing(
+                        "The guest repeated a folder listing position.")))
+                    return
+                }
+                self.readAllPages(path: path, cursor: next,
+                                  accumulated: entries, token: token,
+                                  completion: completion)
+            }
+        }
+    }
+
+    private func export(
+        _ entries: [FileEntry],
+        at index: Int,
+        parentPath: String,
+        destination: URL,
+        budget: Budget,
+        token: Int,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        guard token == generation else { return }
+        guard index < entries.count else {
+            completion(.success(()))
+            return
+        }
+        budget.count += 1
+        guard budget.count <= Self.itemLimit else {
+            completion(.failure(ExportError.tooManyItems(Self.itemLimit)))
+            return
+        }
+
+        let entry = entries[index]
+        let path = FileChangeNames.join(parentPath, entry.name)
+        let localURL = destination.appendingPathComponent(
+            LocalFileName.sanitized(entry.name), isDirectory: entry.isFolder)
+        let next: (Result<Void, Error>) -> Void = { [weak self] result in
+            guard let self, token == self.generation else { return }
+            switch result {
+            case .failure:
+                completion(result)
+            case .success:
+                self.export(entries, at: index + 1,
+                            parentPath: parentPath,
+                            destination: destination, budget: budget,
+                            token: token, completion: completion)
+            }
+        }
+
+        if entry.isFolder {
+            do {
+                try fileManager.createDirectory(
+                    at: localURL, withIntermediateDirectories: false)
+            } catch {
+                completion(.failure(error))
+                return
+            }
+            exportDirectory(path: path, destination: localURL,
+                            budget: budget, token: token, completion: next)
+        } else {
+            fetchFile(FileRow(entry: entry, path: path), localURL, next)
+        }
+    }
+
+    private func finish(_ request: Request,
+                        result: Result<Void, Error>, token: Int) {
+        guard token == generation, active?.id == request.id else {
+            return
+        }
+        if case .failure = result, active?.createdDestination == true {
+            try? fileManager.removeItem(at: request.destination)
+        }
+        active = nil
+        request.completion(result)
+        startNextIfIdle()
+    }
+}
+
+/// Guest names use HFS rules; APFS paths cannot use slash and leading dots
+/// disappear from ordinary Finder views. This is the same projection used by
+/// direct downloads and promised folder children.
+enum LocalFileName {
+    static func sanitized(_ name: String) -> String {
+        var output = name.replacingOccurrences(of: "/", with: ":")
+        if output.hasPrefix(".") { output = "_" + output.dropFirst() }
+        return output.isEmpty ? "Untitled" : output
+    }
+}
