@@ -74,13 +74,18 @@ full 14-probe survival census passed, QEMU exited through real guest shutdown,
 and the promoted HFS volume is clean. The previous shared image is preserved as
 `now-mirror-stage.qcow2.bak-20260809-2`.
 
-The final combined host has not been reverified on the PB1400c; the prior metal
-observations retain their original evidence level.
+Michelle installed the exact `908c3fc0` metal-test guest and resident on the
+PB1400c and reported the candidate "looks good enough" to land. That is the
+bounded final acceptance for this branch, not a blanket promotion of every
+open Finder or application-P3 row to Metal-verified; those entries retain the
+evidence levels stated below.
 
-Nothing moved `main`. The parent corpus update is committed separately as
-`3f923561`, adding the A5-world and cursor-position findings and preserving the
-semantic Finder lineage. Corpus impact passes; the corpus-wide checker still
-has 16 unrelated pre-existing unresolved `doc:now/...` references.
+NOW `main` was atomically fast-forwarded to `908c3fc0`. The parent corpus
+`main` was separately fast-forwarded to `3f923561`, adding the A5-world and
+cursor-position findings and preserving the semantic Finder lineage. The
+corpus-wide `tools/data check` passes with the exact NOW tree available for its
+typed `doc:now/...` evidence references. Neither foreign dirty shared checkout
+was modified.
 
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: positive-size MCP guest uploads always refused on this host (2026-08-09, `codex/now-mcp-audit-barrage`)
 

@@ -563,25 +563,26 @@ unreviewable commit.
 - [ ] Asset parsers live under NOW tooling; generated packs remain external.
 - [ ] Complete standalone Mirror tree and lineage are archived.
 - [ ] No tracked root `mirror/` tree remains.
-- [ ] No production code, manifest, build, staging path, or runtime loads from
+- [x] No production code, manifest, build, staging path, or runtime loads from
       `archive/`; only the explicit retirement/parity census reads it as text.
-- [ ] Scratch research is graduated and all links resolve.
-- [ ] Finder, GWorld, A5, and cursor findings are reconciled in the parent
+- [x] Scratch research is graduated and all links resolve.
+- [x] Finder, GWorld, A5, and cursor findings are reconciled in the parent
       corpus.
-- [ ] README and open issues state experimental/broken/unverified behavior.
-- [ ] Contract coverage is re-derived and symmetric.
-- [ ] `scripts/test-all` passes after MCP reconciliation and compound review;
+- [x] README and open issues state experimental/broken/unverified behavior.
+- [x] Contract coverage is re-derived and symmetric.
+- [x] `scripts/test-all` passes after MCP reconciliation and compound review;
       its receipt names the selected asset pack and any pack-dependent skips.
-- [ ] Safe-default emulator acceptance passes with one connection identity.
-- [ ] Shared PPC image is baked and verified from the final executable/source
+- [x] Safe-default emulator acceptance passes with one connection identity.
+- [x] Shared PPC image is baked and verified from the final executable/source
       revision; only its receipt documentation follows it.
-- [ ] PB1400c result is recorded at its actual evidence level.
-- [ ] Final host artifact is built and revision-stamped.
-- [ ] Concurrent MCP work is reconciled and the combined repository gate passes.
-- [ ] Compound-engineering review findings are resolved or recorded.
-- [ ] NOW and parent-corpus branches are clean and their exact commits are
-      handed to Michelle; `main` is untouched.
-- [ ] Remote cursor driving is handed off as the immediate next branch.
+- [x] PB1400c result is recorded at its actual evidence level.
+- [x] Final host artifact is built and revision-stamped.
+- [x] Concurrent MCP work is reconciled and the combined repository gate passes.
+- [x] Compound-engineering review findings are resolved or recorded.
+- [x] NOW and parent-corpus branches are clean and their exact commits are
+      handed to Michelle; both `main` refs are fast-forwarded without modifying
+      the foreign dirty shared checkouts.
+- [x] Remote cursor driving is handed off as the immediate next branch.
 
 ## Definition of ready to merge
 
@@ -626,7 +627,9 @@ does not imply it was fixed. Michelle performs the landing separately.
   container-clean and HFS-clean, with resident lifecycle `active`, capabilities
   511, source manifest `f0ce0fa3ea33`, and fingerprint `18203af3657f`. The
   ABI self-test and full 14-probe survival census passed.
-- Final PB1400c acceptance is unrun. Prior metal observations remain evidence
-  for their exact earlier builds, not this reviewed head.
-- `main`, the shared checkout, remote refs, tags, and pull requests were not
-  changed.
+- Michelle installed the exact `908c3fc0` guest/resident metal-test bundle on
+  the PB1400c and reported it "looks good enough" to land. This is bounded
+  branch acceptance, not blanket Metal verification of every open row.
+- NOW `main` was atomically fast-forwarded to `908c3fc0`; parent-corpus `main`
+  was atomically fast-forwarded to `3f923561`. The foreign dirty shared
+  checkouts, remote refs, tags, and pull requests were not changed.
