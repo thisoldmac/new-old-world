@@ -295,6 +295,26 @@ struct ChatProvidersSheet: View {
             }
             .padding()
             Divider()
+            if let notice = model.credentialNotice {
+                HStack(spacing: 10) {
+                    Image(systemName: "key.horizontal")
+                        .foregroundStyle(.secondary)
+                    Text(notice)
+                        .font(.callout)
+                    Spacer()
+                    if model.canAuthorizeSavedCredentials {
+                        Button(model.isAuthorizingCredentials
+                                   ? "Authorizing..." : "Authorize") {
+                            model.authorizeSavedCredentials()
+                        }
+                        .disabled(model.isAuthorizingCredentials)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Color(nsColor: .controlBackgroundColor))
+                Divider()
+            }
             ScrollView {
                 VStack(spacing: 12) {
                     anthropicCard

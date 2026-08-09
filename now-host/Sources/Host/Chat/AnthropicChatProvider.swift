@@ -36,13 +36,43 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
        twice over. The key is the fallback for a Mac that never signed
        in. Metal finding 2026-08-02: the first build preferred the key,
        and the person rightly asked why a sign-in wanted a key at all. */
-    private func auth() async throws -> Auth {
-        if store.read(.anthropicOAuth) != nil {
-            let tokens = try await refresher.liveTokens(transport: transport)
+    private func auth(
+        interaction: ChatCredentialInteraction
+    ) async throws -> Auth {
+        switch store.read(.anthropicOAuth, interaction: interaction) {
+        case .value(let stored):
+            let tokens = try await refresher.liveTokens(
+                stored: stored, transport: transport)
             return .oauth(tokens.accessToken)
+        case .authorizationRequired:
+            throw ChatFault.refuse(
+                code: "no-credentials",
+                reason: "Authorize the saved Anthropic sign-in")
+        case .unavailable(let status):
+            throw ChatFault.refuse(
+                code: "no-credentials",
+                reason: ChatCredentialRead.unavailable(status).statusReason
+                    ?? "Keychain unavailable")
+        case .missing:
+            break
         }
-        if let key = store.readString(.anthropicAPIKey), !key.isEmpty {
+        switch store.readString(
+            .anthropicAPIKey, interaction: interaction) {
+        case .value(let data)
+            where !(String(data: data, encoding: .utf8) ?? "").isEmpty:
+            let key = String(decoding: data, as: UTF8.self)
             return .apiKey(key)
+        case .authorizationRequired:
+            throw ChatFault.refuse(
+                code: "no-credentials",
+                reason: "Authorize the saved Anthropic API key")
+        case .unavailable(let status):
+            throw ChatFault.refuse(
+                code: "no-credentials",
+                reason: ChatCredentialRead.unavailable(status).statusReason
+                    ?? "Keychain unavailable")
+        case .missing, .value:
+            break
         }
         throw ChatFault.refuse(
             code: "no-credentials", reason: "Not signed in and no API key")
@@ -64,14 +94,25 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
     }
 
     func entry() async -> ChatProviderEntry {
-        if store.read(.anthropicOAuth) != nil {
+        let oauth = store.read(.anthropicOAuth, interaction: .forbid)
+        if oauth.isAvailable {
             return ChatProviderEntry(
                 id: id, label: label, state: "serving",
                 detail: "Using your Claude subscription")
         }
-        if let key = store.readString(.anthropicAPIKey), !key.isEmpty {
+        if let reason = oauth.statusReason {
+            return ChatProviderEntry(
+                id: id, label: label, state: "unavailable", detail: reason)
+        }
+        let apiKey = store.readString(
+            .anthropicAPIKey, interaction: .forbid)
+        if let key = apiKey.string, !key.isEmpty {
             return ChatProviderEntry(
                 id: id, label: label, state: "serving", detail: "Using an API key")
+        }
+        if let reason = apiKey.statusReason {
+            return ChatProviderEntry(
+                id: id, label: label, state: "unavailable", detail: reason)
         }
         return ChatProviderEntry(
             id: id, label: label, state: "unavailable",
@@ -79,7 +120,7 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
     }
 
     func listModels() async throws -> [ChatModel] {
-        let auth = try await auth()
+        let auth = try await auth(interaction: .forbid)
         let (data, response) = try await transport.send(
             request(path: "models", auth: auth))
         try Self.checkStatus(response, body: data)
@@ -118,7 +159,9 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
         _ completion: ChatCompletionRequest,
         into continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
     ) async throws {
-        let auth = try await auth()
+        // A request may originate over the guest wire. Only the provider
+        // sheet's explicit authorization action may raise Keychain UI.
+        let auth = try await auth(interaction: .forbid)
         var request = request(path: "messages", auth: auth)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

@@ -77,27 +77,42 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
             store: store, transport: transport)
     }
 
-    private func authorize(_ request: inout URLRequest) throws {
+    private func bearer(
+        interaction: ChatCredentialInteraction
+    ) throws -> String? {
         switch auth {
         case .storedKey(let key):
-            guard let value = store.readString(key), !value.isEmpty else {
-                throw ChatFault.refuse(code: "no-credentials", reason: "No API key")
+            let read = store.readString(key, interaction: interaction)
+            if let value = read.string, !value.isEmpty {
+                return value
             }
-            request.setValue("Bearer \(value)", forHTTPHeaderField: "Authorization")
+            if let reason = read.statusReason {
+                throw ChatFault.refuse(code: "no-credentials", reason: reason)
+            }
+            throw ChatFault.refuse(code: "no-credentials", reason: "No API key")
         case .fixedBearer(let token):
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            return token
         case .none:
-            break
+            return nil
+        }
+    }
+
+    private func authorize(_ request: inout URLRequest, bearer: String?) {
+        if let bearer {
+            request.setValue(
+                "Bearer \(bearer)", forHTTPHeaderField: "Authorization")
         }
     }
 
     func entry() async -> ChatProviderEntry {
         if case .storedKey(let key) = auth {
-            let hasKey = !(store.readString(key) ?? "").isEmpty
+            let read = store.readString(key, interaction: .forbid)
+            let hasKey = !(read.string ?? "").isEmpty
             return ChatProviderEntry(
                 id: id, label: label,
                 state: hasKey ? "serving" : "unavailable",
-                detail: hasKey ? "Using an API key" : "No API key")
+                detail: hasKey ? "Using an API key"
+                    : read.statusReason ?? "No API key")
         }
         guard probes else {
             return ChatProviderEntry(
@@ -124,7 +139,8 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
         var request = URLRequest(url: base.appendingPathComponent("models"))
         // A probe must answer fast: a page draw is waiting on it.
         request.timeoutInterval = 2
-        try authorize(&request)
+        let bearer = try bearer(interaction: .forbid)
+        authorize(&request, bearer: bearer)
         let (data, response) = try await transport.send(request)
         guard response.statusCode == 200 else {
             throw ChatFault.refuse(
@@ -171,8 +187,12 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
         _ completion: ChatCompletionRequest,
         into continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
     ) async throws {
+        // A request may originate over the guest wire. Only the provider
+        // sheet's explicit authorization action may raise Keychain UI.
+        let bearer = try bearer(interaction: .forbid)
         do {
-            try await attempt(completion, into: continuation)
+            try await attempt(
+                completion, bearer: bearer, into: continuation)
         } catch let empty as NothingReadable {
             /* Some local models answer NOTHING when handed thirty tool
                schemas their template cannot hold (metal, 2026-08-02:
@@ -189,7 +209,7 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
                 turns: completion.turns, tools: [],
                 maxTokens: completion.maxTokens)
             do {
-                try await attempt(bare, into: continuation)
+                try await attempt(bare, bearer: bearer, into: continuation)
             } catch let stillEmpty as NothingReadable {
                 throw ChatFault.refuse(
                     code: "provider-error",
@@ -218,13 +238,14 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
 
     private func attempt(
         _ completion: ChatCompletionRequest,
+        bearer: String?,
         into continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
     ) async throws {
         var request = URLRequest(
             url: base.appendingPathComponent("chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        try authorize(&request)
+        authorize(&request, bearer: bearer)
         request.httpBody = try JSONSerialization.data(
             withJSONObject: Self.body(for: completion))
 

@@ -22,6 +22,37 @@ struct ChatDisplayRow: Identifiable, Equatable {
     var text: String
 }
 
+private func makeChatProviderRegistry(
+    store: ChatCredentialStore, transport: ChatHTTPTransport
+) -> ChatProviderRegistry {
+    let registry = ChatProviderRegistry()
+    registry.register(
+        AnthropicChatProvider(store: store, transport: transport))
+    registry.register(
+        OpenAICompatibleChatProvider.openAI(
+            store: store, transport: transport))
+    registry.register(
+        OpenAICompatibleChatProvider.ollama(
+            store: store, transport: transport))
+    registry.register(
+        OpenAICompatibleChatProvider.lmStudio(
+            store: store, transport: transport))
+    registry.register(
+        OpenAICompatibleChatProvider.oMLX(
+            store: store, transport: transport))
+    return registry
+}
+
+private func makePassiveChatProviderRegistry(
+    store: ChatCredentialStore, transport: ChatHTTPTransport
+) -> (snapshot: SnapshotChatCredentialStore,
+      registry: ChatProviderRegistry) {
+    let snapshot = SnapshotChatCredentialStore(
+        source: store, interaction: .forbid)
+    return (snapshot, makeChatProviderRegistry(
+        store: snapshot, transport: transport))
+}
+
 @MainActor
 final class ChatModuleModel: ObservableObject {
     enum SignInState: Equatable {
@@ -66,6 +97,9 @@ final class ChatModuleModel: ObservableObject {
     @Published private(set) var hasAnthropicKey = false
     @Published private(set) var hasAnthropicOAuth = false
     @Published private(set) var hasOpenAIKey = false
+    @Published private(set) var credentialNotice: String?
+    @Published private(set) var canAuthorizeSavedCredentials = false
+    @Published private(set) var isAuthorizingCredentials = false
 
     let registry: ChatProviderRegistry
     let harness: ChatHarness
@@ -90,21 +124,8 @@ final class ChatModuleModel: ObservableObject {
         self.defaults = defaults
         selectedWireModelID = defaults.string(forKey: Self.modelKey) ?? ""
 
-        let registry = ChatProviderRegistry()
-        registry.register(
-            AnthropicChatProvider(store: store, transport: transport))
-        registry.register(
-            OpenAICompatibleChatProvider.openAI(
-                store: store, transport: transport))
-        registry.register(
-            OpenAICompatibleChatProvider.ollama(
-                store: store, transport: transport))
-        registry.register(
-            OpenAICompatibleChatProvider.lmStudio(
-                store: store, transport: transport))
-        registry.register(
-            OpenAICompatibleChatProvider.oMLX(
-                store: store, transport: transport))
+        let registry = makeChatProviderRegistry(
+            store: store, transport: transport)
         self.registry = registry
         harness = ChatHarness(
             registry: registry,
@@ -127,33 +148,50 @@ final class ChatModuleModel: ObservableObject {
     // MARK: - Providers and models
 
     func refresh() {
-        let registry = registry
         let store = store
+        let transport = transport
         /* Detached: Keychain reads and local-runtime probes must never
            run on the main actor (see init). */
         Task.detached { [weak self] in
-            let hasAnthropicKey =
-                !(store.readString(.anthropicAPIKey) ?? "").isEmpty
-            let hasAnthropicOAuth = store.read(.anthropicOAuth) != nil
-            let hasOpenAIKey =
-                !(store.readString(.openAIAPIKey) ?? "").isEmpty
+            let passive = makePassiveChatProviderRegistry(
+                store: store, transport: transport)
+            let credentialReads = Dictionary(uniqueKeysWithValues:
+                ChatCredentialKey.allCases.map {
+                    ($0, passive.snapshot.read($0, interaction: .forbid))
+                })
             var entries: [ChatProviderEntry] = []
-            for provider in registry.all() {
+            for provider in passive.registry.all() {
                 entries.append(await provider.entry())
             }
             var models: [ChatModel] = []
-            for provider in registry.all() {
+            for provider in passive.registry.all() {
                 if let served = try? await provider.listModels() {
                     models.append(contentsOf: served)
                 }
             }
-            let found = (entries: entries, models: models)
+            let notice = ChatCredentialKey.allCases.compactMap {
+                credentialReads[$0]?.statusReason
+            }.first
+            let canAuthorize = credentialReads.values.contains {
+                $0 == .authorizationRequired
+            }
+            let found = (
+                entries: entries, models: models,
+                hasAnthropicKey:
+                    !(credentialReads[.anthropicAPIKey]?.string ?? "").isEmpty,
+                hasAnthropicOAuth:
+                    credentialReads[.anthropicOAuth]?.isAvailable == true,
+                hasOpenAIKey:
+                    !(credentialReads[.openAIAPIKey]?.string ?? "").isEmpty,
+                notice: notice, canAuthorize: canAuthorize)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 let models = found.models
-                self.hasAnthropicKey = hasAnthropicKey
-                self.hasAnthropicOAuth = hasAnthropicOAuth
-                self.hasOpenAIKey = hasOpenAIKey
+                self.hasAnthropicKey = found.hasAnthropicKey
+                self.hasAnthropicOAuth = found.hasAnthropicOAuth
+                self.hasOpenAIKey = found.hasOpenAIKey
+                self.credentialNotice = found.notice
+                self.canAuthorizeSavedCredentials = found.canAuthorize
                 self.entries = found.entries
                 self.models = models
                 if self.selectedWireModelID.isEmpty
@@ -178,13 +216,19 @@ final class ChatModuleModel: ObservableObject {
     /// What the wire's chat.models catalog is built from — asked fresh
     /// so a guest never reads a stale page's cache.
     func servableModels() async -> [ChatModel] {
-        var models: [ChatModel] = []
-        for provider in registry.all() {
-            if let served = try? await provider.listModels() {
-                models.append(contentsOf: served)
+        let store = store
+        let transport = transport
+        return await Task.detached {
+            let passive = makePassiveChatProviderRegistry(
+                store: store, transport: transport)
+            var models: [ChatModel] = []
+            for provider in passive.registry.all() {
+                if let served = try? await provider.listModels() {
+                    models.append(contentsOf: served)
+                }
             }
-        }
-        return models
+            return models
+        }.value
     }
 
     /// The chat.* family's server, sharing this page's harness so what
@@ -204,16 +248,14 @@ final class ChatModuleModel: ObservableObject {
     /// that cannot serve is still a row saying WHY. Labels leave
     /// converted and bounded (<= 31 bytes, the cloud rule).
     private func wireProviders() async -> [ChatCatalogProvider] {
-        var rows: [ChatCatalogProvider] = []
-        for provider in registry.all() {
-            let entry = await provider.entry()
-            rows.append(ChatCatalogProvider(
-                provider: provider.id,
+        let entries = await providerEntries()
+        return entries.map { entry in
+            ChatCatalogProvider(
+                provider: entry.id,
                 label: ChatWireText.label(entry.label),
                 state: entry.state,
-                detail: CloudText.displayable(entry.detail)))
+                detail: CloudText.displayable(entry.detail))
         }
-        return rows
     }
 
     /// The named provider's FULL list, fetched when somebody selects
@@ -221,26 +263,32 @@ final class ChatModuleModel: ObservableObject {
     /// list right now) reads as an empty page at the service, the
     /// contract's honest "nothing to list".
     private func wireModels(provider id: String) async -> [ChatModel]? {
-        guard let provider = registry.all().first(where: { $0.id == id })
-        else { return nil }
-        return try? await provider.listModels()
+        let store = store
+        let transport = transport
+        return await Task.detached {
+            let passive = makePassiveChatProviderRegistry(
+                store: store, transport: transport)
+            guard let provider = passive.registry.provider(for: id)
+            else { return nil }
+            return try? await provider.listModels()
+        }.value
     }
 
     func providerEntries() async -> [ChatProviderEntry] {
-        var entries: [ChatProviderEntry] = []
-        for provider in registry.all() {
-            entries.append(await provider.entry())
-        }
-        return entries
+        let store = store
+        let transport = transport
+        return await Task.detached {
+            let passive = makePassiveChatProviderRegistry(
+                store: store, transport: transport)
+            var entries: [ChatProviderEntry] = []
+            for provider in passive.registry.all() {
+                entries.append(await provider.entry())
+            }
+            return entries
+        }.value
     }
 
     // MARK: - Credentials
-
-    private func refreshCredentialFlags() {
-        hasAnthropicKey = !(store.readString(.anthropicAPIKey) ?? "").isEmpty
-        hasAnthropicOAuth = store.read(.anthropicOAuth) != nil
-        hasOpenAIKey = !(store.readString(.openAIAPIKey) ?? "").isEmpty
-    }
 
     func setAnthropicKey(_ key: String) {
         setKey(.anthropicAPIKey, key)
@@ -255,10 +303,31 @@ final class ChatModuleModel: ObservableObject {
         if trimmed.isEmpty {
             store.delete(which)
         } else {
-            try? store.writeString(which, trimmed)
+            do {
+                try store.writeString(which, trimmed)
+            } catch {
+                credentialNotice = ChatFault.from(error).reason
+            }
         }
-        refreshCredentialFlags()
         refresh()
+    }
+
+    func authorizeSavedCredentials() {
+        guard !isAuthorizingCredentials else { return }
+        isAuthorizingCredentials = true
+        let store = store
+        Task.detached { [weak self] in
+            let results = ChatCredentialKey.allCases.map {
+                store.read($0, interaction: .allow)
+            }
+            let notice = results.compactMap(\.statusReason).first
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.isAuthorizingCredentials = false
+                self.credentialNotice = notice
+                self.refresh()
+            }
+        }
     }
 
     func beginAnthropicSignIn() {
@@ -278,7 +347,6 @@ final class ChatModuleModel: ObservableObject {
                 try self.store.write(
                     .anthropicOAuth, JSONEncoder().encode(tokens))
                 self.signIn = .idle
-                self.refreshCredentialFlags()
                 self.refresh()
             } catch {
                 self.signIn = .failed(ChatFault.from(error).reason)
@@ -293,7 +361,6 @@ final class ChatModuleModel: ObservableObject {
     func signOutAnthropic() {
         store.delete(.anthropicOAuth)
         signIn = .idle
-        refreshCredentialFlags()
         refresh()
     }
 

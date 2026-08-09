@@ -191,12 +191,12 @@ final class AnthropicProviderTests: XCTestCase {
     }
 
     func testOAuthPathSendsBearerAndBetaHeader() async throws {
-        let store = InMemoryChatCredentialStore()
-        try store.write(
-            .anthropicOAuth,
-            JSONEncoder().encode(ChatOAuthTokens(
+        let oauth = try JSONEncoder().encode(ChatOAuthTokens(
                 accessToken: "at-1", refreshToken: "rt-1",
-                expiresAt: Date().addingTimeInterval(3600))))
+                expiresAt: Date().addingTimeInterval(3600)))
+        let store = RecordingChatCredentialStore(values: [
+            .anthropicOAuth: .value(oauth),
+        ])
         let transport = FakeChatTransport([
             .init(data: try JSONSerialization.data(withJSONObject: ["data": []]))
         ])
@@ -208,6 +208,9 @@ final class AnthropicProviderTests: XCTestCase {
         XCTAssertEqual(
             request.value(forHTTPHeaderField: "anthropic-beta"),
             AnthropicOAuth.betaHeader)
+        XCTAssertEqual(store.reads.count, 1)
+        XCTAssertEqual(store.reads.first?.0, .anthropicOAuth)
+        XCTAssertEqual(store.reads.first?.1, .forbid)
     }
 
     func testSubscriptionIsPreferredOverAStoredKey() async throws {
@@ -485,8 +488,11 @@ final class OpenAICompatibleProviderTests: XCTestCase {
                 "",
             ]),
         ])
-        let provider = OpenAICompatibleChatProvider.oMLX(
-            store: InMemoryChatCredentialStore(), transport: transport)
+        let store = RecordingChatCredentialStore(values: [
+            .openAIAPIKey: .value(Data("sk-test".utf8)),
+        ])
+        let provider = OpenAICompatibleChatProvider.openAI(
+            store: store, transport: transport)
         let schema = try JSONSerialization.data(
             withJSONObject: ["type": "object"])
         let out = try await collect(provider.stream(ChatCompletionRequest(
@@ -496,6 +502,12 @@ final class OpenAICompatibleProviderTests: XCTestCase {
             maxTokens: 64)))
         XCTAssertEqual(out.text, "Second try.")
         XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertEqual(store.reads.count, 1)
+        XCTAssertEqual(store.reads.first?.0, .openAIAPIKey)
+        XCTAssertEqual(store.reads.first?.1, .forbid)
+        XCTAssertTrue(transport.requests.allSatisfy {
+            $0.value(forHTTPHeaderField: "Authorization") == "Bearer sk-test"
+        })
         let retryBody = try XCTUnwrap(
             try JSONSerialization.jsonObject(
                 with: XCTUnwrap(transport.requests[1].httpBody))
@@ -647,14 +659,19 @@ final class AnthropicOAuthTests: XCTestCase {
             ]))
         ])
         let refresher = AnthropicTokenRefresher(store: store)
-        async let first = refresher.liveTokens(transport: transport)
-        async let second = refresher.liveTokens(transport: transport)
+        let original = try XCTUnwrap(store.read(
+            .anthropicOAuth, interaction: .forbid).data)
+        async let first = refresher.liveTokens(
+            stored: original, transport: transport)
+        async let second = refresher.liveTokens(
+            stored: original, transport: transport)
         let (a, b) = try await (first, second)
         XCTAssertEqual(a.accessToken, "at-fresh")
         XCTAssertEqual(b.accessToken, "at-fresh")
         XCTAssertEqual(transport.requests.count, 1)
         let stored = try JSONDecoder().decode(
-            ChatOAuthTokens.self, from: XCTUnwrap(store.read(.anthropicOAuth)))
+            ChatOAuthTokens.self, from: XCTUnwrap(store.read(
+                .anthropicOAuth, interaction: .forbid).data))
         XCTAssertEqual(stored.refreshToken, "rt-2")
     }
 }

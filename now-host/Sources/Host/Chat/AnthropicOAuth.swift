@@ -158,12 +158,14 @@ actor AnthropicTokenRefresher {
 
     /// Returns a live access token, refreshing (once) if the stored
     /// one has expired. Throws no-credentials when nobody is signed in.
-    func liveTokens(transport: ChatHTTPTransport) async throws -> ChatOAuthTokens {
-        guard let data = store.read(.anthropicOAuth),
-            let tokens = try? JSONDecoder().decode(ChatOAuthTokens.self, from: data)
+    func liveTokens(
+        stored data: Data, transport: ChatHTTPTransport
+    ) async throws -> ChatOAuthTokens {
+        guard let tokens = try? JSONDecoder().decode(
+            ChatOAuthTokens.self, from: data)
         else {
             throw ChatFault.refuse(
-                code: "no-credentials", reason: "Not signed in")
+                code: "no-credentials", reason: "Unreadable saved sign-in")
         }
         guard tokens.isExpired else { return tokens }
         if let running = inFlight {
