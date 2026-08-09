@@ -11,9 +11,11 @@ post-change focused tests, real spawned-client conformance, and a private PPC
 VM barrage using fresh GPT-5.6 Luna workers. The comparative repositories were
 read-only and sampled at their public MCP/command boundaries rather than
 audited internally. Final `scripts/test-all` passed: 28 image-discipline tests,
-149 native tests, MirrorKit, all guest/extension cross-builds, two 1,954-test
-host passes, and Debug/Release app builds; the optional live-guest stage
-skipped, so this remains tested plus separately VM-verified, not metal-verified.
+149 native tests, MirrorKit, all guest/extension cross-builds, the host suites
+in both asset modes, and Debug/Release app builds. The optional live-guest
+stage skipped; a separate identity-checked live conformance run reached all 42
+advertised tools with zero failed or uncovered rows. This remains tested plus
+separately VM-verified, not metal-verified.
 
 ## Summary
 
@@ -23,8 +25,9 @@ agent problem is not capability absence but first-contact routing: most bare
 classic-Mac tasks never selected NOW, while one routing sentence made every
 repeat select it first. The pre-barrage pass resolved the ambiguous discovery
 name, server-owned guide, Mirror vocabulary leak, and conformance
-classification. The barrage also reproduced a small high-impact upload
-capacity bug and exposed an authority distinction that documentation must make
+classification. The barrage also reproduced and fixed a small high-impact
+upload capacity bug, corrected a conformance recipe that had hidden the next
+failure, and exposed an authority distinction that documentation must make
 more explicit. A deeper tool hierarchy should wait for a separate design pass.
 
 ## Findings
@@ -86,7 +89,7 @@ zero/missing cases before the fix, then passed with the upload- and
 download-store suites. Through the real stdio companion and private host
 socket, a four-byte VM upload reserved host space, appended, committed with
 guest-confirmed integrity, and statted as a four-byte `TEXT` file on Mac OS
-9.1. Full-repository verification remains the closeout gate.
+9.1. The full repository gate then passed.
 
 ### [F-004] Transfer approval and caller-supplied upload are easy to conflate (severity: medium, effort: S)
 
