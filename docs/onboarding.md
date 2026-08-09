@@ -181,6 +181,12 @@ extension and CarbonLib resource forks plus preferences and instructions. It
 also asserts a sub-6-MiB carrier with less than 128 KiB free, and proves that a
 native CarbonLib supersedes the matching StuffIt representation.
 
+The host-facing selection, rebuild and image-detail workflow was also exercised
+from the `457823dd` release build and accepted after the fixed-capacity image was
+replaced by the content-fitted result. That is acceptance of the macOS surface
+and the generated image size for the installed package set, not evidence for a
+classic browser's MacBinary handling or a physical Mac's first connection.
+
 Separately, the generated NDIF image was transferred into a Mac OS 9.1 QEMU
 guest and mounted by its stock Disk Copy 6.3.3. That proves the carrier and its
 contents are compatible with the target OS; it does not prove that every

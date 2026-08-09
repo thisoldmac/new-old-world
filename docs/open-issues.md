@@ -61,6 +61,12 @@ The realistic app, extension and CarbonLib fork sizes produce a 5,607,424-byte
 raw disk with 36,864 bytes free. The MacBinary envelope adds only its header
 and block padding to those filesystem sectors.
 
+**Host acceptance 2026-08-09:** the `457823dd` release build's item selection,
+explicit rebuild, image details and content-fitted result were exercised and
+accepted after the earlier 2.6 MiB of free space was removed. This closes the
+host UI and image-sizing acceptance question. It does not close the classic
+browser or physical-Mac boundaries named below.
+
 The focused host tests pass. Two use the real temporary listener over loopback
 to fetch the page, application and preferences, and to exercise unknown-route
 and POST refusal. The preference test separately pins the MacBinary header,
