@@ -50,12 +50,12 @@ def _release_table(catalog) -> str:
     return "\n".join(rows)
 
 
-def _extension_matrix(catalog) -> str:
+def _coverage_table(features) -> str:
     rows = [
         "| Feature | Without the Extension | Extension required? | Current status |",
         "|---|---|---|---|",
     ]
-    for feature in catalog["extension_feature_coverage"]:
+    for feature in features:
         required = "**Yes**" if feature["extension_required"] else "No"
         rows.append(
             f"| **{feature['title']}** | {feature['without_extension']} | "
@@ -64,8 +64,19 @@ def _extension_matrix(catalog) -> str:
     return "\n".join(rows)
 
 
+def _feature_matrices(catalog) -> str:
+    return "\n\n".join(
+        (
+            "### Application features",
+            _coverage_table(catalog["module_feature_coverage"]),
+            "### Extension-backed Mirror features",
+            _coverage_table(catalog["extension_feature_coverage"]),
+        )
+    )
+
+
 def on_page_markdown(markdown, page, config, files):
     catalog = config.extra["feature_catalog"]
     return markdown.replace(RELEASE_TABLE, _release_table(catalog)).replace(
-        EXTENSION_MATRIX, _extension_matrix(catalog)
+        EXTENSION_MATRIX, _feature_matrices(catalog)
     )

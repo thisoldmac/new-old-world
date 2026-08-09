@@ -15,8 +15,8 @@ feature_ids: [resident.extension]
 # Core features and the NOW Extension
 
 Start with the normal PowerPC application. It connects, transfers files,
-captures the screen, reports processes and machine details, and provides the
-Workshop without installing anything in the classic Mac's Extensions folder.
+captures the screen, and provides the complete application module set listed
+below without installing anything in the classic Mac's Extensions folder.
 
 The optional **NOW Extension** is for deeper Mirror features. It lets NOW
 observe and interact while another classic application is drawing, tracking a
@@ -26,17 +26,22 @@ console, process, hardware, or software features.
 
 ## Feature coverage
 
+The application table is complete by construction: every module in the
+published [module reference](../reference/modules/index.md) must appear exactly
+once. The second table separates the deeper Mirror outcomes added by the
+optional Extension.
+
 <!-- extension-feature-matrix -->
 
-**Included** rows are part of the initial-alpha PowerPC path, subject to the
+**Current** rows are part of the initial-alpha PowerPC path, subject to the
 linked limitations. **Experimental** rows are available for evaluation but do
 not carry the same release confidence. Emulator-verified or tested rows have
 not necessarily been observed on physical hardware.
 
 ## Decide whether to install it
 
-- Skip it when you want the normal NOW connection, file, screen, inventory, or
-  console experience.
+- Skip it when you want any application feature in the first table, including
+  iCloud, Chat, Diagnostics, MCP, Logs, and the ordinary Mirror shell.
 - Install it when you are deliberately evaluating the Extension-required
   Mirror rows in the matrix and can recover by booting with Extensions
   disabled.

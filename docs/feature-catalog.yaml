@@ -41,48 +41,84 @@ profiles:
         state: excluded
         note: The current NOW-68K build is stale and is not planned for the initial alpha.
 
-extension_feature_coverage:
-  - id: connections
-    title: Connect and identify a classic Mac
-    without_extension: Full feature.
-    extension_required: false
-    status: Included in the initial alpha.
-    capability_ids: []
-  - id: files
-    title: Browse, transfer, and manage files
-    without_extension: Full feature.
-    extension_required: false
-    status: Included, with the documented resume and large-transfer limitations.
-    capability_ids: []
-  - id: screen
+module_feature_coverage:
+  - module_id: screen
     title: Capture or stream the classic Mac screen
-    without_extension: Full feature.
+    without_extension: Available.
     extension_required: false
-    status: Included, with the documented streaming and transfer limitations.
-    capability_ids: []
-  - id: inventory
-    title: Inspect processes, hardware, and software
-    without_extension: Full feature.
+    status: Current; streaming and large transfers have documented limits.
+  - module_id: files
+    title: Browse, transfer, and manage files
+    without_extension: Available.
     extension_required: false
-    status: Included in the initial alpha.
-    capability_ids: []
-  - id: workshop
-    title: Use the Workshop and console
-    without_extension: Full feature.
+    status: Current; resume and large transfers have documented limits.
+  - module_id: icloud
+    title: Use iCloud Drive, Photos, and Contacts
+    without_extension: Available.
     extension_required: false
-    status: Included in the initial alpha.
-    capability_ids: []
-  - id: mirror-shell
+    status: Experimental; each macOS service requires an explicit grant.
+  - module_id: processes
+    title: Inspect and manage running applications
+    without_extension: Available.
+    extension_required: false
+    status: Current; state-changing requests settle through typed results.
+  - module_id: mirror
     title: Open Mirror and inspect its application-level shell
     without_extension: Basic shell only.
     extension_required: false
-    status: Experimental; deeper observation uses the rows below.
-    capability_ids: []
+    status: Experimental; deeper observation and interaction use the Extension rows below.
+  - module_id: console
+    title: Run classic-side console commands
+    without_extension: Available.
+    extension_required: false
+    status: Current; the connected guest advertises its own command set.
+  - module_id: chat
+    title: Chat through a model configured on the modern Mac
+    without_extension: Available.
+    extension_required: false
+    status: Experimental; provider credentials remain on the modern Mac.
+  - module_id: census
+    title: Inspect classic Mac hardware
+    without_extension: Available.
+    extension_required: false
+    status: Current; unsupported and unavailable probes remain explicit.
+  - module_id: diagnostics
+    title: Run bounded diagnostics
+    without_extension: Available.
+    extension_required: false
+    status: Experimental; each diagnostic states its cost before it runs.
+  - module_id: networking
+    title: Inspect classic network and link state
+    without_extension: Available.
+    extension_required: false
+    status: Current; listener configuration remains in Connections.
+  - module_id: software
+    title: Inventory classic applications and system software
+    without_extension: Available.
+    extension_required: false
+    status: Current; availability depends on what the connected guest serves.
+  - module_id: mcp
+    title: Set agent access and inspect the MCP companion
+    without_extension: Available.
+    extension_required: false
+    status: Experimental; a live companion is not itself an access grant.
+  - module_id: logs
+    title: Review bounded host and guest logs
+    without_extension: Available.
+    extension_required: false
+    status: Current; entries retain machine, operation, time, and reason where known.
+  - module_id: settings
+    title: Manage connections and preferences
+    without_extension: Available.
+    extension_required: false
+    status: Current; the listener is plaintext and intended for trusted networks.
+
+extension_feature_coverage:
   - id: extension-health
     title: See whether the Extension is active and compatible
     without_extension: Reports that the Extension is not installed.
     extension_required: false
-    status: Included diagnostic for an optional component.
+    status: Current diagnostic for an optional component.
     capability_ids: [discovery]
   - id: window-structure
     title: See live windows and menus from other applications

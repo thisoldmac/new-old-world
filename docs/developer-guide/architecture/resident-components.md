@@ -34,7 +34,7 @@ Text equivalent: resident callbacks observe or act in the foreign application, w
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 26082812f53cc4619214a9251fa3b6be3996d62b
+sources-sha1: e7046f6e3965a69dc4f479391f5e630f43d75f8e
 derive resident-contract sha256=e423b6ffb62efdc0b3f336dd334c3df87437691f7d41ddb8e81d8536e9cd15fa lines=11
     scripts/docs-source-group resident
 rederived: pending
@@ -45,4 +45,5 @@ rederived: 2026-08-09T17:08:03-0400 446cf620 sources
 rederived: 2026-08-09T17:53:28-0400 ed9436c0 sources
 rederived: 2026-08-09T18:53:51-0400 181db7a5 sources
 rederived: 2026-08-09T18:56:22-0400 181db7a5 unchanged
+rederived: 2026-08-09T19:21:55-0400 dc5bfcd2 sources
 -->

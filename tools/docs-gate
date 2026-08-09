@@ -485,15 +485,47 @@ def check(root: Path, site_dir: Path | None) -> int:
             "docs/feature-catalog.yaml: extension capability symbols differ from peek_table.h "
             f"(catalog={declared_symbols}, live={live_symbols})"
         )
-    coverage = feature_catalog.get("extension_feature_coverage", [])
-    coverage_ids = [row.get("id") for row in coverage if isinstance(row, dict)]
-    if not coverage or len(coverage_ids) != len(set(coverage_ids)):
+    modules = load_yaml(docs / "module-manifest.yaml")
+    module_rows = modules.get("modules", [])
+    manifest_ids = [row["id"] for row in module_rows]
+    module_coverage = feature_catalog.get("module_feature_coverage", [])
+    module_coverage_ids = [
+        row.get("module_id") for row in module_coverage if isinstance(row, dict)
+    ]
+    if (set(module_coverage_ids) != set(manifest_ids)
+            or len(module_coverage_ids) != len(manifest_ids)):
+        errors.append(
+            "docs/feature-catalog.yaml: module feature coverage IDs do not match module manifest "
+            f"(coverage={module_coverage_ids}, manifest={manifest_ids})"
+        )
+    required_module_coverage_fields = {
+        "module_id", "title", "without_extension", "extension_required", "status",
+    }
+    for row in module_coverage:
+        if not isinstance(row, dict):
+            errors.append("docs/feature-catalog.yaml: module feature coverage rows must be mappings")
+            continue
+        missing_fields = sorted(required_module_coverage_fields - set(row))
+        if missing_fields:
+            errors.append(
+                f"module feature coverage {row.get('module_id', '<unknown>')}: missing fields: "
+                f"{', '.join(missing_fields)}"
+            )
+            continue
+        if not isinstance(row["extension_required"], bool):
+            errors.append(
+                f"module feature coverage {row['module_id']}: extension_required must be true or false"
+            )
+
+    extension_coverage = feature_catalog.get("extension_feature_coverage", [])
+    coverage_ids = [row.get("id") for row in extension_coverage if isinstance(row, dict)]
+    if not extension_coverage or len(coverage_ids) != len(set(coverage_ids)):
         errors.append("docs/feature-catalog.yaml: extension feature coverage needs unique rows")
     covered_capabilities: list[str] = []
     required_coverage_fields = {
         "id", "title", "without_extension", "extension_required", "status", "capability_ids",
     }
-    for row in coverage:
+    for row in extension_coverage:
         if not isinstance(row, dict):
             errors.append("docs/feature-catalog.yaml: extension feature coverage rows must be mappings")
             continue
@@ -530,17 +562,14 @@ def check(root: Path, site_dir: Path | None) -> int:
     if orphan_media:
         errors.append(f"media manifest entries are unused: {', '.join(orphan_media)}")
 
-    modules = load_yaml(docs / "module-manifest.yaml")
-    rows = modules.get("modules", [])
-    manifest_ids = [row["id"] for row in rows]
     host_ids = extract_host_ids(root)
     if set(manifest_ids) != set(host_ids) or len(manifest_ids) != len(host_ids):
         errors.append(f"module manifest IDs do not match host registry (manifest={manifest_ids}, host={host_ids})")
-    ppc_declared = [page for row in rows for page in row.get("ppc_pages", [])]
+    ppc_declared = [page for row in module_rows for page in row.get("ppc_pages", [])]
     ppc_live = extract_ppc_pages(root)
     if set(ppc_declared) != set(ppc_live) or len(ppc_declared) != len(ppc_live):
         errors.append(f"module manifest PPC pages do not match live enum (manifest={ppc_declared}, live={ppc_live})")
-    for row in rows:
+    for row in module_rows:
         page = docs / row["page"]
         if not page.exists():
             errors.append(f"module {row['id']}: guide page does not exist: {row['page']}")
@@ -590,7 +619,7 @@ def check(root: Path, site_dir: Path | None) -> int:
             site_dir / "user-guide/tutorials/first-connection/index.html": {},
             site_dir / "user-guide/how-to/configure-connection/index.html": {},
             site_dir / "user-guide/how-to/install-68k/index.html": {"release_banner": True},
-            site_dir / "user-guide/explanation/optional-extension/index.html": {"table": True, "release_banner": True},
+            site_dir / "user-guide/explanation/optional-extension/index.html": {"tables_min": 2, "release_banner": True},
             site_dir / "user-guide/reference/release-profile/index.html": {"table": True},
             site_dir / "user-guide/reference/modules/files/index.html": {"images": True, "release_banner": True},
             site_dir / "developer-guide/architecture/system-context/index.html": {"mermaid": True},
@@ -619,6 +648,11 @@ def check(root: Path, site_dir: Path | None) -> int:
                 errors.append(f"{path}: representative image page rendered no images")
             if expected.get("table") and parser.tables < 1:
                 errors.append(f"{path}: representative table page rendered no table")
+            if expected.get("tables_min") and parser.tables < expected["tables_min"]:
+                errors.append(
+                    f"{path}: representative table page rendered {parser.tables} tables; "
+                    f"need at least {expected['tables_min']}"
+                )
             if expected.get("mermaid") and parser.mermaid < 1:
                 errors.append(f"{path}: representative diagram page rendered no Mermaid container")
             if expected.get("release_banner") and parser.release_banners != 1:
@@ -654,10 +688,11 @@ def check(root: Path, site_dir: Path | None) -> int:
     notices.append(f"curated pages: {len(curated)} ({dict(Counter(meta['doc_type'] for meta in metadata.values()))})")
     notices.append(f"published links scanned: {sum(len(LINK_RE.findall(path.read_text())) for path in published)}")
     notices.append(f"media: {real_count} captured, {placeholder_count} placeholders")
-    notices.append(f"module coverage: {len(rows)} host modules, {len(ppc_declared)} PPC pages")
+    notices.append(f"module coverage: {len(module_rows)} host modules, {len(ppc_declared)} PPC pages")
     notices.append(f"release profile: {active_profile_id}, {len(feature_defs)} product features")
     notices.append(f"extension capabilities: {len(capabilities)} planes, {len(declared_symbols)} capability bits")
-    notices.append(f"extension feature coverage: {len(coverage)} user-facing rows")
+    notices.append(f"application feature coverage: {len(module_coverage)} module rows")
+    notices.append(f"extension feature coverage: {len(extension_coverage)} user-facing rows")
     notices.append(f"Mermaid diagrams: {sum(len(MERMAID_RE.findall(frontmatter(path)[1])) for path in curated)}")
     print("[docs-gate] passed")
     for notice in notices:

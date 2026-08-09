@@ -67,7 +67,7 @@ Fields are additive unless a revision explicitly changes meaning. Unknown enum v
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
-sources-sha1: c2335a4bb4ef8bbe0636418f10c41b6c13202ed1
+sources-sha1: 2c4fd3635ad27196ecf2811921f558859a33c259
 derive contract-summary sha256=55e4e7d1518abb241c6ac63a41a4f14740d239569498e3401c5940f6a44205b3 lines=6
     scripts/docs-source-group contract
 rederived: pending
@@ -78,4 +78,5 @@ rederived: 2026-08-09T17:08:04-0400 446cf620 sources
 rederived: 2026-08-09T17:53:28-0400 ed9436c0 sources
 rederived: 2026-08-09T18:53:51-0400 181db7a5 sources
 rederived: 2026-08-09T18:56:22-0400 181db7a5 unchanged
+rederived: 2026-08-09T19:21:55-0400 dc5bfcd2 sources
 -->

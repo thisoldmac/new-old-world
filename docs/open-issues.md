@@ -40,6 +40,16 @@ Extension row back to the complete resident capability inventory and its
 mutation suite proves that navigation, script lifecycle, or capability
 coverage cannot be removed silently.
 
+**Corrected later on 2026-08-09:** that 15-row matrix was still incomplete.
+It named all nine Extension outcomes but compressed the 14 application modules
+into six broad rows, omitting iCloud, Chat, Diagnostics, Networking, MCP, and
+Logs as distinct features and hiding Hardware and Software behind one
+"inventory" label. The page now renders a 14-row application table and a
+separate nine-row Extension table. The gate compares the application row IDs
+exactly with `docs/module-manifest.yaml`, while the existing capability check
+continues to compare the Extension rows with P0–P8; its mutation suite has
+watched both omissions refuse by name.
+
 ## DEFERRED WEBSITE HANDOFF: app documentation will be assembled by the separate website repository (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
 The public website now lives at

@@ -136,6 +136,11 @@ def main() -> int:
             "extension capability symbols differ from peek_table.h",
         )
         expect_mutation(
+            test_root, "module feature coverage", test_root / "docs/feature-catalog.yaml",
+            "module_id: screen", "module_id: screen-renamed",
+            "module feature coverage IDs do not match module manifest",
+        )
+        expect_mutation(
             test_root, "extension feature coverage", test_root / "docs/feature-catalog.yaml",
             "capability_ids: [structure]", "capability_ids: []",
             "feature coverage capability IDs differ from extension capability inventory",
