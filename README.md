@@ -79,10 +79,22 @@ and launch the host app itself:
 open "/private/tmp/now-host-product/New Old World.app"
 ```
 
-The ad-hoc signature that script produces is fine for development, but
-system notifications need a real one — `now-host/NewOldWorld.xcodeproj`
-builds the same sources as an app target. Open it in Xcode, pick a
-signing team, and build.
+That command uses the Xcode target and the repository's configured
+Developer team. Its stable identity is required for Chat's saved
+credentials, and its entitlements are required for Photos and Contacts.
+The first build may ask Xcode to refresh its managed provisioning profile.
+
+For scratch work on pages that need neither Keychain nor privacy
+entitlements, an ad-hoc build remains available:
+
+```bash
+./scripts/build-host-app --adhoc /private/tmp/now-host-scratch
+```
+
+An ad-hoc build deliberately cannot read Chat credentials saved by the
+Developer-signed app. Re-signing it produces a new identity, so using it
+for Chat would recreate the repeated Keychain authorization problem this
+split exists to prevent.
 
 ## Build the guests
 

@@ -1,8 +1,14 @@
 #!/bin/sh
 set -eu
 
+signing=developer
+if [ "${1:-}" = "--adhoc" ]; then
+    signing=adhoc
+    shift
+fi
+
 if [ "$#" -ne 1 ]; then
-    echo "usage: $0 /absolute/output/directory" >&2
+    echo "usage: $0 [--adhoc] /absolute/output/directory" >&2
     exit 64
 fi
 
@@ -20,18 +26,45 @@ case "$output_root/" in
         ;;
 esac
 
-scratch="$output_root/swift-build"
+mkdir -p "$output_root"
+output_root=$(CDPATH= cd -- "$output_root" && pwd -P)
+if [ "$output_root" = / ]; then
+    echo "output directory must not be the filesystem root" >&2
+    exit 64
+fi
+case "$output_root/" in
+    "$repo_root"/*)
+        echo "output directory must live outside the source repository" >&2
+        exit 64
+        ;;
+esac
+
 bundle="$output_root/New Old World.app"
-binary="$scratch/debug/Host"
 
-swift build --package-path "$repo_root/now-host" --scratch-path "$scratch"
-mkdir -p "$bundle/Contents/MacOS"
-cp "$binary" "$bundle/Contents/MacOS/Host"
+if [ "$signing" = developer ]; then
+    xcodebuild \
+        -project "$repo_root/now-host/NewOldWorld.xcodeproj" \
+        -scheme "New Old World" \
+        -configuration Debug \
+        -derivedDataPath "$output_root/xcode-derived" \
+        -allowProvisioningUpdates \
+        CONFIGURATION_BUILD_DIR="$output_root" \
+        build
+    codesign --verify --strict "$bundle"
+else
+    scratch="$output_root/swift-build"
+    binary="$scratch/debug/Host"
 
-sed \
-    -e 's/@DISPLAY_NAME@/New Old World/g' \
-    -e 's/@BUNDLE_ID@/dev.newoldworld.now/g' \
-    "$script_dir/HostInfo.plist.in" > "$bundle/Contents/Info.plist"
-codesign --force --sign - "$bundle"
+    swift build --package-path "$repo_root/now-host" --scratch-path "$scratch"
+    rm -rf "$bundle"
+    mkdir -p "$bundle/Contents/MacOS"
+    cp "$binary" "$bundle/Contents/MacOS/Host"
+
+    sed \
+        -e 's/@DISPLAY_NAME@/New Old World/g' \
+        -e 's/@BUNDLE_ID@/dev.newoldworld.now/g' \
+        "$script_dir/HostInfo.plist.in" > "$bundle/Contents/Info.plist"
+    codesign --force --sign - "$bundle"
+fi
 
 echo "$bundle"

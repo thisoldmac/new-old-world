@@ -90,6 +90,17 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					A1000060 = {
+						CreatedOnToolsVersion = 16.0;
+						DevelopmentTeam = B93A9CG7F9;
+						SystemCapabilities = {
+							com.apple.Keychain = {
+								enabled = 1;
+							};
+						};
+					};
+				};
 			};
 			buildConfigurationList = A1000110 /* Build configuration list for PBXProject "NewOldWorld" */;
 			developmentRegion = en;
