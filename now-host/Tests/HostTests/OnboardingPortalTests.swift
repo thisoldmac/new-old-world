@@ -31,7 +31,9 @@ final class OnboardingPortalTests: XCTestCase {
         XCTAssertTrue(html.contains("127.0.0.1:5412"))
         XCTAssertTrue(html.contains("/now/application.bin"))
         XCTAssertTrue(html.contains("/now/settings.bin"))
+        XCTAssertTrue(html.contains("CarbonLib 1.6.1"))
         XCTAssertTrue(html.contains("macintoshgarden.org/apps/carbonlib"))
+        XCTAssertFalse(html.contains("/now/archive.sit"))
         XCTAssertFalse(html.contains("<script"))
 
         let app = try await fetch(endpointURL(endpoint,

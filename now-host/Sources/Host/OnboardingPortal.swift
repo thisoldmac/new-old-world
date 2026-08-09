@@ -24,23 +24,30 @@ final class OnboardingPortal: ObservableObject {
         case failed(String)
     }
 
-    static let carbonLibPage = URL(
-        string: "http://macintoshgarden.org/apps/carbonlib")!
+    enum DependencyAcquisitionState: Equatable {
+        case downloading
+        case failed(String)
+    }
 
     @Published private(set) var state: State = .stopped
     @Published private(set) var assets: OnboardingAssetSnapshot = .empty
+    @Published private(set) var dependencyAcquisitions:
+        [String: DependencyAcquisitionState] = [:]
 
     private let catalog: OnboardingAssetCatalog
+    private let dependencyAcquirer: OnboardingDependencyAcquirer
     private let advertisedAddress: () -> String?
     private var listener: NWListener?
     private var generation = 0
     private var wirePort: UInt16 = SettingsModel.defaultPort
 
     init(catalog: OnboardingAssetCatalog = .live(),
+         dependencyAcquirer: OnboardingDependencyAcquirer? = nil,
          advertisedAddress: @escaping () -> String? = {
              HostAddressDetector.primaryIPv4()
          }) {
         self.catalog = catalog
+        self.dependencyAcquirer = dependencyAcquirer ?? .live()
         self.advertisedAddress = advertisedAddress
         refreshAssets()
     }
@@ -106,6 +113,23 @@ final class OnboardingPortal: ObservableObject {
         let url = try catalog.prepareWritableRoot()
         refreshAssets()
         return url
+    }
+
+    func acquire(_ dependency: OnboardingDependency) {
+        if dependencyAcquisitions[dependency.id] == .downloading { return }
+        dependencyAcquisitions[dependency.id] = .downloading
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await dependencyAcquirer.acquire(
+                    dependency, catalog: catalog)
+                dependencyAcquisitions[dependency.id] = nil
+                refreshAssets()
+            } catch {
+                dependencyAcquisitions[dependency.id] = .failed(
+                    error.localizedDescription)
+            }
+        }
     }
 
     private func listenerStateChanged(_ value: NWListener.State,
@@ -237,8 +261,6 @@ final class OnboardingPortal: ObservableObject {
             return assetResponse(assets.application)
         case "/now/extension.bin":
             return assetResponse(assets.extensionComponent)
-        case "/now/archive.sit":
-            return assetResponse(assets.archive)
         default:
             if path.hasPrefix("/now/dependencies/") {
                 let encoded = String(path.dropFirst(

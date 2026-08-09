@@ -33,9 +33,6 @@ struct OnboardingSheet: View {
 
             HStack {
                 Button("Open Packages Folder", action: openPackagesFolder)
-                Button("CarbonLib Page") {
-                    NSWorkspace.shared.open(OnboardingPortal.carbonLibPage)
-                }
                 Spacer()
                 if portal.endpoint != nil {
                     Button("Stop Onboarding", role: .destructive) {
@@ -113,24 +110,21 @@ struct OnboardingSheet: View {
             packageLine("NOW Extension",
                         asset: portal.assets.extensionComponent,
                         required: false)
-            packageLine("StuffIt archive",
-                        asset: portal.assets.archive,
-                        required: false)
-            HStack(alignment: .firstTextBaseline) {
-                Image(systemName: portal.assets.dependencies.isEmpty
-                      ? "circle" : "checkmark.circle.fill")
-                    .foregroundStyle(portal.assets.dependencies.isEmpty
-                                     ? Color.secondary : Color.green)
-                Text("Dependencies")
-                Spacer()
-                Text(dependencySummary)
-                    .foregroundStyle(.secondary)
+            Divider()
+            Text("Dependencies")
+                .font(.subheadline.weight(.semibold))
+            ForEach(OnboardingDependencyCatalog.all) { dependency in
+                dependencyLine(dependency)
+            }
+            ForEach(OnboardingDependencyCatalog.additionalAssets(
+                in: portal.assets)) { asset in
+                packageLine(asset.fileName, asset: asset, required: false)
             }
             Text("Release packages can be placed in the app's "
                  + "Contents/Resources/Onboarding folder before signing. "
                  + "Local or licensed packages belong in the Application "
-                 + "Support folder opened below; put dependencies in its "
-                 + "Dependencies folder.")
+                 + "Support folder opened below. Get downloads are checksum-"
+                 + "verified and saved directly in its Dependencies folder.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -164,11 +158,46 @@ struct OnboardingSheet: View {
         }
     }
 
-    private var dependencySummary: String {
-        if portal.assets.dependencies.isEmpty { return "None installed" }
-        let count = portal.assets.dependencies.count
-        let carbon = portal.assets.hasCarbonLib ? ", CarbonLib found" : ""
-        return "\(count) file\(count == 1 ? "" : "s")\(carbon)"
+    private func dependencyLine(_ dependency: OnboardingDependency)
+        -> some View {
+        let asset = dependency.installedAsset(in: portal.assets)
+        let state = portal.dependencyAcquisitions[dependency.id]
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Image(systemName: asset == nil
+                      ? "circle" : "checkmark.circle.fill")
+                    .foregroundStyle(asset == nil
+                                     ? Color.secondary : Color.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(dependency.displayName)
+                    Text(dependency.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let asset {
+                    Text(ByteCountFormatter.string(
+                        fromByteCount: asset.byteCount,
+                        countStyle: .file))
+                        .foregroundStyle(.secondary)
+                } else if state == .downloading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button("Source…") {
+                        NSWorkspace.shared.open(dependency.sourcePageURL)
+                    }
+                    .controlSize(.small)
+                    Button("Get…") { portal.acquire(dependency) }
+                        .controlSize(.small)
+                }
+            }
+            if case .failed(let message) = state {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.leading, 27)
+            }
+        }
     }
 
     private func copy(_ value: String?) {

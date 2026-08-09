@@ -27,19 +27,28 @@ listener and a separate temporary HTTP listener, displays a detected LAN IPv4
 and actual HTTP port, and serves an HTML 3.2-shaped fixed-route page. The page
 offers the canonical PPC MacBinary when installed, a per-request MacBinary
 `New Old World Prefs` aimed at the accepting interface and configured wire
-port, the optional NOW Extension and `.sit`, and files from the external
-dependency store. Unknown routes and mutation methods are refused; quit stops
-the listener. The product and server contract are in
+port, the optional NOW Extension, and explicitly enumerated files from the
+external dependency store. A missing CarbonLib row can download the known
+1.6.1 archive directly into that store after verifying its published SHA-1;
+NOW wraps the unchanged StuffIt bytes in MacBinary with `SIT5` / `SIT!`
+metadata before serving them. Unknown routes and mutation methods are refused;
+quit stops the listener. The product and server contract are in
 [onboarding.md](onboarding.md).
 
-Six focused host tests pass. Two use the real temporary listener over loopback
+Ten focused host tests pass. Two use the real temporary listener over loopback
 to fetch the page, application and preferences, and to exercise unknown-route
 and POST refusal. The preference test separately pins the MacBinary header,
 CRC, Finder type/creator, big-endian V1 magic/format/port, and host field. The
-asset tests pin local-over-bundled precedence and dependency discovery.
+asset tests pin local-over-bundled precedence and dependency discovery. The
+new dependency tests pin explicit catalog enumeration, refusal before write on
+checksum mismatch, and the acquired archive's MacBinary name, data-fork
+boundary, Finder type and creator. A general encoder test pins both fork
+lengths and their independently padded regions.
 Each new guard was also watched failing against the mutation it names: a
 byte-swapped preference port, POST being admitted, and bundled assets taking
-precedence over the operator's local package store.
+precedence over the operator's local package store; additionally, a substituted
+Finder type, bypassed checksum comparison, and restored StuffIt archive link
+each produced the named failure.
 
 `scripts/test-all` exits 0 on this branch: staged-image discipline 28/28,
 native tests 149/149, MirrorKit, all guest/resident/instrument cross-builds,
@@ -50,11 +59,12 @@ that run reached a Macintosh.
 What remains unverified is the product path: no Netscape, Internet Explorer or
 Classilla-era browser has downloaded and decoded these files; no physical PPC
 Mac has installed the generated preference file, launched the guest, and sent
-the `hello` that makes it appear under Active. A `.sit` is pass-through only
-and no archive has been supplied or checked. CarbonLib remains operator-
-provided: the Macintosh Garden page was live over HTTP on 2026-08-09, but NOW
-has established neither Apple redistribution permission nor provenance for a
-particular installer. None of those absences changes the focused result from
+the `hello` that makes it appear under Active. CarbonLib remains external: NOW
+has pinned the mirror bytes and independently published checksum, but has not
+established Apple redistribution permission. Open-source StuffIt/BinHex
+extraction is not integrated, and the product intentionally exposes no
+single-archive creation button until a StuffIt writer is proven across guest
+handler versions. None of those absences changes the focused result from
 Tested to Metal-verified.
 
 **There is a third category, and it is not on this page.**

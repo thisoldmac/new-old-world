@@ -20,6 +20,12 @@ message, so it does not change `contract/asyncapi.yaml`.
    **Active**, not when the browser finishes a download.
 6. Stop onboarding from the sheet or the Connections page.
 
+Every product download in that sequence is MacBinary. The HTTP connection is
+still a data-only transport, but the `.bin` envelope carries the classic file
+name, Finder type and creator, data fork and resource fork through it. The
+browser or MacBinary decoder reconstructs the native classic file rather than
+leaving an untyped host download behind.
+
 The NOW Extension is optional. Put its decoded file in
 `System Folder:Extensions` and restart the classic Mac. The application works
 without the resident, with the reduced capability set described in
@@ -45,22 +51,46 @@ names are:
 |---|---|
 | `New Old World.bin` | canonical PPC MacBinary; required |
 | `NowExt.bin` or `NOW Extension.bin` | optional resident |
-| `New Old World.sit` or `New Old World Installer.sit` | optional complete archive; served as supplied |
-| `Dependencies/*` | optional operator-provided dependencies, listed by file name |
+| `Dependencies/CarbonLib_161.sit.bin` | checksum-verified CarbonLib StuffIt archive in a MacBinary envelope |
+| `Dependencies/*` | other operator-provided dependencies, each listed separately and served as supplied |
 
 Set `NOW_ONBOARDING_ASSETS` to an alternate root for a development or test
 run. When it is set, that root is the only package store.
 
-The host does not manufacture a StuffIt archive. If a verified `.sit` is
-present it is offered; if not, the portal presents the individual MacBinary
-files. That keeps an unreliable archive-creation path out of the application.
+Dependencies are explicit rows rather than one aggregate status. A missing
+known dependency has **Source…** and **Get…** buttons. **Get…** downloads into
+the local `Dependencies/` folder; a package is admitted only if its bytes
+match the catalogued checksum.
 
-The repository does not redistribute CarbonLib. If no dependency whose name
-contains `CarbonLib` is installed, the page links to the
-[CarbonLib page on Macintosh Garden](http://macintoshgarden.org/apps/carbonlib).
-That HTTP page was reachable on 2026-08-09, but it is an external archive, not
-an Apple redistribution grant or a package NOW has verified. A release may
-carry an operator-vetted installer in `Dependencies/` without changing code.
+The repository does not redistribute CarbonLib. Its catalog entry downloads
+the 1.6.1 StuffIt archive from the Macintosh Garden mirror and requires SHA-1
+`8a80248cb9acd2b26a3c7cf7af5dbde56b96fa3e`, which is also published by
+[Macintosh Repository](https://www.macintoshrepository.org/17069-carbonlib).
+NOW then puts those unchanged `.sit` bytes in the data fork of
+`CarbonLib_161.sit.bin`, with Finder type `SIT5` and creator `SIT!`. Decoding
+the MacBinary on the classic Mac therefore yields a native StuffIt archive.
+The **Source…** button remains available because this is still a third-party
+download, not an Apple redistribution grant.
+
+## StuffIt and BinHex boundary
+
+MacBinary is a preservation envelope, not compression. NOW can reliably
+create it itself and uses it for the application, extension, generated
+preferences and catalog-acquired CarbonLib package.
+
+Open-source host-side extraction is plausible but is not part of this build.
+[unar and XADMaster](https://theunarchiver.com/command-line) read StuffIt and
+BinHex without depending on the proprietary StuffIt application. Before NOW
+adopts that path, it still needs a pinned helper build plus fixtures proving
+that data forks, resource forks and Finder metadata survive extraction and
+repackaging for the guest.
+
+NOW does not currently create StuffIt archives. The open-source
+[stuffit-rs](https://github.com/benletchford/stuffit-rs) can write StuffIt 5,
+but it is young and has not been checked against the range of StuffIt Expander
+versions on NOW's supported Macs. A single-archive button would encode a
+compatibility promise, so the old pass-through **StuffIt archive** row has
+been removed until a writer passes that matrix on real guests.
 
 ## Server and preference contract
 
@@ -73,7 +103,6 @@ only these fixed route families:
 - `/now/application.bin`
 - `/now/settings.bin`
 - `/now/extension.bin`
-- `/now/archive.sit`
 - the exact installed names beneath `/now/dependencies/`
 
 There are no uploads, directory listings, arbitrary file paths, cookies,
@@ -93,7 +122,8 @@ emulator interfaces are not guessed a second time after the browser arrives.
 
 The host tests exercise the real temporary listener over loopback, the page,
 application and generated-settings downloads, method and unknown-route
-refusals, package precedence, and the MacBinary/preference bytes. This is
+refusals, package precedence, explicit dependency enumeration, checksum
+refusal, and MacBinary fork boundaries plus preference bytes. This is
 **Tested**. It has not yet been used from a classic browser or carried through
 a first launch and `hello` on physical PowerPC hardware, so it is not
 Metal-verified.

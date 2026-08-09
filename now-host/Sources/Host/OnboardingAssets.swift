@@ -4,7 +4,6 @@ struct OnboardingAsset: Identifiable, Equatable {
     enum Kind: Equatable {
         case application
         case extensionComponent
-        case archive
         case dependency
     }
 
@@ -19,17 +18,13 @@ struct OnboardingAsset: Identifiable, Equatable {
 struct OnboardingAssetSnapshot: Equatable {
     let application: OnboardingAsset?
     let extensionComponent: OnboardingAsset?
-    let archive: OnboardingAsset?
     let dependencies: [OnboardingAsset]
 
     static let empty = OnboardingAssetSnapshot(
-        application: nil, extensionComponent: nil, archive: nil,
-        dependencies: [])
+        application: nil, extensionComponent: nil, dependencies: [])
 
     var hasCarbonLib: Bool {
-        dependencies.contains {
-            $0.fileName.localizedCaseInsensitiveContains("carbonlib")
-        }
+        OnboardingDependencyCatalog.carbonLib.installedAsset(in: self) != nil
     }
 }
 
@@ -82,9 +77,6 @@ struct OnboardingAssetCatalog {
             extensionComponent: firstAsset(
                 named: ["NOW Extension.bin", "NowExt.bin"],
                 kind: .extensionComponent),
-            archive: firstAsset(
-                named: ["New Old World.sit", "New Old World Installer.sit"],
-                kind: .archive),
             dependencies: dependencyAssets())
     }
 
@@ -97,6 +89,13 @@ struct OnboardingAssetCatalog {
         try fileManager.createDirectory(at: dependencies,
                                         withIntermediateDirectories: true)
         return writableRoot
+    }
+
+    @discardableResult
+    func prepareDependenciesRoot() throws -> URL {
+        try prepareWritableRoot()
+        return writableRoot.appendingPathComponent(
+            "Dependencies", isDirectory: true)
     }
 
     private func firstAsset(named candidates: [String],

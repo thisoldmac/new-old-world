@@ -13,28 +13,27 @@ enum OnboardingPage {
         }
         downloads += item("/now/settings.bin",
                           "Settings for \(host):\(wirePort)")
-        if assets.archive != nil {
-            downloads += item("/now/archive.sit",
-                              "Complete StuffIt archive (optional)")
-        }
         if assets.extensionComponent != nil {
             downloads += item("/now/extension.bin",
                               "NOW Extension (optional; restart required)")
         }
 
         var dependencies = ""
-        for dependency in assets.dependencies {
-            let route = "/now/dependencies/"
-                + percentEncode(dependency.fileName)
-            dependencies += item(route, dependency.fileName)
+        for dependency in OnboardingDependencyCatalog.all {
+            if let asset = dependency.installedAsset(in: assets) {
+                dependencies += item(dependencyRoute(asset),
+                                     dependency.displayName)
+            } else {
+                dependencies += "<li><b>\(escape(dependency.displayName)):</b> "
+                    + "not installed on the host. Get it from "
+                    + "<a href=\"\(escape(dependency.sourcePageURL.absoluteString))\">"
+                    + "the source page</a>.</li>\n"
+            }
         }
-        if dependencies.isEmpty {
-            dependencies = "<li>No local dependency packages are installed.</li>\n"
-        }
-        if !assets.hasCarbonLib {
-            dependencies += "<li>CarbonLib is not bundled. Get CarbonLib 1.6 "
-                + "from <a href=\"http://macintoshgarden.org/apps/carbonlib\">"
-                + "Macintosh Garden</a> if this Mac does not have it.</li>\n"
+        for dependency in OnboardingDependencyCatalog.additionalAssets(
+            in: assets) {
+            dependencies += item(dependencyRoute(dependency),
+                                 dependency.fileName)
         }
 
         return """
@@ -74,6 +73,10 @@ enum OnboardingPage {
 
     private static func item(_ href: String, _ label: String) -> String {
         "<li><a href=\"\(href)\">\(escape(label))</a></li>\n"
+    }
+
+    private static func dependencyRoute(_ asset: OnboardingAsset) -> String {
+        "/now/dependencies/" + percentEncode(asset.fileName)
     }
 
     private static func escape(_ value: String) -> String {
