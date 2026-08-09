@@ -10,6 +10,38 @@ enum GuestFilePromiseType {
     }
 }
 
+/// A testable description of the browser shortcuts. AppKit includes state
+/// flags such as Caps Lock in every key event, so only the modifiers that
+/// participate in shortcuts are compared.
+enum FileBrowserKeyAction: Equatable {
+    case download
+    case newFolder
+    case open
+    case trash
+
+    static func resolve(modifiers: NSEvent.ModifierFlags, keyCode: UInt16,
+                        characters: String?) -> FileBrowserKeyAction? {
+        let shortcutFlags: NSEvent.ModifierFlags =
+            [.command, .shift, .option, .control]
+        let chord = modifiers.intersection(shortcutFlags)
+        let character = characters?.lowercased()
+
+        if chord == .command {
+            if character == "d" { return .download }
+            // 51 is the Mac's Backspace/Delete key; 117 is Forward Delete.
+            if keyCode == 51 || keyCode == 117 { return .trash }
+        }
+        if chord == [.command, .shift], character == "n" {
+            return .newFolder
+        }
+        if chord.isEmpty, let key = character?.unicodeScalars.first,
+           key == "\r" || key == "\u{3}" {
+            return .open
+        }
+        return nil
+    }
+}
+
 /// The browser's table, in AppKit.
 ///
 /// SwiftUI's Table cannot be a drag SOURCE for files: dragging a row
@@ -314,9 +346,11 @@ struct FileBrowserTable: NSViewRepresentable {
             menu.addItem(withTitle: trashTitle, action: #selector(trashRows),
                          keyEquivalent: "").target = self
             menu.addItem(.separator())
-            menu.addItem(withTitle: "New Folder",
-                         action: #selector(newFolder),
-                         keyEquivalent: "").target = self
+            let newFolder = menu.addItem(withTitle: "New Folder",
+                                         action: #selector(newFolder),
+                                         keyEquivalent: "n")
+            newFolder.target = self
+            newFolder.keyEquivalentModifierMask = [.command, .shift]
             if row.isFolder {
                 // The keyboard's half of drag-to-add. A sidebar that can
                 // only be filled by dragging is a sidebar some people
@@ -352,6 +386,16 @@ struct FileBrowserTable: NSViewRepresentable {
             if let row = selectedRows.first { parent.onOpen(row) }
         }
 
+        func trashSelection() {
+            let selected = selectedRows
+            guard !selected.isEmpty else { return }
+            parent.model.requestTrash(selected)
+        }
+
+        func beginNewFolder() {
+            parent.model.beginNewFolder()
+        }
+
         @objc private func pinRow() {
             if let row = clickedRow, row.isFolder {
                 parent.model.pinLocation(path: row.path)
@@ -373,7 +417,7 @@ struct FileBrowserTable: NSViewRepresentable {
         }
 
         @objc private func newFolder() {
-            parent.model.beginNewFolder()
+            beginNewFolder()
         }
 
         @objc private func commitRename(_ sender: NSTextField) {
@@ -541,27 +585,30 @@ struct FileBrowserTable: NSViewRepresentable {
     /// The download glyph is a button in a cell, so Full Keyboard Access
     /// already reaches it — but only by tabbing through every row before
     /// it, which is not reaching. ⌘D acts on the selection the way the
-    /// context menu's Download does, and Return opens it the way a
-    /// double-click does. Both are the *same* model calls; the point is a
-    /// second door, not a second behaviour.
+    /// context menu's Download does, Return opens it, Command-Delete moves
+    /// it to Trash, and Shift-Command-N makes a folder. Each is the *same*
+    /// model call as its visible control; the point is a second door, not a
+    /// second behaviour.
     @MainActor
     final class BrowserTableView: NSTableView {
         weak var coordinator: Coordinator?
 
         override func keyDown(with event: NSEvent) {
-            let command = event.modifierFlags
-                .intersection(.deviceIndependentFlagsMask) == .command
-            if command, event.charactersIgnoringModifiers?.lowercased() == "d" {
+            let action = FileBrowserKeyAction.resolve(
+                modifiers: event.modifierFlags, keyCode: event.keyCode,
+                characters: event.charactersIgnoringModifiers)
+            switch action {
+            case .download:
                 coordinator?.downloadSelection()
-                return
-            }
-            // Return/Enter, the Finder's own "open this".
-            if !command, let key = event.charactersIgnoringModifiers?.unicodeScalars.first,
-               key == "\r" || key == "\u{3}" {
+            case .newFolder:
+                coordinator?.beginNewFolder()
+            case .open:
                 coordinator?.openSelection()
-                return
+            case .trash:
+                coordinator?.trashSelection()
+            case nil:
+                super.keyDown(with: event)
             }
-            super.keyDown(with: event)
         }
     }
 }

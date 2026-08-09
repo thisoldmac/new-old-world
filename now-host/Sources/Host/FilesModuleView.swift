@@ -161,6 +161,7 @@ struct FilesModuleView: View {
             } label: {
                 Label("New Folder", systemImage: "folder.badge.plus")
             }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
             .labelStyle(.iconOnly)
             .disabled(!model.canBrowse || model.isChanging)
             .help("New folder here")
@@ -207,7 +208,7 @@ struct FilesModuleView: View {
                 ProgressView().controlSize(.small)
             }
             Button {
-                model.refresh()
+                model.refreshBrowser()
             } label: {
                 Image(systemName: "arrow.clockwise")
             }

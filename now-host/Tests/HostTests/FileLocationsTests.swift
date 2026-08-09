@@ -323,7 +323,7 @@ final class FileLocationsTests: XCTestCase {
                        "a dragged string is not evidence of anything")
         XCTAssertFalse(bench.model.pinLocation(path: ""),
                        "the root is already there")
-        XCTAssertEqual(bench.model.locations.map(\.path), ["Lab"])
+        XCTAssertEqual(bench.model.locations.map(\.path), ["", "Lab"])
     }
 
     func testRemovingAPinForgetsItAndRemovingADiscoveryRemembersIt()

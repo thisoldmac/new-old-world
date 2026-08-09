@@ -398,51 +398,61 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     // MARK: - Which machine is being browsed
 
     private func connectionChanged(from old: GuestConnectionState) {
-        guard connection != old,
-              case .switched(let restored) =
-                cache.focus(connection.key, parking: snapshot())
-        else { return }
-        listingGeneration += 1
-        let fresh = restored ?? Snapshot()
-        breadcrumb = fresh.breadcrumb
-        rows = fresh.rows
-        selection = fresh.selection
-        shareRoot = fresh.shareRoot
-        pageCursor = fresh.pageCursor
-        history = fresh.history
-        isLoading = false
-        lastError = nil
-        lastNotice = nil
-        transfer = nil
-        renaming = nil
-        draggedFolderPath = nil
-        newFolderPrompt = nil
-        promiseExporter.cancelAll(
-            reason: "The connected guest changed while files were being copied.")
-        pendingChange = nil
-        overwritePrompt = nil
-        /* A queue of files is the one thing here that must NOT survive the
-           switch, parked or otherwise. It is a list of things to WRITE, and
-           the machine they were meant for is no longer the one on the other
-           end of the wire — sending them anyway is the destructive version
-           of the bug this whole slice is about. Dropping them says so out
-           loud rather than resuming against the wrong Mac later. */
-        if !queue.isEmpty {
-            let dropped = queue.count
-            lastError = "\(dropped) file\(dropped == 1 ? "" : "s") "
-                + "still waiting to send were dropped: they were meant for "
-                + "\(MachineNaming.simpleReference)."
+        guard connection != old else { return }
+        // Even a disconnect owns the sidebar: a reply from the machine that
+        // just went away must not repopulate Places after it was cleared.
+        locationDiscoveryGeneration += 1
+        isDiscoveringLocations = false
+        if case .switched(let restored) =
+            cache.focus(connection.key, parking: snapshot()) {
+            listingGeneration += 1
+            let fresh = restored ?? Snapshot()
+            breadcrumb = fresh.breadcrumb
+            rows = fresh.rows
+            selection = fresh.selection
+            shareRoot = fresh.shareRoot
+            pageCursor = fresh.pageCursor
+            history = fresh.history
+            isLoading = false
+            lastError = nil
+            lastNotice = nil
+            transfer = nil
+            renaming = nil
+            draggedFolderPath = nil
+            newFolderPrompt = nil
+            promiseExporter.cancelAll(
+                reason: "The connected guest changed while files were being copied.")
+            pendingChange = nil
+            overwritePrompt = nil
+            /* A queue of files is the one thing here that must NOT survive the
+               switch, parked or otherwise. It is a list of things to WRITE,
+               and the machine they were meant for is no longer the one on the
+               other end of the wire — sending them anyway is the destructive
+               version of the bug this whole slice is about. */
+            if !queue.isEmpty {
+                let dropped = queue.count
+                lastError = "\(dropped) file\(dropped == 1 ? "" : "s") "
+                    + "still waiting to send were dropped: they were meant for "
+                    + "\(MachineNaming.simpleReference)."
+            }
+            queue = []
+            queueTotal = 0
+            queueDone = 0
+            /* The sidebar is one machine's furniture, and the customisation
+               of it is that machine's too. Discovered rows go with the old
+               machine rather than being parked: they are a claim about a disk
+               that is no longer on the other end of the wire. */
+            discoveredLocations = []
+            reloadStoredLocations()
         }
-        queue = []
-        queueTotal = 0
-        queueDone = 0
-        /* The sidebar is one machine's furniture, and the customisation
-           of it is that machine's too. Discovered rows go with the old
-           machine rather than being parked: they are a claim about a disk
-           that is no longer on the other end of the wire, and the sweep
-           that replaces them costs a handful of small requests. */
-        discoveredLocations = []
-        reloadStoredLocations()
+
+        /* A page may already be on screen when the same guest reconnects, so
+           `onAppear` is not a connection hook. Every newly usable connection
+           revalidates both the open folder and the guest-derived Places rows. */
+        if canBrowse {
+            refresh()
+            discoverLocations()
+        }
     }
 
     private func snapshot() -> Snapshot {
@@ -455,6 +465,17 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
 
     func refresh() {
         load(path: path, resetRows: true)
+    }
+
+    /// The human-facing refresh: both surfaces that describe the guest's disk.
+    /// Internal mutation events use `refresh()` because they only invalidate
+    /// the open listing; a toolbar click or a new connection revalidates the
+    /// Places sidebar as well.
+    func refreshBrowser() {
+        refresh()
+        locationDiscoveryGeneration += 1
+        isDiscoveringLocations = false
+        discoverLocations()
     }
 
     func open(_ row: FileRow) {
@@ -586,6 +607,10 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// Machines already swept, so showing the page twice is not two
     /// sweeps. A person can still ask again.
     private var sweptMachines = Set<GuestKey>()
+    /// Owns an in-flight Places sweep. A guest switch or explicit refresh may
+    /// start a newer sweep before the old connection answers; only the newest
+    /// one may publish locations.
+    private var locationDiscoveryGeneration = 0
 
     private var currentMachine: GuestID? { connection.key?.machine }
 
@@ -610,6 +635,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     func discoverLocations() {
         guard canBrowse, !isDiscoveringLocations else { return }
         if let key = connection.key { sweptMachines.insert(key) }
+        locationDiscoveryGeneration += 1
+        let generation = locationDiscoveryGeneration
         isDiscoveringLocations = true
         /* The share root comes FIRST, and not for the sidebar's top row:
            `software.list` answers in whole HFS paths, and turning one of
@@ -617,16 +644,19 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
            what to subtract. Sweeping before the root was known threw away
            every Folder Manager answer for want of a prefix. */
         listener.listFiles(path: "") { [weak self] result in
-            guard let self else { return }
+            guard let self,
+                  generation == self.locationDiscoveryGeneration else { return }
             switch result {
             case .success(let listing):
                 if let root = listing.root, !root.isEmpty {
                     self.shareRoot = root
                 }
                 self.sweepFolderManager(index: 0, found: [],
-                                        systemFolder: nil)
+                                        systemFolder: nil,
+                                        generation: generation)
             case .failure(let failure):
-                self.finishDiscovery(abandoned: failure.message)
+                self.finishDiscovery(abandoned: failure.message,
+                                     generation: generation)
             }
         }
     }
@@ -634,21 +664,24 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// Route one: ask for a page of each FindFolder-backed domain and
     /// read the folder out of where its entries live.
     private func sweepFolderManager(index: Int, found: [FileLocation],
-                                    systemFolder: String?) {
+                                    systemFolder: String?, generation: Int) {
         guard index < ClassicLocations.folderManagerDomains.count else {
-            sweepSystemFolder(found: found, systemFolder: systemFolder)
+            sweepSystemFolder(found: found, systemFolder: systemFolder,
+                              generation: generation)
             return
         }
         let domain = ClassicLocations.folderManagerDomains[index]
         listener.listSoftware(domain: domain.domain, cursor: 1) {
             [weak self] result in
-            guard let self else { return }
+            guard let self,
+                  generation == self.locationDiscoveryGeneration else { return }
             var found = found
             var systemFolder = systemFolder
             switch result {
             case .failure(let failure):
                 guard !FileLocationResolver.isFatal(failure.code) else {
-                    self.finishDiscovery(abandoned: failure.message)
+                    self.finishDiscovery(abandoned: failure.message,
+                                         generation: generation)
                     return
                 }
                 // A guest too old for this domain simply does not
@@ -672,7 +705,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 }
             }
             self.sweepFolderManager(index: index + 1, found: found,
-                                    systemFolder: systemFolder)
+                                    systemFolder: systemFolder,
+                                    generation: generation)
         }
     }
 
@@ -680,7 +714,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// otherwise the one thing left to guess at before its children can
     /// be probed.
     private func sweepSystemFolder(found: [FileLocation],
-                                   systemFolder: String?) {
+                                   systemFolder: String?, generation: Int) {
         if let systemFolder, !systemFolder.isEmpty {
             var found = found
             found.insert(FileLocation(
@@ -688,14 +722,20 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 name: ClassicLocations.leafName(of: systemFolder),
                 symbol: ClassicLocations.systemFolder.symbol,
                 origin: .folderManager), at: 0)
-            sweepCandidates(index: 0, found: found, systemFolder: systemFolder)
+            sweepCandidates(index: 0, found: found,
+                            systemFolder: systemFolder,
+                            generation: generation)
             return
         }
-        probe(ClassicLocations.systemFolder.names, at: 0, under: "") {
+        probe(ClassicLocations.systemFolder.names, at: 0, under: "",
+              generation: generation) {
             [weak self] resolved in
-            guard let self else { return }
+            guard let self,
+                  generation == self.locationDiscoveryGeneration else { return }
             guard let resolved else {
-                self.sweepCandidates(index: 0, found: found, systemFolder: nil)
+                self.sweepCandidates(index: 0, found: found,
+                                     systemFolder: nil,
+                                     generation: generation)
                 return
             }
             var found = found
@@ -705,7 +745,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 symbol: ClassicLocations.systemFolder.symbol,
                 origin: .probed), at: 0)
             self.sweepCandidates(index: 0, found: found,
-                                 systemFolder: resolved)
+                                 systemFolder: resolved,
+                                 generation: generation)
         }
     }
 
@@ -713,9 +754,9 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// back. A candidate whose every name refuses is omitted — the rule
     /// the whole sidebar rests on.
     private func sweepCandidates(index: Int, found: [FileLocation],
-                                 systemFolder: String?) {
+                                 systemFolder: String?, generation: Int) {
         guard index < ClassicLocations.candidates.count else {
-            finishDiscovery(found: found)
+            finishDiscovery(found: found, generation: generation)
             return
         }
         let candidate = ClassicLocations.candidates[index]
@@ -726,11 +767,14 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         guard let base = candidate.insideSystemFolder ? systemFolder : ""
         else {
             sweepCandidates(index: index + 1, found: found,
-                            systemFolder: systemFolder)
+                            systemFolder: systemFolder,
+                            generation: generation)
             return
         }
-        probe(candidate.names, at: 0, under: base) { [weak self] resolved in
-            guard let self else { return }
+        probe(candidate.names, at: 0, under: base,
+              generation: generation) { [weak self] resolved in
+            guard let self,
+                  generation == self.locationDiscoveryGeneration else { return }
             var found = found
             if let resolved, !found.contains(where: { $0.path == resolved }) {
                 found.append(FileLocation(
@@ -738,7 +782,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                     symbol: candidate.symbol, origin: .probed))
             }
             self.sweepCandidates(index: index + 1, found: found,
-                                 systemFolder: systemFolder)
+                                 systemFolder: systemFolder,
+                                 generation: generation)
         }
     }
 
@@ -746,6 +791,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// that lists. One `file.list` per name — bounded by the candidate
     /// table, and every one of them a page of at most sixteen entries.
     private func probe(_ names: [String], at index: Int, under base: String,
+                       generation: Int,
                        completion: @escaping (String?) -> Void) {
         guard index < names.count else {
             completion(nil)
@@ -753,7 +799,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         }
         let path = FileLocationResolver.join(base, names[index])
         listener.listFiles(path: path) { [weak self] result in
-            guard let self else { return }
+            guard let self,
+                  generation == self.locationDiscoveryGeneration else { return }
             switch result {
             case .success(let listing):
                 if let root = listing.root, !root.isEmpty {
@@ -762,16 +809,19 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 completion(path)
             case .failure(let failure):
                 guard !FileLocationResolver.isFatal(failure.code) else {
-                    self.finishDiscovery(abandoned: failure.message)
+                    self.finishDiscovery(abandoned: failure.message,
+                                         generation: generation)
                     return
                 }
                 self.probe(names, at: index + 1, under: base,
+                           generation: generation,
                            completion: completion)
             }
         }
     }
 
-    private func finishDiscovery(found: [FileLocation]) {
+    private func finishDiscovery(found: [FileLocation], generation: Int) {
+        guard generation == locationDiscoveryGeneration else { return }
         isDiscoveringLocations = false
         var found = found
         found.insert(ClassicLocations.rootLocation(shareRoot: shareRoot),
@@ -783,7 +833,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// The wire went away mid-sweep. Everything not yet asked about is
     /// unknown, not absent — so nothing is recorded, and the machine is
     /// left un-swept so a reconnection tries again.
-    private func finishDiscovery(abandoned reason: String) {
+    private func finishDiscovery(abandoned reason: String, generation: Int) {
+        guard generation == locationDiscoveryGeneration else { return }
         isDiscoveringLocations = false
         if let key = connection.key { sweptMachines.remove(key) }
         lastNotice = "Could not finish looking for folders on "
