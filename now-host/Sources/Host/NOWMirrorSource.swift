@@ -352,6 +352,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         [String: MirrorKit.Scene.FinderPresentation] = [:]
     private var iconLayout: String = "<none>"
     private var fetchingIcons = false
+    private var finderReadNoticeShown = false
     private var iconTask: Task<Void, Never>?
     private var visibilityTask: Task<Void, Never>?
     /// The process roster the last visibility census was read for, and
@@ -457,6 +458,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         visibilityTask?.cancel()
         visibilityTask = nil
         fetchingIcons = false
+        finderReadNoticeShown = false
         guard let key = cycleIO.activeKey() else {
             ambient = "no Mac is connected"
             return
@@ -559,6 +561,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         visibilityTask?.cancel()
         visibilityTask = nil
         fetchingIcons = false
+        finderReadNoticeShown = false
         if clearContentImmediately { cycleIO.guestChanged() }
 
         mutationBroker?.sessionChanged()
@@ -1010,6 +1013,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             .joined(separator: "|")
     }
 
+    /// People look at the front Finder window before the desktop behind it.
+    /// A Finder Apple event costs real cooperative time on the guest, so
+    /// ordering is product behaviour: the visible interior must not wait for
+    /// lower-priority desktop enrichment to finish first.
+    static func prioritizedFinderWindows(_ scene: MirrorKit.Scene)
+        -> [MirrorKit.Scene.Window] {
+        scene.windows.enumerated()
+            .filter { FinderItems.isFolderWindow($0.element) }
+            .sorted {
+                if $0.element.front != $1.element.front {
+                    return $0.element.front
+                }
+                return $0.offset < $1.offset
+            }
+            .map(\.element)
+    }
+
     /// **The Finder complements are SESSION work, not cycle work.**
     ///
     /// Both of these are AppleScript to the Finder, and a Finder Apple
@@ -1071,7 +1091,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             finderRefreshOverride(scene, generation, completion)
             return
         }
-        let folders = scene.windows.filter(FinderItems.isFolderWindow)
+        let folders = Self.prioritizedFinderWindows(scene)
         /* The leading "desktop" is not decoration. The key used to be just
            the folder windows joined, so a machine with NO Finder window
            open produced "" - which equals the initial value of iconLayout,
@@ -1081,11 +1101,15 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         let key = Self.iconLayoutKey(scene)
         guard key != iconLayout else { return completion() }
         guard !fetchingIcons else {
-            note("Finder roster read was already in flight; retained the "
-                 + "last complete roster")
+            if !finderReadNoticeShown {
+                finderReadNoticeShown = true
+                note("Reading Finder contents; a previous complete roster "
+                     + "remains visible when one exists")
+            }
             return completion()
         }
         fetchingIcons = true
+        finderReadNoticeShown = false
         let started = Date()
         iconTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -1093,12 +1117,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             var presentations:
                 [String: MirrorKit.Scene.FinderPresentation] = [:]
             var complete = true
-            if let d = await self.readIcons(container: "desktop",
-                                            generation: generation) {
-                fresh[Self.desktopKey] = d
-            } else {
-                complete = false
-            }
             let duplicateTitles = Dictionary(grouping: folders, by: \.title)
                 .filter { $0.value.count > 1 }.keys
             for win in folders {
@@ -1120,7 +1138,20 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 let containerStarted = Date()
                 if let snapshot = await self.readFinderSurface(
                     container: "window \"\(quoted)\"",
-                    generation: generation) {
+                    generation: generation,
+                    rosterReady: { [weak self] roster in
+                        guard let self,
+                              self.isCurrentRun(generation),
+                              let current = self.scene,
+                              Self.iconLayoutKey(current) == key else { return }
+                        var presentation = roster.presentation
+                        if !win.front {
+                            presentation.selectedNames.removeAll()
+                        }
+                        self.icons[surfaceKey] = roster.items
+                        self.finderPresentations[surfaceKey] = presentation
+                        self.publishFinderComplements(for: key)
+                    }) {
                     fresh[surfaceKey] = snapshot.items
                     var presentation = snapshot.presentation
                     /* Finder's `selection` is global and describes the front
@@ -1146,11 +1177,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     complete = false
                 }
             }
+            /* Desktop enrichment is useful, but it is behind every visible
+               Finder window in the latency queue. The old desktop-first
+               order made Macintosh HD stay blank for nine seconds while the
+               host learned about icons a person could already see behind it. */
+            if let d = await self.readIcons(container: "desktop",
+                                            generation: generation) {
+                fresh[Self.desktopKey] = d
+            } else {
+                complete = false
+            }
             /* A canceled read can outlive a guest switch. Do not let its
                unwind clear the replacement run's in-flight bookkeeping. */
             guard !Task.isCancelled,
                   self.isCurrentRun(generation) else { return }
             self.fetchingIcons = false
+            self.finderReadNoticeShown = false
             self.iconTask = nil
             ActLog.note(action: "complements\n    "
                         + BaselineLine.line("finder", [
@@ -1183,15 +1225,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 self.finderPresentations[container] = presentation
             }
             if complete { self.iconLayout = key }
-            if let current = self.scene {
-                let enriched = self.withIcons(current)
-                _ = self.shadowEngine?.enrichFinder(enriched)
-                self.observeOperations()
-                self.shadowEngine?.compareVisible(enriched)
-                self.scene = self.projectedScene(fallback: enriched)
-            }
+            self.publishFinderComplements(for: key)
             completion()
         }
+    }
+
+    /// Publish the semantic facts already proved for this layout. This is
+    /// deliberately callable before icon-art enrichment finishes: names,
+    /// bounds, order and selection make a useful Finder; type/creator art is
+    /// a later visual improvement and may not hold the interior blank.
+    private func publishFinderComplements(for layoutKey: String) {
+        guard let current = scene,
+              Self.iconLayoutKey(current) == layoutKey else { return }
+        let enriched = withIcons(current)
+        _ = shadowEngine?.enrichFinder(enriched)
+        observeOperations()
+        shadowEngine?.compareVisible(enriched)
+        scene = projectedScene(fallback: enriched)
     }
 
     /// The session engine is the visible replica owner once it exists. The
@@ -1235,9 +1285,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Vectorised, bounded pages rather than one Apple event per icon. A
     /// single all-items result exceeded the guest's 1 KiB script-result cap
     /// in Control Panels and silently lost later rows such as Date & Time.
-    /// Eight HFS names plus positions/kinds remain comfortably below that
-    /// bound; every page carries the same total so a partial read is refused.
-    nonisolated private static let iconPageSize = 8
+    /// Sixteen ordinary HFS names plus positions/kinds fit below that bound;
+    /// an unusually long page retries at the measured-safe eight rows. Every
+    /// page carries the same total so a partial read is refused.
+    nonisolated private static let iconPageSize = 16
+    nonisolated private static let iconFallbackPageSize = 8
 
     /// **`bounds of`, not `position of`** — the whole of the list-view defect.
     ///
@@ -1305,6 +1357,15 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     func readFinderSurface(container: String, generation: Int? = nil)
         async -> FinderSurfaceRead? {
+        await readFinderSurface(container: container, generation: generation,
+                                rosterReady: nil)
+    }
+
+    func readFinderSurface(
+        container: String, generation: Int? = nil,
+        rosterReady: (@MainActor (FinderSurfaceRead) -> Void)?
+    )
+        async -> FinderSurfaceRead? {
         /* Two vectorised passes, not one per icon. The first names every
            item and where the Finder drew it; the second asks the FILES
            for their type and creator, which is what picks the real icon
@@ -1331,10 +1392,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         var selectedNames = Set<String>()
         var pages = 0
         var offset = 0
+        var pageSize = Self.iconPageSize
         while expectedTotal == nil || offset < expectedTotal! {
             guard complementIsCurrent(generation) else { return nil }
             let source = Self.iconItemsScript(container: container,
-                                              offset: offset)
+                                              offset: offset,
+                                              limit: pageSize)
             /* `osaFailureIsAnError` because THIS pass is the one that must
                succeed. A script that raises answers `ok: true` with an
                empty output row and its reason in `osaErr`; without the
@@ -1348,6 +1411,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 source, osaFailureIsAnError: true)
             guard complementIsCurrent(generation) else { return nil }
             let total = read.value.flatMap(Self.iconPageTotal)
+            /* Sixteen compact rows fit ordinary folders in one or two guest
+               turns. A directory with unusually long names may cross the
+               measured 1 KiB result cap; retry that same page at the proven
+               eight-row size rather than trading safety for speed. */
+            if read.truncated && pageSize > Self.iconFallbackPageSize {
+                pageSize = Self.iconFallbackPageSize
+                continue
+            }
             guard let text = read.value, !read.truncated, let total,
                   expectedTotal == nil || expectedTotal == total,
                   total <= FinderItems.maxItemsPerWindow else {
@@ -1367,16 +1438,24 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             selectedNames.formUnion(metadata.selectedNames)
             pages += 1
             let page = Self.parseIcons(text)
-            let expectedCount = min(Self.iconPageSize, total - offset)
+            let expectedCount = min(pageSize, total - offset)
             guard page.count == expectedCount else {
                 note("could not read the items of \(container) - page "
-                     + "\(offset / Self.iconPageSize + 1) was incomplete")
+                     + "\(pages) was incomplete")
                 return nil
             }
             roster.append(contentsOf: page)
             offset += page.count
             if total == 0 { break }
         }
+
+        let semantic = FinderSurfaceRead(
+            items: roster,
+            presentation: .init(path: expectedPath ?? "",
+                                view: expectedView ?? .unknown,
+                                selectedNames: selectedNames,
+                                pages: pages, complete: true))
+        rosterReady?(semantic)
 
         let types = """
         tell application "Finder"
@@ -1431,10 +1510,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         return FinderSurfaceRead(
             items: Self.applyingArt(roster, types: typesByName,
                                     aliasTargets: targetsByName),
-            presentation: .init(path: expectedPath ?? "",
-                                view: expectedView ?? .unknown,
-                                selectedNames: selectedNames,
-                                pages: pages, complete: true))
+            presentation: semantic.presentation)
     }
 
     static func finderPageMetadata(_ raw: String)

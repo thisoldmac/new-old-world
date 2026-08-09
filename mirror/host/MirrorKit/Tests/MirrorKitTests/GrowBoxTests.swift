@@ -1,7 +1,7 @@
 import XCTest
 @testable import MirrorKit
 
-/// **Nothing may offer a grow box the guest has not reported.**
+/// **Nothing may offer a grow box it cannot establish.**
 ///
 /// `WindowChrome.growBox` guarded on `win.kind != 2` until 2026-08-07, and
 /// fidelity sweep D measured that discriminator wrong **in both directions at
@@ -28,11 +28,9 @@ import XCTest
 /// them names it.
 final class GrowBoxTests: XCTestCase {
 
-    /// The pair sweep D measured, and the two other kinds in its corpus.
-    /// Posed as a property rather than as two constants: **no window shape
-    /// gets a grow box**, so nothing in `Scene.Window` can be reaching the
-    /// decision. A discriminator restored on any field fails here.
-    func testNoWindowShapeIsGivenAGrowBox() throws {
+    /// The pair sweep D measured, and the two other application kinds in its
+    /// corpus. No application WDEF is inferred from `kind`.
+    func testNoApplicationWindowShapeIsGivenAGrowBox() throws {
         for (kind, title) in [(2000 as Int?, "Appearance"),
                               (2, "Extensions Manager"),
                               (2, "Memory"),
@@ -53,6 +51,28 @@ final class GrowBoxTests: XCTestCase {
                     + "not, the fabricated affordance is back and a resize "
                     + "drags inside the content region.")
         }
+    }
+
+    func testFrontFinderFolderHasAResizeHandleAndHitTarget() throws {
+        let win = try Self.window(kind: 20, title: "Macintosh HD",
+                                  app: "Finder")
+        let box = try XCTUnwrap(WindowChrome.growBox(win))
+        XCTAssertEqual(box.r, win.rect.r)
+        XCTAssertEqual(box.b, win.rect.b)
+
+        let hit = HitTester.hitTest(try Self.scene(win),
+                                    x: box.r - 4, y: box.b - 4)
+        guard case .growBox(let id, _, _) = hit else {
+            return XCTFail("Finder's size box resolved to \(hit)")
+        }
+        XCTAssertEqual(id, win.id)
+    }
+
+    func testBackgroundFinderFolderDoesNotOfferAnActiveResizeHandle() throws {
+        var win = try Self.window(kind: 20, title: "Macintosh HD",
+                                  app: "Finder")
+        win.front = false
+        XCTAssertNil(WindowChrome.growBox(win))
     }
 
     /// The hit-tester is the half that turns a fabricated box into a drag.
@@ -98,10 +118,11 @@ final class GrowBoxTests: XCTestCase {
 
     /// Built through the public decoder rather than a memberwise initialiser,
     /// so the fixture is the shape a real scene produces.
-    static func window(kind: Int?, title: String) throws -> Scene.Window {
+    static func window(kind: Int?, title: String, app: String? = nil) throws
+        -> Scene.Window {
         let kindJSON = kind.map(String.init) ?? "null"
         let json = """
-            {"id":"1.0/\(title)#0","app":"\(title)","psn":"1.0",
+            {"id":"1.0/\(title)#0","app":"\(app ?? title)","psn":"1.0",
              "title":"\(title)","kind":\(kindJSON),
              "rect":{"l":100,"t":80,"r":500,"b":400},
              "front":true,"z":0,"visible":true,"controls":[]}

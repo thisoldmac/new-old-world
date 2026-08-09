@@ -114,8 +114,10 @@ public enum WindowChrome {
         return PlatinumTitleBar.zoomBox(win.rect)
     }
 
-    /// The grow box — **and today the honest answer is always "we cannot
-    /// say"**, for the same reason and by the same argument as `zoomBox`.
+    /// The grow box. Finder folder windows are the one surface for which the
+    /// semantic owner establishes this without interpreting an arbitrary
+    /// application's WDEF: a visible front Finder container is a standard,
+    /// resizable Finder window. Other applications still answer unknown.
     ///
     /// This read `guard win.kind != 2` until 2026-08-07, and fidelity sweep D
     /// measured that discriminator wrong **in both directions at once**, in
@@ -141,18 +143,23 @@ public enum WindowChrome {
     /// window with no grow box is a drag inside the content region of a live
     /// application. That is the same failure the zoom box was removed for.
     ///
-    /// **The cost is real and is not hidden:** every window loses its grow
-    /// box, including the ones that have one (sweep D's Workshop, SimpleText,
-    /// Finder, Apple System Profiler, Extensions Manager). `mirror.act.window
-    /// op: resize` answers `element_not_found` and the battery records a skip
-    /// rather than a pass.
+    /// **The cost is real and is not hidden:** application windows still lose
+    /// their grow box until the target-context probe below lands. Finder is
+    /// different because this slice already gives its standard folder windows
+    /// a semantic owner; withholding the resize affordance there makes the
+    /// strict Mirror less capable than the Finder it is projecting.
     ///
     /// **What fills this in:** `FindWindow`'s `inGrow` — ask the Window
     /// Manager, in the target application's own context, which part a point in
     /// that corner belongs to. That is an **act**, not a read, so it needs an
     /// armed, gated surface rather than the passive scene walk every other
     /// chrome fact comes from. Written up in docs/open-issues.md.
-    public static func growBox(_ win: Scene.Window) -> Rect? { nil }
+    public static func growBox(_ win: Scene.Window) -> Rect? {
+        guard win.front, FinderItems.isFolderWindow(win) else { return nil }
+        let r = win.rect
+        return Rect(l: r.r - growBoxSpan, t: r.b - growBoxSpan,
+                    r: r.r, b: r.b)
+    }
 
     /// The chrome band a titleless dialog wears instead of a title bar:
     /// a raised border with an inner hairline, drawn on all four sides.

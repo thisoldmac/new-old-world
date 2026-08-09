@@ -98,6 +98,24 @@ final class NOWMirrorSourceTests: XCTestCase {
                      "two front rows must refuse rather than guess")
     }
 
+    func testFrontFinderWindowIsEnrichedBeforeBackgroundWindows() throws {
+        var scene = try fixtureScene()
+        var background = try XCTUnwrap(scene.windows.first {
+            $0.app == "Finder" && $0.title != "Desktop"
+        })
+        var front = background
+        background.title = "Background Folder"
+        background.front = false
+        front.title = "Front Folder"
+        front.front = true
+        scene.windows = [background, front]
+
+        XCTAssertEqual(
+            NOWMirrorSource.prioritizedFinderWindows(scene).map(\.title),
+            ["Front Folder", "Background Folder"],
+            "a slow background read must not hold the visible interior blank")
+    }
+
     func testAnEmptyAppleShellCannotEraseTheLastCompleteGuestMenu() throws {
         let fixture = try XCTUnwrap(
             Bundle.module.url(forResource: "now-scene-ir-v1",
@@ -1621,6 +1639,14 @@ final class NOWMirrorIconParsingTests: XCTestCase {
                        "one unbounded result can exceed the guest's 1 KiB cap")
     }
 
+    func testOrdinaryFinderPageStartsAtSixteenRows() {
+        let script = NOWMirrorSource.iconItemsScript(
+            container: "window \"Macintosh HD\"", offset: 0)
+
+        XCTAssertTrue(script.contains("set lastIndex to 16"),
+                      "18 root items should take two guest turns, not three")
+    }
+
     func testLaterFinderPageKeepsDateAndTimeNameAndHitTarget() throws {
         let page = "\"N\t33\r"
             + "I\tDate & Time\t184\t221\tcontrol panel\r"
@@ -1835,6 +1861,50 @@ final class NOWMirrorRosterReasonTests: XCTestCase {
                       + "got: \(src.lastAct)")
         XCTAssertFalse(src.lastAct.contains("incomplete or changing"),
                        "the catch-all hid every real reason: \(src.lastAct)")
+    }
+
+    func testSemanticRosterPublishesBeforeIconArtSettles() async throws {
+        var replies: [(CommandResult) -> Void] = []
+        let listener = GuestListener(
+            identity: .init(version: "test", name: "Test Host"))
+        let src = NOWMirrorSource(
+            listener: listener,
+            act: AgentIntegrationActControl(listener: listener,
+                                            currentSessionID: { nil }),
+            interval: 3_600,
+            sendCommand: { _, _, completion in replies.append(completion) })
+        var firstPaint: NOWMirrorSource.FinderSurfaceRead?
+        var settled = false
+
+        let read = Task { @MainActor in
+            let result = await src.readFinderSurface(
+                container: "window \"Macintosh HD\"",
+                rosterReady: { firstPaint = $0 })
+            settled = true
+            return result
+        }
+        while replies.isEmpty { await Task.yield() }
+        replies.removeFirst()(.init(
+            id: 1, ok: true,
+            output: ["script": [
+                ["output", "\"N\t1\rV\ticon\rP\tMacintosh HD:\r"
+                    + "I\tSystem Folder\t20\t30\t52\t62\tfolder\tfalse\r\""],
+                ["osaErr", "0"], ["truncated", "false"],
+            ]]))
+        while replies.isEmpty { await Task.yield() }
+
+        XCTAssertEqual(firstPaint?.items.map(\.name), ["System Folder"])
+        XCTAssertFalse(settled,
+                       "type/creator art is still outstanding and may not "
+                           + "hold semantic first paint")
+
+        replies.removeFirst()(.init(
+            id: 2, ok: true,
+            output: ["script": [["output", "\"\""],
+                                 ["osaErr", "0"],
+                                 ["truncated", "false"]]]))
+        _ = await read.value
+        XCTAssertTrue(settled)
     }
 
     /// The opposite half, so the fix cannot be "call everything an error".

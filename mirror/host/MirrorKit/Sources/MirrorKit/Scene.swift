@@ -447,8 +447,10 @@ public struct Scene: Codable, Equatable, Sendable {
         /// spelled out: a zoom box needs proof, a close box needs only the
         /// absence of a denial.
         ///
-        /// There is no `growBox` companion — see ``WindowChrome/growBox(_:)``
-        /// and mirror/docs/IR-V2.md. The record holds no grow flag.
+        /// There is no general `growBox` companion — see
+        /// ``WindowChrome/growBox(_:)``. The record holds no grow flag;
+        /// semantic Finder folder windows are the one domain-specific case
+        /// whose standard resize affordance the host can establish.
         public var closeBox: Bool? = nil
         public var zoomBox: Bool? = nil
         /// Dialog TextEdit content (`kind==2` windows only today).
