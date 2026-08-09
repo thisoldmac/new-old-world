@@ -123,7 +123,7 @@ nav:
               - MCP: user-guide/reference/modules/mcp.md
               - Logs: user-guide/reference/modules/logs.md
               - Connections and preferences: user-guide/reference/modules/connections-and-preferences.md
-  - Developer guide for humans:
+  - Developer guide:
       - Overview: developer-guide/index.md
       - Orientation: developer-guide/orientation.md
       - Architecture:
@@ -148,12 +148,6 @@ nav:
           - Repository map: developer-guide/reference/repository-map.md
           - Documentation standard: developer-guide/reference/documentation-standard.md
           - Generated AsyncAPI reference: generated/asyncapi.md
-  - Coding agent guide:
-      - Start here: agent-guide/index.md
-      - Operating protocol: agent-guide/operating-protocol.md
-      - Platform routing: agent-guide/platform-routing.md
-      - Change routing: agent-guide/change-routing.md
-      - Evidence and handoff: agent-guide/evidence-and-handoff.md
   - Engineering records:
       - Current status: status.md
       - Known wrong: known-wrong.md
@@ -163,3 +157,9 @@ nav:
       - MCP coverage: mcp-coverage.md
       - Security: developer-guide/reference/security.md
       - Contributing: developer-guide/workflows/contributing.md
+      - Coding agents:
+          - Agent guide: agent-guide/index.md
+          - Operating protocol: agent-guide/operating-protocol.md
+          - Platform routing: agent-guide/platform-routing.md
+          - Change routing: agent-guide/change-routing.md
+          - Evidence and handoff: agent-guide/evidence-and-handoff.md

@@ -148,7 +148,7 @@ def main() -> int:
             "agent-guide pages must use audience: agent",
         )
         expect_mutation(
-            test_root, "human developer audience ownership", test_root / "docs/developer-guide/index.md",
+            test_root, "developer guide audience ownership", test_root / "docs/developer-guide/index.md",
             "audience: developer\n", "audience: agent\n",
             "developer-guide pages cannot use audience: agent",
         )

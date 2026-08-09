@@ -14,7 +14,7 @@ last_verified: 2026-08-09
 # Coding agent guide
 
 This guide is an operational overlay for coding agents. It does not teach the
-architecture twice. Use the human [developer guide](../developer-guide/index.md)
+architecture twice. Use the [developer guide](../developer-guide/index.md)
 to understand the system and this path to decide how to operate on it.
 
 `AGENTS.md` remains the complete repository instruction and outranks this
@@ -27,7 +27,7 @@ projection. Current user instructions outrank both.
    nearby repository instructions.
 3. Classify the request as read-only analysis, diagnosis, planning, or
    authorized implementation. Do not turn the first three into edits.
-4. Use the human [codebase orientation](../developer-guide/orientation.md) to
+4. Use the [codebase orientation](../developer-guide/orientation.md) to
    identify the owning subsystem and source authority.
 5. Choose the platform route before touching classic Mac code.
 

@@ -54,7 +54,7 @@ runtime evidence confirms it.
 
 ## Public documentation discipline
 
-Published `docs/` pages are deliberate user or human-developer material unless
+Published `docs/` pages are deliberate user or developer material unless
 they live under `docs/agent-guide/`. Investigation logs, raw output, and
 session handoffs stay in ignored `docs/local/` until a durable finding is
 graduated to its owning page or ledger.

@@ -47,9 +47,6 @@ authoritative release-facing statement.
   you already have a connection and want to understand one surface.
 - [Read the developer orientation](developer-guide/orientation.md) before
   digging into the source, contracts, guests, resident components, or gates.
-- [Use the coding agent guide](agent-guide/index.md) when an automated coding
-  agent needs repository-specific operating, routing, evidence, and handoff
-  rules.
 
 ## Pre-alpha posture
 
@@ -63,10 +60,15 @@ before putting irreplaceable data or an untrusted network in the loop.
 
 - The **user guide** contains one tutorial, outcome-oriented how-to guides,
   explanations, and reference pages.
-- The **developer guide for humans** explains how the code works, how to trace
-  and debug it, and why its contracts and verification boundaries exist.
-- The **coding agent guide** is a separate operational overlay. It routes an
-  agent through authority, scope, platform guidance, gates, and handoff without
-  duplicating the human technical explanation.
+- The **developer guide** explains how the code works, how to trace and debug
+  it, and why its contracts and verification boundaries exist.
 - **Engineering records** preserve status, measurements, known-wrong behavior,
   and the append-only issue ledger. They are evidence, not first-run prose.
+
+## Contributing
+
+The [contributing guide](developer-guide/workflows/contributing.md) covers the
+project contribution path. Coding agents should enter through the lower
+[agent guide](agent-guide/index.md), which adds repository operating, routing,
+evidence, and handoff rules while linking back to the same developer
+documentation for technical explanations.

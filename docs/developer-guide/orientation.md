@@ -1,7 +1,7 @@
 ---
 page_id: dev-orientation
 title: Understand the codebase
-description: A human-oriented tour from product behavior to the host, guest, resident, contract, and tests that own it.
+description: A codebase tour from product behavior to the host, guest, resident, contract, and tests that own it.
 doc_type: tutorial
 audience: developer
 lifecycle: current

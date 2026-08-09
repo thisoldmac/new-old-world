@@ -24,8 +24,8 @@ Choose by application model, not merely by CPU or folder name.
 | QEMU or physical-machine acceptance | Deterministic emulator or metal harness | Load emulator-harness guidance and follow the [emulator and metal workflow](../developer-guide/workflows/emulator-and-metal.md) |
 
 Product agent integration under `now-host/Sources/NOWAgentIntegration/` is
-ordinary host architecture, not coding-agent protocol. Read the human [product
-agent boundary](../developer-guide/architecture/agent-boundary.md) for that
+ordinary host architecture, not coding-agent protocol. Read the [product agent
+integration page](../developer-guide/architecture/agent-boundary.md) for that
 subsystem.
 
 For every classic surface, determine the supported OS floor and application

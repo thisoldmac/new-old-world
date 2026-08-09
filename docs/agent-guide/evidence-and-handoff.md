@@ -15,7 +15,7 @@ last_verified: 2026-08-09
 
 ## Prove the intended behavior
 
-Use the human [verification levels](../developer-guide/reference/verification-levels.md)
+Use the [verification levels](../developer-guide/reference/verification-levels.md)
 without inventing a stronger adjective. A successful build is not a behavior
 test; emulator evidence is not physical-hardware evidence.
 

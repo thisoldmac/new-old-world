@@ -18,16 +18,16 @@ The public site uses MkDocs Material and the Diátaxis page types: tutorial, how
 
 - `docs/user-guide/` explains how a person installs, operates, understands, and
   evaluates the product.
-- `docs/developer-guide/` is for humans reading the code. It owns architecture,
-  code tracing, debugging rationale, implementation workflows, and technical
-  reference.
+- `docs/developer-guide/` is for developers reading the code. It owns
+  architecture, code tracing, debugging rationale, implementation workflows,
+  and technical reference.
 - `docs/agent-guide/` is for coding agents. It owns imperative repository
   protocol, scope control, platform/skill routing, evidence rules, and handoff.
 
-Do not publish the same technical explanation once for humans and again for
-agents. Put it in the human developer guide; link to it from the agent page and
+Do not publish the same technical explanation in both the developer and agent
+guides. Put it in the developer guide; link to it from the agent page and
 add only the operational instruction the agent needs. Likewise, branch and
-checkpoint protocol does not belong in the human codebase tour. The docs gate
+checkpoint protocol does not belong in the codebase tour. The docs gate
 checks folder/audience ownership; review still checks that the prose actually
 serves its declared reader.
 

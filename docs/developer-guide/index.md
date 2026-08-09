@@ -1,7 +1,7 @@
 ---
 page_id: dev-home
-title: Developer guide for humans
-description: Human-oriented entry point for reading, debugging, changing, and verifying the New Old World codebase.
+title: Developer guide
+description: Entry point for reading, debugging, changing, and verifying the New Old World codebase.
 doc_type: explanation
 audience: developer
 lifecycle: current
@@ -10,11 +10,12 @@ source_dependencies: [README.md, contract/asyncapi.yaml, scripts/test-all, docs/
 media_ids: []
 last_verified: 2026-08-09
 ---
-# Developer guide for humans
+# Developer guide
 
-This guide is for a person digging into the code: understanding why a boundary
-exists, tracing a behavior across processes, finding the implementation that
-owns it, running the right test, and preparing a reviewable change.
+This guide is for developers digging into the code: understanding why a
+boundary exists, tracing a behavior across processes, finding the
+implementation that owns it, running the right test, and preparing a
+reviewable change.
 
 New Old World is a native macOS host, a PowerPC Carbon guest, an optional
 resident extension, and a retained 68K Toolbox sibling. The initial alpha

@@ -1,7 +1,7 @@
 ---
 page_id: dev-workflow-contributing
 title: Contributing
-description: Human contributor workflow from a focused change through tests and review.
+description: Contributor workflow from a focused change through tests and review.
 doc_type: how-to
 audience: developer
 lifecycle: current
@@ -37,5 +37,5 @@ Run the smallest relevant gate while iterating, then `scripts/test-all`. Report 
 In the review description, include the behavior before and after, the owning
 contract or model, the tests run, any skipped toolchain or hardware stage, and
 remaining uncertainty. See the repository-root `CONTRIBUTING.md` for the
-complete human contribution path. Coding agents use the separate [agent
+complete contribution path. Coding agents use the separate [agent
 guide](../../agent-guide/index.md) for their additional operating protocol.

@@ -35,7 +35,7 @@ website repository should pin that artifact and assemble it beneath
 `/app/docs/` as part of its own deployment. No submodule, copied generated
 working tree, or cross-repository commit automation has been adopted.
 
-## RESOLVED DOCUMENTATION OWNERSHIP: human developer and coding-agent prose now have separate owners (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+## RESOLVED DOCUMENTATION OWNERSHIP: developer and coding-agent prose now have separate owners (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
 The original developer entry path mixed architecture and code-reading material
 with instructions specific to automated sessions. That was not only a
@@ -43,15 +43,15 @@ navigation problem: the same reader had to move between explanatory prose and
 imperative agent protocol, and future edits would have duplicated technical
 claims to serve both.
 
-`docs/developer-guide/` now addresses humans digging into the code: mental
+`docs/developer-guide/` now addresses developers digging into the code: mental
 models, source tracing, debugging, architecture, implementation workflows, and
 verification rationale. `docs/agent-guide/` is a smaller operational overlay
 for coding agents: authority and scope, shared-repository protocol, platform
 routing, change routing, mutation evidence, and handoff. Agent pages link to
-the human technical owner instead of restating it. The docs gate validates the
-folder/audience distinction and its mutation suite proves both directions are
-rejected; prose ownership still requires review because metadata cannot prove
-that a paragraph serves the right reader.
+the developer documentation owner instead of restating it. The docs gate
+validates the folder/audience distinction and its mutation suite proves both
+directions are rejected; prose ownership still requires review because
+metadata cannot prove that a paragraph serves the right reader.
 
 ## PLANNED RELEASE CONTROL: documentation has a feature profile; runtime flags do not yet exist (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
