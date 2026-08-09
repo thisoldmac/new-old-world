@@ -61,26 +61,21 @@ MirrorKit gate enforced the discovered external
 `pack-2026-08-07b/Resources` pack and repeated its suite with
 `NOW_MIRROR_ASSETS=none`.
 
-The signed host artifact for that payload revision is
-`/private/tmp/now-host-781f6281/New Old World.app`. An exact-revision private
-PPC image passed resident identity (`active`, capabilities 511, source manifest
-`f0ce0fa3ea33`, fingerprint `18203af3657f`), the full 14-probe survival census,
-container verification, and clean-HFS shutdown. It is
-`~/Lab/Assets/os91-qemu/agent-stage/now-stage-mirror-premerge-final-781f6281.qcow2`,
-630,587,392 bytes, SHA-256
-`a3dba627d43d14dc3a0171c3eb98974558844669c3de2639d4abb644bcd41d7a`.
-The first private attempt was correctly refused because its shutdown left HFS
-dirty; no dirty candidate was installed.
+The final combined MCP source revision is `858cfb51`; its deterministic gate
+passed before the bake, and its developer-signed host artifact is staged at
+`/private/tmp/now-host-858cfb51/New Old World.app`. The shared PPC oracle was
+baked and promoted from that exact source revision after the only foreign QEMU
+clone shut down through Finder and left its own HFS volume clean. The promoted
+`~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2` is 630,587,392 bytes, SHA-256
+`f48398203008b0ae220d9109e662054106e98864de860c1dc2a9fbfbc8a4c345`.
+The guest reported resident lifecycle `active`, capabilities 511, source
+manifest `f0ce0fa3ea33`, and fingerprint `18203af3657f`; the ABI self-test and
+full 14-probe survival census passed, QEMU exited through real guest shutdown,
+and the promoted HFS volume is clean. The previous shared image is preserved as
+`now-mirror-stage.qcow2.bak-20260809-2`.
 
-The shared oracle remains the earlier clean bake from `573dc086`, SHA-256
-`46da2706697cb7be2a7fe987fd9c87bcff515788dd4eb1491c167fbae5ef584a`.
-No guest, resident, contract, or guest-build source changed after that bake;
-the resident fingerprint is identical. Promotion of the exact-revision image
-to the shared oracle was deliberately not forced while a foreign Claude-owned
-QEMU clone at `/private/tmp/claude-501/wt-int12/run/79151/` remained active.
-That is an operational handoff item, not a hidden green bake. The final combined
-host has not been reverified on the PB1400c; the prior metal observations retain
-their original evidence level.
+The final combined host has not been reverified on the PB1400c; the prior metal
+observations retain their original evidence level.
 
 Nothing moved `main`. The parent corpus update is committed separately as
 `3f923561`, adding the A5-world and cursor-position findings and preserving the

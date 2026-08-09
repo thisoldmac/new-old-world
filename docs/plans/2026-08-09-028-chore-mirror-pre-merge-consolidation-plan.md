@@ -1,8 +1,7 @@
 # Mirror pre-merge consolidation
 
-**Status:** Implemented through merge-ready source and exact-revision private
-runtime evidence. Shared-image promotion remains blocked on a foreign active
-QEMU clone and final PB1400c acceptance remains unrun. This plan prepares
+**Status:** Implemented through merge-ready source and exact-revision shared
+runtime evidence. Final PB1400c acceptance remains unrun. This plan prepares
 `codex/mirror-session-teardown` for Michelle to land; it does not authorize
 moving `main`, pushing, or opening a pull request.
 
@@ -607,12 +606,13 @@ does not imply it was fixed. Michelle performs the landing separately.
 - Compound code review produced `b40a8fb5`; the final simplify pass produced
   `3e7ab897`. Independent document review corrected this plan's ordering and
   did not reopen settled Finder/P3 scope.
-- The final payload gate passed at `781f6281`: 28 staged-image checks, 149
+- The original consolidated payload gate passed at `781f6281`: 28 staged-image checks, 149
   native tests, MirrorKit, all guest/resident/instrument cross-builds, and the
   host Debug/Release gate. Live/metal skipped. The selected external pack was
   `pack-2026-08-07b/Resources`; the asset-free repeat also passed.
-- The developer-signed host artifact is
-  `/private/tmp/now-host-781f6281/New Old World.app`.
+- The final combined MCP source revision is `858cfb51`; its deterministic gate
+  passed before the shared bake. Its developer-signed host artifact is
+  `/private/tmp/now-host-858cfb51/New Old World.app`.
 - The exact-revision private image is
   `~/Lab/Assets/os91-qemu/agent-stage/now-stage-mirror-premerge-final-781f6281.qcow2`
   (630,587,392 bytes; SHA-256
@@ -620,11 +620,12 @@ does not imply it was fixed. Michelle performs the landing separately.
   It is container-clean and HFS-clean; the guest reported lifecycle `active`,
   capabilities 511, source manifest `f0ce0fa3ea33`, and build fingerprint
   `18203af3657f`; the full 14-probe survival census passed.
-- The shared oracle still names the earlier clean `573dc086` bake, SHA-256
-  `46da2706697cb7be2a7fe987fd9c87bcff515788dd4eb1491c167fbae5ef584a`.
-  No guest/resident/build source changed after it, but exact-revision promotion
-  was not forced over the foreign active QEMU clone at
-  `/private/tmp/claude-501/wt-int12/run/79151/`.
+- The shared oracle was promoted from `858cfb51` after all QEMU sessions ended
+  through guest-clean shutdown. It is 630,587,392 bytes, SHA-256
+  `f48398203008b0ae220d9109e662054106e98864de860c1dc2a9fbfbc8a4c345`,
+  container-clean and HFS-clean, with resident lifecycle `active`, capabilities
+  511, source manifest `f0ce0fa3ea33`, and fingerprint `18203af3657f`. The
+  ABI self-test and full 14-probe survival census passed.
 - Final PB1400c acceptance is unrun. Prior metal observations remain evidence
   for their exact earlier builds, not this reviewed head.
 - `main`, the shared checkout, remote refs, tags, and pull requests were not
