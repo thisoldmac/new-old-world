@@ -24,9 +24,11 @@ tool schemas.
 5. If NOW tools are unavailable, say that plainly. Do not silently detour into
    another classic-Mac runtime or emulator harness.
 
-Call `now_session_capabilities` when availability is uncertain and before a
-cross-domain or mutating workflow. Trust its live result over assumptions about
-the guest type or build.
+Call `now_session_capabilities` only when the task depends on availability that
+`now_list_machines` did not establish, or after a typed refusal asks you to
+probe. Do not call it prophylactically; each domain tool settles its own live
+availability. Trust a capability result over assumptions about the guest type
+or build.
 
 ## Use the evidence ladder
 
@@ -48,14 +50,17 @@ already exposes.
 
 ## Route actions narrowly
 
-- Software: `now_launch_software` or `now_reveal_item`.
+- Software: `now_launch_software` or `now_reveal_item`. Launch by an exact name
+  or opaque reference from `now_software_inventory`, never by its guest path.
 - Processes: obtain a fresh process reference with `now_list_processes`, then
   use `now_bring_to_front` or `now_request_quit`.
 - Retained semantic UI: act on a published entity with
   `now_semantic_ui_act`.
 - Direct UI: obtain fresh references with `now_observe_elements`, then use
   `now_window_act`, `now_control_act`, `now_menu_act`, `now_text_get`, or
-  `now_text_set`. Never invent or reuse a stale reference.
+  `now_text_set`. Never invent or reuse a stale reference. Retained semantic
+  entity ids and direct-observation references belong to different action
+  families; do not pass one to the other.
 - Guest files: use `now_guest_files_mutate` for one bounded move, trash,
   restore, or mkdir operation.
 
@@ -65,7 +70,9 @@ Artifact delivery has two different authority lanes:
   person selects a host file in NOW. Never invent or claim to mint a receipt.
 - `now_guest_files_upload_begin`, `now_guest_files_upload_append`, and
   `now_guest_files_upload_commit` transfer caller-owned bytes under the
-  full-access policy. They do not use a picker receipt.
+  full-access policy. They do not use a picker receipt. Derive the declared
+  byte count, SHA-256, and base64 chunks from the same immutable byte sequence.
+  After an integrity refusal, recompute them locally before retrying.
 
 Honor every confirmation, consent ceiling, typed refusal, size bound, and
 create-only rule exposed by the live tools. Do not weaken or work around one.
@@ -75,6 +82,11 @@ create-only rule exposed by the live tools. Do not weaken or work around one.
 After every mutation, re-read the authoritative domain. For asynchronous UI
 state, wait for the expected semantic condition or take a fresh snapshot.
 Distinguish accepted from confirmed; do not report success from dispatch alone.
+
+On an action failure, read the exact refusal, the live schema, and fresh state.
+Never enumerate guessed gesture synonyms. After two unsuccessful actions toward
+the same state, stop and report the observed state and refusals instead of
+continuing an ungrounded probe loop.
 
 Use the live tool description and schema for arguments and result meaning.
 This skill intentionally does not duplicate them.

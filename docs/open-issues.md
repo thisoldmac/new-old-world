@@ -134,6 +134,9 @@ given to MCP. The separate `now_guest_files_upload_*` family accepts bytes the
 caller supplies and commits them under the guest's full agent-access ceiling.
 A Codex worker with filesystem access therefore read a zero-byte file from the
 modern Desktop and placed it on the guest without minting or forging a receipt.
+The routing-skill follow-up repeated the authority path with a synthetic
+25-byte Desktop fixture and verified its guest digest, so the result is not an
+artifact of the original empty file.
 
 The implementation is internally explicit; the unresolved question is product
 authority. If full guest agent access is meant to authorize any bytes the
@@ -142,7 +145,7 @@ negative test was wrong. If every modern-host file needs an additional human
 gesture, the upload family is a second write path that does not enforce that
 decision. No policy changed in this audit. See F-004 in the audit report.
 
-## UNVERIFIED: server-owned first contact does not route bare Macintosh tasks to NOW (2026-08-09, `codex/now-mcp-audit-barrage`)
+## RESOLVED: a repo-scoped router makes bare Macintosh tasks select NOW (2026-08-09, `codex/now-mcp-routing-skill`)
 
 After adding initialize instructions, one resource, one prompt, and the obvious
 `now_list_machines` entry point, five of seven bare Luna tasks still made zero
@@ -150,12 +153,27 @@ NOW calls. Four reasoned about an empty workspace and one searched the modern
 host. Prefixing only “Use the NOW integration on the connected classic
 Macintosh” made all five repeats call `now_list_machines` first.
 
-The server guide helps after selection; it is not a client intent router. A
-thin client-side NOW skill is the next bounded candidate, but it has not been
-built or retested. It should route and defer to the server guide, not duplicate
-the full tool catalog. The same run also recorded 76,618 input tokens for clean
-one-call H0 and up to 856,750 for an eleven-call cross-domain attempt, so tool
-and result context cost should be measured before any deeper catalog redesign.
+The server guide helps after selection; it is not a client intent router. The
+repo-scoped `.agents/skills/now-mcp` skill now supplies that missing route
+without duplicating tool schemas. In a fresh isolated Luna follow-up, all seven
+original bare prompts called `now_list_machines` first; none detoured into
+TimBotTu, an emulator harness, or the modern host. H0, R1, R2, A1, M1, and N1
+completed correctly. X1 entered NOW and completed its upload, but exposed the
+separate modal-action issue below.
+
+## UNVERIFIED DESIGN: modal UI failure crosses action families and invites gesture guessing (2026-08-09, `codex/now-mcp-routing-skill`)
+
+The X1 skill run uploaded and byte-verified its text file, launched SimpleText,
+opened the File menu, and populated the Open dialog. When the dialog did not
+settle, it mixed retained semantic entities with direct-observation references
+and tried seven unsupported gesture names until the evaluator interrupted the
+run at 332 seconds. Typed refusals were clear, but the route from modal state to
+the permitted action vocabulary was not.
+
+The skill now keeps the reference families separate and stops after two failed
+actions. That is a circuit breaker, not a claim that the agent-facing state and
+action planes are well shaped. Use the retained JSONL trace for the planned
+post-barrage hierarchy pass; do not redesign it inside this cleanup.
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: Stop, disconnect, and guest replacement left a Mirror session alive (2026-08-08, `codex/mirror-session-teardown`)
 
 The reported host could hold two live Mirror sessions from one guest, and

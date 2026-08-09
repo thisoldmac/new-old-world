@@ -115,6 +115,7 @@ it.
 
 | Rule | Governs | Arc | main |
 |---|---|---|---|
+| `.agents/skills/now-mcp` | routes connected classic-Mac tasks into NOW, then applies its evidence and verification order | new in the MCP audit follow-up | NO |
 | `.githooks/pre-commit` | main guardrail + `ext-bake-gate check` (+ unarmed derived-doc gate) | 54/55 | NO |
 | `.githooks/pre-merge-commit` | `ext-bake-gate merge-check` on an auto-resolved merge | 54/55 | NO |
 | `.githooks/post-merge` | announces what the stage image is after any merge, incl. fast-forward | 54/55 | NO |
@@ -135,6 +136,11 @@ it.
 
 One line each, on why NOW and not lab:
 
+- **`.agents/skills/now-mcp`** — it names NOW's machine selector, consent
+  boundary, semantic projections, and guest-file authority lanes. Codex's
+  project skill location makes it discoverable only while working in this
+  repository; installing it globally would misroute unrelated classic-Mac
+  projects and preserve product-specific vocabulary at lab scope.
 - **The hook family, `setup-hooks`, `hooks-doctor`, the merge driver** —
   they enforce *this repository's* branch policy and *this repository's*
   receipts file; a second project would want a main guardrail but not

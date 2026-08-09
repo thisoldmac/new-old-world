@@ -367,19 +367,62 @@ review aid, not a model benchmark.
 | X1 | declared an unrelated workspace read-only and SimpleText absent | chose the right domains, but non-empty staging and UI actions were refused; file absence and blank window reverified; total 84 s | none bare; first call routed | 20 → 70 |
 | N1 | declined for unrelated read-only/no-file reasons | copied and verified a zero-byte Desktop file through guest upload; total 72 s | none bare; first call routed | 20 → 74 |
 
-The dominant result is categorical: only two of seven bare tasks entered NOW.
-All five minimally routed repeats did so immediately. Server-owned
-instructions, a resource, and a prompt improve the route *after NOW is
-selected*; they are not a reliable client-side router.
+The dominant baseline result was categorical: only two of seven bare tasks
+entered NOW. All five minimally routed repeats did so immediately.
+Server-owned instructions, a resource, and a prompt improve the route *after
+NOW is selected*; they are not a reliable client-side router.
+
+### Repo-scoped routing-skill follow-up
+
+The bounded F-005 follow-up installed `.agents/skills/now-mcp` into another
+otherwise isolated Luna home and reran the original prompts without a routing
+sentence or task-specific tool hint. The VM was a private clone of
+`now-stage-mirror-premerge-final-781f6281.qcow2` (SHA-256
+`a3dba627d43d14dc3a0171c3eb98974558844669c3de2639d4abb644bcd41d7a`),
+running the staged guest build `c25f6d220a73 2026-08-09T10:09:25Z` against an
+isolated host listener and same-UID socket. QMP performed lifecycle only.
+
+| ID | Skill result | First NOW call | Total | Input tokens | Score |
+|---|---|---|---:|---:|---:|
+| H0 | correct machine and readiness | `now_list_machines` | 17 s | 81,321 | 98 |
+| R1 | correct processes and frontmost app | `now_list_machines` | 16 s | 75,288 | 99 |
+| R2 | complete guest-root folder inventory | `now_list_machines` | 45 s | 181,415 | 98 |
+| A1 | launched, fronted, and reverified SimpleText | `now_list_machines` | 26 s | 196,133 | 98 |
+| M1 | mkdir, trash, restore, and final stat all confirmed | `now_list_machines` | 36 s | 229,217 | 98 |
+| X1 | file uploaded and byte-verified; modal UI confirmation did not complete | `now_list_machines` | 332 s, interrupted | unavailable | 62 |
+| N1 | copied and verified a 25-byte synthetic Desktop fixture | `now_list_machines` | 43 s | 218,770 | 98 |
+
+All seven bare prompts entered NOW first. None detoured into TimBotTu, the
+emulator harness, or the modern host as its target. The final A1 run is listed;
+an earlier A1 run triggered a skill correction after it called capabilities
+without a demonstrated need and invented a launch path instead of using the
+inventory's exact name. M1 and N1 used the client's supported automatic
+approval mode, preserving server annotations and NOW consent checks rather
+than weakening them.
+
+X1 is the useful failure. It eventually derived consistent size, digest, and
+base64 for the 52-byte file and verified the downloaded bytes. In SimpleText's
+Open dialog it then mixed retained-state and direct-observation action models
+and enumerated unsupported gesture synonyms. The evaluator stopped the run at
+the circuit breaker. The skill now separates those reference families,
+requires recomputing one immutable upload payload after integrity failure, and
+stops after two unsuccessful actions. The server-side action hierarchy itself
+is deliberately left for the post-barrage design pass.
+
+The JSONL preserves the accessible decision trace: agent status messages,
+tool calls and results, command executions, final answers where completed, and
+token accounting. The current runs emitted no separate private-reasoning
+records, and hidden chain-of-thought is not available or claimed. The raw local
+evidence remains under `docs/local/now-mcp-barrage-2026-08-09/f005-skill/`.
 
 ### What the barrage found
 
-1. **First-contact routing is the largest friction.** “Macintosh” and classic
+1. **First-contact routing was the largest baseline friction.** “Macintosh” and classic
    app names did not cause the client to select the only MCP. Four workers
    instead reasoned about their empty working directory; one searched the
-   modern host. A small client-side NOW skill is the likely next cheap win.
-   It should say when to select NOW and then defer to the server-owned guide;
-   it should not duplicate 42 tool descriptions.
+   modern host. The repo-scoped NOW skill closed this gap across all seven bare
+   repeats. It says when to select NOW, names the evidence ladder, and leaves
+   all 42 live schemas authoritative.
 2. **Once routed, machine discovery is good.** Every repeat began with
    `now_list_machines`, selected `guest-1`, and received the human-visible
    `Power Mac G4` name plus the exact live session identifier. The host label,
@@ -407,11 +450,10 @@ selected*; they are not a reliable client-side router.
    a file itself and upload its bytes. That is the implemented distinction,
    not a forged receipt; whether the product intends all modern-host files to
    require a second approval is a separate authority decision.
-6. **Mutation evaluation needs an interactive approval mode.** Destructive
-   annotations caused non-interactive Codex to return `user cancelled` before
-   NOW executed `mkdir`, semantic typing, or menu actions. The refusals are
-   safe and the workers reported them honestly, but this batch did not test a
-   successful reversible mutation chain.
+6. **Automatic approval is sufficient for an isolated mutation barrage.** It
+   let annotations reach the client without changing NOW's consent model. M1
+   completed its reversible chain; X1 reached the real UI surface and then
+   failed for action-model friction rather than client cancellation.
 7. **Context cost is material.** The clean one-call H0 recorded 76,618 input
    tokens. Routed R2 and A1 recorded 270,593 and 250,909; X1 reached 856,750
    across eleven NOW calls, including large semantic payloads. These are
@@ -425,18 +467,19 @@ chain-of-thought, so this audit makes no claim to have captured it.
 
 ### Verification status and next review
 
-The first-contact cleanup is **tested and VM-verified for H0/H1/R1/R2/A1**.
+The first-contact cleanup and routing skill are **tested and VM-verified for
+H0/H1/R1/R2/A1/M1/N1**.
 The staging failure, zero-byte baseline, and successful four-byte post-fix
-upload are VM-observed. M1 and X1 are not behavior-verified because client
-confirmation prevented the intended mutation. Nothing here is metal-verified.
+upload are VM-observed. X1's file lane is VM-verified; its modal SimpleText
+confirmation remains failed with an attributable trace. Nothing here is
+metal-verified.
 
 The next brief review should decide only:
 
-1. whether a packaged client-side NOW routing skill is the intended first
-   contact layer;
-2. whether caller-supplied guest upload bytes are intentionally outside the
+1. whether caller-supplied guest upload bytes are intentionally outside the
    one-time host-file approval boundary;
-3. how to run one interactive M1/X1 follow-up without weakening confirmations.
+2. how the retained semantic and direct-observation action families should
+   present modal UI without inviting gesture guessing.
 
 The larger direct-observation/retained-state/tool-hierarchy redesign remains a
 post-barrage design pass, now informed by these traces.

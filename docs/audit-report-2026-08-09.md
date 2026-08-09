@@ -20,15 +20,14 @@ separately VM-verified, not metal-verified.
 ## Summary
 
 NOW has a broad, strongly typed, locally private agent surface with good
-machine/session identity and unusually deep behavioral tests. Its dominant
-agent problem is not capability absence but first-contact routing: most bare
-classic-Mac tasks never selected NOW, while one routing sentence made every
-repeat select it first. The pre-barrage pass resolved the ambiguous discovery
-name, server-owned guide, Mirror vocabulary leak, and conformance
-classification. The barrage also reproduced and fixed a small high-impact
-upload capacity bug, corrected a conformance recipe that had hidden the next
-failure, and exposed an authority distinction that documentation must make
-more explicit. A deeper tool hierarchy should wait for a separate design pass.
+machine/session identity and unusually deep behavioral tests. The server-owned
+guide was not sufficient to route arbitrary classic-Mac prompts, but the
+repo-scoped `.agents/skills/now-mcp` router closed that first-contact gap: all
+seven bare Luna tasks selected NOW and called `now_list_machines` first. The
+barrage also reproduced and fixed a small high-impact upload capacity bug,
+corrected a conformance recipe that had hidden the next failure, exposed an
+authority distinction that documentation must make more explicit, and found a
+specific modal-UI action loop for the post-barrage hierarchy pass.
 
 ## Findings
 
@@ -46,8 +45,9 @@ more explicit. A deeper tool hierarchy should wait for a separate design pass.
   companion tests, conformance, and controlled H0/H1.
 
 The server now publishes initialize instructions, `now://agent/first-contact`,
-`start-with-now`, and `now_list_machines`. Controlled first contact improved,
-but the bare-task result leaves the client-routing half open under F-005.
+`start-with-now`, and `now_list_machines`. Controlled first contact improved;
+the later repo-scoped routing skill closes the client-selection half under
+F-005.
 
 ### [F-002] Human Mirror terminology leaked into the agent model (severity: medium, effort: S) — resolved
 
@@ -97,8 +97,9 @@ guest-confirmed integrity, and statted as a four-byte `TEXT` file on Mac OS
 - **Evidence:**
   `TransferApprovedArtifactProjection.swift` requires a one-use human receipt
   for a host-selected private file; `GuestFilesUploadBeginProjection.swift`
-  accepts caller-supplied bytes with no receipt. N1 read a modern Desktop file
-  using the Codex shell and committed its bytes through the latter lane.
+  accepts caller-supplied bytes with no receipt. The original N1 proved the
+  route with a zero-byte Desktop file; the skill follow-up used a synthetic
+  25-byte fixture, committed it, and reverified its guest metadata and digest.
 - **Why it matters:** “host-to-guest transfer requires approval” is too broad a
   description. Product review cannot evaluate the intended authority boundary
   until the two source-ownership cases are stated together.
@@ -109,7 +110,7 @@ guest-confirmed integrity, and statted as a four-byte `TEXT` file on Mac OS
   any policy change would touch tool contracts, consent, and tests and needs a
   separate approval.
 
-### [F-005] Server discovery does not route arbitrary tasks to NOW (severity: high, effort: M)
+### [F-005] Server discovery does not route arbitrary tasks to NOW (severity: high, effort: M) — resolved
 
 - **Dimension:** structure-maintainability
 - **Evidence:** R2/A1/M1/X1/N1 made zero NOW calls from bare prompts. The same
@@ -117,10 +118,24 @@ guest-confirmed integrity, and statted as a four-byte `TEXT` file on Mac OS
   classic Macintosh,” all called `now_list_machines` first.
 - **Why it matters:** prompts/resources are opt-in and initialize instructions
   are not a reliable client-side intent router.
-- **Proposed change:** package a thin NOW skill that recognizes connected
-  classic-Mac tasks, selects NOW, and then defers to the server-owned guide.
+- **Resolution:** `.agents/skills/now-mcp` recognizes connected classic-Mac
+  tasks, selects NOW, and keeps the live schemas authoritative. With that
+  repo-scoped skill installed in an otherwise isolated Luna home, H0, R1, R2,
+  A1, M1, X1, and N1 all called `now_list_machines` first from their original
+  bare prompts. No worker detoured to TimBotTu, an emulator harness, or the
+  modern host.
 - **Blast radius:** client packaging and onboarding, not server behavior;
-  verify by rerunning the same bare set with no task-specific tool hints.
+  verified by rerunning the same bare set with no task-specific tool hints.
+
+The first A1 skill run also showed why the router must remain small: a
+prophylactic `now_session_capabilities` call and an invented launch `path`
+added cost without evidence. The skill now probes capabilities only after an
+actual uncertainty or typed refusal and launches by exact inventory name or
+reference. The repeated A1 completed with six clean NOW calls and no refused
+arguments. Compared with the prior minimally routed runs, the final skill runs
+reduced cumulative input accounting by 94,833 tokens for R1, 89,178 for R2,
+54,776 for A1, 110,339 for M1, and 536,661 for N1. These are end-to-end client
+numbers, not schema-only savings.
 
 ### [F-006] Rich, flat discovery has material context cost (severity: medium, effort: M)
 
@@ -150,11 +165,11 @@ Luna A/B with the same natural first-contact prompt and real companion measured
 107,990 input tokens with all 42 tools versus 77,120 with only discovery and
 capability tools, a 30,870-token reduction. When the prompt explicitly named
 `now_list_machines`, both full and filtered cases were approximately 36K.
-Therefore F-005's thin client routing skill plus a small intent-to-canonical-
-tool map is the preferred next experiment. Keep the typed output schemas and
-do not redesign the NOW facade from prose-byte counts alone.
+The F-005 skill result confirms that a small intent-to-canonical-tool map is a
+useful client layer. Keep the typed output schemas and do not redesign the NOW
+facade from prose-byte counts alone.
 
-### [F-007] Non-interactive workers cannot complete annotated mutation chains (severity: medium, effort: S)
+### [F-007] Non-interactive workers cannot complete annotated mutation chains (severity: medium, effort: S) — resolved for the harness
 
 - **Dimension:** correctness
 - **Evidence:** M1's three `now_guest_files_mutate` attempts and X1's semantic
@@ -163,9 +178,32 @@ do not redesign the NOW facade from prose-byte counts alone.
   not landed.
 - **Why it matters:** the barrage can rate refusal handling but cannot verify
   the mutation capabilities it was designed to test.
-- **Proposed change:** run one explicitly interactive, observed M1/X1 follow-up
-  with confirmations intact; do not remove destructive annotations.
+- **Resolution:** the isolated evaluation client used its supported automatic
+  approval mode; server annotations and consent checks remained intact. M1
+  created, verified, trashed, verified absent, restored, and reverified its
+  folder. X1's annotated upload and UI calls also reached NOW rather than being
+  cancelled, exposing F-009 instead.
 - **Blast radius:** evaluation harness only.
+
+### [F-009] Modal direct actions invite ungrounded gesture guessing (severity: medium, effort: S)
+
+- **Dimension:** correctness and structure-maintainability
+- **Evidence:** X1 successfully uploaded and byte-verified its 52-byte text
+  file, launched SimpleText, opened its File menu, and entered the guest path.
+  When the Open dialog did not settle, the worker crossed retained semantic
+  state and direct-observation references, then tried unsupported gesture
+  synonyms (`keyPress`, `press`, `submit`, `confirm`, `click`, `invoke`, and
+  `select`) until the evaluator interrupted the run at 332 seconds.
+- **Why it matters:** the typed surface gives good refusals, but the relation
+  between retained entities, direct references, modal controls, and their
+  permitted action vocabulary is not self-evident under failure.
+- **Bounded response:** the routing skill now keeps the two reference families
+  separate and stops after two unsuccessful actions instead of enumerating
+  guessed synonyms. Redesigning or renaming the action planes remains a
+  post-barrage task, informed by this trace.
+- **Blast radius:** skill guidance now; any server/tool hierarchy change later
+  affects the experimental semantic-UI surface and needs its own contract and
+  compatibility review.
 
 ### [F-008] The live upload conformance recipe contradicted its own payload (severity: medium, effort: XS) — resolved
 
@@ -206,9 +244,10 @@ do not redesign the NOW facade from prose-byte counts alone.
 
 1. F-004: decide and document the intended authority boundary before changing
    either transfer family.
-2. F-007: run the one interactive mutation follow-up.
-3. F-005: prototype and retest a thin client-side routing skill.
-4. F-006: A/B the F-005 thin router with a small `enabled_tools` allowlist;
+2. F-009: use the preserved X1 trace in the post-barrage semantic/direct action
+   hierarchy pass; do not broaden this cleanup into that redesign.
+3. F-006: A/B the thin router with a small `enabled_tools` allowlist;
    defer any deeper facade or catalog redesign until that result is known.
 
-F-001, F-002, F-003, and F-008 are resolved in this branch.
+F-001, F-002, F-003, F-005, F-007, and F-008 are resolved in their stated
+scope. F-004, F-006, and F-009 remain review inputs.
