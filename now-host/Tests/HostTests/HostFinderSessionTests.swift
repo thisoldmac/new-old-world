@@ -38,6 +38,17 @@ final class HostFinderSessionTests: XCTestCase {
         let session = HostFinderSession(listener: listener, defaults: defaults)
         session.observe(screen: .init(w: 640, h: 480))
 
+        _ = try await answerNextList(
+            guest, path: "Desktop Folder", entries: [])
+        try await waitUntil("desktop volume") {
+            session.project(self.scene()).desktopItems?.contains {
+                $0.name == "Macintosh HD"
+            } == true
+        }
+        XCTAssertTrue(session.windows.isEmpty,
+                      "enabling emulation must not invent a root window")
+        session.openDesktop(["Macintosh HD"])
+
         let root = try await answerNextList(
             guest, path: "",
             entries: [entry("Applications", kind: "folder"),
@@ -73,6 +84,14 @@ final class HostFinderSessionTests: XCTestCase {
         let guest = try await connectedGuest()
         let session = HostFinderSession(listener: listener, defaults: defaults)
         session.observe(screen: .init(w: 640, h: 480))
+        _ = try await answerNextList(
+            guest, path: "Desktop Folder", entries: [])
+        try await waitUntil("desktop volume") {
+            session.project(self.scene()).desktopItems?.contains {
+                $0.name == "Macintosh HD"
+            } == true
+        }
+        session.openDesktop(["Macintosh HD"])
         _ = try await answerNextList(
             guest, path: "",
             entries: [entry("z", kind: "file"), entry("a", kind: "file")])
@@ -124,6 +143,14 @@ final class HostFinderSessionTests: XCTestCase {
         let guest = try await connectedGuest()
         let session = HostFinderSession(listener: listener, defaults: defaults)
         session.observe(screen: .init(w: 640, h: 480))
+        _ = try await answerNextList(
+            guest, path: "Desktop Folder", entries: [])
+        try await waitUntil("desktop volume") {
+            session.project(self.scene()).desktopItems?.contains {
+                $0.name == "Macintosh HD"
+            } == true
+        }
+        session.openDesktop(["Macintosh HD"])
         _ = try await answerNextList(guest, path: "", entries: [])
 
         try await waitUntil("optimistic guest open") {
@@ -135,12 +162,12 @@ final class HostFinderSessionTests: XCTestCase {
             }
         }
         let rootID = try XCTUnwrap(session.windows.first?.id)
+        session.windowAct(id: rootID, act: .move(left: 90, top: 100))
+        XCTAssertEqual(session.windows.first?.frame.l, 90,
+                       "the host moves before the guest has named its window")
         let observed = finderWindow(path: "Macintosh HD", ref: "now-window-42",
                                     rect: Rect(l: 40, t: 50, r: 440, b: 350))
         session.observe(scene: scene(windows: [observed]))
-        XCTAssertEqual(session.windows.first?.frame, observed.rect)
-
-        session.windowAct(id: rootID, act: .move(left: 90, top: 100))
         XCTAssertEqual(session.windows.first?.frame.l, 90,
                        "the host moves before the guest answers")
         try await waitUntil("guest geometry act") {
@@ -150,6 +177,119 @@ final class HostFinderSessionTests: XCTestCase {
                 }
                 return request.name == "winact"
             }
+        }
+        let geometryRequests: [CommandRequest] = guest.received.compactMap {
+            message in
+            guard case .commandRequest(let request) = message,
+                  request.name == "winact" else { return nil }
+            return request
+        }
+        let geometry = try XCTUnwrap(geometryRequests.last)
+        XCTAssertEqual(geometry.args?["action"], .text("move"))
+        XCTAssertEqual(geometry.args?["left"], .number(90))
+        XCTAssertEqual(geometry.args?["top"], .number(100))
+    }
+
+    func testDesktopFolderOpenCreatesTheHostWindowBeforeGuestSettlement()
+        async throws {
+        defaults.set(true, forKey: HostFinderSession.lifecycleSyncPreferenceKey)
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        session.observe(screen: .init(w: 640, h: 480))
+        _ = try await answerNextList(
+            guest, path: "Desktop Folder",
+            entries: [entry("Projects", kind: "folder")])
+        try await waitUntil("desktop folder") {
+            session.project(self.scene()).desktopItems?.contains {
+                $0.name == "Projects"
+            } == true
+        }
+
+        session.openDesktop(["Projects"])
+        XCTAssertEqual(session.windows.first?.path, "Desktop Folder:Projects")
+        _ = try await answerNextList(
+            guest, path: "Desktop Folder:Projects", entries: [])
+        try await waitUntil("guest lifecycle request") {
+            guest.received.contains { message in
+                guard case .commandRequest(let request) = message else {
+                    return false
+                }
+                return request.name == "script"
+            }
+        }
+    }
+
+    func testModeChangeAndRefreshDiscardAndReloadDesktopCatalog() async throws {
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        session.observe(screen: .init(w: 640, h: 480))
+        _ = try await answerNextList(
+            guest, path: "Desktop Folder",
+            entries: [entry("Before", kind: "file")])
+        try await waitUntil("first desktop") {
+            session.project(self.scene()).desktopItems?.contains {
+                $0.name == "Before"
+            } == true
+        }
+
+        session.enabled = false
+        let second = try await nextList(after: 1, guest: guest,
+                                        path: "Desktop Folder")
+        try guest.send(.fileListing(.init(
+            id: second.id, path: second.path,
+            entries: [entry("After", kind: "file")], more: false,
+            cursor: nil, root: "Macintosh HD:")))
+        try await waitUntil("repopulated desktop") {
+            let names = session.project(self.scene()).desktopItems?.map(\.name)
+            return names?.contains("After") == true
+                && names?.contains("Before") == false
+        }
+
+        session.refresh()
+        _ = try await nextList(after: 2, guest: guest, path: "Desktop Folder")
+        XCTAssertTrue(session.windows.isEmpty)
+    }
+
+    func testRebuildClearsOpenWindowsAndStartsFromAnEmptyCache() async throws {
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        session.observe(screen: .init(w: 640, h: 480))
+        _ = try await answerNextList(guest, path: "Desktop Folder", entries: [])
+        try await waitUntil("desktop volume") {
+            session.project(self.scene()).desktopItems?.contains {
+                $0.name == "Macintosh HD"
+            } == true
+        }
+        session.openDesktop(["Macintosh HD"])
+        _ = try await answerNextList(guest, path: "", entries: [])
+        try await waitUntil("root window") { !session.windows.isEmpty }
+
+        session.rebuild()
+
+        XCTAssertTrue(session.windows.isEmpty)
+        XCTAssertFalse(session.project(scene()).desktopItems?.contains {
+            $0.name == "Macintosh HD"
+        } ?? false)
+        _ = try await nextList(after: 1, guest: guest, path: "Desktop Folder")
+    }
+
+    func testGuestVolumesAreKeptBesideSemanticDesktopItems() async throws {
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        let external = Scene.DesktopItem(
+            name: "External", kind: "disk", type: nil, creator: nil,
+            x: 500, y: 80, placed: true, alias: false, invisible: false,
+            w: 32, h: 32, origin: .drawn)
+        session.observe(scene: scene(desktopItems: [external]))
+        _ = try await answerNextList(
+            guest, path: "Desktop Folder",
+            entries: [entry("Read Me", kind: "file")])
+        try await waitUntil("desktop projection") {
+            let names = session.project(
+                self.scene(desktopItems: [external])).desktopItems?.map(\.name)
+            return names?.contains("Macintosh HD") == true
+                && names?.contains("External") == true
+                && names?.contains("Read Me") == true
         }
     }
 
@@ -186,15 +326,32 @@ final class HostFinderSessionTests: XCTestCase {
         return list
     }
 
+    private func nextList(after count: Int, guest: FakeGuest, path: String)
+        async throws -> FileList {
+        var requests: [FileList] = []
+        try await waitUntil("file.list \(path) number \(count + 1)") {
+            requests = guest.received.compactMap { message in
+                if case .fileList(let list) = message, list.path == path {
+                    return list
+                }
+                return nil
+            }
+            return requests.count > count
+        }
+        return requests[count]
+    }
+
     private func entry(_ name: String, kind: String) -> FileEntry {
         .init(name: name, kind: kind,
               fileType: kind == "file" ? "TEXT" : nil,
               creator: nil, dataBytes: 1, rsrcBytes: 0, modified: 0)
     }
 
-    private func scene(windows: [Scene.Window] = []) -> Scene {
+    private func scene(windows: [Scene.Window] = [],
+                       desktopItems: [Scene.DesktopItem]? = nil) -> Scene {
         .init(version: 1, seq: 1, source: "test", capturedAt: 0,
               screen: .init(w: 640, h: 480), apps: [], windows: windows,
+              desktopItems: desktopItems,
               meta: .init())
     }
 

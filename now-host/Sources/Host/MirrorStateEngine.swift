@@ -96,6 +96,24 @@ final class MirrorStateEngine: ObservableObject {
         diagnostics.compare(legacy: legacy, engine: snapshot, at: date)
     }
 
+    /// Discard every retained observation while keeping the session's
+    /// operation journal and identity. A manual rebuild is a new read of the
+    /// same connected Mac, not a reconnect and not permission to forget acts.
+    func resetProjection() {
+        snapshot = nil
+        lastRejection = nil
+        replica = nil
+        semantics.removeAll()
+        content.removeAll()
+        visibility.removeAll()
+        visibilityCoverage = nil
+        finderItemsCoverage = nil
+        digestScene = nil
+        digestPlanes.removeAll()
+        digestValue = ""
+        store.reset()
+    }
+
     /// Reduces asynchronous content/Finder results into the already accepted
     /// structural sequence. Returns true only when a new immutable projection
     /// was actually published.

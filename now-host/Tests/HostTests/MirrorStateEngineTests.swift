@@ -66,6 +66,26 @@ final class MirrorStateEngineTests: XCTestCase {
                        ?? true)
     }
 
+    func testProjectionResetClearsEveryObservationButKeepsTheJournal() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        _ = engine.accept(try scene(seq: 1))
+        let process = MirrorProcessIdentity(
+            session: engine.session, incarnation: "process-finder")
+        let operation = MirrorOperation(
+            id: "op-retained", source: .human,
+            displayedSnapshotID: try XCTUnwrap(engine.snapshot?.id),
+            displayedSequence: 1, target: .process(process),
+            postcondition: .processFront(process), enqueuedAt: Date())
+        XCTAssertTrue(engine.operations.append(operation))
+
+        engine.resetProjection()
+
+        XCTAssertNil(engine.snapshot)
+        XCTAssertNil(engine.replica)
+        XCTAssertTrue(engine.store.entries.isEmpty)
+        XCTAssertEqual(engine.operations.records.map(\.id), [operation.id])
+    }
+
     func testOldSequenceIsRecordedAndDoesNotRepublish() throws {
         let engine = MirrorStateEngine(guestKey: key)
         _ = engine.accept(try scene(seq: 2))

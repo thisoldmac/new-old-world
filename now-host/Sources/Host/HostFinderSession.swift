@@ -19,8 +19,8 @@ final class HostFinderSession {
     var onChange: () -> Void = {}
 
     private var serial = 0
-    private var seeded = false
     private var screen: Scene.ScreenSize?
+    private var lastGuestWindows: [Scene.Window] = []
     private var generation = 0
     private var dragSubject: DragTargeting.Subject?
     private(set) var active = true
@@ -35,6 +35,8 @@ final class HostFinderSession {
     private var guestRefByWindowID: [String: String] = [:]
     private var suppressedGuestIdentities: [String: Date] = [:]
     private var pendingGeometry: [String: (Rect, Date)] = [:]
+    private var pendingGeometryActions: [String: Set<String>] = [:]
+    private var dispatchedGeometry: [String: Rect] = [:]
     private var guestOpenRequested = Set<String>()
 
     var currentDragContainer: DragTargeting.Container? {
@@ -46,17 +48,25 @@ final class HostFinderSession {
             guard enabled != oldValue else { return }
             defaults.set(enabled, forKey: Self.preferenceKey)
             generation &+= 1
-            if desktopLoading { desktopLoading = false }
             windows.removeAll()
+            desktopEntries.removeAll()
+            desktopRootLabel = nil
+            desktopLoading = false
+            desktopLoaded = false
+            guestCatalogs.removeAll()
+            loadingGuestCatalogs.removeAll()
             guestIdentityByWindowID.removeAll()
             guestRefByWindowID.removeAll()
             pendingGeometry.removeAll()
+            pendingGeometryActions.removeAll()
+            dispatchedGeometry.removeAll()
             guestOpenRequested.removeAll()
-            seeded = false
             active = enabled
-            status = enabled ? "Opening the guest disk…" : "Host Finder is off"
+            status = enabled ? "Reading open Finder windows…"
+                : "Reading guest Finder state…"
             seedDesktopIfNeeded()
-            if enabled { seedIfNeeded() }
+            if enabled { reconcileGuestWindows(lastGuestWindows) }
+            else { observeGuestCatalogs(lastGuestWindows) }
             onChange()
         }
     }
@@ -74,6 +84,8 @@ final class HostFinderSession {
             guard syncGeometry != oldValue else { return }
             defaults.set(syncGeometry, forKey: Self.geometrySyncPreferenceKey)
             pendingGeometry.removeAll()
+            pendingGeometryActions.removeAll()
+            dispatchedGeometry.removeAll()
             onChange()
         }
     }
@@ -88,7 +100,7 @@ final class HostFinderSession {
         syncGeometry = defaults.object(forKey: Self.geometrySyncPreferenceKey)
             as? Bool ?? true
         fileWatch = listener.events.subscribe { [weak self] event in
-            guard let self, self.enabled else { return }
+            guard let self else { return }
             if case .fileTreeChanged(_, let side, _) = event, side == .guest {
                 self.refresh()
             }
@@ -98,15 +110,14 @@ final class HostFinderSession {
     func observe(screen: Scene.ScreenSize) {
         self.screen = screen
         seedDesktopIfNeeded()
-        seedIfNeeded()
     }
 
     func observe(scene: Scene) {
         screen = scene.screen
+        lastGuestWindows = scene.windows
         seedDesktopIfNeeded()
         if enabled {
             reconcileGuestWindows(scene.windows)
-            seedIfNeeded()
         } else {
             observeGuestCatalogs(scene.windows)
         }
@@ -115,6 +126,7 @@ final class HostFinderSession {
     func resetForGuestChange() {
         generation &+= 1
         windows.removeAll()
+        lastGuestWindows.removeAll()
         desktopEntries.removeAll()
         desktopRootLabel = nil
         desktopLoading = false
@@ -125,8 +137,9 @@ final class HostFinderSession {
         guestRefByWindowID.removeAll()
         suppressedGuestIdentities.removeAll()
         pendingGeometry.removeAll()
+        pendingGeometryActions.removeAll()
+        dispatchedGeometry.removeAll()
         guestOpenRequested.removeAll()
-        seeded = false
         /* Screen geometry belongs to the session that reported it. Keeping
            the old screen here would immediately seed a new host Finder and
            let it repaint over a replacement connection before that Mac had
@@ -137,26 +150,57 @@ final class HostFinderSession {
     }
 
     func refresh() {
-        guard enabled else { return }
         generation &+= 1
+        desktopEntries.removeAll()
+        desktopRootLabel = nil
         desktopLoaded = false
         desktopLoading = false
-        loadDesktop()
         guestCatalogs.removeAll()
         loadingGuestCatalogs.removeAll()
-        let ids = windows.map(\.id)
-        for id in ids { load(windowID: id, replacing: true) }
-        if ids.isEmpty {
-            seeded = false
-            seedIfNeeded()
+        status = "Refreshing semantic Finder catalogs…"
+        seedDesktopIfNeeded()
+        if enabled {
+            for id in windows.map(\.id) { load(windowID: id, replacing: true) }
+        } else {
+            observeGuestCatalogs(lastGuestWindows)
         }
+        onChange()
+    }
+
+    func rebuild() {
+        generation &+= 1
+        windows.removeAll()
+        lastGuestWindows.removeAll()
+        desktopEntries.removeAll()
+        desktopRootLabel = nil
+        desktopLoaded = false
+        desktopLoading = false
+        guestCatalogs.removeAll()
+        loadingGuestCatalogs.removeAll()
+        guestIdentityByWindowID.removeAll()
+        guestRefByWindowID.removeAll()
+        suppressedGuestIdentities.removeAll()
+        pendingGeometry.removeAll()
+        pendingGeometryActions.removeAll()
+        dispatchedGeometry.removeAll()
+        guestOpenRequested.removeAll()
+        status = "Cleared semantic Finder state; rebuilding…"
+        seedDesktopIfNeeded()
+        onChange()
     }
 
     func project(_ base: Scene) -> Scene {
         var result = base
         if desktopLoaded, let screen {
-            result.desktopItems = HostFinderDomain.projectedDesktop(
+            let systemItems = (base.desktopItems ?? []).filter {
+                $0.kind == "disk" || $0.kind == "trash"
+            }
+            let local = HostFinderDomain.projectedDesktop(
                 desktopEntries, rootLabel: desktopRootLabel, screen: screen)
+            let systemNames = Set(systemItems.map(\.name))
+            result.desktopItems = systemItems + local.filter {
+                !systemNames.contains($0.name)
+            }
         }
         guard enabled else {
             result.windows = result.windows.map(projectGuestFinderFallback)
@@ -261,6 +305,8 @@ final class HostFinderSession {
             guestIdentityByWindowID[id] = nil
             guestRefByWindowID[id] = nil
             pendingGeometry[id] = nil
+            pendingGeometryActions[id] = nil
+            dispatchedGeometry[id] = nil
             guestOpenRequested.remove(id)
             status = "Closed Finder window"
             onChange()
@@ -268,7 +314,8 @@ final class HostFinderSession {
             guard let screen else { return }
             windows[index].frame = defaultFrame(in: screen, offset: 0,
                                                 expanded: true)
-            notePendingGeometry(id)
+            notePendingGeometry(id, action: "move")
+            notePendingGeometry(id, action: "resize")
             sendGuestWindowAct(id: id, action: "zoom")
             onChange()
         case .move(let left, let top):
@@ -278,17 +325,16 @@ final class HostFinderSession {
             windows[index].frame = Rect(l: left, t: top - SceneBuilder.titleBarHeight,
                                         r: left + width,
                                         b: top - SceneBuilder.titleBarHeight + height)
-            notePendingGeometry(id)
-            sendGuestWindowAct(id: id, action: "move", left: left, top: top)
+            notePendingGeometry(id, action: "move")
+            sendPendingGuestGeometry(id: id)
             bringFront(index)
         case .resize(let width, let height):
             active = true
             windows[index].frame.r = windows[index].frame.l + max(180, width)
             windows[index].frame.b = windows[index].frame.t
                 + SceneBuilder.titleBarHeight + max(100, height)
-            notePendingGeometry(id)
-            sendGuestWindowAct(id: id, action: "resize", width: width,
-                               height: height)
+            notePendingGeometry(id, action: "resize")
+            sendPendingGuestGeometry(id: id)
             bringFront(index)
         }
     }
@@ -308,6 +354,33 @@ final class HostFinderSession {
                 openDocument(path: path, root: window.rootLabel)
             }
         }
+    }
+
+    func openDesktop(_ names: [String]) -> Bool {
+        active = true
+        var handled = false
+        let rootName = desktopRootLabel?.trimmingCharacters(
+            in: CharacterSet(charactersIn: ":"))
+        for name in names {
+            if name == rootName {
+                openFolder("")
+                handled = true
+                continue
+            }
+            guard let entry = desktopEntries.first(where: { $0.name == name })
+            else { continue }
+            let path = HostFinderDomain.joined("Desktop Folder", name)
+            if entry.isFolder {
+                openFolder(path)
+            } else if entry.fileType == "APPL" || entry.fileType == "appe"
+                        || entry.fileType == "cdev" {
+                launch(path: path, root: desktopRootLabel)
+            } else {
+                openDocument(path: path, root: desktopRootLabel)
+            }
+            handled = true
+        }
+        return handled
     }
 
     func rename(_ name: String, to newName: String, in id: String) {
@@ -528,9 +601,12 @@ final class HostFinderSession {
             if syncGeometry {
                 if let pending = pendingGeometry[id], pending.1 > now,
                    pending.0 != guest.rect {
+                    sendPendingGuestGeometry(id: id)
                     continue
                 }
                 pendingGeometry[id] = nil
+                pendingGeometryActions[id] = nil
+                dispatchedGeometry[id] = nil
                 windows[index].frame = guest.rect
             }
         }
@@ -545,31 +621,71 @@ final class HostFinderSession {
                 guestIdentityByWindowID[id] = nil
                 guestRefByWindowID[id] = nil
                 pendingGeometry[id] = nil
+                pendingGeometryActions[id] = nil
+                dispatchedGeometry[id] = nil
                 guestOpenRequested.remove(id)
             }
             onChange()
         }
     }
 
-    private func notePendingGeometry(_ id: String) {
+    private func notePendingGeometry(_ id: String, action: String) {
         guard syncGeometry,
               let frame = windows.first(where: { $0.id == id })?.frame else {
             return
         }
         pendingGeometry[id] = (frame, Date().addingTimeInterval(8))
+        pendingGeometryActions[id, default: []].insert(action)
     }
 
-    private func sendGuestWindowAct(id: String, action: String,
-                                    left: Int? = nil, top: Int? = nil,
-                                    width: Int? = nil, height: Int? = nil) {
+    private func sendPendingGuestGeometry(id: String) {
+        guard syncGeometry, let ref = guestRefByWindowID[id],
+              let pending = pendingGeometry[id],
+              dispatchedGeometry[id] != pending.0 else { return }
+        let actions = pendingGeometryActions[id] ?? []
+        let frame = pending.0
+        var requests: [[String: CommandArg]] = []
+        if actions.contains("move") {
+            requests.append([
+                "window": .text(ref), "action": .text("move"),
+                "left": .number(frame.l),
+                "top": .number(frame.t + SceneBuilder.titleBarHeight),
+            ])
+        }
+        if actions.contains("resize") {
+            requests.append([
+                "window": .text(ref), "action": .text("resize"),
+                "width": .number(max(1, frame.r - frame.l)),
+                "height": .number(max(1, frame.b - frame.t
+                    - SceneBuilder.titleBarHeight)),
+            ])
+        }
+        guard !requests.isEmpty else { return }
+        dispatchedGeometry[id] = frame
+        sendGuestGeometryRequests(requests, id: id)
+    }
+
+    private func sendGuestGeometryRequests(_ requests: [[String: CommandArg]],
+                                           id: String) {
+        guard let request = requests.first else { return }
+        listener.runCommand("winact", typed: request) { [weak self] result in
+            guard let self else { return }
+            guard result.ok else {
+                self.status = "Guest window geometry refused: "
+                    + (result.error?.message ?? "unknown error")
+                self.dispatchedGeometry[id] = nil
+                self.onChange()
+                return
+            }
+            self.sendGuestGeometryRequests(Array(requests.dropFirst()), id: id)
+        }
+    }
+
+    private func sendGuestWindowAct(id: String, action: String) {
         guard syncGeometry, let ref = guestRefByWindowID[id] else { return }
-        var args: [String: CommandArg] = [
+        let args: [String: CommandArg] = [
             "window": .text(ref), "action": .text(action),
         ]
-        if let left { args["left"] = .number(left) }
-        if let top { args["top"] = .number(top) }
-        if let width { args["width"] = .number(width) }
-        if let height { args["height"] = .number(height) }
         listener.runCommand("winact", typed: args) { [weak self] result in
             guard !result.ok else { return }
             self?.status = "Guest window \(action) refused: "
@@ -632,16 +748,6 @@ final class HostFinderSession {
     private static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-    }
-
-    private func seedIfNeeded() {
-        guard enabled, !seeded, let screen else { return }
-        seeded = true
-        serial &+= 1
-        windows = [.init(id: HostFinderDomain.windowID(serial), path: "",
-                         frame: defaultFrame(in: screen, offset: 0))]
-        load(windowID: windows[0].id, replacing: true)
-        onChange()
     }
 
     private func openFolder(_ path: String) {

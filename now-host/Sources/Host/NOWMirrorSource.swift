@@ -547,6 +547,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// intact; only host projections are discarded and repopulated.
     func rebuildGuestState() {
         guard running else { return }
+        runGeneration &+= 1
+        cycleGeneration = nil
+        pollRequestedAfterCycle = false
         iconTask?.cancel()
         iconTask = nil
         visibilityTask?.cancel()
@@ -562,6 +565,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         desktopIconLayout = "<none>"
         visibilityKey = "<none>"
         visibilityReadAt = nil
+        cycleIO.guestChanged()
+        shadowEngine?.resetProjection()
+        scene = nil
+        sceneGuestKey = nil
+        lastGuestScene = nil
+        hostFinder.rebuild()
         ambient = "discarded cached guest state; rebuilding…"
         note("manual rebuild discarded Finder rosters and application state")
         poll()
@@ -3687,6 +3696,10 @@ extension NOWMirrorSource: FinderInteractionDriver {
         guard !names.isEmpty else { return }
         if case .hostWindow(let id) = container {
             hostFinder.open(names, in: id)
+            return
+        }
+        if case .desktop = container, hostFinder.enabled,
+           hostFinder.openDesktop(names) {
             return
         }
         performFinderPlan(.finderOpenItems(items: names, container: container),

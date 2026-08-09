@@ -29,4 +29,8 @@ final class MirrorSnapshotStore {
             entries.removeFirst(entries.count - limit)
         }
     }
+
+    func reset() {
+        entries.removeAll()
+    }
 }
