@@ -51,6 +51,15 @@ import Foundation
 final class GuestRegistry {
     /// One machine, as the host remembers it.
     struct Record: Codable, Equatable {
+        /// The registry's exact identity for one record. Machine ids are
+        /// human-editable and legacy data may contain duplicates; the anchor
+        /// tuple is what `identify` already uses to distinguish records.
+        struct Key: Hashable, Sendable {
+            let address: String
+            let fingerprint: String
+            let slot: Int
+        }
+
         var id: GuestID
         var address: String
         var fingerprint: String
@@ -59,6 +68,16 @@ final class GuestRegistry {
         var autoAssigned: Bool
         var lastSeen: Date
         var lastName: String
+        /// Host-owned title. Nil only for records written before display
+        /// names existed; those are upgraded on their next connection.
+        var displayName: String? = nil
+        /// Host port this machine most recently connected through. Optional
+        /// for records written before per-machine ports were stored.
+        var listenPort: UInt16? = nil
+
+        var key: Key {
+            Key(address: address, fingerprint: fingerprint, slot: slot)
+        }
     }
 
     /// What a rename could not do, in the caller's words.
@@ -68,6 +87,12 @@ final class GuestRegistry {
         /// Another machine already holds it. Named, so the human can go
         /// and free it rather than guess.
         case taken(by: String)
+    }
+
+    enum DisplayNameFailure: Error, Equatable {
+        case notFound
+        case empty
+        case tooLong
     }
 
     /// Where the book lives between launches. `UserDefaults` because the
@@ -82,13 +107,20 @@ final class GuestRegistry {
     /// what the next one sees.
     private let defaults: UserDefaults?
     private let storageKey: String
+    private let ordinalKey: String
     private var records: [Record] = []
+    private var nextOrdinalNumber = 1
 
     init(defaults: UserDefaults? = nil,
          storageKey: String = "guestRegistry.v1") {
         self.defaults = defaults
         self.storageKey = storageKey
+        ordinalKey = storageKey + ".nextOrdinal"
         load()
+        let stored = defaults?.integer(forKey: ordinalKey) ?? 0
+        let afterExisting = records.compactMap { Self.ordinal($0.id) }
+            .max().map { $0 + 1 } ?? 1
+        nextOrdinalNumber = max(max(1, stored), afterExisting)
     }
 
     /// Every machine the host has ever seen, newest first. The roster of
@@ -108,6 +140,7 @@ final class GuestRegistry {
                   name: String?,
                   operatingSystem: String?,
                   occupiedSlots: Set<Int>,
+                  listenPort: UInt16? = nil,
                   now: Date = Date()) -> Record {
         let print = Self.fingerprint(name: name, operatingSystem: operatingSystem)
         var slot = 0
@@ -117,16 +150,23 @@ final class GuestRegistry {
             $0.address == address.text && $0.fingerprint == print
                 && $0.slot == slot
         }) {
+            if records[index].displayName == nil {
+                records[index].displayName = nextDisplayName(
+                    basedOn: name, excluding: index)
+            }
             records[index].lastSeen = now
             records[index].lastName = name ?? Session.unnamedGuest
+            if let listenPort { records[index].listenPort = listenPort }
             save()
             return records[index]
         }
 
+        let displayName = nextDisplayName(basedOn: name)
         let record = Record(
             id: nextOrdinal(), address: address.text, fingerprint: print,
             slot: slot, autoAssigned: true, lastSeen: now,
-            lastName: name ?? Session.unnamedGuest)
+            lastName: name ?? Session.unnamedGuest,
+            displayName: displayName, listenPort: listenPort)
         records.append(record)
         save()
         return record
@@ -141,9 +181,9 @@ final class GuestRegistry {
         }
         guard let index = records.firstIndex(where: { $0.id == current })
         else { return .failure(.notFound) }
-        if let clash = records.first(where: {
-            $0.id == wanted && $0.address != records[index].address
-        }) {
+        if let clash = records.enumerated().first(where: {
+            $0.offset != index && $0.element.id == wanted
+        })?.element {
             return .failure(.taken(by: clash.lastName))
         }
         records[index].id = wanted
@@ -152,9 +192,36 @@ final class GuestRegistry {
         return .success(wanted)
     }
 
+    /// Changes only the human-facing title. Stable addressing remains on
+    /// `GuestID`, so spaces and punctuation here never enter a session id.
+    @discardableResult
+    func renameDisplayName(_ key: Record.Key, to proposed: String)
+        -> Result<String, DisplayNameFailure> {
+        let wanted = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty else { return .failure(.empty) }
+        guard wanted.count <= 80 else { return .failure(.tooLong) }
+        guard let index = records.firstIndex(where: { $0.key == key })
+        else { return .failure(.notFound) }
+        records[index].displayName = wanted
+        save()
+        return .success(wanted)
+    }
+
     /// The record currently holding an id, if any.
     func record(for id: GuestID) -> Record? {
         records.first { $0.id == id }
+    }
+
+    /// Removes one remembered machine. A live socket is owned by the
+    /// listener and must be closed there first; this only edits the book the
+    /// host will consult if that machine appears again.
+    @discardableResult
+    func forget(_ key: Record.Key) -> Bool {
+        guard let index = records.firstIndex(where: { $0.key == key })
+        else { return false }
+        records.remove(at: index)
+        save()
+        return true
     }
 
     /// Strips the version off a guest-asserted name.
@@ -187,9 +254,38 @@ final class GuestRegistry {
     }
 
     private func nextOrdinal() -> GuestID {
-        var n = 1
-        while records.contains(where: { $0.id.slug == "guest-\(n)" }) { n += 1 }
-        return GuestID("guest-\(n)")!
+        while records.contains(where: {
+            $0.id.slug == "guest-\(nextOrdinalNumber)"
+        }) {
+            nextOrdinalNumber += 1
+        }
+        let id = GuestID("guest-\(nextOrdinalNumber)")!
+        nextOrdinalNumber += 1
+        defaults?.set(nextOrdinalNumber, forKey: ordinalKey)
+        return id
+    }
+
+    private static func ordinal(_ id: GuestID) -> Int? {
+        guard id.slug.hasPrefix("guest-") else { return nil }
+        return Int(id.slug.dropFirst("guest-".count))
+    }
+
+    private func nextDisplayName(basedOn proposed: String?,
+                                 excluding excludedIndex: Int? = nil) -> String {
+        let trimmed = proposed?.trimmingCharacters(
+            in: .whitespacesAndNewlines) ?? ""
+        let base = trimmed.isEmpty ? Session.unnamedGuest : trimmed
+        let taken: Set<String> = Set(records.enumerated().compactMap {
+            index, record in
+            guard index != excludedIndex else { return nil }
+            return (record.displayName ?? record.lastName).lowercased()
+        })
+        guard taken.contains(base.lowercased()) else { return base }
+        var suffix = 2
+        while taken.contains("\(base)-\(suffix)".lowercased()) {
+            suffix += 1
+        }
+        return "\(base)-\(suffix)"
     }
 
     private func load() {

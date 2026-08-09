@@ -71,6 +71,105 @@ final class FilesPagingTests: XCTestCase {
                        + "restarting it")
     }
 
+    /// A mutation completion and the file-tree event it publishes can both
+    /// refresh the visible folder. Only the newest refresh owns the rows;
+    /// otherwise both replies append the same page and every item appears
+    /// twice even though the guest contains only one copy.
+    func testOnlyTheNewestOverlappingRefreshMayPublishRows() async throws {
+        let guest = try await connectedGuest()
+        var before = 0
+        try await waitUntil("connection refresh requests") {
+            before = guest.received.reduce(into: 0) { count, message in
+                if case .fileList(let list) = message, list.path.isEmpty {
+                    count += 1
+                }
+            }
+            return before >= 1
+        }
+        model.refresh()
+        model.refresh()
+
+        var ids: [Int] = []
+        try await waitUntil("two overlapping file.list requests") {
+            let all: [Int] = guest.received.compactMap { message in
+                guard case .fileList(let list) = message,
+                      list.path.isEmpty else { return nil }
+                return list.id
+            }
+            ids = Array(all.dropFirst(before))
+            return ids.count >= 2
+        }
+
+        let row = entry(1)
+        try guest.send(.fileListing(FileListing(
+            id: ids[1], path: "", entries: [row], more: false,
+            cursor: nil)))
+        try guest.send(.fileListing(FileListing(
+            id: ids[0], path: "", entries: [row], more: false,
+            cursor: nil)))
+
+        try await waitUntil("newest listing published") {
+            self.model.rows.count >= 1
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(model.rows.map(\.name), ["item-1"],
+                       "a stale full refresh must not append its page")
+    }
+
+    /// A successful trash publishes `fileTreeChanged` before its completion
+    /// runs. Both paths refresh the open folder, so this pins the real delete
+    /// ordering rather than only calling `refresh()` twice in isolation.
+    func testTrashEventAndCompletionCannotDuplicateTheRemainingRows()
+        async throws {
+        let guest = try await connectedGuest()
+        model.refresh()
+        try await answerListing(guest, cursor: 1, count: 2, next: nil)
+        try await waitUntil("initial listing") { self.model.rows.count == 2 }
+
+        let before = guest.received.reduce(into: 0) { count, message in
+            if case .fileList(let list) = message, list.path.isEmpty {
+                count += 1
+            }
+        }
+        model.requestTrash([try XCTUnwrap(model.rows.first)])
+        model.commitPendingChange()
+
+        var trashID: Int?
+        try await waitUntil("file.trash") {
+            for message in guest.received {
+                if case .fileTrash(let trash) = message {
+                    trashID = trash.id
+                    return true
+                }
+            }
+            return false
+        }
+        try guest.send(.fileResult(FileResult(
+            id: try XCTUnwrap(trashID), ok: true, path: "item-1",
+            trashedAs: "item-1")))
+
+        var refreshIDs: [Int] = []
+        try await waitUntil("delete refresh") {
+            refreshIDs = guest.received.compactMap { message in
+                guard case .fileList(let list) = message,
+                      list.path.isEmpty else { return nil }
+                return list.id
+            }
+            return refreshIDs.count >= before + 2
+        }
+        let remaining = entry(2)
+        for id in refreshIDs.dropFirst(before).reversed() {
+            try guest.send(.fileListing(FileListing(
+                id: id, path: "", entries: [remaining], more: false,
+                cursor: nil)))
+        }
+
+        try await waitUntil("remaining listing") { self.model.rows.count >= 1 }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(model.rows.map(\.name), ["item-2"],
+                       "the delete event's older refresh must stay stale")
+    }
+
     // MARK: - the two ways it must refuse to spin
 
     /// A guest that answers `more` without advancing its cursor would
@@ -144,7 +243,7 @@ final class FilesPagingTests: XCTestCase {
                                next: Int?) async throws {
         var listID: Int?
         try await waitUntil("file.list at cursor \(cursor)") {
-            for message in guest.received {
+            for message in guest.received.reversed() {
                 if case .fileList(let list) = message,
                    (list.cursor ?? 1) == cursor {
                     listID = list.id
@@ -184,7 +283,9 @@ final class FilesPagingTests: XCTestCase {
             if case .connected = self.listener.state { return true }
             return false
         }
-        model.connection = .connected(named: "PowerBook 1400")
+        model.connection = .connected(
+            name: "PowerBook 1400",
+            key: try XCTUnwrap(listener.activeKey))
         return guest
     }
 }

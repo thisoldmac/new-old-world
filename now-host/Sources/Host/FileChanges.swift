@@ -126,7 +126,7 @@ extension FilesModuleModel {
     }
 
     func requestTrash(_ rows: [FileRow]) {
-        guard !rows.isEmpty else { return }
+        guard canBrowse, !isChanging, !rows.isEmpty else { return }
         pendingChange = .init(kind: .trash(paths: rows.map(\.path)))
     }
 

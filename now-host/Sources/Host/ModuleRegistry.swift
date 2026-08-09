@@ -232,7 +232,7 @@ struct ModuleRegistry: Sendable {
                spell, so it stays put while the title says what the page is
                about. */
             id: "settings",
-            title: "Connection",
+            title: "Connections",
             symbol: "network",
             summary: "The port \(MachineNaming.thisMac) listens on, and "
                 + "which \(MachineNaming.properNounPlural) are on it",
@@ -241,4 +241,3 @@ struct ModuleRegistry: Sendable {
         ),
     ])
 }
-

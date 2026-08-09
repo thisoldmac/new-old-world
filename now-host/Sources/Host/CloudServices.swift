@@ -887,7 +887,7 @@ extension GuestListener {
             note("#\(request.id) cloud services: "
                  + entries.map { "\($0.service)=\($0.state)" }
                      .joined(separator: " "),
-                 area: "cloud")
+                 area: "cloud", session: asker.guestKey)
             asker.send(.cloudReport(CloudReport(id: request.id,
                                                 services: entries)))
         case .list(let request):
@@ -907,7 +907,8 @@ extension GuestListener {
                     + bounded.count - 1
                 note("#\(request.id) \(request.service): "
                      + "\(bounded.count) row"
-                     + "\(bounded.count == 1 ? "" : "s")", area: "cloud")
+                     + "\(bounded.count == 1 ? "" : "s")", area: "cloud",
+                     session: asker.guestKey)
                 asker.send(.cloudListing(CloudListing(
                     id: request.id, service: request.service,
                     entries: bounded,
@@ -974,7 +975,8 @@ extension GuestListener {
                 maxHeight: maxHeight, depth: request.depth)
             note("#\(request.id) \(request.service) preview -> "
                  + "\(pixels.width)x\(pixels.height)@\(pixels.depth), "
-                 + "\(pixels.pixels.count) bytes", area: "cloud")
+                 + "\(pixels.pixels.count) bytes", area: "cloud",
+                 session: asker.guestKey)
             asker.servePreview(id: request.id, pixels: pixels)
         } catch {
             let fault = CloudFault.from(error)
@@ -1011,16 +1013,18 @@ extension GuestListener {
                                         size: request.size)
             note("#\(request.id) \(request.service) get -> "
                  + "\(plan.name), \(plan.bytes.count) bytes",
-                 area: "cloud")
+                 area: "cloud", session: asker.guestKey)
             /* From here the file family owns the outcome; the guest
                sees an ordinary offer landing in its share. */
+            let sessionKey = asker.guestKey
             putFile(name: plan.name, into: "", container: plan.container,
                     bytes: plan.bytes, fileType: plan.fileType,
                     creator: plan.creator, modified: plan.modified) {
                 [weak self] result in
                 if case .failure(let failure) = result {
                     self?.note("cloud get #\(request.id) failed: "
-                               + failure.message, area: "cloud")
+                               + failure.message, area: "cloud",
+                               session: sessionKey)
                 }
             }
         } catch {
@@ -1032,7 +1036,8 @@ extension GuestListener {
 
     private func refuseCloud(id: Int, code: String, reason: String,
                              on session: Session) {
-        note("#\(id) cloud refused: \(code) (\(reason))", area: "cloud")
+        note("#\(id) cloud refused: \(code) (\(reason))", area: "cloud",
+             session: session.guestKey)
         session.send(.cloudRefuse(CloudRefuse(id: id, code: code,
                                               reason: reason)))
     }

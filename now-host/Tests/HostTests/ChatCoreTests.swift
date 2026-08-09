@@ -1,3 +1,4 @@
+import Security
 import XCTest
 
 @testable import Host
@@ -60,28 +61,81 @@ final class ChatSSEParserTests: XCTestCase {
 }
 
 final class ChatCredentialStoreTests: XCTestCase {
-    func testOAuthBlobRoundTripsThroughTheStore() throws {
-        let store = InMemoryChatCredentialStore()
-        let tokens = ChatOAuthTokens(
-            accessToken: "at", refreshToken: "rt",
-            expiresAt: Date(timeIntervalSince1970: 2_000_000_000))
-        try store.write(.anthropicOAuth, JSONEncoder().encode(tokens))
-        let back = try JSONDecoder().decode(
-            ChatOAuthTokens.self, from: XCTUnwrap(store.read(.anthropicOAuth)))
-        XCTAssertEqual(back, tokens)
-        store.delete(.anthropicOAuth)
-        XCTAssertNil(store.read(.anthropicOAuth))
+    func testPassiveLegacyProbeNeverRequestsCredentialData() {
+        let query = KeychainChatCredentialStore.passiveLegacyQuery(
+            .anthropicOAuth)
+
+        XCTAssertNil(query[kSecReturnData as String])
+        XCTAssertEqual(query[kSecReturnAttributes as String] as? Bool, true)
+        XCTAssertEqual(
+            query[kSecMatchLimit as String] as? String,
+            kSecMatchLimitOne as String)
     }
 
-    func testExpiryHasAMinuteOfSlack() {
-        let live = ChatOAuthTokens(
-            accessToken: "a", refreshToken: "r",
-            expiresAt: Date().addingTimeInterval(3600))
-        let nearlyOut = ChatOAuthTokens(
-            accessToken: "a", refreshToken: "r",
-            expiresAt: Date().addingTimeInterval(30))
-        XCTAssertFalse(live.isExpired)
-        XCTAssertTrue(nearlyOut.isExpired)
+    func testOperationCacheReadsOnlyUsedCredentialsAndOnlyOnce() {
+        let source = RecordingChatCredentialStore(values: [
+            .openAIAPIKey: .value(Data("openai".utf8)),
+        ])
+        let cache = OperationChatCredentialStore(
+            source: source, interaction: .forbid)
+
+        XCTAssertTrue(source.reads.isEmpty)
+        XCTAssertEqual(
+            cache.read(.openAIAPIKey, interaction: .allow),
+            .value(Data("openai".utf8)))
+        XCTAssertEqual(
+            cache.read(.openAIAPIKey, interaction: .forbid),
+            .value(Data("openai".utf8)))
+        XCTAssertEqual(source.reads.count, 1)
+        XCTAssertEqual(source.reads.first?.0, .openAIAPIKey)
+        XCTAssertEqual(source.reads.first?.1, .forbid)
+    }
+
+    func testAuthorizationRequirementIsNotCollapsedIntoMissingCredential() {
+        let source = RecordingChatCredentialStore(values: [
+            .anthropicOAuth: .authorizationRequired,
+        ])
+        let cache = OperationChatCredentialStore(
+            source: source, interaction: .forbid)
+
+        XCTAssertEqual(
+            cache.read(.anthropicOAuth, interaction: .forbid),
+            .authorizationRequired)
+        XCTAssertFalse(cache.read(.anthropicOAuth, interaction: .forbid)
+            .isAvailable)
+    }
+}
+
+final class RecordingChatCredentialStore: ChatCredentialStore,
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [ChatCredentialKey: ChatCredentialRead]
+    private var recordedReads: [
+        (ChatCredentialKey, ChatCredentialInteraction)
+    ] = []
+
+    var reads: [(ChatCredentialKey, ChatCredentialInteraction)] {
+        lock.withLock { recordedReads }
+    }
+
+    init(values: [ChatCredentialKey: ChatCredentialRead] = [:]) {
+        self.values = values
+    }
+
+    func read(_ key: ChatCredentialKey, interaction: ChatCredentialInteraction)
+        -> ChatCredentialRead {
+        lock.withLock {
+            recordedReads.append((key, interaction))
+            return values[key] ?? .missing
+        }
+    }
+
+    func write(_ key: ChatCredentialKey, _ data: Data) throws {
+        lock.withLock { values[key] = .value(data) }
+    }
+
+    func delete(_ key: ChatCredentialKey) throws {
+        lock.withLock { values[key] = .missing }
     }
 }
 

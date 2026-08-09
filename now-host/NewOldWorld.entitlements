@@ -2,6 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- The Data Protection Keychain needs an application identifier and
+	     access group supplied by a provisioning profile. Keep Chat out of
+	     ad-hoc builds rather than letting every CDHash become a new reader. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)dev.newoldworld.now</string>
+	</array>
 	<!-- The app signs with the hardened runtime, under which Photos and
 	     Contacts access is DENIED WITHOUT PROMPTING unless the matching
 	     personal-information entitlement is present — no dialog, no

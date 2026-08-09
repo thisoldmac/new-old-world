@@ -1,0 +1,41 @@
+#!/bin/sh
+set -eu
+
+expected_team=B93A9CG7F9
+expected_bundle=dev.newoldworld.now
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: $0 /absolute/path/New Old World.app" >&2
+    exit 64
+fi
+
+bundle=$1
+codesign --verify --strict "$bundle"
+
+details=$(codesign -dvv "$bundle" 2>&1)
+team=$(printf '%s\n' "$details" | sed -n 's/^TeamIdentifier=//p')
+if [ "$team" != "$expected_team" ]; then
+    echo "host app is not signed by expected team $expected_team (got ${team:-none})" >&2
+    exit 70
+fi
+
+entitlements=$(mktemp "${TMPDIR:-/tmp}/now-host-entitlements.XXXXXX")
+cleanup() { rm -f "$entitlements"; }
+trap cleanup EXIT INT TERM
+codesign -d --entitlements :- "$bundle" > "$entitlements" 2>/dev/null
+
+application_id=$(/usr/libexec/PlistBuddy \
+    -c 'Print :com.apple.application-identifier' \
+    "$entitlements" 2>/dev/null || true)
+keychain_group=$(/usr/libexec/PlistBuddy \
+    -c 'Print :keychain-access-groups:0' "$entitlements" 2>/dev/null || true)
+expected_id="$expected_team.$expected_bundle"
+
+if [ "$application_id" != "$expected_id" ]; then
+    echo "host app has wrong application identifier (got ${application_id:-none})" >&2
+    exit 70
+fi
+if [ "$keychain_group" != "$expected_id" ]; then
+    echo "host app has wrong Keychain access group (got ${keychain_group:-none})" >&2
+    exit 70
+fi

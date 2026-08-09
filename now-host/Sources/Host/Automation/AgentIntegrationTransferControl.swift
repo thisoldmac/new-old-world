@@ -81,7 +81,8 @@ final class AgentIntegrationTransferControl {
            may have started has been stopped by somebody else. */
         listener.note(personVisibleLine(direction: direction,
                                         progress: progress),
-                      area: "files", level: .warn)
+                      area: "files", level: .warn,
+                      session: listener.activeKey)
 
         return .completed(.init(
             outcome: .asked,

@@ -66,29 +66,34 @@ struct HostRootView: View {
         }
     }
 
-    /// The fold control, and nothing else. Modern apps put this in a
-    /// toolbar; this window has no toolbar, so it sits at the top of the
-    /// sidebar itself — the next most familiar place, and the one that
-    /// keeps it attached to the thing it folds.
+    /// The sidebar's own controls: the fold button, then the live guest the
+    /// whole module stack is attached to.
     @ViewBuilder
     private var sidebarHeader: some View {
-        HStack(spacing: 0) {
-            Button {
-                sidebar.collapsed.toggle()
-            } label: {
-                Image(systemName: "sidebar.leading")
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 4) {
+            HStack(spacing: 0) {
+                Button {
+                    sidebar.collapsed.toggle()
+                } label: {
+                    Image(systemName: "sidebar.leading")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(sidebar.collapsed
+                      ? "Show module names"
+                      : "Collapse the sidebar to icons")
+                .accessibilityLabel(sidebar.collapsed
+                                    ? "Show module names"
+                                    : "Collapse sidebar to icons")
+                if !sidebar.collapsed {
+                    Spacer(minLength: 0)
+                }
             }
-            .buttonStyle(.borderless)
-            .help(sidebar.collapsed
-                  ? "Show module names"
-                  : "Collapse the sidebar to icons")
-            .accessibilityLabel(sidebar.collapsed
-                                ? "Show module names"
-                                : "Collapse sidebar to icons")
-            if !sidebar.collapsed {
-                Spacer(minLength: 0)
-            }
+            SidebarGuestMenu(
+                listener: state.listener,
+                collapsed: sidebar.collapsed,
+                select: { state.selectGuest($0) },
+                add: { state.selectedModuleID = "settings" })
         }
         .padding(.horizontal, sidebar.collapsed ? 0 : 12)
         .padding(.vertical, 6)
@@ -125,14 +130,6 @@ struct HostRootView: View {
     @ViewBuilder
     private var footer: some View {
         VStack(spacing: 0) {
-            /* Folded, there is no room for a popup and its label. The
-               picker is not lost - it is one click away, and the footer's
-               Connections page names the driven Mac in full. */
-            if !sidebar.collapsed {
-                GuestPicker(listener: state.listener) { key in
-                    state.selectGuest(key)
-                }
-            }
             if !registry.footerModules.isEmpty {
                 SidebarFooter(modules: registry.footerModules,
                               monitor: state.guestStatus,
@@ -238,64 +235,64 @@ struct HostRootView: View {
     }
 }
 
-/// Which Mac the window is driving, when there is a choice.
-///
-/// A pop-up button, which is `Picker` under `.menu` — the stock AppKit
-/// control for "one of a short list", drawn by the system rather than
-/// rebuilt out of rows here. The alternative, a second list of machines
-/// above the modules, would have said the same thing in more pixels and
-/// invented a selection idiom the rest of the OS does not use.
-///
-/// **It appears only when there are two.** With one machine connected the
-/// popup would offer a choice that is not a choice, and the footer's status
-/// line already names it; with none there is nothing to name. The row is
-/// therefore evidence in itself: seeing it means a second Mac is on the
-/// wire, which is the fact a person most needs when a command lands
-/// somewhere surprising.
-struct GuestPicker: View {
+/// The live-only guest menu. Registry records never enter this list: a
+/// remembered machine cannot receive a module request. The final action
+/// routes to Connections, where listening for another guest is configured.
+struct SidebarGuestMenu: View {
     @ObservedObject var listener: GuestListener
+    let collapsed: Bool
     let select: (GuestKey) -> Void
+    let add: () -> Void
 
     var body: some View {
-        if listener.guests.count > 1 {
-            VStack(spacing: 0) {
-                Divider()
-                HStack(spacing: 6) {
-                    Image(systemName: "desktopcomputer")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Picker("Driving", selection: selection) {
-                        ForEach(listener.guests) { guest in
-                            /* Handle, then what the machine calls itself.
-                               Two Macs may report the same name — that is
-                               the case the old identity could not serve at
-                               all — so the row a person clicks must carry
-                               the thing that tells them apart. */
-                            Text(guest.label).tag(GuestKey?.some(guest.key))
+        Menu {
+            if listener.guests.isEmpty {
+                Text("No Guests Attached")
+            } else {
+                ForEach(listener.guests) { guest in
+                    Button {
+                        select(guest.key)
+                    } label: {
+                        if guest.isActive {
+                            Label(guest.label, systemImage: "checkmark")
+                        } else {
+                            Text(guest.label)
                         }
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
+                    .disabled(guest.isActive)
                 }
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                .help("Every command, module and capture request goes to "
-                      + "the machine chosen here. The others stay "
-                      + "connected.")
+            }
+            Divider()
+            Button("Add Guest…", action: add)
+        } label: {
+            if collapsed {
+                Image(systemName: "desktopcomputer")
+                    .frame(width: 18, height: 18)
+            } else {
+                HStack(spacing: 7) {
+                    Image(systemName: "desktopcomputer")
+                        .foregroundStyle(.secondary)
+                    Text(activeLabel)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, minHeight: 26,
+                       alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(nsColor: .controlBackgroundColor)))
             }
         }
+        .menuStyle(.borderlessButton)
+        .help("Choose the guest every host module is attached to")
     }
 
-    /// Reads the roster rather than a stored choice: the active guest is
-    /// the listener's fact, and a picker holding its own copy would go on
-    /// showing a machine that had disconnected.
-    private var selection: Binding<GuestKey?> {
-        Binding {
-            listener.guests.first(where: \.isActive)?.key
-        } set: { picked in
-            if let picked { select(picked) }
-        }
+    private var activeLabel: String {
+        listener.guests.first(where: \.isActive)?.label
+            ?? "No Guest Attached"
     }
 }
 

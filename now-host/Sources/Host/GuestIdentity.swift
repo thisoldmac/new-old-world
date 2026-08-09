@@ -39,23 +39,31 @@ struct GuestAddress: Hashable, Sendable, CustomStringConvertible {
     /// not a machine, and would make every reconnection look like a new
     /// Mac.
     let text: String
+    /// The remote TCP port for this exact connection. It is display-only:
+    /// the registry deliberately anchors on `text`, never this ephemeral
+    /// socket number.
+    let port: UInt16?
 
-    init(text: String) {
+    init(text: String, port: UInt16? = nil) {
         self.text = text
+        self.port = port
     }
 
     init(endpoint: NWEndpoint) {
         switch endpoint {
-        case .hostPort(let host, _):
+        case .hostPort(let host, let port):
+            let rawPort = port.rawValue
             switch host {
             case .ipv4(let v4):
-                self.init(text: Self.strip(String(describing: v4)))
+                self.init(text: Self.strip(String(describing: v4)),
+                          port: rawPort)
             case .ipv6(let v6):
-                self.init(text: Self.strip(String(describing: v6)))
+                self.init(text: Self.strip(String(describing: v6)),
+                          port: rawPort)
             case .name(let name, _):
-                self.init(text: name)
+                self.init(text: name, port: rawPort)
             @unknown default:
-                self.init(text: String(describing: host))
+                self.init(text: String(describing: host), port: rawPort)
             }
         default:
             self.init(text: String(describing: endpoint))
@@ -75,6 +83,12 @@ struct GuestAddress: Hashable, Sendable, CustomStringConvertible {
     /// False when two different Macs can arrive here wearing this same
     /// address. Loopback is the case that actually happens on this desk.
     var distinguishesMachines: Bool { !isLoopback }
+
+    var endpointText: String {
+        guard let port else { return text }
+        let host = text.contains(":") ? "[\(text)]" : text
+        return "\(host):\(port)"
+    }
 
     var description: String { text }
 }
@@ -221,6 +235,12 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     /// What the guest calls itself. Version-bearing, guest-asserted, for
     /// humans only.
     var name: String
+    /// Host-owned title, defaulted from `name` and independently editable.
+    /// Nil only in fixtures or while reading a pre-display-name record.
+    var displayName: String? = nil
+    /// Host port this machine's connection was accepted on. Unlike the
+    /// remote source port in `address`, this is stable and useful to a person.
+    var listenPort: UInt16? = nil
     var address: GuestAddress
     var version: String?
     /// The build this machine reported at `hello`, when it reported one.
@@ -239,10 +259,9 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     /// successor".
     var sessionID: String { key.text }
 
-    /// How this machine is written where a person reads it: the handle
-    /// first, because that is what they will have to type, and what the
-    /// machine calls itself after it, because that is what changes.
-    var label: String { "\(id.slug) — \(name)" }
+    /// The host-owned title shown to a person, falling back to the name
+    /// reported at hello while legacy records acquire a display name.
+    var label: String { displayName ?? name }
 }
 
 /// **Which machine's art belongs to this guest** — the asset-pack key,

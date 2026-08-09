@@ -37,7 +37,7 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Processes: list, launch, quit, front | yes | yes | emulator-verified |
 | Installed software: applications, extensions, control panels | yes | yes, without versions or a running flag | metal-verified (PPC); 68K tested only |
 | Hardware census (14 probes) | yes | 14 probes, 5 of them honestly `absent`/`partial` on this hardware. **Until 2026-08-07 the `pccard` probe killed the guest on any Mac without a PC Card Manager** — the trap dispatch checked that its route was open and never that the trap existed. Gated now: `tools/census-survives.py` sweeps all 14 against a real guest inside every bake. | metal-verified (PPC, PB1400c); emulator-verified on mac99/OS 9.1 after the fix; **68K's probes have never run at all** |
-| Two Macs on one port, with a picker for which one you are driving | yes | yes | tested; **never run against real hardware** |
+| Two Macs on one port, with a live-guest menu for which one every host module drives | yes | yes | tested; **never run against real hardware** |
 | iCloud: the host's Drive, Photos and Contacts served to the guest's iCloud page — drive browser with history and breadcrumbs, live filter-as-you-type, photo preview and download at chosen resolution, contact cards | yes | no | metal-verified (PPC) for Drive and the granted services; the newest layout pass is tested only — [docs/icloud.md](docs/icloud.md) |
 | Window **interiors** — application QuickDraw records plus semantic Finder rendering | yes, with the optional NOW Extension for application drawing; Finder never uses it | no — no resident for System 7.1 | **experimental, tested:** Finder windows always keep their guest-observed shell. Optional **Emulate Finder Window Interiors (Experimental)** replaces only the item layer with a host-native Finder model; several Finder behaviors remain incomplete. Position, size, stacking and lifecycle still follow the guest when synchronization is enabled. **Emulate Desktop** is a separate switch: off preserves Finder's live desktop roster and positions, while on lays out a host-owned Desktop Folder catalog. Application P3 remains emulator-verified only. These Finder corrections have not yet been re-run on metal |
 | Offscreen worlds joined to the window they land in — including a world created, drawn and disposed inside one event pass | yes | no | emulator-verified (guest side); the host's composition is tested against committed captures — **the live host app has never been watched composing** |
@@ -339,10 +339,22 @@ To build and launch the host app itself:
 open "/private/tmp/now-host-product/New Old World.app"
 ```
 
-The ad-hoc signature that script produces is fine for development, but
-system notifications need a real one — `now-host/NewOldWorld.xcodeproj`
-builds the same sources as an app target. Open it in Xcode, pick a
-signing team, and build.
+That command uses the Xcode target and the repository's configured
+Developer team. Its stable identity is required for Chat's saved
+credentials, and its entitlements are required for Photos and Contacts.
+The first build may ask Xcode to refresh its managed provisioning profile.
+
+For scratch work on pages that need neither Keychain nor privacy
+entitlements, an ad-hoc build remains available:
+
+```bash
+./scripts/build-host-app --adhoc /private/tmp/now-host-scratch
+```
+
+An ad-hoc build deliberately cannot read Chat credentials saved by the
+Developer-signed app. Re-signing it produces a new identity, so using it
+for Chat would recreate the repeated Keychain authorization problem this
+split exists to prevent.
 
 ## Build the guests
 

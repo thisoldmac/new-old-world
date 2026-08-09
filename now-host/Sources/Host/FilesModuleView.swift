@@ -49,7 +49,6 @@ struct FilesModuleView: View {
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
-            if model.rows.isEmpty { model.refresh() }
             model.discoverLocationsIfNeeded()
         }
         .onReceive(clock) { elapsed = $0 }
@@ -82,17 +81,13 @@ struct FilesModuleView: View {
                 confirm: { model.commitPendingChange() },
                 cancel: { model.cancelPendingChange() })
         }
-        .sheet(isPresented: Binding(
-            get: { model.newFolderName != nil },
-            set: { if !$0 { model.newFolderName = nil } })) {
+        .sheet(item: Binding(
+            get: { model.newFolderPrompt },
+            set: { if $0 == nil { model.cancelNewFolder() } })) { prompt in
             NewFolderSheet(
-                name: Binding(get: { model.newFolderName ?? "" },
-                              set: { model.newFolderName = $0 }),
-                create: { name in
-                    model.newFolderName = nil
-                    model.createFolder(named: name)
-                },
-                cancel: { model.newFolderName = nil })
+                initialName: prompt.initialName,
+                create: { model.createFolderFromPrompt(named: $0) },
+                cancel: { model.cancelNewFolder() })
         }
     }
 
@@ -161,10 +156,11 @@ struct FilesModuleView: View {
                 .fixedSize()
             }
             Button {
-                model.newFolderName = "untitled folder"
+                model.beginNewFolder()
             } label: {
                 Label("New Folder", systemImage: "folder.badge.plus")
             }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
             .labelStyle(.iconOnly)
             .disabled(!model.canBrowse || model.isChanging)
             .help("New folder here")
@@ -211,7 +207,7 @@ struct FilesModuleView: View {
                 ProgressView().controlSize(.small)
             }
             Button {
-                model.refresh()
+                model.refreshBrowser()
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
@@ -422,18 +418,12 @@ struct FilesModuleView: View {
             }
         }
         .frame(width: 190)
-        /* A folder dragged out of the browser lands here. The pasteboard
-           carries its path as text; the MODEL decides whether that string
-           names a folder it can currently see, so a stray drag of any
-           other text is refused rather than pinned. */
-        .onDrop(of: [.text], isTargeted: nil) { providers in
-            for provider in providers {
-                _ = provider.loadObject(ofClass: NSString.self) { text, _ in
-                    guard let path = text as? String else { return }
-                    Task { @MainActor in model.pinLocation(path: path) }
-                }
-            }
-            return true
+        /* The source model remembers which local folder drag is active.
+           The Finder sees a real folder promise; this sidebar never asks
+           the pasteboard to masquerade that folder as plain text. */
+        .onDrop(of: [.folder], isTargeted: nil) { _ in
+            guard let path = model.draggedFolderPath else { return false }
+            return model.pinLocation(path: path)
         }
     }
 
@@ -782,9 +772,17 @@ private struct ChangeConfirmation: View {
 }
 
 private struct NewFolderSheet: View {
-    @Binding var name: String
+    @State private var name: String
     let create: (String) -> Void
     let cancel: () -> Void
+
+    init(initialName: String,
+         create: @escaping (String) -> Void,
+         cancel: @escaping () -> Void) {
+        _name = State(initialValue: initialName)
+        self.create = create
+        self.cancel = cancel
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
