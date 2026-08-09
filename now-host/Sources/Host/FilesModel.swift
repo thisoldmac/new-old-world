@@ -415,6 +415,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         lastNotice = nil
         transfer = nil
         renaming = nil
+        draggedFolderPath = nil
         newFolderPrompt = nil
         promiseExporter.cancelAll(
             reason: "The connected guest changed while files were being copied.")

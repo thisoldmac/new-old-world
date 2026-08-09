@@ -14,6 +14,31 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## Host Files export and mutation repair (2026-08-08)
+
+**Tested, not metal-verified.** Four host-side failures are repaired:
+
+- an overwrite that the guest cannot finalize after staging now reports the
+  refusal once; an already-authorized overwrite never opens a second prompt;
+- overlapping refreshes have one generation owner, so creating a folder no
+  longer appends the same guest listing twice;
+- the new-folder sheet owns its text draft and dismisses before the request,
+  so a late TextField write cannot reopen it after success; and
+- every dragged row is a real AppKit file promise. Folder promises recursively
+  follow paged guest listings, and multiple promises wait in one bounded queue
+  for the guest's single transfer lane.
+
+The new native tests pin each repair, empty directories, partial-tree cleanup,
+refusal without deleting an existing host folder, the recursive item bound,
+and multi-promise ordering. The overwrite, overlapping-refresh, folder-bound,
+cleanup and sheet-lifetime guards were each watched fail before their fixes.
+No wire message or guest behavior changed.
+
+Still unverified: Finder has not redeemed a multi-file or directory drag from
+a live guest in this pass, and a running application on a classic Mac has not
+exercised the finalization-refusal path. Those are the two useful metal checks;
+the host suites prove the state machines and app build, not those interactions.
+
 ## The folding sidebar, both halves (2026-08-05)
 
 The rail folds to icons on the guest and the sidebar does the same on the

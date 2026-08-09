@@ -68,13 +68,28 @@ final class FilePromiseExportTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let destination = root.appendingPathComponent("Project")
         let listings: [String: [FileEntry]] = [
-            "Project": [entry("Read Me"), entry("Source", folder: true)],
             "Project:Source": [entry("main.c"),
                                entry("Empty", folder: true)],
             "Project:Source:Empty": [],
         ]
+        var projectPages = 0
         let exporter = GuestFilePromiseExporter(
             listPage: { path, cursor, done in
+                if path == "Project" {
+                    projectPages += 1
+                    if cursor == nil {
+                        done(.success(FileListing(
+                            id: 1, path: path, entries: [self.entry("Read Me")],
+                            more: true, cursor: 2)))
+                    } else {
+                        XCTAssertEqual(cursor, 2)
+                        done(.success(FileListing(
+                            id: 2, path: path,
+                            entries: [self.entry("Source", folder: true)],
+                            more: false, cursor: nil)))
+                    }
+                    return
+                }
                 XCTAssertNil(cursor)
                 guard let entries = listings[path] else {
                     done(.failure(TestFailure.unknownPath(path)))
@@ -114,6 +129,7 @@ final class FilePromiseExportTests: XCTestCase {
             atPath: destination.appendingPathComponent("Source/Empty").path,
             isDirectory: &isDirectory))
         XCTAssertTrue(isDirectory.boolValue, "empty folders must survive")
+        XCTAssertEqual(projectPages, 2, "all listing pages must be followed")
     }
 
     func testAFailedFolderPromiseRemovesItsPartialTree() throws {
@@ -169,6 +185,37 @@ final class FilePromiseExportTests: XCTestCase {
         }
         XCTAssertEqual(try Data(contentsOf: sentinel), Data("mine".utf8),
                        "cleanup must only remove a folder it created")
+    }
+
+    func testAnOversizedFolderIsRefusedBeforeAnyChildTransfer() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let destination = root.appendingPathComponent("Project")
+        let entries = (0...GuestFilePromiseExporter.itemLimit).map {
+            entry("Item \($0)")
+        }
+        var fetched = 0
+        let exporter = GuestFilePromiseExporter(
+            listPage: { path, _, done in
+                done(.success(FileListing(
+                    id: 1, path: path, entries: entries,
+                    more: false, cursor: nil)))
+            },
+            fetchFile: { _, _, done in
+                fetched += 1
+                done(.success(()))
+            })
+        var result: Result<Void, Error>?
+
+        exporter.enqueue(row("Project", folder: true), to: destination) {
+            result = $0
+        }
+
+        guard case .failure = try XCTUnwrap(result) else {
+            return XCTFail("an oversized folder promise reported success")
+        }
+        XCTAssertEqual(fetched, 0,
+                       "the bound must apply before child transfers begin")
     }
 
     private enum TestFailure: LocalizedError {

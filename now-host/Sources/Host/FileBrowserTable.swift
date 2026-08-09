@@ -118,9 +118,6 @@ struct FileBrowserTable: NSViewRepresentable {
         var parent: FileBrowserTable
         var rows: [FileRow] = []
         weak var table: NSTableView?
-        /// Rows being dragged, keyed by the promise handed to the Finder,
-        /// since the Finder asks for the bytes long after the drag began.
-        private var promised: [ObjectIdentifier: FileRow] = [:]
         private let queue = OperationQueue()
 
         init(_ parent: FileBrowserTable) {
@@ -431,13 +428,16 @@ struct FileBrowserTable: NSViewRepresentable {
             let type = GuestFilePromiseType.type(for: item)
             let provider = NSFilePromiseProvider(fileType: type.identifier,
                                                  delegate: self)
-            promised[ObjectIdentifier(provider)] = item
+            // The provider owns this drag's row for exactly as long as
+            // AppKit owns the promise. A coordinator dictionary leaked one
+            // entry for every drag that ended without a Finder drop.
+            provider.userInfo = item
             return provider
         }
 
         func filePromiseProvider(_ provider: NSFilePromiseProvider,
                                  fileNameForType fileType: String) -> String {
-            promised[ObjectIdentifier(provider)]?.name ?? "Untitled"
+            (provider.userInfo as? FileRow)?.name ?? "Untitled"
         }
 
         func operationQueue(for provider: NSFilePromiseProvider)
@@ -449,14 +449,12 @@ struct FileBrowserTable: NSViewRepresentable {
         func filePromiseProvider(_ provider: NSFilePromiseProvider,
                                  writePromiseTo url: URL,
                                  completionHandler: @escaping (Error?) -> Void) {
-            let key = ObjectIdentifier(provider)
             Task { @MainActor in
-                guard let row = self.promised[key] else {
+                guard let row = provider.userInfo as? FileRow else {
                     completionHandler(FilesModuleModel.FilesError
                         .wire("that file is no longer listed"))
                     return
                 }
-                self.promised[key] = nil
                 self.parent.model.fetchForPromise(row, to: url) { result in
                     switch result {
                     case .success:

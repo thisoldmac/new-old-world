@@ -29,6 +29,10 @@ final class GuestFilePromiseExporter {
         var count = 0
     }
 
+    private final class ListingAccumulator {
+        var entries: [FileEntry] = []
+    }
+
     enum ExportError: LocalizedError {
         case cancelled(String)
         case malformedListing(String)
@@ -52,7 +56,7 @@ final class GuestFilePromiseExporter {
     private let listPage: ListPage
     private let fetchFile: FetchFile
     private let fileManager: FileManager
-    private var pending: [Request] = []
+    private var pending: ArraySlice<Request> = []
     private var active: Request?
     private var generation = 0
 
@@ -87,12 +91,11 @@ final class GuestFilePromiseExporter {
             request.completion(.failure(failure))
         }
         active = nil
-        pending = []
+        pending.removeAll()
     }
 
     private func startNextIfIdle() {
-        guard active == nil, !pending.isEmpty else { return }
-        let request = pending.removeFirst()
+        guard active == nil, let request = pending.popFirst() else { return }
         active = request
         let token = generation
         if request.row.isFolder {
@@ -129,7 +132,9 @@ final class GuestFilePromiseExporter {
         token: Int,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        readAllPages(path: path, cursor: nil, accumulated: [], token: token) {
+        readAllPages(path: path, cursor: nil,
+                     accumulated: ListingAccumulator(), budget: budget,
+                     token: token) {
             [weak self] result in
             guard let self, token == self.generation else { return }
             switch result {
@@ -146,7 +151,8 @@ final class GuestFilePromiseExporter {
     private func readAllPages(
         path: String,
         cursor: Int?,
-        accumulated: [FileEntry],
+        accumulated: ListingAccumulator,
+        budget: Budget,
         token: Int,
         completion: @escaping (Result<[FileEntry], Error>) -> Void
     ) {
@@ -161,9 +167,15 @@ final class GuestFilePromiseExporter {
                         "The guest listed \(listing.path) while \(path) was requested.")))
                     return
                 }
-                let entries = accumulated + listing.entries
+                accumulated.entries.append(contentsOf: listing.entries)
+                budget.count += listing.entries.count
+                guard budget.count <= Self.itemLimit else {
+                    completion(.failure(
+                        ExportError.tooManyItems(Self.itemLimit)))
+                    return
+                }
                 guard listing.more else {
-                    completion(.success(entries))
+                    completion(.success(accumulated.entries))
                     return
                 }
                 guard let next = listing.cursor,
@@ -173,7 +185,8 @@ final class GuestFilePromiseExporter {
                     return
                 }
                 self.readAllPages(path: path, cursor: next,
-                                  accumulated: entries, token: token,
+                                  accumulated: accumulated, budget: budget,
+                                  token: token,
                                   completion: completion)
             }
         }
@@ -193,12 +206,6 @@ final class GuestFilePromiseExporter {
             completion(.success(()))
             return
         }
-        budget.count += 1
-        guard budget.count <= Self.itemLimit else {
-            completion(.failure(ExportError.tooManyItems(Self.itemLimit)))
-            return
-        }
-
         let entry = entries[index]
         let path = FileChangeNames.join(parentPath, entry.name)
         let localURL = destination.appendingPathComponent(
