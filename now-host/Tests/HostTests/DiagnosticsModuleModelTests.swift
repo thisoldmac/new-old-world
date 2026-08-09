@@ -168,7 +168,7 @@ final class DiagnosticsModuleModelTests: XCTestCase {
 
         XCTAssertEqual(serving("vprobe"), .unknown)
         model.run(.vprobe)
-        try await waitUntil("vprobe answered") {
+        try await waitUntil("vprobe answered", timeout: 2.5) {
             !(self.model.state(id: "vprobe")?.rows.isEmpty ?? true)
         }
         XCTAssertEqual(serving("vprobe"), .served,
@@ -361,7 +361,7 @@ final class DiagnosticsModuleModelTests: XCTestCase {
         defer { guest.connection.cancel() }
 
         model.run(.shotdiag)
-        try await waitUntil("shotdiag refused") {
+        try await waitUntil("shotdiag refused", timeout: 2.5) {
             self.serving("shotdiag") == .notServed
         }
         XCTAssertNil(model.state(id: "shotdiag")?.refusal,

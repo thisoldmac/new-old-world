@@ -493,7 +493,7 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
            reason the console's own wait is generous. */
         listener.runScheduledCommand(
             verb, purpose: .command("diagnostics \(verb)"),
-            workClass: .foreground) { [weak self] result in
+            workClass: .humanInteractive) { [weak self] result in
             guard let self,
                   self.generation[verb] == gen,
                   let idx = self.states.firstIndex(where: { $0.id == verb })
@@ -554,9 +554,16 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
     func askWhatThisMacServes() {
         guard isConnected, !askedForCommands else { return }
         askedForCommands = true
+        /* This is enrichment, not the person's requested diagnostic. A guest
+           that never answers `help` must not hold the shared admission lane
+           for the generic 20-second script-safe watchdog; 1.8 seconds is the
+           same sub-two-second automatic-work budget used by Mirror's Finder
+           pages, after which the explicit Run is allowed to establish the
+           capability directly. */
         listener.runScheduledCommand(
             "help", line: "", purpose: .command("diagnostics help"),
-            workClass: .foreground, coalescingKey: "diagnostics-help") {
+            workClass: .ambient, coalescingKey: "diagnostics-help",
+            watchdogSeconds: 1.8) {
             [weak self] result in
             guard let self else { return }
             // The first column of `help`'s list form is the command names —

@@ -736,6 +736,7 @@ final class GuestListener: ObservableObject {
 
     func runCommand(_ name: String, typed args: [String: CommandArg]?,
                     line: String? = nil,
+                    watchdogSeconds: TimeInterval? = nil,
                     completion: @escaping (CommandResult) -> Void) {
         guard let session, case .connected = state else {
             completion(CommandResult(
@@ -747,7 +748,8 @@ final class GuestListener: ObservableObject {
         let id = nextCommandId
         nextCommandId += 1
         pendingCommands[id] = completion
-        armWatchdog(id: id, seconds: Self.commandWatchdogSeconds) {
+        armWatchdog(id: id,
+                    seconds: watchdogSeconds ?? Self.commandWatchdogSeconds) {
             [weak self] reason in
             guard let self,
                   let waiting = self.pendingCommands
@@ -773,6 +775,7 @@ final class GuestListener: ObservableObject {
         line: String? = nil,
         purpose: GuestWorkPurpose, workClass: GuestWorkClass,
         coalescingKey: String? = nil,
+        watchdogSeconds: TimeInterval? = nil,
         completion: @escaping (CommandResult) -> Void
     ) {
         workScheduler.submitCallback(
@@ -784,7 +787,8 @@ final class GuestListener: ObservableObject {
                                  message: "The Mac changed before the command was sent")))
             }) { [weak self] _, finish in
                 guard let self else { finish(); return }
-                self.runCommand(name, typed: args, line: line) { result in
+                self.runCommand(name, typed: args, line: line,
+                                watchdogSeconds: watchdogSeconds) { result in
                     finish()
                     completion(result)
                 }
@@ -795,12 +799,14 @@ final class GuestListener: ObservableObject {
         _ name: String, args: [String: String]? = nil,
         line: String? = nil, purpose: GuestWorkPurpose,
         workClass: GuestWorkClass, coalescingKey: String? = nil,
+        watchdogSeconds: TimeInterval? = nil,
         completion: @escaping (CommandResult) -> Void
     ) {
         runScheduledCommand(
             name, typed: args?.mapValues(CommandArg.text), line: line,
             purpose: purpose,
-            workClass: workClass, coalescingKey: coalescingKey
+            workClass: workClass, coalescingKey: coalescingKey,
+            watchdogSeconds: watchdogSeconds
         ) { result in
             completion(result)
         }
