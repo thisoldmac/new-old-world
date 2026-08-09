@@ -770,6 +770,7 @@ final class GuestListener: ObservableObject {
     /// NOWMirrorSource has already admitted that exact gesture.
     func runScheduledCommand(
         _ name: String, typed args: [String: CommandArg]?,
+        line: String? = nil,
         purpose: GuestWorkPurpose, workClass: GuestWorkClass,
         coalescingKey: String? = nil,
         completion: @escaping (CommandResult) -> Void
@@ -783,7 +784,7 @@ final class GuestListener: ObservableObject {
                                  message: "The Mac changed before the command was sent")))
             }) { [weak self] _, finish in
                 guard let self else { finish(); return }
-                self.runCommand(name, typed: args) { result in
+                self.runCommand(name, typed: args, line: line) { result in
                     finish()
                     completion(result)
                 }
@@ -797,7 +798,8 @@ final class GuestListener: ObservableObject {
         completion: @escaping (CommandResult) -> Void
     ) {
         runScheduledCommand(
-            name, typed: args?.mapValues(CommandArg.text), purpose: purpose,
+            name, typed: args?.mapValues(CommandArg.text), line: line,
+            purpose: purpose,
             workClass: workClass, coalescingKey: coalescingKey
         ) { result in
             completion(result)
