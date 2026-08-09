@@ -239,6 +239,53 @@ final class ProjectStoreTests: XCTestCase {
             .receipt.manifest.map(\.path), ["Project.ckp", "Sources/Main.c"])
     }
 
+    func testGuestImportCreatesVerifiedMirrorAndPreservesWorkspaceOnRefresh() throws {
+        let store = try ProjectStore(root: try root())
+        let first = Data("guest one".utf8)
+        let firstDigest = try snapshotDigest(document: document,
+                                             path: "Sources/Main.c", data: first)
+        let imported = try store.importGuestSnapshot(
+            projectDocument: document,
+            files: [.init(path: "Sources/Main.c", contents: first)],
+            guestDigest: firstDigest)
+        XCTAssertEqual(imported.home, .guest)
+        XCTAssertEqual(try store.status(projectID: imported.projectID).guestState,
+                       .verified)
+        let unchanged = try store.importGuestSnapshot(
+            projectDocument: document,
+            files: [.init(path: "Sources/Main.c", contents: first)],
+            guestDigest: firstDigest)
+        XCTAssertEqual(unchanged.revision, imported.revision)
+
+        let workspace = try store.openWorkspace(projectID: imported.projectID)
+        let second = Data("human edit".utf8)
+        let secondDigest = try snapshotDigest(document: document,
+                                              path: "Sources/Main.c", data: second)
+        let refreshed = try store.importGuestSnapshot(
+            projectDocument: document,
+            files: [.init(path: "Sources/Main.c", contents: second)],
+            guestDigest: secondDigest)
+        XCTAssertEqual(refreshed.revision, imported.revision + 1)
+        XCTAssertEqual(try store.status(projectID: imported.projectID).guestState,
+                       .divergent)
+        XCTAssertEqual(try store.resumeWorkspace(
+            workspaceID: workspace.workspaceID).baseGuestDigest, firstDigest)
+        XCTAssertEqual(try store.read(projectID: imported.projectID,
+                                      path: "Sources/Main.c"), second)
+    }
+
+    private func snapshotDigest(document: Data, path: String, data: Data) throws
+        -> String {
+        let snapshot = try root()
+        try document.write(to: snapshot.appendingPathComponent("Project.ckp"))
+        let destination = snapshot.appendingPathComponent(path)
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try data.write(to: destination)
+        return try ProjectDigest.tree(at: snapshot)
+    }
+
     func testGuestPromotionRefusesDivergenceAndPreservesWorkspace() throws {
         let store = try ProjectStore(root: try root())
         let baseDigest = String(repeating: "a", count: 64)

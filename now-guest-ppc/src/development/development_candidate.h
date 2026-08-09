@@ -19,8 +19,12 @@ int dev_candidate_mark_built(const char *candidate_id);
 int dev_candidate_promote(const char *candidate_id, const char *base_digest,
                           char current_digest[65], char promoted_digest[65],
                           char *reason, long reason_cap);
+int dev_active_project_file(const char *project_id, const char *path,
+                            FSSpec *folder, long *dir_id);
 
 void now_development_stage_command(const char *request_json, long id,
                                    char *out, long cap);
+void now_development_project_command(const char *request_json, long id,
+                                     char *out, long cap);
 
 #endif

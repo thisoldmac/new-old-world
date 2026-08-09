@@ -27,6 +27,8 @@ final class AgentIntegrationDevelopmentControl {
             return .unavailable(.guest)
         }
         switch request.operation {
+        case .importGuest:
+            return await importGuest(request, sessionID: sessionID)
         case .stage:
             return await stage(request, sessionID: sessionID)
         case .stageStatus, .stageDiscard:
@@ -38,7 +40,7 @@ final class AgentIntegrationDevelopmentControl {
         }
         let route: (verb: String, group: String, args: [String: String])
         switch request.operation {
-        case .stage, .stageStatus, .stageDiscard, .promote:
+        case .importGuest, .stage, .stageStatus, .stageDiscard, .promote:
             preconditionFailure("Candidate operations settle above")
         case .buildStart:
             var args = ["action": "start"]
@@ -259,6 +261,143 @@ final class AgentIntegrationDevelopmentControl {
             groups: [.init(name: "development-stage", rows: rows)],
             note: "The sealed guest candidate matches the host staging receipt and remains inactive.",
             observedAt: Date()))
+    }
+
+    private struct GuestSnapshotFile {
+        let path: String
+        let digest: String
+    }
+
+    private func importGuest(
+        _ request: AgentIntegrationDevelopmentRequest, sessionID: UUID
+    ) async -> AgentIntegrationGuestRowReportResult {
+        guard let projectStore, let projectID = request.projectID else {
+            return .refused(.init(code: "now-development-project-unavailable",
+                                  message: "The bounded host Projects store is unavailable."))
+        }
+        var cursor = 0
+        var expectedDigest: String?
+        var expectedCount: Int?
+        var files: [GuestSnapshotFile] = []
+        repeat {
+            let page = await command(
+                "development-project",
+                args: ["projectID": projectID, "cursor": String(cursor)])
+            guard currentSessionID() == sessionID else {
+                return .refused(.init(code: "now-development-outcome-unknown",
+                                      message: "The paired guest changed during project import."))
+            }
+            guard page.ok, let rows = page.output?["development-project"],
+                  let digest = rows.first(where: { $0.first == "Digest" })?.last,
+                  let countText = rows.first(where: { $0.first == "Files" })?.last,
+                  let count = Int(countText), count >= 1, count <= 128,
+                  digest.count == 64 else {
+                return refusal(page, fallback: "The guest project snapshot is invalid.")
+            }
+            guard expectedDigest == nil || expectedDigest == digest,
+                  expectedCount == nil || expectedCount == count else {
+                return .refused(.init(code: "now-development-project-changed",
+                                      message: "The guest project changed between manifest pages."))
+            }
+            expectedDigest = digest
+            expectedCount = count
+            for row in rows where row.first == "File" {
+                guard let record = row.last,
+                      let split = record.lastIndex(of: "|") else {
+                    return .refused(.init(code: "now-development-project-invalid",
+                                          message: "A guest manifest entry is malformed."))
+                }
+                let path = String(record[..<split])
+                let fileDigest = String(record[record.index(after: split)...])
+                guard !files.contains(where: { $0.path == path }),
+                      fileDigest.count == 64 else {
+                    return .refused(.init(code: "now-development-project-invalid",
+                                          message: "The guest manifest repeats or malforms a file."))
+                }
+                files.append(.init(path: path, digest: fileDigest))
+            }
+            guard let nextText = rows.first(where: { $0.first == "Next" })?.last,
+                  let next = Int(nextText), next == -1 || next > cursor else {
+                return .refused(.init(code: "now-development-project-invalid",
+                                      message: "The guest manifest cursor did not advance."))
+            }
+            cursor = next
+        } while cursor >= 0
+        guard files.count == expectedCount else {
+            return .refused(.init(code: "now-development-project-invalid",
+                                  message: "The guest manifest file count is inconsistent."))
+        }
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-project-import-\(UUID().uuidString)")
+        do {
+            try FileManager.default.createDirectory(at: staging,
+                                                    withIntermediateDirectories: true)
+        } catch {
+            return .refused(.init(code: "now-development-import-failed",
+                                  message: "NOW could not create private import staging."))
+        }
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var projectDocument: Data?
+        var changes: [ProjectFileChange] = []
+        for file in files {
+            let delivery = await getProjectFile(projectID: projectID,
+                                                path: file.path,
+                                                staging: staging)
+            guard currentSessionID() == sessionID else {
+                return .refused(.init(code: "now-development-outcome-unknown",
+                                      message: "The paired guest changed during project import."))
+            }
+            switch delivery {
+            case .failure(let failure):
+                return .refused(.init(code: "now-development-import-failed",
+                                      message: failure.message))
+            case .success(let value):
+                do {
+                    let data = try Data(contentsOf: value.staged.url)
+                    guard ProjectDigest.sha256(data) == file.digest else {
+                        return .refused(.init(code: "now-development-project-changed",
+                                              message: "A guest source file changed during import."))
+                    }
+                    if file.path == "Project.ckp" { projectDocument = data }
+                    else { changes.append(.init(path: file.path, contents: data)) }
+                    value.staged.discard()
+                } catch {
+                    return .refused(.init(code: "now-development-import-failed",
+                                          message: error.localizedDescription))
+                }
+            }
+        }
+        guard let projectDocument, let digest = expectedDigest else {
+            return .refused(.init(code: "now-development-project-invalid",
+                                  message: "The guest snapshot has no Project.ckp."))
+        }
+        do {
+            let receipt = try projectStore.importGuestSnapshot(
+                projectDocument: projectDocument, files: changes,
+                guestDigest: digest)
+            return .completed(.init(
+                verb: "development-project",
+                groups: [.init(name: "development-project", rows: [
+                    .init(label: "Project", value: receipt.projectID.rawValue),
+                    .init(label: "State", value: "verified guest snapshot"),
+                    .init(label: "Revision", value: String(receipt.revision)),
+                    .init(label: "Digest", value: receipt.contentDigest),
+                ])], observedAt: Date()))
+        } catch {
+            return .refused(.init(code: "now-development-import-failed",
+                                  message: error.localizedDescription))
+        }
+    }
+
+    private func getProjectFile(projectID: String, path: String, staging: URL)
+        async -> Result<GuestListener.FileDelivery, GuestListener.FileFailure> {
+        await withCheckedContinuation { continuation in
+            listener.getDevelopmentProjectFile(
+                projectID: projectID, path: path,
+                stagingDirectory: staging) {
+                    continuation.resume(returning: $0)
+                }
+        }
     }
 
     private func candidateCommand(

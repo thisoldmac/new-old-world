@@ -824,6 +824,7 @@ struct FileGet: Codable, Equatable, Sendable {
     var id: Int
     var path: String
     var container: String?
+    var developmentProject: String? = nil
 }
 
 /// Ask the other machine for its running processes. Read-only and

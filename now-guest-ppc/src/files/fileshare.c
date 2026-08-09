@@ -300,6 +300,27 @@ int now_files_stage(const char *rel_path, FileContainer container,
     return now_files_stage_spec(&spec, container, stage);
 }
 
+int now_files_stage_under(short vref, long root_dir, const char *rel_path,
+                          FileContainer container, FileStage *stage)
+{
+    FSSpec spec;
+    Str255 partial;
+    char path[300];
+    OSErr err;
+    if (!now_share_path_ok(rel_path) || strlen(rel_path) > 250) {
+        memset(stage, 0, sizeof *stage); return kFilesBadPath;
+    }
+    path[0] = ':';
+    strcpy(path + 1, rel_path);
+    CopyCStringToPascal(path, partial);
+    err = FSMakeFSSpec(vref, root_dir, partial, &spec);
+    if (err != noErr) {
+        memset(stage, 0, sizeof *stage);
+        return err == fnfErr ? kFilesNotFound : kFilesIOError;
+    }
+    return now_files_stage_spec(&spec, container, stage);
+}
+
 /* The same staging, for a file named directly rather than through the
    share. Sending is not browsing: the human picked this file in a
    standard dialog, so it needs no relation to the share root. */

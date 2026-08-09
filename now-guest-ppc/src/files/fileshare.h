@@ -71,6 +71,8 @@ int now_files_list(const char *rel_path, short start,
    the whole artifact). */
 int now_files_stage(const char *rel_path, FileContainer container,
                     FileStage *stage);
+int now_files_stage_under(short vref, long root_dir, const char *rel_path,
+                          FileContainer container, FileStage *stage);
 int now_files_stage_spec(const FSSpec *from, FileContainer container,
                          FileStage *stage);
 int now_files_stage_open(FileStage *stage);

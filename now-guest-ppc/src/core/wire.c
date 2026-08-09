@@ -5635,6 +5635,7 @@ static void serve_file_get(const char *request)
     NowPrefs prefs;
     FileStage stage;
     char path[224];
+    char development_project[40];
     char container_arg[16];
     char json[512];
     long id = now_json_find_int(request, "id", 0);
@@ -5650,7 +5651,10 @@ static void serve_file_get(const char *request)
         return;
     }
     path[0] = '\0';
+    development_project[0] = '\0';
     now_json_find_text(request, "path", path, sizeof path);
+    now_json_find_string(request, "developmentProject", development_project,
+                         sizeof development_project);
 
     /* Resuming a PULL is not offered yet: the guest does not compute a
        token for its own files, so it can never prove the file it would
@@ -5673,7 +5677,26 @@ static void serve_file_get(const char *request)
             want = kContainerData;
         }
     }
-    rc = now_files_stage(path, want, &stage);
+    if (development_project[0] != '\0') {
+        FSSpec folder;
+        long project_dir;
+        char hfs_path[224];
+        long i;
+        if (!dev_active_project_file(development_project, path,
+                                     &folder, &project_dir)) {
+            file_refuse(id, "project-file-unavailable",
+                        "the named source file is not in that active project");
+            return;
+        }
+        snprintf(hfs_path, sizeof hfs_path, "%s", path);
+        for (i = 0; hfs_path[i] != '\0'; ++i) {
+            if (hfs_path[i] == '/') hfs_path[i] = ':';
+        }
+        rc = now_files_stage_under(folder.vRefNum, project_dir,
+                                   hfs_path, want, &stage);
+    } else {
+        rc = now_files_stage(path, want, &stage);
+    }
     if (rc != kFilesOK) {
         file_refuse_rc(id, rc);
         return;

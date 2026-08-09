@@ -1605,6 +1605,10 @@ void now_command_run(const char *name, const char *request_json, long id,
         now_development_stage_command(request_json, id, out, cap);
         return;
     }
+    if (strcmp(name, "development-project") == 0) {
+        now_development_project_command(request_json, id, out, cap);
+        return;
+    }
     if (strcmp(name, "development-run") == 0) {
         now_development_run_command(request_json, id, out, cap);
         return;

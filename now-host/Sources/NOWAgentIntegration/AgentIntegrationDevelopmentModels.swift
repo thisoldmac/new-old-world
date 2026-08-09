@@ -1,6 +1,7 @@
 import Foundation
 
 public enum AgentIntegrationDevelopmentOperation: String, Codable, Sendable {
+    case importGuest = "import"
     case stage
     case stageStatus = "stage-status"
     case stageDiscard = "stage-discard"
@@ -51,6 +52,9 @@ public struct AgentIntegrationDevelopmentRequest: Codable, Equatable, Sendable {
         guard projectIsValid, productIsValid, workspaceIsValid,
               candidateIsValid else { return false }
         switch operation {
+        case .importGuest:
+            return projectID != nil && workspaceID == nil
+                && candidateID == nil && productRef == nil
         case .stage:
             return projectID != nil && candidateID == nil && productRef == nil
         case .stageStatus, .stageDiscard, .promote:

@@ -2682,6 +2682,13 @@ components:
         type: { const: file.listing }
         id: { type: integer }
         path: { type: string }
+        developmentProject:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+          description: >
+            Internal Development import scope. When present, path is resolved
+            only beneath that active project in the selected Projects root;
+            it is never exposed by generic Files, Chat, or MCP schemas.
         entries:
           type: array
           maxItems: 16
@@ -3803,6 +3810,30 @@ components:
         type: object
         properties:
           development-build:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
+    development-project:
+      description: >
+        Measures and pages one active source tree beneath the human-selected
+        Projects root. Only opaque project identity and project-relative
+        manifest entries cross; the Projects root and HFS path remain private.
+        NOW-68K does not register this command.
+      args:
+        type: object
+        required: [projectID]
+        additionalProperties: false
+        properties:
+          projectID:
+            type: string
+            pattern: "^[0-9a-f]{32}$"
+          cursor:
+            type: integer
+            minimum: 0
+            maximum: 128
+      x-line: "One project ID; optional cursor is host paging state."
+      output:
+        type: object
+        properties:
+          development-project:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
     development-stage:
       description: >

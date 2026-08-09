@@ -6,7 +6,7 @@ import Foundation
 public enum DevelopmentProjection: HostProjection {
     public static let capability = HostCapabilityID("now_development")
     public static let requires = [
-        "development-stage", "development-build", "development-run",
+        "development-project", "development-stage", "development-build", "development-run",
         "development-open",
     ]
     public static let exposes = requires
@@ -22,19 +22,19 @@ public enum DevelopmentProjection: HostProjection {
         .appIntents: .appIntentsFaceNotBuiltYet,
     ]
     public static let availabilityNote =
-        "The connected guest serves the closed build, run and handoff commands."
+        "The connected guest serves project snapshot, stage, build, run and handoff commands."
 
     public static var mcpDescriptor: [String: Any] {
         [
             "title": "Build and Run a New Old World Project",
             "description":
-                "Starts, observes or cancels a declarative MPW ToolServer build for one opaque project ID; launches only the unchanged opaque product returned by a successful build; or optionally opens one active Project.ckp in CodeKitten. It accepts no path, MPW text, shell text, Git operation or generic launch target. Build and run are separate outcomes.",
+                "Imports one verified active guest project, stages and promotes an inactive candidate, starts or observes a declarative MPW ToolServer build, launches only its unchanged product, or optionally opens one active Project.ckp in CodeKitten. It accepts no path, MPW text, shell text, Git operation or generic launch target. Build and run are separate outcomes.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
                     "operation": [
                         "type": "string",
-                    "enum": ["stage", "stage-status", "stage-discard", "promote",
+                    "enum": ["import", "stage", "stage-status", "stage-discard", "promote",
                                  "build-start", "build-status", "build-cancel",
                                  "run", "open-in-codekitten"],
                     ],

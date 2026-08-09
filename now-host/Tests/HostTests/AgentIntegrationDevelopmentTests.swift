@@ -16,8 +16,14 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
         XCTAssertFalse(AgentIntegrationDevelopmentRequest(
             operation: .run, projectID: project,
             productRef: "product-0123456789abcdef").isWellFormed)
+        XCTAssertTrue(AgentIntegrationDevelopmentRequest(
+            operation: .importGuest, projectID: project).isWellFormed)
+        XCTAssertTrue(AgentIntegrationDevelopmentRequest(
+            operation: .promote,
+            candidateID: "candidate-0123456789abcdef").isWellFormed)
         XCTAssertEqual(DevelopmentProjection.acceptedArguments,
-                       ["operation", "projectID", "productRef"])
+                       ["operation", "projectID", "workspaceID",
+                        "candidateID", "productRef"])
         XCTAssertEqual(DevelopmentProjection.authorityDomain,
                        .hostProjectsAndGuest)
     }

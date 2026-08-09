@@ -124,6 +124,95 @@ final class ProjectStore {
         try load(projectID).history
     }
 
+    @discardableResult
+    func importGuestSnapshot(projectDocument: Data,
+                             files: [ProjectFileChange],
+                             guestDigest: String) throws
+        -> ProjectRevisionReceipt {
+        guard isSHA256(guestDigest) else {
+            throw ProjectStoreError.invalidProject(
+                "The measured guest digest is malformed.")
+        }
+        let parsed = try CKProjectDocument.parse(projectDocument)
+        let projectID = parsed.id
+        let staging = projectsURL.appendingPathComponent(
+            ".import-\(UUID().uuidString)")
+        try fileManager.createDirectory(at: staging,
+                                        withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: staging) }
+        try projectDocument.write(to: staging.appendingPathComponent("Project.ckp"),
+                                  options: .atomic)
+        try preflight(files, under: staging, allowMissingExpected: true)
+        try apply(files, to: staging)
+        let measured = try ProjectDigest.tree(at: staging, fileManager: fileManager)
+        guard measured == guestDigest else {
+            throw ProjectStoreError.unavailable(
+                "The imported bytes do not match the coherent guest snapshot.")
+        }
+        let existing = try? load(projectID)
+        guard existing?.home != .host else {
+            throw ProjectStoreError.unavailable(
+                "A host-home project already owns that identity.")
+        }
+        if let existing, existing.verifiedGuestDigest == guestDigest {
+            return ProjectRevisionReceipt(
+                projectID: projectID, home: .guest,
+                revision: existing.revision, commit: existing.currentCommit,
+                contentDigest: existing.contentDigest, changedPaths: [],
+                committedAt: existing.history.last?.committedAt ?? Date())
+        }
+        let repository = try repository(for: projectID)
+        let date = Date()
+        let parent = existing?.currentCommit
+        let commit = try repository.commit(
+            tree: staging, parent: parent,
+            message: existing == nil ? "Import guest project" : "Refresh guest snapshot",
+            date: date)
+        let revision = (existing?.revision ?? 0) + 1
+        let working = workingURL(projectID)
+        if existing == nil {
+            try fileManager.createDirectory(
+                at: working.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
+            try fileManager.copyItem(at: staging, to: working)
+        } else {
+            let replacement = working.deletingLastPathComponent()
+                .appendingPathComponent(".import-working-\(UUID().uuidString)")
+            let backup = working.deletingLastPathComponent()
+                .appendingPathComponent(".import-backup-\(UUID().uuidString)")
+            try fileManager.copyItem(at: staging, to: replacement)
+            try fileManager.moveItem(at: working, to: backup)
+            do {
+                try fileManager.moveItem(at: replacement, to: working)
+                try fileManager.removeItem(at: backup)
+            } catch {
+                try? fileManager.removeItem(at: working)
+                try? fileManager.moveItem(at: backup, to: working)
+                try? fileManager.removeItem(at: replacement)
+                throw error
+            }
+        }
+        try repository.update(branch: "main", to: commit)
+        let entry = ProjectHistoryEntry(
+            revision: revision, commit: commit, parent: parent,
+            contentDigest: measured,
+            message: existing == nil ? "Import guest project" : "Refresh guest snapshot",
+            committedAt: date)
+        let record = CatalogRecord(
+            projectID: projectID, name: parsed.name, home: .guest,
+            formatVersion: 1, revision: revision, currentCommit: commit,
+            contentDigest: measured, verifiedGuestDigest: guestDigest,
+            guestState: existing?.activeWorkspaceID == nil ? .verified : .divergent,
+            history: (existing?.history ?? []) + [entry],
+            activeWorkspaceID: existing?.activeWorkspaceID)
+        try save(record)
+        return ProjectRevisionReceipt(
+            projectID: projectID, home: .guest, revision: revision,
+            commit: commit, contentDigest: measured,
+            changedPaths: (["Project.ckp"] + files.map(\.path)).sorted(),
+            committedAt: date)
+    }
+
     func read(projectID: ProjectID, path: String, maximumBytes: Int = 262_144) throws -> Data {
         let record = try load(projectID)
         let url = try ProjectPath.checkedURL(path, under: workingURL(record.projectID),

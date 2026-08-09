@@ -1380,6 +1380,27 @@ final class GuestListener: ObservableObject {
                 ?? FileManager.default.temporaryDirectory)
     }
 
+    func getDevelopmentProjectFile(projectID: String, path: String,
+                                   stagingDirectory: URL,
+                                   completion: @escaping (
+                                    Result<FileDelivery, FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No classic Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingFile = completion
+        fileWatchdogId = id
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            self?.deliverFile(.failure(.init(code: "timeout", message: reason)))
+        }
+        session.sendDevelopmentProjectFileGet(
+            id: id, projectID: projectID, path: path,
+            stagingDirectory: stagingDirectory)
+    }
+
     /// Sends a file into the guest's share. `path` is the destination
     /// folder relative to the share root ("" is the root); the source is
     /// any file the human picked, since a share bounds what the other

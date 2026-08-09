@@ -3,7 +3,9 @@ import SwiftUI
 struct DevelopmentModuleView: View {
     @ObservedObject var model: DevelopmentModel
     @State private var showingCreate = false
+    @State private var showingImport = false
     @State private var projectName = "Untitled Project"
+    @State private var guestProjectID = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,6 +24,7 @@ struct DevelopmentModuleView: View {
             }
         }
         .sheet(isPresented: $showingCreate) { createSheet }
+        .sheet(isPresented: $showingImport) { importSheet }
         .onAppear {
             model.refresh()
             model.refreshDevelopment()
@@ -38,6 +41,8 @@ struct DevelopmentModuleView: View {
             Spacer()
             Button("New Project…") { showingCreate = true }
                 .disabled(!model.isAvailable)
+            Button("Import Guest…") { showingImport = true }
+                .disabled(model.developmentBusy)
         }
         .padding(14)
     }
@@ -118,12 +123,17 @@ struct DevelopmentModuleView: View {
                 }.font(.callout)
             }
             HStack {
+                Button("Stage") { model.stage() }
+                    .disabled(!model.canStage)
                 Button("Build") { model.build() }
-                    .disabled(!model.canBuildActiveGuestProject)
+                    .disabled(!model.canBuildActiveGuestProject
+                              && model.candidateReference == nil)
                 Button("Cancel") { model.cancelBuild() }
                     .disabled(model.developmentBusy)
                 Button("Run") { model.run() }
                     .disabled(!model.canRun)
+                Button("Promote") { model.promote() }
+                    .disabled(!model.canPromote)
                 Button("Open in CodeKitten") { model.openInCodeKitten() }
                     .disabled(model.selectedProject?.home != .guest
                               || model.developmentBusy)
@@ -169,6 +179,27 @@ struct DevelopmentModuleView: View {
             }
         }
         .padding(20).frame(width: 420)
+    }
+
+    private var importSheet: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Import Guest Project").font(.headline)
+            TextField("32-character project ID", text: $guestProjectID)
+                .font(.system(.body, design: .monospaced))
+            Text("NOW reads a coherent snapshot beneath the Projects folder selected on the classic Mac, verifies it, and stores a private Git history mirror. The active guest source is not changed.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { showingImport = false }
+                Button("Import") {
+                    model.importGuestProject(projectID: guestProjectID)
+                    showingImport = false
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(guestProjectID.count != 32)
+            }
+        }
+        .padding(20).frame(width: 460)
     }
 
     private func section<Content: View>(_ title: String,

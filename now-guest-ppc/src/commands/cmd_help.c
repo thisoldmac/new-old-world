@@ -38,6 +38,10 @@ static const char *const d_development_stage[] = {
     "Candidate identities are single-use and files arrive through the",
     "bounded transfer lane outside the generic Files root.", NULL
 };
+static const char *const d_development_project[] = {
+    "Measures and pages one active project's source manifest.",
+    "The chosen Projects root and HFS path remain private.", NULL
+};
 
 static const char *const d_development_run[] = {
     "  Launches only the unchanged product measured by a successful build.",
@@ -603,6 +607,8 @@ const NowCommandDoc kNowCommandDocs[] = {
     { "development-stage", 1, "manage one inactive project candidate",
       "development-stage <prepare | status | discard>",
       d_development_stage },
+    { "development-project", 1, "measure one active project",
+      "development-project <projectID>", d_development_project },
     { "development-run", 1, "launch the exact last built product",
       "development-run <productRef>", d_development_run },
     { "development-open", 1, "open one active Project.ckp in CodeKitten",

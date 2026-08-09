@@ -40,10 +40,20 @@ final class DevelopmentModel: ObservableObject {
     var productReference: String? {
         buildRows.first { $0.label == "Product" && $0.value != "unavailable" }?.value
     }
+    var candidateReference: String? {
+        buildRows.first {
+            $0.label == "Candidate" && $0.value.hasPrefix("candidate-")
+        }?.value
+    }
     var canBuildActiveGuestProject: Bool {
         selectedProject?.home == .guest && !developmentBusy
     }
     var canRun: Bool { productReference != nil && !developmentBusy }
+    var canStage: Bool {
+        guard let project = selectedProject else { return false }
+        return !developmentBusy && (project.home == .host || workspace != nil)
+    }
+    var canPromote: Bool { candidateReference != nil && !developmentBusy }
 
     func refresh() {
         guard let store else {
@@ -93,6 +103,17 @@ final class DevelopmentModel: ObservableObject {
         }
     }
 
+    func importGuestProject(projectID: String) {
+        perform(.init(operation: .importGuest, projectID: projectID))
+    }
+
+    func stage() {
+        guard let project = selectedProject else { return }
+        perform(.init(operation: .stage,
+                      projectID: project.projectID.rawValue,
+                      workspaceID: workspace?.workspaceID.rawValue))
+    }
+
     func openWorkspace() {
         guard let store, let projectID = selectedProjectID else { return }
         do {
@@ -128,12 +149,23 @@ final class DevelopmentModel: ObservableObject {
     }
 
     func build() {
+        if let candidateReference {
+            perform(.init(operation: .buildStart,
+                          candidateID: candidateReference))
+            return
+        }
         guard let project = selectedProject, project.home == .guest else {
             problem = "Only an active guest-home project can build directly; host work must be staged as a candidate first."
             return
         }
         perform(.init(operation: .buildStart,
                       projectID: project.projectID.rawValue))
+    }
+
+    func promote() {
+        guard let candidateReference else { return }
+        perform(.init(operation: .promote,
+                      candidateID: candidateReference))
     }
 
     func cancelBuild() {
@@ -164,6 +196,7 @@ final class DevelopmentModel: ObservableObject {
         Task { @MainActor in
             let result = await performDevelopment(request)
             buildRows = rows(from: result, problemPrefix: "Development")
+            refresh()
             developmentBusy = false
         }
     }

@@ -428,6 +428,18 @@ static int find_active_project(const char *project_id, FSSpec *folder,
     return 0;
 }
 
+int dev_active_project_file(const char *project_id, const char *path,
+                            FSSpec *folder, long *dir_id)
+{
+    return lower_hex(project_id, 32)
+        && (strcmp(path, "Project.ckp") == 0
+            || (dev_project_path_valid(path)
+                && strcmp(path, "Build") != 0
+                && strncmp(path, "Build/", 6) != 0
+                && path[0] != '.'))
+        && find_active_project(project_id, folder, dir_id);
+}
+
 int dev_candidate_promote(const char *candidate_id, const char *base_digest,
                           char current_digest[65], char promoted_digest[65],
                           char *reason, long reason_cap)
@@ -641,4 +653,74 @@ void now_development_stage_command(const char *request_json, long id,
         "[\"State\",\"%s\"]]}}", id, candidate_id,
         strcmp(action, "discard") == 0 ? "discarded" :
         (strcmp(action, "prepare") == 0 ? "prepared" : "present"));
+}
+
+void now_development_project_command(const char *request_json, long id,
+                                     char *out, long cap)
+{
+    char project_id[40];
+    char digest[65];
+    char reason[180];
+    FSSpec folder;
+    long dir_id;
+    CandidateFile *files;
+    int count = 0;
+    int measured = 0;
+    long cursor = now_json_find_int(request_json, "cursor", 0);
+    long pos;
+    int i;
+    project_id[0] = '\0';
+    now_json_find_string(request_json, "projectID", project_id,
+                         sizeof project_id);
+    if (project_id[0] == '\0') {
+        char line[96];
+        char *space;
+        line[0] = '\0';
+        now_json_find_string(request_json, "line", line, sizeof line);
+        space = strchr(line, ' ');
+        if (space != NULL) {
+            *space++ = '\0';
+            while (*space == ' ') ++space;
+            cursor = atol(space);
+        }
+        strncpy(project_id, line, sizeof project_id - 1);
+        project_id[sizeof project_id - 1] = '\0';
+    }
+    if (!lower_hex(project_id, 32)
+        || cursor < 0 || cursor > kCandidateMaxFiles
+        || !find_active_project(project_id, &folder, &dir_id)
+        || !project_tree_digest(&folder, dir_id, digest, &measured,
+                                reason, sizeof reason)) {
+        error_reply(out, cap, id, "project-unavailable",
+                    "The active guest project could not be measured.");
+        return;
+    }
+    files = (CandidateFile *)NewPtr(sizeof(CandidateFile) * kCandidateMaxFiles);
+    if (files == NULL || !collect_files(folder.vRefNum, dir_id, "", files,
+                                        &count, reason, sizeof reason)) {
+        if (files != NULL) DisposePtr((Ptr)files);
+        error_reply(out, cap, id, "project-unavailable",
+                    "The active guest project manifest could not be read.");
+        return;
+    }
+    qsort(files, (size_t)count, sizeof files[0], compare_file);
+    pos = snprintf(out, (size_t)cap,
+        "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+        "\"output\":{\"development-project\":["
+        "[\"Project\",\"%s\"],[\"Digest\",\"%s\"],"
+        "[\"Files\",\"%d\"]", id, project_id, digest, count);
+    for (i = (int)cursor; i < count && i < cursor + 2; ++i) {
+        char file_hex[65];
+        char escaped[1100];
+        char record[590];
+        if (!file_digest(&files[i].spec, file_hex)) break;
+        snprintf(record, sizeof record, "%s|%s", files[i].path, file_hex);
+        now_json_escape(record, escaped, sizeof escaped);
+        pos += snprintf(out + pos, (size_t)(cap - pos),
+                        ",[\"File\",\"%s\"]", escaped);
+    }
+    pos += snprintf(out + pos, (size_t)(cap - pos),
+                    ",[\"Next\",\"%d\"]]}}",
+                    i < count ? i : -1);
+    DisposePtr((Ptr)files);
 }
