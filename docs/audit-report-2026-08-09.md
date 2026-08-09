@@ -26,8 +26,9 @@ repo-scoped `.agents/skills/now-mcp` router closed that first-contact gap: all
 seven bare Luna tasks selected NOW and called `now_list_machines` first. The
 barrage also reproduced and fixed a small high-impact upload capacity bug,
 corrected a conformance recipe that had hidden the next failure, exposed an
-authority distinction that documentation must make more explicit, and found a
-specific modal-UI action loop for the post-barrage hierarchy pass.
+authority distinction that documentation must make more explicit, made the
+semantic action grammar explicit, and isolated Standard File list navigation
+as the remaining modal-UI gap.
 
 ## Findings
 
@@ -185,7 +186,7 @@ facade from prose-byte counts alone.
   cancelled, exposing F-009 instead.
 - **Blast radius:** evaluation harness only.
 
-### [F-009] Modal direct actions invite ungrounded gesture guessing (severity: medium, effort: S)
+### [F-009] Modal direct actions invite ungrounded gesture guessing (severity: medium, effort: S) — resolved
 
 - **Dimension:** correctness and structure-maintainability
 - **Evidence:** X1 successfully uploaded and byte-verified its 52-byte text
@@ -197,13 +198,43 @@ facade from prose-byte counts alone.
 - **Why it matters:** the typed surface gives good refusals, but the relation
   between retained entities, direct references, modal controls, and their
   permitted action vocabulary is not self-evident under failure.
-- **Bounded response:** the routing skill now keeps the two reference families
-  separate and stops after two unsuccessful actions instead of enumerating
-  guessed synonyms. Redesigning or renaming the action planes remains a
-  post-barrage task, informed by this trace.
-- **Blast radius:** skill guidance now; any server/tool hierarchy change later
-  affects the experimental semantic-UI surface and needs its own contract and
-  compatibility review.
+- **Resolution:** `now_semantic_ui_act` now publishes the exact 16-gesture enum
+  and one required-argument branch per gesture. The decoder enforces that same
+  Swift-owned contract before a request reaches the host, rejects arguments
+  from another gesture with a specific correction, and tells callers where to
+  find dialog item numbers in `snapshot.surfaces[].items`. The Finder gestures
+  now state that they do not select rows inside Standard File dialogs.
+- **Verification:** the schema and decoder guards were watched fail against the
+  old surface. Focused tests pass. In a second isolated Luna run the worker
+  recovered from two refused direct-control attempts to the retained snapshot,
+  selected `gesture: dialogItem` itself, corrected `item` to `itemIndex` after
+  the typed boundary error, and dispatched the exact `Open` item. It did not
+  enumerate invented gesture names. The overall task still failed for the
+  distinct F-010 selection gap.
+- **Blast radius:** experimental semantic-action schema and pre-host argument
+  validation only; executor, guest command, and wire behavior are unchanged.
+
+### [F-010] Standard File item lists are not semantically selectable (severity: medium, effort: M)
+
+- **Dimension:** correctness and structure-maintainability
+- **Evidence:** the retained SimpleText Open-dialog surface named `Open` as
+  dialog item 1 and exposed its other controls, but represented the file-list
+  rectangle only as an unnamed `userItem`. It published no file rows, current
+  selection, or row action. Direct observation likewise exposed the container
+  control but no selectable children. Luna set the filename field to the exact
+  uploaded name and dispatched `Open`; SimpleText opened the previously
+  selected `Apple DVD Player Read Me` instead.
+- **Why it matters:** the MCP can open and dismiss the dialog but cannot
+  reliably choose the document inside it. Cross-domain open/save tasks
+  therefore degrade into keyboard, pixel, or container guesses even though the
+  final button is fully semantic.
+- **Proposed change:** first decide whether Standard File row semantics belong
+  in the retained surface, a bounded direct observation, or a typed
+  open-document operation. Preserve the actual Dialog Manager navigation and
+  selection semantics; do not infer a selected row from editable text.
+- **Blast radius:** likely guest semantic capture plus the retained projector
+  and executor, or one new typed domain action. This is not folded into the
+  action-schema cleanup.
 
 ### [F-008] The live upload conformance recipe contradicted its own payload (severity: medium, effort: XS) — resolved
 
@@ -244,10 +275,10 @@ facade from prose-byte counts alone.
 
 1. F-004: decide and document the intended authority boundary before changing
    either transfer family.
-2. F-009: use the preserved X1 trace in the post-barrage semantic/direct action
-   hierarchy pass; do not broaden this cleanup into that redesign.
+2. F-010: choose the ownership boundary for Standard File row selection before
+   adding another generic UI action.
 3. F-006: A/B the thin router with a small `enabled_tools` allowlist;
    defer any deeper facade or catalog redesign until that result is known.
 
-F-001, F-002, F-003, F-005, F-007, and F-008 are resolved in their stated
-scope. F-004, F-006, and F-009 remain review inputs.
+F-001, F-002, F-003, F-005, F-007, F-008, and F-009 are resolved in their
+stated scope. F-004, F-006, and F-010 remain review inputs.

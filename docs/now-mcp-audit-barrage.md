@@ -415,6 +415,40 @@ token accounting. The current runs emitted no separate private-reasoning
 records, and hidden chain-of-thought is not available or claimed. The raw local
 evidence remains under `docs/local/now-mcp-barrage-2026-08-09/f005-skill/`.
 
+### Semantic-action contract follow-up
+
+F-009 then received a server-owned correction rather than another prompt hint.
+`now_semantic_ui_act` publishes an exact 16-value gesture enum and one
+required-argument branch per gesture, and its decoder enforces the same
+Swift-owned contract before the host sees a request. The dialog route points
+to `snapshot.surfaces[].items`, where `source: dialogItem`, `number`, title,
+enabled state, and the containing surface entity are already present. Finder
+gestures explicitly exclude Standard File dialog rows.
+
+The original X1 shape was repeated once with GPT-5.6 Luna in a new isolated
+auth-only Codex home, the repo skill, the NOW companion, and no TimBotTu MCP or
+repo context. It used the same private stage-image clone and identity-checked
+guest as the F-005 run. The worker called `now_list_machines` first, uploaded
+and downloaded the exact 21-byte file, and verified its digest. After two
+direct `now_control_act` refusals it took a fresh retained snapshot, found the
+semantic dialog route, corrected `item` to `itemIndex` from the typed error,
+and dispatched dialog item 1, `Open`. It did not enumerate gesture synonyms.
+
+That successful act exposed a narrower failure. The Standard File list itself
+was one unnamed `userItem`; neither retained state nor direct observation
+published its rows or current selection. Setting the dialog text to `Luna
+Contract.txt` did not select that row, so `Open` launched the preselected
+`Apple DVD Player Read Me`. Later Finder and keyboard attempts could not turn
+the opaque list into a grounded target. The evaluator stopped the run after
+47 completed NOW calls and about 226 seconds. This is F-010, not a reason to
+weaken the now-explicit gesture contract.
+
+The accessible 610 KB JSONL, prompt metadata, and stderr are retained under
+`docs/local/now-mcp-barrage-2026-08-09/f009-action-contracts/`. The run was
+interrupted, so it has no final answer or token-usage event. As in the earlier
+runs, the trace contains status messages and tool I/O, not hidden
+chain-of-thought.
+
 ### What the barrage found
 
 1. **First-contact routing was the largest baseline friction.** “Macintosh” and classic
@@ -460,6 +494,11 @@ evidence remains under `docs/local/now-mcp-barrage-2026-08-09/f005-skill/`.
    end-to-end Codex accounting numbers, not a claim that tool schemas alone
    caused all of them. Catalog size and rich repeated results both deserve a
    separate bounded measurement before redesign.
+8. **Modal buttons and modal contents are separate capability questions.** The
+   retained surface already identifies the Open button and its DITL number,
+   and the new action contract made Luna find and dispatch it. The Standard
+   File list remains opaque, so the task still cannot reliably choose which
+   file that button opens. That is now F-010.
 
 The emitted traces contained tool calls, tool results, final answers, and
 occasional reasoning summaries. They did not expose private hidden
@@ -470,19 +509,18 @@ chain-of-thought, so this audit makes no claim to have captured it.
 The first-contact cleanup and routing skill are **tested and VM-verified for
 H0/H1/R1/R2/A1/M1/N1**.
 The staging failure, zero-byte baseline, and successful four-byte post-fix
-upload are VM-observed. X1's file lane is VM-verified; its modal SimpleText
-confirmation remains failed with an attributable trace. Nothing here is
-metal-verified.
+upload are VM-observed. X1's file lane and the retained `dialogItem` route are
+VM-observed; its SimpleText document selection remains failed with an
+attributable F-010 trace. Nothing here is metal-verified.
 
 The next brief review should decide only:
 
 1. whether caller-supplied guest upload bytes are intentionally outside the
    one-time host-file approval boundary;
-2. how the retained semantic and direct-observation action families should
-   present modal UI without inviting gesture guessing.
+2. which layer should own typed Standard File row discovery and selection.
 
 The larger direct-observation/retained-state/tool-hierarchy redesign remains a
-post-barrage design pass, now informed by these traces.
+post-barrage design pass. The action grammar no longer needs to wait for it.
 
 ### Final repository gate
 

@@ -131,6 +131,30 @@ final class MirrorStateProjectionTests: XCTestCase {
                        "every gesture needs one exact required-argument branch")
     }
 
+    func testDrivePublishesTheDialogAndFinderRoutingBoundary() throws {
+        let allOf = try XCTUnwrap(
+            driveInputSchema["allOf"] as? [[String: Any]])
+        let alternatives = try XCTUnwrap(
+            allOf.first?["oneOf"] as? [[String: Any]])
+        let descriptions = Dictionary(uniqueKeysWithValues:
+            try alternatives.map { alternative -> (String, String) in
+                let properties = try XCTUnwrap(
+                    alternative["properties"] as? [String: Any])
+                let gesture = try XCTUnwrap(
+                    properties["gesture"] as? [String: Any])
+                return (
+                    try XCTUnwrap(gesture["const"] as? String),
+                    try XCTUnwrap(alternative["description"] as? String))
+            })
+
+        let dialog = try XCTUnwrap(descriptions["dialogItem"])
+        XCTAssertTrue(dialog.contains("snapshot.surfaces[].items"), dialog)
+        XCTAssertTrue(dialog.contains("source is dialogItem"), dialog)
+        let finder = try XCTUnwrap(descriptions["finderSelect"])
+        XCTAssertTrue(finder.contains("source is finderItem"), finder)
+        XCTAssertTrue(finder.contains("Standard File"), finder)
+    }
+
     func testDriveRefusesAMalformedKnownGestureBeforeTheHost() async {
         let outcome = await MirrorDriveProjection.invoke(
             .init(raw: ["gesture": "dialogItem"]),

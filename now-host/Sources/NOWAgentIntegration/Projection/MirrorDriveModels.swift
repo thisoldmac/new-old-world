@@ -90,14 +90,22 @@ public enum AgentIntegrationMirrorDriveGesture:
         case .finderOpen, .finderSelect:
             return .init(
                 required: ["itemName"], optional: ["container"],
-                guidance: "Name one Finder item. container is desktop or a Finder window entityID from the retained snapshot.")
+                guidance: "Name one Finder item from "
+                    + "snapshot.surfaces[].items where source is finderItem. "
+                    + "container is desktop or that Finder window's "
+                    + "entityID. This gesture does not select rows inside "
+                    + "a Standard File Open or Save dialog.")
         case .finderDeselect:
             return .init(
                 guidance: "Clears the Finder selection and takes no target argument.")
         case .dialogItem:
             return .init(
                 required: ["entityID", "itemIndex"],
-                guidance: "Use the containing window's entityID and the dialog item's 1-based number from the same fresh retained snapshot. Do not pass a now-element reference or a Control Manager part code.")
+                guidance: "Find the target in snapshot.surfaces[].items "
+                    + "where source is dialogItem. Use that surface's "
+                    + "entityID and the item's 1-based number as itemIndex. "
+                    + "Do not pass a now-element reference or a Control "
+                    + "Manager part code.")
         case .appleMenuItem:
             return .init(
                 required: ["itemName"],

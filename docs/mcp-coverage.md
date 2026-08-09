@@ -387,7 +387,11 @@ the exact 16-gesture enum and one required-argument branch per gesture, while
 the projection rejects cross-gesture argument mixtures before they reach the
 host. The enum, schema branches, and decoder derive from one Swift contract;
 focused tests pin all 16 branches and were watched failing against the old
-unconstrained string schema.
+unconstrained string schema. A private Luna repeat then recovered from direct
+control refusals to the retained `dialogItem` route and dispatched the
+snapshot's numbered Open item. The dialog's file list remained an opaque
+`userItem`, so selecting the intended row is recorded separately as F-010 in
+the audit report rather than attributed to the action grammar.
 
 Two consequences worth stating plainly:
 

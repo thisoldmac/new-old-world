@@ -161,7 +161,7 @@ TimBotTu, an emulator harness, or the modern host. H0, R1, R2, A1, M1, and N1
 completed correctly. X1 entered NOW and completed its upload, but exposed the
 separate modal-action issue below.
 
-## UNVERIFIED DESIGN: modal UI failure crosses action families and invites gesture guessing (2026-08-09, `codex/now-mcp-routing-skill`)
+## RESOLVED: semantic UI actions publish and enforce one exact gesture grammar (2026-08-09, `codex/now-mcp-action-contracts`)
 
 The X1 skill run uploaded and byte-verified its text file, launched SimpleText,
 opened the File menu, and populated the Open dialog. When the dialog did not
@@ -170,10 +170,38 @@ and tried seven unsupported gesture names until the evaluator interrupted the
 run at 332 seconds. Typed refusals were clear, but the route from modal state to
 the permitted action vocabulary was not.
 
-The skill now keeps the reference families separate and stops after two failed
-actions. That is a circuit breaker, not a claim that the agent-facing state and
-action planes are well shaped. Use the retained JSONL trace for the planned
-post-barrage hierarchy pass; do not redesign it inside this cleanup.
+The skill first kept the reference families separate and stopped after two
+failed actions. The server now closes the underlying grammar gap:
+`now_semantic_ui_act` publishes the exact 16 gestures, one required-argument
+branch per gesture, and the same contract rejects malformed or cross-gesture
+arguments before the host. Dialog guidance points to
+`snapshot.surfaces[].items` and its 1-based `number`; Finder guidance states
+that Standard File rows are outside that action.
+
+In a fresh isolated Luna repeat, the worker recovered from two refused direct
+control calls to `gesture: dialogItem`, corrected `item` to `itemIndex` from
+the boundary error, and dispatched the Open button without inventing gesture
+names. The task still failed for the separate list-selection gap below.
+
+## BROKEN: Standard File dialogs expose buttons but not selectable file rows (2026-08-09, `codex/now-mcp-action-contracts`)
+
+SimpleText's Open dialog is richly present in the retained surface: Open is
+dialog item 1, Cancel is item 2, and the surrounding controls carry titles,
+state, and geometry. The file list itself is only an unnamed `userItem` with
+no rows, current selection, or row action. Direct observation has the same
+boundary.
+
+The F-009 repeat uploaded and byte-verified `Luna Contract.txt`, set the Open
+dialog's text to that exact name, and dispatched the semantic Open item. The
+dialog opened the previously selected `Apple DVD Player Read Me` instead.
+Subsequent Finder and key attempts had no semantic row to ground against and
+the evaluator interrupted the run after about 226 seconds.
+
+Do not infer selection from the editable text or add another gesture synonym.
+The next review should decide whether Standard File rows belong in the
+retained surface, a bounded direct observation, or a typed open-document
+operation. The raw trace is under
+`docs/local/now-mcp-barrage-2026-08-09/f009-action-contracts/`.
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: Stop, disconnect, and guest replacement left a Mirror session alive (2026-08-08, `codex/mirror-session-teardown`)
 
 The reported host could hold two live Mirror sessions from one guest, and
