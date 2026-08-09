@@ -122,11 +122,14 @@ Two things are known limitations rather than suspicions:
 
 ## The chat.* family: metal-proven end to end; edges still open (2026-08-02)
 
-**Host credential boundary updated and host-tested on 2026-08-09; the real
-Keychain migration remains unverified.** Passive provider discovery now forbids
-authentication UI, one explicit Chat-page action is the only path allowed to
-authorize an old login-keychain item, and successful migration moves the value
-to the app's Data Protection Keychain access group. The default host build is
+**Host credential boundary updated and host-tested on 2026-08-09; the corrected
+legacy migration remains unverified.** The first signed desk run disproved the
+original passive-read claim: opening Chat produced two legacy ACL dialogs
+because the fallback query still requested each secret's data. Passive provider
+discovery now probes only legacy item attributes; one explicit Chat-page action
+is the only path allowed to request an old login-keychain value, and successful
+migration moves it to the app's Data Protection Keychain access group. The
+default host build is
 Apple Development signed by team `B93A9CG7F9`; the host gate now rejects a
 validly sealed bundle that lacks that team identity, application identifier, or
 Keychain access group. `--adhoc` remains available for scratch work and is
@@ -140,9 +143,9 @@ signature/entitlement assertion; a known ad-hoc bundle failed it as intended.
 `scripts/test-all` passed; its native tests and host gate ran, while all three
 guest cross-builds reported their documented toolchain-unavailable skip.
 
-**Still unverified:** no one has launched this branch against a protected
-legacy `dev.newoldworld.now.chat` item and watched the full sequence. The
-remaining proof is that passive startup shows no system dialog, one explicit
+**Still unverified:** no one has launched the corrected build against a
+protected legacy `dev.newoldworld.now.chat` item and watched the full sequence.
+The remaining proof is that passive startup shows no system dialog, one explicit
 Authorize action produces only the prompts required by the credentials that
 actually need access, subsequent signed launches are prompt-free, and migration
 or sign-out reports a login-keychain cleanup refusal instead of silently

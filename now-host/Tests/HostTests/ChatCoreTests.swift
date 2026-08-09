@@ -1,3 +1,4 @@
+import Security
 import XCTest
 
 @testable import Host
@@ -60,6 +61,17 @@ final class ChatSSEParserTests: XCTestCase {
 }
 
 final class ChatCredentialStoreTests: XCTestCase {
+    func testPassiveLegacyProbeNeverRequestsCredentialData() {
+        let query = KeychainChatCredentialStore.passiveLegacyQuery(
+            .anthropicOAuth)
+
+        XCTAssertNil(query[kSecReturnData as String])
+        XCTAssertEqual(query[kSecReturnAttributes as String] as? Bool, true)
+        XCTAssertEqual(
+            query[kSecMatchLimit as String] as? String,
+            kSecMatchLimitOne as String)
+    }
+
     func testOAuthBlobRoundTripsThroughTheStore() throws {
         let store = InMemoryChatCredentialStore()
         let tokens = ChatOAuthTokens(

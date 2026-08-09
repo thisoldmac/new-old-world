@@ -116,7 +116,7 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
     /// else this app might one day keep.
     static let service = "dev.newoldworld.now.chat"
 
-    private func query(
+    private static func query(
         _ key: ChatCredentialKey, dataProtection: Bool
     ) -> [String: Any] {
         var query: [String: Any] = [
@@ -131,10 +131,22 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
         return query
     }
 
+    /// Passive discovery needs to know that an old item exists, but must not
+    /// request its protected value: doing so can invoke the item's legacy ACL
+    /// before Security honors a no-interaction hint.
+    static func passiveLegacyQuery(
+        _ key: ChatCredentialKey
+    ) -> [String: Any] {
+        var query = query(key, dataProtection: false)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        return query
+    }
+
     func read(_ key: ChatCredentialKey, interaction: ChatCredentialInteraction)
         -> ChatCredentialRead {
         let protected = read(
-            query(key, dataProtection: true), interaction: interaction)
+            Self.query(key, dataProtection: true), interaction: interaction)
         switch protected {
         case .missing:
             break
@@ -144,14 +156,16 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
         }
 
         // Items written before the Data Protection migration live in the
-        // login keychain. A passive refresh may use one only when its old
-        // ACL already permits that without UI. The first explicit access
-        // moves it into this app's signed access group and retires the old
-        // copy after the new write is safely present.
+        // login keychain. Passive refresh detects them without requesting
+        // secret data; the first explicit access reads and moves one into
+        // this app's signed access group, then retires the old copy after the
+        // new write is safely present.
+        if interaction == .forbid {
+            return legacyPresence(key)
+        }
         let legacy = read(
-            query(key, dataProtection: false), interaction: interaction)
-        guard case .value(let data) = legacy,
-              interaction == .allow else { return legacy }
+            Self.query(key, dataProtection: false), interaction: interaction)
+        guard case .value(let data) = legacy else { return legacy }
         do {
             try writeDataProtection(key, data)
             let status = deleteStatus(key, dataProtection: false)
@@ -164,6 +178,23 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
             return .operationFailed(ChatFault.from(error).reason)
         }
         return .value(data)
+    }
+
+    private func legacyPresence(_ key: ChatCredentialKey)
+        -> ChatCredentialRead {
+        var result: AnyObject?
+        let status = SecItemCopyMatching(
+            Self.passiveLegacyQuery(key) as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            return .authorizationRequired
+        case errSecItemNotFound:
+            return .missing
+        case errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled:
+            return .authorizationRequired
+        default:
+            return .unavailable(status)
+        }
     }
 
     private func read(
@@ -203,7 +234,7 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
     private func writeDataProtection(
         _ key: ChatCredentialKey, _ data: Data
     ) throws {
-        var add = query(key, dataProtection: true)
+        var add = Self.query(key, dataProtection: true)
         add[kSecValueData as String] = data
         // This Mac only in the product sense: it never synchronizes through
         // iCloud, and it is readable only while this Mac is unlocked.
@@ -211,7 +242,7 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
         let status = SecItemAdd(add as CFDictionary, nil)
         if status == errSecDuplicateItem {
             let update = SecItemUpdate(
-                query(key, dataProtection: true) as CFDictionary,
+                Self.query(key, dataProtection: true) as CFDictionary,
                 [kSecValueData as String: data] as CFDictionary)
             guard update == errSecSuccess else {
                 throw ChatFault.refuse(
@@ -230,7 +261,7 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
     private func deleteStatus(
         _ key: ChatCredentialKey, dataProtection: Bool
     ) -> OSStatus {
-        var item = query(key, dataProtection: dataProtection)
+        var item = Self.query(key, dataProtection: dataProtection)
         item[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
         return SecItemDelete(item as CFDictionary)
     }
