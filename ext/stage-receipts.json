@@ -174,6 +174,28 @@
         "ext/src/now_content.c"
       ],
       "reason": "Archive-only source comment; final resident bake follows the full green gate and MCP reconciliation"
+    },
+    {
+      "at": "2026-08-09T04:31:59-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/mirror-session-teardown",
+      "commit": "573dc086cf921564037e9f280a0a2d21f3bdcd09",
+      "extBuildFingerprint": "18203af3657f83c877159cb1eea250d5b29f3be9",
+      "extDigest": "ea618145ab361de575dea54f83c7a80e066c4354",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 627310592,
+      "imageName": "codex-mirror-session-teardown",
+      "imageSha256": "46da2706697cb7be2a7fe987fd9c87bcff515788dd4eb1491c167fbae5ef584a",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260809",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "f0ce0fa3ea3351a41622f05a0df234a58b059048",
+      "volumeClean": "clean"
     }
   ]
 }
