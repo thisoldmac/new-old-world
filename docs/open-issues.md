@@ -96,6 +96,22 @@ provider can follow Finder navigation anywhere on the guest disk and never
 uses the Files module's share-root contract; it remains scoped to the displayed
 container and contains no `entire contents` search.
 
+The first Wallstreet run of that path exposed a latency defect rather than a
+Finder failure: opening Macintosh HD at 19:53:56 produced its 18-item semantic
+snapshot at 19:54:09. The measured complement was **12,983 ms** because the
+host read the desktop first, then read the folder in eight-row pages, then
+waited for type/creator icon-art enrichment before publishing anything. The
+host now reads the front Finder window first, starts ordinary pages at sixteen
+rows with an eight-row truncation fallback, and publishes the complete
+name/order/bounds/selection roster before icon art settles. Generic host-side
+icons are the immediate fallback; extracted asset art enriches them later.
+This latency correction is **Tested, not yet metal-verified**.
+
+Paging remains scoped to the one displayed container. Opening another folder
+starts a read for that directory; a later host-side expandable list must apply
+the same rule when a row expands. No parent read prewalks its children and no
+volume is recursively paged.
+
 Native qdtrace target tests, 36 focused host content tests, 45 host source
 tests, and 10 renderer arbitration tests pass. This is **Tested**. The next
 PB1400c run still owes the claim that Finder stays alive and does not front
@@ -1132,7 +1148,7 @@ Two consequences while it is unmerged: a per-target render finding carries
 an ordering artefact nobody is subtracting, and any pixel-exact render
 test in this tree is passing because of where its file happens to sit.
 
-## OPEN: `WindowChrome.growBox` still uses the discriminator `hasTitleBar` was corrected off (2026-08-07, fidelity sweep D)
+## OPEN FOR APPLICATIONS, FIXED FOR FINDER: grow-box identity (2026-08-08)
 
 **CLOSED 2026-08-07 by `claude/019-kw01-kw06`, landed in round 9.**
 `growBox` now answers nil everywhere; the entry that records it, and the
@@ -1142,10 +1158,19 @@ the machine leaves plain"*, above. Note this entry's claim that the
 defect is one-directional is itself superseded: the closing measurement
 found it wrong in **both** directions.
 
+The semantic Finder slice now establishes one narrower answer without
+reviving that guess: a visible, front Finder folder window is a standard
+resizable Finder container. It draws and hit-tests its 15-pixel size box, and
+the existing resize action still settles through the guest-owned window.
+Background Finder windows and all application windows remain conservative.
+Application grow boxes still require target-context `FindWindow`/`inGrow`
+evidence.
+
 `hasTitleBar` was fixed from `win.kind != 2` because every
-Dialog-Manager-owned window was getting no widgets.
-**`WindowChrome.growBox` (`WindowChrome.swift:96`) still opens `guard
-win.kind != 2`**, one function below it in the same file.
+Dialog-Manager-owned window was getting no widgets. **At the time of this
+finding, `WindowChrome.growBox` (`WindowChrome.swift:96`) still opened `guard
+win.kind != 2`**, one function below it in the same file. The 2026-08-07 close
+withdrew that inference; the Finder-specific rule above does not restore it.
 
 Confirmed in pixels, not inferred: Appearance is `kind == 2000`, so it
 passes the guard, **the machine draws no grow box on it and the render

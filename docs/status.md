@@ -190,8 +190,15 @@ says so at the point of claim rather than in a footnote.
   Navigation is not limited to the Files module's shared tree: any directory
   Finder opens on the guest can be read. The safety boundary is current
   container only — no `entire contents` search, the operation that previously
-  wedged hardware for about twelve minutes. Ordinary application P3 remains
-  experimental and off by default.
+  wedged hardware for about twelve minutes. The front Finder container is read
+  before the desktop, its complete semantic roster publishes before optional
+  type/creator icon-art enrichment, and ordinary pages start at sixteen rows
+  with an eight-row overflow fallback. Generic host-side icons therefore do
+  not wait for extracted asset matching. A front Finder folder window again
+  carries its resize handle; application grow boxes remain withheld until a
+  target-context probe can establish their WDEF variant. Ordinary application
+  P3 remains experimental and off by default. The latency and resize changes
+  are host-tested but have not yet been rerun on metal.
 - **The guest is woken by its socket, not by a timer expiring**
   (2026-08-06, emulator-verified; **a metal pass is owed and this is the
   change most likely to behave differently there**). A request arriving

@@ -16,6 +16,12 @@ World host owns the configured metal port, but the same host gate passed with
 the repository's explicit busy-machine override. Guest cross-builds and the
 focused native and host suites pass.
 
+**Metal follow-up:** The first Wallstreet run proved the semantic contents but
+measured a 12,983 ms initial complement. The host now prioritises the front
+Finder container, publishes its semantic roster before optional icon-art
+enrichment, uses an adaptive 16/8-row page, and restores the Finder-specific
+resize handle. These follow-ups are host-tested and await the next metal run.
+
 ## Goal Capsule
 
 - **Objective:** Make the Mirror stable enough to land by permanently excluding Finder from P3 drawing interception, preserving P3 for ordinary applications, and rendering Finder interiors from semantic directory state while Finder continues to own its windows and actions.
