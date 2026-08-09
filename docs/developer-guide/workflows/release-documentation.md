@@ -12,9 +12,22 @@ last_verified: 2026-08-09
 ---
 # Release documentation
 
-## Complete the website handoff
+## Complete the deferred website handoff
 
-Set the canonical origin, website repository, security contact, and future RFC 9116 expiry in `docs/site-integration.yaml`. Set `NOW_DOCS_SITE_URL` to the canonical `/docs/` URL and run:
+The intended public route is `/app/docs/` in the separate
+`newoldworld-web` repository, but that integration is deliberately deferred
+until the website is published. Until then, keep using the standalone
+`/docs/` local preview and do not treat a normal docs build as a deployable
+website handoff.
+
+When the handoff is implemented, keep docs source and validation here, publish
+an immutable docs artifact from an app release, and have the website repository
+pin and assemble that artifact under `/app/docs/`. Do not copy generated HTML
+between working trees or make the app repository own the website deployment.
+
+Then set the canonical origin, security contact, future RFC 9116 expiry, and
+final base-path contract in `docs/site-integration.yaml`. Set
+`NOW_DOCS_SITE_URL` to the canonical docs URL and run:
 
 ```sh
 NOW_DOCS_RELEASE=1 scripts/docs-build

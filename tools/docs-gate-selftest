@@ -143,13 +143,23 @@ def main() -> int:
             "doc_type: explanation\n", "", "missing front matter fields: doc_type",
         )
         expect_mutation(
+            test_root, "agent guide audience ownership", test_root / "docs/agent-guide/index.md",
+            "audience: agent\n", "audience: developer\n",
+            "agent-guide pages must use audience: agent",
+        )
+        expect_mutation(
+            test_root, "human developer audience ownership", test_root / "docs/developer-guide/index.md",
+            "audience: developer\n", "audience: agent\n",
+            "developer-guide pages cannot use audience: agent",
+        )
+        expect_mutation(
             test_root, "Mermaid syntax", test_root / "docs/developer-guide/architecture/system-context.md",
             "flowchart LR", "flowchart", "invalid flowchart declaration",
         )
         expect_mutation(
             test_root, "source dependency", test_root / "docs/developer-guide/index.md",
-            "source_dependencies: [AGENTS.md, contract/asyncapi.yaml, scripts/test-all]",
-            "source_dependencies: [AGENTS.md, contract/nope.yaml, scripts/test-all]",
+            "source_dependencies: [README.md, contract/asyncapi.yaml, scripts/test-all, docs/developer-guide/orientation.md]",
+            "source_dependencies: [README.md, contract/nope.yaml, scripts/test-all, docs/developer-guide/orientation.md]",
             "source dependency does not exist",
         )
         expect_mutation(

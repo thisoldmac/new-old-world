@@ -1,7 +1,7 @@
 ---
 page_id: dev-arch-agent-boundary
-title: Agent boundary
-description: How local agent clients reach approved projections without gaining a parallel control surface.
+title: Product agent integration
+description: How product-facing local agent clients reach approved host projections without gaining a parallel control surface.
 doc_type: explanation
 audience: developer
 lifecycle: current
@@ -10,9 +10,13 @@ source_dependencies: [docs/agent-integration.md, now-host/Sources/NOWAgentIntegr
 media_ids: []
 last_verified: 2026-08-09
 ---
-# Agent boundary
+# Product agent integration
 
-The agent companion is a client of the host, not an alternate face of the guest. `HostProjectionCatalog` declares capabilities once so the app UI and approved client share schemas, availability rules, bounds, and implementations.
+This page describes a New Old World product subsystem, not instructions for a
+coding agent working in the repository. The agent companion is a client of the
+host, not an alternate face of the guest. `HostProjectionCatalog` declares
+capabilities once so the app UI and approved client share schemas,
+availability rules, bounds, and implementations.
 
 ```mermaid
 flowchart TD

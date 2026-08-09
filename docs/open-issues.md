@@ -20,6 +20,39 @@ under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
 `MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
 retain their original path spelling so the ledger remains an honest receipt.
 
+## DEFERRED WEBSITE HANDOFF: app documentation will be assembled by the separate website repository (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+
+The public website now lives at
+`https://github.com/mishyjari/newoldworld-web`, outside this application
+repository. The intended route is `/app/docs/`, but cross-repository assembly
+is deferred until that website is published. The current local framework
+therefore remains a standalone `/docs/` preview and release mode remains
+incomplete.
+
+When this is resumed, the application repository should continue to own the
+Markdown, docs gates, and an immutable versioned documentation artifact. The
+website repository should pin that artifact and assemble it beneath
+`/app/docs/` as part of its own deployment. No submodule, copied generated
+working tree, or cross-repository commit automation has been adopted.
+
+## RESOLVED DOCUMENTATION OWNERSHIP: human developer and coding-agent prose now have separate owners (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+
+The original developer entry path mixed architecture and code-reading material
+with instructions specific to automated sessions. That was not only a
+navigation problem: the same reader had to move between explanatory prose and
+imperative agent protocol, and future edits would have duplicated technical
+claims to serve both.
+
+`docs/developer-guide/` now addresses humans digging into the code: mental
+models, source tracing, debugging, architecture, implementation workflows, and
+verification rationale. `docs/agent-guide/` is a smaller operational overlay
+for coding agents: authority and scope, shared-repository protocol, platform
+routing, change routing, mutation evidence, and handoff. Agent pages link to
+the human technical owner instead of restating it. The docs gate validates the
+folder/audience distinction and its mutation suite proves both directions are
+rejected; prose ownership still requires review because metadata cannot prove
+that a paragraph serves the right reader.
+
 ## PLANNED RELEASE CONTROL: documentation has a feature profile; runtime flags do not yet exist (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
 `docs/feature-catalog.yaml` now declares the initial-alpha product boundary:

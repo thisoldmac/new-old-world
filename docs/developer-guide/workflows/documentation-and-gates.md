@@ -6,13 +6,30 @@ doc_type: how-to
 audience: developer
 lifecycle: current
 authority: [mkdocs.yml, tools/docs-gate, docs/module-manifest.yaml, docs/feature-catalog.yaml]
-source_dependencies: [mkdocs.yml, tools/docs-gate, tools/docs-placeholders, tools/docs-contract-projector, scripts/test-docs, docs/module-manifest.yaml, docs/feature-catalog.yaml, docs/hooks/release_features.py]
+source_dependencies: [mkdocs.yml, tools/docs-gate, tools/docs-placeholders, tools/docs-contract-projector, scripts/test-docs, docs/module-manifest.yaml, docs/feature-catalog.yaml, docs/hooks/release_features.py, docs/developer-guide/index.md, docs/agent-guide/index.md]
 media_ids: []
 last_verified: 2026-08-09
 ---
 # Documentation and gates
 
 The public site uses MkDocs Material and the Diátaxis page types: tutorial, how-to, reference, and explanation. Each curated page declares its type, audience, lifecycle, authorities, source dependencies, media IDs, and verification date in YAML front matter.
+
+## Choose the owning audience before writing
+
+- `docs/user-guide/` explains how a person installs, operates, understands, and
+  evaluates the product.
+- `docs/developer-guide/` is for humans reading the code. It owns architecture,
+  code tracing, debugging rationale, implementation workflows, and technical
+  reference.
+- `docs/agent-guide/` is for coding agents. It owns imperative repository
+  protocol, scope control, platform/skill routing, evidence rules, and handoff.
+
+Do not publish the same technical explanation once for humans and again for
+agents. Put it in the human developer guide; link to it from the agent page and
+add only the operational instruction the agent needs. Likewise, branch and
+checkpoint protocol does not belong in the human codebase tour. The docs gate
+checks folder/audience ownership; review still checks that the prose actually
+serves its declared reader.
 
 ## Install the pinned toolchain
 
@@ -60,4 +77,11 @@ The official AsyncAPI Generator remains a compatibility probe, not a required de
 scripts/test-docs
 ```
 
-It checks metadata, navigation, public links, image alt text and dimensions, module/source parity, AsyncAPI references, generated output, a strict site build, representative accessibility structure, and all declared derived documents. `NOW_DOCS_RELEASE=1` additionally refuses publication until the canonical origin, website repository, security contact, and RFC 9116 expiry are configured in `docs/site-integration.yaml`. A release build then writes `security.txt` and `robots.txt`; ordinary local builds never publish placeholder contact data.
+It checks metadata, navigation, audience-folder ownership, public links, image
+alt text and dimensions, module/source parity, AsyncAPI references, generated
+output, a strict site build, representative accessibility structure, and all
+declared derived documents. `NOW_DOCS_RELEASE=1` additionally refuses
+publication until the canonical origin, website repository, security contact,
+and RFC 9116 expiry are configured in `docs/site-integration.yaml`. A release
+build then writes `security.txt` and `robots.txt`; ordinary local builds never
+publish placeholder contact data.

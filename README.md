@@ -14,7 +14,8 @@ Use a classic Macintosh from a modern Mac without turning either interface into 
 - [See what the optional NOW Extension adds](docs/user-guide/explanation/optional-extension.md)
 - [Review the initial-alpha feature profile](docs/user-guide/reference/release-profile.md)
 - [Browse every module](docs/user-guide/reference/modules/index.md)
-- [Read the developer orientation](docs/developer-guide/orientation.md)
+- [Read the human developer orientation](docs/developer-guide/orientation.md)
+- [Use the coding agent guide](docs/agent-guide/index.md)
 - [See the generated protocol reference](docs/generated/asyncapi.md)
 
 The web documentation is built from `mkdocs.yml` at the `/docs/` base path. Run `scripts/docs-serve` for a local preview.
@@ -86,9 +87,13 @@ The docs gate validates structure, links, source dependencies, images, live modu
 | `now-guest-68k/` | 68K Toolbox/MacTCP guest |
 | `ext/` | Optional resident extension |
 | `docs/user-guide/` | Public task and module documentation |
-| `docs/developer-guide/` | Architecture, workflows, and reference |
+| `docs/developer-guide/` | Human architecture, code-reading, debugging, and contribution guide |
+| `docs/agent-guide/` | Coding-agent operating, routing, evidence, and handoff guide |
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing the tree. `AGENTS.md` is the full working convention for human and automated contributors.
+Human contributors start with [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents
+start with [the agent guide](docs/agent-guide/index.md), with `AGENTS.md` as the
+complete repository instruction. Technical architecture is explained once in
+the human developer guide and linked from the agent path.
 
 ## Security
 

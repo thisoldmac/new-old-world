@@ -6,7 +6,7 @@ doc_type: tutorial
 audience: user
 lifecycle: current
 authority: [README.md, docs/status.md]
-source_dependencies: [README.md, docs/status.md, docs/module-manifest.yaml]
+source_dependencies: [README.md, docs/status.md, docs/module-manifest.yaml, docs/developer-guide/index.md, docs/agent-guide/index.md]
 media_ids: [overview-host, overview-workshop]
 last_verified: 2026-08-09
 ---
@@ -46,7 +46,10 @@ authoritative release-facing statement.
 - [Browse the module reference](user-guide/reference/modules/index.md) when
   you already have a connection and want to understand one surface.
 - [Read the developer orientation](developer-guide/orientation.md) before
-  changing source, contracts, guests, resident components, or gates.
+  digging into the source, contracts, guests, resident components, or gates.
+- [Use the coding agent guide](agent-guide/index.md) when an automated coding
+  agent needs repository-specific operating, routing, evidence, and handoff
+  rules.
 
 ## Pre-alpha posture
 
@@ -60,7 +63,10 @@ before putting irreplaceable data or an untrusted network in the loop.
 
 - The **user guide** contains one tutorial, outcome-oriented how-to guides,
   explanations, and reference pages.
-- The **developer guide** traces ownership, contracts, build/test workflows,
-  Mirror, the optional resident, and agent boundaries.
+- The **developer guide for humans** explains how the code works, how to trace
+  and debug it, and why its contracts and verification boundaries exist.
+- The **coding agent guide** is a separate operational overlay. It routes an
+  agent through authority, scope, platform guidance, gates, and handoff without
+  duplicating the human technical explanation.
 - **Engineering records** preserve status, measurements, known-wrong behavior,
   and the append-only issue ledger. They are evidence, not first-run prose.

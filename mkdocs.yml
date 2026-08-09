@@ -69,6 +69,8 @@ exclude_docs: |
   !user-guide/**
   !developer-guide/
   !developer-guide/**
+  !agent-guide/
+  !agent-guide/**
   !generated/
   !generated/**
   !assets/
@@ -121,7 +123,7 @@ nav:
               - MCP: user-guide/reference/modules/mcp.md
               - Logs: user-guide/reference/modules/logs.md
               - Connections and preferences: user-guide/reference/modules/connections-and-preferences.md
-  - Developer guide:
+  - Developer guide for humans:
       - Overview: developer-guide/index.md
       - Orientation: developer-guide/orientation.md
       - Architecture:
@@ -132,7 +134,7 @@ nav:
           - 68K guest: developer-guide/architecture/68k-guest.md
           - Resident components: developer-guide/architecture/resident-components.md
           - Mirror: developer-guide/architecture/mirror.md
-          - Agent boundary: developer-guide/architecture/agent-boundary.md
+          - Product agent integration: developer-guide/architecture/agent-boundary.md
       - Workflows:
           - Build and test: developer-guide/workflows/build-and-test.md
           - Change the contract: developer-guide/workflows/change-the-contract.md
@@ -146,6 +148,12 @@ nav:
           - Repository map: developer-guide/reference/repository-map.md
           - Documentation standard: developer-guide/reference/documentation-standard.md
           - Generated AsyncAPI reference: generated/asyncapi.md
+  - Coding agent guide:
+      - Start here: agent-guide/index.md
+      - Operating protocol: agent-guide/operating-protocol.md
+      - Platform routing: agent-guide/platform-routing.md
+      - Change routing: agent-guide/change-routing.md
+      - Evidence and handoff: agent-guide/evidence-and-handoff.md
   - Engineering records:
       - Current status: status.md
       - Known wrong: known-wrong.md

@@ -20,7 +20,7 @@ import yaml
 
 
 ALLOWED_DOC_TYPES = {"tutorial", "how-to", "reference", "explanation"}
-ALLOWED_AUDIENCES = {"user", "developer", "operator"}
+ALLOWED_AUDIENCES = {"user", "developer", "operator", "agent"}
 ALLOWED_LIFECYCLES = {"current", "experimental", "reference", "historical"}
 REQUIRED_META = {
     "page_id", "title", "description", "doc_type", "audience", "lifecycle",
@@ -85,7 +85,7 @@ def frontmatter(path: Path) -> tuple[dict, str]:
 def curated_files(root: Path) -> list[Path]:
     docs = root / "docs"
     files = [docs / "index.md"] if (docs / "index.md").exists() else []
-    for subtree in (docs / "user-guide", docs / "developer-guide"):
+    for subtree in (docs / "user-guide", docs / "developer-guide", docs / "agent-guide"):
         if subtree.exists():
             files.extend(sorted(subtree.rglob("*.md")))
     return files
@@ -294,6 +294,11 @@ def check(root: Path, site_dir: Path | None) -> int:
             errors.append(f"{rel}: invalid doc_type {meta['doc_type']!r}")
         if meta["audience"] not in ALLOWED_AUDIENCES:
             errors.append(f"{rel}: invalid audience {meta['audience']!r}")
+        doc_parts = path.relative_to(docs).parts
+        if doc_parts[0] == "agent-guide" and meta["audience"] != "agent":
+            errors.append(f"{rel}: agent-guide pages must use audience: agent")
+        if doc_parts[0] == "developer-guide" and meta["audience"] == "agent":
+            errors.append(f"{rel}: developer-guide pages cannot use audience: agent")
         if meta["lifecycle"] not in ALLOWED_LIFECYCLES:
             errors.append(f"{rel}: invalid lifecycle {meta['lifecycle']!r}")
         if not isinstance(meta["authority"], list) or not meta["authority"]:
@@ -550,6 +555,7 @@ def check(root: Path, site_dir: Path | None) -> int:
             site_dir / "user-guide/reference/modules/files/index.html": {"images": True, "release_banner": True},
             site_dir / "developer-guide/architecture/system-context/index.html": {"mermaid": True},
             site_dir / "developer-guide/reference/verification-levels/index.html": {"table": True, "mermaid": True},
+            site_dir / "agent-guide/index.html": {},
         }
         for path, expected in representative.items():
             if not path.exists():
