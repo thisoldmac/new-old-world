@@ -30,8 +30,10 @@ live session or forgets exactly a selected remembered record. Pressing Return
 in the port field follows the same validated Start Listening action as the
 button. Each row is headed by a host-owned display name, defaulted from the
 machine's reported name; collisions receive `-2`, `-3`, and so on. The guest
-IP and the host's stable listening port are the subrow; the guest's transient
-outbound source port is deliberately not shown. A pencil beside the detail title and the row/detail
+IP and the host port that particular machine used are the subrow; remembered
+machines retain their own last-used ports when the current listener changes,
+and the guest's transient outbound source port is deliberately not shown. A
+pencil beside the detail title and the row/detail
 context menus rename that display name without changing the stable machine id;
 the same menus expose Delete and the listener's Start/Stop action.
 

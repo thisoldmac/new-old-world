@@ -92,9 +92,10 @@ struct EndedGuestSession: Equatable, Sendable {
 /// - `machineID` is what a person or an agent TYPES. Stable, host-assigned.
 /// - `liveSessionID` is THIS connection. Refused once it has ended, rather
 ///   than answered by its successor.
-/// - `address` is where the host saw it. Authoritative for which socket,
-///   useless as a name — and on loopback it cannot even tell two Macs
-///   apart, which is what `idIsAnchored` says out loud.
+/// - `address` pairs the guest IP the host saw with the host port that
+///   accepted that machine. It is useful reconnect information, not a
+///   durable identity — on loopback it cannot even tell two Macs apart,
+///   which is what `idIsAnchored` says out loud.
 ///
 /// `name` is what the machine reported; `displayName` is the host-owned title
 /// that defaults from it and may be edited without changing identity.
@@ -119,6 +120,8 @@ struct ConnectionRow: Identifiable, Equatable, Sendable {
     /// last name it used for a remembered one.
     let name: String
     let displayName: String
+    /// Guest IP plus the host listener port this machine used. This is not
+    /// the transient remote source port from its TCP socket.
     let address: String
     let liveSessionID: String?
     /// The last session this machine had, when the pane watched it end.
@@ -236,7 +239,6 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                      guests: [ConnectedGuest],
                      known: [GuestRegistry.Record],
                      ended: [String: EndedGuestSession],
-                     listenPort: UInt16 = SettingsModel.defaultPort,
                      resolve: (String) -> AgentIntegrationUnavailable?)
         -> ConnectionsSnapshot {
         var rows: [ConnectionRow] = []
@@ -254,7 +256,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 name: guest.name,
                 displayName: guest.displayName ?? guest.name,
                 address: Self.listenerAddress(guest.address.text,
-                                              port: listenPort),
+                    port: guest.listenPort ?? SettingsModel.defaultPort),
                 liveSessionID: guest.sessionID,
                 lastSessionID: ended[guest.id.slug]?.sessionID,
                 since: guest.connectedAt,
@@ -283,7 +285,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 name: record.lastName,
                 displayName: record.displayName ?? record.lastName,
                 address: Self.listenerAddress(record.address,
-                                              port: listenPort),
+                    port: record.listenPort ?? SettingsModel.defaultPort),
                 liveSessionID: nil,
                 lastSessionID: last,
                 since: record.lastSeen,
@@ -338,7 +340,6 @@ final class ConnectionsModel: ObservableObject {
     @Published private(set) var renameProblem: String?
 
     private let listener: GuestListener
-    private let listenPort: () -> UInt16
     private let resolve: (String) -> AgentIntegrationUnavailable?
     private let select: (GuestKey) -> Bool
     private let disconnect: (GuestKey) -> Bool
@@ -353,15 +354,11 @@ final class ConnectionsModel: ObservableObject {
 
     init(listener: GuestListener,
          resolve: @escaping (String) -> AgentIntegrationUnavailable?,
-         listenPort: @escaping () -> UInt16 = {
-             SettingsModel.defaultPort
-         },
          select: ((GuestKey) -> Bool)? = nil,
          disconnect: ((GuestKey) -> Bool)? = nil,
          forget: ((GuestRegistry.Record.Key) -> Bool)? = nil) {
         self.listener = listener
         self.resolve = resolve
-        self.listenPort = listenPort
         self.select = select ?? { [listener] key in listener.selectGuest(key) }
         self.disconnect = disconnect
             ?? { [listener] key in listener.removeGuest(key) }
@@ -390,15 +387,11 @@ final class ConnectionsModel: ObservableObject {
     /// adapter that actually serves them.
     convenience init(listener: GuestListener,
                      addressing: AgentIntegrationHostAdapter,
-                     listenPort: @escaping () -> UInt16 = {
-                         SettingsModel.defaultPort
-                     },
                      select: ((GuestKey) -> Bool)? = nil) {
         self.init(listener: listener,
                   resolve: { [addressing] selector in
                       addressing.addressingRefusal(selector)
                   },
-                  listenPort: listenPort,
                   select: select)
     }
 
@@ -410,7 +403,6 @@ final class ConnectionsModel: ObservableObject {
             guests: listener.guests,
             known: listener.registry.known,
             ended: ended,
-            listenPort: listenPort(),
             resolve: resolve)
     }
 

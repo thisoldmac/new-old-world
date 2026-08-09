@@ -94,7 +94,6 @@ final class HostAppState: ObservableObject {
     private(set) lazy var connections = ConnectionsModel(
         listener: listener,
         addressing: agentIntegration,
-        listenPort: { [settings] in settings.listenPort },
         select: { [weak self] key in self?.selectGuest(key) ?? false })
     private(set) lazy var console = ConsoleModel(listener: listener)
     /// The Mirror page. Guest-scoped like the rest — it is a claim about one

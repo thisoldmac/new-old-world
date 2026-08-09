@@ -40,16 +40,17 @@ final class GuestIdentityTests: XCTestCase {
         let first = book.identify(
             address: GuestAddress(text: "10.0.0.1", port: 49152),
             name: "PowerBook 1400c", operatingSystem: "9.1",
-            occupiedSlots: [])
+            occupiedSlots: [], listenPort: 5250)
 
         XCTAssertEqual(book.renameDisplayName(first.key, to: "Desk Mac"),
                        .success("Desk Mac"))
         let reconnected = book.identify(
             address: GuestAddress(text: "10.0.0.1", port: 49153),
             name: "PowerBook 1400c", operatingSystem: "9.1",
-            occupiedSlots: [])
+            occupiedSlots: [], listenPort: 5251)
 
         XCTAssertEqual(reconnected.displayName, "Desk Mac")
+        XCTAssertEqual(reconnected.listenPort, 5251)
     }
 
     func testObservedEndpointFormatsIPAndPort() {

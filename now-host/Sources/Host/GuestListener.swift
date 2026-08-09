@@ -366,6 +366,7 @@ final class GuestListener: ObservableObject {
                 idIsAnchored: live.guestAddress.distinguishesMachines,
                 name: live.guestName,
                 displayName: machine?.displayName,
+                listenPort: machine?.listenPort,
                 address: live.guestAddress,
                 version: record.guestVersion,
                 build: record.guestBuild,
@@ -383,7 +384,8 @@ final class GuestListener: ObservableObject {
     /// reconnect is told its session ended rather than being retargeted
     /// at the successor while believing it holds continuity.
     private func mintSessionKey(hello: Hello,
-                                address: GuestAddress) -> GuestKey {
+                                address: GuestAddress,
+                                listenPort: UInt16?) -> GuestKey {
         let print = GuestRegistry.fingerprint(
             name: hello.name, operatingSystem: hello.os)
         /* Only slots held by a LIVE session count. A machine reconnecting
@@ -393,7 +395,7 @@ final class GuestListener: ObservableObject {
         }.map(\.slot))
         let record = registry.identify(
             address: address, name: hello.name, operatingSystem: hello.os,
-            occupiedSlots: occupied)
+            occupiedSlots: occupied, listenPort: listenPort)
         let key = GuestKey(machine: record.id, session: UUID())
         machineBySession[key] = record
         return key
@@ -2375,6 +2377,7 @@ final class GuestListener: ObservableObject {
            itself has been read. This is the fact the machine registry
            anchors on precisely because the guest had no say in it. */
         let address = GuestAddress(endpoint: connection.endpoint)
+        let listenPort = boundPort
         /// True when this connection is the one the request-shaped API is
         /// driving — so its answers are the ones our waiters are owed.
         func fromActive() -> Bool {
@@ -2409,7 +2412,8 @@ final class GuestListener: ObservableObject {
                     return GuestKey(machine: GuestID("guest")!,
                                     session: UUID())
                 }
-                return self.mintSessionKey(hello: hello, address: address)
+                return self.mintSessionKey(
+                    hello: hello, address: address, listenPort: listenPort)
             },
             onActive: { [weak self] activated in
                 guard let self, let key = activated.guestKey else { return }

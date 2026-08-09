@@ -71,6 +71,9 @@ final class GuestRegistry {
         /// Host-owned title. Nil only for records written before display
         /// names existed; those are upgraded on their next connection.
         var displayName: String? = nil
+        /// Host port this machine most recently connected through. Optional
+        /// for records written before per-machine ports were stored.
+        var listenPort: UInt16? = nil
 
         var key: Key {
             Key(address: address, fingerprint: fingerprint, slot: slot)
@@ -137,6 +140,7 @@ final class GuestRegistry {
                   name: String?,
                   operatingSystem: String?,
                   occupiedSlots: Set<Int>,
+                  listenPort: UInt16? = nil,
                   now: Date = Date()) -> Record {
         let print = Self.fingerprint(name: name, operatingSystem: operatingSystem)
         var slot = 0
@@ -152,6 +156,7 @@ final class GuestRegistry {
             }
             records[index].lastSeen = now
             records[index].lastName = name ?? Session.unnamedGuest
+            if let listenPort { records[index].listenPort = listenPort }
             save()
             return records[index]
         }
@@ -161,7 +166,7 @@ final class GuestRegistry {
             id: nextOrdinal(), address: address.text, fingerprint: print,
             slot: slot, autoAssigned: true, lastSeen: now,
             lastName: name ?? Session.unnamedGuest,
-            displayName: displayName)
+            displayName: displayName, listenPort: listenPort)
         records.append(record)
         save()
         return record

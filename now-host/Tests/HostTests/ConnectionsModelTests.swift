@@ -158,10 +158,10 @@ final class ConnectionsModelTests: XCTestCase {
     func testTheThreeIdentitiesStayApartOnTheRow() throws {
         var live = guest("pb1400c", address: "10.91.5.34", active: true)
         live.address = GuestAddress(text: "10.91.5.34", port: 49180)
+        live.listenPort = 5250
         let snapshot = ConnectionsSnapshot.make(
             state: .connected(guestName: live.name),
             guests: [live], known: [], ended: [:],
-            listenPort: 5250,
             resolve: resolver(driving: "pb1400c", connected: ["pb1400c"]))
 
         let row = try XCTUnwrap(snapshot.driving)
@@ -175,6 +175,25 @@ final class ConnectionsModelTests: XCTestCase {
         XCTAssertEqual(row.name, "NOW 0.14",
                        "what the Mac calls itself is a label, kept beside "
                        + "the handle and never in place of it")
+    }
+
+    func testRememberedRowsKeepThePortEachMachineUsed() throws {
+        var first = record("pb1400c", address: "10.91.5.34")
+        first.listenPort = 5250
+        var second = record("powerbook", address: "10.91.5.251")
+        second.listenPort = 5251
+
+        let snapshot = ConnectionsSnapshot.make(
+            state: .listening(port: 5251), guests: [],
+            known: [first, second], ended: [:],
+            resolve: resolver(driving: nil, connected: []))
+
+        XCTAssertEqual(snapshot.known.first {
+            $0.machineID == "pb1400c"
+        }?.address, "10.91.5.34:5250")
+        XCTAssertEqual(snapshot.known.first {
+            $0.machineID == "powerbook"
+        }?.address, "10.91.5.251:5251")
     }
 
     /// The two hedges the identity design makes explicit — an id nobody
@@ -513,6 +532,8 @@ final class ConnectionsModelTests: XCTestCase {
                                  "the one connected Mac is the driven one")
         let session = try XCTUnwrap(live.liveSessionID)
         XCTAssertEqual(live.name, "PowerBook 180c")
+        XCTAssertEqual(live.address, "127.0.0.1:\(port)",
+                       "the accepted session captures its own listener port")
 
         guest.cancel()
         try await wait { model.snapshot.isIdle }
@@ -523,6 +544,8 @@ final class ConnectionsModelTests: XCTestCase {
             model.snapshot.known.first { $0.machineID == live.machineID },
             "a machine the host has met is remembered by name")
         XCTAssertNil(remembered.liveSessionID)
+        XCTAssertEqual(remembered.address, "127.0.0.1:\(port)",
+                       "the machine keeps the port it used after leaving")
         XCTAssertEqual(remembered.lastSessionID, session,
                        "the session id survives the connection, because "
                        + "that is the only thing that can answer a caller "

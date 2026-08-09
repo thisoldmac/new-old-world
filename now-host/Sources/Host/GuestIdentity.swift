@@ -238,6 +238,9 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     /// Host-owned title, defaulted from `name` and independently editable.
     /// Nil only in fixtures or while reading a pre-display-name record.
     var displayName: String? = nil
+    /// Host port this machine's connection was accepted on. Unlike the
+    /// remote source port in `address`, this is stable and useful to a person.
+    var listenPort: UInt16? = nil
     var address: GuestAddress
     var version: String?
     /// The build this machine reported at `hello`, when it reported one.
