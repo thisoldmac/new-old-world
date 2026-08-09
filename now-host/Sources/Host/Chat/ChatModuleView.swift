@@ -316,13 +316,42 @@ struct ChatProvidersSheet: View {
             ScrollView {
                 VStack(spacing: 12) {
                     anthropicCard
+                    claudeCard
                     openAICard
                     localsCard
                 }
                 .padding()
             }
         }
-        .frame(width: 460, height: 480)
+        .frame(width: 500, height: 620)
+    }
+
+    private var claudeCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                cardHeader("Claude (Experimental)", entry("claude"))
+                Text("Uses an independently installed Claude Code runtime. "
+                     + "Anthropic has not approved this as a third-party "
+                     + "subscription integration, and programmatic use may "
+                     + "draw from separate Agent SDK credit.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if entry("claude")?.state != "serving" {
+                    HStack {
+                        Text("Authenticate outside NOW:  claude auth login")
+                            .font(.system(.callout, design: .monospaced))
+                            .textSelection(.enabled)
+                            .accessibilityLabel(
+                                "Authenticate outside New Old World with "
+                                + "claude auth login")
+                        Spacer()
+                        Button("Check Again") { model.refresh() }
+                    }
+                }
+            }
+            .padding(6)
+        }
     }
 
     private func entry(_ id: String) -> ChatProviderEntry? {

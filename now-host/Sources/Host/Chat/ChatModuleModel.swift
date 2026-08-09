@@ -23,7 +23,8 @@ struct ChatDisplayRow: Identifiable, Equatable {
 }
 
 private func makeChatProviderRegistry(
-    store: ChatCredentialStore, transport: ChatHTTPTransport
+    store: ChatCredentialStore, transport: ChatHTTPTransport,
+    runtimeProviders: [ChatProvider]
 ) -> ChatProviderRegistry {
     let registry = ChatProviderRegistry()
     registry.register(
@@ -40,17 +41,20 @@ private func makeChatProviderRegistry(
     registry.register(
         OpenAICompatibleChatProvider.oMLX(
             store: store, transport: transport))
+    runtimeProviders.forEach(registry.register)
     return registry
 }
 
 private func makePassiveChatProviderRegistry(
-    store: ChatCredentialStore, transport: ChatHTTPTransport
+    store: ChatCredentialStore, transport: ChatHTTPTransport,
+    runtimeProviders: [ChatProvider]
 ) -> (credentials: OperationChatCredentialStore,
       registry: ChatProviderRegistry) {
     let credentials = OperationChatCredentialStore(
         source: store, interaction: .forbid)
     return (credentials, makeChatProviderRegistry(
-        store: credentials, transport: transport))
+        store: credentials, transport: transport,
+        runtimeProviders: runtimeProviders))
 }
 
 @MainActor
@@ -105,6 +109,7 @@ final class ChatModuleModel: ObservableObject {
     let harness: ChatHarness
     private let store: ChatCredentialStore
     private let transport: ChatHTTPTransport
+    private let runtimeProviders: [ChatProvider]
     private let defaults: UserDefaults
     private var conversation: [ChatTurn] = []
     private static let modelKey = "chat.selectedModel"
@@ -124,8 +129,11 @@ final class ChatModuleModel: ObservableObject {
         self.defaults = defaults
         selectedWireModelID = defaults.string(forKey: Self.modelKey) ?? ""
 
+        let runtimeProviders: [ChatProvider] = [ClaudeCodeChatProvider()]
+        self.runtimeProviders = runtimeProviders
         let registry = makeChatProviderRegistry(
-            store: store, transport: transport)
+            store: store, transport: transport,
+            runtimeProviders: runtimeProviders)
         harness = ChatHarness(
             registry: registry,
             makeClient: { selector in
@@ -149,11 +157,13 @@ final class ChatModuleModel: ObservableObject {
     func refresh(preservingCredentialNotice preservedNotice: String? = nil) {
         let store = store
         let transport = transport
+        let runtimeProviders = runtimeProviders
         /* Detached: Keychain reads and local-runtime probes must never
            run on the main actor (see init). */
         Task.detached { [weak self] in
             let passive = makePassiveChatProviderRegistry(
-                store: store, transport: transport)
+                store: store, transport: transport,
+                runtimeProviders: runtimeProviders)
             let credentialReads = Dictionary(uniqueKeysWithValues:
                 ChatCredentialKey.activeCases.map {
                     ($0, passive.credentials.read($0, interaction: .forbid))
@@ -216,9 +226,11 @@ final class ChatModuleModel: ObservableObject {
     func servableModels() async -> [ChatModel] {
         let store = store
         let transport = transport
+        let runtimeProviders = runtimeProviders
         return await Task.detached {
             let passive = makePassiveChatProviderRegistry(
-                store: store, transport: transport)
+                store: store, transport: transport,
+                runtimeProviders: runtimeProviders)
             var models: [ChatModel] = []
             for provider in passive.registry.all() {
                 if let served = try? await provider.listModels() {
@@ -263,9 +275,11 @@ final class ChatModuleModel: ObservableObject {
     private func wireModels(provider id: String) async -> [ChatModel]? {
         let store = store
         let transport = transport
+        let runtimeProviders = runtimeProviders
         return await Task.detached {
             let passive = makePassiveChatProviderRegistry(
-                store: store, transport: transport)
+                store: store, transport: transport,
+                runtimeProviders: runtimeProviders)
             guard let provider = passive.registry.provider(for: id)
             else { return nil }
             return try? await provider.listModels()
@@ -275,9 +289,11 @@ final class ChatModuleModel: ObservableObject {
     func providerEntries() async -> [ChatProviderEntry] {
         let store = store
         let transport = transport
+        let runtimeProviders = runtimeProviders
         return await Task.detached {
             let passive = makePassiveChatProviderRegistry(
-                store: store, transport: transport)
+                store: store, transport: transport,
+                runtimeProviders: runtimeProviders)
             var entries: [ChatProviderEntry] = []
             for provider in passive.registry.all() {
                 entries.append(await provider.entry())
