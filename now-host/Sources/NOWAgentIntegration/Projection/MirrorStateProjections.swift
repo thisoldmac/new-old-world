@@ -353,7 +353,7 @@ public enum MirrorSnapshotProjection: HostProjection {
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
             title: "Experimental Semantic UI Snapshot",
-            description: "Experimental. Returns the immutable retained semantic UI projection: identity, coverage, freshness, stable process/window entities, menubar rows, geometry, controls, dialogs, Finder items, and bounded content evidence. Prefer this over pixels for desktop and application context.",
+            description: "Experimental. The first UI-context read: returns the immutable retained semantic projection with identity, coverage, freshness, stable process/window entities, menubar rows, geometry, controls, dialogs, Finder items, and bounded content evidence. Call this before now_observe_elements and read its coverage and content before deciding whether to escalate; do not launch direct observation in parallel. Prefer this over pixels for desktop and application context.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,

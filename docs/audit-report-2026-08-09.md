@@ -188,13 +188,22 @@ facade from prose-byte counts alone.
   front of it without consulting an optional resource or repo skill. The two
   escalation tools therefore sounded like primary observation paths.
 - **Resolution:** `now_observe_elements` now says to prefer
-  `now_semantic_ui_snapshot` and use direct observation only for incomplete
-  retained state or fresh direct references. `now_capture_screen` now limits
+  `now_semantic_ui_snapshot`, read its result before deciding to escalate, and
+  never launch the two reads in parallel. The snapshot descriptor states the
+  same ordering from the retained side. Direct observation remains for proven
+  incomplete state or fresh direct references. `now_capture_screen` limits
   pixels to genuinely visual facts or exhausted semantic evidence. A registry
-  test pins both local instructions and was watched fail before the descriptors
-  changed.
+  test pins the local instructions and was watched fail before each descriptor
+  change.
+- **VM validation:** an isolated Luna baseline still launched retained and
+  direct observation in parallel under the first wording. With the sequencing
+  explicit, the same prompt and VM used process state plus the retained
+  snapshot only. A control with the routing skill readable called
+  `now_list_machines`, started semantic UI, read the retained snapshot, and
+  then cross-checked processes; it used neither a direct probe nor pixels.
 - **Blast radius:** two MCP descriptions and one registry test; no dispatch,
-  guest, state-engine, transport, or authority behavior changed.
+  guest, state-engine, transport, or authority behavior changed. The matching
+  repo-skill sentence is agent guidance, not a runtime change.
 
 ### [F-007] Non-interactive workers cannot complete annotated mutation chains (severity: medium, effort: S) — resolved for the harness
 

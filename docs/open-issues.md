@@ -192,11 +192,20 @@ a retained dialog item but tried the direct family twice before recovering,
 and the earlier H1 run escalated to pixels without first using retained state.
 
 `now_observe_elements` now identifies itself as targeted direct observation
-for incomplete retained state or fresh direct-action references.
+for incomplete retained state or fresh direct-action references, and says not
+to launch it in parallel with the retained snapshot. The snapshot description
+also requires reading its coverage before deciding whether to escalate.
 `now_capture_screen` now reserves pixels for genuinely visual facts or facts
 semantic evidence cannot answer. The registry guard was watched fail before
-the descriptions changed; it then passed with all 39 companion tests and the
-42-tool spawned-client conformance run. No runtime action or authority changed.
+both description rounds changed.
+
+The second round came from a live private-VM A/B, not prose review. Under the
+first wording Luna launched process, retained, and direct reads in parallel.
+Under the sequencing wording the identical prompt used process and retained
+state only, even when the isolated harness failed to load the routing skill. A
+control with the skill readable began with `now_list_machines`, started and
+read semantic UI, then cross-checked processes; it used no direct probe or
+pixels. No runtime action or authority changed.
 
 ## BROKEN: Standard File dialogs expose buttons but not selectable file rows (2026-08-09, `codex/now-mcp-action-contracts`)
 

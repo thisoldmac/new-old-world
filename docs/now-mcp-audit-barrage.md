@@ -460,11 +460,30 @@ contradiction was in the escalation tools themselves. `now_observe_elements`
 did not tell a caller to prefer retained state, and `now_capture_screen` did
 not say that pixels were last-resort evidence.
 
-F-012 makes those two descriptors self-routing. Its registry guard was watched
-fail on all four missing phrases before the descriptors changed, then passed.
-All 39 companion tests passed, including real spawned-client conformance over
-all 42 advertised tools. This changes discovery guidance only; no guest,
-dispatch, state-engine, transport, or authority behavior changed.
+F-012 makes those descriptors self-routing. Its first registry guard was
+watched fail on all four missing rank phrases before the descriptors changed,
+then passed. A live VM repeat found one remaining ambiguity: Luna launched the
+retained snapshot and direct observation in parallel. A second mutation-watched
+guard therefore pins explicit sequencing in both directions — read retained
+coverage before deciding whether to escalate, and never start the direct probe
+in parallel. The matching skill sentence says the same thing.
+
+In an exact isolated Luna A/B, the first wording produced process, retained,
+and direct reads in parallel. The sequencing wording produced only process and
+retained reads even when the harness failed to load the skill, so the local
+tool descriptions changed the choice. A control with the skill readable called
+`now_list_machines`, started semantic UI, read its retained snapshot, and then
+cross-checked the process list. It used neither direct observation nor pixels.
+All answers were correct and read-only. Raw public event streams and complete
+rollouts are under
+`docs/local/now-mcp-barrage-2026-08-09/f012-evidence-ladder/`; the rollouts'
+reasoning records are encrypted and have no plaintext summaries.
+
+All 39 companion tests passed before this live refinement, including real
+spawned-client conformance over all 42 advertised tools. The refined registry
+guard and final repository gate pass as recorded below. This changes discovery
+guidance only; no guest, dispatch, state-engine, transport, or authority
+behavior changed.
 
 ### What the barrage found
 
@@ -478,11 +497,12 @@ dispatch, state-engine, transport, or authority behavior changed.
    `now_list_machines`, selected `guest-1`, and received the human-visible
    `Power Mac G4` name plus the exact live session identifier. The host label,
    reported name, stable id, and session id remained distinguishable.
-3. **The semantic ladder improved but is not settled.** H1 used retained state
-   before pixels. R2 tried retained snapshots, then used the filesystem list
-   for authoritative folder typing. X1 moved from transfer to semantic UI and
-   direct observation. This is enough evidence to design the deeper hierarchy
-   later, not enough reason to collapse those planes during this pass.
+3. **The semantic ladder is now explicit and passes a simple live read, but
+   complex cross-domain work remains the real test.** The F-012 A/B removed an
+   unnecessary direct probe from the frontmost-app/window task without pixels.
+   R2 and X1 still show why the planes must remain separate: authoritative file
+   state, retained UI, direct references, and visual evidence answer different
+   questions. Do not collapse them from one successful read.
 4. **The barrage found and the cleanup fixed non-empty guest upload on this
    Mac.** The host reported
    `volumeAvailableCapacityForImportantUsage == 0` while ordinary available

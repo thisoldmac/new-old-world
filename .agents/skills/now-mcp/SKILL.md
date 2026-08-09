@@ -39,7 +39,8 @@ Choose the highest semantic source that answers the question:
    `now_guest_files_*` read tools.
 2. Retained desktop/application state: start or inspect the semantic UI plane,
    then use `now_semantic_ui_snapshot`, `now_semantic_ui_find`, or
-   `now_semantic_ui_wait`.
+   `now_semantic_ui_wait`. Read the retained result before deciding whether to
+   continue; do not start targeted direct observation in parallel with it.
 3. Targeted direct observation: `now_observe_elements`, only when retained
    state is incomplete or an action requires a fresh opaque reference.
 4. Pixels: `now_capture_screen`, only when the requested fact is visual or the

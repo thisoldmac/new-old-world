@@ -104,6 +104,15 @@ final class HostProjectionRegistryTests: XCTestCase {
             direct.contains("now_semantic_ui_snapshot"), direct)
         XCTAssertTrue(
             direct.contains("retained state is incomplete"), direct)
+        XCTAssertTrue(
+            direct.contains("Do not call this in parallel"), direct)
+
+        let retained = MirrorSnapshotProjection.mcpDescriptor["description"]
+            as? String ?? ""
+        XCTAssertTrue(
+            retained.contains("now_observe_elements"), retained)
+        XCTAssertTrue(
+            retained.contains("before deciding whether to escalate"), retained)
 
         let pixels = CaptureScreenProjection.mcpDescriptor["description"]
             as? String ?? ""
