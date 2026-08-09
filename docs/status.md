@@ -223,6 +223,18 @@ says so at the point of claim rather than in a footnote.
   Existing item drag remains single-item even when several items are selected;
   grouped Finder drags and host context menus are later slices. These additions
   are tested, not metal-verified.
+
+  **Correction 2026-08-09:** host emulation owns Finder interiors, not Finder
+  windows. The observed guest window remains the only shell and supplies its
+  title, rectangle, z-order, visibility and chrome; the host swaps in semantic
+  items and interaction state. Position/size synchronization also follows
+  guest open/close so it cannot leave a second window set. Desktop emulation is
+  an independent toggle. When off, the live Finder roster and positions are
+  preserved; when on, the bounded Desktop Folder catalog is laid out locally.
+  The roster now explicitly requests disks and Trash with live bounds, merges
+  rather than replaces structural system items, and reapplies cached folder
+  rosters after the state-engine projection. These corrections are host-tested
+  and still await a Wallstreet/PB1400c run.
 - **The guest is woken by its socket, not by a timer expiring**
   (2026-08-06, emulator-verified; **a metal pass is owed and this is the
   change most likely to behave differently there**). A request arriving

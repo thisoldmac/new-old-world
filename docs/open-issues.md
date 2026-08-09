@@ -214,16 +214,14 @@ not a hard-coded pack path; an environment override remains authoritative and
 picker changes take effect at next launch because art is process-cached. Pack
 extraction and arbitrary-path selection remain subsequent work.
 
-**UPDATE 2026-08-08, independent host Finder windows.** The persisted host
-toggle **Emulate Finder Windows** now creates a second ownership mode rather
-than another cache over the guest Finder. When enabled, guest Finder folder
-windows are removed from the projection. The host owns their lifecycle,
-frontness, geometry, icon/list/small-icon layout, sort field and direction,
-selection, marquee, rename and scrolling. It lists the root and each folder
-through the existing Files contract; double-clicking a folder creates another
-host window and emits `file.list`, not a `command.request` that opens or fronts
-the guest Finder. File launches, document opens, renames and moves still cross
-the wire because they change the Macintosh, while presentation changes do not.
+**UPDATE 2026-08-09, corrected Finder ownership boundary.** The persisted host
+toggle is **Emulate Finder Window Interiors**. It does not create a second set
+of windows: each semantic interior is joined to the exact guest Finder window,
+whose title, rectangle, stacking, visibility and chrome remain authoritative.
+The host owns icon/list/small-icon layout, sort, selection, marquee, rename and
+scrolling inside that shell. It lists only each open folder through the Files
+contract. File launches, document opens, renames and moves still cross the wire
+because they change the Macintosh, while interior presentation changes do not.
 
 The mode is bounded by the configured guest share. **Share entire boot volume**
 makes that share the disk root, which is the expected whole-disk Finder setup;
@@ -258,14 +256,18 @@ joined by exact window identity plus semantic HFS path. Either axis can be
 disabled independently; this is diagnostic control, not a final product-mode
 decision. It is Tested and not metal-verified.
 
-Desktop ownership is no longer merely stated in prose. While Mirror runs, both
-Finder modes page the configured share's `Desktop Folder` once and render those
-catalog entries plus the shared volume as host semantic icons. Guest-follow
-folder windows retain the Finder's exact live roster when available; if that
+Desktop ownership is a separate **Emulate Desktop** switch. Off means the guest
+Finder roster and its exact positions are projected; on means the host lays out
+the bounded `Desktop Folder` catalog. The Finder roster now explicitly appends
+`disks` and `trash` with their live bounds because `every item of desktop` does
+not reliably enumerate those system objects. Enrichment merges instead of
+replacing structural disk/trash rows. Switching the desktop mode invalidates
+only that catalog, so the next projection must come from the newly selected
+owner. Guest-follow folder windows retain Finder's exact live roster; if that
 roster is absent but its semantic path is known, a bounded `file.list` of that
-one open directory supplies fallback icons. Neither path walks descendants.
-The prior Finder/OSA roster remains useful for exact guest positions and view
-state, but its failure no longer makes a known directory visually empty.
+one directory supplies fallback icons. The current icon cache is reapplied
+after state-engine projection so a one-complement-behind snapshot cannot blank
+the window. Neither path walks descendants.
 
 The host no longer persists Mirror's run intent across app launches. It deletes
 the retired preference and starts stopped; only `--open-mirror` or an explicit
@@ -284,12 +286,14 @@ script yields a live guest window reference is retained and dispatched after
 the exact identity/path join; geometry commands are serialized rather than
 raced into the guest's one act cell.
 
-Desktop state is invalidated on every mode transition and repaged in both
-modes. The bounded `Desktop Folder` catalog supplies files, the configured
-share supplies a fallback root-volume icon, and every disk the guest actually
-reported is retained beside it rather than erased by host projection. The
-Finder-card Refresh invalidates semantic catalogs without closing host-owned
-windows. The top-level **Rebuild State** is deliberately destructive: it
+Finder-window interior and desktop ownership no longer invalidate one another.
+Changing **Emulate Desktop** clears and rebuilds only the desktop catalog;
+changing **Emulate Finder Window Interiors** rebuilds only the open-window
+semantic state and rejoins it to the observed guest shells. With position/size
+synchronization enabled, that reconciliation also adopts guest opens/closes,
+so geometry synchronization cannot leave a parallel host window set behind.
+The Finder-card Refresh invalidates semantic catalogs without closing the
+observed guest windows. The top-level **Rebuild State** is deliberately destructive: it
 invalidates any in-flight generation, clears the reducer snapshot and bounded
 history, content state, displayed scene, icon/visibility/Finder caches and
 host Finder windows, then begins a new observation. It preserves the operation

@@ -293,12 +293,19 @@ final class HostFinderSessionTests: XCTestCase {
             guest, path: "Desktop Folder",
             entries: [entry("Read Me", kind: "file")])
         try await waitUntil("desktop projection") {
-            let names = session.project(
-                self.scene(desktopItems: [external])).desktopItems?.map(\.name)
+            let projected = session.project(
+                self.scene(desktopItems: [external])).desktopItems
+            let names = projected?.map(\.name)
             return names?.contains("Macintosh HD") == true
                 && names?.contains("External") == true
                 && names?.contains("Read Me") == true
+                && projected?.first(where: { $0.name == "External" })?.x != 500
         }
+
+        session.emulateDesktop = false
+        XCTAssertEqual(session.project(
+            scene(desktopItems: [external])).desktopItems?.first?.x, 500,
+            "guest desktop mode must restore Finder's exact icon position")
     }
 
     func testFinderRosterEnrichmentCannotEraseGuestVolumesOrTrash() {

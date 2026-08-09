@@ -208,15 +208,28 @@ final class HostFinderSession {
     func project(_ base: Scene) -> Scene {
         var result = base
         if emulateDesktop, desktopLoaded, let screen {
-            let systemItems = (base.desktopItems ?? []).filter {
+            let guestSystemItems = (base.desktopItems ?? []).filter {
                 $0.kind == "disk" || $0.kind == "trash"
             }
-            let local = HostFinderDomain.projectedDesktop(
+            var local = HostFinderDomain.projectedDesktop(
                 desktopEntries, rootLabel: desktopRootLabel, screen: screen)
-            let systemNames = Set(systemItems.map(\.name))
-            result.desktopItems = systemItems + local.filter {
-                !systemNames.contains($0.name)
+            let localNames = Set(local.map(\.name))
+            let extras = guestSystemItems.filter {
+                !localNames.contains($0.name)
+            }.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name)
+                    == .orderedAscending
             }
+            let right = max(8, screen.w - 58)
+            for (index, var item) in extras.enumerated() {
+                /* Desktop emulation owns placement too. Keeping Finder's
+                   measured disk coordinates here made this toggle appear to
+                   do nothing and left the desktop with two geometry owners. */
+                item.x = max(8, right - (index + 1) * 84)
+                item.y = item.kind == "trash" ? max(82, screen.h - 64) : 14
+                local.append(item)
+            }
+            result.desktopItems = local
         }
         guard enabled else {
             result.windows = result.windows.map(projectGuestFinderFallback)
