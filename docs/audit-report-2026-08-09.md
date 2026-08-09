@@ -201,7 +201,8 @@ facade from prose-byte counts alone.
 - **Resolution:** the launch descriptor now says to pass the exact inventory
   `name`, not its `path`, and explains that opaque references come only from
   an ambiguous-name refusal. The registry guard was watched fail on all four
-  missing handoff phrases before the descriptor changed, then passed.
+  missing handoff phrases before the descriptor changed, then passed. All
+  eight registry tests and the final repository gate pass.
 - **Blast radius:** one descriptor and one registry guard; no arguments,
   dispatch, guest behavior, or compatibility changes.
 

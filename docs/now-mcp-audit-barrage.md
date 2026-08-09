@@ -237,6 +237,8 @@ GPT-5.4-mini, local `Qwen3.6-27B-MLX-8bit`, and local
 token windows; their persisted oMLX caps were raised from the 32,768 default to
 98,304 for this panel. Sampling, thinking, output, and tool-result settings
 remain unchanged. Runs are serial so every actor sees the same guest state.
+Both caps were restored to 32,768 and the loaded model was unloaded when the
+local lane was benched.
 
 The fixed tasks are:
 
@@ -693,7 +695,8 @@ post-barrage design pass. The action grammar no longer needs to wait for it.
 
 At closeout, `scripts/test-all` passed end to end on 2026-08-09 and was rerun
 successfully after the routing-skill, semantic-action-contract, and
-evidence-ladder follow-ups:
+evidence-ladder follow-ups, then again after the cross-model panel and F-013
+launch-handoff cleanup:
 
 - staged-image discipline: 28 passed;
 - native guest tests: 149 passed;
