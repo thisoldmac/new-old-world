@@ -159,6 +159,10 @@ final class NOWAgentCompanionTests: XCTestCase {
                 "uri": NOWMCPServer.firstContactResourceURI,
                 "extra": true,
             ]),
+            ("resources/read", [
+                "uri": NOWMCPServer.firstContactResourceURI,
+                "_meta": "not-an-object",
+            ]),
             ("prompts/get", ["name": "unknown"]),
             ("prompts/get", [
                 "name": NOWMCPServer.firstContactPromptName,

@@ -49,7 +49,14 @@ as the remaining modal-UI gap.
 The server now publishes initialize instructions, `now://agent/first-contact`,
 `start-with-now`, and `now_list_machines`. Controlled first contact improved;
 the later repo-scoped routing skill closes the client-selection half under
-F-005.
+F-005. A later Qwen3.6 client replay found one protocol interoperability defect
+in that fix: Codex includes `_meta.progressToken` in `resources/read`, while
+NOW accepted only the `uri` member and returned `-32602 Unknown NOW resource`
+for the resource it had just advertised. A spawned-client regression was
+watched fail on those exact parameters. NOW now accepts dictionary-valued MCP
+`_meta` while continuing to reject unknown routing members and malformed
+metadata. The identical Qwen3.6 prompt then read the guide on its first call
+and correctly stated that `now_list_machines` is the first workflow step.
 
 ### [F-002] Human Mirror terminology leaked into the agent model (severity: medium, effort: S) — resolved
 

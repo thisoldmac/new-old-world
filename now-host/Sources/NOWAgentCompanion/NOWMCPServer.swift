@@ -183,7 +183,9 @@ actor NOWMCPServer {
     private func readResource(_ request: [String: Any], id: Any) -> Data {
         guard let params = request["params"] as? [String: Any],
               params["uri"] as? String == Self.firstContactResourceURI,
-              Set(params.keys).isSubset(of: ["uri"]) else {
+              Set(params.keys).isSubset(of: ["uri", "_meta"]),
+              params["_meta"] == nil
+                || params["_meta"] is [String: Any] else {
             return errorResponse(id: id, code: -32602,
                                  message: "Unknown NOW resource")
         }

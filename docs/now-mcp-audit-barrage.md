@@ -202,6 +202,32 @@ make arbitrary Macintosh tasks choose NOW automatically. In this client,
 resources and prompts are opt-in discovery surfaces; the server instructions
 were insufficient to overcome task-plane ambiguity by themselves.
 
+### Cross-model first-contact regression
+
+Before the cross-model VM panel, an isolated local
+`Qwen3.6-27B-MLX-8bit` probe found a defect in the advertised first-contact
+resource. Codex sent the exact listed URI with normal MCP request metadata:
+
+```json
+{"uri":"now://agent/first-contact","_meta":{"progressToken":1}}
+```
+
+NOW's resource handler treated `_meta` as an unknown routing member and
+returned `-32602 Unknown NOW resource`. Qwen listed the resource, retried the
+exact URI, and then explored several wrong variants before stopping: 82,217
+input tokens and five failed reads for a guide the server claimed to serve.
+This was a server interoperability failure first and a model stop-discipline
+signal second.
+
+A real spawned-client regression was watched fail with the same parameters.
+The bounded fix permits dictionary-valued MCP `_meta` on `resources/read` and
+still rejects unknown members or malformed metadata. Replaying the identical
+Qwen prompt against the rebuilt companion succeeded on its first resource
+call, correctly returned `now_list_machines` as the first workflow step, and
+used 16,514 input tokens. This is local client/server evidence only, not a VM
+behavior score. Raw event streams and the captured stdio requests remain under
+`docs/local/now-mcp-barrage-2026-08-09/cross-model/`.
+
 ## Comparative surfaces
 
 ### TBT classic / 0.6.4 line

@@ -111,6 +111,33 @@ final class MCPClientConformanceTests: XCTestCase {
         }
     }
 
+    /// Real MCP clients may attach request metadata such as a progress token.
+    /// The resource URI still owns routing; protocol metadata must not turn an
+    /// advertised first-contact resource into an "Unknown NOW resource".
+    func testAdvertisedFirstContactResourceAcceptsClientMetadata() throws {
+        let client = try MCPClient(executable: Self.companionExecutable(),
+                                   environment: Self.environment())
+        defer { client.shutDown() }
+
+        _ = try client.handshake()
+        let listed = try client.request("resources/list")
+        let result = try XCTUnwrap(listed["result"] as? [String: Any])
+        let resources = try XCTUnwrap(
+            result["resources"] as? [[String: Any]])
+        let uri = try XCTUnwrap(resources.first?["uri"] as? String)
+
+        let read = try client.request("resources/read", params: [
+            "uri": uri,
+            "_meta": ["progressToken": 1],
+        ])
+        let readResult = try XCTUnwrap(read["result"] as? [String: Any],
+                                       "resources/read failed: \(read)")
+        let contents = try XCTUnwrap(
+            readResult["contents"] as? [[String: Any]])
+        let text = try XCTUnwrap(contents.first?["text"] as? String)
+        XCTAssertTrue(text.contains("now_list_machines"))
+    }
+
     func testUploadRecipesShareOneFreshBoundedScratchDestination() {
         let first = MCPConformanceRecipes.Context()
         let second = MCPConformanceRecipes.Context()
