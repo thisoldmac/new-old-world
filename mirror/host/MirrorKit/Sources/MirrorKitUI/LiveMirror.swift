@@ -271,7 +271,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                         point, scene: scene, size: geo.size)
                                     else { return }
                                     handleFinderAwareClick(
-                                        scene, at: guest, count: 1, mods: mods)
+                                        scene, at: guest, count: 1, mods: mods,
+                                        secondary: true)
                                 },
                                 onScroll: { point, notches in
                                     guard let guest = guestPoint(
@@ -646,7 +647,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// well would reproduce the "that window is already front" fall-through.
     private func handleFinderAwareClick(
         _ scene: MirrorKit.Scene, at point: (x: Int, y: Int),
-        count: Int, mods: Int
+        count: Int, mods: Int, secondary: Bool = false
     ) {
         let target = HitTester.hitTest(scene, x: point.x, y: point.y)
         if case .menuTitle(let index) = target {
@@ -655,11 +656,25 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         }
         if case .windowItem(let id, let name, _, _) = target,
            let window = scene.windows.first(where: { $0.id == id }) {
-            let mode: FinderInteriorState.SelectionMode
-            if mods & KeyCaptureView.Mods.control != 0 { mode = .toggle }
-            else if mods & KeyCaptureView.Mods.shift != 0 { mode = .range }
-            else { mode = .replace }
-            let names = finderInterior.select(name, in: window, mode: mode)
+            let contextual = FinderItems.isHostOwnedWindow(window)
+                && (secondary || mods & KeyCaptureView.Mods.control != 0)
+            let names: Set<String>
+            if contextual, finderInterior.isSelected(name, in: window) {
+                /* A contextual click never toggles an already-selected item
+                   out of a multi-selection. On a new item it first makes
+                   that item the selection, matching the Finder's context
+                   target rather than manufacturing another selected row. */
+                names = finderInterior.selectedNames(in: window)
+            } else {
+                let mode: FinderInteriorState.SelectionMode
+                if contextual { mode = .replace }
+                else if mods & KeyCaptureView.Mods.control != 0 {
+                    mode = .toggle
+                } else if mods & KeyCaptureView.Mods.shift != 0 {
+                    mode = .range
+                } else { mode = .replace }
+                names = finderInterior.select(name, in: window, mode: mode)
+            }
             sendFinderSelection(names, in: window)
             if count >= 2 {
                 controller.finderInteractionDriver?.openFinderItems(

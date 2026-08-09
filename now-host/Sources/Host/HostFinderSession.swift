@@ -23,6 +23,7 @@ final class HostFinderSession {
     private var generation = 0
     private var dragSubject: DragTargeting.Subject?
     private(set) var active = true
+    private var fileWatch: HostEventSubscription?
 
     var currentDragContainer: DragTargeting.Container? {
         dragSubject?.container
@@ -47,6 +48,12 @@ final class HostFinderSession {
         self.listener = listener
         self.defaults = defaults
         enabled = defaults.bool(forKey: Self.preferenceKey)
+        fileWatch = listener.events.subscribe { [weak self] event in
+            guard let self, self.enabled else { return }
+            if case .fileTreeChanged(_, let side, _) = event, side == .guest {
+                self.refresh()
+            }
+        }
     }
 
     func observe(screen: Scene.ScreenSize) {
@@ -100,7 +107,8 @@ final class HostFinderSession {
                 }
                 result.processes = processes
             }
-            result.menubar = HostFinderDomain.finderMenubar(from: base.menubar)
+            result.menubar = HostFinderDomain.finderMenubar(
+                from: base.menubar, window: windows.first)
         } else if !windows.isEmpty {
             let offset = result.windows.count
             let projected = windows.enumerated().map { pair -> Scene.Window in

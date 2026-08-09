@@ -126,18 +126,23 @@ enum HostFinderDomain {
             display: nil)
     }
 
-    static func finderMenubar(from base: Scene.Menubar?) -> Scene.Menubar {
+    static func finderMenubar(from base: Scene.Menubar?, window: Window? = nil)
+        -> Scene.Menubar {
         let apple = base?.menus.first(where: \.apple)
             ?? .init(title: "", apple: true, left: 0, id: 1, items: [])
         let viewItems = [
-            Scene.MenuItem(title: "as Icons", index: 1),
-            .init(title: "as Buttons", index: 2),
-            .init(title: "as List", index: 3),
+            Scene.MenuItem(title: "as Icons", index: 1,
+                           mark: window?.view == .icon),
+            .init(title: "as Buttons", index: 2,
+                  mark: window?.view == .smallIcon),
+            .init(title: "as List", index: 3,
+                  mark: window?.view == .name),
             .init(title: "", index: 4, separator: true, enabled: false),
-            .init(title: "By Name", index: 5),
-            .init(title: "By Date Modified", index: 6),
-            .init(title: "By Size", index: 7),
-            .init(title: "By Kind", index: 8),
+            .init(title: "By Name", index: 5, mark: window?.sort == .name),
+            .init(title: "By Date Modified", index: 6,
+                  mark: window?.sort == .modified),
+            .init(title: "By Size", index: 7, mark: window?.sort == .size),
+            .init(title: "By Kind", index: 8, mark: window?.sort == .kind),
         ]
         let app = base?.menus.first(where: { $0.id == -16489 })
             ?? .init(title: "", apple: false, left: 0, id: -16489, items: [])
