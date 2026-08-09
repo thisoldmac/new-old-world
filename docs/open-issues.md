@@ -40,6 +40,18 @@ explicit envelope fallback. Unknown routes and mutation methods are refused;
 quit stops the listener. The product and server contract are in
 [onboarding.md](onboarding.md).
 
+**Updated 2026-08-09:** the original image-sizing rule admitted both a native
+`CarbonLib.bin` and its matching StuffIt archive, then reserved twice the
+combined package bytes plus 4 MiB. That produced a 19 MiB uncompressed disk
+for about 5.4 MiB of installed files; none of those extra bytes were Xcode or
+Swift content. Known dependency representations are now deduplicated with the
+native file preferred, and the image is payload plus 1 MiB, rounded up with an
+8 MiB floor. The onboarding sheet now makes each optional installed item a
+selection, explicitly rebuilds one cached image, and shows the live image's
+name, disk size, transfer size, time and contents. Selection changes are
+reported as pending until a successful rebuild replaces the bytes served by
+both setup-image routes.
+
 The focused host tests pass. Two use the real temporary listener over loopback
 to fetch the page, application and preferences, and to exercise unknown-route
 and POST refusal. The preference test separately pins the MacBinary header,
@@ -56,6 +68,9 @@ Finder type, bypassed checksum comparison, and restored StuffIt archive link
 each produced the named failure. The new setup-image integration test builds
 and mounts the actual filesystem, then verifies both forks and Finder metadata;
 changing the NDIF Finder type from `rohd` to `dImg` produced its named failure.
+The 8 MiB capacity assertion, native-over-archive choice, and selection-to-
+served-image test were separately watched fail against mutations to the image
+floor, representation rank, and selection setter.
 
 `scripts/test-all` exits 0 after the HFS/NDIF checkpoint: staged-image
 discipline 28/28,

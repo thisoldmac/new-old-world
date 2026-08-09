@@ -4,7 +4,8 @@ import Foundation
 /// redirects, compression or chunked transfer. Old browsers only need links.
 enum OnboardingPage {
     static func render(host: String, wirePort: UInt16,
-                       assets: OnboardingAssetSnapshot) -> String {
+                       assets: OnboardingAssetSnapshot,
+                       setupImage: OnboardingSetupImage? = nil) -> String {
         var downloads = ""
         if assets.application != nil {
             downloads += item("/now/application.bin", "New Old World")
@@ -36,6 +37,22 @@ enum OnboardingPage {
                                  dependency.fileName)
         }
 
+        let imageDetails: String
+        if let setupImage {
+            let size = ByteCountFormatter.string(
+                fromByteCount: setupImage.transferByteCount,
+                countStyle: .file)
+            imageDetails = "<p><b>Served image:</b> "
+                + "\(escape(setupImage.fileName)), \(escape(size)).<br>"
+                + "<b>Contains:</b> "
+                + escape(setupImage.includedItems.joined(separator: ", "))
+                + ".</p>"
+        } else {
+            imageDetails = "<p>The host is still preparing the install image. "
+                + "If the download is not ready, wait a moment and reload "
+                + "this page.</p>"
+        }
+
         return """
         <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
         <html>
@@ -45,6 +62,7 @@ enum OnboardingPage {
         <p>This page is coming from the modern Mac on your LAN.</p>
         <h2>Recommended</h2>
         <p><a href="/now/setup.img"><b>Download the complete setup disk</b></a></p>
+        \(imageDetails)
         <p>Your browser should decode the MacBinary transfer and leave a
         <b>New Old World Setup.img</b> file. Open that image with Disk Copy.
         It contains the native

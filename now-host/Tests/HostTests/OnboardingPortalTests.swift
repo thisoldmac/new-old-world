@@ -97,11 +97,86 @@ final class OnboardingPortalTests: XCTestCase {
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 405)
     }
 
+    func testSelectionsRebuildAndDescribeTheImageActuallyBeingServed()
+        async throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let dependencies = temporary.appendingPathComponent(
+            "Dependencies", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: dependencies, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try Data("app".utf8).write(to: temporary
+            .appendingPathComponent("New Old World.bin"))
+        try Data("ext".utf8).write(to: temporary
+            .appendingPathComponent("NOW Extension.bin"))
+        try Data("carbon".utf8).write(to: dependencies
+            .appendingPathComponent("CarbonLib.bin"))
+
+        let portal = OnboardingPortal(
+            catalog: OnboardingAssetCatalog(
+                roots: [temporary], writableRoot: temporary),
+            setupImageBuilder: { _, _, assets in
+                Data(("extension=\(assets.extensionComponent != nil);"
+                     + "dependencies=\(assets.dependencies.count)").utf8)
+            },
+            advertisedAddress: { "127.0.0.1" })
+        portal.start(wirePort: 5_250)
+        let endpoint = try await runningEndpoint(portal)
+        defer { portal.stop() }
+        let first = try await readyImage(portal)
+        XCTAssertEqual(first.includedItems,
+                       ["New Old World", "Host settings", "Read Me First",
+                        "NOW Extension", "CarbonLib 1.6.1"])
+
+        let extensionComponent = try XCTUnwrap(
+            portal.assets.extensionComponent)
+        let carbonLib = try XCTUnwrap(
+            OnboardingDependencyCatalog.carbonLib.installedAsset(
+                in: portal.assets))
+        portal.setSelected(false, asset: extensionComponent)
+        portal.setSelected(false, asset: carbonLib)
+        XCTAssertTrue(portal.hasPendingSetupImageChanges)
+        _ = try await portal.rebuildSetupImage()
+        XCTAssertFalse(portal.hasPendingSetupImageChanges)
+
+        let download = try await fetch(endpointURL(
+            endpoint, path: "/now/setup.img"))
+        XCTAssertEqual(String(data: download.data, encoding: .utf8),
+                       "extension=false;dependencies=0")
+        guard case .ready(let rebuilt) = portal.setupImageState else {
+            return XCTFail("the rebuilt image was not published")
+        }
+        XCTAssertEqual(rebuilt.includedItems,
+                       ["New Old World", "Host settings", "Read Me First"])
+        XCTAssertEqual(rebuilt.transferByteCount,
+                       Int64(download.data.count))
+
+        let page = try await fetch(try XCTUnwrap(endpoint.pageURL))
+        let html = try XCTUnwrap(String(data: page.data, encoding: .utf8))
+        XCTAssertTrue(html.contains("Served image:"))
+        XCTAssertTrue(html.contains("New Old World, Host settings, Read Me First"))
+        XCTAssertFalse(html.contains("Contains:</b> NOW Extension"))
+    }
+
     private func runningEndpoint(_ portal: OnboardingPortal) async throws
         -> OnboardingEndpoint {
         for _ in 0..<100 {
             if let endpoint = portal.endpoint { return endpoint }
             if case .failed(let message) = portal.state {
+                XCTFail(message)
+                throw TestError.portalFailed
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        throw TestError.timedOut
+    }
+
+    private func readyImage(_ portal: OnboardingPortal) async throws
+        -> OnboardingSetupImage {
+        for _ in 0..<100 {
+            if case .ready(let image) = portal.setupImageState { return image }
+            if case .failed(let message) = portal.setupImageState {
                 XCTFail(message)
                 throw TestError.portalFailed
             }

@@ -8,20 +8,26 @@ message, so it does not change `contract/asyncapi.yaml`.
 
 1. Open **Connections** in the host and choose **Set Up a New Mac…**.
 2. The host starts its configured NOW listener if necessary, then starts a
-   separate HTTP server on an available temporary port.
+   separate HTTP server on an available temporary port and builds the initial
+   install image.
 3. Connect the classic Mac to the same LAN. In its browser, open the exact
    `http://<address>:<temporary-port>/now` address shown by the host.
-4. Choose **Download the complete setup disk**. A MacBinary-aware browser
+4. Installed package rows are checked by default. Uncheck any optional item
+   that should not be on the disk, then choose **Rebuild Install Image**. The
+   Install Image card shows the filename, disk and transfer sizes, build time,
+   and the exact contents currently served. Changed selections do not replace
+   the live download until the rebuild succeeds.
+5. Choose **Download the complete setup disk**. A MacBinary-aware browser
    leaves `New Old World Setup.img`; open it with the system's Disk Copy and
    copy the native files from the mounted **NOW Setup** volume. If the browser
    leaves a `.bin`, enable its automatic MacBinary decoding and try again.
-5. Put `New Old World Prefs` from the setup disk in
+6. Put `New Old World Prefs` from the setup disk in
    `System Folder:Preferences` before launching New Old World.
-6. Launch New Old World. The preference file already names the host interface
+7. Launch New Old World. The preference file already names the host interface
    that served the download and the NOW listener port shown in Connections.
    Setup is complete when the guest's real handshake puts the Mac under
    **Active**, not when the browser finishes a download.
-7. Stop onboarding from the sheet or the Connections page.
+8. Stop onboarding from the sheet or the Connections page.
 
 The recommended download is one dynamically generated HFS Plus volume inside
 an uncompressed NDIF image, the disk-image format read by the system Disk Copy
@@ -34,11 +40,23 @@ fallback path. This is the unavoidable first bootstrap boundary: HTTP itself
 cannot create a Finder type or resource fork on the receiving HFS volume.
 
 The setup volume contains the application, generated preferences, optional
-extension and prepared dependencies as native classic files. The host decodes
-their MacBinary envelopes while constructing the HFS Plus filesystem, so no
-archive or fork-restoration utility is required on the guest after Disk Copy
-mounts it. **Create Setup Disk…** in the host sheet saves the complete image as
-`New Old World Setup.img.bin` for a separate MacBinary-preserving transfer.
+extension and whichever prepared dependencies are selected, as native classic
+files. New Old World itself is required; every optional installed row is a
+checkbox. The host decodes their MacBinary envelopes while constructing the
+HFS Plus filesystem, so no archive or fork-restoration utility is required on
+the guest after Disk Copy mounts it. **Save a Copy…** saves the exact currently
+served image as `New Old World Setup.img.bin` for a separate
+MacBinary-preserving transfer.
+
+The builder keeps one completed image in memory. `/now/setup.img` and its
+explicit `.bin` fallback serve those exact cached bytes; changing a checkbox
+marks the image as having pending changes, and **Rebuild Install Image** swaps
+in the replacement only after it finishes. For the shipped application,
+extension and native CarbonLib test package, the raw HFS disk is 8 MiB rather
+than the former 19 MiB. Larger selections grow in one-MiB steps with one MiB
+of filesystem headroom. When native CarbonLib and its StuffIt download are
+both present, the native file wins and the archive is not included a second
+time.
 
 The NOW Extension is optional. Put its decoded file in
 `System Folder:Extensions` and restart the classic Mac. The application works
@@ -72,10 +90,11 @@ names are:
 Set `NOW_ONBOARDING_ASSETS` to an alternate root for a development or test
 run. When it is set, that root is the only package store.
 
-Dependencies are explicit rows rather than one aggregate status. A missing
-known dependency has **Source…** and **Get…** buttons. **Get…** downloads into
-the local `Dependencies/` folder; a package is admitted only if its bytes
-match the catalogued checksum.
+Dependencies are explicit, selectable rows rather than one aggregate status.
+A missing known dependency has **Source…** and **Get…** buttons. **Get…**
+downloads into the local `Dependencies/` folder; a package is admitted only if
+its bytes match the catalogued checksum. A newly acquired dependency is
+selected for the next build by default.
 
 The repository does not redistribute CarbonLib. Its catalog entry downloads
 the 1.6.1 StuffIt archive from the Macintosh Garden mirror and requires SHA-1
@@ -149,10 +168,12 @@ emulator interfaces are not guessed a second time after the browser arrives.
 The host tests exercise the real temporary listener over loopback, both setup
 image routes and their headers, application and generated-settings downloads,
 method and unknown-route refusals, package precedence, explicit dependency
-enumeration, checksum refusal, and MacBinary fork boundaries plus preference
-bytes. A macOS integration test builds the actual HFS Plus volume, decodes the
-NDIF's MacBinary envelope, mounts the raw disk read-only, and verifies native
-application and extension resource forks plus preferences and instructions.
+enumeration, selection and cached-image replacement, checksum refusal, and
+MacBinary fork boundaries plus preference bytes. A macOS integration test
+builds the actual 8 MiB HFS Plus volume, decodes the NDIF's MacBinary envelope,
+mounts the raw disk read-only, and verifies native application, extension and
+CarbonLib resource forks plus preferences and instructions. It also proves
+that a native CarbonLib supersedes the matching StuffIt representation.
 
 Separately, the generated NDIF image was transferred into a Mac OS 9.1 QEMU
 guest and mounted by its stock Disk Copy 6.3.3. That proves the carrier and its

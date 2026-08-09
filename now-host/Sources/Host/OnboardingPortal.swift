@@ -12,6 +12,14 @@ struct OnboardingEndpoint: Equatable {
     }
 }
 
+struct OnboardingSetupImage: Equatable {
+    let fileName: String
+    let transferByteCount: Int64
+    let diskByteCount: Int64
+    let includedItems: [String]
+    let builtAt: Date
+}
+
 /// A temporary, fixed-route HTTP server for getting the PPC guest onto a
 /// LAN. It is intentionally not a general web server: GET/HEAD only, one
 /// page, generated settings, and files already admitted by the catalog.
@@ -32,6 +40,13 @@ final class OnboardingPortal: ObservableObject {
         case failed(String)
     }
 
+    enum SetupImageState: Equatable {
+        case notBuilt
+        case building
+        case ready(OnboardingSetupImage)
+        case failed(String)
+    }
+
     enum SetupImageError: LocalizedError {
         case notRunning
 
@@ -45,6 +60,8 @@ final class OnboardingPortal: ObservableObject {
     @Published private(set) var assets: OnboardingAssetSnapshot = .empty
     @Published private(set) var dependencyAcquisitions:
         [String: DependencyAcquisitionState] = [:]
+    @Published private(set) var selectedAssetIDs: Set<String> = []
+    @Published private(set) var setupImageState: SetupImageState = .notBuilt
 
     private let catalog: OnboardingAssetCatalog
     private let dependencyAcquirer: OnboardingDependencyAcquirer
@@ -53,6 +70,9 @@ final class OnboardingPortal: ObservableObject {
     private var listener: NWListener?
     private var generation = 0
     private var wirePort: UInt16 = SettingsModel.defaultPort
+    private var knownAssetIDs: Set<String> = []
+    private var setupImageData: Data?
+    private var setupImageSelection: Set<String> = []
 
     init(catalog: OnboardingAssetCatalog = .live(),
          dependencyAcquirer: OnboardingDependencyAcquirer? = nil,
@@ -83,6 +103,9 @@ final class OnboardingPortal: ObservableObject {
         }
         stop()
         self.wirePort = wirePort
+        setupImageData = nil
+        setupImageSelection = []
+        setupImageState = .notBuilt
         refreshAssets()
         state = .starting
         generation += 1
@@ -126,6 +149,38 @@ final class OnboardingPortal: ObservableObject {
 
     func refreshAssets() {
         assets = catalog.snapshot()
+        let available = selectableAssets.map(\.id)
+        let availableIDs = Set(available)
+        selectedAssetIDs.formIntersection(availableIDs)
+        selectedAssetIDs.formUnion(availableIDs.subtracting(knownAssetIDs))
+        if let application = assets.application {
+            selectedAssetIDs.insert(application.id)
+        }
+        knownAssetIDs = availableIDs
+    }
+
+    var selectableAssets: [OnboardingAsset] {
+        [assets.application, assets.extensionComponent].compactMap { $0 }
+            + OnboardingDependencyCatalog.setupAssets(in: assets)
+    }
+
+    var hasPendingSetupImageChanges: Bool {
+        setupImageData != nil && setupImageSelection != selectedAssetIDs
+    }
+
+    func isSelected(_ asset: OnboardingAsset) -> Bool {
+        selectedAssetIDs.contains(asset.id)
+    }
+
+    func setSelected(_ selected: Bool, asset: OnboardingAsset) {
+        if asset.kind == .application { return }
+        var selection = selectedAssetIDs
+        if selected {
+            selection.insert(asset.id)
+        } else {
+            selection.remove(asset.id)
+        }
+        selectedAssetIDs = selection
     }
 
     func preparePackagesFolder() throws -> URL {
@@ -151,11 +206,62 @@ final class OnboardingPortal: ObservableObject {
         }
     }
 
-    func makeSetupImage() async throws -> Data {
+    @discardableResult
+    func rebuildSetupImage() async throws -> OnboardingSetupImage {
         guard let endpoint else { throw SetupImageError.notRunning }
         refreshAssets()
-        return try await setupImageBuilder(
-            endpoint.host, endpoint.wirePort, assets)
+        setupImageState = .building
+        do {
+            let selection = selectedAssetIDs
+            let selected = selectedAssets(selection: selection)
+            let image = try await setupImageBuilder(
+                endpoint.host, endpoint.wirePort, selected)
+            let summary = setupImageSummary(image, assets: selected)
+            setupImageData = image
+            setupImageSelection = selection
+            setupImageState = .ready(summary)
+            return summary
+        } catch {
+            setupImageState = .failed(error.localizedDescription)
+            throw error
+        }
+    }
+
+    func currentSetupImage() -> Data? {
+        setupImageData
+    }
+
+    private func selectedAssets(selection: Set<String>)
+        -> OnboardingAssetSnapshot {
+        OnboardingAssetSnapshot(
+            application: assets.application.flatMap {
+                selection.contains($0.id) ? $0 : nil
+            },
+            extensionComponent: assets.extensionComponent.flatMap {
+                selection.contains($0.id) ? $0 : nil
+            },
+            dependencies: assets.dependencies.filter {
+                selection.contains($0.id)
+            })
+    }
+
+    private func setupImageSummary(_ image: Data,
+                                   assets: OnboardingAssetSnapshot)
+        -> OnboardingSetupImage {
+        let diskBytes = (try? MacBinaryFile.decode(image))
+            .map { Int64($0.dataFork.count) } ?? 0
+        var items = ["New Old World", "Host settings", "Read Me First"]
+        if assets.extensionComponent != nil { items.append("NOW Extension") }
+        items += OnboardingDependencyCatalog.setupAssets(in: assets).map {
+            asset in
+            OnboardingDependencyCatalog.all.first(where: { dependency in
+                dependency.matches(asset)
+            })?.displayName ?? asset.fileName
+        }
+        return OnboardingSetupImage(
+            fileName: ClassicSetupImageBuilder.classicImageName,
+            transferByteCount: Int64(image.count), diskByteCount: diskBytes,
+            includedItems: items, builtAt: Date())
     }
 
     private func listenerStateChanged(_ value: NWListener.State,
@@ -175,6 +281,9 @@ final class OnboardingPortal: ObservableObject {
             }
             state = .running(OnboardingEndpoint(
                 host: host, httpPort: port, wirePort: wirePort))
+            Task { @MainActor [weak self] in
+                try? await self?.rebuildSetupImage()
+            }
         case .failed(let error):
             self.listener = nil
             state = .failed("Onboarding stopped: "
@@ -267,7 +376,7 @@ final class OnboardingPortal: ObservableObject {
                     return
                 }
                 let response = await self.setupImageResponse(
-                    host: localHost, envelopeFallback: path.hasSuffix(".bin"))
+                    envelopeFallback: path.hasSuffix(".bin"))
                 self.send(response, headOnly: method == "HEAD",
                           on: connection)
             }
@@ -277,11 +386,25 @@ final class OnboardingPortal: ObservableObject {
              headOnly: method == "HEAD", on: connection)
     }
 
-    private func setupImageResponse(host: String,
-                                    envelopeFallback: Bool) async
+    private func setupImageResponse(envelopeFallback: Bool) async
         -> HTTPResponse {
         do {
-            let image = try await setupImageBuilder(host, wirePort, assets)
+            let image: Data
+            if let cached = setupImageData {
+                image = cached
+            } else if case .building = setupImageState {
+                return .plain(
+                    status: 503, reason: "Service Unavailable",
+                    text: "The install image is still being built. "
+                        + "Try the download again in a moment.\r\n",
+                    extraHeaders: ["Retry-After: 2"])
+            } else {
+                _ = try await rebuildSetupImage()
+                guard let built = setupImageData else {
+                    throw SetupImageError.notRunning
+                }
+                image = built
+            }
             if envelopeFallback {
                 return .download(
                     data: image,
@@ -301,9 +424,16 @@ final class OnboardingPortal: ObservableObject {
         refreshAssets()
         switch path {
         case "/", "/now", "/now/":
+            let setupImage: OnboardingSetupImage?
+            if case .ready(let image) = setupImageState {
+                setupImage = image
+            } else {
+                setupImage = nil
+            }
             let page = OnboardingPage.render(host: host,
                                              wirePort: wirePort,
-                                             assets: assets)
+                                             assets: assets,
+                                             setupImage: setupImage)
             return .data(status: 200, reason: "OK",
                          contentType: "text/html; charset=utf-8",
                          data: Data(page.utf8))

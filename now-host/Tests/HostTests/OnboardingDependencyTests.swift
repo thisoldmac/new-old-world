@@ -28,6 +28,32 @@ final class OnboardingDependencyTests: XCTestCase {
             in: snapshot).map(\.fileName), ["StuffIt Expander 5.5.bin"])
     }
 
+    func testNativeKnownDependencyReplacesItsArchiveRepresentation() throws {
+        let temporary = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let dependencies = temporary.appendingPathComponent(
+            "Dependencies", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: dependencies, withIntermediateDirectories: true)
+        try Data("native".utf8).write(to: dependencies
+            .appendingPathComponent("CarbonLib.bin"))
+        try Data("archive".utf8).write(to: dependencies
+            .appendingPathComponent("CarbonLib_161.sit.bin"))
+        try Data("other".utf8).write(to: dependencies
+            .appendingPathComponent("Other Package.bin"))
+
+        let snapshot = OnboardingAssetCatalog(
+            roots: [temporary], writableRoot: temporary).snapshot()
+
+        XCTAssertEqual(OnboardingDependencyCatalog.carbonLib
+            .installedAsset(in: snapshot)?.fileName, "CarbonLib.bin")
+        XCTAssertEqual(OnboardingDependencyCatalog.additionalAssets(
+            in: snapshot).map(\.fileName), ["Other Package.bin"])
+        XCTAssertEqual(OnboardingDependencyCatalog.setupAssets(
+            in: snapshot).map(\.fileName),
+            ["CarbonLib.bin", "Other Package.bin"])
+    }
+
     func testAcquisitionVerifiesThenWrapsStuffItInMacBinary() async throws {
         let temporary = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temporary) }

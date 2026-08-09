@@ -6,7 +6,6 @@ struct OnboardingSheet: View {
     let wirePort: UInt16
     @Environment(\.dismiss) private var dismiss
     @State private var folderProblem: String?
-    @State private var creatingSetupDisk = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -25,6 +24,7 @@ struct OnboardingSheet: View {
 
             statusCard
             packagesCard
+            setupImageCard
 
             if let folderProblem {
                 Text(folderProblem)
@@ -34,11 +34,6 @@ struct OnboardingSheet: View {
 
             HStack {
                 Button("Open Packages Folder", action: openPackagesFolder)
-                Button("Create Setup Disk…", action: createSetupDisk)
-                    .disabled(portal.endpoint == nil || creatingSetupDisk)
-                if creatingSetupDisk {
-                    ProgressView().controlSize(.small)
-                }
                 Spacer()
                 if portal.endpoint != nil {
                     Button("Stop Onboarding", role: .destructive) {
@@ -141,10 +136,7 @@ struct OnboardingSheet: View {
     private func packageLine(_ title: String, asset: OnboardingAsset?,
                              required: Bool) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Image(systemName: asset == nil
-                  ? "circle" : "checkmark.circle.fill")
-                .foregroundStyle(asset == nil
-                                 ? Color.secondary : Color.green)
+            selectionControl(asset, required: required)
             Text(title)
             if !required {
                 Text("Optional")
@@ -170,10 +162,7 @@ struct OnboardingSheet: View {
         let state = portal.dependencyAcquisitions[dependency.id]
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                Image(systemName: asset == nil
-                      ? "circle" : "checkmark.circle.fill")
-                    .foregroundStyle(asset == nil
-                                     ? Color.secondary : Color.green)
+                selectionControl(asset, required: false)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(dependency.displayName)
                     Text(dependency.detail)
@@ -206,6 +195,104 @@ struct OnboardingSheet: View {
         }
     }
 
+    @ViewBuilder
+    private func selectionControl(_ asset: OnboardingAsset?, required: Bool)
+        -> some View {
+        if let asset {
+            Toggle("", isOn: Binding(
+                get: { portal.isSelected(asset) },
+                set: { portal.setSelected($0, asset: asset) }))
+                .labelsHidden()
+                .toggleStyle(.checkbox)
+                .disabled(required)
+                .help(required
+                      ? "New Old World is required in every install image."
+                      : "Include this item in the next install image.")
+        } else {
+            Image(systemName: "circle")
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+        }
+    }
+
+    private var setupImageCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text("Install Image")
+                    .font(.headline)
+                Spacer()
+                Button(setupImageButtonTitle, action: rebuildSetupImage)
+                    .controlSize(.small)
+                    .disabled(portal.endpoint == nil || isBuildingSetupImage)
+            }
+            switch portal.setupImageState {
+            case .notBuilt:
+                Text("Start onboarding to build the HFS install image served "
+                     + "at /now/setup.img.")
+                    .foregroundStyle(.secondary)
+            case .building:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Building the fork-preserving HFS image…")
+                }
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+            case .ready(let image):
+                imageDetails(image)
+            }
+        }
+        .cardStyle()
+    }
+
+    private var setupImageButtonTitle: String {
+        portal.currentSetupImage() == nil
+            ? "Build Install Image" : "Rebuild Install Image"
+    }
+
+    private var isBuildingSetupImage: Bool {
+        if case .building = portal.setupImageState { return true }
+        return false
+    }
+
+    private func imageDetails(_ image: OnboardingSetupImage) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if portal.hasPendingSetupImageChanges {
+                Label("Package selections changed; rebuild to update the "
+                      + "served image.", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
+            detailLine("File", image.fileName)
+            detailLine("Disk", byteCount(image.diskByteCount))
+            detailLine("Download", byteCount(image.transferByteCount)
+                       + " MacBinary")
+            detailLine("Built", DateFormatter.localizedString(
+                from: image.builtAt, dateStyle: .none, timeStyle: .medium))
+            detailLine("Contains", image.includedItems.joined(separator: ", "))
+            HStack {
+                Spacer()
+                Button("Save a Copy…", action: saveSetupImage)
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    private func detailLine(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .frame(width: 72, alignment: .trailing)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .textSelection(.enabled)
+        }
+        .font(.callout)
+    }
+
+    private func byteCount(_ count: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
+    }
+
     private func copy(_ value: String?) {
         guard let value else { return }
         NSPasteboard.general.clearContents()
@@ -223,26 +310,30 @@ struct OnboardingSheet: View {
         }
     }
 
-    private func createSetupDisk() {
+    private func rebuildSetupImage() {
         folderProblem = nil
-        creatingSetupDisk = true
         Task { @MainActor in
-            defer { creatingSetupDisk = false }
             do {
-                let image = try await portal.makeSetupImage()
-                let panel = NSSavePanel()
-                panel.nameFieldStringValue =
-                    ClassicSetupImageBuilder.downloadFileName
-                panel.canCreateDirectories = true
-                panel.prompt = "Save"
-                guard panel.runModal() == .OK, let url = panel.url else {
-                    return
-                }
-                try image.write(to: url, options: [.atomic])
+                _ = try await portal.rebuildSetupImage()
             } catch {
-                folderProblem = "Could not create the setup disk: "
+                folderProblem = "Could not rebuild the install image: "
                     + error.localizedDescription
             }
+        }
+    }
+
+    private func saveSetupImage() {
+        guard let image = portal.currentSetupImage() else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = ClassicSetupImageBuilder.downloadFileName
+        panel.canCreateDirectories = true
+        panel.prompt = "Save"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try image.write(to: url, options: [.atomic])
+        } catch {
+            folderProblem = "Could not save the install image: "
+                + error.localizedDescription
         }
     }
 }

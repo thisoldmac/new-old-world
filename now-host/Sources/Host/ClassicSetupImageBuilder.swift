@@ -45,9 +45,11 @@ struct ClassicSetupImageBuilder: Sendable {
         guard let application = assets.application else {
             throw BuildError.missingApplication
         }
+        let selectedDependencies = OnboardingDependencyCatalog.setupAssets(
+            in: assets)
         let estimatedContents = [application, assets.extensionComponent]
-            .compactMap { $0 }.map(\.byteCount).reduce(0, +)
-            + assets.dependencies.map(\.byteCount).reduce(0, +)
+            .compactMap { $0 }.map(estimatedInstalledBytes).reduce(0, +)
+            + selectedDependencies.map(estimatedInstalledBytes).reduce(0, +)
         let capacity = imageCapacity(for: estimatedContents)
         guard capacity <= Self.maximumImageBytes else {
             throw BuildError.packageTooLarge
@@ -78,7 +80,8 @@ struct ClassicSetupImageBuilder: Sendable {
         let mountedDevice = try attach(rawImage, mountPoint: mountPoint)
         do {
             try populate(mountPoint: mountPoint, host: host,
-                         wirePort: wirePort, assets: assets)
+                         wirePort: wirePort, assets: assets,
+                         dependencies: selectedDependencies)
             try eject(mountedDevice)
         } catch {
             try? eject(mountedDevice)
@@ -93,7 +96,9 @@ struct ClassicSetupImageBuilder: Sendable {
     }
 
     private func populate(mountPoint: URL, host: String, wirePort: UInt16,
-                          assets: OnboardingAssetSnapshot) throws {
+                          assets: OnboardingAssetSnapshot,
+                          dependencies selectedDependencies:
+                            [OnboardingAsset]) throws {
         guard let application = assets.application else {
             throw BuildError.missingApplication
         }
@@ -112,7 +117,7 @@ struct ClassicSetupImageBuilder: Sendable {
             "Dependencies", isDirectory: true)
         try fileManager.createDirectory(
             at: dependencies, withIntermediateDirectories: true)
-        for asset in assets.dependencies {
+        for asset in selectedDependencies {
             try installDependency(asset, in: dependencies,
                                   workspace: mountPoint.deletingLastPathComponent())
         }
@@ -185,10 +190,22 @@ struct ClassicSetupImageBuilder: Sendable {
 
     private func imageCapacity(for packageBytes: Int64) -> Int {
         let minimum = 8 * 1_024 * 1_024
-        let desired = Int(min(Int64(Int.max), packageBytes * 2
-            + 4 * 1_024 * 1_024))
+        let desired = Int(min(Int64(Int.max), packageBytes
+            + 1 * 1_024 * 1_024))
         let megabyte = 1_024 * 1_024
         return max(minimum, (desired + megabyte - 1) / megabyte * megabyte)
+    }
+
+    private func estimatedInstalledBytes(_ asset: OnboardingAsset) -> Int64 {
+        guard let raw = try? Data(contentsOf: asset.fileURL,
+                                  options: [.mappedIfSafe]),
+              let file = try? MacBinaryFile.decode(raw) else {
+            return asset.byteCount * 2
+        }
+        if isStuffIt(file) {
+            return Int64(file.dataFork.count) * 3
+        }
+        return Int64(file.dataFork.count + file.resourceFork.count + 4_096)
     }
 
     private func attach(_ image: URL, mountPoint: URL?) throws -> String {

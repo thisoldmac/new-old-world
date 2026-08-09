@@ -19,12 +19,21 @@ struct OnboardingDependency: Identifiable, Equatable {
 
     func installedAsset(in snapshot: OnboardingAssetSnapshot)
         -> OnboardingAsset? {
-        snapshot.dependencies.first { asset in
-            let name = asset.fileName.lowercased()
-            return acceptedNameFragments.contains {
-                name.contains($0.lowercased())
-            }
+        snapshot.dependencies.filter(matches).min { left, right in
+            deliveryRank(left) < deliveryRank(right)
         }
+    }
+
+    func matches(_ asset: OnboardingAsset) -> Bool {
+        let name = asset.fileName.lowercased()
+        return acceptedNameFragments.contains {
+            name.contains($0.lowercased())
+        }
+    }
+
+    private func deliveryRank(_ asset: OnboardingAsset) -> Int {
+        let name = asset.fileName.lowercased()
+        return name.contains(".sit") || name.contains(".hqx") ? 1 : 0
     }
 }
 
@@ -48,8 +57,14 @@ enum OnboardingDependencyCatalog {
     static func additionalAssets(in snapshot: OnboardingAssetSnapshot)
         -> [OnboardingAsset] {
         snapshot.dependencies.filter { asset in
-            !all.contains { $0.installedAsset(in: snapshot)?.id == asset.id }
+            !all.contains { $0.matches(asset) }
         }
+    }
+
+    static func setupAssets(in snapshot: OnboardingAssetSnapshot)
+        -> [OnboardingAsset] {
+        all.compactMap { $0.installedAsset(in: snapshot) }
+            + additionalAssets(in: snapshot)
     }
 }
 

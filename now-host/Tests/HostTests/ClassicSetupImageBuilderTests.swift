@@ -19,6 +19,19 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
             name: "NowExt", type: "INIT", creator: "NOWx",
             dataFork: Data(), resourceFork: Data([6, 7, 8])))
             .write(to: assets.appendingPathComponent("NOW Extension.bin"))
+        let dependencies = assets.appendingPathComponent(
+            "Dependencies", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: dependencies, withIntermediateDirectories: true)
+        try XCTUnwrap(MacBinaryEncoder.data(
+            name: "CarbonLib", type: "INIT", creator: "cbon",
+            dataFork: Data([9]), resourceFork: Data([10])))
+            .write(to: dependencies.appendingPathComponent("CarbonLib.bin"))
+        try XCTUnwrap(MacBinaryEncoder.data(
+            name: "CarbonLib_161.sit", type: "SIT5", creator: "SIT!",
+            dataFork: Data([11]), resourceFork: Data()))
+            .write(to: dependencies.appendingPathComponent(
+                "CarbonLib_161.sit.bin"))
         let snapshot = OnboardingAssetCatalog(
             roots: [assets], writableRoot: assets).snapshot()
 
@@ -29,6 +42,7 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
                        ClassicSetupImageBuilder.classicImageName)
         XCTAssertEqual(nativeImage.type, "rohd")
         XCTAssertEqual(nativeImage.creator, "ddsk")
+        XCTAssertEqual(nativeImage.dataFork.count, 8 * 1_024 * 1_024)
 
         let raw = temporary.appendingPathComponent("setup.raw")
         try nativeImage.dataFork.write(to: raw)
@@ -51,6 +65,13 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
             .appendingPathComponent("New Old World Prefs").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: mount
             .appendingPathComponent("Read Me First").path))
+        let carbonLib = mount.appendingPathComponent(
+            "Dependencies/CarbonLib")
+        XCTAssertEqual(try Data(contentsOf: carbonLib), Data([9]))
+        XCTAssertEqual(try resourceFork(at: carbonLib), Data([10]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mount
+            .appendingPathComponent(
+                "Dependencies/CarbonLib_161.sit").path))
     }
 
     private func resourceFork(at url: URL) throws -> Data {
