@@ -9,6 +9,28 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class LegacyMirrorRetirementTests(unittest.TestCase):
+    def test_build_and_staging_owners_never_enter_the_archive(self):
+        owners = (
+            ROOT / "now-host" / "Package.swift",
+            ROOT / "now-host" / "NewOldWorld.xcodeproj" / "project.pbxproj",
+            ROOT / "scripts" / "build-host-app",
+            ROOT / "scripts" / "test-mirrorkit",
+            ROOT / "scripts" / "spin-up-ppc",
+            ROOT / "tools" / "stage-ext.py",
+        )
+        forbidden = (
+            "archive/mirror-standalone",
+            "mirror/host/MirrorKit",
+            "mirror/guest",
+            "mirror/tools",
+        )
+        for owner in owners:
+            text = owner.read_text()
+            for path in forbidden:
+                self.assertNotIn(
+                    path, text,
+                    f"{owner.relative_to(ROOT)} restored retired path {path}")
+
     def test_production_path_has_no_legacy_runtime_or_transport(self):
         stage = (ROOT / "tools" / "stage-ext.py").read_text()
         spin = (ROOT / "scripts" / "spin-up-ppc").read_text()

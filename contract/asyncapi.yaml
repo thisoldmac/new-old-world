@@ -3548,7 +3548,7 @@ components:
           minimum: 1
           description: >
             The scene IR major version, the SAME number the document's own
-            `version` carries (mirror/docs/IR-V2.md, "Compatibility and the
+            `version` carries (archive/mirror-standalone-2026-08-09/docs/IR-V2.md, "Compatibility and the
             gate"); the guest copies both from one constant. It is
             repeated HERE so a consumer can refuse an unknown major before
             it has spent a transfer decoding the body. That order — read

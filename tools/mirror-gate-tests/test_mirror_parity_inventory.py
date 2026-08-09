@@ -14,20 +14,27 @@ HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("NOW_REPO_ROOT", HERE.parent.parent))
 SOURCE_ROOT = Path(os.environ.get("NOW_SOURCE_ROOT", ROOT))
 INVENTORY = ROOT / "docs" / "mirror-foldin-inventory.md"
+ARCHIVE_RELATIVE = Path("archive/mirror-standalone-2026-08-09")
+
+
+def legacy_root(source_root):
+    """The frozen source of retired capability names, never production."""
+    return source_root / ARCHIVE_RELATIVE
 
 
 def legacy_capabilities(source_root):
     """Derive the inventory keys from the legacy component contracts."""
     capabilities = set()
+    legacy = legacy_root(source_root)
 
-    ax = (source_root / "mirror" / "guest" / "extensions" / "axpeek"
+    ax = (legacy / "guest" / "extensions" / "axpeek"
           / "src" / "axshared.h").read_text()
     sample = ax.split("typedef struct {", 1)[1].split("} AXContextSample", 1)[0]
     fields = re.findall(r"(?:uint32_t|unsigned char)\s+(\w+)(?:\[|;)", sample)
     capabilities.update("AXPeek:" + field for field in fields)
     capabilities.add("AXPeek:sample-throttle")
 
-    qd = (source_root / "mirror" / "guest" / "extensions" / "qdpeek"
+    qd = (legacy / "guest" / "extensions" / "qdpeek"
           / "src" / "qdshared.h").read_text()
     capabilities.update(
         "QDPeek:" + name.lower().replace("_", "-")
@@ -35,7 +42,7 @@ def legacy_capabilities(source_root):
                                re.MULTILINE)
         if name != "WRAP")
 
-    portal = (source_root / "mirror" / "guest" / "extensions" / "portal"
+    portal = (legacy / "guest" / "extensions" / "portal"
               / "src" / "ptshared.h").read_text()
     capabilities.update(
         "Portal:" + name.lower().replace("_", "-")
@@ -45,7 +52,7 @@ def legacy_capabilities(source_root):
         "Portal:window-" + name.lower().replace("_", "-")
         for name in re.findall(r"\bPT_WIN_([A-Z0-9_]+)\s*=\s*\d+", portal))
 
-    agent = (source_root / "mirror" / "guest" / "app" / "src"
+    agent = (legacy / "guest" / "app" / "src"
              / "mirrorverbs.c").read_text()
     dispatch = agent.split("static int dispatch_verb", 1)[1]
     dispatch = dispatch.split("int mirror_verb_handle", 1)[0]
@@ -57,9 +64,9 @@ def legacy_capabilities(source_root):
     # this runtime. Derive the historical staging/transport rows from the
     # preserved legacy Mirror tools instead of requiring retired code to stay
     # executable in NOW's path merely so the inventory can remember it.
-    staging = (source_root / "mirror" / "tools" / "stage-agent.py").read_text()
-    spin_up = (source_root / "mirror" / "tools" / "spin-up.sh").read_text()
-    host_service = (source_root / "mirror" / "host" / "MirrorKit" / "Sources"
+    staging = (legacy / "tools" / "stage-agent.py").read_text()
+    spin_up = (legacy / "tools" / "spin-up.sh").read_text()
+    host_service = (legacy / "host" / "MirrorKit" / "Sources"
                     / "MirrorApp" / "Serve.swift").read_text()
     if all(name in staging for name in ("AXPeek", "QDPeek", "Portal")):
         capabilities.add("staging:TB-residents")
@@ -117,7 +124,7 @@ class MirrorParityInventoryTests(unittest.TestCase):
         }))
 
     def test_every_old_service_method_has_one_disposition(self):
-        source = (SOURCE_ROOT / "mirror" / "host" / "MirrorKit" / "Sources"
+        source = (legacy_root(SOURCE_ROOT) / "host" / "MirrorKit" / "Sources"
                   / "MirrorApp" / "Serve.swift").read_text()
         methods = set(re.findall(r'case "(mirror\.[a-z.]+)"', source))
         rows = table_under(INVENTORY.read_text(),
@@ -135,8 +142,9 @@ class MirrorParityInventoryTests(unittest.TestCase):
             self.assertIn(row[3], allowed, row[0])
 
     def test_every_human_action_case_has_one_disposition(self):
-        source = (SOURCE_ROOT / "mirror" / "host" / "MirrorKit" / "Sources"
-                  / "MirrorKit" / "InteractionPolicy.swift").read_text()
+        source = (SOURCE_ROOT / "now-host" / "Packages" / "MirrorKit"
+                  / "Sources" / "MirrorKit"
+                  / "InteractionPolicy.swift").read_text()
         enum_body = source.split("public enum InteractionPlan", 1)[1]
         enum_body = enum_body.split("public enum FinderContainer", 1)[0]
         cases = set(re.findall(r"^\s*case\s+([A-Za-z][A-Za-z0-9]*)",

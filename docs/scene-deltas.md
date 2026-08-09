@@ -133,7 +133,7 @@ A deletion in a delta is *an absence from the ordered array*, and it carries **n
 authority of its own.**
 
 The consumer reconstructs the whole document and hands it to the same reducer a
-whole scene goes to. That reducer applies the rule `mirror/docs/IR-V2.md`
+whole scene goes to. That reducer applies the rule `archive/mirror-standalone-2026-08-09/docs/IR-V2.md`
 already states normatively: a member missing from the collection is deleted only
 under a fresh `complete` claim for its exact scope and owner, and is otherwise
 retained expected-stale and inert. Because `meta.coverage` is restated in full

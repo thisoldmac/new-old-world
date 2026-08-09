@@ -16,7 +16,7 @@
 
 /* The scene envelope: NOW's guest producing Mirror's frozen v1 scene IR
    over the part of the machine it can honestly walk today.
-   (mirror/docs/IR-V1.md; docs/scene-producer.md for what is and is not
+   (archive/mirror-standalone-2026-08-09/docs/IR-V1.md; docs/scene-producer.md for what is and is not
    produced, and why.)
 
    THE PRODUCED SUBSET is `version` / `seq` / `capturedAt` / `source`,

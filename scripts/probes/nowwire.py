@@ -1,6 +1,6 @@
 """The probe harnesses' wire client — NOW's transport, not Mirror's.
 
-Ported from `timbottu/mirror/tests/trials.py` (class `Agent`). The measurement
+Ported from `archive/mirror-standalone-2026-08-09/tests/trials.py` (class `Agent`). The measurement
 methodology crossed intact; the transport could not, because the two projects
 run their wire in OPPOSITE DIRECTIONS.
 

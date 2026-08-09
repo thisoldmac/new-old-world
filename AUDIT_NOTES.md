@@ -34,7 +34,7 @@ All changes ported from upstream. Static analysis passed.
 - NOW uses __DATE__/__TIME__ in `now-guest-ppc/src/core/build_stamp.c`
 - CMake forces recompile via `touch_build_stamp` target (CMakeLists.txt:164-168)
 - Problem: a change in unrelated file still ships old stamp if build_stamp.c wasn't edited
-- Upstream fix at `/Users/michelle/Lab/Code/timbottu/mirror/guest/app/cmake/buildstamp.cmake` uses SHA-1 hash over all sources
+- Upstream fix at `/Users/michelle/Lab/Code/timbottu/now/archive/mirror-standalone-2026-08-09/guest/app/cmake/buildstamp.cmake` uses SHA-1 hash over all sources
 
 ## Changes Completed
 
@@ -74,5 +74,5 @@ See `BUILDSTAMP_TEST_PLAN.md` for full test specification.
 - `now-guest-68k` (68K build, if any)
 
 ## References
-- Upstream: `/Users/michelle/Lab/Code/timbottu/mirror/guest/app/cmake/buildstamp.cmake`
+- Upstream: `/Users/michelle/Lab/Code/timbottu/now/archive/mirror-standalone-2026-08-09/guest/app/cmake/buildstamp.cmake`
 - NOW guest: `/Users/michelle/Lab/Code/timbottu/now/.claude/worktrees/audit-buildstamp/now-guest-ppc/`

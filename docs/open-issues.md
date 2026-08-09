@@ -14,6 +14,12 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+Paths beginning `mirror/` in entries dated before 2026-08-09 name the tree as
+it existed when the evidence was recorded. The standalone project now lives
+under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
+`MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
+retain their original path spelling so the ledger remains an honest receipt.
+
 **There is a third category, and it is not on this page.**
 [known-wrong.md](known-wrong.md) is the register of things NOW knowingly
 ships that disagree with the machine, or knowingly does not do — each
@@ -22,6 +28,33 @@ cost, and who decided. Several of its rows draw their evidence from
 entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
+
+## PRE-MERGE CONSOLIDATION: Mirror is NOW-owned; the standalone product is archived (2026-08-09, `codex/mirror-session-teardown`)
+
+The production semantic model and renderer now live at
+`now-host/Packages/MirrorKit/`; the reusable resource parsers live at
+`tools/asset-pack/`. The complete copied standalone app, guest, residents,
+oracle, probes, raw documents, and imported asset bytes are preserved beneath
+`archive/mirror-standalone-2026-08-09/`, where no active build, staging route,
+or runtime asset resolver enters. `archive/mirror-lineage.md` is the ownership
+map and `docs/research/mirror/README.md` keeps the Finder, GWorld, A5, desktop,
+and cursor conclusions discoverable outside the archive.
+
+The external asset-store seam is now complete across the renderer, extractor,
+and MirrorKit gate: `NOW_MIRROR_ASSET_STORE` selects the store, the host keeps a
+persisted pack identity rather than a hard-coded path, and extraction creates a
+finished timestamped pack by default. The 276-test MirrorKit suite passes both
+with the current extracted pack and with `NOW_MIRROR_ASSETS=none`; the native
+guest suite passes after changing its legacy parity census to read archived
+source deliberately and its human-action census from the active package.
+
+This is a pre-merge checkpoint, not a landing receipt. The full repository
+gate, host artifact, shared-image bake, emulator/metal observations, and final
+MCP-branch reconciliation are recorded later in this entry. Nothing has moved
+`main`. The parent corpus update is committed separately as `3f923561`, adding
+the A5-world and cursor-position findings and preserving the semantic Finder
+lineage. Corpus impact passes; the corpus-wide checker still has 16 unrelated
+pre-existing unresolved `doc:now/...` references.
 
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: Stop, disconnect, and guest replacement left a Mirror session alive (2026-08-08, `codex/mirror-session-teardown`)
 

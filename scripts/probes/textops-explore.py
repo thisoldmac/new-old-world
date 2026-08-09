@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Scratch: find a dialog with text items, and see what the text ops say.
 
-Ported from `timbottu/mirror/tests/textops-explore.py`, and from
+Ported from `archive/mirror-standalone-2026-08-09/tests/textops-explore.py`, and from
 `h2-explore.py`'s half of the same job.
 
 NOT A MEASUREMENT — A LOOK. The probe that measures is textops-probe.py, and

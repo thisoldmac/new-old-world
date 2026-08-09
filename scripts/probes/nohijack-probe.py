@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """NO HIJACK. Does an armed request fire on someone else's click?
 
-Ported from `timbottu/mirror/tests/nohijack-probe.py` (50 KB, 1209 lines).
+Ported from `archive/mirror-standalone-2026-08-09/tests/nohijack-probe.py` (50 KB, 1209 lines).
 THIS IS THE HARNESS BEHIND 18/20 -> 0/19 — the measurement NOW's own contract
 cites, in the act plane's preamble, as the reason every act verb must address
 one element by a reference the responder minted:

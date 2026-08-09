@@ -2,7 +2,7 @@
 #define NOW_AXBINDING_H
 
 /* Binding a validated context to one process LIFETIME, not one process
-   number. Ported from mirror/guest/app/src/axbinding.c.
+   number. Ported from archive/mirror-standalone-2026-08-09/guest/app/src/axbinding.c.
 
    The defect this exists to prevent: a PSN is a number, Mac OS reuses
    partitions, and a new process can end up with the same PSN, the same

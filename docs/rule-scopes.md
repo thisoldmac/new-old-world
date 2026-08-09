@@ -208,10 +208,10 @@ it and should not be.
 
 | Rule | Governs | Currently | Should be |
 |---|---|---|---|
-| `tools/mirror-gate` (+ `tools/mirror-gate-tests/`) | the Mirror drive-loop Stop gate and its bash ban | NOW root, wired into repo-wide `.claude/settings.json` | `mirror/tools/`, armed per-run |
-| `docs/mirror-drive-loop.md` | the rules `mirror-gate` re-grounds you with | `docs/` (published, read by newcomers) | `mirror/docs/` |
-| 19 further `docs/mirror-*.md` | act plane, content plane, parity ledger, measurement method, … | `docs/` | `mirror/docs/`, except `mirror-knowledge.md` which AGENTS.md points every session at |
-| `tools/mirror-acts`, `mirror-corpus`, `mirror-diff` | Mirror instruments | `tools/` | `mirror/tools/` |
+| `tools/mirror-gate` (+ `tools/mirror-gate-tests/`) | the Mirror drive-loop Stop gate and its bash ban | NOW root, wired into repo-wide `.claude/settings.json` | `archive/mirror-standalone-2026-08-09/tools/`, armed per-run |
+| `docs/mirror-drive-loop.md` | the rules `mirror-gate` re-grounds you with | `docs/` (published, read by newcomers) | `archive/mirror-standalone-2026-08-09/docs/` |
+| 19 further `docs/mirror-*.md` | act plane, content plane, parity ledger, measurement method, … | `docs/` | `archive/mirror-standalone-2026-08-09/docs/`, except `mirror-knowledge.md` which AGENTS.md points every session at |
+| `tools/mirror-acts`, `mirror-corpus`, `mirror-diff` | Mirror instruments | `tools/` | `archive/mirror-standalone-2026-08-09/tools/` |
 | `tools/toolbox-re-gate` | the Toolbox/GWorld research arc's Stop gate | NOW root, wired into repo-wide `.claude/settings.json` | arc-scoped, same treatment as `mirror-gate` |
 | `mirror/.claude/worktrees/**` | **nothing — 3789 tracked files, 25 MB, five dead agent worktrees** | tracked, landed in `0443ab2b` "vendor Mirror whole as a subproject" | deleted and `.gitignore`d |
 | the shared checkout parked on `claude/mirror-subproject` | — | the direct cause of the outage above | `main` |

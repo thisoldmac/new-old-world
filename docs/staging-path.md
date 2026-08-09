@@ -32,7 +32,7 @@ wrong trap ABI does not crash, it lies*, could not be run at all.
 | `tools/shutdown-guest.py` | Quits the front application, launches that applet through the worker, waits for QEMU to exit. Never `quit`. |
 | `tools/askguest.py` | Listens as a NOW host, takes the dialling guest, asks verbs, prints answers verbatim. `fakeguest.py`'s mirror image. |
 
-Ported from `mirror/tools/` (upstream `5c822b0`, `f42cb09`, `a82cc8f`),
+Ported from `archive/mirror-standalone-2026-08-09/tools/` (upstream `5c822b0`, `f42cb09`, `a82cc8f`),
 keeping every rule that hardening encodes: an INIT loads at boot **only**
 and OS 9 ignores a soft power-down, so the machine has to be reboot**ed**
 rather than resumed; let the post-reboot `stat` be the guardrail; verify by

@@ -433,7 +433,7 @@ The discriminators that hold, verified in the source:
 ### And arming was necessary but not sufficient
 
 `SceneBuilder.normalizeWindows` sets **`display: nil` unconditionally**
-(`mirror/host/MirrorKit/Sources/MirrorKit/SceneBuilder.swift:285` — the
+(`now-host/Packages/MirrorKit/Sources/MirrorKit/SceneBuilder.swift:285` — the
 sole occurrence of `display` in that function, with no branch). **No scene
 envelope from any capture has ever carried content ops.** The interior
 arrives only on a *second* artifact, the `qdtrace` drain.

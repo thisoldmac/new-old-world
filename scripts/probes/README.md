@@ -1,6 +1,6 @@
 # The probe harnesses
 
-**Ported from `timbottu/mirror/tests/` on 2026-07-31.** Wave 2B of
+**Ported from `archive/mirror-standalone-2026-08-09/tests/` on 2026-07-31.** Wave 2B of
 [../../docs/mirror-foldin-inventory.md](../../docs/mirror-foldin-inventory.md),
 which says why this was the most under-valued item on the list:
 
@@ -88,7 +88,7 @@ found nothing.
 
 ## The ledger
 
-Every script in `mirror/tests/`, with its verdict.
+Every script in `archive/mirror-standalone-2026-08-09/tests/`, with its verdict.
 
 ### Ported
 

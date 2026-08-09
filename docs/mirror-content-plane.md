@@ -36,7 +36,7 @@ measured by NOW.
 > remain eligible so the mechanism described below still matters for them.
 
 Source documents, now superseded by this one:
-`mirror/docs/QUICKDRAW-CONTENT-PLANE.md` (the design brief),
+`archive/mirror-standalone-2026-08-09/docs/QUICKDRAW-CONTENT-PLANE.md` (the design brief),
 `QDPEEK-SPEC.md` (the build contract), `TIMBUKTU-QD-FINDINGS.md` and
 `TIMBUKTU-TEARDOWN.md` (the prior-art teardown).
 

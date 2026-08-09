@@ -1,7 +1,8 @@
 # Mirror pre-merge consolidation
 
-**Status:** Proposed. This plan prepares `codex/mirror-session-teardown` for
-landing; it does not authorize the implementation units by itself.
+**Status:** In progress. This plan prepares `codex/mirror-session-teardown` for
+Michelle to land; it does not authorize moving `main`, pushing, or opening a
+pull request.
 
 **Planning baseline:** `codex/mirror-session-teardown` at `d979c6ee`, clean on
 2026-08-09. Current `main` is `7d906f15`; the branch is 1,365 commits ahead and
@@ -20,7 +21,7 @@ copied standalone Mirror product in the active tree. The landed revision must:
 - retain the detailed Finder, GWorld, A5-world, and cursor research in live NOW
   documentation and the parent TimBotTu findings corpus;
 - state the experimental and unverified Mirror behavior honestly;
-- pass the repository gates from the exact revision that is landed;
+- pass the repository gates from the exact revision offered for landing;
 - produce and verify the new shared PPC emulator image only after the tree is
   frozen; and
 - leave remote cursor driving as the first bounded follow-on from the landed
@@ -228,8 +229,10 @@ its exact final state and provenance.
 **Verification**
 
 - `git ls-files mirror` returns nothing.
-- No active manifest, Xcode project, script, test, or runtime source refers to
-  `archive/` or the former root `mirror/` path.
+- No active manifest, Xcode project, build/staging script, or runtime source
+  depends on `archive/` or the former root `mirror/` path. The retirement and
+  parity inventory tests may read frozen archive text deliberately; they never
+  import, build, execute, or stage it.
 - The archived snapshot still contains its root metadata, guest, extensions,
   host app, tests, tools, docs, and tracked asset copy.
 - Repository gates do not traverse or build the archive.
@@ -298,8 +301,8 @@ clean and 13 commits ahead of its `main`.
   control as if it never happened.
 - Run the corpus validator, recording its pre-existing baseline separately and
   requiring no new failures from the changed findings.
-- Commit corpus work separately in the parent repository and land it through
-  that repository's normal main reconciliation.
+- Commit corpus work separately in the parent repository and leave that branch
+  ready for Michelle's normal reconciliation; do not move its `main` here.
 
 **Verification**
 
@@ -436,25 +439,65 @@ session's machine or VM.
 **Commit boundary:** runtime evidence and final documentation corrections only;
 the baked image itself remains a Lab artifact, not repository content.
 
-### U9. Land and hand off
+### U9. Reconcile the concurrent MCP audit/barrage branch
 
-**Goal:** Make `main` point at the exact tested revision and leave the next
-branch obvious.
+**Goal:** Include the independently reviewed MCP-layer changes without
+overwriting either stack, then prove the combined repository before the final
+simplification pass.
+
+**Concurrent task:** `codex://threads/019fe526-e695-7700-8a69-1eb67c314eab`,
+working in `/Users/michelle/.codex/worktrees/019fe526/now` on
+`codex/now-mcp-audit-barrage`.
 
 **Actions**
 
-- Confirm `main` has not advanced since U0. If it has, merge again and repeat
-  affected gates.
+- Do not read as final, edit, merge, or reset the worktree while its task is
+  active.
+- Once it reports completion, inspect its final commit series, dirt, base, and
+  changed paths. Require a clean, committed handoff.
+- Reconcile its completed commits into this branch by merge or targeted
+  cherry-pick according to ancestry. Resolve shared documentation and MCP
+  coverage by meaning; do not discard its first-contact guide, display-name
+  authority, multi-guest naming, or barrage evidence merely to preserve this
+  branch's older generated files.
+- Re-derive MCP and contract coverage from the combined tree.
+- Run `scripts/test-all` before any compound-engineering review. A code review
+  of an uncombined or red stack is not the requested final review.
+
+### U10. Review and simplify with the compound-engineering stack
+
+**Goal:** Give the complete combined code and docs a final independent
+correctness, reliability, and maintainability pass.
+
+**Actions**
+
+- Use the compound-engineering review tooling against the combined branch,
+  concentrating on Mirror session lifecycle, Finder ownership boundaries,
+  MCP projections, archive isolation, build paths, and contradictory docs.
+- Classify findings before editing. Apply only bounded, evidence-backed
+  simplifications or fixes that preserve behavior and make ownership clearer.
+- Do not reopen settled product scope, replace semantic Finder with pixel
+  replay, or expand P3 safety claims.
+- Rerun focused tests for every applied finding, then `scripts/test-all` from
+  the final revision.
+
+### U11. Prepare the merge-ready handoff
+
+**Goal:** Leave clean, committed branches and exact receipts for Michelle to
+review and land.
+
+**Actions**
+
+- Confirm `main` has not advanced since U0. If it has, report the exact drift;
+  reconcile and repeat affected gates only when doing so does not overwrite
+  active work.
 - Build the final signed/notarization-appropriate local host artifact used by
   this project and record its path and revision.
 - Require clean NOW and parent-corpus worktrees.
-- Fast-forward or merge the finished branch into the shared checkout using the
-  repository's worktree-safe procedure; leave the shared checkout on `main`.
-- If moving the `main` ref without updating its working tree, resynchronize the
-  clean shared checkout immediately and verify that no staged-deletion mirage
-  remains.
-- Tag the landed integration and record the tag, commit, full gate receipt,
-  emulator image receipt, and metal status.
+- Record the NOW branch/commit, parent-corpus branch/commit, full gate receipt,
+  emulator image receipt, host artifact, and actual metal status.
+- Do **not** move `main`, alter the shared checkout, tag, push, or open a pull
+  request. Those are Michelle's final landing actions.
 - Preserve the safety ref and archives until the landed revision has been used
   successfully; pruning them is a separate later decision.
 
@@ -474,7 +517,9 @@ correlation, human-yield behavior, and cursor-shape observation.
 7. `docs(mirror): close the pre-merge ledger`
 8. `test(mirror): enforce active-tree ownership boundaries` if new guards are
    not naturally included above
-9. `docs(mirror): record final emulator and metal receipts`
+9. MCP branch reconciliation commit(s), preserving their original history
+10. `refactor(mirror): apply final review simplifications` when findings justify it
+11. `docs(mirror): record final emulator, gate, and metal receipts`
 
 Each commit must build or clearly identify itself as an unverified checkpoint.
 Do not combine the main merge, package extraction, and archive move into one
@@ -489,7 +534,8 @@ unreviewable commit.
 - [ ] Asset parsers live under NOW tooling; generated packs remain external.
 - [ ] Complete standalone Mirror tree and lineage are archived.
 - [ ] No tracked root `mirror/` tree remains.
-- [ ] No production code, manifest, test, or gate loads from `archive/`.
+- [ ] No production code, manifest, build, staging path, or runtime loads from
+      `archive/`; only the explicit retirement/parity census reads it as text.
 - [ ] Scratch research is graduated and all links resolve.
 - [ ] Finder, GWorld, A5, and cursor findings are reconciled in the parent
       corpus.
@@ -500,8 +546,10 @@ unreviewable commit.
 - [ ] Shared PPC image is baked and verified from the final revision.
 - [ ] PB1400c result is recorded at its actual evidence level.
 - [ ] Final host artifact is built and revision-stamped.
-- [ ] `main` points at the tested revision and the shared checkout remains on
-      `main`.
+- [ ] Concurrent MCP work is reconciled and the combined repository gate passes.
+- [ ] Compound-engineering review findings are resolved or recorded.
+- [ ] NOW and parent-corpus branches are clean and their exact commits are
+      handed to Michelle; `main` is untouched.
 - [ ] Remote cursor driving is handed off as the immediate next branch.
 
 ## Definition of ready to merge
@@ -511,5 +559,7 @@ NOW-owned Mirror library package; the standalone project exists only as a
 documented archive; the detailed and distilled research remains discoverable;
 all deterministic gates pass; the final shared image has a reproducible
 receipt; the safe default has not crashed or retained a session on the
-PB1400c; and every remaining limitation is named plainly enough that landing
-does not imply it was fixed.
+PB1400c (or the unavailable metal gate is named explicitly); the concurrent MCP
+work has been reconciled; the combined tree has received its final independent
+review; and every remaining limitation is named plainly enough that landing
+does not imply it was fixed. Michelle performs the landing separately.

@@ -2,7 +2,7 @@
 #define NOW_AXTEXT_H
 
 /* A Dialog Manager window's editable text, read out of its TextEdit
-   record. Ported from mirror/guest/app/src/axtext.c; the offsets are
+   record. Ported from archive/mirror-standalone-2026-08-09/guest/app/src/axtext.c; the offsets are
    measurements, per axwalk.h.
 
    This is what makes a dialog legible rather than merely visible. A

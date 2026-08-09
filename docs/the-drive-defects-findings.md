@@ -72,7 +72,7 @@ until `PressSession.patience` expired. Michelle reported the opposite:
 the pressed state never appears at all.
 
 The actual wall is `PressSubject.init?(_ object:)`
-(`mirror/host/MirrorKit/Sources/MirrorKit/PressSubject.swift`), which
+(`now-host/Packages/MirrorKit/Sources/MirrorKit/PressSubject.swift`), which
 returns nil — **no press session is created, so there is nothing to draw
 and nothing for a confirmation to settle** — for:
 

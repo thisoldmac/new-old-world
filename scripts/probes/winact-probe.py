@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Probe `winact` — move, resize, zoom, close ONE window — against guest state.
 
-Ported from `timbottu/mirror/tests/winact-probe.py`.
+Ported from `archive/mirror-standalone-2026-08-09/tests/winact-probe.py`.
 
 ## STATUS ON NOW TODAY: REFUSES on `observe` only
 

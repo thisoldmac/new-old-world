@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Probe the `aesend` verb — the one behind "quit that application".
 
-Ported from `timbottu/mirror/tests/apple-event-probe.py`.
+Ported from `archive/mirror-standalone-2026-08-09/tests/apple-event-probe.py`.
 
 ## STATUS ON NOW TODAY: gated on `observe`, not on the verb
 

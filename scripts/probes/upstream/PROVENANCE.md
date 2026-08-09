@@ -1,7 +1,7 @@
 # Upstream's recorded results — copied verbatim, never regenerated
 
 These are **measurements taken on a real machine by `timbottu/mirror`**, copied
-byte-for-byte out of `mirror/tests/` on 2026-07-31 as part of Wave 2B of
+byte-for-byte out of `archive/mirror-standalone-2026-08-09/tests/` on 2026-07-31 as part of Wave 2B of
 [../../../docs/mirror-foldin-inventory.md](../../../docs/mirror-foldin-inventory.md).
 
 They are here for one reason: **a future NOW run has to be comparable to
@@ -56,7 +56,7 @@ The headline number — **18 in 20** for the request that merely disarmed after
 one use, against **0 in 20** for the variant that had to name its exact target
 — is quoted in NOW's own contract (`contract/asyncapi.yaml`, the
 `winact`/`textget`/`textset` preamble) and in upstream's prose. The `18/20`
-run's own JSON was not among the files in `mirror/tests/`; the surviving
+run's own JSON was not among the files in `archive/mirror-standalone-2026-08-09/tests/`; the surviving
 machine-readable artifact of that lane is `p2-nohijack.json`, which is the
 **0-hijack side** measured after the design changed.
 

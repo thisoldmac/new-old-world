@@ -6,7 +6,7 @@ tested; latest change not guest-built or emulator-verified · **Code of record:*
 `scene_walk_test.c`
 
 M5 of [the fold-in plan](plans/2026-07-31-007-feat-now-mirror-integration-plan.md):
-NOW's guest producing Mirror's frozen v1 scene IR (`mirror/docs/IR-V1.md`) over
+NOW's guest producing Mirror's frozen v1 scene IR (`archive/mirror-standalone-2026-08-09/docs/IR-V1.md`) over
 the part of the machine it can honestly walk today. The companion is
 [streaming-a-scene.md](streaming-a-scene.md), which argued how a scene should
 travel; this note records what was built and what it refuses to claim.

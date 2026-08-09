@@ -1,6 +1,6 @@
 """Actuation oracles: things the GUEST changed, read back from the guest.
 
-Ported from `timbottu/mirror/tests/trials.py` and `nohijack-probe.py`. The rule
+Ported from `archive/mirror-standalone-2026-08-09/tests/trials.py` and `nohijack-probe.py`. The rule
 they encode is the one rule none of these harnesses may relax:
 
     The oracle must be something the GUEST changed, not something the

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive the guest through a real multi-step task and verify each step.
 
-Ported from `timbottu/mirror/tests/drive-sequence.py`.
+Ported from `archive/mirror-standalone-2026-08-09/tests/drive-sequence.py`.
 
 ## STATUS ON NOW TODAY: gated on the machine, no longer on a name
 

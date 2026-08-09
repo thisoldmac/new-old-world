@@ -1,4 +1,4 @@
-"""How a trial is COUNTED. Ported from `timbottu/mirror/tests/trials.py` and
+"""How a trial is COUNTED. Ported from `archive/mirror-standalone-2026-08-09/tests/trials.py` and
 the `summarize` in `nohijack-probe.py`.
 
 This file is the reason the port is worth anything. The scripts around it can

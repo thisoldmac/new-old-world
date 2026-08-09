@@ -5,7 +5,7 @@ parked upstream project `timbottu/mirror`. Nothing on this page was
 measured by NOW.
 
 Source documents, now superseded by this one: the perceive half of
-`mirror/docs/CONTROL-SURFACE.md`, `FOLDER-ITEMS.md`, `IR-V1.md`, the
+`archive/mirror-standalone-2026-08-09/docs/CONTROL-SURFACE.md`, `FOLDER-ITEMS.md`, `IR-V1.md`, the
 scene-IR half of `MIRRORKIT-PLAN.md`, and the reading sections of
 `PROTOTYPE-NOTES.md` and `STATUS.md`.
 

@@ -10,7 +10,7 @@
    ship": this code executes at DRAW time inside another process.
 
    PROVENANCE. The mechanism is ported from this project's own prototype
-   (timbottu/mirror, guest/extensions/qdpeek, and mirror/docs/QDPEEK-SPEC.md),
+   (timbottu/mirror, guest/extensions/qdpeek, and archive/mirror-standalone-2026-08-09/docs/QDPEEK-SPEC.md),
    where it was measured on a live mac99 guest. The rule that governs the
    crossing is the one now-guest-ppc/src/axwalk/ carries: THE MEASURED PARTS
    ARE EVIDENCE, NOT STYLE. Upstream's live proof is strong evidence about

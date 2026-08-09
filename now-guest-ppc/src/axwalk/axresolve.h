@@ -3,7 +3,7 @@
 
 /* Naming an element without naming a pointer, and finding it again.
 
-   Ported from mirror/guest/app/src/axresolve.c and the identity half of
+   Ported from archive/mirror-standalone-2026-08-09/guest/app/src/axresolve.c and the identity half of
    its axref.c. What this module owns is the policy every consumer of
    the walk needs and none should re-invent: traversal limits, cycle
    detection, what "the second button called OK" means, and how a

@@ -127,7 +127,7 @@ untouched — see `NOW_ACT_POINT_SLOP` in `now-guest-shared/src/now_act_guard.c`
 ## 3. The six cases
 
 `scripts/probes/nohijack-probe.py`, ported from
-`timbottu/mirror/tests/nohijack-probe.py`.
+`archive/mirror-standalone-2026-08-09/tests/nohijack-probe.py`.
 
 | Case | What it asks | Oracle |
 |---|---|---|

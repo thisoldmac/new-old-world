@@ -2164,7 +2164,7 @@ final class GuestListener: ObservableObject {
     ///
     /// The bytes are handed on **undecoded** on purpose. The IR gate's rule
     /// is read the version, refuse an unknown major, THEN decode
-    /// (`mirror/docs/IR-V1.md`), and the only way this layer can obey it is
+    /// (`archive/mirror-standalone-2026-08-09/docs/IR-V1.md`), and the only way this layer can obey it is
     /// by not decoding at all: it carries the envelope's `irVersion` beside
     /// the body and lets `NOWSceneCodec.decode` — the one place that
     /// implements the order — do both steps. A convenience that parsed here

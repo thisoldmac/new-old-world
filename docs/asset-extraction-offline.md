@@ -92,15 +92,18 @@ are both already installed on this Mac.
 ## The script
 
 [`tools/extract-assets-offline`](../tools/extract-assets-offline) is the
-four steps above, end to end, writing the pack the host renders from
-(`mirror/host/MirrorKit/Sources/MirrorKitUI/Resources/`). It reuses the
-parsers the live-pull extractor already had
-(`mirror/tools/extract-assets/`) rather than growing a second set — only
-the transport is different, so the two routes cannot disagree about what
+four steps above, end to end. By default it writes a new timestamped
+`pack-*/Resources` beneath `$NOW_MIRROR_ASSET_STORE` (or
+`~/Lab/Assets/now-mirror-assets`) and prints the completed destination. The
+resource parsers extracted from the former live-pull route now live at
+`tools/asset-pack/`; the archived orchestrator remains provenance only. Keeping
+one parser implementation means the two transports cannot disagree about what
 an `icl8` means.
 
 ```
 tools/extract-assets-offline                 # default image, default pack
+tools/extract-assets-offline --store DIR     # another external pack store
+tools/extract-assets-offline --out DIR       # deliberate exact destination
 tools/extract-assets-offline --reuse-work    # skip convert+carve on a rerun
 tools/extract-assets-offline --theme-report  # census the theme file, stop
 ```
@@ -210,7 +213,7 @@ see the next section.
 
 `tools/extract-assets-offline --accent-ramps` prints them; a full run
 generates
-[`PlatinumAccentRamps.swift`](../mirror/host/MirrorKit/Sources/MirrorKitUI/PlatinumAccentRamps.swift)
+[`PlatinumAccentRamps.swift`](../now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumAccentRamps.swift)
 beside the renderer. **Source, not a pack file** — 21 names and 160 RGB
 triples the renderer wants at static-init, with no bundle lookup and no
 decode that could fail quietly into a fallback nobody would ever see on

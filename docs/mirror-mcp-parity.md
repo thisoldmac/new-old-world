@@ -120,7 +120,7 @@ found while taking this inventory rather than added for MCP's sake:
     grep -n "capability = HostCapabilityID" \
         now-host/Sources/NOWAgentIntegration/Projection/*.swift
     grep -n "case " \
-        mirror/host/MirrorKit/Sources/MirrorKit/InteractionPolicy.swift
+        now-host/Packages/MirrorKit/Sources/MirrorKit/InteractionPolicy.swift
     grep -n "requiresTypedSettlement" -A 20 \
         now-host/Sources/Host/MirrorActionExecutor.swift
 

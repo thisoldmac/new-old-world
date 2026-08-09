@@ -13,7 +13,7 @@ That art is **Apple's bitmaps**. The rule it inherits from
 
 On 2026-08-06 the pack was committed to this repository — 1,154 files
 and 5.0 MB under
-`mirror/host/MirrorKit/Sources/MirrorKitUI/Resources/`, 914 of them
+`now-host/Packages/MirrorKit/Sources/MirrorKitUI/Resources/`, 914 of them
 per-application icons. It arrived as a **side effect of wiring the pack
 up**, not as a decision: the offline extractor's default output
 directory happened to be inside a SwiftPM target, and SwiftPM needs
@@ -32,8 +32,10 @@ and reads resource forks as ordinary files. The route and its one
 genuinely surprising step are in
 [asset-extraction-offline.md](asset-extraction-offline.md).
 
-Its default `--out` is exactly where the renderer looks in a working
-checkout, so **"run the extractor" is the whole recovery procedure**.
+Its default output is a new timestamped pack beneath the configurable
+external store, so **"run the extractor" is the whole recovery procedure**.
+Set `NOW_MIRROR_ASSET_STORE` or pass `--store` to choose another store; use
+`--out` only for a deliberate one-off destination.
 
 That sentence was not true when it was written, and 2026-08-07 made it
 true. The offline extractor produced no `fonts/` at all, so a recovered
@@ -64,9 +66,8 @@ this order:
 | # | Source | Notes |
 |---|---|---|
 | 1 | `$NOW_MIRROR_ASSETS` | An explicit directory. Wins over everything. `NOW_MIRROR_ASSETS=none` forces the absent path — see below. |
-| 2 | the persisted selection among valid `~/Lab/Assets/now-mirror-assets/pack-*/Resources` packs | The host's **Asset Packs** picker stores only the discovered pack identity. It never compiles one extracted pack's name or absolute path into the app. |
-| 3 | newest valid pack in `~/Lab/Assets/now-mirror-assets/pack-*/Resources` | The default when no selection exists, or when the selected pack was removed. This currently targets the existing emulator extraction without hard-coding which extraction that is. |
-| 4 | the checkout's own `Resources/` | `tools/extract-assets-offline`'s default output. For a developer who has just run it and is building from the same tree. |
+| 2 | the persisted selection among valid packs in `$NOW_MIRROR_ASSET_STORE` | The host's **Asset Packs** picker stores only the discovered pack identity. It never compiles one extracted pack's name or absolute path into the app. The environment defaults to `~/Lab/Assets/now-mirror-assets`. |
+| 3 | newest valid `pack-*/Resources` in that store | The default when no selection exists, or when the selected pack was removed. This targets the existing emulator extraction without hard-coding which extraction that is. |
 | — | absent | A first-class state. Not an error, and not silent. |
 
 A directory only counts as a pack if it holds `manifest.json`, which

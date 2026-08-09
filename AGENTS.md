@@ -88,9 +88,10 @@ Both: comments say **why**, not what. Match the surrounding density.
   cheapest first, and stops at the first failure naming it. A broken
   frame codec should cost two seconds to find, not the four minutes
   xcodebuild takes to reach the same conclusion by a longer route.
-- MirrorKit: `scripts/test-mirrorkit` — the vendored `mirror/` package's
-  own suite. It became stage 2 on 2026-08-06 **because it was missing**:
-  `mirror/` is tracked in this tree and carries a full SwiftPM package,
+- MirrorKit: `scripts/test-mirrorkit` — the NOW-owned package at
+  `now-host/Packages/MirrorKit/` and its own suite. It became stage 2 on
+  2026-08-06 **because it was missing**: the imported package was tracked
+  in this tree,
   and no gate ran it, so `test-all` read green for three days with seven
   of those tests red. That is the same hole as "every other gate can be
   green while neither guest compiles" — a gate is only as wide as the

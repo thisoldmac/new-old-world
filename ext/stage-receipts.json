@@ -164,6 +164,16 @@
         "ext/src/now_content_qdext.S"
       ],
       "reason": "Metal safety fix requires a clean-boot PB1400c run before promoting this resident into the shared emulator oracle"
+    },
+    {
+      "at": "2026-08-09T04:17:11-0400",
+      "branch": "codex/mirror-session-teardown",
+      "extDigest": "ea618145ab361de575dea54f83c7a80e066c4354",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c"
+      ],
+      "reason": "Archive-only source comment; final resident bake follows the full green gate and MCP reconciliation"
     }
   ]
 }

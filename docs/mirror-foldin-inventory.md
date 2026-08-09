@@ -1,5 +1,14 @@
 # What Mirror actually contains, and what has crossed
 
+> **Consolidation completed 2026-08-09.** This remains the executable and
+> historical fold-in ledger. The active libraries now live at
+> `now-host/Packages/MirrorKit/`, reusable extraction parsers at
+> `tools/asset-pack/`, and the complete standalone project at
+> `archive/mirror-standalone-2026-08-09/`. No active build, staging path, or
+> runtime asset lookup enters the archive. See
+> [the lineage map](../archive/mirror-lineage.md) and
+> [research index](research/mirror/README.md).
+
 ## Executable completion inventory, 2026-08-03
 
 This is the strangler map for the final fold. It is derived and checked by
@@ -110,10 +119,10 @@ only differential-oracle inputs to that owner's proof.
 | `mirror-agent:textset` | `mirrorverbs.c:dispatch_verb` | edit addressed foreign text | goal | outcome-equivalent-through-NOW | prerequisite U5 direct-input text settlement proof |
 | `mirror-agent:volumes` | `mirrorverbs.c:dispatch_verb` | enumerate guest volumes | goal | same-capability | prerequisite U7 focused Macintosh HD proof |
 | `mirror-agent:winact` | `mirrorverbs.c:dispatch_verb` | act on an addressed foreign window | goal | outcome-equivalent-through-NOW | prerequisite U5 window settlement proof |
-| `staging:TB-residents` | preserved `mirror/tools/stage-agent.py` | install three old resident files | legacy-only | prohibited-mechanism/no-consumer | U7 extension-only staging mutation watch |
-| `staging:mirror-agent` | preserved `mirror/tools/stage-agent.py` | install the old faceless guest service | legacy-only | prohibited-mechanism/no-consumer | U7 extension-only staging mutation watch |
-| `transport:mirror.port` | preserved `mirror/tools/stage-agent.py` | configure the old agent's separate port | legacy-only | prohibited-mechanism/no-consumer | U7 staging and stopped-image absence proof |
-| `transport:port-1420` | preserved `mirror/tools/stage-agent.py` and `spin-up.sh` | forward the old agent's separate socket | legacy-only | prohibited-mechanism/no-consumer | U7 port-1420 mutation watch |
+| `staging:TB-residents` | preserved `archive/mirror-standalone-2026-08-09/tools/stage-agent.py` | install three old resident files | legacy-only | prohibited-mechanism/no-consumer | U7 extension-only staging mutation watch |
+| `staging:mirror-agent` | preserved `archive/mirror-standalone-2026-08-09/tools/stage-agent.py` | install the old faceless guest service | legacy-only | prohibited-mechanism/no-consumer | U7 extension-only staging mutation watch |
+| `transport:mirror.port` | preserved `archive/mirror-standalone-2026-08-09/tools/stage-agent.py` | configure the old agent's separate port | legacy-only | prohibited-mechanism/no-consumer | U7 staging and stopped-image absence proof |
+| `transport:port-1420` | preserved `archive/mirror-standalone-2026-08-09/tools/stage-agent.py` and `spin-up.sh` | forward the old agent's separate socket | legacy-only | prohibited-mechanism/no-consumer | U7 port-1420 mutation watch |
 
 ### Old Mirror method disposition
 
@@ -234,7 +243,7 @@ and two of them exist.**
 | Piece | Where it landed | State |
 |---|---|---|
 | `axwalk` / `axmenu` / `axtext` / `axref` / `axresolve` / `axbinding` | `now-guest-ppc/src/axwalk/` | ported, natively tested (first coverage this archaeology ever had) |
-| `MirrorKit` + `MirrorKitUI` | `now-host/Sources/` | ported whole with both test targets and the golden fixtures |
+| `MirrorKit` + `MirrorKitUI` | `now-host/Packages/MirrorKit/` | ported whole with both test targets and the golden fixtures; NOW-owned after the 2026-08-09 standalone archive |
 | The IR contract | `contract/`, guest encoder, host decoder, adapter | NOW's own, IR v1-conformant |
 | Oracle *answers* (five verdicts) | `peek_oracle.c` | reimplemented, then V3 added `CurApName` from upstream's |
 
@@ -331,7 +340,7 @@ which NOW does not have — the same judgement as the tooling below.
 
 ### ~~2. The test harnesses — as written 2026-07-31~~
 
-`mirror/tests/` holds ~25 probe scripts against a live guest. `nohijack-probe.py`
+`archive/mirror-standalone-2026-08-09/tests/` holds ~25 probe scripts against a live guest. `nohijack-probe.py`
 is **50 KB** and is the harness that produced 18/20 → 0/19. Also
 `textops-probe.py`, `ctlinvoke-probe.py`, `apple-event-probe.py`, `g1-probe.py`,
 the `h2-*` folder-item set with its recorded trial results, `mirror-service-e2e.py`,
@@ -465,7 +474,7 @@ Without `observe` to mint references and `handle` to resolve one back to a live
 has no way to say *this* window. **This blocks the value of Wave 1**, which is
 why it is first here rather than filed with the other verbs.
 
-**2B — the probe harnesses.** `mirror/tests/`, ~25 scripts that drive a live
+**2B — the probe harnesses.** `archive/mirror-standalone-2026-08-09/tests/`, ~25 scripts that drive a live
 guest. This is Phase 3 of the roadmap, already written and already run. Porting
 them is cheaper than authoring an emulator pass and yields numbers directly
 comparable to upstream's. `nohijack-probe.py` alone is the 50 KB harness behind

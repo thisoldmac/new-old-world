@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Menu titles, the `launch` verb, and the build stamp.
 
-Ported from `timbottu/mirror/tests/g1-probe.py`.
+Ported from `archive/mirror-standalone-2026-08-09/tests/g1-probe.py`.
 
 THE ONLY HARNESS IN THIS DIRECTORY THAT CAN PARTLY RUN ON NOW TODAY, and the
 one to run first when a machine is available — because it is the cheapest way

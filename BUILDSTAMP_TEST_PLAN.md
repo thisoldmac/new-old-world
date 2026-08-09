@@ -85,7 +85,7 @@ A developer with the Retro68 toolchain should run this test plan to fully verify
 
 ## Proof of Concept: Upstream Validation
 
-The upstream codebase at `/Users/michelle/Lab/Code/timbottu/mirror/guest/app/cmake/buildstamp.cmake` 
+The upstream codebase at `/Users/michelle/Lab/Code/timbottu/now/archive/mirror-standalone-2026-08-09/guest/app/cmake/buildstamp.cmake`
 has already proven this pattern works. The NOW implementation is a faithful port with:
 - Same SHA-1 hashing strategy
 - Same stable file ordering

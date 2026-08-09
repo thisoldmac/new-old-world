@@ -4,11 +4,14 @@
 classic Mac.** It costs two minutes and has already been worth several
 days.
 
-`timbottu/mirror` is a parked, complete upstream project: a semantic
-mirror of a Mac OS 9 desktop, with a guest application, resident
-extensions and a Swift host. NOW has ported parts of it and inherits all
-of its recorded knowledge. **Everything in it was paid for once
-already.**
+The standalone `timbottu/mirror` project is now archived at
+`archive/mirror-standalone-2026-08-09/`: a semantic mirror of a Mac OS 9
+desktop, with a guest application, resident extensions and a Swift host. NOW
+owns the production pieces it retained and inherits all of the archive's
+recorded knowledge. **Everything in it was paid for once already.** The
+maintained research index is [research/mirror/README.md](research/mirror/README.md),
+and [archive/mirror-lineage.md](../archive/mirror-lineage.md) maps active code
+to its historical source.
 
 ## Why this page exists
 
@@ -24,7 +27,8 @@ Both cost real effort and produced nothing upstream did not have.
 
 **The standing rule: check Mirror before deriving anything.** If a piece
 of work begins with *"we need to find out whether…"*, the first place to
-look is this page, and the second is the upstream repository.
+look is this page, and the second is the archived standalone project and
+graduated research—not a new probe.
 
 ## The pages
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Probe `textget` / `textset` — NOW's declared text ops.
 
-Ported from `timbottu/mirror/tests/textops-probe.py` (19 KB). Upstream's
+Ported from `archive/mirror-standalone-2026-08-09/tests/textops-probe.py` (19 KB). Upstream's
 recorded numbers: **20/20 actuated, with the no-hijack cross-fire at 0/20**
 (`upstream/p2-ditem.json`, `p2-dialogte.json`, `p2-nohijack.json`).
 

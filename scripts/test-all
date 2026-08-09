@@ -107,7 +107,7 @@ echo "==> [2/6] native tests"
 
 echo
 echo "==> [3/6] MirrorKit gate"
-# 165 XCTest lines is more than a green run should print, so it is logged
+# The XCTest transcript is more than a green run should print, so it is logged
 # rather than shown — but a SKIP is pulled back out and echoed. A gate that
 # quietly declines to run is exactly how this stage came to be missing, so
 # "did not run" must never look like "passed".

@@ -446,7 +446,7 @@ read-only on code and was asked to write the ledger, not a finding.
   §7 item-refresh cache fix again) were **not** diffed at the C-source line
   level against upstream — this lane read `commands.c`'s dispatch table and
   NOW's Swift call graph, not every guest C function body. A line-level diff
-  of `now-guest-ppc/src/commands/` against `mirror/guest/app/src/` would
+  of `now-guest-ppc/src/commands/` against `archive/mirror-standalone-2026-08-09/guest/app/src/` would
   sharpen these from "open" to a firmer verdict.
 - The 8-section, ~60-row structure was reconstructed from `git log
   --oneline` (189 commits) and directory-level reading, not copied from a

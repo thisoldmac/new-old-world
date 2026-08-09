@@ -1,5 +1,5 @@
 """A real mouse, from OUTSIDE the guest. Ported near-verbatim from
-`timbottu/mirror/tests/nohijack-probe.py`.
+`archive/mirror-standalone-2026-08-09/tests/nohijack-probe.py`.
 
 This is the one part of the no-hijack harness that crossed unchanged, because
 it never touched Mirror's wire: it drives QEMU's own input plane over QMP. The

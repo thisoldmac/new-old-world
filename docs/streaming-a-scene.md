@@ -45,9 +45,9 @@ Facts, with where they come from. Everything else in this note is marked.
 | **Control frames cap at 4 KB** | `contract/wire_limits.h`, `asyncapi.yaml` (file listings paginate for this reason) | decided, enforced both sides |
 | A capture costs **0.5–0.6 s** on the 1400c | `docs/metal-and-ux-review.md` §9 | measured, metal |
 | Whether a frame off an open bracket is cheaper than that capture | — | **unmeasured, and it is the bracket's entire premise** |
-| Mirror's semantic walk costs **~2.1 ms per poll**, a scene of **13980 B** | `mirror/docs/STATUS.md`, on a session-private mac99 clone | measured, **emulator**, **and it is upstream's guest, not NOW's** |
-| Encoded scenes in upstream's fixture corpus run **1.9 KB – 23.7 KB** (raw guest replies to 70 KB) | `mirror/host/MirrorKit/Tests/.../Fixtures/*` | observed |
-| Upstream's live mirror is built on **polling** (`ScenePoller`), not on a push stream | `mirror/host/MirrorKit/Sources/MirrorKit/ScenePoller.swift` | observed in shipped code |
+| Mirror's semantic walk costs **~2.1 ms per poll**, a scene of **13980 B** | `archive/mirror-standalone-2026-08-09/docs/STATUS.md`, on a session-private mac99 clone | measured, **emulator**, **and it is upstream's guest, not NOW's** |
+| Encoded scenes in upstream's fixture corpus run **1.9 KB – 23.7 KB** (raw guest replies to 70 KB) | `now-host/Packages/MirrorKit/Tests/.../Fixtures/*` | observed |
+| Upstream's live mirror is built on **polling** (`ScenePoller`), not on a push stream | `now-host/Packages/MirrorKit/Sources/MirrorKit/ScenePoller.swift` | observed in shipped code |
 
 Two of those rows do most of the work below and are easy to skim past: **a scene
 does not fit in a control frame**, and **a scene has no expensive capture to
@@ -59,7 +59,7 @@ Per the plan's stop condition, nothing here is designed against upstream's
 field-level schema. What is used is the **shape and size class** only: a scene
 is a tree of a few kilobytes to a few tens of kilobytes, carrying its own
 version stamp, a sequence number and a capture time. Upstream declared a v1
-freeze on 2026-07-31 (`mirror/docs/IR-V1.md`, on `lane/h1-ir-freeze`) with an
+freeze on 2026-07-31 (`archive/mirror-standalone-2026-08-09/docs/IR-V1.md`, on `lane/h1-ir-freeze`) with an
 additive-within-major discipline — which is a good sign but is not Michelle
 saying it has landed, so this note still treats it as moving.
 

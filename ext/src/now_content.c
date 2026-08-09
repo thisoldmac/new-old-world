@@ -15,7 +15,7 @@
  * not a screen tap.
  *
  * Ported from this project's own prototype (timbottu/mirror,
- * guest/extensions/qdpeek, mirror/docs/QDPEEK-SPEC.md), which measured it
+ * guest/extensions/qdpeek, archive/mirror-standalone-2026-08-09/docs/QDPEEK-SPEC.md), which measured it
  * on a live mac99 guest: the ten families, the re-entrancy guard, the
  * install/uninstall/repair state machine, and the counters are upstream's
  * and are kept exactly. The header rule of now-guest-ppc/src/axwalk/

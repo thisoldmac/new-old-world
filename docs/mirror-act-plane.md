@@ -4,7 +4,7 @@
 parked upstream project `timbottu/mirror`. Nothing on this page was
 measured by NOW.
 
-Source documents, now superseded by this one: `mirror/docs/PORTAL-PLAN.md`
+Source documents, now superseded by this one: `archive/mirror-standalone-2026-08-09/docs/PORTAL-PLAN.md`
 (the act plane), `CONTROL-SURFACE.md` (the perceive/act map), and the
 act-plane sections of `STATUS.md`, `HANDOFF.md` and `MIRRORKIT-PLAN.md`.
 

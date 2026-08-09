@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Probe the control op — NOW's `ctlact`, Mirror's `ctlinvoke` — against state.
 
-Ported from `timbottu/mirror/tests/ctlinvoke-probe.py`.
+Ported from `archive/mirror-standalone-2026-08-09/tests/ctlinvoke-probe.py`.
 
 ## STATUS ON NOW TODAY: RUNS (the verb is served)
 

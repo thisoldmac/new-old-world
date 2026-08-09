@@ -223,7 +223,7 @@ the defect back.
 
 ### R1 — Small system text renders 33% too large, and overruns (RENDERER)
 
-`mirror/host/MirrorKit/Sources/MirrorKitUI/DisplayReplay.swift`,
+`now-host/Packages/MirrorKit/Sources/MirrorKitUI/DisplayReplay.swift`,
 `strike(font:size:)`:
 
 ```swift

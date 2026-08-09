@@ -6,7 +6,7 @@
 
    THIS IS THE ONE THAT MATTERS. The MenuList's header size and entry
    stride appear in no header in this toolchain; they are measurements
-   carried over from mirror/guest/app/src/axmenu.c, and until now the
+   carried over from archive/mirror-standalone-2026-08-09/guest/app/src/axmenu.c, and until now the
    only thing that could have caught a wrong one was a Macintosh.
 
    The fixture is built the way the walk reads it - a 6-byte header

@@ -19,8 +19,8 @@ order, cheapest first, and stops at the first failure naming it.
   `cc` and run it here — frame codecs, JSON, layout arithmetic, command
   parsing, file lists. `scripts/test-native` runs both guests' suites in
   one command. No guest required.
-- **MirrorKit's own suite** — `scripts/test-mirrorkit` — is the vendored
-  `mirror/` SwiftPM package that turns drained drawing records into
+- **MirrorKit's own suite** — `scripts/test-mirrorkit` — builds the NOW-owned
+  `now-host/Packages/MirrorKit/` SwiftPM package that turns drained records into
   scenes and renders them. Ordinary Swift; no guest required. It has been
   stage 2 of `test-all` since 2026-08-06.
 - **The guest cross-builds** — `scripts/build-guests` — need

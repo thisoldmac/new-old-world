@@ -191,7 +191,7 @@ $ git log --oneline --merges claude/019-integration-7 ^claude/019-integration-5 
 ```
 
 And the code says the same thing: `RenderShot.png`
-(`mirror/host/MirrorKit/Sources/MirrorKitUI/SceneView.swift:64-68`) still
+(`now-host/Packages/MirrorKit/Sources/MirrorKitUI/SceneView.swift:64-68`) still
 reads
 
 ```swift

@@ -725,16 +725,18 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 ## What does not work
 
-- **No part of the content plane has touched metal** (2026-08-06). Every
-  claim in the three interior bullets above is emulator-verified on
-  mac99/OS 9.1 and nothing more. The resident that writes the ring has
-  never run on a Macintosh; no `qdext` counter has been read on one; and
-  **the live host application has never been watched composing an
-  interior** — the composition is proven by replaying committed captures
-  inside tests, which is a different and weaker thing. A PowerBook 1400c
-  is far slower than the emulator and the trap patch is the most
-  invasive thing this project installs in a foreign process, so this is
-  the gap most worth closing next.
+- **Application content replay is not metal-safe as a class** (corrected
+  2026-08-09). The content plane has now touched metal, and the result was a
+  safety boundary rather than a positive verification. Finder restarted on a
+  PB1400c after P3 tracing and is permanently refused before arming. Sherlock 2
+  produced two Type 1 crashes in cycles where the broader offscreen `probe`
+  tier became active. Ordinary `record` therefore targets only one exact
+  identified non-Finder application window; QDExtensions interception, heap
+  census, and offscreen discovery remain an explicit diagnostic tier. No
+  individual application is blacklisted. The semantic renderer and committed
+  captures are Tested, and application P3 remains useful on the emulator, but
+  there is still no positive metal matrix establishing which applications and
+  tiers are safe. Finder interiors use semantic state instead.
 - **The content plane needs the optional resident, and NOW-68K will
   never have it** (2026-08-06). Without the NOW Extension there is no
   interior at all — the verb answers `content-plane-absent`, correctly,

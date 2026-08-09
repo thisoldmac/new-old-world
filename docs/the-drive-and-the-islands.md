@@ -132,7 +132,7 @@ Tracing that one exclusion found `PixelIsland`. The archaeology:
 - **1 August, `bcc00f7d`** — the port's ~250 files were deleted. The
   abandoned copy is genuinely gone.
 
-So the live island at `mirror/host/MirrorKit/` is **Mirror's own
+So the live island at `now-host/Packages/MirrorKit/` is **Mirror's own
 implementation**, arriving by the route that was chosen deliberately —
 not a survivor of the abandoned port. Nobody decided to cross NOW's gate
 on over-the-wire pixels. **The gate was bypassed by the shape of the

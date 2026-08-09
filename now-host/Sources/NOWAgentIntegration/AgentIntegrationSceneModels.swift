@@ -1,7 +1,7 @@
 import Foundation
 
 /// The host's decoder for the scene document a guest sends over the bulk
-/// lane — Mirror's IR v1, described in `mirror/docs/IR-V1.md`.
+/// lane — Mirror's IR v1, described in `archive/mirror-standalone-2026-08-09/docs/IR-V1.md`.
 ///
 /// Two rules shape every line of this file, and both are the opposite of
 /// what a Codable model normally does.

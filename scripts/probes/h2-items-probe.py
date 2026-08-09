@@ -2,7 +2,7 @@
 """Folder items: does a click computed from an item's reported position select
 THAT item?
 
-Ported from `timbottu/mirror/tests/h2-trials.py`, with `h2-scroll.py`'s
+Ported from `archive/mirror-standalone-2026-08-09/tests/h2-trials.py`, with `h2-scroll.py`'s
 question folded in as the `scrolled` case (upstream ran scrolled trials inside
 h2-trials.py too, so this is upstream's own structure, not a merge).
 

@@ -78,7 +78,8 @@ mkdir -p "$scratch_root"
 if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
     pack=${NOW_MIRROR_ASSETS:-}
     if [ -z "$pack" ]; then
-        pack=$(ls -d "$HOME"/Lab/Assets/now-mirror-assets/pack-*/Resources \
+        asset_store=${NOW_MIRROR_ASSET_STORE:-"$HOME/Lab/Assets/now-mirror-assets"}
+        pack=$(ls -d "$asset_store"/pack-*/Resources \
                2>/dev/null | sort -r | head -1)
     fi
     if [ -n "$pack" ] && [ -f "$pack/manifest.json" ]; then

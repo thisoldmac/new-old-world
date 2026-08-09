@@ -10,7 +10,7 @@
 
 #include <string.h>
 
-/* MEASURED, not derived. mirror/guest/app/src/axmenu.c, against a live
+/* MEASURED, not derived. archive/mirror-standalone-2026-08-09/guest/app/src/axmenu.c, against a live
    Mac OS 9.1 Finder:
      - the MenuList begins with a 6-byte header whose first word is the
        LAST menu's byte offset (so count = lastMenu / entry stride),
