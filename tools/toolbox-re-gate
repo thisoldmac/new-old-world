@@ -13,7 +13,7 @@
 WHY A GATE. This is an overnight arc with nobody awake to notice it
 stopping early, and the failure mode is not laziness - it is that a
 long research task has a hundred natural-looking places to stop, each of
-which feels like a milestone. docs/local/toolbox-re/PLAN.md names six
+which feels like a milestone. The graduated investigation plan names six
 phases; this refuses to let the turn end while any of them has recorded
 nothing, and carries the plan back into context when it blocks (the
 trick tools/mirror-gate established: a rejection that re-grounds rather
@@ -52,7 +52,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 LEDGER = os.path.join(ROOT, "docs", "local", "toolbox-re", "ledger.json")
-PLAN = "docs/local/toolbox-re/PLAN.md"
+PLAN = "docs/research/mirror/toolbox-re/investigation-plan.md"
 
 MAX_FRUITLESS_BLOCKS = 6
 

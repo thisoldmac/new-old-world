@@ -2,7 +2,7 @@
 
 **Provenance of this whole file: `doc` — evidence, not measurement.**
 Nothing here was observed on the rig. It is the documented and prior-art
-half of [PLAN.md](PLAN.md); the live lane confirms or refutes it. Where a
+half of the [investigation plan](investigation-plan.md); the live lane confirms or refutes it. Where a
 claim is strong enough that a contradiction on the machine would be
 surprising, it still gets confirmed — this project has been bitten by
 code that looked obviously correct and had never run.
@@ -32,7 +32,7 @@ everything refers back to the layouts.
 | **1** | [GWorld internals](#1-gworld-internals) | construction, flags, lifecycle, teardown |
 | **2** | [The bottleneck mechanism](#2-the-bottleneck-mechanism) | `grafProcs` dispatch, `StdText`, icons |
 | **5** | [Prior reimplementations](#5-prior-reimplementations) | Executor, MACE, AMS, SheepShaver |
-| — | [Corrections to PLAN.md](#corrections-to-planmd-that-fell-out-of-this-sweep) | four things that do not exist as named |
+| — | [Corrections to the plan](#corrections-to-the-investigation-plan-that-fell-out-of-this-sweep) | four things that do not exist as named |
 | — | [**Questions for the live lane**](#questions-for-the-live-lane) | the deliverable's other half |
 | — | [Coverage](#coverage-and-what-this-file-does-not-cover) | what is thin, and what rests on what |
 
@@ -414,7 +414,7 @@ Other block facts that bear on a sweep:
 `static (this Mac)` — **DEMONSTRATES** (searched the whole `CIncludes`
 tree), **Confidence High**.
 
-PLAN.md's flag list names **`nativeEndianPixMap`** and this brief also
+the investigation plan's flag list names **`nativeEndianPixMap`** and this brief also
 asked about **`createPalette`**. **Neither identifier exists anywhere in
 UI 3.4's headers.** `QDOffscreen.h`'s only related remark is the
 pointer "to allocate non-mac-rgb GWorlds use `QTNewGWorld`
@@ -465,7 +465,7 @@ The encoding is `MOVE.L #(paramBytes<<16 | selector), D0` then `$AB1D`.
 | 0x0017 | `GetGWorldPixMap` | 0x04 |
 | 0x0018 | `GetPixRowBytes` | 0x04 |
 
-Note there is **no `PixMapChanged` selector** — PLAN.md names it; the
+Note there is **no `PixMapChanged` selector** — the investigation plan names it; the
 header's call is **`PixPatChanged`** (0x0008), alongside `CTabChanged`,
 `PortChanged` and `GDeviceChanged`. Worth correcting before a probe goes
 looking for it.
@@ -2043,7 +2043,7 @@ assumed to be a blinking caret.
 
 ---
 
-## Corrections to PLAN.md that fell out of this sweep
+## Corrections to the investigation plan that fell out of this sweep
 
 Small, but they would each have sent someone looking for something that
 does not exist:
@@ -2268,5 +2268,3 @@ machine — or, for a couple, a static read of a built binary — can answer.
   `grafProcs` NULL at allocation, port in the application zone — the
   agreement is noted as corroboration, and the measurement is the
   authority, not this file.
-
-

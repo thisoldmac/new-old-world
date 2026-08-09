@@ -481,7 +481,7 @@ int main(void)
     TEInit(); InitDialogs(NULL); InitCursor();
 
     gLen = 0; gRep[0] = '\0';
-    Say("NOW Toolbox anatomy - docs/local/toolbox-re/PLAN.md");
+    Say("NOW Toolbox anatomy - docs/research/mirror/toolbox-re/investigation-plan.md");
     Say("Emulator run, 68K application on a PowerPC guest. Not metal.");
 
     SetStdCProcs(&gStd);

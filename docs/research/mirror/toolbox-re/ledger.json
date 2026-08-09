@@ -135,28 +135,28 @@
       "phase": "P3",
       "claim": "From prior art (Apple's released 1984 QuickDraw source, corroborated by Executor): CopyBits calls bitsProc ONLY when the destination is the current port; otherwise it bypasses grafProcs entirely. Our blits satisfy that - the window is the current port - which is why sighting works even while the chase does not.",
       "provenance": "doc",
-      "evidence": "docs/local/toolbox-re/prior-art.md",
+      "evidence": "docs/research/mirror/toolbox-re/prior-art.md",
       "at": "2026-08-06T03:58:14-0400"
     },
     {
       "phase": "P3",
       "claim": "PlotIconSuite CHANGES PATH depending on whether it is being watched: Icon Utilities uses CopyMask - invisible to grafProcs - UNLESS the port has grafProcs or picSave set, in which case it renders as two CopyBits. The spike's 'PlotIconSuite emitted a blit' was therefore self-fulfilling, and an UNHOOKED application's icon drawing is invisible to a passive observer. This is an observer-changes-the-system result of the same family as instrument-feeds-the-clock.",
       "provenance": "doc",
-      "evidence": "docs/local/toolbox-re/prior-art.md",
+      "evidence": "docs/research/mirror/toolbox-re/prior-art.md",
       "at": "2026-08-06T03:58:14-0400"
     },
     {
       "phase": "P3",
       "claim": "StdText does NOT blit glyphs through bitsProc - text runs through a separate character generator that never reads grafProcs, converging with CopyBits only at the private _StretchBits. Prior art and this rig's own measurement agree, so ext/src/now_content.c's stated justification for its re-entrancy guard is wrong and the guard should be re-argued or removed.",
       "provenance": "doc",
-      "evidence": "docs/local/toolbox-re/prior-art.md",
+      "evidence": "docs/research/mirror/toolbox-re/prior-art.md",
       "at": "2026-08-06T03:58:15-0400"
     },
     {
       "phase": "P3",
       "claim": "QuickDraw has been native PowerPC since 1994 - the opposite of the arc's working premise - but native routines still sit behind routine descriptors, so trap-table interception is not thereby excluded. Measured locally: the PPC guest emits no A-traps (pure CFM imports) while the 68K guest emits raw traps, so interception depends on what the import library does. OPEN RISK: our guest links CarbonLib, and both libInterfaceLib.a and libCarbonLib.a export CopyBits, so link order decides - answerable statically from a built PEF.",
       "provenance": "doc",
-      "evidence": "docs/local/toolbox-re/prior-art.md",
+      "evidence": "docs/research/mirror/toolbox-re/prior-art.md",
       "at": "2026-08-06T03:58:15-0400"
     },
     {
@@ -184,7 +184,7 @@
       "phase": "P6",
       "claim": "prior-art.md landed from the documentation lane: ~2270 lines with per-claim provenance, confidence, and ASSERTS-vs-DEMONSTRATES, an offsetof table cross-compiled with BOTH Retro68 toolchains (PPC and 68K byte-for-byte identical, so no packing drift between guests), source conflicts reported rather than resolved, and 20 tiered questions for the live lane.",
       "provenance": "doc",
-      "evidence": "docs/local/toolbox-re/prior-art.md",
+      "evidence": "docs/research/mirror/toolbox-re/prior-art.md",
       "at": "2026-08-06T04:05:21-0400"
     },
     {

@@ -13,8 +13,9 @@ corpus as findings — `gworld-offscreen-ports-are-hookable`,
 `memtop-is-not-the-address-space-ceiling`,
 `quickdraw-bottlenecks-are-native-ppc-routine-descriptors` — and what to
 build on them is [plan 013](plans/2026-08-06-013-feat-composing-interiors-host-side-plan.md).
-The working notes it was graduated from (`docs/local/toolbox-re/`) are
-scratch and gitignored by design.
+The supporting investigation plan, ledger, and prior-art survey are published
+under `docs/research/mirror/toolbox-re/`; they preserve provenance and the
+questions the shorter reference deliberately compresses.
 
 ## 1. Getting at the corpus
 

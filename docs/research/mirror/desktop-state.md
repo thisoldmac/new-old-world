@@ -1,6 +1,6 @@
 # Lane C — the desktop the guest actually has
 
-**Plan:** [018 slice 5](../plans/2026-08-06-018-feat-stable-honest-render-plan.md)
+**Plan:** [018 slice 5](../../plans/2026-08-06-018-feat-stable-honest-render-plan.md)
 · **Date:** 2026-08-07 · **Branch:** `claude/018-lane-c`
 · **Status:** acquisition side IMPLEMENTED and verified offline; the
 render decision is Lane A's and is untouched here.

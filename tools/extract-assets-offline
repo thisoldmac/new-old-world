@@ -367,7 +367,7 @@ def extract_patterns(fork: resfork.ResourceFork, out: str, prov: list) -> dict:
 # differ: on now-mirror-stage.qcow2, System 'ppat' 16 is the 128x128 purple
 # Mac face while the running guest's desktop is the 800x600 JPEG "Indigo
 # Foam" — verified pixel-for-pixel against a QMP screendump (p95 delta 3
-# over the visible desktop strip, docs/local/018-lane-c-desktop-pattern.md).
+# over the visible desktop strip, docs/research/mirror/desktop-state.md).
 # So the renderer tiling 'ppat' 16 is a confident wrong answer twice over:
 # wrong art, and tiled where the machine does not tile.
 #

@@ -32,7 +32,7 @@ safer discovery mechanism — for transient worlds it is the only one.
 
 The overnight toolbox/GWorld RE lane
 ([docs/toolbox-and-gworld.md](../toolbox-and-gworld.md),
-docs/local/toolbox-re/prior-art.md and its ledger) did most of this
+docs/research/mirror/toolbox-re/prior-art.md and its ledger) did most of this
 plan's homework before it was written:
 
 - **A native PPC application never executes the A-trap itself** — its

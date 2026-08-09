@@ -15,8 +15,8 @@ call site to implementation, and the GWorld lifecycle understood well
 enough to predict what an unknown application will do.
 
 The immediate consumer is the GWorld probe
-([the brief](../../gworld-probe-brief.md),
-[run notes](../gworld-probe-run-notes.md)), which is blocked on exactly
+([the brief](../../../gworld-probe-brief.md),
+[run notes](../../../gworld-probe-run-notes.md)), which is blocked on exactly
 this: after a night of measurement it still cannot say whether the
 Finder's composite has an owning CGrafPort, and every explanation left
 standing is a fact about the Toolbox nobody here knows.
@@ -121,7 +121,7 @@ durable claims, plus an honest list of what remains unknown.
 
 `tools/toolbox-re-gate` runs on the `Stop` hook and refuses to let the
 turn end while phases remain unrecorded. It is a no-op for any session
-without `docs/local/toolbox-re/ledger.json`, so it costs other work
+without an active scratch ledger, so it costs other work
 nothing, and it stands down after repeated blocks with no progress
 rather than wedging the session — a gate that can never be satisfied is
 worse than the drift it prevents.
