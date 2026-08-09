@@ -24,6 +24,55 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## BROKEN: positive-size MCP guest uploads always refuse on this host (2026-08-09, `codex/now-mcp-audit-barrage`)
+
+The live Luna barrage reproduced the earlier four-byte conformance symptom at
+52 and 2,466 bytes. `GuestUploadStagingStore` reads
+`volumeAvailableCapacityForImportantUsage`; Foundation reports zero for that
+key on this Mac while ordinary available capacity is about 714 GB. The policy
+therefore concludes that every positive-size reservation exceeds capacity. A
+zero-byte begin and commit succeeds, proving the rest of the lane is reachable
+and making the false capacity answer the immediate blocker.
+
+This is root-caused, not fixed. The bounded candidate is to fall back to
+ordinary available capacity when the important-usage value is zero or absent,
+while retaining the five-percent reserve. The same capacity-reading shape in
+`AgentDownloadStore` must be checked in the same finding so one direction does
+not retain the defect. See [audit-report-2026-08-09.md](audit-report-2026-08-09.md)
+F-003 and [now-mcp-audit-barrage.md](now-mcp-audit-barrage.md).
+
+## UNVERIFIED PRODUCT BOUNDARY: full agent access may upload bytes without a one-time host-file approval (2026-08-09, `codex/now-mcp-audit-barrage`)
+
+The barrage's negative transfer prompt assumed all modern-host-to-guest files
+required `now_transfer_approved_artifact`. That is not the implemented model.
+The approval receipt governs a host-selected private file whose path is never
+given to MCP. The separate `now_guest_files_upload_*` family accepts bytes the
+caller supplies and commits them under the guest's full agent-access ceiling.
+A Codex worker with filesystem access therefore read a zero-byte file from the
+modern Desktop and placed it on the guest without minting or forging a receipt.
+
+The implementation is internally explicit; the unresolved question is product
+authority. If full guest agent access is meant to authorize any bytes the
+agent can already read, this needs clearer paired documentation and the
+negative test was wrong. If every modern-host file needs an additional human
+gesture, the upload family is a second write path that does not enforce that
+decision. No policy changed in this audit. See F-004 in the audit report.
+
+## UNVERIFIED: server-owned first contact does not route bare Macintosh tasks to NOW (2026-08-09, `codex/now-mcp-audit-barrage`)
+
+After adding initialize instructions, one resource, one prompt, and the obvious
+`now_list_machines` entry point, five of seven bare Luna tasks still made zero
+NOW calls. Four reasoned about an empty workspace and one searched the modern
+host. Prefixing only “Use the NOW integration on the connected classic
+Macintosh” made all five repeats call `now_list_machines` first.
+
+The server guide helps after selection; it is not a client intent router. A
+thin client-side NOW skill is the next bounded candidate, but it has not been
+built or retested. It should route and defer to the server guide, not duplicate
+the full tool catalog. The same run also recorded 76,618 input tokens for clean
+one-call H0 and up to 856,750 for an eleven-call cross-domain attempt, so tool
+and result context cost should be measured before any deeper catalog redesign.
+
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: Stop, disconnect, and guest replacement left a Mirror session alive (2026-08-08, `codex/mirror-session-teardown`)
 
 The reported host could hold two live Mirror sessions from one guest, and

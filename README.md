@@ -360,6 +360,13 @@ checked-in client configuration:
 swift build --package-path now-host --product NOWAgentCompanion
 ```
 
+It exposes MCP over stdio and reaches the already-running host over a private
+same-user Unix socket; it is not a hosted MCP service. The current surface is
+experimental. Start with `now_list_machines`, or read the companion's
+`now://agent/first-contact` resource. The mapped surface, test coverage, and
+live-agent findings are in
+[docs/now-mcp-audit-barrage.md](docs/now-mcp-audit-barrage.md).
+
 Build products stay outside the repository, and the bundling script
 enforces it.
 
