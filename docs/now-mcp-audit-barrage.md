@@ -228,6 +228,52 @@ used 16,514 input tokens. This is local client/server evidence only, not a VM
 behavior score. Raw event streams and the captured stdio requests remain under
 `docs/local/now-mcp-barrage-2026-08-09/cross-model/`.
 
+### Cross-model barrage protocol
+
+The follow-up panel keeps one task, one private VM, one NOW build, and one
+scoring rubric fixed while changing only the actor. The actor set is Luna,
+GPT-5.4-mini, local `Qwen3.6-27B-MLX-8bit`, and local
+`gemma-4-31B-it-qat-OptiQ-4bit`. The two local models declare native 262,144
+token windows; their persisted oMLX caps were raised from the 32,768 default to
+98,304 for this panel. Sampling, thinking, output, and tool-result settings
+remain unchanged. Runs are serial so every actor sees the same guest state.
+
+The fixed tasks are:
+
+| ID | Shape | Task boundary |
+|---|---|---|
+| H0 | first contact, read-only | discover the connected Mac and report readiness |
+| A1 | cross-domain action | inventory software, launch SimpleText, and independently verify it is frontmost |
+| M1 | mutating multistep | create a folder, verify it, trash it, restore it, and verify the restored state |
+| X1 | cross-domain mutation and UI | deliver caller-supplied text, launch SimpleText, open the exact guest file, and verify the document |
+
+Each run records prompt-to-first-NOW-call (“hello”), first call name, calls
+before hello, machine selection, domain and tool choices, evidence escalation,
+recovery, mutation verification, stop discipline, factual final answer,
+latency, and provider-reported tokens. The 100-point review rubric remains:
+connection 15, discovery 15, execution 25, verification 20, safety 15, and
+communication 10. Token totals are reported within a provider, never treated
+as directly equivalent across providers.
+
+The first local smoke uncovered a harness distinction that is retained rather
+than scored as NOW behavior. Codex 0.147 rejects oMLX's OpenAI-standard
+`/v1/models` list shape, falls back to unknown-model metadata, and does not
+materialize deferred MCP tools for these local model ids. Gemma therefore saw
+no NOW integration; Qwen found and read NOW's resource but then looped on fake
+shell “checks” instead of calling `now_list_machines`. Both models emit correct
+function calls through oMLX Responses when given a function directly.
+
+The scored local lane therefore uses a bounded direct bridge: one real stdio
+MCP handshake, all 42 live NOW tool schemas, the server's initialize
+instructions, oMLX Responses function calls, and real `tools/call` replies.
+It provides no shell tool and stops after a fixed turn limit. In the no-host
+control, Gemma and Qwen both chose `now_list_machines` from the full catalog on
+their first model turn and reported the typed `now-host-unavailable` result.
+Qwen's final sentence slightly over-inferred “no connected machines” from an
+unavailable host; Gemma preserved the refusal exactly. A longer socket suffix
+also exercised NOW's fail-closed Unix-path bound and was replaced with a short
+lane id; that safe configuration refusal is not a surface finding.
+
 ## Comparative surfaces
 
 ### TBT classic / 0.6.4 line
