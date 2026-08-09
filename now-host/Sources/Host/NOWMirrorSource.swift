@@ -1506,7 +1506,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         end try
         try
         set tn to name of trash
-        if ns does not contain tn then
+        if ns contains tn then
+        repeat with i from 1 to count ns
+        if item i of ns is tn then set item i of ks to "trash"
+        end repeat
+        else
         set end of ns to tn
         set end of ps to bounds of trash
         set end of ks to "trash"

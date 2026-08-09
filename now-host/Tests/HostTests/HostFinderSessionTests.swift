@@ -356,6 +356,8 @@ final class HostFinderSessionTests: XCTestCase {
         XCTAssertTrue(script.contains("repeat with d in disks"))
         XCTAssertTrue(script.contains("bounds of d"))
         XCTAssertTrue(script.contains("bounds of trash"))
+        XCTAssertTrue(script.contains(
+            "if item i of ns is tn then set item i of ks to \"trash\""))
         XCTAssertFalse(NOWMirrorSource.iconItemsScript(
             container: "window \"Macintosh HD\"", offset: 0)
             .contains("repeat with d in disks"),
