@@ -208,7 +208,7 @@ final class CommandParityTests: XCTestCase {
     /// Every `strcmp(name, "verb")` in a file — how both guests dispatch.
     private func dispatched(in text: String) -> Set<String> {
         var found: Set<String> = []
-        let pattern = #"strcmp\(name,\s*"([a-z_.]+)"\)"#
+        let pattern = #"strcmp\(name,\s*"([a-z_.-]+)"\)"#
         let re = try! NSRegularExpression(pattern: pattern)
         let ns = text as NSString
         for m in re.matches(in: text, range: NSRange(location: 0,
@@ -286,14 +286,20 @@ final class CommandParityTests: XCTestCase {
     /// means a verb can be reachable and invisible to this file at once,
     /// which is how `putstat` stayed exempt for eleven days.
     ///
-    /// Only verbs that take **no arguments** belong here. The fallback
-    /// passes `request_json = NULL`, so an argument-taking verb reaches it
-    /// and can only be refused; those are `consoleDebt`, and the debt is
-    /// the arguments rather than the dispatch.
+    /// Argument-taking verbs belong here only when their `x-line` grammar is
+    /// deliberately the same raw rest-of-line that the fallback hands to
+    /// `now_console_line_request`. Bespoke grammars remain explicit console
+    /// dispatch or debt; a name here means the generic route is its real
+    /// console face, not merely that an unknown verb can reach the fallback.
     private static let reachedByFallback: [String: String] = [
         "putstat": "no arguments; renders as rows through console_reply.c",
         "mouseloc": "no arguments; renders as rows through console_reply.c",
         "desktop": "no arguments; renders as rows through console_reply.c",
+        "development-build": "closed status, cancel or start grammar is the raw line",
+        "development-stage": "closed candidate action grammar is the raw line",
+        "development-project": "one opaque project ID is the raw line",
+        "development-run": "one opaque product reference is the raw line",
+        "development-open": "one opaque project ID is the raw line",
     ]
 
     /// Verbs with no console face because **a person cannot usefully type

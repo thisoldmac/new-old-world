@@ -16,6 +16,9 @@ int dev_candidate_accepting_folder(const char *candidate_id,
 int dev_candidate_discard(const char *candidate_id,
                           char *reason, long reason_cap);
 int dev_candidate_mark_built(const char *candidate_id);
+int dev_project_tree_digest(const FSSpec *folder, long dir_id,
+                            char hex[65], int *file_count,
+                            char *reason, long reason_cap);
 int dev_candidate_promote(const char *candidate_id, const char *base_digest,
                           char current_digest[65], char promoted_digest[65],
                           char *reason, long reason_cap);

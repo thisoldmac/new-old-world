@@ -984,13 +984,13 @@ awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
     contract/asyncapi.yaml | sort -u
 
 # what the PowerPC guest serves — 44
-grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
+grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
     now-guest-ppc/src/commands/commands.c \
-  | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+  | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 
 # what NOW-68K serves — 13
-grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
-  | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+grep -oE '\{ *"[a-z0-9-]+"' now-guest-68k/src/commands/commands68.c \
+  | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 ```
 
 The registry command tracks the block by indentation deliberately: a
@@ -1328,12 +1328,12 @@ derive x-commands-registry sha256=dcbff7909f3d815b2153a13307d6e0a539e2b9f8867fa5
          f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
 derive ppc-verbs sha256=2bf9d842cd04b191e3e7aac83b5c68a221bb95f9605b10ccf60a0d6e79f957f5 lines=45 published
-    grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
+    grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
         now-guest-ppc/src/commands/commands.c \
-      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+      | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 derive 68k-verbs sha256=70a32cc1ffb1933862444e2c0a0d7972fb6f1b68e40d34a2fd6bb5ef729e78d2 lines=13 published
-    grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
-      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+    grep -oE '\{ *"[a-z0-9-]+"' now-guest-68k/src/commands/commands68.c \
+      | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 rederived: 2026-08-07T03:49:51-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, x-commands-registry 0->42, ppc-verbs 0->39, 68k-verbs 0->13 (first declaration)
 rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
 rederived: 2026-08-07T12:06:15-0400 c76fea99 sources, ppc-inbound-types 48->49, x-commands-registry 42->47, ppc-verbs 39->44

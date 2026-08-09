@@ -62,9 +62,33 @@ final class AgentIntegrationDevelopmentControl {
             route = ("development-open", "development-open",
                      ["projectID": request.projectID!])
         }
-        let result: CommandResult = await withCheckedContinuation { continuation in
+        var result: CommandResult = await withCheckedContinuation { continuation in
             listener.runCommand(route.verb, args: route.args) {
                 continuation.resume(returning: $0)
+            }
+        }
+        if request.operation == .openInCodeKitten {
+            var attempts = 0
+            while result.ok,
+                  result.output?[route.group]?.contains(
+                    where: { $0.first == "State" && $0.last == "launching" }) == true {
+                attempts += 1
+                guard attempts < 40 else {
+                    return .refused(.init(
+                        code: "codekitten-launch-timeout",
+                        message: "CodeKitten was launched but did not become ready for the project handoff."))
+                }
+                guard currentSessionID() == sessionID else {
+                    return .refused(.init(
+                        code: "now-development-outcome-unknown",
+                        message: "The paired guest changed while CodeKitten was launching."))
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                result = await withCheckedContinuation { continuation in
+                    listener.runCommand(route.verb, args: route.args) {
+                        continuation.resume(returning: $0)
+                    }
+                }
             }
         }
         guard currentSessionID() == sessionID else {

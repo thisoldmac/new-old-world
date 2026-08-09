@@ -285,9 +285,9 @@ static int file_digest(const FSSpec *spec, char hex[65])
     return 1;
 }
 
-static int project_tree_digest(const FSSpec *folder, long dir_id,
-                               char hex[65], int *file_count,
-                               char *reason, long reason_cap)
+int dev_project_tree_digest(const FSSpec *folder, long dir_id,
+                            char hex[65], int *file_count,
+                            char *reason, long reason_cap)
 {
     CandidateFile *files;
     DevSHA256 tree;
@@ -464,15 +464,15 @@ int dev_candidate_promote(const char *candidate_id, const char *base_digest,
                  "Promotion requires one built candidate and its active project.");
         return 0;
     }
-    if (!project_tree_digest(&active, active_dir, current_digest, &files,
-                             reason, reason_cap)) return 0;
+    if (!dev_project_tree_digest(&active, active_dir, current_digest, &files,
+                                 reason, reason_cap)) return 0;
     if (strcmp(current_digest, base_digest) != 0) {
         snprintf(reason, (size_t)reason_cap,
                  "The active guest project diverged from the workspace base.");
         return 0;
     }
-    if (!project_tree_digest(&candidate, candidate_dir, promoted_digest, &files,
-                             reason, reason_cap)) return 0;
+    if (!dev_project_tree_digest(&candidate, candidate_dir, promoted_digest,
+                                 &files, reason, reason_cap)) return 0;
     if (ensure_folder(prefs.projects_vref, prefs.projects_dir,
                       ".NOW Backups", &backups, &backups_dir) != noErr) {
         strcpy(reason, "The promotion backup folder is unavailable."); return 0;
@@ -586,8 +586,8 @@ void now_development_stage_command(const char *request_json, long id,
         ok = lower_hex(expected_digest, 64)
             && expected_files >= 1 && expected_files <= kCandidateMaxFiles
             && dev_candidate_accepting_folder(candidate_id, &folder, &dir_id)
-            && project_tree_digest(&folder, dir_id, measured_digest,
-                                   &measured_files, reason, sizeof reason);
+            && dev_project_tree_digest(&folder, dir_id, measured_digest,
+                                       &measured_files, reason, sizeof reason);
         if (ok && (measured_files != expected_files
                    || strcmp(measured_digest, expected_digest) != 0)) {
             snprintf(reason, sizeof reason,
@@ -689,8 +689,8 @@ void now_development_project_command(const char *request_json, long id,
     if (!lower_hex(project_id, 32)
         || cursor < 0 || cursor > kCandidateMaxFiles
         || !find_active_project(project_id, &folder, &dir_id)
-        || !project_tree_digest(&folder, dir_id, digest, &measured,
-                                reason, sizeof reason)) {
+        || !dev_project_tree_digest(&folder, dir_id, digest, &measured,
+                                    reason, sizeof reason)) {
         error_reply(out, cap, id, "project-unavailable",
                     "The active guest project could not be measured.");
         return;

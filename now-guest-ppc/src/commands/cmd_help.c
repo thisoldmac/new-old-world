@@ -50,7 +50,8 @@ static const char *const d_development_run[] = {
 };
 
 static const char *const d_development_open[] = {
-    "  Sends the active Project.ckp to a running CodeKitten with odoc.",
+    "  Locates and launches CodeKitten, then sends Project.ckp with odoc.",
+    "  A launching reply is safe to retry while CodeKitten starts.",
     "  CodeKitten is optional and this command never participates in builds.",
     NULL
 };

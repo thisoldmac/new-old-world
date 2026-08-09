@@ -8,6 +8,7 @@
 #include "development_build.h"
 #include "development_candidate.h"
 #include "development_project.h"
+#include "development_sha256.h"
 #include "development_toolchain_mac.h"
 #include "fileshare.h"
 #include "json.h"
@@ -27,7 +28,7 @@ typedef struct DevProduct {
     long resource_bytes;
     OSType type;
     OSType creator;
-    unsigned long crc;
+    char digest[65];
     int ready;
 } DevProduct;
 
@@ -36,6 +37,7 @@ typedef struct DevRuntime {
     DevProject project;
     DevToolchain toolchain;
     char candidate_id[40];
+    char source_digest[65];
     FSSpec project_folder;
     long project_dir;
     char project_root[512];
@@ -109,6 +111,8 @@ static void build_reply(long id, char *out, long cap)
 {
     char action[48];
     char sizes[80];
+    char toolchain[96];
+    char signature[16];
     long pos = snprintf(out, (size_t)cap,
         "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
         "\"output\":{\"development-build\":[", id);
@@ -123,14 +127,23 @@ static void build_reply(long id, char *out, long cap)
     pos = row(out, cap, pos, "Candidate",
               g_runtime.candidate_id[0]
                   ? g_runtime.candidate_id : "active", 1);
-    pos = row(out, cap, pos, "Toolchain",
-              g_runtime.toolchain.id[0] ? g_runtime.toolchain.id : "none", 1);
+    snprintf(toolchain, sizeof toolchain, "%s@%s",
+             g_runtime.toolchain.id[0] ? g_runtime.toolchain.id : "none",
+             g_runtime.toolchain.version[0] ? g_runtime.toolchain.version : "none");
+    pos = row(out, cap, pos, "Toolchain", toolchain, 1);
+    pos = row(out, cap, pos, "Source digest",
+              g_runtime.source_digest[0] ? g_runtime.source_digest : "unavailable", 1);
     pos = row(out, cap, pos, "Product",
               g_runtime.product.ready ? g_runtime.product.ref : "unavailable", 1);
     if (g_runtime.product.ready) {
         snprintf(sizes, sizeof sizes, "%ld data, %ld resource",
                  g_runtime.product.data_bytes, g_runtime.product.resource_bytes);
         pos = row(out, cap, pos, "Forks", sizes, 1);
+        pos = row(out, cap, pos, "Product digest", g_runtime.product.digest, 1);
+        snprintf(signature, sizeof signature, "%.4s/%.4s",
+                 (char *)&g_runtime.product.type,
+                 (char *)&g_runtime.product.creator);
+        pos = row(out, cap, pos, "Type/creator", signature, 1);
     }
     pos = row(out, cap, pos, "Transcript", g_runtime.service.transcript, 1);
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
@@ -452,10 +465,9 @@ static void poll_transcript(void)
     }
 }
 
-static unsigned long fork_crc(const FSSpec *spec, Boolean resource)
+static int hash_fork(DevSHA256 *sha, const FSSpec *spec, Boolean resource)
 {
     short ref = -1;
-    unsigned long crc = 0;
     char bytes[1024];
     long count;
     OSErr err = resource ? FSpOpenRF(spec, fsRdPerm, &ref)
@@ -464,10 +476,27 @@ static unsigned long fork_crc(const FSSpec *spec, Boolean resource)
     do {
         count = sizeof bytes;
         err = FSRead(ref, &count, bytes);
-        if (count > 0) crc = now_crc32(crc, bytes, count);
+        if (count > 0) dev_sha256_update(sha, bytes, (size_t)count);
     } while (err == noErr && count > 0);
     FSClose(ref);
-    return crc;
+    return err == eofErr;
+}
+
+static int product_digest(const FSSpec *spec, OSType type, OSType creator,
+                          long data_bytes, long resource_bytes, char hex[65])
+{
+    DevSHA256 sha;
+    unsigned char digest[32];
+    dev_sha256_init(&sha);
+    dev_sha256_update(&sha, &type, sizeof type);
+    dev_sha256_update(&sha, &creator, sizeof creator);
+    dev_sha256_update(&sha, &data_bytes, sizeof data_bytes);
+    dev_sha256_update(&sha, &resource_bytes, sizeof resource_bytes);
+    if (!hash_fork(&sha, spec, false)
+        || (resource_bytes > 0 && !hash_fork(&sha, spec, true))) return 0;
+    dev_sha256_final(&sha, digest);
+    dev_sha256_hex(digest, hex);
+    return 1;
 }
 
 static int inspect_product(void)
@@ -477,7 +506,6 @@ static int inspect_product(void)
     CInfoPBRec pb;
     FSSpec spec;
     long n;
-    unsigned long a, b;
     n = snprintf(partial, sizeof partial, ":%s", g_runtime.project.product);
     if (n <= 0 || n >= (long)sizeof partial) return 0;
     for (n = 0; partial[n]; ++n) if (partial[n] == '/') partial[n] = ':';
@@ -497,11 +525,13 @@ static int inspect_product(void)
     g_runtime.product.resource_bytes = pb.hFileInfo.ioFlRLgLen;
     g_runtime.product.type = pb.hFileInfo.ioFlFndrInfo.fdType;
     g_runtime.product.creator = pb.hFileInfo.ioFlFndrInfo.fdCreator;
-    a = fork_crc(&spec, false); b = fork_crc(&spec, true);
-    g_runtime.product.crc = now_crc32(a, &b, sizeof b);
+    if (!product_digest(&spec, g_runtime.product.type,
+                        g_runtime.product.creator,
+                        g_runtime.product.data_bytes,
+                        g_runtime.product.resource_bytes,
+                        g_runtime.product.digest)) return 0;
     snprintf(g_runtime.product.ref, sizeof g_runtime.product.ref,
-             "product-%08lx%08lx", g_runtime.product.crc & 0xffffffffUL,
-             TickCount() & 0xffffffffUL);
+             "product-%.16s", g_runtime.product.digest);
     g_runtime.product.ready = 1;
     return 1;
 }
@@ -575,6 +605,7 @@ void now_development_build_command(const char *request_json, long id,
     NowPrefs prefs;
     DevToolchain measured;
     char job_id[40];
+    int source_files = 0;
     project_id[0] = '\0';
     candidate_id[0] = '\0';
     if (!now_json_find_string(request_json, "action", action, sizeof action)
@@ -630,6 +661,13 @@ void now_development_build_command(const char *request_json, long id,
                              reason, sizeof reason)) {
         reply_error(out, cap, id, "project-not-found", reason); return;
     }
+    if (!dev_project_tree_digest(&g_runtime.project_folder,
+                                 g_runtime.project_dir,
+                                 g_runtime.source_digest, &source_files,
+                                 reason, sizeof reason)) {
+        reply_error(out, cap, id, "project-unavailable",
+                    "The exact source tree could not be measured."); return;
+    }
     now_prefs_load(&prefs);
     memset(&measured, 0, sizeof measured);
     if (prefs.toolchain_vref == 0 || prefs.toolchain_dir == 0
@@ -677,7 +715,7 @@ void now_development_build_command(const char *request_json, long id,
 static int product_still_exact(void)
 {
     CInfoPBRec pb;
-    unsigned long a, b;
+    char digest[65];
     if (!g_runtime.product.ready) return 0;
     memset(&pb, 0, sizeof pb);
     pb.hFileInfo.ioNamePtr = g_runtime.product.spec.name;
@@ -685,13 +723,15 @@ static int product_still_exact(void)
     pb.hFileInfo.ioDirID = g_runtime.product.spec.parID;
     pb.hFileInfo.ioFDirIndex = 0;
     if (PBGetCatInfoSync(&pb) != noErr) return 0;
-    a = fork_crc(&g_runtime.product.spec, false);
-    b = fork_crc(&g_runtime.product.spec, true);
     return pb.hFileInfo.ioFlLgLen == g_runtime.product.data_bytes
         && pb.hFileInfo.ioFlRLgLen == g_runtime.product.resource_bytes
         && pb.hFileInfo.ioFlFndrInfo.fdType == g_runtime.product.type
         && pb.hFileInfo.ioFlFndrInfo.fdCreator == g_runtime.product.creator
-        && now_crc32(a, &b, sizeof b) == g_runtime.product.crc;
+        && product_digest(&g_runtime.product.spec, g_runtime.product.type,
+                          g_runtime.product.creator,
+                          g_runtime.product.data_bytes,
+                          g_runtime.product.resource_bytes, digest)
+        && strcmp(digest, g_runtime.product.digest) == 0;
 }
 
 void now_development_run_command(const char *request_json, long id,
@@ -699,6 +739,9 @@ void now_development_run_command(const char *request_json, long id,
 {
     char product_ref[40];
     LaunchParamBlockRec launch;
+    ProcessInfoRec process;
+    FSSpec launched_spec;
+    Str255 launched_name;
     OSErr err;
     long pos;
     char ignored[16];
@@ -724,11 +767,26 @@ void now_development_run_command(const char *request_json, long id,
         reply_error(out, cap, id, "launch-failed",
                     "The exact built product did not launch."); return;
     }
+    memset(&process, 0, sizeof process);
+    process.processInfoLength = sizeof process;
+    process.processName = launched_name;
+    process.processAppSpec = &launched_spec;
+    err = GetProcessInformation(&launch.launchProcessSN, &process);
+    if (err != noErr || process.processSignature != g_runtime.product.creator
+        || launched_spec.vRefNum != g_runtime.product.spec.vRefNum
+        || launched_spec.parID != g_runtime.product.spec.parID
+        || EqualString(launched_spec.name, g_runtime.product.spec.name,
+                       false, true) == false) {
+        reply_error(out, cap, id, "launch-unconfirmed",
+                    "Launch returned, but the resulting process identity did not match the built product.");
+        return;
+    }
     pos = snprintf(out, (size_t)cap,
         "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
         "\"output\":{\"development-run\":[", id);
     pos = row(out, cap, pos, "Product", g_runtime.product.ref, 0);
-    pos = row(out, cap, pos, "Launch", "dispatched", 1);
+    pos = row(out, cap, pos, "Product digest", g_runtime.product.digest, 1);
+    pos = row(out, cap, pos, "Launch", "accepted and process identity matched", 1);
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 
@@ -749,6 +807,69 @@ static OSErr find_codekitten(ProcessSerialNumber *found)
         }
     }
     return procNotFound;
+}
+
+/* The Desktop database is the classic Mac authority for locating an
+   application by creator.  Search each mounted volume, because a project and
+   its optional editor need not live on the same disk. */
+static OSErr locate_codekitten(FSSpec *found)
+{
+    short index;
+    for (index = 1; index < 64; ++index) {
+        HParamBlockRec volume;
+        DTPBRec desktop;
+        DTPBRec application;
+        HParamBlockRec file;
+        Str255 volume_name;
+        OSErr err;
+        memset(&volume, 0, sizeof volume);
+        volume_name[0] = 0;
+        volume.volumeParam.ioNamePtr = volume_name;
+        volume.volumeParam.ioVolIndex = index;
+        err = PBHGetVInfoSync(&volume);
+        if (err != noErr) break;
+
+        memset(&desktop, 0, sizeof desktop);
+        desktop.ioNamePtr = volume_name;
+        desktop.ioVRefNum = volume.volumeParam.ioVRefNum;
+        err = PBDTGetPath(&desktop);
+        if (err != noErr) continue;
+
+        memset(&application, 0, sizeof application);
+        application.ioNamePtr = found->name;
+        application.ioDTRefNum = desktop.ioDTRefNum;
+        application.ioIndex = 0;
+        application.ioFileCreator = 'O9ID';
+        err = PBDTGetAPPLSync(&application);
+        if (err != noErr) continue;
+
+        found->vRefNum = volume.volumeParam.ioVRefNum;
+        found->parID = application.ioAPPLParID;
+        memset(&file, 0, sizeof file);
+        file.fileParam.ioNamePtr = found->name;
+        file.fileParam.ioVRefNum = found->vRefNum;
+        file.fileParam.ioDirID = found->parID;
+        file.fileParam.ioFDirIndex = 0;
+        if (PBHGetFInfoSync(&file) == noErr
+            && file.fileParam.ioFlFndrInfo.fdType == 'APPL'
+            && file.fileParam.ioFlFndrInfo.fdCreator == 'O9ID') return noErr;
+    }
+    return procNotFound;
+}
+
+static OSErr launch_codekitten(void)
+{
+    FSSpec application;
+    LaunchParamBlockRec launch;
+    OSErr err = locate_codekitten(&application);
+    if (err != noErr) return err;
+    memset(&launch, 0, sizeof launch);
+    launch.launchBlockID = extendedBlock;
+    launch.launchEPBLength = extendedBlockLen;
+    launch.launchFileFlags = 0;
+    launch.launchControlFlags = launchContinue | launchNoFileFlags;
+    launch.launchAppSpec = &application;
+    return LaunchApplication(&launch);
 }
 
 void now_development_open_command(const char *request_json, long id,
@@ -780,8 +901,19 @@ void now_development_open_command(const char *request_json, long id,
     }
     err = find_codekitten(&psn);
     if (err != noErr) {
-        reply_error(out, cap, id, "codekitten-unavailable",
-                    "CodeKitten is not running; headless development is unaffected.");
+        err = launch_codekitten();
+        if (err != noErr) {
+            reply_error(out, cap, id, "codekitten-unavailable",
+                        "CodeKitten is not registered on a mounted volume; headless development is unaffected.");
+            return;
+        }
+        pos = snprintf(out, (size_t)cap,
+            "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+            "\"output\":{\"development-open\":[", id);
+        pos = row(out, cap, pos, "Project", project_id, 0);
+        pos = row(out, cap, pos, "CodeKitten", "launching", 1);
+        pos = row(out, cap, pos, "State", "launching", 1);
+        snprintf(out + pos, (size_t)(cap - pos), "]}}");
         return;
     }
     err = FSMakeFSSpec(folder.vRefNum, dir,
@@ -810,6 +942,7 @@ void now_development_open_command(const char *request_json, long id,
         "\"output\":{\"development-open\":[", id);
     pos = row(out, cap, pos, "Project", project_id, 0);
     pos = row(out, cap, pos, "CodeKitten", "open-document dispatched", 1);
+    pos = row(out, cap, pos, "State", "dispatched", 1);
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 

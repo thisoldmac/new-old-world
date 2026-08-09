@@ -1,13 +1,14 @@
 import Foundation
 
-/// One compact semantic lane for build, run and optional human handoff. The
+/// One compact semantic lane for project sync, build and run. The optional
+/// CodeKitten handoff stays in the app UI until it has its own approval and
+/// acceptance semantics; an agent does not need an IDE to do this work. The
 /// operation discriminant is the whole vocabulary: there is no generic guest
 /// command, path, ToolServer script or launch target.
 public enum DevelopmentProjection: HostProjection {
     public static let capability = HostCapabilityID("now_development")
     public static let requires = [
         "development-project", "development-stage", "development-build", "development-run",
-        "development-open",
     ]
     public static let exposes = requires
     public static let authorityDomain =
@@ -22,13 +23,13 @@ public enum DevelopmentProjection: HostProjection {
         .appIntents: .appIntentsFaceNotBuiltYet,
     ]
     public static let availabilityNote =
-        "The connected guest serves project snapshot, stage, build, run and handoff commands."
+        "The connected guest serves project snapshot, stage, build and run commands."
 
     public static var mcpDescriptor: [String: Any] {
         [
             "title": "Build and Run a New Old World Project",
             "description":
-                "Imports one verified active guest project, stages and promotes an inactive candidate, starts or observes a declarative MPW ToolServer build, launches only its unchanged product, or optionally opens one active Project.ckp in CodeKitten. It accepts no path, MPW text, shell text, Git operation or generic launch target. Build and run are separate outcomes.",
+                "Imports one verified active guest project, stages and promotes an inactive candidate, starts or observes a declarative MPW ToolServer build, or launches only its unchanged product. It accepts no path, MPW text, shell text, Git operation, generic launch target or IDE-control operation. Build and run are separate outcomes.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
@@ -36,7 +37,7 @@ public enum DevelopmentProjection: HostProjection {
                         "type": "string",
                     "enum": ["import", "stage", "stage-status", "stage-discard", "promote",
                                  "build-start", "build-status", "build-cancel",
-                                 "run", "open-in-codekitten"],
+                                 "run"],
                     ],
                     "projectID": ["type": "string",
                                   "pattern": "^[0-9a-f]{32}$"],
@@ -72,7 +73,8 @@ public enum DevelopmentProjection: HostProjection {
               let data = try? JSONSerialization.data(withJSONObject: object),
               let request = try? JSONDecoder().decode(
                 AgentIntegrationDevelopmentRequest.self, from: data),
-              request.isWellFormed else {
+              request.isWellFormed,
+              request.operation != .openInCodeKitten else {
             return .invalidArguments(
                 "now_development requires exactly one valid semantic operation and only its opaque project or product reference")
         }

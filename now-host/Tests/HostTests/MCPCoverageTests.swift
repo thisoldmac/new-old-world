@@ -685,9 +685,9 @@ final class MCPCoverageTests: XCTestCase {
             let k68Types = try Self.captures(
                 #"strcmp\(type, "([a-z.]+)"\)"#, in: k68Messages)
             let ppcVerbs = try Self.captures(
-                #"strcmp\(name, "([a-z]+)"\) == 0"#, in: ppcCommands)
+                #"strcmp\(name, "([a-z-]+)"\) == 0"#, in: ppcCommands)
             let k68Verbs = try Self.captures(
-                #"\{ *"([a-z]+)""#, in: k68Commands)
+                #"\{ *"([a-z-]+)""#, in: k68Commands)
             for (label, set) in [
                 ("wire.c", ppcTypes), ("wire68.c", k68Types),
                 ("commands.c", ppcVerbs), ("commands68.c", k68Verbs),

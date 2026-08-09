@@ -3890,9 +3890,11 @@ components:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
     development-open:
       description: >
-        Optionally sends the active Project.ckp for one opaque project ID to a
-        running CodeKitten using the standard open-documents Apple Event.
-        CodeKitten absence does not affect headless project or build work.
+        Optionally locates and launches CodeKitten through the classic Desktop
+        database, then sends the active Project.ckp for one opaque project ID
+        using the standard open-documents Apple Event. A launching response is
+        retried by the host without blocking the guest event loop. CodeKitten
+        absence does not affect headless project or build work.
       args:
         type: object
         required: [projectID]
