@@ -246,6 +246,20 @@ actionable full HFS path from `rootLabel`, which is presentation data. Generic
 `aesend`, `quit`, and printing stay off this row. NOW-68K should report typed
 unavailability. This is F-011 in the MCP audit and awaits explicit approval.
 
+## FRICTION: inventory paths are not launch keys (2026-08-09, `codex/now-mcp-standard-file-audit`)
+
+The fixed cross-model A1 made the handoff problem repeatable. GPT-5.6 Luna and
+GPT-5.4-mini both found SimpleText in `now_software_inventory`, then tried to
+feed its returned HFS path to `now_launch_software`; both recovered only after
+a typed refusal. Gemma and Qwen chose the exact name directly.
+
+The launch boundary is correct: paths are not accepted, exact names are
+resolved against the current guest catalog, and ambiguous-name refusals mint
+the only launch references. Its descriptor is not. It says guest paths are
+never “accepted or returned,” even though the adjacent inventory tool returns
+one for every entry. F-013 is the bounded cleanup: state the handoff locally
+and pin it in the registry without changing an argument or guest behavior.
+
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: Stop, disconnect, and guest replacement left a Mirror session alive (2026-08-08, `codex/mirror-session-teardown`)
 
 The reported host could hold two live Mirror sessions from one guest, and

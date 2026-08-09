@@ -183,6 +183,28 @@ facade from prose-byte counts alone.
   narrow client profiles, not as session-dynamic disclosure. No server facade
   change is justified by the measured client behavior.
 
+### [F-013] Inventory paths look actionable to the launch tool (severity: low, effort: XS)
+
+- **Dimension:** structure-maintainability
+- **Evidence:** in the fixed cross-model A1, both GPT-5.6 Luna and
+  GPT-5.4-mini selected SimpleText correctly from `now_software_inventory`,
+  then passed its returned HFS `path` to `now_launch_software`. Luna first used
+  a `path` argument and then combined `name` with a placeholder `reference`;
+  GPT-5.4-mini put the path in `reference`. NOW refused every malformed call
+  and both actors recovered to the exact inventory name. Gemma and Qwen used
+  the name directly.
+- **Why it matters:** the producer returns a prominent `path`, while the
+  adjacent consumer's description ends with the inaccurate statement “Guest
+  paths are never accepted or returned.” The path is returned by inventory;
+  it is simply not a launch key. Two capable actors made the same cross-tool
+  handoff error in an otherwise trivial four-call workflow.
+- **Proposed change:** keep the safe exact-name/reference contract, but make
+  the launch descriptor say explicitly to pass the exact inventory `name`,
+  never its `path`, and explain that opaque references come only from an
+  ambiguous-name refusal.
+- **Blast radius:** one descriptor and one registry guard; no arguments,
+  dispatch, guest behavior, or compatibility changes.
+
 ### [F-012] Escalation tools omitted their local evidence rank (severity: low, effort: XS) — resolved
 
 - **Dimension:** correctness and structure-maintainability

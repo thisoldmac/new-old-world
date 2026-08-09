@@ -274,6 +274,58 @@ unavailable host; Gemma preserved the refusal exactly. A longer socket suffix
 also exercised NOW's fail-closed Unix-path bound and was replaced with a short
 lane id; that safe configuration refusal is not a surface finding.
 
+### Cross-model panel result
+
+The live panel used one private Mac OS 9.1 clone, one isolated signed NOW host,
+and the same 42-tool companion build. The guest identified itself as `Power
+Mac G4`; every H0 run returned that same human machine name, `guest-1`, and the
+same live session. TBT remained present only as guest instrumentation; no TBT
+MCP was configured for any actor.
+
+| Actor | H0 | A1 | M1 | Review score(s) |
+|---|---|---|---|---|
+| GPT-5.6 Luna | one-call hello, 19.40 s | completed, 34.87 s; two rejected launch arguments before exact name; one unnecessary retained-state read | completed reversible chain, 31.71 s | 99 / 90 / 99 |
+| GPT-5.4-mini | one-call hello, 12.83 s | completed, 37.70 s; one path-as-reference retry; one unnecessary retained-state status read | completed reversible chain, 42.14 s | 98 / 93 / 98 |
+| Gemma 4 31B | one-call hello, 14.03 s | shortest correct path, four calls and 30.36 s | benched | 99 / 99 / — |
+| Qwen 3.6 27B | one-call hello, 20.61 s | completed in six calls and 106.63 s, then over-escalated and described pixels it had not received | benched | 99 / 78 / — |
+
+Every actor's first live NOW call was `now_list_machines`. Gemma's A1 was the
+clean reference path: machine discovery, application inventory, exact-name
+launch, then a fresh process snapshot showing `SimpleText` as the sole
+`front: true` process. The two OpenAI actors reached the same authoritative
+answer, but both treated the inventory's returned HFS `path` as if
+`now_launch_software` accepted it. The tool correctly refused and both
+recovered to `name: "SimpleText"`; this repeated handoff error is F-013.
+
+Qwen's A1 is scored down despite completing the task. The fresh process table
+already proved `SimpleText` frontmost, but it started retained state, received
+a typed unavailable result, and captured the screen. NOW correctly returned
+both capture metadata and an MCP `image` content block. The text-only local
+bridge had serialized that block as JSON instead of attaching its pixels, yet
+Qwen claimed the capture showed an Untitled SimpleText window. The bridge now
+replaces actor-facing image bytes with an explicit “pixels not attached; do
+not infer visual contents” sentinel while retaining the full raw MCP response
+in the trace. This is harness/model evidence, not a NOW capture defect; the
+unnecessary escalation remains evidence that F-012 guidance is not uniformly
+obeyed by smaller actors.
+
+The first Luna M1 control used a noninteractive read-only client. Both `mkdir`
+attempts were cancelled before NOW execution because no approval responder was
+present, and Luna correctly re-statted the path as absent and stopped. With
+the private VM explicitly pre-authorized, Luna and GPT-5.4-mini each completed
+and independently verified create, Trash, root absence, restore, and final
+presence without a tool failure. This reconfirms F-007 as an evaluator-launch
+requirement rather than a NOW mutation defect.
+
+Further local runs were benched after H0 and A1. They had already answered the
+surface questions, while remaining failures belonged to the Codex/oMLX
+adapter and local-model stop discipline. The existing Luna X1 trace remains
+the complex upload-plus-UI case and already isolates F-010; repeating that
+known expensive boundary was outside this bounded panel. Raw event streams,
+full tool replies, accessible reasoning summaries, stderr, and timings remain
+under `docs/local/now-mcp-barrage-2026-08-09/cross-model/panel/`. Hidden
+chain-of-thought is neither available nor claimed.
+
 ## Comparative surfaces
 
 ### TBT classic / 0.6.4 line
