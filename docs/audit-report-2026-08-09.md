@@ -146,6 +146,24 @@ guest-confirmed integrity, and statted as a four-byte `TEXT` file on Mac OS
   with confirmations intact; do not remove destructive annotations.
 - **Blast radius:** evaluation harness only.
 
+### [F-008] The live upload conformance recipe contradicted its own payload (severity: medium, effort: XS) — resolved
+
+- **Dimension:** correctness
+- **Evidence:** the recipe declared the four bytes `now\n` but supplied a
+  different hard-coded SHA-256. Once F-003 allowed staging to proceed, the
+  live run appended all four declared bytes and commit correctly refused
+  `now-files-integrity-failed`. Because an explained refusal is normally a
+  valid conformance verdict, the full-surface gate could still pass.
+- **Why it matters:** the upload chain could answer every advertised row while
+  never proving a successful commit, masking both recipe drift and a broken
+  data path.
+- **Resolution:** the recipe now derives byte count, digest, and base64 chunk
+  from one `Data` value. The spawned-client no-host gate passed all 42 rows;
+  the identity-checked live run then classified upload begin, append, and
+  commit as served, with zero failed or uncovered rows.
+- **Blast radius:** conformance test data only; production upload behavior did
+  not change.
+
 ## Not findings
 
 - NOW's stdio companion plus private same-UID Unix socket is not a confused
@@ -172,4 +190,4 @@ guest-confirmed integrity, and statted as a four-byte `TEXT` file on Mac OS
 4. F-006: measure context contributors, then review the deeper semantic/tool
    hierarchy with the barrage traces in hand.
 
-F-001, F-002, and F-003 are resolved in this branch.
+F-001, F-002, F-003, and F-008 are resolved in this branch.

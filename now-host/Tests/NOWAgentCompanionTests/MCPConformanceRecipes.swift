@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// **A legal argument for every advertised tool.**
@@ -80,6 +81,14 @@ enum MCPConformanceRecipes {
     /// The upload family addresses a transfer by a bare UUID rather than by
     /// a `now-…` reference, so its unminted form is spelled separately.
     static let neverIssuedUploadID = "00000000-0000-4000-8000-000000000000"
+
+    /// One value owns the upload recipe's bytes, length, digest and chunk.
+    /// Remembering the digest separately let the live conformance run stage
+    /// four bytes and then fail its own integrity check.
+    static let uploadProbe = Data("now\n".utf8)
+    static let uploadProbeSHA256 = SHA256.hash(data: uploadProbe).map {
+        String(format: "%02x", $0)
+    }.joined()
 
     /// One entry per capability. The gate checks this dictionary's keys
     /// against `tools/list` **both ways**, so a capability added without a
@@ -334,11 +343,9 @@ enum MCPConformanceRecipes {
                 + "uploadID the two below take, so it runs before them and "
                 + "they chain off it.",
             ["destinationPath": "NOW Conformance:probe.txt",
-             "bytes": 4,
+             "bytes": uploadProbe.count,
              "container": "data",
-             // sha256("now\n")
-             "sha256": "1a3cbde04b1e91e1e3f4e26b5b41d8c2a2b7b6c0b6e10b3d"
-                 + "a2b3fd41f7c78c1b"]),
+             "sha256": uploadProbeSHA256]),
         "now_guest_files_upload_append": Recipe(
             "The four bytes, at offset zero, against the upload the row "
                 + "above opened."
@@ -346,11 +353,11 @@ enum MCPConformanceRecipes {
             guard let uploadID = context.uploadID else {
                 return .send(["uploadID": neverIssuedUploadID,
                               "offset": 0,
-                              "data": Data("now\n".utf8)
-                                  .base64EncodedString()], .synthetic)
+                              "data": uploadProbe.base64EncodedString()],
+                             .synthetic)
             }
             return .send(["uploadID": uploadID, "offset": 0,
-                          "data": Data("now\n".utf8).base64EncodedString()],
+                          "data": uploadProbe.base64EncodedString()],
                          .real)
         },
         "now_guest_files_upload_commit": Recipe(

@@ -47,6 +47,21 @@ four data-fork bytes. That is emulator verification, not PowerBook metal
 verification. See [audit-report-2026-08-09.md](audit-report-2026-08-09.md)
 F-003 and [now-mcp-audit-barrage.md](now-mcp-audit-barrage.md).
 
+## FIXED TEST COVERAGE: live upload conformance used the wrong digest (2026-08-09, `codex/now-mcp-audit-barrage`)
+
+The full-surface recipe said it uploaded `now\n`, but its hard-coded SHA-256
+was not the digest of those four bytes. F-003 had made this invisible by
+refusing at reservation. Once staging worked, append accepted all four bytes
+and commit correctly returned `now-files-integrity-failed`. The conformance
+gate still considered that explained refusal an acceptable answer, so the
+upload family could be exercised without ever proving a successful commit.
+
+The recipe now owns one `Data("now\n".utf8)` value and derives its declared
+length, SHA-256, and base64 chunk from it. The spawned-client no-host run
+covered all 42 advertised tools; an identity-checked Mac OS 9.1 VM run then
+served upload begin, append, and commit, with zero failed or uncovered rows.
+See F-008 in [audit-report-2026-08-09.md](audit-report-2026-08-09.md).
+
 ## UNVERIFIED PRODUCT BOUNDARY: full agent access may upload bytes without a one-time host-file approval (2026-08-09, `codex/now-mcp-audit-barrage`)
 
 The barrage's negative transfer prompt assumed all modern-host-to-guest files

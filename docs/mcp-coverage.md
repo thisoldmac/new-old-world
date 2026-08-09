@@ -985,6 +985,19 @@ could have, recorded here and in `open-issues.md`:
 
 None was chased here.
 
+### Exercised again, 2026-08-09
+
+After the discovery cleanup and F-003 capacity fix, the same derived driver
+called all 42 advertised tools through a real spawned stdio companion against
+an identity-checked Mac OS 9.1 VM (`Power Mac G4`, build
+`0aa097ba0c1b`). It reported 29 served, 12 explained refusals, one explicitly
+human-gated row, zero failed, and zero uncovered. The upload recipe itself had
+carried the wrong digest for its four bytes; after deriving length, digest and
+chunk from one payload, `now_guest_files_upload_begin`,
+`now_guest_files_upload_append`, and `now_guest_files_upload_commit` all
+served in that run. This is transport-and-reply coverage on an emulator, not a
+claim that every served mutation was observed semantically or on metal.
+
 ## Status
 
 **Tested, not metal-verified.** The tables are a derivation over source and a
@@ -993,8 +1006,8 @@ dispatch answers — never that any of it has run. `contract-coverage.md`'s
 "how far each served thing is proven" is the axis for that and is not
 duplicated here.
 
-**Seven rows are now emulator-verified, and they are the only ones.** On
-2026-08-07, against Mac OS 9 under QEMU, each of `now_guest_log_tail`,
+**Seven rows retain direct effect evidence from the 2026-08-07 run.** Against
+Mac OS 9 under QEMU, each of `now_guest_log_tail`,
 `now_observe_elements`, `now_semantic_ui_act`, `now_window_act`,
 `now_control_act`, `now_text_get` and `now_text_set` was called through the
 MCP transport — the companion executable over JSON-RPC, not a test seam —
@@ -1007,7 +1020,9 @@ were refused **by the guest, in its own words** — *"that reference names a
 control, not a text element"* — which proves the reference vocabulary is
 shared but is not a completed reading; a window carrying a discoverable
 `TEHandle` was not open on that machine. Nothing here has run on real
-hardware.
+hardware. The broader 2026-08-09 run above proves every advertised row
+answered and the three-stage upload completed; it does not retroactively add
+direct-effect evidence to the other rows.
 
 **The completed text reading was taken later the same day**, on
 `claude/019-conformance`, through the companion binary over JSON-RPC. A
