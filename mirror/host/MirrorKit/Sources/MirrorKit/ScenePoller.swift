@@ -316,6 +316,8 @@ public struct ScenePoller {
 
     /// Last snapshot of what the Finder said, keyed by window title.
     private var windowItems: [String: [Scene.DesktopItem]] = [:]
+    /// Scrollbar values at which each cached Finder roster was measured.
+    private var windowItemScrollOrigins: [String: Point] = [:]
     /// Window title → the folder's HFS path (`item of window`), which is what
     /// a semantic open acts on.
     public private(set) var finderPaths: [String: String] = [:]
@@ -384,7 +386,14 @@ public struct ScenePoller {
             let win = scene.windows[i]
             guard FinderItems.isFolderWindow(win), seen[win.title] == 1,
                   let items = windowItems[win.title] else { continue }
-            scene.windows[i].items = items
+            let now = FinderItems.scrollPosition(win)
+            let captured = windowItemScrollOrigins[win.title] ?? now
+            scene.windows[i].items = items.map { item in
+                var shifted = item
+                shifted.x += captured.x - now.x
+                shifted.y += captured.y - now.y
+                return shifted
+            }
         }
         if seen.values.contains(where: { $0 > 1 }) {
             scene.meta.errors.append("window_items_ambiguous_title")
@@ -447,6 +456,8 @@ public struct ScenePoller {
                                                     catalog: catalog)
         }
         windowItems = items
+        windowItemScrollOrigins = Dictionary(uniqueKeysWithValues:
+            folders.map { ($0.title, FinderItems.scrollPosition($0)) })
         finderPaths = paths
         truncatedWindows = truncated
         return true

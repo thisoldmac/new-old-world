@@ -1036,7 +1036,8 @@ public struct SceneRenderer {
         /* Controls do not constitute the content plane. NOW's Workshop has
            several real buttons over a large hand-drawn canvas; counting those
            buttons made the rest of the body silently white again. */
-        let hasReportedContent = win.display != nil
+        let finderOwnsInterior = FinderItems.isFolderWindow(win)
+        let hasReportedContent = finderOwnsInterior || win.display != nil
             || win.text != nil
             || win.dialogItems != nil
             || win.items != nil
@@ -1070,7 +1071,6 @@ public struct SceneRenderer {
         /* Finder's interior has one owner: its semantic snapshot. Even a
            stale display list from a pre-policy run must not re-enable the
            metal-proven Finder P3 path underneath it. */
-        let finderOwnsInterior = win.app == "Finder" && win.items != nil
         let displayOwnsVisuals = !finderOwnsInterior
             && !(win.display?.isEmpty ?? true)
         /* A DITL resource-control row and its live ControlRecord share one
@@ -1237,7 +1237,7 @@ public struct SceneRenderer {
                 height: CGFloat(max(0, area.b - area.t)))))
             for item in items where item.placed {
                 let selected = win.finder?.selectedNames.contains(item.name)
-                    == true || selectedItem == item.name
+                    == true
                 drawFinderItem(iconCtx, item,
                                at: CGPoint(
                                 x: content.minX + CGFloat(item.x),

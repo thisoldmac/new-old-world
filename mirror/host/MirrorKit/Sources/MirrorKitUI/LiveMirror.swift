@@ -155,6 +155,10 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// reports it. We know what WE selected; a selection the human makes on the
     /// guest directly is invisible to us and will not show here.
     @State private var selectedItem: String?
+    /// Host-owned interaction state for Finder window interiors. The guest
+    /// remains the source of window/view geometry; selection and scroll do
+    /// not wait for the next round trip to become visible here.
+    @State private var finderInterior = FinderInteriorState()
     @State private var lastClick: (at: Date, x: Int, y: Int)?
     @State private var dragOutline: Rect?
     @State private var dragMode: DragMode?
@@ -190,7 +194,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// where that item lives or it could not. `refusedItem` is a MODE rather
     /// than an early return so the refusal is decided once, on the first move,
     /// instead of being re-derived and re-announced sixty times a second.
-    private enum DragMode { case move(Rect), resize(Rect), thumb
+    private enum DragMode { case move(Rect), resize(Rect)
+                            case thumb(String, MirrorKit.Scene.Control)
                             case item, refusedItem }
 
     /// `keyboard` defaults to `.ownsWindow`, which is what every caller
@@ -207,7 +212,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         // status line floats over the bottom edge as a thin overlay.
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
-                if let scene = controller.scene {
+                if let observedScene = controller.scene {
+                    let scene = finderInterior.projecting(observedScene)
                     /* The keyboard, underneath everything and filling the
                        whole surface. It draws nothing; it exists to be
                        first responder, because a ⌘ combination has to be
@@ -256,8 +262,9 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         /* And the machine's own report, every time one
                            arrives: if the control we are drawing pressed is
                            gone from the new scene, our drawing yields. */
-                        .onChange(of: scene.seq) { _ in
-                            reconcilePress(with: scene)
+                        .onChange(of: observedScene.seq) { _ in
+                            finderInterior.reconcile(with: observedScene)
+                            reconcilePress(with: observedScene)
                         }
                         .onContinuousHover { phase in
                             /* Name what is under the pointer, and shape
@@ -455,11 +462,12 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         if let w = scene.windows.first(where: { $0.id == id }) {
                             dragMode = .resize(w.rect)
                         }
-                    case .scrollbar(_, _, let part, _, _) where part == .thumb:
+                    case .scrollbar(let id, let control, let part, _, _)
+                            where part == .thumb:
                         // The guest's TrackControl live-tracks the real mouse;
                         // we just hold the button and move (no outline — the
                         // content itself follows).
-                        dragMode = .thumb
+                        dragMode = .thumb(id, control)
                     case .desktopItem, .windowItem:
                         /* Not on the first pixel: a CLICK also arrives here,
                            and taking hold of an item on one would send the
@@ -484,10 +492,13 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     dragOutline = Rect(l: r.l, t: r.t,
                                        r: max(r.l + 80, r.r + dx),
                                        b: max(r.t + 60, r.b + dy))
-                case .thumb:
-                    // No outline: a scrollbar has no drag ghost — the guest
-                    // live-scrolls the content under the thumb instead.
-                    break
+                case .thumb(let id, let control):
+                    if let window = scene.windows.first(where: { $0.id == id }) {
+                        let delta = Scrollbar.isVertical(control) ? dy : dx
+                        finderInterior.previewThumb(
+                            in: window, control: control,
+                            pointerDelta: delta)
+                    }
                 case .item:
                     /* RULE 1: no waiting. The ghost is under the pointer on
                        this frame, whatever the guest has or has not said. */
@@ -528,8 +539,20 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     // though the Finder did select it.
                     if case .desktopItem(let name, _, _) = target {
                         selectedItem = name
+                    } else if case .windowItem(let id, let name, _, _) = target {
+                        finderInterior.select(name, in: id)
                     } else if case .desktop = target {
                         selectedItem = nil      // clicking empty desktop clears
+                    } else if case .content(let id, _, _, _, _) = target,
+                              scene.windows.first(where: { $0.id == id })
+                                .map(FinderItems.isFolderWindow) == true {
+                        finderInterior.clearSelection(in: id)
+                    }
+                    if case .scrollbar(let id, let control, let part, _, _)
+                            = target, part != .thumb,
+                       let window = scene.windows.first(where: { $0.id == id }) {
+                        finderInterior.previewScroll(
+                            in: window, control: control, part: part)
                     }
                     guard let object = ObjectResolver.resolve(target,
                                                               in: scene) else {

@@ -343,13 +343,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Finder is the only thing that knows where. So they come from the
     /// Finder, by AppleScript, and are merged into the scene here.
     ///
-    /// Cached against `FinderItems.layoutKey`, which changes when a
-    /// window moves, resizes or SCROLLS - three Apple events per
-    /// container is cheap (0.3s for 33 items, measured) but not cheap
-    /// enough to spend on every frame of a mirror.
+    /// Cached against `FinderItems.layoutKey`, which changes when a window
+    /// moves or resizes. Scrolling is a local projection of the same roster:
+    /// `finderScrollOrigins` records the control values at capture and
+    /// `withIcons` translates the cached boxes by the current delta.
     private var icons: [String: [MirrorKit.Scene.DesktopItem]] = [:]
     private var finderPresentations:
         [String: MirrorKit.Scene.FinderPresentation] = [:]
+    private var finderScrollOrigins: [String: Point] = [:]
     private var iconLayout: String = "<none>"
     private var fetchingIcons = false
     private var finderReadNoticeShown = false
@@ -575,6 +576,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         sceneGuestKey = nil
         icons.removeAll()
         finderPresentations.removeAll()
+        finderScrollOrigins.removeAll()
         iconLayout = "<none>"
         visibilityKey = "<none>"
         visibilityReadAt = nil
@@ -982,18 +984,27 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         var out = scene
         if let desktop = icons[Self.desktopKey] { out.desktopItems = desktop }
         out.windows = out.windows.map { win in
-            guard FinderItems.isFolderWindow(win),
-                  let key = Self.finderWindowKey(win),
-                  let items = icons[key] else { return win }
+            guard FinderItems.isFolderWindow(win) else { return win }
             var w = win
-            w.items = items
-            w.finder = finderPresentations[key]
-            /* Semantic Finder owns the interior categorically. A stale P3
-               display may have been cached by an older host run; carrying it
-               forward would put the dangerous path back underneath the new
-               one even though this run never armed Finder. */
+            /* Finder P3 is permanently outside this rendering path. Even
+               before the first roster page arrives, the host owns a blank
+               Finder interior rather than briefly presenting cached guest
+               pixels and replacing them seconds later. */
             w.display = nil
             w.displayEpoch = nil
+            guard let key = Self.finderWindowKey(win),
+                  let items = icons[key] else { return w }
+            let now = FinderItems.scrollPosition(win)
+            let captured = finderScrollOrigins[key] ?? now
+            let dx = captured.x - now.x
+            let dy = captured.y - now.y
+            w.items = items.map { item in
+                var shifted = item
+                shifted.x += dx
+                shifted.y += dy
+                return shifted
+            }
+            w.finder = finderPresentations[key]
             return w
         }
         return out
@@ -1150,6 +1161,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         }
                         self.icons[surfaceKey] = roster.items
                         self.finderPresentations[surfaceKey] = presentation
+                        let currentWindow = current.windows.first {
+                            Self.finderWindowKey($0) == surfaceKey
+                        }
+                        self.finderScrollOrigins[surfaceKey] =
+                            FinderItems.scrollPosition(currentWindow ?? win)
                         self.publishFinderComplements(for: key)
                     }) {
                     fresh[surfaceKey] = snapshot.items
@@ -1203,14 +1219,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         ]),
                         outcome: complete ? "ok" : "partial",
                         ms: Int(Date().timeIntervalSince(started) * 1000))
-            /* **The layout the roster was read FOR must still be the
-               layout on screen.** Positions are window-content-local and
-               scroll-compensated, so a roster that lands after the window
-               scrolled describes icons that are no longer where it says —
-               and a click computed from it hits the wrong file. Holding
-               the whole cycle open used to prevent this by preventing a
-               newer scene; this asks the question directly, which is both
-               cheaper and stricter. */
+            /* Window identity and geometry must still match. Scroll is not
+               part of this key: the roster is translated against the live
+               scrollbar values in `withIcons`, so a scroll neither discards
+               the directory nor starts another AppleScript read. */
             if let current = self.scene,
                Self.iconLayoutKey(current) != key {
                 self.note("the Finder roster arrived for a layout the "
@@ -1446,6 +1458,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             }
             roster.append(contentsOf: page)
             offset += page.count
+            rosterReady?(.init(
+                items: roster,
+                presentation: .init(
+                    path: expectedPath ?? "",
+                    view: expectedView ?? .unknown,
+                    selectedNames: selectedNames,
+                    pages: pages,
+                    complete: offset >= total)))
             if total == 0 { break }
         }
 
@@ -1455,7 +1475,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                                 view: expectedView ?? .unknown,
                                 selectedNames: selectedNames,
                                 pages: pages, complete: true))
-        rosterReady?(semantic)
 
         let types = """
         tell application "Finder"

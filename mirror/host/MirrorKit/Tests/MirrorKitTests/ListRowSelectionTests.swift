@@ -81,6 +81,7 @@ final class ListRowSelectionTests: XCTestCase {
                       x: 22, y: top, placed: true, alias: false,
                       invisible: false, w: 16, h: 16)
             },
+            finder: .init(path: "Macintosh HD:", view: .name),
             display: nil)
     }
 
@@ -208,33 +209,19 @@ final class ListRowSelectionTests: XCTestCase {
                        FinderItems.iconArea(Self.listWindow()))
     }
 
-    /// **The gap, pinned as a gap.**
-    ///
-    /// A person clicking a list row clicks the NAME. The Finder answers
-    /// `bounds of` with the 16x16 row icon and says nothing about where it
-    /// drew the text, so a point on the name is `content` — no item, no
-    /// act, and on a guest with no positional-click verb, nothing happens
-    /// at all. That is the whole of "list view is completely not
-    /// selectable" from where a person sits.
-    ///
-    /// This asserts the CURRENT behaviour deliberately, so that whoever
-    /// widens the target has to come here and say what measured the width.
-    /// Widening it to the Name column header (content 0..214) would be a
-    /// guess about the Finder's own hit rule, not a reading of it: OS 9
-    /// does not select from the empty space after a short name, and
-    /// nothing on this side has ever measured the text.
-    func testTheNameColumnIsNotYetATarget() {
+    /// A semantic list row is a host-owned item target across the visible
+    /// row. The guest still receives a select-by-name act, so the host never
+    /// turns this wider affordance into an invented positional click.
+    func testTheNameColumnTargetsItsSemanticRow() {
         let scene = Self.scene()
         let origin = Self.contentOrigin
-        // Well inside the Name column header's 0..214, on the row whose
-        // icon centre is a target 120 px to the left.
+        // Well past the 16x16 icon, on the row named TBT.
         let hit = HitTester.hitTest(scene, x: origin.x + 150,
                                     y: origin.y + 146)
-        guard case .content = hit else {
-            return XCTFail("the name column became a target and this test "
-                           + "is the place to say what measured its width; "
-                           + "got \(hit)")
+        guard case .windowItem(_, let name, _, _) = hit else {
+            return XCTFail("expected the semantic list row, got \(hit)")
         }
+        XCTAssertEqual(name, "TBT")
     }
 
     /// The header is a control and wins over the rows under it, which is

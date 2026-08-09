@@ -199,15 +199,18 @@ final class FinderItemsTests: XCTestCase {
 
     // MARK: - The cache key
 
-    /// Scrolling moves every reported position, so it MUST invalidate the
-    /// snapshot. This is the assertion that stands between a cheap cache and
-    /// confidently wrong coordinates.
-    func testLayoutKeyChangesWhenTheWindowScrolls() {
+    /// Scrolling changes the viewport, not the directory model. The cached
+    /// roster remains valid and is translated by the reported scroll delta.
+    func testLayoutKeyDoesNotChangeWhenTheWindowScrolls() {
         let before = Self.folderWindow(items: [])
         var after = before
         after.controls[0].value = 124        // the measured post-scroll value
-        XCTAssertNotEqual(FinderItems.layoutKey(before),
-                          FinderItems.layoutKey(after))
+        XCTAssertEqual(FinderItems.layoutKey(before),
+                       FinderItems.layoutKey(after))
+        let beforeScroll = FinderItems.scrollPosition(before)
+        let afterScroll = FinderItems.scrollPosition(after)
+        XCTAssertEqual(afterScroll.x, beforeScroll.x)
+        XCTAssertEqual(afterScroll.y, 124)
     }
 
     func testLayoutKeyChangesWhenTheWindowMovesOrResizes() {

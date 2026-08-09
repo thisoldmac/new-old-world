@@ -509,16 +509,34 @@ public enum FinderItems {
         win.app == "Finder" && !HitTester.isDesktopBackdrop(win) && win.visible
     }
 
-    /// A cache key that changes whenever the *layout* could have changed: the
-    /// window's geometry, and its scroll positions. Scrolling moves every
-    /// reported position, so a cache that ignored it would serve confidently
-    /// wrong coordinates — the exact failure this lane exists to remove.
+    /// The current document scroll offset carried by the Finder's two live
+    /// scrollbars. Missing or inactive bars contribute zero.
+    ///
+    /// Item positions are cached in the coordinate space measured at one of
+    /// these offsets, then translated by the delta when the guest reports a
+    /// new value. That makes scrolling a cheap projection of an already-known
+    /// directory instead of a reason to ask the Finder for the same names and
+    /// bounds again.
+    public static func scrollPosition(_ win: Scene.Window) -> Point {
+        var point = Point(x: 0, y: 0)
+        for control in win.controls
+        where control.visible && control.role == "scrollbar" {
+            guard let value = control.value else { continue }
+            if Scrollbar.isVertical(control) {
+                point.y = value
+            } else {
+                point.x = value
+            }
+        }
+        return point
+    }
+
+    /// A cache key for the identity and viewport geometry of a Finder
+    /// container. Scroll values are deliberately absent: scrolling changes
+    /// the viewport, not the directory model, and `scrollPosition` projects
+    /// cached item geometry into the new viewport immediately.
     public static func layoutKey(_ win: Scene.Window) -> String {
-        let scrolls = win.controls
-            .filter { $0.visible && $0.value != nil }
-            .map { "\($0.value ?? 0)" }
-            .joined(separator: ",")
         return "\(win.title)@\(win.rect.l),\(win.rect.t),\(win.rect.r),"
-            + "\(win.rect.b)/\(scrolls)"
+            + "\(win.rect.b)"
     }
 }
