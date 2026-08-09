@@ -50,6 +50,75 @@ final class NOWAgentCompanionTests: XCTestCase {
         return server
     }
 
+    func testFirstContactIsServerOwnedAsInstructionsResourceAndPrompt()
+        async throws {
+        let server = NOWMCPServer(
+            client: StubAgentIntegrationClient(), audit: AuditSinkSpy())
+        let initialized = try Self.object(await server.handle(
+            try Self.request(
+                id: 1, method: "initialize", params: [
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": [:],
+                    "clientInfo": ["name": "tests", "version": "1"],
+                ])))
+        let initializeResult = try XCTUnwrap(
+            initialized["result"] as? [String: Any])
+        let capabilities = try XCTUnwrap(
+            initializeResult["capabilities"] as? [String: Any])
+        let instructions = try XCTUnwrap(
+            initializeResult["instructions"] as? String)
+        XCTAssertNotNil(capabilities["resources"])
+        XCTAssertNotNil(capabilities["prompts"])
+        XCTAssertTrue(instructions.contains("retained semantic UI state"))
+        XCTAssertTrue(instructions.contains("pixels only"))
+        XCTAssertTrue(instructions.contains("approval receipt"))
+
+        _ = await server.handle(try JSONSerialization.data(withJSONObject: [
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+        ]))
+
+        let listedResources = try Self.object(await server.handle(
+            try Self.request(id: 2, method: "resources/list", params: [:])))
+        let resourceResult = try XCTUnwrap(
+            listedResources["result"] as? [String: Any])
+        let resources = try XCTUnwrap(
+            resourceResult["resources"] as? [[String: Any]])
+        XCTAssertEqual(resources.count, 1)
+        XCTAssertEqual(resources[0]["uri"] as? String,
+                       NOWMCPServer.firstContactResourceURI)
+
+        let read = try Self.object(await server.handle(try Self.request(
+            id: 3, method: "resources/read", params: [
+                "uri": NOWMCPServer.firstContactResourceURI,
+            ])))
+        let readResult = try XCTUnwrap(read["result"] as? [String: Any])
+        let contents = try XCTUnwrap(
+            readResult["contents"] as? [[String: Any]])
+        XCTAssertEqual(contents.first?["text"] as? String, instructions)
+
+        let listedPrompts = try Self.object(await server.handle(
+            try Self.request(id: 4, method: "prompts/list", params: [:])))
+        let promptResult = try XCTUnwrap(
+            listedPrompts["result"] as? [String: Any])
+        let prompts = try XCTUnwrap(
+            promptResult["prompts"] as? [[String: Any]])
+        XCTAssertEqual(prompts.first?["name"] as? String,
+                       NOWMCPServer.firstContactPromptName)
+
+        let prompt = try Self.object(await server.handle(try Self.request(
+            id: 5, method: "prompts/get", params: [
+                "name": NOWMCPServer.firstContactPromptName,
+            ])))
+        let returnedPrompt = try XCTUnwrap(
+            prompt["result"] as? [String: Any])
+        let messages = try XCTUnwrap(
+            returnedPrompt["messages"] as? [[String: Any]])
+        let content = try XCTUnwrap(
+            messages.first?["content"] as? [String: Any])
+        XCTAssertEqual(content["text"] as? String, instructions)
+    }
+
     func testListsOnlyApprovedBoundedTools() async throws {
         let server = try await initializedServer(
             client: StubAgentIntegrationClient())

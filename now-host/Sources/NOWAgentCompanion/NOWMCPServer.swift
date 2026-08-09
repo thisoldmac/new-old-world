@@ -12,6 +12,8 @@ import NOWAgentIntegration
 /// `Self.tools` and the lookup in `callTool`.
 actor NOWMCPServer {
     static let maximumMessageBytes = 64 * 1024
+    static let firstContactResourceURI = "now://agent/first-contact"
+    static let firstContactPromptName = "start-with-now"
     private static let supportedVersions = [
         "2025-11-25",
         "2025-06-18",
@@ -91,6 +93,22 @@ actor NOWMCPServer {
                     message: "Server has not completed initialization")
             }
             return await callTool(request, id: id)
+        case "resources/list":
+            guard !isNotification else { return nil }
+            guard initialized else { return notInitialized(id: id) }
+            return listResources(request, id: id)
+        case "resources/read":
+            guard !isNotification else { return nil }
+            guard initialized else { return notInitialized(id: id) }
+            return readResource(request, id: id)
+        case "prompts/list":
+            guard !isNotification else { return nil }
+            guard initialized else { return notInitialized(id: id) }
+            return listPrompts(request, id: id)
+        case "prompts/get":
+            guard !isNotification else { return nil }
+            guard initialized else { return notInitialized(id: id) }
+            return getPrompt(request, id: id)
         default:
             guard !isNotification else { return nil }
             return errorResponse(id: id, code: -32601,
@@ -117,14 +135,94 @@ actor NOWMCPServer {
             ? requested : Self.supportedVersions[0]
         return successResponse(id: id, result: [
             "protocolVersion": version,
-            "capabilities": ["tools": [:]],
+            "capabilities": [
+                "tools": [:],
+                "resources": ["subscribe": false, "listChanged": false],
+                "prompts": ["listChanged": false],
+            ],
             "serverInfo": [
                 "name": "now-agent-companion",
                 "title": "New Old World Agent Integration",
                 "version": "0.1.0",
             ],
-            "instructions":
-                "Projects bounded health, process observation, exact application launch, revalidated cooperative quit, approved artifact delivery, and root-scoped guest Files observation already owned by a running New Old World host.",
+            "instructions": Self.firstContactGuide,
+        ])
+    }
+
+    private static let firstContactGuide = """
+        NOW controls one or more classic Macintosh guests through an already-running New Old World host. This agent surface is experimental and its names may change.
+
+        Start by discovering the connected machines and deliberately selecting a stable machine id or exact session id. Then prefer evidence in this order: structured product state (processes, software, files); retained semantic UI state for desktop and application context; typed semantic actions followed by a wait or fresh read; a targeted direct element probe only when retained state is incomplete; pixels only for a genuinely visual fact or after semantic evidence fails. Do not infer success from an accepted action. Do not invent an approval receipt: modern-host artifact delivery requires one minted by a person in NOW.
+        """
+
+    private func notInitialized(id: Any) -> Data {
+        errorResponse(id: id, code: -32002,
+                      message: "Server has not completed initialization")
+    }
+
+    private func listResources(_ request: [String: Any], id: Any) -> Data {
+        if let params = request["params"] as? [String: Any],
+           params["cursor"] != nil {
+            return errorResponse(id: id, code: -32602,
+                                 message: "Invalid resources/list cursor")
+        }
+        return successResponse(id: id, result: ["resources": [[
+            "uri": Self.firstContactResourceURI,
+            "name": "now-first-contact",
+            "title": "NOW agent first contact",
+            "description":
+                "Machine selection, semantic evidence order, verification, and approval boundaries for NOW.",
+            "mimeType": "text/markdown",
+        ]]])
+    }
+
+    private func readResource(_ request: [String: Any], id: Any) -> Data {
+        guard let params = request["params"] as? [String: Any],
+              params["uri"] as? String == Self.firstContactResourceURI,
+              Set(params.keys).isSubset(of: ["uri"]) else {
+            return errorResponse(id: id, code: -32602,
+                                 message: "Unknown NOW resource")
+        }
+        return successResponse(id: id, result: ["contents": [[
+            "uri": Self.firstContactResourceURI,
+            "mimeType": "text/markdown",
+            "text": Self.firstContactGuide,
+        ]]])
+    }
+
+    private func listPrompts(_ request: [String: Any], id: Any) -> Data {
+        if let params = request["params"] as? [String: Any],
+           params["cursor"] != nil {
+            return errorResponse(id: id, code: -32602,
+                                 message: "Invalid prompts/list cursor")
+        }
+        return successResponse(id: id, result: ["prompts": [[
+            "name": Self.firstContactPromptName,
+            "title": "Start with NOW",
+            "description":
+                "Ground on the connected Macintosh and use the semantic evidence ladder before acting.",
+            "arguments": [],
+        ]]])
+    }
+
+    private func getPrompt(_ request: [String: Any], id: Any) -> Data {
+        guard let params = request["params"] as? [String: Any],
+              params["name"] as? String == Self.firstContactPromptName,
+              Set(params.keys).isSubset(of: ["name", "arguments"]),
+              params["arguments"] == nil
+                || params["arguments"] is [String: Any] else {
+            return errorResponse(id: id, code: -32602,
+                                 message: "Unknown NOW prompt")
+        }
+        return successResponse(id: id, result: [
+            "description": "Begin a bounded NOW session",
+            "messages": [[
+                "role": "user",
+                "content": [
+                    "type": "text",
+                    "text": Self.firstContactGuide,
+                ],
+            ]],
         ])
     }
 
