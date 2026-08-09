@@ -247,6 +247,33 @@ cover selected rendering, list-row targeting, stable sort, host menus,
 multi-window folder navigation, local view/sort/scroll, and the absence of a
 guest command when opening a folder. This is **Tested**, not Metal-verified.
 
+**UPDATE 2026-08-09, optimistic Finder coupling and catalog fallback.** The
+independent mode now has two explicit development controls: synchronize Finder
+window opens/closes, and synchronize position/size. Both are local-first. A
+host open, close, move or resize changes the mirror immediately, sends the
+existing script or `winact` request when it has an exact guest identity, and
+holds that optimistic frame for eight seconds while a later guest scene either
+confirms or reconciles it. Guest-opened and guest-closed folder windows are
+joined by exact window identity plus semantic HFS path. Either axis can be
+disabled independently; this is diagnostic control, not a final product-mode
+decision. It is Tested and not metal-verified.
+
+Desktop ownership is no longer merely stated in prose. While Mirror runs, both
+Finder modes page the configured share's `Desktop Folder` once and render those
+catalog entries plus the shared volume as host semantic icons. Guest-follow
+folder windows retain the Finder's exact live roster when available; if that
+roster is absent but its semantic path is known, a bounded `file.list` of that
+one open directory supplies fallback icons. Neither path walks descendants.
+The prior Finder/OSA roster remains useful for exact guest positions and view
+state, but its failure no longer makes a known directory visually empty.
+
+The host no longer persists Mirror's run intent across app launches. It deletes
+the retired preference and starts stopped; only `--open-mirror` or an explicit
+start in the current process can begin it. A reconnect during that same process
+can still resume the current intent. Asset-pack provenance moved to the
+inspector's **Asset Packs** scaffold and is no longer painted over the mirrored
+desktop. All of this remains unverified on the PB1400c/Wallstreet.
+
 **UPDATE 2026-08-08, empty Application menu.** Presence of menu `-16489` is
 not evidence that Finder supplied its rows. An empty or incomplete menu is now
 rebuilt from the same switchable-process roster used by the agent surface,

@@ -153,6 +153,11 @@ enum HostFinderDomain {
                 placed: true, alias: false, invisible: false, w: 32, h: 32,
                 origin: .drawn))
         }
+        result.append(.init(name: "Trash", kind: "trash", type: nil,
+                            creator: nil, x: right,
+                            y: max(82, screen.h - 64), placed: true,
+                            alias: false, invisible: false, w: 32, h: 32,
+                            origin: .drawn))
         return result
     }
 

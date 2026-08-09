@@ -439,9 +439,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
          ) -> Void)? = nil,
          cycleIO: NOWMirrorCycleIO? = nil,
          sendCommand: GuestCommandSend? = nil,
+         hostFinderDefaults: UserDefaults? = nil,
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
-        self.hostFinder = HostFinderSession(listener: listener)
+        self.hostFinder = hostFinderDefaults.map {
+            HostFinderSession(listener: listener, defaults: $0)
+        } ?? HostFinderSession(listener: listener)
         self.engineRegistry = engineRegistry
         self.act = act
         let content = NOWMirrorContentPlane(listener: listener)

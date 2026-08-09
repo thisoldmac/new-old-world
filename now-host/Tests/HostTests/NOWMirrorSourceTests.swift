@@ -1311,12 +1311,16 @@ final class NOWMirrorSourceTests: XCTestCase {
         let act = AgentIntegrationActControl(
             listener: listener, currentSessionID: { session },
             commandTimeout: 0.3)
+        let finderSuite = "NOWMirrorSourceTests.\(UUID().uuidString)"
+        let finderDefaults = try XCTUnwrap(UserDefaults(suiteName: finderSuite))
+        defer { finderDefaults.removePersistentDomain(forName: finderSuite) }
+        finderDefaults.set(false, forKey: HostFinderSession.preferenceKey)
         let source = NOWMirrorSource(
             listener: listener, engineRegistry: MirrorStateEngineRegistry(),
             act: act, interval: 3_600,
             finderRefreshOverride: { _, _, completion in completion() },
             visibilityRefreshOverride: { _, _, completion in completion() },
-            cycleIO: harness.io)
+            cycleIO: harness.io, hostFinderDefaults: finderDefaults)
 
         // The scene a person is looking at, with the window still open.
         source.start()

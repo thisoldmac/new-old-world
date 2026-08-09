@@ -64,7 +64,7 @@ this order:
 | # | Source | Notes |
 |---|---|---|
 | 1 | `$NOW_MIRROR_ASSETS` | An explicit directory. Wins over everything. `NOW_MIRROR_ASSETS=none` forces the absent path — see below. |
-| 2 | the persisted selection among valid `~/Lab/Assets/now-mirror-assets/pack-*/Resources` packs | The host's **Mirror Artwork** picker stores only the discovered pack identity. It never compiles one extracted pack's name or absolute path into the app. |
+| 2 | the persisted selection among valid `~/Lab/Assets/now-mirror-assets/pack-*/Resources` packs | The host's **Asset Packs** picker stores only the discovered pack identity. It never compiles one extracted pack's name or absolute path into the app. |
 | 3 | newest valid pack in `~/Lab/Assets/now-mirror-assets/pack-*/Resources` | The default when no selection exists, or when the selected pack was removed. This currently targets the existing emulator extraction without hard-coding which extraction that is. |
 | 4 | the checkout's own `Resources/` | `tools/extract-assets-offline`'s default output. For a developer who has just run it and is building from the same tree. |
 | — | absent | A first-class state. Not an error, and not silent. |
@@ -99,11 +99,9 @@ this project keeps paying for. Without a pack:
   ways to fix it.
 - `AssetPack.status` is readable as `.absent(searched:)`, carrying the
   list of places it looked — so the message can say where to put it.
-- The live mirror shows `AssetPack.bannerText` above its status line
-  for as long as the pack is absent. A picture of another machine drawn
-  from art that machine does not own is a claim, and an unmarked claim
-  is the problem. The banner is deliberately **not** in `SceneView`:
-  the render screenshots must stay pixel-comparable.
+- The Mirror inspector's **Asset Packs** card names the selected pack or the
+  absent state. Pack management belongs beside the other development controls;
+  it is not painted over the Macintosh surface itself.
 - `IconAtlas`, `BitmapFont` and `DesktopPattern` return nil, which is
   the path they already took for "this application has no extracted
   icon" — so callers draw their procedural fallbacks through code that
