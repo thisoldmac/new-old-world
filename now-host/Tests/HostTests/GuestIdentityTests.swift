@@ -24,9 +24,47 @@ final class GuestIdentityTests: XCTestCase {
             address: GuestAddress(text: "10.0.0.2"), name: "Second",
             operatingSystem: "8.6", occupiedSlots: [])
 
-        XCTAssertTrue(registry.forget(first.id))
-        XCTAssertFalse(registry.forget(first.id))
+        XCTAssertTrue(registry.forget(first.key))
+        XCTAssertFalse(registry.forget(first.key))
         XCTAssertEqual(registry.known.map(\.id), [second.id])
+    }
+
+    func testForgettingOneLegacyDuplicateIdKeepsTheOtherRecord() throws {
+        let suite = "GuestIdentityTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let id = GuestID("q950")!
+        let first = GuestRegistry.Record(
+            id: id, address: "127.0.0.1", fingerprint: "now|9.1",
+            slot: 0, autoAssigned: false, lastSeen: Date(),
+            lastName: "First")
+        let second = GuestRegistry.Record(
+            id: id, address: "127.0.0.1", fingerprint: "now|9.1",
+            slot: 1, autoAssigned: false, lastSeen: Date(),
+            lastName: "Second")
+        let storageKey = "legacy-duplicates"
+        defaults.set(try JSONEncoder().encode([first, second]),
+                     forKey: storageKey)
+        let registry = GuestRegistry(defaults: defaults,
+                                     storageKey: storageKey)
+
+        XCTAssertTrue(registry.forget(first.key))
+        XCTAssertEqual(registry.known.map(\.key), [second.key])
+    }
+
+    func testForgottenOrdinalsAreNeverReassigned() {
+        let book = registry()
+        let first = book.identify(
+            address: GuestAddress(text: "10.0.0.1"), name: "First",
+            operatingSystem: "9.1", occupiedSlots: [])
+        XCTAssertEqual(first.id.slug, "guest-1")
+        XCTAssertTrue(book.forget(first.key))
+
+        let later = book.identify(
+            address: GuestAddress(text: "10.0.0.2"), name: "Later",
+            operatingSystem: "8.6", occupiedSlots: [])
+        XCTAssertEqual(later.id.slug, "guest-2",
+                       "a stale guest-1 selector must not reach Later")
     }
 
     func testAFirstSightMachineIsAddressableWithNoConfiguration() {
@@ -112,6 +150,21 @@ final class GuestIdentityTests: XCTestCase {
         }
         XCTAssertEqual(holder, "NOW Guest 0.14")
         XCTAssertNotEqual(book.record(for: second.id)?.id.slug, "pb1400c")
+    }
+
+    func testARenameOntoATakenIdIsRefusedAtTheSameAddress() {
+        let book = registry()
+        let loopback = GuestAddress(text: "127.0.0.1")
+        let first = book.identify(
+            address: loopback, name: "NOW Guest 0.14",
+            operatingSystem: "9.1", occupiedSlots: [])
+        let second = book.identify(
+            address: loopback, name: "NOW Guest 0.14",
+            operatingSystem: "9.1", occupiedSlots: [first.slot])
+        XCTAssertEqual(book.rename(first.id, to: "q950"),
+                       .success(GuestID("q950")!))
+        guard case .failure(.taken) = book.rename(second.id, to: "q950")
+        else { return XCTFail("loopback must not permit duplicate ids") }
     }
 
     /// Where the address cannot tell machines apart, the slot does — and

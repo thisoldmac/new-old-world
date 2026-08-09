@@ -70,6 +70,26 @@ final class ConnectionsPaneTests: XCTestCase {
             "Button(\"Start Listening\", action: startListening)"))
     }
 
+    func testPortSubmissionValidatesAndStartsExactlyOnce() throws {
+        let suite = "ConnectionsPaneTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsModel(defaults: defaults)
+        var starts = 0
+
+        XCTAssertTrue(settings.submitListenPort("5400") { starts += 1 })
+        XCTAssertEqual(settings.listenPort, 5400)
+        XCTAssertEqual(starts, 1)
+
+        for invalid in ["", "0", "70000", "not-a-port"] {
+            XCTAssertFalse(settings.submitListenPort(invalid) { starts += 1 },
+                           invalid)
+        }
+        XCTAssertEqual(settings.listenPort, 5400)
+        XCTAssertEqual(starts, 1,
+                       "invalid Return must not start on the old port")
+    }
+
     // MARK: - The retired id still resolves
 
     /// **A saved selection of the retired id lands on the merged page.**

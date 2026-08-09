@@ -374,12 +374,12 @@ final class ConnectionsModelTests: XCTestCase {
         let listener = GuestListener(
             identity: .init(version: "0.1-test", name: "Test Host"))
         var disconnected: [GuestKey] = []
-        var forgotten: [GuestID] = []
+        var forgotten: [GuestRegistry.Record.Key] = []
         let model = ConnectionsModel(
             listener: listener,
             resolve: resolver(driving: "pb1400c", connected: ["pb1400c"]),
             disconnect: { key in disconnected.append(key); return true },
-            forget: { id in forgotten.append(id); return true })
+            forget: { key in forgotten.append(key); return true })
 
         let snapshot = ConnectionsSnapshot.make(
             state: .connected(guestName: "NOW 0.14"),
@@ -390,7 +390,7 @@ final class ConnectionsModelTests: XCTestCase {
         XCTAssertTrue(model.remove(snapshot.driving!))
         XCTAssertTrue(model.remove(snapshot.known.first!))
         XCTAssertEqual(disconnected, [GuestKey.synthetic("pb1400c")])
-        XCTAssertEqual(forgotten, [GuestID("q950")!])
+        XCTAssertEqual(forgotten, [snapshot.known.first!.registryKey!])
     }
 
     /// A rename failure has to say what to do about it. `taken` names the

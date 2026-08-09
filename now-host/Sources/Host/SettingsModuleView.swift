@@ -92,19 +92,11 @@ struct ConnectionLinkSection: View {
     }
 
     private func startListening() {
-        guard applyPort() else { return }
-        onStart()
-    }
-
-    @discardableResult
-    private func applyPort() -> Bool {
-        if let port = UInt16(portText), port > 0 {
-            settings.listenPort = port
-            return true
-        } else {
+        guard settings.submitListenPort(portText, start: onStart) else {
             portText = String(settings.listenPort)
-            return false
+            return
         }
+        portText = String(settings.listenPort)
     }
 
     /// How the paired session is actually behaving — the one thing on this
@@ -177,13 +169,14 @@ struct ConnectionListenerLog: View {
     }
 
     var body: some View {
-        if !entries.isEmpty {
+        let visibleEntries = entries
+        if !visibleEntries.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 SectionHead("Log", caption: "What the listener on "
                     + "\(MachineNaming.thisMac) has done, newest first.")
                 ScrollView {
                     VStack(alignment: .leading, spacing: 2) {
-                        ForEach(entries.reversed()) { entry in
+                        ForEach(visibleEntries.reversed()) { entry in
                             Text("\(entry.at, format: .dateTime.hour().minute().second())  \(entry.text)")
                                 .font(.system(.caption, design: .monospaced))
                                 .frame(maxWidth: .infinity, alignment: .leading)

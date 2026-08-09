@@ -429,6 +429,36 @@ final class GuestListenerTests: XCTestCase {
         }
     }
 
+    func testRemovingTheDrivenGuestPromotesTheRemainingSession()
+        async throws {
+        let first = FakeGuest(port: listener.boundPort!)
+        first.start()
+        try first.send(guestHello(name: "PowerBook 1400c"))
+        try await waitUntil("first connected") {
+            self.listener.guests.count == 1
+        }
+        let second = FakeGuest(port: listener.boundPort!)
+        second.start()
+        try second.send(guestHello(name: "PowerBook 180c"))
+        try await waitUntil("both connected") {
+            self.listener.guests.count == 2
+        }
+        let driven = try XCTUnwrap(listener.guests.first(where: \.isActive))
+
+        XCTAssertTrue(listener.removeGuest(driven.key))
+        try await waitUntil("remaining guest promoted") {
+            self.listener.guests.count == 1
+                && self.listener.guests[0].isActive
+                && self.listener.guests[0].name == "PowerBook 180c"
+        }
+
+        XCTAssertNil(listener.registry.record(for: driven.id))
+        try second.send(.ping(id: 9))
+        try await waitUntil("promoted guest still answers") {
+            second.received.contains(.pong(id: 9))
+        }
+    }
+
     func testByeDisconnectsCalmly() async throws {
         let guest = FakeGuest(port: listener.boundPort!)
         guest.start()
@@ -1341,6 +1371,13 @@ final class MultiGuestListenerTests: XCTestCase {
         }
         XCTAssertFalse(answered(active, id: 77),
                        "the active guest never asked and must not be told")
+        let backgroundSession = try XCTUnwrap(listener.guests.first {
+            $0.name == "PowerBook 180c"
+        }?.sessionID)
+        XCTAssertTrue(listener.log.contains {
+            $0.text.contains("#77 ")
+                && $0.sessionID == backgroundSession
+        }, "the selected-session log must retain the asker's file result")
     }
 
     /// Ids are drawn from one host-side sequence, so a guest can name a

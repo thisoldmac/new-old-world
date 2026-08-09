@@ -451,7 +451,7 @@ final class GuestListener: ObservableObject {
     func removeGuest(_ key: GuestKey) -> Bool {
         guard let live = sessions[key] else { return false }
         if let record = machineBySession[key] {
-            _ = registry.forget(record.id)
+            _ = registry.forget(record.key)
         }
         note("Removed \(machineBySession[key]?.lastName ?? live.guestName)",
              session: key)
@@ -799,7 +799,7 @@ final class GuestListener: ObservableObject {
             note("#\(request.id) listed \(page.entries.count) "
                  + "item\(page.entries.count == 1 ? "" : "s") of "
                  + "\(request.path.isEmpty ? "the share root" : request.path)",
-                 area: "files")
+                 area: "files", session: session.guestKey)
             session.send(.fileListing(FileListing(
                 id: request.id, path: request.path, entries: page.entries,
                 more: page.more, cursor: page.next,
@@ -820,7 +820,8 @@ final class GuestListener: ObservableObject {
                 convertText: convertServedText
                     && request.container != "data")
             note("#\(request.id) serving \(plan.name), "
-                 + "\(plan.bytes.count) bytes", area: "files")
+                 + "\(plan.bytes.count) bytes", area: "files",
+                 session: session.guestKey)
             session.serveFile(id: request.id, plan: plan,
                               container: request.container,
                               modified: plan.modified)
@@ -840,7 +841,8 @@ final class GuestListener: ObservableObject {
                 createParents: offer.createParents ?? true,
                 overwrite: offer.overwrite ?? false)
             note("#\(offer.id) accepting \(offer.name), "
-                 + "\(offer.bytes) bytes, into the share", area: "files")
+                 + "\(offer.bytes) bytes, into the share", area: "files",
+                 session: session.guestKey)
             try session.beginReceiving(offer: offer, to: url)
         } catch {
             session.refuseFile(id: offer.id, error: error)
@@ -874,7 +876,7 @@ final class GuestListener: ObservableObject {
                                             overwrite: request.overwrite
                                                 ?? false)
                 note("#\(request.id) moved \(request.path) to \(landed)",
-                     area: "files")
+                     area: "files", session: session.guestKey)
                 served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
@@ -884,7 +886,8 @@ final class GuestListener: ObservableObject {
                 /* The other machine putting a file of yours in the
                    Trash is the line most worth having later. */
                 note("#\(request.id) trashed \(request.path), it is in the "
-                     + "Trash as \(landed)", area: "files")
+                     + "Trash as \(landed)", area: "files",
+                     session: session.guestKey)
                 served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: request.path,
@@ -893,7 +896,8 @@ final class GuestListener: ObservableObject {
                 let landed = try share.restore(trashedAs: request.trashedAs,
                                                to: request.toPath)
                 note("#\(request.id) restored \(request.trashedAs) to "
-                     + "\(landed)", area: "files")
+                     + "\(landed)", area: "files",
+                     session: session.guestKey)
                 served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
@@ -901,7 +905,7 @@ final class GuestListener: ObservableObject {
             case .mkdir(let request):
                 let landed = try share.makeFolder(path: request.path)
                 note("#\(request.id) made the folder \(landed)",
-                     area: "files")
+                     area: "files", session: session.guestKey)
                 served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
@@ -910,7 +914,8 @@ final class GuestListener: ObservableObject {
         } catch {
             let fault = HostShare.WireFault(error)
             note("#\(change.id) change refused: \(fault.code) "
-                 + "(\(fault.reason))", area: "files", level: .warn)
+                 + "(\(fault.reason))", area: "files", level: .warn,
+                 session: session.guestKey)
             session.send(.fileResult(FileResult(
                 id: change.id, ok: false, path: nil, trashedAs: nil,
                 code: fault.code, reason: fault.reason)))

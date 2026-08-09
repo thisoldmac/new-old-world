@@ -141,6 +141,9 @@ struct ConnectionRow: Identifiable, Equatable, Sendable {
     /// The session handle the pane needs to drive or rename this machine.
     /// Nil for a remembered row: neither is possible without a connection.
     let key: GuestKey?
+    /// Exact durable registry record, only for remembered rows. A machine id
+    /// is human-editable and therefore cannot safely identify a deletion.
+    let registryKey: GuestRegistry.Record.Key?
     /// What an agent naming this row's MACHINE id would be told.
     let byMachineID: ConnectionAddressing
     /// What an agent holding this row's SESSION id would be told — the live
@@ -259,6 +262,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 idIsAutoAssigned: guest.idIsAutoAssigned,
                 idIsAnchored: guest.idIsAnchored,
                 key: guest.key,
+                registryKey: nil,
                 byMachineID: ConnectionAddressing(
                     refusal: resolve(guest.id.slug)),
                 bySessionID: ConnectionAddressing(
@@ -288,6 +292,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 idIsAnchored: GuestAddress(text: record.address)
                     .distinguishesMachines,
                 key: nil,
+                registryKey: record.key,
                 byMachineID: ConnectionAddressing(
                     refusal: resolve(record.id.slug)),
                 bySessionID: last.map {
@@ -325,7 +330,7 @@ final class ConnectionsModel: ObservableObject {
     private let resolve: (String) -> AgentIntegrationUnavailable?
     private let select: (GuestKey) -> Bool
     private let disconnect: (GuestKey) -> Bool
-    private let forget: (GuestID) -> Bool
+    private let forget: (GuestRegistry.Record.Key) -> Bool
     private var ended: [String: EndedGuestSession] = [:]
     private var liveGuests: [GuestKey: ConnectedGuest] = [:]
     private var watch: HostEventSubscription?
@@ -338,14 +343,14 @@ final class ConnectionsModel: ObservableObject {
          resolve: @escaping (String) -> AgentIntegrationUnavailable?,
          select: ((GuestKey) -> Bool)? = nil,
          disconnect: ((GuestKey) -> Bool)? = nil,
-         forget: ((GuestID) -> Bool)? = nil) {
+         forget: ((GuestRegistry.Record.Key) -> Bool)? = nil) {
         self.listener = listener
         self.resolve = resolve
         self.select = select ?? { [listener] key in listener.selectGuest(key) }
         self.disconnect = disconnect
             ?? { [listener] key in listener.removeGuest(key) }
         self.forget = forget
-            ?? { [listener] id in listener.registry.forget(id) }
+            ?? { [listener] key in listener.registry.forget(key) }
         /* This used to sink `$guests` and `$state` and hop a turn through
            the main queue, because `@Published` fires in `willSet` and a sink
            reading the listener back synchronously saw the OUTGOING value.
@@ -414,8 +419,8 @@ final class ConnectionsModel: ObservableObject {
         if let key = row.key {
             return disconnect(key)
         }
-        guard let id = GuestID(row.machineID) else { return false }
-        let removed = forget(id)
+        guard let key = row.registryKey else { return false }
+        let removed = forget(key)
         if removed { refresh() }
         return removed
     }

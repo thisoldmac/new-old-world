@@ -30,11 +30,13 @@ live session or forgets exactly a selected remembered record. Pressing Return
 in the port field follows the same validated Start Listening action as the
 button.
 
-**Tested here:** focused host tests cover active-versus-remembered removal,
+**Tested here:** `scripts/test-all` passes: 82 native tests, the complete host
+suite, and the Debug and Release app builds. Focused host tests cover
+active-versus-remembered removal, exact remembered-record removal,
 session-scoped health and logs, the plural module name, and Return starting
-the listener. A two-guest socket test removes the background session and then
-proves the driven guest still answers. The complete repository gate is the
-remaining local check for this branch.
+the listener. Two-guest socket tests remove either session and prove the
+remaining guest is still promoted or still answers. Guest cross-builds were
+skipped because this worktree has no Retro68 toolchain.
 
 **Still unverified:** nobody has looked at this layout in the running host
 app yet, and none of these controls has been exercised against two physical

@@ -13,6 +13,8 @@ struct ConnectionsModuleView: View {
     var onStop: () -> Void
     @State private var selectedID: String?
     @State private var adding = false
+    @State private var connectedBeforeAdding: Set<String> = []
+    @State private var pendingRemoval: ConnectionRow?
 
     var body: some View {
         HSplitView {
@@ -26,10 +28,26 @@ struct ConnectionsModuleView: View {
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { repairSelection() }
-        .onChange(of: model.snapshot) { _ in repairSelection() }
+        .onChange(of: model.snapshot) { snapshot in
+            if adding,
+               let arrived = snapshot.connected.first(where: {
+                   !connectedBeforeAdding.contains($0.id)
+               }) {
+                adding = false
+                selectedID = arrived.id
+            } else {
+                repairSelection()
+            }
+        }
         .onChange(of: listener.activeKey) { _ in
             guard !adding else { return }
             selectedID = model.snapshot.driving?.id
+        }
+        .alert(removalTitle, isPresented: removalIsPresented) {
+            Button("Remove", role: .destructive, action: confirmRemoval)
+            Button("Cancel", role: .cancel) { pendingRemoval = nil }
+        } message: {
+            Text(removalMessage)
         }
     }
 
@@ -63,7 +81,7 @@ struct ConnectionsModuleView: View {
                     Image(systemName: "plus")
                 }
                 .help("Add a guest")
-                Button(action: removeSelection) {
+                Button(action: requestRemoval) {
                     Image(systemName: "minus")
                 }
                 .disabled(selectedRow == nil)
@@ -181,10 +199,6 @@ struct ConnectionsModuleView: View {
         } set: { id in
             adding = false
             selectedID = id
-            guard let id,
-                  let row = model.snapshot.rows.first(where: { $0.id == id }),
-                  row.presence == .connected else { return }
-            _ = model.drive(row)
         }
     }
 
@@ -200,14 +214,47 @@ struct ConnectionsModuleView: View {
     }
 
     private func beginAdding() {
+        connectedBeforeAdding = Set(model.snapshot.connected.map(\.id))
         selectedID = nil
         adding = true
     }
 
-    private func removeSelection() {
-        guard let row = selectedRow, model.remove(row) else { return }
-        selectedID = nil
-        DispatchQueue.main.async { repairSelection() }
+    private func requestRemoval() {
+        pendingRemoval = selectedRow
+    }
+
+    private func confirmRemoval() {
+        guard let row = pendingRemoval else { return }
+        pendingRemoval = nil
+        guard model.remove(row) else { return }
+        if row.presence == .known {
+            selectedID = nil
+            repairSelection()
+        }
+    }
+
+    private var removalIsPresented: Binding<Bool> {
+        Binding {
+            pendingRemoval != nil
+        } set: { shown in
+            if !shown { pendingRemoval = nil }
+        }
+    }
+
+    private var removalTitle: String {
+        guard let row = pendingRemoval else { return "Remove Guest?" }
+        return "Remove \(row.machineID)?"
+    }
+
+    private var removalMessage: String {
+        guard let row = pendingRemoval else { return "" }
+        if row.isConnected {
+            return "This disconnects \(row.name) and forgets its saved "
+                + "machine ID. If it reconnects, it will receive a new "
+                + "temporary ID. This cannot be undone."
+        }
+        return "This forgets \(row.name) and its saved machine ID. "
+            + "This cannot be undone."
     }
 }
 
