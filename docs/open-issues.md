@@ -198,10 +198,30 @@ Subsequent Finder and key attempts had no semantic row to ground against and
 the evaluator interrupted the run after about 226 seconds.
 
 Do not infer selection from the editable text or add another gesture synonym.
-The next review should decide whether Standard File rows belong in the
-retained surface, a bounded direct observation, or a typed open-document
-operation. The raw trace is under
+The design review in
+[now-mcp-standard-file-review.md](now-mcp-standard-file-review.md) keeps this
+literal dialog-row problem open: Navigation Services selection requires an
+opaque `NavDialogRef` that the observed window does not reveal, so a generic
+fix is a resident-contract project rather than a bounded cleanup. The raw
+trace is under
 `docs/local/now-mcp-barrage-2026-08-09/f009-action-contracts/`.
+
+## UNPROJECTED: the PPC guest can open a document semantically but MCP cannot ask it (2026-08-09, `codex/now-mcp-standard-file-audit`)
+
+The guest's closed `aesend` command already serves `odoc`: one exact process
+serial, one HFS document, one `kAEOpenDocuments` Apple Event, with `sent`
+reported distinctly from `performed`. The MCP projects neither that bounded
+outcome nor a document-shaped wrapper, so agents fall into F-010's opaque Open
+dialog for a task the OS can perform directly.
+
+The recommended bounded slice is `now_open_document(processReference, path)`.
+It should revalidate the opaque process reference, enforce the existing
+root-relative guest Files policy, and delegate only `odoc`. The guest contract
+needs an accretive share-relative path form; the host must not build an
+actionable full HFS path from `rootLabel`, which is presentation data. Generic
+`aesend`, `quit`, and printing stay off this row. NOW-68K should report typed
+unavailability. This is F-011 in the MCP audit and awaits explicit approval.
+
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: Stop, disconnect, and guest replacement left a Mirror session alive (2026-08-08, `codex/mirror-session-teardown`)
 
 The reported host could hold two live Mirror sessions from one guest, and

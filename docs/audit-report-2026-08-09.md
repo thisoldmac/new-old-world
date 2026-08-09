@@ -229,13 +229,40 @@ facade from prose-byte counts alone.
   reliably choose the document inside it. Cross-domain open/save tasks
   therefore degrade into keyboard, pixel, or container guesses even though the
   final button is fully semantic.
-- **Proposed change:** first decide whether Standard File row semantics belong
-  in the retained surface, a bounded direct observation, or a typed
-  open-document operation. Preserve the actual Dialog Manager navigation and
-  selection semantics; do not infer a selected row from editable text.
+- **Review result:** keep literal Open-dialog row navigation as a distinct,
+  unresolved semantic-capture problem. The installed Navigation Services
+  headers expose selection through an opaque `NavDialogRef`, but the observed
+  `WindowRef` is a distinct type and there is no public inverse lookup.
+  Capturing it generically would require a new in-context registration or
+  interception seam and resident contract. Do not widen `dialogItem`, infer a
+  selected row from editable text, or disguise a coordinate as a row identity.
+  The bounded high-impact slice is instead the dedicated `now_open_document`
+  projection described in [now-mcp-standard-file-review.md](now-mcp-standard-file-review.md),
+  using the PPC guest's existing closed `aesend`/`odoc` mechanism. It does not
+  claim to fix explicit dialog traversal.
 - **Blast radius:** likely guest semantic capture plus the retained projector
   and executor, or one new typed domain action. This is not folded into the
   action-schema cleanup.
+
+### [F-011] A bounded guest document-open capability exists but is absent from MCP (severity: medium, effort: M)
+
+- **Dimension:** correctness and structure-maintainability
+- **Evidence:** the PPC guest's contract and implementation already serve a
+  closed `aesend` vocabulary. Its `odoc` operation addresses one exact PSN,
+  resolves one HFS document, sends `kAEOpenDocuments`, and reports `sent`
+  rather than `performed`. `docs/mcp-coverage.md` records it as unprojected.
+  TBT classic exposes the same mechanism but gives agents a generic event tool.
+- **Why it matters:** an agent that has uploaded or found a known document must
+  currently reverse-engineer an application's Open dialog even though the
+  operating system already provides a semantic document-open operation.
+- **Proposed change:** add `now_open_document(processReference, path)`. Reuse
+  opaque process revalidation and the host-owned root-relative Files policy;
+  extend the guest command accretively with a share-relative path form rather
+  than reconstructing an actionable full HFS path from a display label. Expose
+  only `odoc`, not generic `aesend`; keep NOW-68K typed unavailable.
+- **Blast radius:** async contract, PPC command argument/resolve seam, one host
+  projection and local-protocol lane, derived MCP/coverage docs, and focused
+  tests. No resident or Mirror state-engine change.
 
 ### [F-008] The live upload conformance recipe contradicted its own payload (severity: medium, effort: XS) — resolved
 
@@ -276,10 +303,12 @@ facade from prose-byte counts alone.
 
 1. F-004: decide and document the intended authority boundary before changing
    either transfer family.
-2. F-010: choose the ownership boundary for Standard File row selection before
-   adding another generic UI action.
+2. F-011: with explicit approval, project the PPC guest's bounded document-open
+   mechanism as `now_open_document`; keep generic Apple Events off MCP.
 3. F-006: A/B the thin router with a small `enabled_tools` allowlist;
    defer any deeper facade or catalog redesign until that result is known.
 
 F-001, F-002, F-003, F-005, F-007, F-008, and F-009 are resolved in their
-stated scope. F-004, F-006, and F-010 remain review inputs.
+stated scope. F-004 and F-006 remain review inputs. F-011 awaits approval.
+F-010 remains an explicitly deferred resident-contract problem, not a
+prerequisite for F-011.

@@ -517,7 +517,13 @@ The next brief review should decide only:
 
 1. whether caller-supplied guest upload bytes are intentionally outside the
    one-time host-file approval boundary;
-2. which layer should own typed Standard File row discovery and selection.
+2. whether to implement the bounded `now_open_document` slice from
+   [now-mcp-standard-file-review.md](now-mcp-standard-file-review.md).
+
+Literal Standard File/Navigation Services row discovery remains F-010 and is
+not a prerequisite for that slice. The public selection API requires an opaque
+`NavDialogRef` that the observed window does not provide, so pursuing it would
+be a resident-contract project rather than a cheap MCP cleanup.
 
 The larger direct-observation/retained-state/tool-hierarchy redesign remains a
 post-barrage design pass. The action grammar no longer needs to wait for it.
