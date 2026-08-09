@@ -60,7 +60,7 @@ but the bare-task result leaves the client-routing half open under F-005.
 - **Blast radius:** nine MCP names and derived documentation; host engine,
   executor, and human UI unchanged.
 
-### [F-003] Positive-size upload staging always refuses on this Mac (severity: high, effort: S)
+### [F-003] Positive-size upload staging always refuses on this Mac (severity: high, effort: S) — resolved
 
 - **Dimension:** correctness
 - **Evidence:**
@@ -77,6 +77,16 @@ but the bare-task result leaves the client-routing half open under F-005.
 - **Blast radius:** guest-upload and guest-download staging capacity readers;
   verify with injected-capacity unit tests, a live positive-size upload, and
   `scripts/test-all`.
+
+`PrivateStagingCapacity` now gives both transfer directions one capacity
+answer: a positive important-usage value wins, while zero or unavailable falls
+back to a nonnegative ordinary volume value. The five-percent reserve is
+unchanged. The new resolver guard was watched fail in the two reproduced
+zero/missing cases before the fix, then passed with the upload- and
+download-store suites. Through the real stdio companion and private host
+socket, a four-byte VM upload reserved host space, appended, committed with
+guest-confirmed integrity, and statted as a four-byte `TEXT` file on Mac OS
+9.1. Full-repository verification remains the closeout gate.
 
 ### [F-004] Transfer approval and caller-supplied upload are easy to conflate (severity: medium, effort: S)
 
@@ -155,13 +165,11 @@ but the bare-task result leaves the client-routing half open under F-005.
 
 ## Suggested order
 
-1. F-003 after explicit approval: the reproduced defect is small and blocks
-   X1 plus every non-empty caller-supplied upload.
-2. F-004: decide and document the intended authority boundary before changing
+1. F-004: decide and document the intended authority boundary before changing
    either transfer family.
-3. F-007: run the one interactive mutation follow-up.
-4. F-005: prototype and retest a thin client-side routing skill.
-5. F-006: measure context contributors, then review the deeper semantic/tool
+2. F-007: run the one interactive mutation follow-up.
+3. F-005: prototype and retest a thin client-side routing skill.
+4. F-006: measure context contributors, then review the deeper semantic/tool
    hierarchy with the barrage traces in hand.
 
-F-001 and F-002 are resolved in this branch.
+F-001, F-002, and F-003 are resolved in this branch.

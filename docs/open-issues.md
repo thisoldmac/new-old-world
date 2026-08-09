@@ -24,7 +24,7 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
-## BROKEN: positive-size MCP guest uploads always refuse on this host (2026-08-09, `codex/now-mcp-audit-barrage`)
+## FIXED HOST-SIDE, NOT METAL-VERIFIED: positive-size MCP guest uploads always refused on this host (2026-08-09, `codex/now-mcp-audit-barrage`)
 
 The live Luna barrage reproduced the earlier four-byte conformance symptom at
 52 and 2,466 bytes. `GuestUploadStagingStore` reads
@@ -34,11 +34,17 @@ therefore concludes that every positive-size reservation exceeds capacity. A
 zero-byte begin and commit succeeds, proving the rest of the lane is reachable
 and making the false capacity answer the immediate blocker.
 
-This is root-caused, not fixed. The bounded candidate is to fall back to
-ordinary available capacity when the important-usage value is zero or absent,
-while retaining the five-percent reserve. The same capacity-reading shape in
-`AgentDownloadStore` must be checked in the same finding so one direction does
-not retain the defect. See [audit-report-2026-08-09.md](audit-report-2026-08-09.md)
+Fixed on 2026-08-09 at `de4aedf2`. `PrivateStagingCapacity` now supplies one
+answer to both `GuestUploadStagingStore` and `AgentDownloadStore`: a positive
+important-usage value wins; zero or unavailable falls back to a nonnegative
+ordinary capacity. The five-percent reserve did not change. The new resolver
+guard was watched fail before the fix, then passed with both store suites.
+
+A private Mac OS 9.1 VM then accepted a four-byte upload through the real stdio
+companion and same-UID host socket, confirmed all four bytes and their guest
+CRC, finalized by same-folder rename, and statted the resulting `TEXT` file as
+four data-fork bytes. That is emulator verification, not PowerBook metal
+verification. See [audit-report-2026-08-09.md](audit-report-2026-08-09.md)
 F-003 and [now-mcp-audit-barrage.md](now-mcp-audit-barrage.md).
 
 ## UNVERIFIED PRODUCT BOUNDARY: full agent access may upload bytes without a one-time host-file approval (2026-08-09, `codex/now-mcp-audit-barrage`)

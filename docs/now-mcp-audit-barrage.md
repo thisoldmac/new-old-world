@@ -389,13 +389,16 @@ selected*; they are not a reliable client-side router.
    for authoritative folder typing. X1 moved from transfer to semantic UI and
    direct observation. This is enough evidence to design the deeper hierarchy
    later, not enough reason to collapse those planes during this pass.
-4. **Non-empty guest upload is broken on this Mac.** The host reported
+4. **The barrage found and the cleanup fixed non-empty guest upload on this
+   Mac.** The host reported
    `volumeAvailableCapacityForImportantUsage == 0` while ordinary available
    capacity was about 714 GB. Every positive-size reservation therefore
    returned `now-files-insufficient-host-space`; a zero-byte reservation and
    commit succeeded. A four-byte live conformance run had already recorded the
-   same symptom on 2026-08-07. This is now reproduced and root-caused, but not
-   fixed in this audit.
+   same symptom on 2026-08-07. Both transfer directions now share a capacity
+   resolver that falls back to ordinary capacity without weakening the reserve.
+   A post-fix four-byte VM upload completed through the real MCP companion and
+   statted as four data-fork bytes on the guest.
 5. **The transfer authority model is narrower than the original N1 expected.**
    `now_transfer_approved_artifact` requires a human-minted receipt because it
    redeems a host-selected private file. `now_guest_files_upload_*` accepts
@@ -423,19 +426,17 @@ chain-of-thought, so this audit makes no claim to have captured it.
 ### Verification status and next review
 
 The first-contact cleanup is **tested and VM-verified for H0/H1/R1/R2/A1**.
-The staging failure and zero-byte upload are also VM-observed. M1 and X1 are
-not behavior-verified because client confirmation prevented the intended
-mutation. Nothing here is metal-verified.
+The staging failure, zero-byte baseline, and successful four-byte post-fix
+upload are VM-observed. M1 and X1 are not behavior-verified because client
+confirmation prevented the intended mutation. Nothing here is metal-verified.
 
 The next brief review should decide only:
 
-1. whether to fix capacity detection by treating a zero “important usage”
-   value as unavailable and falling back to ordinary volume capacity;
-2. whether a packaged client-side NOW routing skill is the intended first
+1. whether a packaged client-side NOW routing skill is the intended first
    contact layer;
-3. whether caller-supplied guest upload bytes are intentionally outside the
+2. whether caller-supplied guest upload bytes are intentionally outside the
    one-time host-file approval boundary;
-4. how to run one interactive M1/X1 follow-up without weakening confirmations.
+3. how to run one interactive M1/X1 follow-up without weakening confirmations.
 
 The larger direct-observation/retained-state/tool-hierarchy redesign remains a
 post-barrage design pass, now informed by these traces.
