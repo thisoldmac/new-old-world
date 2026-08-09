@@ -486,7 +486,8 @@ post-barrage design pass, now informed by these traces.
 
 ### Final repository gate
 
-At closeout, `scripts/test-all` passed end to end on 2026-08-09:
+At closeout, `scripts/test-all` passed end to end on 2026-08-09 and was rerun
+successfully after the routing-skill follow-up:
 
 - staged-image discipline: 28 passed;
 - native guest tests: 149 passed;
