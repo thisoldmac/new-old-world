@@ -84,7 +84,7 @@ public enum CaptureScreenProjection: HostProjection {
         [
             "title": "Capture the New Old World Guest's Screen",
             "description":
-                "Asks the classic Mac paired with the running NOW host for a picture of its screen now, and returns it as a PNG image with the measurements behind it. Read-only: it observes the screen and changes nothing on the machine. The capture crosses the wire in chunks and the local surface in pages; both are handled here, so one call returns one whole image. Pass abandon to release the connection's single transfer lane from a capture already in flight instead of starting one.",
+                "Pixel evidence. Use only when the requested fact is genuinely visual or semantic evidence cannot answer it; do not recapture facts already published by structured or semantic state. Asks the classic Mac paired with the running NOW host for a picture of its screen now, and returns it as a PNG image with the measurements behind it. Read-only: it observes the screen and changes nothing on the machine. The capture crosses the wire in chunks and the local surface in pages; both are handled here, so one call returns one whole image. Pass abandon to release the connection's single transfer lane from a capture already in flight instead of starting one.",
             "inputSchema": [
                 "type": "object",
                 "properties": [

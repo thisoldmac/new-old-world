@@ -286,16 +286,17 @@ Port principles, not either catalog wholesale:
 | Classic's machine-explicit normal tools | Machine choice should be a first-class discovery step, with transient execution coordinates hidden behind stable machine identity. | **Already applied:** `now_list_machines` plus optional `guest`; keep stable id, session id, human label, and reported name separate. |
 | Classic's fixed resources, templates, and workflow prompts | Server-owned orientation is useful and versioned with the server, but only after the client chooses that server. | **Partly applied:** one guide resource and prompt. Add machine-specific resource templates only if agents demonstrably use them. |
 | 0.7's Host-owned domain graph | Keep durable identity, policy, and state in the host; make transports thin projections. | **Already NOW's shape:** the companion is a thin stdio client of the host-owned registry/state. |
-| 0.7's closed `guest_operation_submit` envelope | A typed domain envelope can expose many operation kinds without advertising one large schema per verb. It may reduce catalog cost. | **Measure first:** F-006. A single generic escape hatch would lose per-operation guidance; do not copy it blindly. |
+| 0.7's closed `guest_operation_submit` envelope | A typed domain envelope can expose many operation kinds without advertising one large schema per verb. It may reduce catalog cost. | **Measured; do not port:** F-006 found negligible model-context savings from schema removal and no usable dynamic disclosure. Keep NOW's typed tools and the thin client router. |
 | 0.7's HTTP/stdio parity and readiness identity | Hosted transports need explicit readiness, identity, Host/Origin policy, and parity tests. | **No current port:** NOW has no remote/hosted requirement. Adding HTTP would enlarge its trust boundary for no measured gain. |
 | 0.7's separate generic `mirror_call` service | A sibling experimental service can remain replaceable, but one generic call weakens agent discovery and schemas. | **Do not port:** NOW's sibling relationship is conceptual inside one host; keep typed semantic projections while experimental. |
 | Classic's richer normal/developer/Mordor surface split | Dangerous diagnostics need an unmistakable boundary instead of crowding normal work. | **Keep as a review lens:** NOW's current direct probes are bounded normal tools; revisit their placement only with post-barrage hierarchy data. |
 
 The most immediate borrowed lesson is also the negative one: TBT's resources
 and prompts would not have fixed NOW's bare-task failures by themselves. The
-client still needs a small routing layer. The most promising later experiment
-is TBT 0.7's typed operation-envelope economy, compared against NOW's flat
-catalog without adopting its generic Mirror escape hatch.
+client still needs a small routing layer. F-006 also rejected a generic
+operation envelope as a context-cost fix for this client: retain the typed
+catalog and use deliberate `enabled_tools` profiles only when a client is
+intentionally narrow.
 
 ## Review findings and bounded cleanups
 
@@ -448,6 +449,22 @@ The accessible 610 KB JSONL, prompt metadata, and stderr are retained under
 interrupted, so it has no final answer or token-usage event. As in the earlier
 runs, the trace contains status messages and tool I/O, not hidden
 chain-of-thought.
+
+### Post-barrage evidence-ladder follow-up
+
+The server guide, repo-scoped skill, and F-009 action grammar already agree on
+the intended hierarchy: structured product state, retained semantic state,
+typed semantic action and verification, targeted direct observation only for
+a missing fact or fresh opaque reference, and pixels last. The remaining local
+contradiction was in the escalation tools themselves. `now_observe_elements`
+did not tell a caller to prefer retained state, and `now_capture_screen` did
+not say that pixels were last-resort evidence.
+
+F-012 makes those two descriptors self-routing. Its registry guard was watched
+fail on all four missing phrases before the descriptors changed, then passed.
+All 39 companion tests passed, including real spawned-client conformance over
+all 42 advertised tools. This changes discovery guidance only; no guest,
+dispatch, state-engine, transport, or authority behavior changed.
 
 ### What the barrage found
 

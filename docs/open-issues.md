@@ -183,6 +183,21 @@ control calls to `gesture: dialogItem`, corrected `item` to `itemIndex` from
 the boundary error, and dispatched the Open button without inventing gesture
 names. The task still failed for the separate list-selection gap below.
 
+## RESOLVED: direct and pixel tools now state their evidence-ladder rank (2026-08-09, `codex/now-mcp-standard-file-audit`)
+
+The first-contact guide and repo-scoped skill already preferred structured and
+retained semantic state over direct probes and pixels. The escalation tools'
+own descriptions did not. That local omission mattered in the barrage: X1 had
+a retained dialog item but tried the direct family twice before recovering,
+and the earlier H1 run escalated to pixels without first using retained state.
+
+`now_observe_elements` now identifies itself as targeted direct observation
+for incomplete retained state or fresh direct-action references.
+`now_capture_screen` now reserves pixels for genuinely visual facts or facts
+semantic evidence cannot answer. The registry guard was watched fail before
+the descriptions changed; it then passed with all 39 companion tests and the
+42-tool spawned-client conformance run. No runtime action or authority changed.
+
 ## BROKEN: Standard File dialogs expose buttons but not selectable file rows (2026-08-09, `codex/now-mcp-action-contracts`)
 
 SimpleText's Open dialog is richly present in the retained surface: Open is

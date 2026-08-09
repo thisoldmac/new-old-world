@@ -94,6 +94,25 @@ final class HostProjectionRegistryTests: XCTestCase {
         }
     }
 
+    /// The server guide and repo skill state the evidence ladder, but the
+    /// escalation tools must also carry it locally. A small client may choose
+    /// from one tool description without consulting either optional surface.
+    func testDirectAndPixelEscalationsStateTheirPlaceInTheEvidenceLadder() {
+        let direct = ObserveElementsProjection.mcpDescriptor["description"]
+            as? String ?? ""
+        XCTAssertTrue(
+            direct.contains("now_semantic_ui_snapshot"), direct)
+        XCTAssertTrue(
+            direct.contains("retained state is incomplete"), direct)
+
+        let pixels = CaptureScreenProjection.mcpDescriptor["description"]
+            as? String ?? ""
+        XCTAssertTrue(
+            pixels.contains("genuinely visual"), pixels)
+        XCTAssertTrue(
+            pixels.contains("semantic evidence cannot answer"), pixels)
+    }
+
     /// A requirement is a guest command or message family that the ledger
     /// resolves. A typo does not fail anywhere: `state(of:)` falls through
     /// to the command table, misses, and reports the capability

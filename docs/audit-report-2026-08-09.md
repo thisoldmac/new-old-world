@@ -139,7 +139,7 @@ reduced cumulative input accounting by 94,833 tokens for R1, 89,178 for R2,
 54,776 for A1, 110,339 for M1, and 536,661 for N1. These are end-to-end client
 numbers, not schema-only savings.
 
-### [F-006] Rich, flat discovery has material context cost (severity: medium, effort: M)
+### [F-006] Rich, flat discovery has material context cost (severity: medium, effort: M) — resolved by measurement
 
 - **Dimension:** structure-maintainability
 - **Evidence:** controlled one-call H0 recorded 76,618 input tokens. Routed R2
@@ -170,6 +170,31 @@ capability tools, a 30,870-token reduction. When the prompt explicitly named
 The F-005 skill result confirms that a small intent-to-canonical-tool map is a
 useful client layer. Keep the typed output schemas and do not redesign the NOW
 facade from prose-byte counts alone.
+
+- **Resolution:** retain the typed catalog and schemas. Use the repo-scoped
+  routing skill for intent selection; use `enabled_tools` only for deliberately
+  narrow client profiles, not as session-dynamic disclosure. No server facade
+  change is justified by the measured client behavior.
+
+### [F-012] Escalation tools omitted their local evidence rank (severity: low, effort: XS) — resolved
+
+- **Dimension:** correctness and structure-maintainability
+- **Evidence:** the server guide and routing skill put retained semantic state
+  before direct observation and pixels, but the descriptors for
+  `now_observe_elements` and `now_capture_screen` did not. In X1, Luna had a
+  retained dialog item yet tried the direct family twice before recovering;
+  the pre-cleanup H1 also escalated to pixels without retained state.
+- **Why it matters:** a small client may choose from the one descriptor in
+  front of it without consulting an optional resource or repo skill. The two
+  escalation tools therefore sounded like primary observation paths.
+- **Resolution:** `now_observe_elements` now says to prefer
+  `now_semantic_ui_snapshot` and use direct observation only for incomplete
+  retained state or fresh direct references. `now_capture_screen` now limits
+  pixels to genuinely visual facts or exhausted semantic evidence. A registry
+  test pins both local instructions and was watched fail before the descriptors
+  changed.
+- **Blast radius:** two MCP descriptions and one registry test; no dispatch,
+  guest, state-engine, transport, or authority behavior changed.
 
 ### [F-007] Non-interactive workers cannot complete annotated mutation chains (severity: medium, effort: S) — resolved for the harness
 
@@ -305,10 +330,7 @@ facade from prose-byte counts alone.
    either transfer family.
 2. F-011: with explicit approval, project the PPC guest's bounded document-open
    mechanism as `now_open_document`; keep generic Apple Events off MCP.
-3. F-006: A/B the thin router with a small `enabled_tools` allowlist;
-   defer any deeper facade or catalog redesign until that result is known.
-
-F-001, F-002, F-003, F-005, F-007, F-008, and F-009 are resolved in their
-stated scope. F-004 and F-006 remain review inputs. F-011 awaits approval.
+F-001, F-002, F-003, F-005, F-006, F-007, F-008, F-009, and F-012 are resolved
+in their stated scope. F-004 remains a review input. F-011 awaits approval.
 F-010 remains an explicitly deferred resident-contract problem, not a
 prerequisite for F-011.
