@@ -3,8 +3,7 @@ import XCTest
 @testable import Host
 
 /* The providers against a scripted transport: request bodies in each
-   dialect, stream assembly back out of each dialect, and the OAuth
-   flow's deterministic parts. No network anywhere. */
+   dialect and stream assembly back out of each dialect. No network. */
 
 final class FakeChatTransport: ChatHTTPTransport, @unchecked Sendable {
     struct Scripted {
@@ -190,30 +189,7 @@ final class AnthropicProviderTests: XCTestCase {
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
     }
 
-    func testOAuthPathSendsBearerAndBetaHeader() async throws {
-        let oauth = try JSONEncoder().encode(ChatOAuthTokens(
-                accessToken: "at-1", refreshToken: "rt-1",
-                expiresAt: Date().addingTimeInterval(3600)))
-        let store = RecordingChatCredentialStore(values: [
-            .anthropicOAuth: .value(oauth),
-        ])
-        let transport = FakeChatTransport([
-            .init(data: try JSONSerialization.data(withJSONObject: ["data": []]))
-        ])
-        let provider = AnthropicChatProvider(store: store, transport: transport)
-        _ = try await provider.listModels()
-        let request = try XCTUnwrap(transport.requests.first)
-        XCTAssertEqual(
-            request.value(forHTTPHeaderField: "Authorization"), "Bearer at-1")
-        XCTAssertEqual(
-            request.value(forHTTPHeaderField: "anthropic-beta"),
-            AnthropicOAuth.betaHeader)
-        XCTAssertEqual(store.reads.count, 1)
-        XCTAssertEqual(store.reads.first?.0, .anthropicOAuth)
-        XCTAssertEqual(store.reads.first?.1, .forbid)
-    }
-
-    func testProtectedOAuthFallsBackToWorkingAPIKey() async throws {
+    func testLegacyOAuthIsNeverReadWhenAPIKeyWorks() async throws {
         let store = RecordingChatCredentialStore(values: [
             .anthropicOAuth: .authorizationRequired,
             .anthropicAPIKey: .value(Data("sk-fallback".utf8)),
@@ -231,51 +207,9 @@ final class AnthropicProviderTests: XCTestCase {
         let entry = await provider.entry()
         XCTAssertEqual(entry.state, "serving")
         XCTAssertTrue(entry.detail.contains("API key"))
-    }
-
-    func testSubscriptionIsPreferredOverAStoredKey() async throws {
-        // Both credentials present: the sign-in wins - a person who
-        // signed in did so to use their plan (metal, 2026-08-02).
-        let store = InMemoryChatCredentialStore()
-        try store.writeString(.anthropicAPIKey, "sk-test")
-        try store.write(
-            .anthropicOAuth,
-            JSONEncoder().encode(ChatOAuthTokens(
-                accessToken: "at-sub", refreshToken: "rt",
-                expiresAt: Date().addingTimeInterval(3600))))
-        let transport = FakeChatTransport([
-            .init(data: try JSONSerialization.data(withJSONObject: ["data": []]))
+        XCTAssertEqual(store.reads.map(\.0), [
+            .anthropicAPIKey, .anthropicAPIKey,
         ])
-        let provider = AnthropicChatProvider(store: store, transport: transport)
-        _ = try await provider.listModels()
-        let request = try XCTUnwrap(transport.requests.first)
-        XCTAssertEqual(
-            request.value(forHTTPHeaderField: "Authorization"), "Bearer at-sub")
-        XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
-        let entry = await provider.entry()
-        XCTAssertTrue(entry.detail.contains("subscription"))
-    }
-
-    func testOAuthRequestsCarryTheIdentityPrefixFirst() throws {
-        let body = AnthropicChatProvider.body(
-            for: ChatCompletionRequest(
-                model: "claude-opus-5", system: "our situation prompt",
-                turns: [.user("hi")], tools: [], maxTokens: 64),
-            oauth: true)
-        let system = try XCTUnwrap(body["system"] as? [[String: Any]])
-        XCTAssertEqual(system.count, 2)
-        XCTAssertEqual(
-            system[0]["text"] as? String,
-            AnthropicChatProvider.oauthSystemPrefix)
-        XCTAssertEqual(system[1]["text"] as? String, "our situation prompt")
-
-        // The key path keeps the plain string shape.
-        let keyBody = AnthropicChatProvider.body(
-            for: ChatCompletionRequest(
-                model: "m", system: "s", turns: [.user("x")],
-                tools: [], maxTokens: 64),
-            oauth: false)
-        XCTAssertEqual(keyBody["system"] as? String, "s")
     }
 
     func testErrorBodiesSurfaceTheProvidersOwnSentence() async throws {
@@ -611,139 +545,5 @@ final class OpenAICompatibleProviderTests: XCTestCase {
         } catch {
             XCTAssertEqual(ChatFault.from(error).code, "no-credentials")
         }
-    }
-}
-
-final class AnthropicOAuthTests: XCTestCase {
-    private let fixedRNG: (Int) -> [UInt8] = { count in
-        Array(repeating: 7, count: count)
-    }
-
-    func testPKCEIsDeterministicUnderAFixedRNG() {
-        let a = AnthropicOAuth.makePKCE(randomBytes: fixedRNG)
-        let b = AnthropicOAuth.makePKCE(randomBytes: fixedRNG)
-        XCTAssertEqual(a, b)
-        XCTAssertFalse(a.verifier.contains("="))
-        XCTAssertFalse(a.challenge.contains("+"))
-    }
-
-    func testAuthorizeURLCarriesTheChallengeAndState() throws {
-        let pkce = AnthropicOAuth.makePKCE(randomBytes: fixedRNG)
-        let url = AnthropicOAuth.authorizeURL(pkce: pkce)
-        let components = try XCTUnwrap(
-            URLComponents(url: url, resolvingAgainstBaseURL: false))
-        func query(_ name: String) -> String? {
-            components.queryItems?.first { $0.name == name }?.value
-        }
-        XCTAssertEqual(components.host, "claude.ai")
-        XCTAssertEqual(query("client_id"), AnthropicOAuth.clientID)
-        XCTAssertEqual(query("code_challenge"), pkce.challenge)
-        XCTAssertEqual(query("code_challenge_method"), "S256")
-        XCTAssertEqual(query("state"), pkce.state)
-        XCTAssertEqual(query("redirect_uri"), AnthropicOAuth.redirectURI)
-    }
-
-    func testPastedCodeParsesAndStateMismatchIsRefused() throws {
-        let pkce = AnthropicOAuth.makePKCE(randomBytes: fixedRNG)
-        let code = try AnthropicOAuth.parsePasted(
-            " abc123#\(pkce.state) \n", pkce: pkce)
-        XCTAssertEqual(code, "abc123")
-        XCTAssertThrowsError(
-            try AnthropicOAuth.parsePasted("abc123#wrong", pkce: pkce))
-        XCTAssertThrowsError(
-            try AnthropicOAuth.parsePasted("nostate", pkce: pkce))
-    }
-
-    func testExchangePostsTheGrantAndReadsTheBlob() async throws {
-        let transport = FakeChatTransport([
-            .init(data: try JSONSerialization.data(withJSONObject: [
-                "access_token": "at-new",
-                "refresh_token": "rt-new",
-                "expires_in": 1800,
-            ]))
-        ])
-        let pkce = AnthropicOAuth.makePKCE(randomBytes: fixedRNG)
-        let tokens = try await AnthropicOAuth.exchange(
-            code: "abc", pkce: pkce, transport: transport)
-        XCTAssertEqual(tokens.accessToken, "at-new")
-        XCTAssertEqual(tokens.refreshToken, "rt-new")
-        let request = try XCTUnwrap(transport.requests.first)
-        XCTAssertEqual(request.url?.absoluteString, AnthropicOAuth.tokenEndpoint)
-        let body = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody))
-                as? [String: String])
-        XCTAssertEqual(body["grant_type"], "authorization_code")
-        XCTAssertEqual(body["code_verifier"], pkce.verifier)
-    }
-
-    func testRefreshKeepsOldRefreshTokenWhenServerOmitsIt() async throws {
-        let transport = FakeChatTransport([
-            .init(data: try JSONSerialization.data(withJSONObject: [
-                "access_token": "at-2", "expires_in": 600,
-            ]))
-        ])
-        let old = ChatOAuthTokens(
-            accessToken: "at-1", refreshToken: "rt-keep", expiresAt: .distantPast)
-        let fresh = try await AnthropicOAuth.refresh(old, transport: transport)
-        XCTAssertEqual(fresh.refreshToken, "rt-keep")
-    }
-
-    func testRefresherIsSingleFlightAndPersists() async throws {
-        let store = InMemoryChatCredentialStore()
-        try store.write(
-            .anthropicOAuth,
-            JSONEncoder().encode(ChatOAuthTokens(
-                accessToken: "stale", refreshToken: "rt",
-                expiresAt: .distantPast)))
-        // One scripted refresh response: a second network refresh
-        // would hit the empty-script default and produce garbage.
-        let transport = FakeChatTransport([
-            .init(data: try JSONSerialization.data(withJSONObject: [
-                "access_token": "at-fresh", "refresh_token": "rt-2",
-                "expires_in": 3600,
-            ]))
-        ])
-        let refresher = AnthropicTokenRefresher(store: store)
-        let original = try XCTUnwrap(store.read(
-            .anthropicOAuth, interaction: .forbid).data)
-        async let first = refresher.liveTokens(
-            stored: original, transport: transport)
-        async let second = refresher.liveTokens(
-            stored: original, transport: transport)
-        let (a, b) = try await (first, second)
-        XCTAssertEqual(a.accessToken, "at-fresh")
-        XCTAssertEqual(b.accessToken, "at-fresh")
-        XCTAssertEqual(transport.requests.count, 1)
-        let stored = try JSONDecoder().decode(
-            ChatOAuthTokens.self, from: XCTUnwrap(store.read(
-                .anthropicOAuth, interaction: .forbid).data))
-        XCTAssertEqual(stored.refreshToken, "rt-2")
-    }
-
-    func testRefresherDoesNotReplayACompletedStaleSnapshot() async throws {
-        let store = InMemoryChatCredentialStore()
-        let stale = ChatOAuthTokens(
-            accessToken: "stale", refreshToken: "rt-old",
-            expiresAt: .distantPast)
-        let original = try JSONEncoder().encode(stale)
-        try store.write(.anthropicOAuth, original)
-        let transport = FakeChatTransport([
-            .init(data: try JSONSerialization.data(withJSONObject: [
-                "access_token": "at-fresh", "refresh_token": "rt-rotated",
-                "expires_in": 3600,
-            ]))
-        ])
-        let refresher = AnthropicTokenRefresher(store: store)
-
-        let first = try await refresher.liveTokens(
-            stored: original, transport: transport)
-        // A second operation captured `original` before the first completed,
-        // but did not enter the actor until after the rotated token was saved.
-        let second = try await refresher.liveTokens(
-            stored: original, transport: transport)
-
-        XCTAssertEqual(first.accessToken, "at-fresh")
-        XCTAssertEqual(second.accessToken, "at-fresh")
-        XCTAssertEqual(transport.requests.count, 1)
     }
 }

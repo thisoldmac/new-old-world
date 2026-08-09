@@ -9,9 +9,14 @@ import Security
 
 enum ChatCredentialKey: String, CaseIterable {
     case anthropicAPIKey = "anthropic.api-key"
-    /// A JSON ChatOAuthTokens blob, not a bare token.
+    /// Retained only so an explicit cleanup can remove unsupported data
+    /// written by older builds. Passive discovery never reads this key.
     case anthropicOAuth = "anthropic.oauth"
     case openAIAPIKey = "openai.api-key"
+
+    static let activeCases: [ChatCredentialKey] = [
+        .anthropicAPIKey, .openAIAPIKey,
+    ]
 }
 
 enum ChatCredentialInteraction: Equatable, Sendable {
@@ -93,20 +98,6 @@ extension ChatCredentialStore {
 
     func writeString(_ key: ChatCredentialKey, _ value: String) throws {
         try write(key, Data(value.utf8))
-    }
-}
-
-/// The Anthropic subscription sign-in's stored state. `expiresAt` is
-/// absolute so a relaunch can tell a live token from a stale one.
-struct ChatOAuthTokens: Codable, Equatable, Sendable {
-    var accessToken: String
-    var refreshToken: String
-    var expiresAt: Date
-
-    var isExpired: Bool {
-        // A minute of slack: a token that expires mid-request costs a
-        // retry; refreshing one minute early costs nothing.
-        Date() >= expiresAt.addingTimeInterval(-60)
     }
 }
 
@@ -293,7 +284,7 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
 /// One operation's lazy credential cache. It fixes the source interaction
 /// policy at construction, reads each key at most once, and lets provider
 /// status and discovery reuse that outcome without re-entering Keychain.
-/// Writes still flow through so an OAuth refresh is not stranded in the cache.
+/// Writes still flow through so an explicit settings change is not stranded.
 final class OperationChatCredentialStore: ChatCredentialStore,
     @unchecked Sendable {
     private let lock = NSLock()

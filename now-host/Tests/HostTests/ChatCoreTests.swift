@@ -72,48 +72,22 @@ final class ChatCredentialStoreTests: XCTestCase {
             kSecMatchLimitOne as String)
     }
 
-    func testOAuthBlobRoundTripsThroughTheStore() throws {
-        let store = InMemoryChatCredentialStore()
-        let tokens = ChatOAuthTokens(
-            accessToken: "at", refreshToken: "rt",
-            expiresAt: Date(timeIntervalSince1970: 2_000_000_000))
-        try store.write(.anthropicOAuth, JSONEncoder().encode(tokens))
-        let back = try JSONDecoder().decode(
-            ChatOAuthTokens.self, from: XCTUnwrap(store.read(
-                .anthropicOAuth, interaction: .allow).data))
-        XCTAssertEqual(back, tokens)
-        try store.delete(.anthropicOAuth)
-        XCTAssertEqual(
-            store.read(.anthropicOAuth, interaction: .allow), .missing)
-    }
-
-    func testExpiryHasAMinuteOfSlack() {
-        let live = ChatOAuthTokens(
-            accessToken: "a", refreshToken: "r",
-            expiresAt: Date().addingTimeInterval(3600))
-        let nearlyOut = ChatOAuthTokens(
-            accessToken: "a", refreshToken: "r",
-            expiresAt: Date().addingTimeInterval(30))
-        XCTAssertFalse(live.isExpired)
-        XCTAssertTrue(nearlyOut.isExpired)
-    }
-
     func testOperationCacheReadsOnlyUsedCredentialsAndOnlyOnce() {
         let source = RecordingChatCredentialStore(values: [
-            .anthropicOAuth: .value(Data("oauth".utf8)),
+            .openAIAPIKey: .value(Data("openai".utf8)),
         ])
         let cache = OperationChatCredentialStore(
             source: source, interaction: .forbid)
 
         XCTAssertTrue(source.reads.isEmpty)
         XCTAssertEqual(
-            cache.read(.anthropicOAuth, interaction: .allow),
-            .value(Data("oauth".utf8)))
+            cache.read(.openAIAPIKey, interaction: .allow),
+            .value(Data("openai".utf8)))
         XCTAssertEqual(
-            cache.read(.anthropicOAuth, interaction: .forbid),
-            .value(Data("oauth".utf8)))
+            cache.read(.openAIAPIKey, interaction: .forbid),
+            .value(Data("openai".utf8)))
         XCTAssertEqual(source.reads.count, 1)
-        XCTAssertEqual(source.reads.first?.0, .anthropicOAuth)
+        XCTAssertEqual(source.reads.first?.0, .openAIAPIKey)
         XCTAssertEqual(source.reads.first?.1, .forbid)
     }
 

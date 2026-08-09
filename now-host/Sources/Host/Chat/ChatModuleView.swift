@@ -273,16 +273,14 @@ private struct TailOffsetKey: PreferenceKey {
 
 // MARK: - The providers sheet
 
-/// Provider accounts and local runtimes, as cards. Anthropic leads
-/// with the subscription sign-in — the flow the plan ships with — and
-/// the API key sits behind a disclosure for the machines that need it.
+/// Provider accounts and local runtimes, as cards. Direct API access
+/// and separately authenticated subscription runtimes stay visibly
+/// distinct so their billing and credential ownership cannot blur.
 struct ChatProvidersSheet: View {
     @ObservedObject var model: ChatModuleModel
     @Environment(\.dismiss) private var dismiss
     @State private var anthropicKey = ""
     @State private var openAIKey = ""
-    @State private var pastedCode = ""
-    @State private var keyEntryShown = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -354,97 +352,20 @@ struct ChatProvidersSheet: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
                 cardHeader("Anthropic", entry("anthropic"))
-                switch model.signIn {
-                case .awaitingPaste:
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Approve in the browser, then paste the code "
-                             + "it shows you:")
-                            .font(.callout)
-                        HStack(spacing: 6) {
-                            TextField("code#state", text: $pastedCode)
-                                .textFieldStyle(.roundedBorder)
-                                .onAppear {
-                                    // The code is usually already on the
-                                    // clipboard - meet it there.
-                                    if let candidate = Self.clipboardCode() {
-                                        pastedCode = candidate
-                                    }
-                                }
-                            Button("Finish") {
-                                model.completeAnthropicSignIn(
-                                    pasted: pastedCode)
-                                pastedCode = ""
-                            }
-                            .disabled(pastedCode.isEmpty)
-                            Button("Cancel") { model.cancelAnthropicSignIn() }
-                        }
-                    }
-                case .failed(let reason):
-                    HStack(spacing: 6) {
-                        Text(reason)
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                        Spacer()
-                        Button("Try Again") { model.beginAnthropicSignIn() }
-                    }
-                case .idle:
-                    if model.hasAnthropicOAuth {
-                        HStack {
-                            Label("Signed in - using your Claude subscription",
-                                  systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                                .font(.callout)
-                            Spacer()
-                            Button("Sign Out") { model.signOutAnthropic() }
-                        }
-                    } else {
-                        HStack {
-                            Button("Sign in with Claude") {
-                                model.beginAnthropicSignIn()
-                            }
-                            .controlSize(.large)
-                            Text("Uses your Claude Pro or Max plan")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        DisclosureGroup(
-                            "Use an API key instead",
-                            isExpanded: $keyEntryShown
-                        ) {
-                            keyRow(
-                                text: $anthropicKey,
-                                hasKey: model.hasAnthropicKey,
-                                save: {
-                                    model.setAnthropicKey(anthropicKey)
-                                    anthropicKey = ""
-                                },
-                                clear: { model.setAnthropicKey("") })
-                        }
-                        .font(.callout)
-                    }
-                }
+                Text("Public API access billed through an Anthropic Console account.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                keyRow(
+                    text: $anthropicKey,
+                    hasKey: model.hasAnthropicKey,
+                    save: {
+                        model.setAnthropicKey(anthropicKey)
+                        anthropicKey = ""
+                    },
+                    clear: { model.setAnthropicKey("") })
             }
             .padding(6)
         }
-    }
-
-    /// A pasted authorization code, when the clipboard already holds
-    /// one — the shape is distinctive enough to trust.
-    static func clipboardCode() -> String? {
-        guard let text = NSPasteboard.general
-            .string(forType: .string)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        else { return nil }
-        let parts = text.split(separator: "#")
-        guard parts.count == 2, text.count < 300,
-            parts.allSatisfy({ part in
-                part.allSatisfy {
-                    $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_"
-                }
-            })
-        else { return nil }
-        return text
     }
 
     // MARK: OpenAI

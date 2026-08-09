@@ -23,14 +23,11 @@ struct ChatDisplayRow: Identifiable, Equatable {
 }
 
 private func makeChatProviderRegistry(
-    store: ChatCredentialStore, transport: ChatHTTPTransport,
-    anthropicRefresher: AnthropicTokenRefresher
+    store: ChatCredentialStore, transport: ChatHTTPTransport
 ) -> ChatProviderRegistry {
     let registry = ChatProviderRegistry()
     registry.register(
-        AnthropicChatProvider(
-            store: store, transport: transport,
-            refresher: anthropicRefresher))
+        AnthropicChatProvider(store: store, transport: transport))
     registry.register(
         OpenAICompatibleChatProvider.openAI(
             store: store, transport: transport))
@@ -47,25 +44,17 @@ private func makeChatProviderRegistry(
 }
 
 private func makePassiveChatProviderRegistry(
-    store: ChatCredentialStore, transport: ChatHTTPTransport,
-    anthropicRefresher: AnthropicTokenRefresher
+    store: ChatCredentialStore, transport: ChatHTTPTransport
 ) -> (credentials: OperationChatCredentialStore,
       registry: ChatProviderRegistry) {
     let credentials = OperationChatCredentialStore(
         source: store, interaction: .forbid)
     return (credentials, makeChatProviderRegistry(
-        store: credentials, transport: transport,
-        anthropicRefresher: anthropicRefresher))
+        store: credentials, transport: transport))
 }
 
 @MainActor
 final class ChatModuleModel: ObservableObject {
-    enum SignInState: Equatable {
-        case idle
-        case awaitingPaste(AnthropicOAuth.PKCE)
-        case failed(String)
-    }
-
     private struct CredentialAccess: Equatable {
         var notice: String?
         var authorizationKeys: [ChatCredentialKey] = []
@@ -103,9 +92,7 @@ final class ChatModuleModel: ObservableObject {
     }
     @Published private(set) var transcript: [ChatDisplayRow] = []
     @Published private(set) var isStreaming = false
-    @Published private(set) var signIn: SignInState = .idle
     @Published private(set) var hasAnthropicKey = false
-    @Published private(set) var hasAnthropicOAuth = false
     @Published private(set) var hasOpenAIKey = false
     @Published private var credentialAccess = CredentialAccess()
     @Published private(set) var isAuthorizingCredentials = false
@@ -118,7 +105,6 @@ final class ChatModuleModel: ObservableObject {
     let harness: ChatHarness
     private let store: ChatCredentialStore
     private let transport: ChatHTTPTransport
-    private let anthropicRefresher: AnthropicTokenRefresher
     private let defaults: UserDefaults
     private var conversation: [ChatTurn] = []
     private static let modelKey = "chat.selectedModel"
@@ -138,11 +124,8 @@ final class ChatModuleModel: ObservableObject {
         self.defaults = defaults
         selectedWireModelID = defaults.string(forKey: Self.modelKey) ?? ""
 
-        let anthropicRefresher = AnthropicTokenRefresher(store: store)
-        self.anthropicRefresher = anthropicRefresher
         let registry = makeChatProviderRegistry(
-            store: store, transport: transport,
-            anthropicRefresher: anthropicRefresher)
+            store: store, transport: transport)
         harness = ChatHarness(
             registry: registry,
             makeClient: { selector in
@@ -166,15 +149,13 @@ final class ChatModuleModel: ObservableObject {
     func refresh(preservingCredentialNotice preservedNotice: String? = nil) {
         let store = store
         let transport = transport
-        let anthropicRefresher = anthropicRefresher
         /* Detached: Keychain reads and local-runtime probes must never
            run on the main actor (see init). */
         Task.detached { [weak self] in
             let passive = makePassiveChatProviderRegistry(
-                store: store, transport: transport,
-                anthropicRefresher: anthropicRefresher)
+                store: store, transport: transport)
             let credentialReads = Dictionary(uniqueKeysWithValues:
-                ChatCredentialKey.allCases.map {
+                ChatCredentialKey.activeCases.map {
                     ($0, passive.credentials.read($0, interaction: .forbid))
                 })
             var entries: [ChatProviderEntry] = []
@@ -187,18 +168,16 @@ final class ChatModuleModel: ObservableObject {
                     models.append(contentsOf: served)
                 }
             }
-            let keychainNotice = ChatCredentialKey.allCases.compactMap {
+            let keychainNotice = ChatCredentialKey.activeCases.compactMap {
                 credentialReads[$0]?.statusReason
             }.first
-            let authorizationKeys = ChatCredentialKey.allCases.filter {
+            let authorizationKeys = ChatCredentialKey.activeCases.filter {
                 credentialReads[$0] == .authorizationRequired
             }
             let found = (
                 entries: entries, models: models,
                 hasAnthropicKey:
                     !(credentialReads[.anthropicAPIKey]?.string ?? "").isEmpty,
-                hasAnthropicOAuth:
-                    credentialReads[.anthropicOAuth]?.isAvailable == true,
                 hasOpenAIKey:
                     !(credentialReads[.openAIAPIKey]?.string ?? "").isEmpty,
                 notice: preservedNotice ?? keychainNotice,
@@ -207,7 +186,6 @@ final class ChatModuleModel: ObservableObject {
                 guard let self else { return }
                 let models = found.models
                 self.hasAnthropicKey = found.hasAnthropicKey
-                self.hasAnthropicOAuth = found.hasAnthropicOAuth
                 self.hasOpenAIKey = found.hasOpenAIKey
                 self.credentialAccess = CredentialAccess(
                     notice: found.notice,
@@ -238,11 +216,9 @@ final class ChatModuleModel: ObservableObject {
     func servableModels() async -> [ChatModel] {
         let store = store
         let transport = transport
-        let anthropicRefresher = anthropicRefresher
         return await Task.detached {
             let passive = makePassiveChatProviderRegistry(
-                store: store, transport: transport,
-                anthropicRefresher: anthropicRefresher)
+                store: store, transport: transport)
             var models: [ChatModel] = []
             for provider in passive.registry.all() {
                 if let served = try? await provider.listModels() {
@@ -287,11 +263,9 @@ final class ChatModuleModel: ObservableObject {
     private func wireModels(provider id: String) async -> [ChatModel]? {
         let store = store
         let transport = transport
-        let anthropicRefresher = anthropicRefresher
         return await Task.detached {
             let passive = makePassiveChatProviderRegistry(
-                store: store, transport: transport,
-                anthropicRefresher: anthropicRefresher)
+                store: store, transport: transport)
             guard let provider = passive.registry.provider(for: id)
             else { return nil }
             return try? await provider.listModels()
@@ -301,11 +275,9 @@ final class ChatModuleModel: ObservableObject {
     func providerEntries() async -> [ChatProviderEntry] {
         let store = store
         let transport = transport
-        let anthropicRefresher = anthropicRefresher
         return await Task.detached {
             let passive = makePassiveChatProviderRegistry(
-                store: store, transport: transport,
-                anthropicRefresher: anthropicRefresher)
+                store: store, transport: transport)
             var entries: [ChatProviderEntry] = []
             for provider in passive.registry.all() {
                 entries.append(await provider.entry())
@@ -359,38 +331,9 @@ final class ChatModuleModel: ObservableObject {
         }
     }
 
-    func beginAnthropicSignIn() {
-        let pkce = AnthropicOAuth.makePKCE()
-        signIn = .awaitingPaste(pkce)
-        NSWorkspace.shared.open(AnthropicOAuth.authorizeURL(pkce: pkce))
-    }
-
-    func completeAnthropicSignIn(pasted: String) {
-        guard case .awaitingPaste(let pkce) = signIn else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let code = try AnthropicOAuth.parsePasted(pasted, pkce: pkce)
-                let tokens = try await AnthropicOAuth.exchange(
-                    code: code, pkce: pkce, transport: self.transport)
-                try self.store.write(
-                    .anthropicOAuth, JSONEncoder().encode(tokens))
-                self.signIn = .idle
-                self.refresh()
-            } catch {
-                self.signIn = .failed(ChatFault.from(error).reason)
-            }
-        }
-    }
-
-    func cancelAnthropicSignIn() {
-        signIn = .idle
-    }
-
-    func signOutAnthropic() {
+    func removeLegacyAnthropicSignIn() {
         do {
             try store.delete(.anthropicOAuth)
-            signIn = .idle
             refresh()
         } catch {
             let reason = ChatFault.from(error).reason
