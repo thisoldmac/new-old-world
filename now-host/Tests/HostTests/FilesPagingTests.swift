@@ -155,7 +155,7 @@ final class FilesPagingTests: XCTestCase {
                       list.path.isEmpty else { return nil }
                 return list.id
             }
-            return refreshIDs.count > before
+            return refreshIDs.count >= before + 2
         }
         let remaining = entry(2)
         for id in refreshIDs.dropFirst(before).reversed() {
@@ -283,7 +283,9 @@ final class FilesPagingTests: XCTestCase {
             if case .connected = self.listener.state { return true }
             return false
         }
-        model.connection = .connected(named: "PowerBook 1400")
+        model.connection = .connected(
+            name: "PowerBook 1400",
+            key: try XCTUnwrap(listener.activeKey))
         return guest
     }
 }

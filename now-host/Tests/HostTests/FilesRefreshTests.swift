@@ -32,7 +32,7 @@ final class FilesRefreshTests: XCTestCase {
     func testConnectingAutomaticallyRefreshesTheListingAndPlaces()
         async throws {
         let fixture = try await connectedFixture()
-        model.connection = .connected(named: "PowerBook 1400")
+        model.connection = try connectedState()
 
         try await waitUntil("connection listing") {
             self.model.rows.map(\.name) == ["item-1"]
@@ -46,7 +46,7 @@ final class FilesRefreshTests: XCTestCase {
 
     func testBrowserRefreshReloadsTheListingAndPlaces() async throws {
         let fixture = try await connectedFixture()
-        model.connection = .connected(named: "PowerBook 1400")
+        model.connection = try connectedState()
         try await waitUntil("initial browser refresh") {
             self.model.rows.map(\.name) == ["item-1"]
                 && !self.model.isDiscoveringLocations
@@ -71,7 +71,7 @@ final class FilesRefreshTests: XCTestCase {
     func testAPlacesReplyFromBeforeDisconnectCannotRepopulateTheSidebar()
         async throws {
         let fixture = try await connectedFixture(holdRoot: true)
-        model.connection = .connected(named: "PowerBook 1400")
+        model.connection = try connectedState()
         try await waitUntil("held root request") {
             !fixture.heldRootRequests.isEmpty
         }
@@ -132,6 +132,11 @@ final class FilesRefreshTests: XCTestCase {
             }
         }
         return fixture
+    }
+
+    private func connectedState() throws -> GuestConnectionState {
+        .connected(name: "PowerBook 1400",
+                   key: try XCTUnwrap(listener.activeKey))
     }
 
     private func entry(_ n: Int) -> FileEntry {

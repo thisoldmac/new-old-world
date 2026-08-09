@@ -177,6 +177,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     @Published private(set) var newFolderPrompt: NewFolderPrompt?
 
     func beginNewFolder() {
+        guard canBrowse, !isChanging else { return }
         newFolderPrompt = NewFolderPrompt(initialName: "untitled folder")
     }
 
@@ -186,6 +187,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
 
     func createFolderFromPrompt(named name: String) {
         newFolderPrompt = nil
+        guard canBrowse, !isChanging else { return }
         createFolder(named: name)
     }
 
