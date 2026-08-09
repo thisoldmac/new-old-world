@@ -42,6 +42,24 @@ public struct Scene: Codable, Equatable, Sendable {
     public var desktopItems: [DesktopItem]?
     public var meta: Meta
 
+    public init(version: Int, seq: Int, source: String, capturedAt: Double,
+                screen: ScreenSize, apps: [AppRef],
+                processes: [ProcessRef]? = nil, menubar: Menubar? = nil,
+                windows: [Window], desktopItems: [DesktopItem]? = nil,
+                meta: Meta) {
+        self.version = version
+        self.seq = seq
+        self.source = source
+        self.capturedAt = capturedAt
+        self.screen = screen
+        self.apps = apps
+        self.processes = processes
+        self.menubar = menubar
+        self.windows = windows
+        self.desktopItems = desktopItems
+        self.meta = meta
+    }
+
     /// V1 required producers to spell a role even when they could not
     /// observe one. It remains decodable for fixtures and differential
     /// comparison, but no action may be authorized from that approximation.
@@ -298,6 +316,11 @@ public struct Scene: Codable, Equatable, Sendable {
     public struct Menubar: Codable, Equatable, Sendable {
         public var app: String
         public var menus: [Menu]
+
+        public init(app: String, menus: [Menu]) {
+            self.app = app
+            self.menus = menus
+        }
     }
 
     public struct Menu: Codable, Equatable, Sendable {
@@ -329,6 +352,15 @@ public struct Scene: Codable, Equatable, Sendable {
         /// and a title is not an identity the Menu Manager understands.
         public var id: Int
         public var items: [MenuItem]
+
+        public init(title: String, apple: Bool, left: Int?, id: Int,
+                    items: [MenuItem]) {
+            self.title = title
+            self.apple = apple
+            self.left = left
+            self.id = id
+            self.items = items
+        }
     }
 
     public struct MenuItem: Codable, Equatable, Sendable {
@@ -342,6 +374,17 @@ public struct Scene: Codable, Equatable, Sendable {
         /// ⌘-shortcut character, or "" — actuation sends the KEYCODE, not
         /// this char (Finder matches on keycode; CONTROL-SURFACE.md).
         public var cmd: String
+
+        public init(title: String, index: Int, separator: Bool = false,
+                    enabled: Bool = true, mark: Bool = false,
+                    cmd: String = "") {
+            self.title = title
+            self.index = index
+            self.separator = separator
+            self.enabled = enabled
+            self.mark = mark
+            self.cmd = cmd
+        }
     }
 
     /// **Which kind of empty an empty `controls` array is.**
@@ -512,6 +555,31 @@ public struct Scene: Codable, Equatable, Sendable {
         /// on this struct. It describes what THIS host did, not what the
         /// machine is, so there is nothing for a guest to send.
         public var contentPlane: ContentPlaneAttention? = nil
+
+        public init(id: String, app: String, psn: String, title: String,
+                    kind: Int?, rect: Rect, front: Bool, z: Int,
+                    visible: Bool, controls: [Control],
+                    controlsState: String? = nil,
+                    dialogItems: [DialogItem]? = nil, ref: String? = nil,
+                    addr: UInt32? = nil, incarnation: String? = nil,
+                    closeBox: Bool? = nil, zoomBox: Bool? = nil,
+                    text: TextContent? = nil,
+                    items: [DesktopItem]? = nil,
+                    finder: FinderPresentation? = nil,
+                    display: [DisplayOp]? = nil,
+                    displayEpoch: DisplayEpoch? = nil,
+                    contentPlane: ContentPlaneAttention? = nil) {
+            self.id = id; self.app = app; self.psn = psn
+            self.title = title; self.kind = kind; self.rect = rect
+            self.front = front; self.z = z; self.visible = visible
+            self.controls = controls; self.controlsState = controlsState
+            self.dialogItems = dialogItems; self.ref = ref; self.addr = addr
+            self.incarnation = incarnation; self.closeBox = closeBox
+            self.zoomBox = zoomBox; self.text = text; self.items = items
+            self.finder = finder; self.display = display
+            self.displayEpoch = displayEpoch
+            self.contentPlane = contentPlane
+        }
 
         /// The frozen IR is everything except the three host-internal shelves
         /// above (`finder`, `displayEpoch`, and `contentPlane`). Listing the
@@ -959,6 +1027,19 @@ public struct Scene: Codable, Equatable, Sendable {
         /// What the guest says its desktop is drawn from. nil means this
         /// producer did not ask — see `Scene.Desktop`.
         public var desktop: Desktop? = nil
+
+        public init(latencyMs: Double? = nil, bytes: Int? = nil,
+                    errors: [String] = [], plane: String? = nil,
+                    coverage: [CoverageClaim]? = nil,
+                    theme: Theme? = nil, desktop: Desktop? = nil) {
+            self.latencyMs = latencyMs
+            self.bytes = bytes
+            self.errors = errors
+            self.plane = plane
+            self.coverage = coverage
+            self.theme = theme
+            self.desktop = desktop
+        }
     }
 }
 

@@ -157,6 +157,7 @@ struct MirrorControlView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     MirrorLifecycleCard(model: model)
                     MirrorPlanesCard(model: model)
+                    hostFinderCard
                     MirrorSceneFactsCard(source: source)
                     assetPackCard
                     MirrorCyclesCard(cycles: cycles)
@@ -189,6 +190,32 @@ struct MirrorControlView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
+    }
+
+    private var hostFinderCard: some View {
+        GroupBox("Finder Windows") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Emulate Finder Windows", isOn: Binding(
+                    get: { source.emulateFinderWindows },
+                    set: { source.emulateFinderWindows = $0 }
+                ))
+                Text("Folder windows are owned by this Mac and browse the guest's configured file share. The guest Finder is not opened or selected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Text(source.hostFinderStatus)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Spacer()
+                    Button("Refresh") { source.refreshHostFinder() }
+                        .disabled(!source.emulateFinderWindows
+                                  || !model.connection.canCapture)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var assetPackCard: some View {

@@ -14,6 +14,10 @@ public protocol FinderInteractionDriver: AnyObject {
     func renameFinderItem(_ name: String, to newName: String,
                           in container: InteractionPlan.FinderContainer,
                           at point: Point?)
+    func setFinderView(_ view: Scene.FinderPresentation.View,
+                       in container: InteractionPlan.FinderContainer)
+    func sortFinder(by field: String,
+                    in container: InteractionPlan.FinderContainer)
 }
 
 public extension FinderInteractionDriver {
@@ -30,5 +34,15 @@ public extension FinderInteractionDriver {
     func renameFinderItem(_ name: String, to newName: String,
                           in container: InteractionPlan.FinderContainer) {
         renameFinderItem(name, to: newName, in: container, at: nil)
+    }
+
+    func setFinderView(_ view: Scene.FinderPresentation.View,
+                       in container: InteractionPlan.FinderContainer) {
+        _ = view; _ = container
+    }
+
+    func sortFinder(by field: String,
+                    in container: InteractionPlan.FinderContainer) {
+        _ = field; _ = container
     }
 }

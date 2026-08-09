@@ -42,6 +42,8 @@ enum MirrorActionExecutor {
             return scene.desktopItems
         case .window(let title):
             return scene.windows.first { $0.title == title }?.items
+        case .hostWindow(let id):
+            return scene.windows.first { $0.id == id }?.items
         }
     }
 

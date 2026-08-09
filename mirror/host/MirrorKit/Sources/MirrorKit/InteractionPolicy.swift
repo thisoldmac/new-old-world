@@ -83,6 +83,9 @@ public enum InteractionPlan: Equatable, Sendable {
         /// A Finder window, by its title — which is how the Finder's own
         /// scripting addresses it.
         case window(title: String)
+        /// A Finder window owned by this host. Its identity is deliberately
+        /// not a title: two folders with the same leaf name are ordinary.
+        case hostWindow(id: String)
     }
 
     public enum ApplicationVisibility: Equatable, Sendable {

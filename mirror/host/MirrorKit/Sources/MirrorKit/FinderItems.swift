@@ -108,6 +108,16 @@ import Foundation
 /// a name.
 public enum FinderItems {
 
+    /// Rendering identity reserved for Finder windows whose contents and
+    /// lifecycle are owned by the host. Kept in the shared semantic core so
+    /// hit testing, the live view, and the host adapter agree without either
+    /// importing the other.
+    public static let hostWindowPrefix = "host-finder:"
+
+    public static func isHostOwnedWindow(_ win: Scene.Window) -> Bool {
+        win.id.hasPrefix(hostWindowPrefix)
+    }
+
     /// The icon VIEW's box: `bounds of` an item is `position … position+32`
     /// there. Measured, not assumed (see the table above) — and it is the
     /// icon view's number only, which is why nothing computes a box from it

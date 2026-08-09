@@ -297,6 +297,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     nonisolated var planes: ActionPlanes { .residentActPlane }
 
     private let listener: GuestListener
+    private let hostFinder: HostFinderSession
+    private var lastGuestScene: MirrorKit.Scene?
     private let engineRegistry: MirrorStateEngineRegistry?
     private let act: AgentIntegrationActControl
     /// The nonce `dragpress` minted for the gesture in flight, and the only
@@ -304,6 +306,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// between gestures — and nil is not "released": the resident's own
     /// dead-man is what guarantees the button comes up, never this field.
     fileprivate var dragSession: Int?
+    private var hostThumb: (id: String, start: MirrorKit.Point,
+                            value: Int, control: MirrorKit.Scene.Control)?
     private var dragPressInFlight = false
     private var pendingDragPoint: MirrorKit.Point?
     private var pendingDragRelease: ((ItemDragAnswer) -> Void)?
@@ -437,6 +441,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
          sendCommand: GuestCommandSend? = nil,
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
+        self.hostFinder = HostFinderSession(listener: listener)
         self.engineRegistry = engineRegistry
         self.act = act
         let content = NOWMirrorContentPlane(listener: listener)
@@ -450,6 +455,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         self.finderRefreshOverride = finderRefreshOverride
         self.visibilityRefreshOverride = visibilityRefreshOverride
         self.lifecycleDidChange = lifecycleDidChange
+        self.hostFinder.onChange = { [weak self] in
+            guard let self, let base = self.lastGuestScene else { return }
+            self.scene = self.hostFinder.project(base)
+        }
+    }
+
+    var emulateFinderWindows: Bool {
+        get { hostFinder.enabled }
+        set { hostFinder.enabled = newValue }
+    }
+
+    var hostFinderStatus: String { hostFinder.status }
+
+    func refreshHostFinder() { hostFinder.refresh() }
+
+    func activeGuestDidChangeForHostFinder() {
+        hostFinder.resetForGuestChange()
     }
 
     // MARK: - The poll
@@ -567,6 +589,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// End the pinned session when the listener's active connection changes.
     /// A later resume is a fresh start even when it is the same physical Mac.
     func activeGuestDidChange() {
+        hostFinder.resetForGuestChange()
         guard let pinnedGuestKey,
               pinnedGuestKey != cycleIO.activeKey() else { return }
         endSession(
@@ -1020,7 +1043,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            made from it rather than from a flag somebody has to remember
            to clear. */
         let foldersComplete = scene.windows
-            .filter(FinderItems.isFolderWindow)
+            .filter {
+                FinderItems.isFolderWindow($0)
+                    && !FinderItems.isHostOwnedWindow($0)
+            }
             .allSatisfy { window in
                 guard let key = Self.finderWindowKey(window) else {
                     return false
@@ -1031,7 +1057,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         var out = scene
         if let desktop = icons[Self.desktopKey] { out.desktopItems = desktop }
         out.windows = out.windows.map { win in
-            guard FinderItems.isFolderWindow(win) else { return win }
+            guard FinderItems.isFolderWindow(win),
+                  !FinderItems.isHostOwnedWindow(win) else { return win }
             var w = win
             /* Finder P3 is permanently outside this rendering path. Even
                before the first roster page arrives, the host owns a blank
@@ -1066,7 +1093,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     private static func iconLayoutKey(_ scene: MirrorKit.Scene) -> String {
-        let folders = scene.windows.filter(FinderItems.isFolderWindow)
+        let folders = scene.windows.filter {
+            FinderItems.isFolderWindow($0)
+                && !FinderItems.isHostOwnedWindow($0)
+        }
         return (["desktop"] + folders.map(FinderItems.layoutKey))
             .joined(separator: "|")
     }
@@ -1086,7 +1116,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     static func prioritizedFinderWindows(_ scene: MirrorKit.Scene)
         -> [MirrorKit.Scene.Window] {
         scene.windows.enumerated()
-            .filter { FinderItems.isFolderWindow($0.element) }
+            .filter {
+                FinderItems.isFolderWindow($0.element)
+                    && !FinderItems.isHostOwnedWindow($0.element)
+            }
             .sorted {
                 if $0.element.front != $1.element.front {
                     return $0.element.front
@@ -1346,8 +1379,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// is selected, so cutover drift remains inspectable without two owners
     /// competing to draw the window.
     private func projectedScene(fallback: MirrorKit.Scene) -> MirrorKit.Scene {
-        Self.projectedScene(snapshot: shadowEngine?.snapshot,
-                            fallback: fallback)
+        let guest = Self.projectedScene(snapshot: shadowEngine?.snapshot,
+                                        fallback: fallback)
+        lastGuestScene = guest
+        hostFinder.observe(screen: guest.screen)
+        return hostFinder.project(guest)
     }
 
     /// Policy is a projection switch as well as a resident claim. The state
@@ -1356,7 +1392,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     func planePolicyDidChange() {
         guard let key = pinnedGuestKey, let engine = shadowEngine else { return }
         let changed = engine.setEnabledPlanes(planePolicy(key))
-        if changed, let projected = engine.snapshot?.scene { scene = projected }
+        if changed, let projected = engine.snapshot?.scene {
+            scene = projectedScene(fallback: projected)
+        }
         guard running else { return }
         if cycleGeneration != nil {
             pollRequestedAfterCycle = true
@@ -2201,6 +2239,64 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         if let why = disposition.refusal { answer(.refused(why)) }
     }
 
+    /// Consume acts addressed to a host Finder window before the guest
+    /// policy, connection gate, or resident lane sees them. These are native
+    /// host window mechanics over file-list state, not simulated guest input.
+    private func performHostFinder(_ interaction: Interaction) -> Bool {
+        switch interaction.object {
+        case .app(let app) where hostFinder.enabled && app.name == "Finder":
+            hostFinder.activate()
+            return true
+        case .app where hostFinder.enabled:
+            hostFinder.deactivate()
+            return false
+        case .window(let window)
+                where HostFinderDomain.isWindowID(window.id):
+            let plan = InteractionPolicy.plan(for: interaction,
+                                              planes: .residentActPlane)
+            switch plan {
+            case .windowAct(_, let act):
+                hostFinder.windowAct(id: window.id, act: act)
+            case .activateWindow:
+                hostFinder.windowAct(id: window.id, act: .select)
+            case .nothing:
+                break
+            default:
+                report("That host Finder window action is not available")
+            }
+            return true
+
+        case .control(let control)
+                where HostFinderDomain.isWindowID(control.window.id):
+            guard let target = HostFinderDomain.control(control.ref),
+                  target.windowID == control.window.id else {
+                report("That host Finder control has no local identity")
+                return true
+            }
+            if target.action.hasPrefix("sort-"),
+               let sort = HostFinderDomain.Sort(rawValue:
+                    String(target.action.dropFirst("sort-".count))) {
+                hostFinder.sort(sort, in: target.windowID)
+                return true
+            }
+            guard target.action == "vscroll" else { return true }
+            let part: Scrollbar.Part?
+            switch interaction.gesture {
+            case .scroll(let notches, _):
+                part = notches > 0 ? .lineDown : .lineUp
+            case .click:
+                part = control.part
+            default:
+                part = nil
+            }
+            if let part { hostFinder.scroll(windowID: target.windowID, part: part) }
+            return true
+
+        default:
+            return false
+        }
+    }
+
     /// The one dispatch path, with the face that asked for it. `MirrorKit`'s
     /// `MirrorSceneSource` conformance above is the gesture door; this is the
     /// same door with the caller named.
@@ -2224,6 +2320,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     @discardableResult
     func perform(_ interaction: Interaction,
                  source: MirrorOperationSource) -> MirrorPerformDisposition {
+        if performHostFinder(interaction) { return .direct }
         if let refusal = pinnedActionRefusal() {
             let label = InteractionBridge.label(for: interaction)
             ActLog.note(action: label,
@@ -2628,6 +2725,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 $0.title == title && FinderItems.isFolderWindow($0)
             }
             return matches.count == 1 ? matches[0].ref : nil
+        case .hostWindow:
+            return nil
         }
     }
 
@@ -2718,6 +2817,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             switch container {
             case .desktop: place = "on the desktop"
             case .window(let title): place = "in \(title)"
+            case .hostWindow(let id):
+                place = "in \(scene.windows.first { $0.id == id }?.title ?? "that Finder window")"
             }
             return "the Finder shows no item named \(missing) \(place), so "
                 + "the act was not sent. Read it again."
@@ -2939,6 +3040,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                rather than a path is also what stays true when the same
                folder is open twice. */
             return "item \"\(escaped)\" of window \"\(w)\""
+        case .hostWindow:
+            /* Host Finder operations are intercepted before the guest plan
+               reaches this AppleScript adapter. Keep the boundary closed if
+               a future caller bypasses that door. */
+            return "item \"\(escaped)\""
         }
     }
 
@@ -3548,6 +3654,10 @@ extension NOWMirrorSource: FinderInteractionDriver {
         _ names: [String], in container: InteractionPlan.FinderContainer,
         at point: MirrorKit.Point?
     ) {
+        if case .hostWindow(let id) = container {
+            hostFinder.select(names, in: id)
+            return
+        }
         performFinderPlan(.finderSetSelection(items: names,
                                               container: container),
                           label: names.isEmpty ? "deselect Finder items"
@@ -3560,6 +3670,10 @@ extension NOWMirrorSource: FinderInteractionDriver {
         at point: MirrorKit.Point?
     ) {
         guard !names.isEmpty else { return }
+        if case .hostWindow(let id) = container {
+            hostFinder.open(names, in: id)
+            return
+        }
         performFinderPlan(.finderOpenItems(items: names, container: container),
                           label: "open \(names.count) Finder item(s)",
                           cursor: point)
@@ -3570,9 +3684,28 @@ extension NOWMirrorSource: FinderInteractionDriver {
         in container: InteractionPlan.FinderContainer,
         at point: MirrorKit.Point?
     ) {
+        if case .hostWindow(let id) = container {
+            hostFinder.rename(name, to: newName, in: id)
+            return
+        }
         performFinderPlan(.finderRename(item: name, to: newName,
                                         container: container),
                           label: "rename \(name) to \(newName)", cursor: point)
+    }
+
+    func setFinderView(
+        _ view: MirrorKit.Scene.FinderPresentation.View,
+        in container: InteractionPlan.FinderContainer
+    ) {
+        guard case .hostWindow(let id) = container else { return }
+        hostFinder.setView(view, in: id)
+    }
+
+    func sortFinder(by field: String,
+                    in container: InteractionPlan.FinderContainer) {
+        guard case .hostWindow(let id) = container,
+              let sort = HostFinderDomain.Sort(rawValue: field) else { return }
+        hostFinder.sort(sort, in: id)
     }
 }
 
@@ -3581,6 +3714,15 @@ extension NOWMirrorSource: ScrollbarDragDriver {
 
     func thumbPress(windowID: String, at point: MirrorKit.Point,
                     answer: @escaping (ItemDragAnswer) -> Void) {
+        if HostFinderDomain.isWindowID(windowID),
+           let control = scene?.windows.first(where: { $0.id == windowID })?
+                .controls.first(where: {
+                    $0.role == "scrollbar" && Scrollbar.isVertical($0)
+                }) {
+            hostThumb = (windowID, point, control.value ?? 0, control)
+            answer(.confirmed)
+            return
+        }
         guard let ref = scene?.windows.first(where: { $0.id == windowID })?.ref,
               !ref.isEmpty else {
             answer(.refused("the scrollbar's Finder window has no live "
@@ -3591,10 +3733,22 @@ extension NOWMirrorSource: ScrollbarDragDriver {
     }
 
     func thumbMove(to point: MirrorKit.Point) {
+        if let thumb = hostThumb, let rect = thumb.control.rect {
+            let track = max(1, rect.b - rect.t - 32)
+            let range = max(0, (thumb.control.max ?? 0) - (thumb.control.min ?? 0))
+            let value = thumb.value + (point.y - thumb.start.y) * range / track
+            hostFinder.setScroll(windowID: thumb.id, value: value)
+            return
+        }
         residentDragMove(to: point)
     }
 
     func thumbRelease(answer: @escaping (ItemDragAnswer) -> Void) {
+        if hostThumb != nil {
+            hostThumb = nil
+            answer(.confirmed)
+            return
+        }
         residentDragRelease(answer: answer)
     }
 }
@@ -3639,6 +3793,10 @@ extension NOWMirrorSource: ItemDragDriver {
 
     func dragPress(_ subject: DragTargeting.Subject, at point: MirrorKit.Point,
                    answer: @escaping (ItemDragAnswer) -> Void) {
+        if hostFinder.beginDrag(subject) {
+            answer(.confirmed)
+            return
+        }
         guard let window = containerReference(for: subject) else {
             answer(.refused(
                 "the Macintosh has not named the "
@@ -3653,17 +3811,33 @@ extension NOWMirrorSource: ItemDragDriver {
     }
 
     func dragMove(to point: MirrorKit.Point) {
+        if case .window(let id) = hostFinderDragContainer,
+           HostFinderDomain.isWindowID(id) { return }
         residentDragMove(to: point)
     }
 
     func dragRelease(_ plan: DragTargeting.Plan?,
                      answer: @escaping (ItemDragAnswer) -> Void) {
+        if let container = plan?.subject.container ?? hostFinderDragContainer,
+           case .window(let id) = container,
+           HostFinderDomain.isWindowID(id) {
+            hostFinder.finishDrag(plan)
+            answer(.confirmed)
+            return
+        }
         residentDragRelease { [weak self] result in
             if case .confirmed = result, let plan {
                 self?.applyConfirmedDrag(plan)
             }
             answer(result)
         }
+    }
+
+    private var hostFinderDragContainer: DragTargeting.Container? {
+        /* The session intentionally owns its subject; this computed value is
+           only needed to keep move/release off the resident lane before a
+           release plan exists. */
+        hostFinder.currentDragContainer
     }
 
     private func applyConfirmedDrag(_ plan: DragTargeting.Plan) {

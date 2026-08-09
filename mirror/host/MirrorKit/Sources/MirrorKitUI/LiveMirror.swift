@@ -572,9 +572,11 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                 case .thumb(let id, let control):
                     if let window = scene.windows.first(where: { $0.id == id }) {
                         let delta = Scrollbar.isVertical(control) ? dy : dx
-                        finderInterior.previewThumb(
-                            in: window, control: control,
-                            pointerDelta: delta)
+                        if !FinderItems.isHostOwnedWindow(window) {
+                            finderInterior.previewThumb(
+                                in: window, control: control,
+                                pointerDelta: delta)
+                        }
                         controller.scrollbarDragDriver?.thumbMove(
                             to: Point(x: cur.x, y: cur.y))
                     }
@@ -661,7 +663,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             sendFinderSelection(names, in: window)
             if count >= 2 {
                 controller.finderInteractionDriver?.openFinderItems(
-                    [name], in: .window(title: window.title),
+                    [name], in: finderContainer(for: window),
                     at: Point(x: point.x, y: point.y))
             }
             return
@@ -698,7 +700,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         }
         if case .scrollbar(let id, let control, let part, _, _) = target,
            part != .thumb,
-           let window = scene.windows.first(where: { $0.id == id }) {
+           let window = scene.windows.first(where: { $0.id == id }),
+           !FinderItems.isHostOwnedWindow(window) {
             finderInterior.previewScroll(in: window, control: control,
                                          part: part)
         }
@@ -725,8 +728,16 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             Point(x: origin.x + $0.x + max(1, ($0.w ?? 16) / 2),
                   y: origin.y + $0.y + max(1, ($0.h ?? 16) / 2))
         }
-        driver.setFinderSelection(ordered, in: .window(title: window.title),
+        driver.setFinderSelection(ordered, in: finderContainer(for: window),
                                   at: at)
+    }
+
+    private func finderContainer(
+        for window: MirrorKit.Scene.Window
+    ) -> InteractionPlan.FinderContainer {
+        FinderItems.isHostOwnedWindow(window)
+            ? .hostWindow(id: window.id)
+            : .window(title: window.title)
     }
 
     private func sendFinderSelection(
@@ -763,8 +774,10 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                        x: point.x, y: point.y), in: scene)
         else { return }
         for _ in 0..<abs(notches) {
-            finderInterior.previewScroll(in: window, control: control,
-                                         part: part)
+            if !FinderItems.isHostOwnedWindow(window) {
+                finderInterior.previewScroll(in: window, control: control,
+                                             part: part)
+            }
             act(object, .scroll(notches: notches > 0 ? 1 : -1,
                                 at: Point(x: point.x, y: point.y)))
         }
@@ -797,7 +810,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     }
                     controller.finderInteractionDriver?.renameFinderItem(
                         edit.original, to: edit.text,
-                        in: .window(title: window.title), at: at)
+                        in: finderContainer(for: window), at: at)
                 }
             } else if delete {
                 finderInterior.deleteRenameCharacter()
@@ -825,7 +838,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             let names = finderInterior.selectedNames(in: window)
             let ordered = (window.items ?? []).map(\.name).filter(names.contains)
             controller.finderInteractionDriver?.openFinderItems(
-                ordered, in: .window(title: window.title))
+                ordered, in: finderContainer(for: window))
             return true
         }
         if mods & KeyCaptureView.Mods.cmd != 0,
@@ -1158,6 +1171,19 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                    $0.front && FinderItems.isFolderWindow($0)
                }) {
                 finderInterior.previewView(view, in: window)
+                if FinderItems.isHostOwnedWindow(window) {
+                    controller.finderInteractionDriver?.setFinderView(
+                        view, in: .hostWindow(id: window.id))
+                    return
+                }
+            }
+            if let sort = Self.finderSort(named: item.title),
+               let window = controller.scene?.windows.first(where: {
+                   $0.front && FinderItems.isHostOwnedWindow($0)
+               }) {
+                controller.finderInteractionDriver?.sortFinder(
+                    by: sort, in: .hostWindow(id: window.id))
+                return
             }
             // Dispatch by IDENTITY, and refuse rather than guess.
             //
@@ -1203,6 +1229,16 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         case "as icons": return .icon
         case "as buttons": return .smallIcon
         case "as list": return .name
+        default: return nil
+        }
+    }
+
+    private static func finderSort(named title: String) -> String? {
+        switch title.lowercased() {
+        case "by name": return "name"
+        case "by date modified": return "modified"
+        case "by size": return "size"
+        case "by kind": return "kind"
         default: return nil
         }
     }
