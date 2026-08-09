@@ -35,23 +35,39 @@ enum ChatSubprocessEnvironment {
     static func minimal(
         from source: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String: String] {
-        source.filter { key, _ in
+        var result = source.filter { key, _ in
             exactKeys.contains(key) || key.hasPrefix("LC_")
         }
+        var paths = (result["PATH"] ?? "")
+            .split(separator: ":").map(String.init)
+        for path in ChatRuntimeLocator.fallbackPaths(home: result["HOME"])
+            where !paths.contains(path) {
+            paths.append(path)
+        }
+        result["PATH"] = paths.joined(separator: ":")
+        return result
     }
 }
 
 enum ChatRuntimeLocator {
+    static func fallbackPaths(home: String?) -> [String] {
+        var paths = [
+            "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin",
+        ]
+        if let home, !home.isEmpty {
+            paths.append(URL(fileURLWithPath: home)
+                .appendingPathComponent(".local/bin").path)
+        }
+        return paths
+    }
+
     static func executable(
         named name: String,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> URL? {
         var paths = (environment["PATH"] ?? "")
             .split(separator: ":").map(String.init)
-        paths.append(contentsOf: [
-            "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin",
-            NSString(string: "~/.local/bin").expandingTildeInPath,
-        ])
+        paths.append(contentsOf: fallbackPaths(home: environment["HOME"]))
         let manager = FileManager.default
         for path in paths where !path.isEmpty {
             let candidate = URL(fileURLWithPath: path)

@@ -154,6 +154,50 @@ final class CodexAppServerClientTests: XCTestCase {
         XCTAssertEqual(params["ephemeral"] as? Bool, true)
     }
 
+    func testBurstNotificationsPreserveTransportOrder() async throws {
+        let transport = ScriptedCodexTransport(responses: [
+            "initialize": [[:]],
+            "account/read": [Self.account],
+            "thread/start": [["thread": ["id": "thread-1"]]],
+            "turn/start": [["turn": ["id": "turn-1"]]],
+        ])
+        let stream = CodexAppServerClient(transport: transport).stream(
+            ChatCompletionRequest(
+                model: "gpt-5.4", system: "", turns: [.user("Hello")],
+                tools: [], maxTokens: 100))
+        let collecting = Task { () throws -> String in
+            var text = ""
+            for try await event in stream {
+                if case .textDelta(let part) = event { text += part }
+            }
+            return text
+        }
+        try await waitUntil {
+            transport.messages.contains {
+                $0["method"] as? String == "turn/start"
+            }
+        }
+        for index in 0..<100 {
+            transport.emit([
+                "method": "item/agentMessage/delta",
+                "params": [
+                    "threadId": "thread-1", "turnId": "turn-1",
+                    "itemId": "item-1", "delta": "\(index),",
+                ],
+            ])
+        }
+        transport.emit([
+            "method": "turn/completed",
+            "params": [
+                "threadId": "thread-1",
+                "turn": ["id": "turn-1", "status": "completed"],
+            ],
+        ])
+
+        let result = try await collecting.value
+        XCTAssertEqual(result, (0..<100).map { "\($0)," }.joined())
+    }
+
     func testToolItemFailsTheTextOnlyTurn() async throws {
         let transport = ScriptedCodexTransport(responses: [
             "initialize": [[:]], "account/read": [Self.account],

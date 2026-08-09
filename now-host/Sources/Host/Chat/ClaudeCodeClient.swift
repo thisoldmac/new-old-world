@@ -32,17 +32,24 @@ final class ClaudeCodeClient: @unchecked Sendable {
                 code: "unreachable", reason: "Claude Code is not installed"))
         }
         do {
-            var object: [String: Any]?
+            var document = Data()
             for try await line in runner.stdoutLines(ChatSubprocessRequest(
                 executable: executable,
                 arguments: ["auth", "status", "--json"],
                 standardInput: nil, timeout: 10,
                 environment: environment, workingDirectory: nil
-            )) where !line.isEmpty {
-                object = try JSONSerialization.jsonObject(
-                    with: Data(line.utf8)) as? [String: Any]
+            )) {
+                document.append(contentsOf: line.utf8)
+                document.append(0x0A)
+                guard document.count <= 65_536 else {
+                    throw ChatFault.refuse(
+                        code: "provider-error",
+                        reason: "Claude returned an invalid authentication status")
+                }
             }
-            guard let object else {
+            guard !document.isEmpty,
+                let object = try JSONSerialization.jsonObject(with: document)
+                    as? [String: Any] else {
                 throw ChatFault.refuse(
                     code: "provider-error",
                     reason: "Claude returned no authentication status")
@@ -157,4 +164,3 @@ final class ClaudeCodeClient: @unchecked Sendable {
         return nil
     }
 }
-

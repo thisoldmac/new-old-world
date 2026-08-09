@@ -27,12 +27,15 @@ final class ScriptedChatProcessRunner: ChatSubprocessRunning,
 final class ClaudeCodeClientTests: XCTestCase {
     private let executable = URL(fileURLWithPath: "/usr/bin/true")
 
-    func testStatusReadsSubscriptionFieldsOnly() async throws {
+    func testStatusReadsPrettyPrintedSubscriptionDocument() async throws {
         let runner = ScriptedChatProcessRunner([[
-            "{\"loggedIn\":true,\"authMethod\":\"claude.ai\","
-                + "\"email\":\"person@example.test\","
-                + "\"subscriptionType\":\"max\","
-                + "\"accessToken\":\"must-not-be-decoded\"}",
+            "{",
+            "  \"loggedIn\": true,",
+            "  \"authMethod\": \"claude.ai\",",
+            "  \"email\": \"person@example.test\",",
+            "  \"subscriptionType\": \"max\",",
+            "  \"accessToken\": \"must-not-be-decoded\"",
+            "}",
         ]])
         let client = ClaudeCodeClient(
             runner: runner, executable: executable, environment: [:])
@@ -118,6 +121,17 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertNil(environment["ANTHROPIC_API_KEY"])
         XCTAssertNil(environment["OPENAI_API_KEY"])
         XCTAssertNil(environment["UNRELATED_SECRET"])
+    }
+
+    func testMinimalEnvironmentMakesFallbackRuntimeDependenciesVisible() {
+        let environment = ChatSubprocessEnvironment.minimal(from: [
+            "HOME": "/tmp/home", "PATH": "/usr/bin:/bin",
+        ])
+        let paths = environment["PATH"]?.split(separator: ":").map(String.init)
+
+        XCTAssertEqual(paths?.prefix(2), ["/usr/bin", "/bin"])
+        XCTAssertTrue(paths?.contains("/opt/homebrew/bin") == true)
+        XCTAssertTrue(paths?.contains("/usr/local/bin") == true)
     }
 }
 

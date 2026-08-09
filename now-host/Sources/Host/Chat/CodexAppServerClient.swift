@@ -18,6 +18,7 @@ actor CodexAppServerClient {
     private var nextID = 1
     private var initialized = false
     private var startup: Task<Void, Error>?
+    private var incomingTask: Task<Void, Never>?
     private var pending: [Int: PendingRequest] = [:]
     private var loginWaiters: [String: CheckedContinuation<Void, Error>] = [:]
     private var turns: [String: ActiveTurn] = [:]
@@ -94,13 +95,21 @@ actor CodexAppServerClient {
         if let startup { return try await startup.value }
         let task = Task { [weak self] in
             guard let self else { return }
+            let (lines, continuation) = AsyncStream<String>.makeStream()
             try self.transport.start(
-                receive: { [weak self] line in
-                    Task { await self?.receive(line) }
+                receive: { line in
+                    continuation.yield(line)
                 },
-                terminated: { [weak self] in
-                    Task { await self?.terminated() }
+                terminated: {
+                    continuation.finish()
                 })
+            let incomingTask = Task { [weak self] in
+                for await line in lines {
+                    await self?.receive(line)
+                }
+                await self?.terminated()
+            }
+            await self.setIncomingTask(incomingTask)
             _ = try await self.rawRequest(
                 method: "initialize",
                 params: [
@@ -124,6 +133,10 @@ actor CodexAppServerClient {
     }
 
     private func markInitialized() { initialized = true }
+
+    private func setIncomingTask(_ task: Task<Void, Never>) {
+        incomingTask = task
+    }
 
     private func request(method: String, params: [String: Any]) async throws
         -> Data {
@@ -403,6 +416,7 @@ actor CodexAppServerClient {
     private func terminated() {
         initialized = false
         startup = nil
+        incomingTask = nil
         let error = ChatFault.refuse(
             code: "unreachable", reason: "Codex app-server stopped")
         let waiters = pending.values
