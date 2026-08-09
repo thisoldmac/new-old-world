@@ -172,4 +172,109 @@ final class ProjectStoreTests: XCTestCase {
                                .unpromotedWorkspace)
         }
     }
+
+    func testCandidateBindsExactManifestAndRequiresSuccessfulBuild() throws {
+        let store = try ProjectStore(root: try root())
+        let created = try store.create(
+            name: "Candidate", home: .host, projectDocument: document,
+            files: [ProjectFileChange(path: "Sources/Main.c",
+                                      contents: Data("source".utf8))])
+        let candidate = try store.stageCandidate(projectID: created.projectID)
+
+        XCTAssertEqual(candidate.lifecycle, .staged)
+        XCTAssertEqual(candidate.receipt.manifest.map(\.path),
+                       ["Project.ckp", "Sources/Main.c"])
+        XCTAssertEqual(try store.candidateFile(
+            candidateID: candidate.receipt.candidateID,
+            path: "Sources/Main.c"), Data("source".utf8))
+        XCTAssertThrowsError(try store.promoteCandidate(
+            candidateID: candidate.receipt.candidateID,
+            currentGuestDigest: nil)) { error in
+                XCTAssertEqual(error as? ProjectStoreError, .candidateNotBuilt)
+            }
+
+        let built = try store.recordBuild(
+            candidateID: candidate.receipt.candidateID,
+            buildID: "build-0123456789abcdef", succeeded: true)
+        XCTAssertEqual(built.lifecycle, .buildSucceeded)
+        let promoted = try store.promoteCandidate(
+            candidateID: candidate.receipt.candidateID,
+            currentGuestDigest: nil)
+        XCTAssertEqual(promoted.home, .host)
+        XCTAssertEqual(try store.candidate(
+            candidateID: candidate.receipt.candidateID).lifecycle, .promoted)
+    }
+
+    func testGuestPromotionRefusesDivergenceAndPreservesWorkspace() throws {
+        let store = try ProjectStore(root: try root())
+        let baseDigest = String(repeating: "a", count: 64)
+        let created = try store.create(
+            name: "Guest Candidate", home: .guest, guestDigest: baseDigest,
+            projectDocument: document,
+            files: [ProjectFileChange(path: "Sources/Main.c",
+                                      contents: Data("guest".utf8))])
+        let workspace = try store.openWorkspace(projectID: created.projectID)
+        let edited = try store.apply(
+            workspaceID: workspace.workspaceID,
+            expectedCommit: workspace.currentCommit,
+            changes: [ProjectFileChange(path: "Sources/Main.c",
+                                        contents: Data("agent".utf8))],
+            message: "Agent edit")
+        let candidate = try store.stageCandidate(
+            projectID: created.projectID, workspaceID: workspace.workspaceID)
+        _ = try store.recordBuild(candidateID: candidate.receipt.candidateID,
+                                  buildID: "build-0123456789abcdef",
+                                  succeeded: true)
+        let changedDigest = String(repeating: "b", count: 64)
+
+        XCTAssertThrowsError(try store.promoteCandidate(
+            candidateID: candidate.receipt.candidateID,
+            currentGuestDigest: changedDigest)) { error in
+                XCTAssertEqual(error as? ProjectStoreError,
+                               .guestDiverged(base: baseDigest,
+                                              current: changedDigest))
+            }
+        XCTAssertEqual(try store.status(projectID: created.projectID).guestState,
+                       .divergent)
+        XCTAssertEqual(try store.resumeWorkspace(
+            workspaceID: workspace.workspaceID).currentCommit,
+                       edited.currentCommit)
+        XCTAssertEqual(try store.read(projectID: created.projectID,
+                                      path: "Sources/Main.c"),
+                       Data("guest".utf8))
+    }
+
+    func testVerifiedGuestPromotionAdvancesMirrorAndWorkspaceLifecycle() throws {
+        let store = try ProjectStore(root: try root())
+        let baseDigest = String(repeating: "c", count: 64)
+        let created = try store.create(
+            name: "Guest Candidate", home: .guest, guestDigest: baseDigest,
+            projectDocument: document,
+            files: [ProjectFileChange(path: "Sources/Main.c",
+                                      contents: Data("guest".utf8))])
+        let workspace = try store.openWorkspace(projectID: created.projectID)
+        let edited = try store.apply(
+            workspaceID: workspace.workspaceID,
+            expectedCommit: workspace.currentCommit,
+            changes: [ProjectFileChange(path: "Sources/Main.c",
+                                        contents: Data("accepted".utf8))],
+            message: "Accepted agent edit")
+        let candidate = try store.stageCandidate(
+            projectID: created.projectID, workspaceID: workspace.workspaceID)
+        _ = try store.recordBuild(candidateID: candidate.receipt.candidateID,
+                                  buildID: "build-fedcba9876543210",
+                                  succeeded: true)
+        let receipt = try store.promoteCandidate(
+            candidateID: candidate.receipt.candidateID,
+            currentGuestDigest: baseDigest)
+
+        XCTAssertEqual(receipt.promotedCommit, edited.currentCommit)
+        XCTAssertEqual(try store.read(projectID: created.projectID,
+                                      path: "Sources/Main.c"),
+                       Data("accepted".utf8))
+        XCTAssertEqual(try store.resumeWorkspace(
+            workspaceID: workspace.workspaceID).lifecycle, .promoted)
+        XCTAssertEqual(try store.status(projectID: created.projectID).guestState,
+                       .verified)
+    }
 }

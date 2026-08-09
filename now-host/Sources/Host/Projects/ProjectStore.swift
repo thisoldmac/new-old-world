@@ -47,6 +47,8 @@ final class ProjectStore {
                                         withIntermediateDirectories: true)
         try fileManager.createDirectory(at: workspacesURL,
                                         withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: candidatesURL,
+                                        withIntermediateDirectories: true)
     }
 
     func list() throws -> [ProjectStatus] {
@@ -231,6 +233,180 @@ final class ProjectStore {
         }
     }
 
+    /// Materializes the exact host-side tree that will be published. The
+    /// returned receipt contains no host path; the coordinator alone can ask
+    /// for the candidate's files when it drives the private transfer lane.
+    func stageCandidate(projectID: ProjectID,
+                        workspaceID: ProjectWorkspaceID? = nil) throws
+        -> ProjectCandidate {
+        let project = try load(projectID)
+        let source: URL
+        let sourceCommit: String
+        let workspace: ProjectWorkspace?
+        if let workspaceID {
+            let loaded = try loadWorkspace(workspaceID)
+            guard loaded.projectID == projectID, loaded.lifecycle == .active else {
+                throw ProjectStoreError.unavailable(
+                    "The workspace is not an active workspace for this project.")
+            }
+            source = workspaceContainer(workspaceID).appendingPathComponent("Working")
+            sourceCommit = loaded.currentCommit
+            workspace = loaded
+        } else {
+            guard project.home == .host else {
+                throw ProjectStoreError.unavailable(
+                    "A guest-home candidate must come from a recoverable workspace.")
+            }
+            source = workingURL(projectID)
+            sourceCommit = project.currentCommit
+            workspace = nil
+        }
+        let candidateID = ProjectCandidateID.mint()
+        let container = candidateContainer(candidateID)
+        try fileManager.createDirectory(at: container, withIntermediateDirectories: true)
+        do {
+            let before = try ProjectDigest.tree(at: source, fileManager: fileManager)
+            try fileManager.copyItem(at: source,
+                                     to: container.appendingPathComponent("Working"))
+            let after = try ProjectDigest.tree(at: source, fileManager: fileManager)
+            let copied = try ProjectDigest.tree(
+                at: container.appendingPathComponent("Working"),
+                fileManager: fileManager)
+            guard before == after, after == copied else {
+                throw ProjectStoreError.unavailable(
+                    "The source changed while the candidate was being staged.")
+            }
+            let receipt = ProjectCandidateReceipt(
+                candidateID: candidateID, projectID: projectID, home: project.home,
+                sourceRevision: workspace?.baseRevision ?? project.revision,
+                sourceCommit: sourceCommit, workspaceID: workspaceID,
+                baseGuestDigest: workspace?.baseGuestDigest
+                    ?? project.verifiedGuestDigest,
+                contentDigest: copied, manifest: try manifest(at: source),
+                stagedAt: Date())
+            let candidate = ProjectCandidate(receipt: receipt, lifecycle: .staged,
+                                             buildID: nil, updatedAt: Date())
+            try saveCandidate(candidate)
+            return candidate
+        } catch {
+            try? fileManager.removeItem(at: container)
+            throw error
+        }
+    }
+
+    func candidate(candidateID: ProjectCandidateID) throws -> ProjectCandidate {
+        try loadCandidate(candidateID)
+    }
+
+    func candidateFile(candidateID: ProjectCandidateID, path: String) throws -> Data {
+        _ = try loadCandidate(candidateID)
+        let url = try ProjectPath.checkedURL(
+            path, under: candidateContainer(candidateID).appendingPathComponent("Working"),
+            fileManager: fileManager)
+        return try Data(contentsOf: url)
+    }
+
+    func recordBuild(candidateID: ProjectCandidateID, buildID: String,
+                     succeeded: Bool) throws -> ProjectCandidate {
+        var candidate = try loadCandidate(candidateID)
+        guard candidate.lifecycle == .staged else {
+            throw ProjectStoreError.unavailable("The candidate is not awaiting a build.")
+        }
+        candidate.lifecycle = succeeded ? .buildSucceeded : .buildFailed
+        candidate.buildID = buildID
+        candidate.updatedAt = Date()
+        try saveCandidate(candidate)
+        return candidate
+    }
+
+    /// Records activation only after the guest coordinator has measured the
+    /// active tree. A guest-home promotion advances the verified mirror to the
+    /// workspace commit; a host-home promotion leaves host source authority
+    /// untouched and only settles the candidate lifecycle.
+    func promoteCandidate(candidateID: ProjectCandidateID,
+                          currentGuestDigest: String?) throws
+        -> ProjectPromotionReceipt {
+        var candidate = try loadCandidate(candidateID)
+        guard candidate.lifecycle == .buildSucceeded else {
+            throw ProjectStoreError.candidateNotBuilt
+        }
+        var project = try load(candidate.receipt.projectID)
+        if project.home == .guest {
+            guard let base = candidate.receipt.baseGuestDigest,
+                  let current = currentGuestDigest else {
+                throw ProjectStoreError.unavailable(
+                    "Promotion requires both base and current guest digests.")
+            }
+            guard base == current else {
+                project.guestState = .divergent
+                try save(project)
+                throw ProjectStoreError.guestDiverged(base: base, current: current)
+            }
+            guard let workspaceID = candidate.receipt.workspaceID else {
+                throw ProjectStoreError.unavailable(
+                    "A guest-home candidate has no workspace provenance.")
+            }
+            var workspace = try loadWorkspace(workspaceID)
+            try replaceWorkingTree(projectID: project.projectID,
+                                   withCandidate: candidateID)
+            let date = Date()
+            project.revision += 1
+            project.currentCommit = workspace.currentCommit
+            project.contentDigest = workspace.contentDigest
+            project.verifiedGuestDigest = candidate.receipt.contentDigest
+            project.guestState = .verified
+            project.history.append(ProjectHistoryEntry(
+                revision: project.revision, commit: workspace.currentCommit,
+                parent: workspace.baseProjectCommit,
+                contentDigest: workspace.contentDigest,
+                message: "Promote verified guest candidate", committedAt: date))
+            try repository(for: project.projectID).update(
+                branch: "main", to: workspace.currentCommit)
+            workspace.lifecycle = .promoted
+            workspace.promotedCommit = workspace.currentCommit
+            workspace.updatedAt = date
+            try saveWorkspace(workspace)
+            try save(project)
+        }
+        candidate.lifecycle = .promoted
+        candidate.updatedAt = Date()
+        try saveCandidate(candidate)
+        return ProjectPromotionReceipt(
+            candidateID: candidateID, projectID: project.projectID,
+            home: project.home, baseGuestDigest: candidate.receipt.baseGuestDigest,
+            currentGuestDigest: currentGuestDigest,
+            promotedRevision: project.revision,
+            promotedCommit: project.currentCommit,
+            contentDigest: candidate.receipt.contentDigest,
+            promotedAt: candidate.updatedAt)
+    }
+
+    func discardCandidate(candidateID: ProjectCandidateID) throws {
+        var candidate = try loadCandidate(candidateID)
+        guard candidate.lifecycle != .promoted else {
+            throw ProjectStoreError.unavailable("A promoted candidate is retained as evidence.")
+        }
+        candidate.lifecycle = .discarded
+        candidate.updatedAt = Date()
+        try saveCandidate(candidate)
+        try? fileManager.removeItem(at: candidateContainer(candidateID)
+            .appendingPathComponent("Working"))
+    }
+
+    func observeGuest(projectID: ProjectID, digest: String) throws -> ProjectStatus {
+        guard isSHA256(digest) else {
+            throw ProjectStoreError.invalidProject("The guest digest is malformed.")
+        }
+        var project = try load(projectID)
+        guard project.home == .guest else {
+            throw ProjectStoreError.unavailable("The project is not guest-home.")
+        }
+        project.guestState = digest == project.verifiedGuestDigest
+            ? .verified : (project.activeWorkspaceID == nil ? .dirtyOnGuest : .divergent)
+        try save(project)
+        return status(project)
+    }
+
     func testingWorkingURL(projectID: ProjectID) -> URL {
         workingURL(projectID)
     }
@@ -373,6 +549,64 @@ final class ProjectStore {
                                             options: .atomic)
     }
 
+    private func manifest(at root: URL) throws -> [ProjectManifestEntry] {
+        guard let walk = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]) else {
+            throw ProjectStoreError.unavailable("The candidate tree cannot be read.")
+        }
+        var result: [ProjectManifestEntry] = []
+        for case let url as URL in walk {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey,
+                                                           .isSymbolicLinkKey])
+            let path = url.pathComponents.suffix(walk.level)
+                .joined(separator: "/")
+            if values.isSymbolicLink == true { throw ProjectStoreError.linkEscape(path) }
+            guard values.isRegularFile == true else { continue }
+            let data = try Data(contentsOf: url)
+            result.append(.init(path: path, dataBytes: data.count,
+                                resourceBytes: 0, type: nil, creator: nil,
+                                digest: ProjectDigest.sha256(data)))
+        }
+        return result.sorted { $0.path < $1.path }
+    }
+
+    private func replaceWorkingTree(projectID: ProjectID,
+                                    withCandidate candidateID: ProjectCandidateID) throws {
+        let working = workingURL(projectID)
+        let source = candidateContainer(candidateID).appendingPathComponent("Working")
+        let parent = working.deletingLastPathComponent()
+        let staging = parent.appendingPathComponent(".promote-\(UUID().uuidString)")
+        let backup = parent.appendingPathComponent(".backup-\(UUID().uuidString)")
+        try fileManager.copyItem(at: source, to: staging)
+        try fileManager.moveItem(at: working, to: backup)
+        do {
+            try fileManager.moveItem(at: staging, to: working)
+            try fileManager.removeItem(at: backup)
+        } catch {
+            try? fileManager.removeItem(at: working)
+            try? fileManager.moveItem(at: backup, to: working)
+            try? fileManager.removeItem(at: staging)
+            throw error
+        }
+    }
+
+    private func loadCandidate(_ id: ProjectCandidateID) throws -> ProjectCandidate {
+        let url = candidateContainer(id).appendingPathComponent("Candidate.json")
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw ProjectStoreError.candidateNotFound
+        }
+        return try decoder.decode(ProjectCandidate.self, from: Data(contentsOf: url))
+    }
+
+    private func saveCandidate(_ candidate: ProjectCandidate) throws {
+        let url = candidateContainer(candidate.receipt.candidateID)
+        try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+        try encoder.encode(candidate).write(to: url.appendingPathComponent("Candidate.json"),
+                                            options: .atomic)
+    }
+
     private func isSHA256(_ value: String) -> Bool {
         value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
     }
@@ -381,10 +615,14 @@ final class ProjectStore {
     private var repositoriesURL: URL { root.appendingPathComponent("Repositories") }
     private var catalogURL: URL { root.appendingPathComponent("Catalog") }
     private var workspacesURL: URL { root.appendingPathComponent("Workspaces") }
+    private var candidatesURL: URL { root.appendingPathComponent("Candidates") }
     private func workingURL(_ id: ProjectID) -> URL {
         projectsURL.appendingPathComponent(id.rawValue).appendingPathComponent("Working")
     }
     private func workspaceContainer(_ id: ProjectWorkspaceID) -> URL {
         workspacesURL.appendingPathComponent(id.rawValue)
+    }
+    private func candidateContainer(_ id: ProjectCandidateID) -> URL {
+        candidatesURL.appendingPathComponent(id.rawValue)
     }
 }

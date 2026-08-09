@@ -34,6 +34,22 @@ struct ProjectWorkspaceID: RawRepresentable, Codable, Hashable, Sendable {
     }
 }
 
+struct ProjectCandidateID: RawRepresentable, Codable, Hashable, Sendable {
+    let rawValue: String
+
+    init?(rawValue: String) {
+        guard rawValue.hasPrefix("candidate-"), rawValue.count == 26,
+              rawValue.dropFirst(10).allSatisfy(\.isHexDigit) else { return nil }
+        self.rawValue = rawValue.lowercased()
+    }
+
+    static func mint() -> ProjectCandidateID {
+        let suffix = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            .lowercased().prefix(16)
+        return ProjectCandidateID(rawValue: "candidate-\(suffix)")!
+    }
+}
+
 enum ProjectHome: String, Codable, Equatable, Sendable {
     case host
     case guest
@@ -43,6 +59,57 @@ enum ProjectWorkspaceLifecycle: String, Codable, Equatable, Sendable {
     case active
     case promoted
     case discarded
+}
+
+enum ProjectCandidateLifecycle: String, Codable, Equatable, Sendable {
+    case staged
+    case buildSucceeded
+    case buildFailed
+    case promoted
+    case discarded
+}
+
+struct ProjectManifestEntry: Codable, Equatable, Sendable {
+    let path: String
+    let dataBytes: Int
+    let resourceBytes: Int
+    let type: String?
+    let creator: String?
+    let digest: String
+}
+
+struct ProjectCandidateReceipt: Codable, Equatable, Sendable {
+    let schema = "ckproject.candidate-receipt/1"
+    let candidateID: ProjectCandidateID
+    let projectID: ProjectID
+    let home: ProjectHome
+    let sourceRevision: Int
+    let sourceCommit: String
+    let workspaceID: ProjectWorkspaceID?
+    let baseGuestDigest: String?
+    let contentDigest: String
+    let manifest: [ProjectManifestEntry]
+    let stagedAt: Date
+}
+
+struct ProjectCandidate: Codable, Equatable, Sendable {
+    let receipt: ProjectCandidateReceipt
+    var lifecycle: ProjectCandidateLifecycle
+    var buildID: String?
+    var updatedAt: Date
+}
+
+struct ProjectPromotionReceipt: Codable, Equatable, Sendable {
+    let schema = "ckproject.promotion-receipt/1"
+    let candidateID: ProjectCandidateID
+    let projectID: ProjectID
+    let home: ProjectHome
+    let baseGuestDigest: String?
+    let currentGuestDigest: String?
+    let promotedRevision: Int
+    let promotedCommit: String
+    let contentDigest: String
+    let promotedAt: Date
 }
 
 struct ProjectFileChange: Equatable, Sendable {
@@ -124,6 +191,9 @@ enum ProjectStoreError: Error, Equatable, LocalizedError {
     case commitConflict(expected: String, current: String)
     case digestConflict(path: String, expected: String, current: String?)
     case unpromotedWorkspace
+    case candidateNotFound
+    case candidateNotBuilt
+    case guestDiverged(base: String, current: String)
     case unavailable(String)
 
     var errorDescription: String? {
@@ -142,6 +212,11 @@ enum ProjectStoreError: Error, Equatable, LocalizedError {
             return "Expected \(path) to have digest \(expected), but it has \(current ?? "no file")."
         case .unpromotedWorkspace:
             return "The workspace contains the only copy of unpromoted commits."
+        case .candidateNotFound: return "The candidate reference was not found."
+        case .candidateNotBuilt:
+            return "The candidate has not completed a successful build."
+        case .guestDiverged(let base, let current):
+            return "The guest changed from \(base) to \(current); promotion was refused."
         case .unavailable(let reason): return reason
         }
     }
@@ -163,7 +238,8 @@ enum ProjectDigest {
         for case let url as URL in walk {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey,
                                                            .isSymbolicLinkKey])
-            let relative = String(url.path.dropFirst(root.path.count + 1))
+            let relative = url.pathComponents.suffix(walk.level)
+                .joined(separator: "/")
             if values.isSymbolicLink == true {
                 throw ProjectStoreError.linkEscape(relative)
             }
