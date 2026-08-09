@@ -6,6 +6,7 @@ struct OnboardingSheet: View {
     let wirePort: UInt16
     @Environment(\.dismiss) private var dismiss
     @State private var folderProblem: String?
+    @State private var creatingSetupDisk = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -33,6 +34,11 @@ struct OnboardingSheet: View {
 
             HStack {
                 Button("Open Packages Folder", action: openPackagesFolder)
+                Button("Create Setup Disk…", action: createSetupDisk)
+                    .disabled(portal.endpoint == nil || creatingSetupDisk)
+                if creatingSetupDisk {
+                    ProgressView().controlSize(.small)
+                }
                 Spacer()
                 if portal.endpoint != nil {
                     Button("Stop Onboarding", role: .destructive) {
@@ -214,6 +220,29 @@ struct OnboardingSheet: View {
         } catch {
             folderProblem = "Could not open the packages folder: "
                 + error.localizedDescription
+        }
+    }
+
+    private func createSetupDisk() {
+        folderProblem = nil
+        creatingSetupDisk = true
+        Task { @MainActor in
+            defer { creatingSetupDisk = false }
+            do {
+                let image = try await portal.makeSetupImage()
+                let panel = NSSavePanel()
+                panel.nameFieldStringValue =
+                    ClassicSetupImageBuilder.downloadFileName
+                panel.canCreateDirectories = true
+                panel.prompt = "Save"
+                guard panel.runModal() == .OK, let url = panel.url else {
+                    return
+                }
+                try image.write(to: url, options: [.atomic])
+            } catch {
+                folderProblem = "Could not create the setup disk: "
+                    + error.localizedDescription
+            }
         }
     }
 }

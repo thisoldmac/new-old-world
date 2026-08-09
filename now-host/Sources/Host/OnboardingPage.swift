@@ -43,13 +43,27 @@ enum OnboardingPage {
         <body bgcolor="#ffffff" text="#000000" link="#0000cc">
         <h1>New Old World Setup</h1>
         <p>This page is coming from the modern Mac on your LAN.</p>
-        <h2>Downloads</h2>
+        <h2>Recommended</h2>
+        <p><a href="/now/setup.img"><b>Download the complete setup disk</b></a></p>
+        <p>Your browser should decode the MacBinary transfer and leave a
+        <b>New Old World Setup.img</b> file. Open that image with Disk Copy.
+        It contains the native
+        application, settings for this host, the optional extension, and every
+        dependency the host has prepared. No StuffIt installation is needed
+        for packages the host was able to extract.</p>
+        <p>If the browser saves a file ending in <b>.bin</b>, turn on its
+        automatic MacBinary decoding and download again. You can also
+        <a href="/now/setup.img.bin">download the MacBinary envelope</a>
+        explicitly for another MacBinary-aware transfer path.</p>
+        <h2>Individual files</h2>
+        <p>These MacBinary files are fallbacks for machines that already have
+        a MacBinary-aware transfer or decoding tool.</p>
         <ul>
         \(downloads)</ul>
         <h2>Set up the classic Mac</h2>
         <ol>
-        <li>Download and decode <b>New Old World</b>.</li>
-        <li>Download and decode the settings file. Put
+        <li>From the mounted setup disk, copy <b>New Old World</b>.</li>
+        <li>Put
         <b>New Old World Prefs</b> in <b>System Folder:Preferences</b>
         before opening New Old World for the first time.</li>
         <li>Open New Old World. It is configured to connect to

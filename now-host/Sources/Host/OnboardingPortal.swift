@@ -17,6 +17,9 @@ struct OnboardingEndpoint: Equatable {
 /// page, generated settings, and files already admitted by the catalog.
 @MainActor
 final class OnboardingPortal: ObservableObject {
+    typealias SetupImageBuilder = @Sendable (
+        String, UInt16, OnboardingAssetSnapshot) async throws -> Data
+
     enum State: Equatable {
         case stopped
         case starting
@@ -29,6 +32,15 @@ final class OnboardingPortal: ObservableObject {
         case failed(String)
     }
 
+    enum SetupImageError: LocalizedError {
+        case notRunning
+
+        var errorDescription: String? {
+            "Start onboarding before creating a setup disk so its settings "
+                + "can use the advertised host address."
+        }
+    }
+
     @Published private(set) var state: State = .stopped
     @Published private(set) var assets: OnboardingAssetSnapshot = .empty
     @Published private(set) var dependencyAcquisitions:
@@ -36,6 +48,7 @@ final class OnboardingPortal: ObservableObject {
 
     private let catalog: OnboardingAssetCatalog
     private let dependencyAcquirer: OnboardingDependencyAcquirer
+    private let setupImageBuilder: SetupImageBuilder
     private let advertisedAddress: () -> String?
     private var listener: NWListener?
     private var generation = 0
@@ -43,11 +56,17 @@ final class OnboardingPortal: ObservableObject {
 
     init(catalog: OnboardingAssetCatalog = .live(),
          dependencyAcquirer: OnboardingDependencyAcquirer? = nil,
+         setupImageBuilder: @escaping SetupImageBuilder = {
+             host, port, assets in
+             try await ClassicSetupImageBuilder().build(
+                 host: host, wirePort: port, assets: assets)
+         },
          advertisedAddress: @escaping () -> String? = {
              HostAddressDetector.primaryIPv4()
          }) {
         self.catalog = catalog
         self.dependencyAcquirer = dependencyAcquirer ?? .live()
+        self.setupImageBuilder = setupImageBuilder
         self.advertisedAddress = advertisedAddress
         refreshAssets()
     }
@@ -130,6 +149,13 @@ final class OnboardingPortal: ObservableObject {
                     error.localizedDescription)
             }
         }
+    }
+
+    func makeSetupImage() async throws -> Data {
+        guard let endpoint else { throw SetupImageError.notRunning }
+        refreshAssets()
+        return try await setupImageBuilder(
+            endpoint.host, endpoint.wirePort, assets)
     }
 
     private func listenerStateChanged(_ value: NWListener.State,
@@ -234,8 +260,41 @@ final class OnboardingPortal: ObservableObject {
             ?? endpoint?.host
             ?? advertisedAddress()
             ?? "127.0.0.1"
+        if path == "/now/setup.img" || path == "/now/setup.img.bin" {
+            Task { [weak self] in
+                guard let self else {
+                    connection.cancel()
+                    return
+                }
+                let response = await self.setupImageResponse(
+                    host: localHost, envelopeFallback: path.hasSuffix(".bin"))
+                self.send(response, headOnly: method == "HEAD",
+                          on: connection)
+            }
+            return
+        }
         send(response(for: path, host: localHost),
              headOnly: method == "HEAD", on: connection)
+    }
+
+    private func setupImageResponse(host: String,
+                                    envelopeFallback: Bool) async
+        -> HTTPResponse {
+        do {
+            let image = try await setupImageBuilder(host, wirePort, assets)
+            if envelopeFallback {
+                return .download(
+                    data: image,
+                    fileName: ClassicSetupImageBuilder.downloadFileName,
+                    contentType: "application/macbinary")
+            }
+            return .data(
+                status: 200, reason: "OK",
+                contentType: "application/x-macbinary", data: image)
+        } catch {
+            return .plain(status: 500, reason: "Internal Server Error",
+                          text: error.localizedDescription + "\r\n")
+        }
     }
 
     private func response(for path: String, host: String) -> HTTPResponse {

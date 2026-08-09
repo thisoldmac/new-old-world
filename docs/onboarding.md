@@ -11,20 +11,34 @@ message, so it does not change `contract/asyncapi.yaml`.
    separate HTTP server on an available temporary port.
 3. Connect the classic Mac to the same LAN. In its browser, open the exact
    `http://<address>:<temporary-port>/now` address shown by the host.
-4. Download and decode `New Old World.bin` and
-   `New Old World Prefs.bin`. Put the decoded `New Old World Prefs` in
+4. Choose **Download the complete setup disk**. A MacBinary-aware browser
+   leaves `New Old World Setup.img`; open it with the system's Disk Copy and
+   copy the native files from the mounted **NOW Setup** volume. If the browser
+   leaves a `.bin`, enable its automatic MacBinary decoding and try again.
+5. Put `New Old World Prefs` from the setup disk in
    `System Folder:Preferences` before launching New Old World.
-5. Launch New Old World. The preference file already names the host interface
+6. Launch New Old World. The preference file already names the host interface
    that served the download and the NOW listener port shown in Connections.
    Setup is complete when the guest's real handshake puts the Mac under
    **Active**, not when the browser finishes a download.
-6. Stop onboarding from the sheet or the Connections page.
+7. Stop onboarding from the sheet or the Connections page.
 
-Every product download in that sequence is MacBinary. The HTTP connection is
-still a data-only transport, but the `.bin` envelope carries the classic file
-name, Finder type and creator, data fork and resource fork through it. The
-browser or MacBinary decoder reconstructs the native classic file rather than
-leaving an untyped host download behind.
+The recommended download is one dynamically generated HFS Plus volume inside
+an uncompressed NDIF image, the disk-image format read by the system Disk Copy
+6.3.3. The image itself is a two-fork classic file, so HTTP carries it in a
+MacBinary envelope. `/now/setup.img` advertises `application/x-macbinary` and
+does not force a `.bin` attachment name, allowing a classic browser's built-in
+MacBinary decoder to reconstruct `New Old World Setup.img`. The page also
+links the same bytes at `/now/setup.img.bin` for an explicitly MacBinary-aware
+fallback path. This is the unavoidable first bootstrap boundary: HTTP itself
+cannot create a Finder type or resource fork on the receiving HFS volume.
+
+The setup volume contains the application, generated preferences, optional
+extension and prepared dependencies as native classic files. The host decodes
+their MacBinary envelopes while constructing the HFS Plus filesystem, so no
+archive or fork-restoration utility is required on the guest after Disk Copy
+mounts it. **Create Setup Disk…** in the host sheet saves the complete image as
+`New Old World Setup.img.bin` for a separate MacBinary-preserving transfer.
 
 The NOW Extension is optional. Put its decoded file in
 `System Folder:Extensions` and restart the classic Mac. The application works
@@ -51,6 +65,7 @@ names are:
 |---|---|
 | `New Old World.bin` | canonical PPC MacBinary; required |
 | `NowExt.bin` or `NOW Extension.bin` | optional resident |
+| `Dependencies/CarbonLib.bin` | optional host-prepared native CarbonLib; avoids archive extraction at image-build time |
 | `Dependencies/CarbonLib_161.sit.bin` | checksum-verified CarbonLib StuffIt archive in a MacBinary envelope |
 | `Dependencies/*` | other operator-provided dependencies, each listed separately and served as supplied |
 
@@ -68,7 +83,7 @@ the 1.6.1 StuffIt archive from the Macintosh Garden mirror and requires SHA-1
 [Macintosh Repository](https://www.macintoshrepository.org/17069-carbonlib).
 NOW then puts those unchanged `.sit` bytes in the data fork of
 `CarbonLib_161.sit.bin`, with Finder type `SIT5` and creator `SIT!`. Decoding
-the MacBinary on the classic Mac therefore yields a native StuffIt archive.
+the MacBinary therefore yields a native StuffIt archive.
 The **Source…** button remains available because this is still a third-party
 download, not an Apple redistribution grant.
 
@@ -78,12 +93,21 @@ MacBinary is a preservation envelope, not compression. NOW can reliably
 create it itself and uses it for the application, extension, generated
 preferences and catalog-acquired CarbonLib package.
 
-Open-source host-side extraction is plausible but is not part of this build.
-[unar and XADMaster](https://theunarchiver.com/command-line) read StuffIt and
-BinHex without depending on the proprietary StuffIt application. Before NOW
-adopts that path, it still needs a pinned helper build plus fixtures proving
-that data forks, resource forks and Finder metadata survive extraction and
-repackaging for the guest.
+The setup-image builder uses the open-source
+[unar and XADMaster](https://theunarchiver.com/command-line) when `unar` is
+bundled in the host app or installed at its usual Homebrew path. StuffIt
+dependencies are extracted directly onto the temporary HFS Plus volume, where
+their data forks, resource forks and Finder metadata remain native. A package
+already supplied as a native MacBinary, such as `CarbonLib.bin`, needs no
+extractor at image-build time. If neither is available, the original archive
+is included honestly in the Dependencies folder rather than silently losing
+its forks; that fallback does require a guest archive handler.
+
+The test kit prepares CarbonLib as `CarbonLib.bin`, so its complete setup disk
+does not depend on StuffIt or `unar` at runtime. A distributable host release
+can either carry similarly prepared licensed packages outside Git or bundle a
+pinned open-source `unar` build. The latter packaging and update policy is not
+settled yet.
 
 NOW does not currently create StuffIt archives. The open-source
 [stuffit-rs](https://github.com/benletchford/stuffit-rs) can write StuffIt 5,
@@ -100,6 +124,8 @@ uses HTTP/1.0 responses with a content length and connection close, and serves
 only these fixed route families:
 
 - `/now` and `/`
+- `/now/setup.img` (MacBinary MIME decoding path)
+- `/now/setup.img.bin` (explicit envelope fallback)
 - `/now/application.bin`
 - `/now/settings.bin`
 - `/now/extension.bin`
@@ -120,10 +146,17 @@ emulator interfaces are not guessed a second time after the browser arrives.
 
 ## Evidence and limits
 
-The host tests exercise the real temporary listener over loopback, the page,
-application and generated-settings downloads, method and unknown-route
-refusals, package precedence, explicit dependency enumeration, checksum
-refusal, and MacBinary fork boundaries plus preference bytes. This is
-**Tested**. It has not yet been used from a classic browser or carried through
-a first launch and `hello` on physical PowerPC hardware, so it is not
-Metal-verified.
+The host tests exercise the real temporary listener over loopback, both setup
+image routes and their headers, application and generated-settings downloads,
+method and unknown-route refusals, package precedence, explicit dependency
+enumeration, checksum refusal, and MacBinary fork boundaries plus preference
+bytes. A macOS integration test builds the actual HFS Plus volume, decodes the
+NDIF's MacBinary envelope, mounts the raw disk read-only, and verifies native
+application and extension resource forks plus preferences and instructions.
+
+Separately, the generated NDIF image was transferred into a Mac OS 9.1 QEMU
+guest and mounted by its stock Disk Copy 6.3.3. That proves the carrier and its
+contents are compatible with the target OS; it does not prove that every
+classic browser configuration automatically decodes the outer MacBinary.
+The `/now/setup.img` browser step and a first launch/`hello` on physical
+PowerPC hardware remain not Metal-verified.

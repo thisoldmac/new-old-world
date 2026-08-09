@@ -18,6 +18,9 @@ final class OnboardingPortalTests: XCTestCase {
         let portal = OnboardingPortal(
             catalog: OnboardingAssetCatalog(
                 roots: [temporary], writableRoot: temporary),
+            setupImageBuilder: { host, port, _ in
+                Data("setup-\(host)-\(port)".utf8)
+            },
             advertisedAddress: { "127.0.0.1" })
         portal.start(wirePort: 5_412)
         let endpoint = try await runningEndpoint(portal)
@@ -30,6 +33,8 @@ final class OnboardingPortalTests: XCTestCase {
                       "the page uses the interface that accepted this request")
         XCTAssertTrue(html.contains("127.0.0.1:5412"))
         XCTAssertTrue(html.contains("/now/application.bin"))
+        XCTAssertTrue(html.contains("href=\"/now/setup.img\""))
+        XCTAssertTrue(html.contains("/now/setup.img.bin"))
         XCTAssertTrue(html.contains("/now/settings.bin"))
         XCTAssertTrue(html.contains("CarbonLib 1.6.1"))
         XCTAssertTrue(html.contains("macintoshgarden.org/apps/carbonlib"))
@@ -41,6 +46,22 @@ final class OnboardingPortalTests: XCTestCase {
         XCTAssertEqual(app.status, 200)
         XCTAssertEqual(app.data, Data("macbinary-app".utf8))
         XCTAssertEqual(app.contentType, "application/macbinary")
+
+        let setup = try await fetch(endpointURL(
+            endpoint, path: "/now/setup.img"))
+        XCTAssertEqual(setup.status, 200)
+        XCTAssertEqual(setup.data, Data("setup-127.0.0.1-5412".utf8))
+        XCTAssertEqual(setup.contentType, "application/x-macbinary")
+        XCTAssertNil(setup.contentDisposition)
+
+        let setupEnvelope = try await fetch(endpointURL(
+            endpoint, path: "/now/setup.img.bin"))
+        XCTAssertEqual(setupEnvelope.status, 200)
+        XCTAssertEqual(setupEnvelope.data,
+                       Data("setup-127.0.0.1-5412".utf8))
+        XCTAssertEqual(setupEnvelope.contentType, "application/macbinary")
+        XCTAssertTrue(setupEnvelope.contentDisposition?.contains(
+            "New Old World Setup.img.bin") == true)
 
         let settings = try await fetch(endpointURL(
             endpoint, path: "/now/settings.bin"))
@@ -95,11 +116,13 @@ final class OnboardingPortalTests: XCTestCase {
     }
 
     private func fetch(_ url: URL) async throws
-        -> (data: Data, status: Int, contentType: String?) {
+        -> (data: Data, status: Int, contentType: String?,
+            contentDisposition: String?) {
         let (data, response) = try await URLSession.shared.data(from: url)
         let http = try XCTUnwrap(response as? HTTPURLResponse)
         return (data, http.statusCode,
-                http.value(forHTTPHeaderField: "Content-Type"))
+                http.value(forHTTPHeaderField: "Content-Type"),
+                http.value(forHTTPHeaderField: "Content-Disposition"))
     }
 
     private enum TestError: Error {

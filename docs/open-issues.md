@@ -31,11 +31,16 @@ port, the optional NOW Extension, and explicitly enumerated files from the
 external dependency store. A missing CarbonLib row can download the known
 1.6.1 archive directly into that store after verifying its published SHA-1;
 NOW wraps the unchanged StuffIt bytes in MacBinary with `SIT5` / `SIT!`
-metadata before serving them. Unknown routes and mutation methods are refused;
+metadata before serving them. It can now also generate one setup disk: native
+packages and generated preferences on a bare HFS Plus volume, inside an
+uncompressed NDIF image with `rohd` / `ddsk` metadata, inside MacBinary for
+HTTP. The recommended `/now/setup.img` route uses the classic MacBinary MIME
+type without a forced `.bin` attachment; `/now/setup.img.bin` preserves an
+explicit envelope fallback. Unknown routes and mutation methods are refused;
 quit stops the listener. The product and server contract are in
 [onboarding.md](onboarding.md).
 
-Ten focused host tests pass. Two use the real temporary listener over loopback
+The focused host tests pass. Two use the real temporary listener over loopback
 to fetch the page, application and preferences, and to exercise unknown-route
 and POST refusal. The preference test separately pins the MacBinary header,
 CRC, Finder type/creator, big-endian V1 magic/format/port, and host field. The
@@ -48,7 +53,9 @@ Each new guard was also watched failing against the mutation it names: a
 byte-swapped preference port, POST being admitted, and bundled assets taking
 precedence over the operator's local package store; additionally, a substituted
 Finder type, bypassed checksum comparison, and restored StuffIt archive link
-each produced the named failure.
+each produced the named failure. The new setup-image integration test builds
+and mounts the actual filesystem, then verifies both forks and Finder metadata;
+changing the NDIF Finder type from `rohd` to `dImg` produced its named failure.
 
 `scripts/test-all` exits 0 at follow-up checkpoint `a9ad5dbf`: staged-image
 discipline 28/28,
@@ -57,16 +64,20 @@ the complete host suites, and the Xcode app target in Debug and Release all
 pass. Stage 6 skips honestly because `NOW_GUEST_LIVE` was not set; nothing in
 that run reached a Macintosh.
 
-What remains unverified is the product path: no Netscape, Internet Explorer or
-Classilla-era browser has downloaded and decoded these files; no physical PPC
+Disk Copy 6.3.3 on the Mac OS 9.1 QEMU guest mounted a generated setup image
+and exposed its Read Me, application, preferences, extension and Dependencies
+folder. This is emulator evidence for the image carrier, not a physical-metal
+result. What remains unverified is the browser boundary: no Netscape, Internet
+Explorer or Classilla-era browser has yet downloaded `/now/setup.img` and
+automatically decoded its MacBinary envelope; no physical PPC
 Mac has installed the generated preference file, launched the guest, and sent
 the `hello` that makes it appear under Active. CarbonLib remains external: NOW
 has pinned the mirror bytes and independently published checksum, but has not
-established Apple redistribution permission. Open-source StuffIt/BinHex
-extraction is not integrated, and the product intentionally exposes no
-single-archive creation button until a StuffIt writer is proven across guest
-handler versions. None of those absences changes the focused result from
-Tested to Metal-verified.
+established Apple redistribution permission. The builder can use open-source
+`unar`/XADMaster on the host, and the test kit avoids that runtime dependency
+by carrying a locally prepared native `CarbonLib.bin`; a release-pinned helper
+bundle and its update policy remain unverified. The product intentionally does
+not create StuffIt: the HFS/NDIF disk is the single-package carrier instead.
 
 **There is a third category, and it is not on this page.**
 [known-wrong.md](known-wrong.md) is the register of things NOW knowingly
