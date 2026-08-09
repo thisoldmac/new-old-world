@@ -439,3 +439,19 @@ The next brief review should decide only:
 
 The larger direct-observation/retained-state/tool-hierarchy redesign remains a
 post-barrage design pass, now informed by these traces.
+
+### Final repository gate
+
+After aligning the drive-menu tests with the host-owned human machine names,
+`scripts/test-all` passed end to end on 2026-08-09:
+
+- staged-image discipline: 28 passed;
+- native guest tests: 149 passed;
+- MirrorKit gate: passed;
+- PPC, 68K, Extension, shutdown, wedge, GWorld, and ATA cross-builds: passed;
+- host gate: both 1,954-test passes (asset pack and no-pack degradation) plus
+  Debug and Release app builds passed;
+- live-guest gate: skipped because `NOW_GUEST_LIVE` was not set.
+
+That is **tested**. The private barrage observations remain separately
+**VM-verified**; nothing in this branch is physical-hardware/metal-verified.

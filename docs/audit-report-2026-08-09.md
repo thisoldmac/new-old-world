@@ -10,7 +10,10 @@ Evidence includes source and registry derivation, 228 focused baseline tests,
 post-change focused tests, real spawned-client conformance, and a private PPC
 VM barrage using fresh GPT-5.6 Luna workers. The comparative repositories were
 read-only and sampled at their public MCP/command boundaries rather than
-audited internally. The final `scripts/test-all` status is added at closeout.
+audited internally. Final `scripts/test-all` passed: 28 image-discipline tests,
+149 native tests, MirrorKit, all guest/extension cross-builds, two 1,954-test
+host passes, and Debug/Release app builds; the optional live-guest stage
+skipped, so this remains tested plus separately VM-verified, not metal-verified.
 
 ## Summary
 
