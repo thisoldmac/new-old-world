@@ -136,6 +136,24 @@ guest-confirmed integrity, and statted as a four-byte `TEXT` file on Mac OS
 - **Blast radius:** potentially the whole public catalog, so this is not a
   cleanup-pass edit.
 
+**Measured follow-up (2026-08-09):** the real 42-tool `tools/list` response is
+158,123 bytes. Compacting the repeated guest-selector prose removed 14,364
+wire bytes but only 181 cumulative Luna input tokens. Omitting every typed
+output schema removed 91,057 wire bytes but only 60 input tokens, so deleting
+those schemas is not justified. A valid `notifications/tools/list_changed`
+did not make Codex 0.147 refetch the catalog; the model guessed instead of
+calling the newly exposed typed tool, ruling out session-dynamic disclosure
+for this client.
+
+The supported `mcp_servers.<id>.enabled_tools` boundary was material: an exact
+Luna A/B with the same natural first-contact prompt and real companion measured
+107,990 input tokens with all 42 tools versus 77,120 with only discovery and
+capability tools, a 30,870-token reduction. When the prompt explicitly named
+`now_list_machines`, both full and filtered cases were approximately 36K.
+Therefore F-005's thin client routing skill plus a small intent-to-canonical-
+tool map is the preferred next experiment. Keep the typed output schemas and
+do not redesign the NOW facade from prose-byte counts alone.
+
 ### [F-007] Non-interactive workers cannot complete annotated mutation chains (severity: medium, effort: S)
 
 - **Dimension:** correctness
@@ -190,7 +208,7 @@ guest-confirmed integrity, and statted as a four-byte `TEXT` file on Mac OS
    either transfer family.
 2. F-007: run the one interactive mutation follow-up.
 3. F-005: prototype and retest a thin client-side routing skill.
-4. F-006: measure context contributors, then review the deeper semantic/tool
-   hierarchy with the barrage traces in hand.
+4. F-006: A/B the F-005 thin router with a small `enabled_tools` allowlist;
+   defer any deeper facade or catalog redesign until that result is known.
 
 F-001, F-002, F-003, and F-008 are resolved in this branch.

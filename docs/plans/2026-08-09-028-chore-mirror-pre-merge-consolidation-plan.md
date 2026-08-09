@@ -44,8 +44,10 @@ copied standalone Mirror product in the active tree. The landed revision must:
    evidence, but it may not become the only discoverable copy of a conclusion.
 7. Preserve the branch history. Merge current `main` into the branch; do not
    squash or rebase this integration history immediately before landing.
-8. Bake the shared VM only from the final green revision. A bake from an
-   intermediate tree is not the release image.
+8. Bake the shared VM only after MCP reconciliation, independent review, and a
+   green full gate. A later receipt-only documentation commit may record that
+   immutable bake; any later executable, guest, extension, contract, or build
+   change invalidates it and requires a new gate and bake.
 
 ## Scope boundaries
 
@@ -106,6 +108,14 @@ remains a complete final snapshot rather than a carcass with its useful parts
 removed.
 
 ## Execution units
+
+The unit numbers preserve the plan's original artifact grouping, not the final
+execution order. The authoritative dependency order is:
+
+`U0-U7 initial deterministic pass -> U9 -> U10 -> final U7 rerun -> U8 -> final U6 receipt -> U11`
+
+Do not treat an earlier green gate or bake as the release receipt after U9 or
+U10 changes the tree.
 
 ### U0. Freeze the baseline and merge current main
 
@@ -341,15 +351,20 @@ history.
   - the host launches with Mirror off.
 - Add a short immediate-follow-on entry for remote cursor driving; do not
   implement it in this branch.
+- Complete the structural documentation pass before runtime work, then defer
+  the exact gate, bake, host-artifact, and metal receipts until U8 has produced
+  them. Do not predict those results in the early pass.
 
 **Verification**
 
 - Published links resolve and active docs contain no stale production paths.
-- README claims agree with `docs/open-issues.md` and the actual final runtime
-  receipt.
+- The structural pass agrees with the known code and evidence boundaries.
+- After U8, README and `docs/open-issues.md` agree with the actual final runtime
+  receipt and name any gate that was unavailable.
 - Contract coverage remains derived and symmetric.
 
-**Commit boundary:** NOW documentation closeout.
+**Commit boundary:** structural NOW documentation closeout first; exact final
+runtime corrections and receipts land with U8/U11.
 
 ### U7. Run the deterministic release gates
 
@@ -367,6 +382,10 @@ remove coverage.
 6. `scripts/build-guests`.
 7. `scripts/test-host`.
 8. `scripts/test-all` from a clean final tree.
+
+For the final run, make the selected external asset pack explicit. Record its
+identity when present and name every pack-dependent skip when it is absent;
+the gate must also retain its asset-free coverage.
 
 Any new path/ownership guard must be mutation-proven: point a manifest or test
 back at the archive and watch the guard fail before restoring it.
@@ -394,6 +413,12 @@ back at the archive and watch the guard fail before restoring it.
 **Goal:** Test and bake the exact final revision without disturbing another
 session's machine or VM.
 
+**Dependency:** Run this only after U9 and U10 are complete and the final U7
+gate is green. Any subsequent executable, guest, extension, contract, or build
+change invalidates the gate, bake, and runtime receipt. A receipt-only docs
+commit may follow because its purpose is to record the already immutable image
+and source revision.
+
 **Safe-default acceptance**
 
 - Build and launch the final host; prove Mirror is off regardless of saved
@@ -419,9 +444,10 @@ session's machine or VM.
 **Shared image bake**
 
 - Inventory running QEMU processes and preserve all foreign/private clones.
-- Only after U7 is green, bake with the repository's shared-image procedure
-  (`NOW_STAGE_SHARED_FORCE=1 scripts/bake-ext-image --shared` when private
-  clones are legitimately active).
+- Only after the final U7 is green, bake with the repository's shared-image
+  procedure. `NOW_STAGE_SHARED_FORCE=1` is allowed only for a session-owned,
+  identified idle clone or after the foreign owner confirms it is safe; an
+  unexplained active clone is a stop condition, not permission to force.
 - Record the source revision, guest and extension build stamps, resulting image
   path, hash/receipt, and whether the bake stopped cleanly.
 - Boot a fresh session-private clone derived from the baked image and prove the
@@ -463,6 +489,8 @@ working in `/Users/michelle/.codex/worktrees/019fe526/now` on
 - Re-derive MCP and contract coverage from the combined tree.
 - Run `scripts/test-all` before any compound-engineering review. A code review
   of an uncombined or red stack is not the requested final review.
+- Stop before U10 if the handoff branch is dirty, still active, or its combined
+  gate is red. MCP reconciliation is a prerequisite, not an optional follow-on.
 
 ### U10. Review and simplify with the compound-engineering stack
 
@@ -514,12 +542,12 @@ correlation, human-yield behavior, and cursor-shape observation.
 4. `archive(mirror): retire the standalone project`
 5. `docs(mirror): graduate reverse-engineering research`
 6. Parent corpus: `docs(findings): close the Mirror research lineage`
-7. `docs(mirror): close the pre-merge ledger`
+7. `docs(mirror): close the structural pre-merge ledger`
 8. `test(mirror): enforce active-tree ownership boundaries` if new guards are
    not naturally included above
 9. MCP branch reconciliation commit(s), preserving their original history
 10. `refactor(mirror): apply final review simplifications` when findings justify it
-11. `docs(mirror): record final emulator, gate, and metal receipts`
+11. `docs(mirror): record final emulator, gate, asset-pack, and metal receipts`
 
 Each commit must build or clearly identify itself as an unverified checkpoint.
 Do not combine the main merge, package extraction, and archive move into one
@@ -541,9 +569,11 @@ unreviewable commit.
       corpus.
 - [ ] README and open issues state experimental/broken/unverified behavior.
 - [ ] Contract coverage is re-derived and symmetric.
-- [ ] `scripts/test-all` passes from the final clean revision.
+- [ ] `scripts/test-all` passes after MCP reconciliation and compound review;
+      its receipt names the selected asset pack and any pack-dependent skips.
 - [ ] Safe-default emulator acceptance passes with one connection identity.
-- [ ] Shared PPC image is baked and verified from the final revision.
+- [ ] Shared PPC image is baked and verified from the final executable/source
+      revision; only its receipt documentation follows it.
 - [ ] PB1400c result is recorded at its actual evidence level.
 - [ ] Final host artifact is built and revision-stamped.
 - [ ] Concurrent MCP work is reconciled and the combined repository gate passes.
