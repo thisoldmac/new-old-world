@@ -1,4 +1,5 @@
 import Foundation
+import NOWAgentIntegration
 
 @MainActor
 final class DevelopmentModel: ObservableObject {
@@ -7,12 +8,27 @@ final class DevelopmentModel: ObservableObject {
     @Published private(set) var workspace: ProjectWorkspace?
     @Published private(set) var problem: String?
     @Published private(set) var latestRevision: ProjectRevisionReceipt?
+    @Published private(set) var environmentRows: [AgentIntegrationGuestRow] = []
+    @Published private(set) var buildRows: [AgentIntegrationGuestRow] = []
+    @Published private(set) var developmentBusy = false
 
     let projectsRootDescription = "New Old World's Application Support Projects directory"
     private let store: ProjectStore?
+    private let readEnvironment: () async -> AgentIntegrationGuestRowReportResult
+    private let performDevelopment:
+        (AgentIntegrationDevelopmentRequest) async
+            -> AgentIntegrationGuestRowReportResult
 
-    init(store: ProjectStore?) {
+    init(
+        store: ProjectStore?,
+        readEnvironment: @escaping () async
+            -> AgentIntegrationGuestRowReportResult = { .unavailable(.guest) },
+        performDevelopment: @escaping (AgentIntegrationDevelopmentRequest) async
+            -> AgentIntegrationGuestRowReportResult = { _ in .unavailable(.guest) }
+    ) {
         self.store = store
+        self.readEnvironment = readEnvironment
+        self.performDevelopment = performDevelopment
         refresh()
     }
 
@@ -21,6 +37,13 @@ final class DevelopmentModel: ObservableObject {
     }
 
     var isAvailable: Bool { store != nil }
+    var productReference: String? {
+        buildRows.first { $0.label == "Product" && $0.value != "unavailable" }?.value
+    }
+    var canBuildActiveGuestProject: Bool {
+        selectedProject?.home == .guest && !developmentBusy
+    }
+    var canRun: Bool { productReference != nil && !developmentBusy }
 
     func refresh() {
         guard let store else {
@@ -89,5 +112,74 @@ final class DevelopmentModel: ObservableObject {
         } catch {
             problem = error.localizedDescription
         }
+    }
+
+    func refreshDevelopment() {
+        guard !developmentBusy else { return }
+        developmentBusy = true
+        problem = nil
+        Task { @MainActor in
+            let environment = await readEnvironment()
+            environmentRows = rows(from: environment, problemPrefix: "Environment")
+            let status = await performDevelopment(.init(operation: .buildStatus))
+            buildRows = rows(from: status, problemPrefix: "Build status")
+            developmentBusy = false
+        }
+    }
+
+    func build() {
+        guard let project = selectedProject, project.home == .guest else {
+            problem = "Only an active guest-home project can build directly; host work must be staged as a candidate first."
+            return
+        }
+        perform(.init(operation: .buildStart,
+                      projectID: project.projectID.rawValue))
+    }
+
+    func cancelBuild() {
+        perform(.init(operation: .buildCancel))
+    }
+
+    func run() {
+        guard let productReference else {
+            problem = "A successful build has not minted an exact product reference."
+            return
+        }
+        perform(.init(operation: .run, productRef: productReference))
+    }
+
+    func openInCodeKitten() {
+        guard let project = selectedProject, project.home == .guest else {
+            problem = "Open in CodeKitten targets an active guest-home Project.ckp."
+            return
+        }
+        perform(.init(operation: .openInCodeKitten,
+                      projectID: project.projectID.rawValue))
+    }
+
+    private func perform(_ request: AgentIntegrationDevelopmentRequest) {
+        guard !developmentBusy else { return }
+        developmentBusy = true
+        problem = nil
+        Task { @MainActor in
+            let result = await performDevelopment(request)
+            buildRows = rows(from: result, problemPrefix: "Development")
+            developmentBusy = false
+        }
+    }
+
+    private func rows(
+        from result: AgentIntegrationGuestRowReportResult,
+        problemPrefix: String
+    ) -> [AgentIntegrationGuestRow] {
+        switch result {
+        case .completed(let report):
+            return report.groups.flatMap(\.rows)
+        case .refused(let failure):
+            problem = "\(problemPrefix): \(failure.message)"
+        case .unavailable(let unavailable):
+            problem = "\(problemPrefix): \(unavailable.message)"
+        }
+        return []
     }
 }

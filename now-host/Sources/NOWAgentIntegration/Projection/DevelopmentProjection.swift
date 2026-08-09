@@ -15,8 +15,8 @@ public enum DevelopmentProjection: HostProjection {
         "operation", "projectID", "productRef",
     ]
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
-        .appUI: .notReached(
-            because: "The host Development page shows the lane, but its build, run and handoff controls are not wired until the coordinator owns candidate publication."),
+        .appUI: .reached(file: "Projects/DevelopmentModuleView.swift",
+                         symbol: "Toolchains, Builds & Runs"),
         .mcp: .reachedByRegistry,
         .appIntents: .appIntentsFaceNotBuiltYet,
     ]

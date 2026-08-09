@@ -22,7 +22,10 @@ struct DevelopmentModuleView: View {
             }
         }
         .sheet(isPresented: $showingCreate) { createSheet }
-        .onAppear { model.refresh() }
+        .onAppear {
+            model.refresh()
+            model.refreshDevelopment()
+        }
     }
 
     private var header: some View {
@@ -94,14 +97,40 @@ struct DevelopmentModuleView: View {
 
     private var environment: some View {
         section("Toolchains, Builds & Runs") {
-            Text("No qualified guest toolchain has been reported. Toolchain roots are registered on the classic Mac and are never exposed as Files or agent paths.")
-                .font(.callout).foregroundStyle(.secondary)
-            HStack {
-                Button("Build") {}
-                Button("Run") {}
-                Button("Open in CodeKitten") {}
+            if model.environmentRows.isEmpty {
+                Text("No qualified guest toolchain has been reported. Toolchain roots are registered on the classic Mac and are never exposed as Files or agent paths.")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                Grid(alignment: .leadingFirstTextBaseline,
+                     horizontalSpacing: 14, verticalSpacing: 5) {
+                    ForEach(Array(model.environmentRows.enumerated()), id: \.offset) {
+                        _, row in fact(row.label, row.value)
+                    }
+                }.font(.callout)
             }
-            .disabled(true)
+            if !model.buildRows.isEmpty {
+                Divider()
+                Grid(alignment: .leadingFirstTextBaseline,
+                     horizontalSpacing: 14, verticalSpacing: 5) {
+                    ForEach(Array(model.buildRows.enumerated()), id: \.offset) {
+                        _, row in fact(row.label, row.value)
+                    }
+                }.font(.callout)
+            }
+            HStack {
+                Button("Build") { model.build() }
+                    .disabled(!model.canBuildActiveGuestProject)
+                Button("Cancel") { model.cancelBuild() }
+                    .disabled(model.developmentBusy)
+                Button("Run") { model.run() }
+                    .disabled(!model.canRun)
+                Button("Open in CodeKitten") { model.openInCodeKitten() }
+                    .disabled(model.selectedProject?.home != .guest
+                              || model.developmentBusy)
+                Spacer()
+                Button("Refresh") { model.refreshDevelopment() }
+                    .disabled(model.developmentBusy)
+            }
         }
     }
 
