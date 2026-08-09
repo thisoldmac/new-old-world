@@ -91,6 +91,7 @@ enum ControlMessage: Equatable, Sendable {
     case previewEnd(PreviewEnd)
     case hostShow(HostShow)
     case hostShown(HostShown)
+    case mirrorInvalidate(MirrorInvalidate)
 }
 
 // MARK: - The host-surface family
@@ -125,6 +126,49 @@ struct HostShown: Codable, Equatable, Sendable {
     var ok: Bool
     var code: String?
     var reason: String?
+}
+
+/// An additive hint from the peer that serves scene state. It names what
+/// must be reread; it never carries replacement state and the transport
+/// session that delivered it remains the authoritative session identity.
+struct MirrorInvalidate: Codable, Equatable, Sendable {
+    struct Domains: Codable, Equatable, Sendable {
+        var structure: Int?
+        var front: Int?
+        var menus: Int?
+        var finder: Int?
+        var content: Int?
+
+        init(structure: Int? = nil, front: Int? = nil,
+             menus: Int? = nil, finder: Int? = nil,
+             content: Int? = nil) {
+            self.structure = structure
+            self.front = front
+            self.menus = menus
+            self.finder = finder
+            self.content = content
+        }
+    }
+
+    enum Quality: String, Codable, Equatable, Sendable {
+        case sampled
+        case gap
+        case unknown
+    }
+
+    enum Source: String, Codable, Equatable, Sendable {
+        case transitions
+        case act
+        case selfKnown = "self"
+        case scene
+    }
+
+    var session: String?
+    var generation: Int
+    var domains: Domains
+    var quality: Quality
+    var lost: Int?
+    var source: Source?
 }
 
 // MARK: - The cloud family
@@ -1478,6 +1522,9 @@ enum ControlMessageCodec {
             return .hostShow(try decoder.decode(HostShow.self, from: data))
         case "host.shown":
             return .hostShown(try decoder.decode(HostShown.self, from: data))
+        case "mirror.invalidate":
+            return .mirrorInvalidate(
+                try decoder.decode(MirrorInvalidate.self, from: data))
         case "stream.request":
             return .streamRequest(
                 try decoder.decode(StreamRequest.self, from: data))
@@ -1621,6 +1668,8 @@ enum ControlMessageCodec {
         case .previewEnd(let m): return try tagged("preview.end", m)
         case .hostShow(let m): return try tagged("host.show", m)
         case .hostShown(let m): return try tagged("host.shown", m)
+        case .mirrorInvalidate(let m):
+            return try tagged("mirror.invalidate", m)
         case .streamRequest(let m): return try tagged("stream.request", m)
         case .streamStart(let m): return try tagged("stream.start", m)
         case .streamStop(let m): return try tagged("stream.stop", m)
