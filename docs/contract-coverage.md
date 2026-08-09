@@ -225,8 +225,9 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **48 verbs.** Sixteen of
-them landed on 2026-07-31 and are grouped at the foot of the table; the
+The registry is `x-commands` in the contract: **54 verbs.** The six
+Development verbs landed on 2026-08-09 and are grouped at the foot of the
+table. Sixteen earlier verbs landed on 2026-07-31; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
 about the machine's own state, the input plane's three, and the content
@@ -295,6 +296,12 @@ number here has been found wrong by re-deriving it.
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
 | `transitions` | what changed between two event passes, from the transition plane's ring | ✅ | ❌ |
 | `mirror` | one NOW Extension: lifecycle/build and P1-P4 support, format, request, active, freshness, generation, degradation and refusal | ✅ | ❌ |
+| `development` | configured Projects root, selected MPW toolchain and active jobs | ✅ | ❌ — typed unavailable |
+| `development-project` | measure and page one active guest project's source manifest | ✅ | ❌ — typed unavailable |
+| `development-stage` | prepare, inspect, verify, discard or promote an inactive candidate | ✅ | ❌ — typed unavailable |
+| `development-build` | start, inspect or cancel one declarative ToolServer build | ✅ | ❌ — typed unavailable |
+| `development-run` | launch the exact built product and verify the resulting process identity | ✅ | ❌ — typed unavailable |
+| `development-open` | human-only optional handoff of `Project.ckp` to CodeKitten | ✅ | ❌ — typed unavailable |
 
 *(`key` and `net` were listed twice in this table until 2026-08-06 —
 once here and once in the body above — so it carried 44 rows for 42
@@ -978,12 +985,12 @@ without anyone noticing, and how `key` and `net` sat here twice. Run
 these from the repository root:
 
 ```sh
-# the registry — 47
+# the registry — 54
 awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
-     f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
+     f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
     contract/asyncapi.yaml | sort -u
 
-# what the PowerPC guest serves — 44
+# what the PowerPC guest serves — 51
 grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
     now-guest-ppc/src/commands/commands.c \
   | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
@@ -1012,6 +1019,17 @@ between two derivations on one day is not a property of the command.)*
 > settled by RUNNING the commands below against the merged tree, which
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
+
+## Re-derived for Projects and Development, 2026-08-09
+
+**This supersedes every derivation below.** The commands above derive **54
+contract verbs, 51 PowerPC verbs and 13 NOW-68K verbs**. The three
+contract-only names remain `cancel`, `put` and `shotdiag`; they are deliberate
+console/UI or NOW-68K asymmetries described in their rows. The new six-command
+Development family is PowerPC-only and NOW-68K answers through the typed
+capability-absence path. Served is not emulator- or metal-proven: the local
+suites pass and both guests cross-compile, but no Development workflow has run
+on a guest yet.
 
 ## Re-derived at the 019 integration round 8, 2026-08-07 (`claude/019-integration-8`)
 
@@ -1316,18 +1334,18 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: b6c63cda25ac411ce01f5d5b46d700ec45f78032
+sources-sha1: 324d155beb4d369987aa3ba4957ab1c5f897c536
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=dcbff7909f3d815b2153a13307d6e0a539e2b9f8867fa50ea1f56ce7dd56ddfc lines=48 published
+derive x-commands-registry sha256=86f38d261a980a5b99c365193997ef8ee0a8f61aed0498f62e564d810a8a66a3 lines=54 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
-         f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
+         f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=2bf9d842cd04b191e3e7aac83b5c68a221bb95f9605b10ccf60a0d6e79f957f5 lines=45 published
+derive ppc-verbs sha256=317e5d8bc728c6c77ec5758c860086d53b9740a8ec255156e2f6803c6307dc47 lines=51 published
     grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
         now-guest-ppc/src/commands/commands.c \
       | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
@@ -1354,4 +1372,6 @@ rederived: 2026-08-08T21:56:10-0400 0ca7eb51 unchanged
 rederived: 2026-08-09T04:12:08-0400 3159abaf sources
 rederived: 2026-08-09T04:56:02-0400 ecdf1284 unchanged
 rederived: 2026-08-09T04:56:23-0400 04313f08 unchanged
+rederived: 2026-08-09T18:18:25-0400 a1883ceb sources, x-commands-registry 48->49, ppc-verbs 45->51
+rederived: 2026-08-09T18:18:50-0400 a1883ceb x-commands-registry 49->54
 -->

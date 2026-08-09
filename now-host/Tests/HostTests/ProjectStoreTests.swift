@@ -239,6 +239,22 @@ final class ProjectStoreTests: XCTestCase {
             .receipt.manifest.map(\.path), ["Project.ckp", "Sources/Main.c"])
     }
 
+    func testCandidateRefusesAResourceForkItCannotPreserve() throws {
+        let store = try ProjectStore(root: try root())
+        let created = try store.create(
+            name: "Forked Source", home: .host, projectDocument: document,
+            files: [ProjectFileChange(path: "Sources/Main.c",
+                                      contents: Data("source".utf8))])
+        let source = store.testingWorkingURL(projectID: created.projectID)
+            .appendingPathComponent("Sources/Main.c")
+        let resourceFork = URL(fileURLWithPath: source.path + "/..namedfork/rsrc")
+        try Data("resource".utf8).write(to: resourceFork)
+
+        XCTAssertThrowsError(try store.stageCandidate(projectID: created.projectID)) {
+            XCTAssertTrue(String(describing: $0).contains("resource fork"))
+        }
+    }
+
     func testGuestImportCreatesVerifiedMirrorAndPreservesWorkspaceOnRefresh() throws {
         let store = try ProjectStore(root: try root())
         let first = Data("guest one".utf8)

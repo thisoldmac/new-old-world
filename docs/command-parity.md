@@ -83,6 +83,14 @@ capability:
 chances to drift, and the parity test compares them directly. The
 implementations live below both.
 
+Development is the argument-carrying fallback example. The five
+`development-*` commands use the contract's raw `x-line` grammar, so the
+console hands the typed remainder through `now_console_line_request` to the
+same command functions the wire calls. The parity gate's source regex includes
+hyphens; before 2026-08-09 it silently omitted this entire command family from
+both its dispatch and registry derivations. The host Development module and
+agent projection are clients of that wire face, not a third guest face.
+
 `mirror` is the one-extension example. Both faces call `now_mirror_probe()`;
 the wire serializes its schema-1 facts while the Console and Workshop render
 the same lifecycle and P1-P4 rows. All three are read-only. Host plane policy

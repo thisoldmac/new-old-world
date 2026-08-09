@@ -714,6 +714,13 @@ final class ProjectStore {
             }
             if values.isSymbolicLink == true { throw ProjectStoreError.linkEscape(path) }
             guard values.isRegularFile == true else { continue }
+            let resourceFork = URL(fileURLWithPath:
+                url.path + "/..namedfork/rsrc")
+            if let resourceData = try? Data(contentsOf: resourceFork),
+               !resourceData.isEmpty {
+                throw ProjectStoreError.unavailable(
+                    "The source file \(path) has a resource fork; candidates cannot preserve it yet.")
+            }
             let data = try Data(contentsOf: url)
             result.append(.init(path: path, dataBytes: data.count,
                                 resourceBytes: 0, type: nil, creator: nil,

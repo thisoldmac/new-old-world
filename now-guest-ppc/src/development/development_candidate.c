@@ -19,6 +19,7 @@ enum {
 typedef struct CandidateFile {
     FSSpec spec;
     char path[kCandidatePathCap];
+    long resource_bytes;
 } CandidateFile;
 
 static int lower_hex(const char *text, long count)
@@ -251,6 +252,7 @@ static int collect_files(short vref, long dir_id, const char *prefix,
             files[*count].spec.parID = dir_id;
             memcpy(files[*count].spec.name, name, name[0] + 1);
             strcpy(files[*count].path, relative);
+            files[*count].resource_bytes = pb.hFileInfo.ioFlRLgLen;
             ++*count;
         }
     }
@@ -712,9 +714,12 @@ void now_development_project_command(const char *request_json, long id,
     for (i = (int)cursor; i < count && i < cursor + 2; ++i) {
         char file_hex[65];
         char escaped[1100];
-        char record[590];
+        char record[610];
         if (!file_digest(&files[i].spec, file_hex)) break;
-        snprintf(record, sizeof record, "%s|%s", files[i].path, file_hex);
+        /* Put the optional field at the end so a path containing `|` remains
+           parseable from the right, as it was with the original digest. */
+        snprintf(record, sizeof record, "%s|%s|%ld", files[i].path,
+                 file_hex, files[i].resource_bytes);
         now_json_escape(record, escaped, sizeof escaped);
         pos += snprintf(out + pos, (size_t)(cap - pos),
                         ",[\"File\",\"%s\"]", escaped);

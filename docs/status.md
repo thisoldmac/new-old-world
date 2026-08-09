@@ -1,5 +1,24 @@
 # Status: what works and what does not
 
+## 2026-08-09 — Projects and headless PPC Development are tested, not run
+
+NOW now owns a bounded host Projects root with pure Git history, recoverable
+agent workspaces and explicit host/guest project homes. A guest-only project
+can be imported into a verified host mirror for scratch editing and commits;
+publication creates an inactive guest candidate, verifies it there, builds it
+through declarative MPW ToolServer actions, and promotes only while the active
+guest digest still matches the workspace base. Build and run are separate;
+run rechecks both product forks and metadata and observes the launched process
+identity. The Development module exposes the same services, while CodeKitten
+is an optional human-only `odoc` handoff. NOW-68K reports typed absence.
+
+This is **tested and builds**, not emulator- or metal-verified. Source resource
+forks are refused at host staging and guest import instead of being silently
+lost; Finder metadata is not yet preserved by the Git mirror/candidate round
+trip. CodeKitten event dispatch has no returned acceptance receipt, and the
+host import sheet requires a project ID rather than listing guest projects.
+Details and the operational model are in [development.md](development.md).
+
 This is the long form of the README's status table — every capability
 with its evidence, and every gap with what is actually unknown about it.
 It is deliberately exhaustive. A feature list without its companion is a

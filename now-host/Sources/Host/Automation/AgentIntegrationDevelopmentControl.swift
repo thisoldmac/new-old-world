@@ -290,6 +290,7 @@ final class AgentIntegrationDevelopmentControl {
     private struct GuestSnapshotFile {
         let path: String
         let digest: String
+        let resourceBytes: Int
     }
 
     private func importGuest(
@@ -327,18 +328,27 @@ final class AgentIntegrationDevelopmentControl {
             expectedCount = count
             for row in rows where row.first == "File" {
                 guard let record = row.last,
-                      let split = record.lastIndex(of: "|") else {
+                      let resourceSplit = record.lastIndex(of: "|"),
+                      let resourceBytes = Int(record[record.index(after: resourceSplit)...]),
+                      resourceBytes >= 0,
+                      let digestSplit = record[..<resourceSplit].lastIndex(of: "|") else {
                     return .refused(.init(code: "now-development-project-invalid",
                                           message: "A guest manifest entry is malformed."))
                 }
-                let path = String(record[..<split])
-                let fileDigest = String(record[record.index(after: split)...])
+                let path = String(record[..<digestSplit])
+                let fileDigest = String(record[record.index(after: digestSplit)..<resourceSplit])
                 guard !files.contains(where: { $0.path == path }),
                       fileDigest.count == 64 else {
                     return .refused(.init(code: "now-development-project-invalid",
                                           message: "The guest manifest repeats or malforms a file."))
                 }
-                files.append(.init(path: path, digest: fileDigest))
+                guard resourceBytes == 0 else {
+                    return .refused(.init(
+                        code: "now-development-source-forks-unsupported",
+                        message: "The guest project contains a source resource fork that the host mirror cannot preserve."))
+                }
+                files.append(.init(path: path, digest: fileDigest,
+                                   resourceBytes: resourceBytes))
             }
             guard let nextText = rows.first(where: { $0.first == "Next" })?.last,
                   let next = Int(nextText), next == -1 || next > cursor else {

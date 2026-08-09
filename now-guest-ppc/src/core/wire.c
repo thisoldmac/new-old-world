@@ -5701,6 +5701,15 @@ static void serve_file_get(const char *request)
         file_refuse_rc(id, rc);
         return;
     }
+    if (development_project[0] != '\0' && stage.rsrc_bytes != 0) {
+        /* Project snapshots are intentionally data-fork Git mirrors today.
+           Refuse at the last possible boundary too: a resource fork may have
+           appeared after the manifest page that the host inspected. */
+        now_files_stage_dispose(&stage);
+        file_refuse(id, "project-source-forks-unsupported",
+                    "project import cannot preserve a source resource fork");
+        return;
+    }
 
     now_prefs_load(&prefs);
     tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack_unused);
