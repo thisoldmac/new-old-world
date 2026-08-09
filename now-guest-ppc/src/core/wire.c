@@ -32,6 +32,7 @@
 #include "scene_collect.h"
 #include "scene_phase.h"
 #include "software.h"
+#include "development_candidate.h"
 #include "wire_sleep.h"
 
 enum {
@@ -4306,6 +4307,7 @@ static struct {
     Boolean from_cloud_get;           /* the offer answered our cloud.get */
     Boolean at_dest;                  /* landing at the chosen folder,
                                          not through the share path */
+    Boolean at_candidate;             /* private Development candidate */
     short dest_vref;
     long dest_dir;
 } g_put;
@@ -4546,6 +4548,7 @@ static void serve_file_offer(const char *request)
     char name[64];
     char path[224];
     char container_arg[16];
+    char development_candidate[40];
     char json[320];
     char note[128];
     long id = now_json_find_int(request, "id", 0);
@@ -4602,6 +4605,10 @@ static void serve_file_offer(const char *request)
         && *now_json_value(request, "overwrite") == 't';
     create_parents = now_json_value(request, "createParents") == NULL
         || *now_json_value(request, "createParents") == 't';
+    development_candidate[0] = '\0';
+    now_json_find_string(request, "developmentCandidate",
+                         development_candidate,
+                         sizeof development_candidate);
 
     memset(&g_put, 0, sizeof g_put);
     g_put.id = id;
@@ -4619,7 +4626,27 @@ static void serve_file_offer(const char *request)
     g_put.create_parents = create_parents;
     g_put.overwrite = overwrite;
 
-    if (cloud_born && g_cget_dest.set) {
+    if (development_candidate[0] != '\0') {
+        FSSpec candidate;
+        long candidate_dir;
+        if (cloud_born
+            || !dev_candidate_folder(development_candidate,
+                                     &candidate, &candidate_dir)) {
+            file_refuse(id, "candidate-unavailable",
+                        "the inactive Development candidate is unavailable");
+            rx_outcome("Not received: Development candidate unavailable");
+            return;
+        }
+        g_put.at_candidate = true;
+        g_put.dest_vref = candidate.vRefNum;
+        g_put.dest_dir = candidate_dir;
+        g_put.token[0] = '\0';
+        have = 0;
+        rc = now_files_receive_begin_under(
+            g_put.dest_vref, g_put.dest_dir, path, name, container, bytes,
+            file_type, creator, (unsigned long)modified, overwrite,
+            &g_put.rx);
+    } else if (cloud_born && g_cget_dest.set) {
         /* The person chose where THIS delivery lands. Guest-side only,
            no contract change, and deliberately so: the contract's
            share bound governs what the sender may reach unbidden,
@@ -4696,7 +4723,8 @@ static void serve_file_offer(const char *request)
     }
     g_put.active = true;
     now_log(kLogInfo, "put", "#%ld %.31s, %ld bytes, into %s", id,
-            name, bytes, g_put.at_dest ? "the chosen folder" : "the share");
+            name, bytes, g_put.at_candidate ? "a Development candidate" :
+            (g_put.at_dest ? "the chosen folder" : "the share"));
     /* `have` is omitted rather than sent as 0, so an accept to an old
        host looks exactly as it always did. */
     if (have > 0 && g_put.rx.free_before >= 0) {
@@ -4763,7 +4791,19 @@ static void put_begin(const char *request)
     }
     retained = g_put.rx.keep_partial && g_put.rx.received > 0;
     now_files_receive_abort(&g_put.rx);   /* may keep a resumable partial */
-    if (g_put.at_dest) {
+    if (g_put.at_candidate) {
+        /* Candidate transfers never resume. A sender that contradicts the
+           zero offset we accepted is not allowed to splice bytes into it. */
+        if (offset != 0) {
+            put_done(false, "io-error", "candidate transfer cannot resume",
+                     "temp-discarded");
+            return;
+        }
+        rc = now_files_receive_begin_under(
+            g_put.dest_vref, g_put.dest_dir, g_put.path, g_put.name,
+            g_put.container, g_put.bytes, g_put.file_type, g_put.creator,
+            g_put.modified, g_put.overwrite, &g_put.rx);
+    } else if (g_put.at_dest) {
         /* A redirected receive reported have 0, so a conforming sender
            starts at 0 and never reaches here; one that insists on a
            nonzero offset fails below (begin_at requires a token to

@@ -62,7 +62,8 @@ enum ProjectWorkspaceLifecycle: String, Codable, Equatable, Sendable {
 }
 
 enum ProjectCandidateLifecycle: String, Codable, Equatable, Sendable {
-    case staged
+    case hostStaged
+    case guestTransferred
     case buildSucceeded
     case buildFailed
     case promoted

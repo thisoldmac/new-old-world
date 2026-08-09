@@ -284,7 +284,7 @@ final class ProjectStore {
                     ?? project.verifiedGuestDigest,
                 contentDigest: copied, manifest: try manifest(at: source),
                 stagedAt: Date())
-            let candidate = ProjectCandidate(receipt: receipt, lifecycle: .staged,
+            let candidate = ProjectCandidate(receipt: receipt, lifecycle: .hostStaged,
                                              buildID: nil, updatedAt: Date())
             try saveCandidate(candidate)
             return candidate
@@ -309,11 +309,24 @@ final class ProjectStore {
     func recordBuild(candidateID: ProjectCandidateID, buildID: String,
                      succeeded: Bool) throws -> ProjectCandidate {
         var candidate = try loadCandidate(candidateID)
-        guard candidate.lifecycle == .staged else {
+        guard candidate.lifecycle == .guestTransferred else {
             throw ProjectStoreError.unavailable("The candidate is not awaiting a build.")
         }
         candidate.lifecycle = succeeded ? .buildSucceeded : .buildFailed
         candidate.buildID = buildID
+        candidate.updatedAt = Date()
+        try saveCandidate(candidate)
+        return candidate
+    }
+
+    func recordGuestTransfer(candidateID: ProjectCandidateID) throws
+        -> ProjectCandidate {
+        var candidate = try loadCandidate(candidateID)
+        guard candidate.lifecycle == .hostStaged else {
+            throw ProjectStoreError.unavailable(
+                "The candidate is not awaiting guest transfer.")
+        }
+        candidate.lifecycle = .guestTransferred
         candidate.updatedAt = Date()
         try saveCandidate(candidate)
         return candidate

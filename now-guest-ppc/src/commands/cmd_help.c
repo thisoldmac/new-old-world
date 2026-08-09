@@ -33,6 +33,11 @@ static const char *const d_development_build[] = {
     "  accepts MPW text or a path.",
     NULL
 };
+static const char *const d_development_stage[] = {
+    "Prepares, observes or discards one inactive project candidate.",
+    "Candidate identities are single-use and files arrive through the",
+    "bounded transfer lane outside the generic Files root.", NULL
+};
 
 static const char *const d_development_run[] = {
     "  Launches only the unchanged product measured by a successful build.",
@@ -595,6 +600,9 @@ const NowCommandDoc kNowCommandDocs[] = {
     { "development-build", 1, "build one project through MPW ToolServer",
       "development-build <status | cancel | start projectID>",
       d_development_build },
+    { "development-stage", 1, "manage one inactive project candidate",
+      "development-stage <prepare | status | discard>",
+      d_development_stage },
     { "development-run", 1, "launch the exact last built product",
       "development-run <productRef>", d_development_run },
     { "development-open", 1, "open one active Project.ckp in CodeKitten",

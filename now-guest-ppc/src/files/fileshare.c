@@ -1172,25 +1172,17 @@ unsigned long now_crc32(unsigned long crc, const void *bytes, long len)
 /* Resolves a destination FOLDER, creating missing parents inside the
    share. Only ever creates under the share root, because the path is
    relative to it and traversal is inexpressible. */
-static int resolve_folder_ex(const char *rel, FSSpec *spec, long *dir_id,
-                             Boolean create)
+static int resolve_folder_under(short vref, long root_dir, const char *rel,
+                                FSSpec *spec, long *dir_id, Boolean create)
 {
-    NowPrefs prefs;
     char segment[64];
     const char *p = rel;
-    short vref;
-    long dir;
+    long dir = root_dir;
     OSErr err;
 
     if (!now_share_path_ok(rel)) {
         return kFilesBadPath;
     }
-    now_prefs_load(&prefs);
-    share_point(&prefs);
-    if (!share_volume(&vref, &prefs)) {
-        return kFilesIOError;
-    }
-    dir = prefs.share_dir > 0 ? prefs.share_dir : fsRtDirID;
 
     while (rel != NULL && *p != '\0') {
         Str255 pname;
@@ -1238,6 +1230,20 @@ static int resolve_folder_ex(const char *rel, FSSpec *spec, long *dir_id,
     spec->parID = dir;
     spec->name[0] = 0;
     return kFilesOK;
+}
+
+static int resolve_folder_ex(const char *rel, FSSpec *spec, long *dir_id,
+                             Boolean create)
+{
+    NowPrefs prefs;
+    short vref;
+    long root_dir;
+
+    now_prefs_load(&prefs);
+    share_point(&prefs);
+    if (!share_volume(&vref, &prefs)) return kFilesIOError;
+    root_dir = prefs.share_dir > 0 ? prefs.share_dir : fsRtDirID;
+    return resolve_folder_under(vref, root_dir, rel, spec, dir_id, create);
 }
 
 static int resolve_folder_creating(const char *rel, FSSpec *spec, long *dir_id)
@@ -1546,6 +1552,31 @@ int now_files_receive_begin(const char *rel_path, const char *name,
                                       container, bytes, file_type, creator,
                                       modified, overwrite, resume_token,
                                       resume_offset, rx);
+}
+
+int now_files_receive_begin_under(short vref, long root_dir,
+                                  const char *rel_path, const char *name,
+                                  FileContainer container, long bytes,
+                                  OSType file_type, OSType creator,
+                                  unsigned long modified, Boolean overwrite,
+                                  FileReceive *rx)
+{
+    FSSpec folder;
+    long dir_id;
+    int rc = resolve_folder_under(vref, root_dir, rel_path, &folder,
+                                  &dir_id, true);
+    if (rc != kFilesOK) {
+        memset(rx, 0, sizeof *rx);
+        rx->data_ref = -1;
+        rx->rsrc_ref = -1;
+        return rc;
+    }
+    /* Candidate files are freshly staged and never resumed in place. The
+       candidate itself is the recoverable unit; a failed file leaves it
+       inactive and discardable. */
+    return now_files_receive_begin_at(vref, dir_id, name, container, bytes,
+                                      file_type, creator, modified, overwrite,
+                                      NULL, 0, rx);
 }
 
 /* The same, into a folder named directly rather than through the share.

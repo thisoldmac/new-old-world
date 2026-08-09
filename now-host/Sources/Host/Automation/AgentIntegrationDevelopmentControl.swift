@@ -7,11 +7,14 @@ import NOWAgentIntegration
 final class AgentIntegrationDevelopmentControl {
     private let listener: GuestListener
     private let currentSessionID: @MainActor () -> UUID?
+    private let projectStore: ProjectStore?
 
     init(listener: GuestListener,
-         currentSessionID: @escaping @MainActor () -> UUID?) {
+         currentSessionID: @escaping @MainActor () -> UUID?,
+         projectStore: ProjectStore?) {
         self.listener = listener
         self.currentSessionID = currentSessionID
+        self.projectStore = projectStore
     }
 
     func perform(_ request: AgentIntegrationDevelopmentRequest) async
@@ -23,11 +26,25 @@ final class AgentIntegrationDevelopmentControl {
         guard let sessionID = currentSessionID() else {
             return .unavailable(.guest)
         }
+        switch request.operation {
+        case .stage:
+            return await stage(request, sessionID: sessionID)
+        case .stageStatus, .stageDiscard:
+            return await candidateCommand(request, sessionID: sessionID)
+        default:
+            break
+        }
         let route: (verb: String, group: String, args: [String: String])
         switch request.operation {
+        case .stage, .stageStatus, .stageDiscard:
+            preconditionFailure("Candidate operations settle above")
         case .buildStart:
-            route = ("development-build", "development-build",
-                     ["action": "start", "projectID": request.projectID!])
+            var args = ["action": "start"]
+            if let projectID = request.projectID { args["projectID"] = projectID }
+            if let candidateID = request.candidateID {
+                args["candidateID"] = candidateID
+            }
+            route = ("development-build", "development-build", args)
         case .buildStatus:
             route = ("development-build", "development-build",
                      ["action": "status"])
@@ -73,6 +90,196 @@ final class AgentIntegrationDevelopmentControl {
             verb: route.verb,
             groups: [.init(name: route.group, rows: rows)],
             note: cells.count > 16 ? "The host bounded the Development receipt." : nil,
+            observedAt: Date()))
+    }
+
+    private func stage(
+        _ request: AgentIntegrationDevelopmentRequest, sessionID: UUID
+    ) async -> AgentIntegrationGuestRowReportResult {
+        guard let projectStore,
+              let rawProject = request.projectID,
+              let projectID = ProjectID(rawValue: rawProject) else {
+            return .refused(.init(
+                code: "now-development-project-unavailable",
+                message: "The bounded host Projects store is unavailable."))
+        }
+        let workspaceID: ProjectWorkspaceID?
+        if let raw = request.workspaceID {
+            workspaceID = ProjectWorkspaceID(rawValue: raw)
+            guard workspaceID != nil else {
+                return .refused(.init(code: "now-development-invalid-request",
+                                      message: "The workspace identity is malformed."))
+            }
+        } else {
+            workspaceID = nil
+        }
+        let candidate: ProjectCandidate
+        do {
+            candidate = try projectStore.stageCandidate(
+                projectID: projectID, workspaceID: workspaceID)
+        } catch {
+            return .refused(.init(code: "now-development-stage-refused",
+                                  message: error.localizedDescription))
+        }
+        let candidateID = candidate.receipt.candidateID.rawValue
+        let prepared = await command(
+            "development-stage",
+            args: ["action": "prepare", "candidateID": candidateID,
+                   "projectID": rawProject])
+        guard currentSessionID() == sessionID else {
+            return .refused(.init(
+                code: "now-development-outcome-unknown",
+                message: "The paired guest changed while the candidate was being prepared."))
+        }
+        guard prepared.ok else {
+            try? projectStore.discardCandidate(
+                candidateID: candidate.receipt.candidateID)
+            return refusal(prepared, fallback: "The guest refused the candidate.")
+        }
+
+        for entry in candidate.receipt.manifest {
+            guard let destination = hfsDestination(entry.path) else {
+                await discardGuestCandidate(candidateID)
+                try? projectStore.discardCandidate(
+                    candidateID: candidate.receipt.candidateID)
+                return .refused(.init(
+                    code: "now-development-path-unrepresentable",
+                    message: "A project-relative path is not representable as bounded HFS components."))
+            }
+            do {
+                let bytes = try projectStore.candidateFile(
+                    candidateID: candidate.receipt.candidateID,
+                    path: entry.path)
+                let transfer = await put(candidateID: candidateID,
+                                         name: destination.name,
+                                         path: destination.parent,
+                                         bytes: bytes)
+                guard case .success = transfer else {
+                    let reason: String
+                    if case .failure(let failure) = transfer {
+                        reason = failure.message
+                    } else { reason = "The candidate transfer failed." }
+                    await discardGuestCandidate(candidateID)
+                    try? projectStore.discardCandidate(
+                        candidateID: candidate.receipt.candidateID)
+                    return .refused(.init(code: "now-development-transfer-failed",
+                                          message: reason))
+                }
+            } catch {
+                await discardGuestCandidate(candidateID)
+                try? projectStore.discardCandidate(
+                    candidateID: candidate.receipt.candidateID)
+                return .refused(.init(code: "now-development-transfer-failed",
+                                      message: error.localizedDescription))
+            }
+        }
+        guard currentSessionID() == sessionID else {
+            return .refused(.init(
+                code: "now-development-outcome-unknown",
+                message: "The paired guest changed while the candidate was transferring."))
+        }
+        do {
+            _ = try projectStore.recordGuestTransfer(
+                candidateID: candidate.receipt.candidateID)
+        } catch {
+            return .refused(.init(code: "now-development-stage-unsettled",
+                                  message: error.localizedDescription))
+        }
+        let rows = [
+            AgentIntegrationGuestRow(label: "Candidate", value: candidateID),
+            .init(label: "State", value: "transferred; aggregate guest digest pending"),
+            .init(label: "Files", value: String(candidate.receipt.manifest.count)),
+            .init(label: "Host digest", value: candidate.receipt.contentDigest),
+        ]
+        return .completed(.init(
+            verb: "development-stage",
+            groups: [.init(name: "development-stage", rows: rows)],
+            note: "The candidate is inactive. Build may inspect it; promotion remains unavailable until guest aggregate verification lands.",
+            observedAt: Date()))
+    }
+
+    private func candidateCommand(
+        _ request: AgentIntegrationDevelopmentRequest, sessionID: UUID
+    ) async -> AgentIntegrationGuestRowReportResult {
+        let action = request.operation == .stageDiscard ? "discard" : "status"
+        let result = await command(
+            "development-stage",
+            args: ["action": action, "candidateID": request.candidateID!])
+        guard currentSessionID() == sessionID else {
+            return .refused(.init(code: "now-development-outcome-unknown",
+                                  message: "The paired guest changed while the candidate operation settled."))
+        }
+        guard result.ok else { return refusal(result, fallback: "Candidate unavailable.") }
+        if request.operation == .stageDiscard,
+           let projectStore,
+           let id = ProjectCandidateID(rawValue: request.candidateID!) {
+            try? projectStore.discardCandidate(candidateID: id)
+        }
+        return report(result, verb: "development-stage",
+                      group: "development-stage")
+    }
+
+    private func command(_ verb: String, args: [String: String]) async
+        -> CommandResult {
+        await withCheckedContinuation { continuation in
+            listener.runCommand(verb, args: args) {
+                continuation.resume(returning: $0)
+            }
+        }
+    }
+
+    private func put(candidateID: String, name: String, path: String,
+                     bytes: Data) async -> Result<GuestListener.PutReceipt,
+                                                  GuestListener.FileFailure> {
+        await withCheckedContinuation { continuation in
+            listener.putDevelopmentCandidateFileWithReceipt(
+                candidateID: candidateID, name: name, into: path,
+                bytes: bytes) { continuation.resume(returning: $0) }
+        }
+    }
+
+    private func discardGuestCandidate(_ candidateID: String) async {
+        _ = await command("development-stage",
+                          args: ["action": "discard",
+                                 "candidateID": candidateID])
+    }
+
+    private func hfsDestination(_ path: String)
+        -> (parent: String, name: String)? {
+        let pieces = path.split(separator: "/", omittingEmptySubsequences: false)
+            .map(String.init)
+        guard let name = pieces.last, !name.isEmpty,
+              pieces.allSatisfy({ part in
+                  !part.isEmpty && part.utf8.count <= 31
+                      && part.unicodeScalars.allSatisfy { $0.value < 128 }
+                      && !part.contains(":")
+              }) else { return nil }
+        return (pieces.dropLast().joined(separator: ":"), name)
+    }
+
+    private func refusal(_ result: CommandResult, fallback: String)
+        -> AgentIntegrationGuestRowReportResult {
+        .refused(.init(
+            code: AgentIntegrationBoundedText.prefix(
+                result.error?.code ?? "development-failed", scalars: 64),
+            message: AgentIntegrationBoundedText.prefix(
+                result.error?.message ?? fallback, scalars: 256)))
+    }
+
+    private func report(_ result: CommandResult, verb: String, group: String)
+        -> AgentIntegrationGuestRowReportResult {
+        guard let cells = result.output?[group] else {
+            return .refused(.init(code: "now-development-invalid",
+                                  message: "The paired guest returned no Development rows."))
+        }
+        return .completed(.init(
+            verb: verb,
+            groups: [.init(name: group, rows: cells.prefix(16).map {
+                .init(label: AgentIntegrationBoundedText.prefix(
+                    $0.first ?? "", scalars: 64),
+                      value: AgentIntegrationBoundedText.prefix(
+                    $0.count > 1 ? $0.last ?? "" : "", scalars: 2_048))
+            })],
             observedAt: Date()))
     }
 }

@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "development_build.h"
+#include "development_candidate.h"
 #include "development_project.h"
 #include "development_toolchain_mac.h"
 #include "fileshare.h"
@@ -173,6 +174,32 @@ static OSErr read_data_fork(const FSSpec *spec, char **text)
     return noErr;
 }
 
+static int read_project_folder(const FSSpec *folder, long dir_id,
+                               const char *expected_project_id,
+                               DevProject *project, char *reason,
+                               long reason_cap)
+{
+    FSSpec manifest;
+    char *text;
+    int ok;
+    if (FSMakeFSSpec(folder->vRefNum, dir_id,
+                     (ConstStr255Param)"\pProject.ckp", &manifest) != noErr
+        || read_data_fork(&manifest, &text) != noErr) {
+        snprintf(reason, (size_t)reason_cap,
+                 "The project folder has no readable Project.ckp.");
+        return 0;
+    }
+    ok = dev_project_parse(text, project, reason, reason_cap);
+    DisposePtr((Ptr)text);
+    if (ok && expected_project_id != NULL
+        && strcmp(project->id, expected_project_id) != 0) {
+        snprintf(reason, (size_t)reason_cap,
+                 "Project.ckp does not match the requested project identity.");
+        return 0;
+    }
+    return ok;
+}
+
 static int find_project(const char *project_id, FSSpec *folder,
                         long *dir_id, DevProject *project, char *reason,
                         long reason_cap)
@@ -189,9 +216,7 @@ static int find_project(const char *project_id, FSSpec *folder,
         CInfoPBRec pb;
         Str255 name;
         FSSpec candidate;
-        FSSpec manifest;
         long candidate_dir;
-        char *text;
         memset(&pb, 0, sizeof pb);
         name[0] = 0;
         pb.dirInfo.ioNamePtr = name;
@@ -203,18 +228,13 @@ static int find_project(const char *project_id, FSSpec *folder,
         candidate.vRefNum = prefs.projects_vref;
         candidate.parID = prefs.projects_dir;
         memcpy(candidate.name, name, name[0] + 1);
-        if (folder_id(&candidate, &candidate_dir) != noErr
-            || FSMakeFSSpec(candidate.vRefNum, candidate_dir,
-                           (ConstStr255Param)"\pProject.ckp", &manifest) != noErr
-            || read_data_fork(&manifest, &text) != noErr) continue;
-        if (dev_project_parse(text, project, reason, reason_cap)
-            && strcmp(project->id, project_id) == 0) {
-            DisposePtr((Ptr)text);
+        if (folder_id(&candidate, &candidate_dir) != noErr) continue;
+        if (read_project_folder(&candidate, candidate_dir, project_id,
+                                project, reason, reason_cap)) {
             *folder = candidate;
             *dir_id = candidate_dir;
             return 1;
         }
-        DisposePtr((Ptr)text);
     }
     snprintf(reason, (size_t)reason_cap,
              "No Project.ckp under the chosen Projects folder has that ID.");
@@ -540,11 +560,13 @@ void now_development_build_command(const char *request_json, long id,
 {
     char action[24];
     char project_id[kDevProjectIDCap];
+    char candidate_id[40];
     char reason[180];
     NowPrefs prefs;
     DevToolchain measured;
     char job_id[40];
     project_id[0] = '\0';
+    candidate_id[0] = '\0';
     if (!now_json_find_string(request_json, "action", action, sizeof action)
         && !console_words(request_json, action, sizeof action,
                           project_id, sizeof project_id)) {
@@ -562,12 +584,16 @@ void now_development_build_command(const char *request_json, long id,
         strcpy(g_runtime.last_status, "Build cancelled; late output is quarantined.");
         build_reply(id, out, cap); return;
     }
+    if (project_id[0] == '\0') {
+        now_json_find_string(request_json, "projectID", project_id,
+                             sizeof project_id);
+    }
+    now_json_find_string(request_json, "candidateID", candidate_id,
+                         sizeof candidate_id);
     if (strcmp(action, "start") != 0
-        || (project_id[0] == '\0'
-            && !now_json_find_string(request_json, "projectID", project_id,
-                                     sizeof project_id))) {
+        || ((project_id[0] != '\0') == (candidate_id[0] != '\0'))) {
         reply_error(out, cap, id, "invalid-arguments",
-                    "A start requires one opaque projectID.");
+                    "A start requires exactly one projectID or candidateID.");
         return;
     }
     if (g_runtime.service.job.state == kDevJobRunning
@@ -577,9 +603,20 @@ void now_development_build_command(const char *request_json, long id,
         return;
     }
     memset(&g_runtime, 0, sizeof g_runtime);
-    if (!find_project(project_id, &g_runtime.project_folder,
-                      &g_runtime.project_dir, &g_runtime.project,
-                      reason, sizeof reason)) {
+    if (candidate_id[0] != '\0') {
+        if (!dev_candidate_folder(candidate_id, &g_runtime.project_folder,
+                                  &g_runtime.project_dir)
+            || !read_project_folder(&g_runtime.project_folder,
+                                    g_runtime.project_dir, NULL,
+                                    &g_runtime.project,
+                                    reason, sizeof reason)) {
+            reply_error(out, cap, id, "candidate-not-found",
+                        "The inactive candidate is absent or invalid.");
+            return;
+        }
+    } else if (!find_project(project_id, &g_runtime.project_folder,
+                             &g_runtime.project_dir, &g_runtime.project,
+                             reason, sizeof reason)) {
         reply_error(out, cap, id, "project-not-found", reason); return;
     }
     now_prefs_load(&prefs);

@@ -6,13 +6,14 @@ import Foundation
 public enum DevelopmentProjection: HostProjection {
     public static let capability = HostCapabilityID("now_development")
     public static let requires = [
-        "development-build", "development-run", "development-open",
+        "development-stage", "development-build", "development-run",
+        "development-open",
     ]
     public static let exposes = requires
     public static let authorityDomain =
         HostProjectionAuthorityDomain.hostProjectsAndGuest
     public static let acceptedArguments: Set<String> = [
-        "operation", "projectID", "productRef",
+        "operation", "projectID", "workspaceID", "candidateID", "productRef",
     ]
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "Projects/DevelopmentModuleView.swift",
@@ -33,11 +34,16 @@ public enum DevelopmentProjection: HostProjection {
                 "properties": [
                     "operation": [
                         "type": "string",
-                        "enum": ["build-start", "build-status", "build-cancel",
+                        "enum": ["stage", "stage-status", "stage-discard",
+                                 "build-start", "build-status", "build-cancel",
                                  "run", "open-in-codekitten"],
                     ],
                     "projectID": ["type": "string",
                                   "pattern": "^[0-9a-f]{32}$"],
+                    "workspaceID": ["type": "string",
+                                    "pattern": "^workspace-[0-9a-f]{16}$"],
+                    "candidateID": ["type": "string",
+                                    "pattern": "^candidate-[0-9a-f]{16}$"],
                     "productRef": ["type": "string",
                                    "pattern": "^product-[0-9a-f]{16}$"],
                 ],

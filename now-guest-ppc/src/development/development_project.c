@@ -14,6 +14,18 @@ static int token_valid(const char *value)
     return 1;
 }
 
+static int project_id_valid(const char *value)
+{
+    const unsigned char *p = (const unsigned char *)value;
+    int count = 0;
+    for (; *p != '\0'; ++p, ++count) {
+        if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f'))) {
+            return 0;
+        }
+    }
+    return count == 32;
+}
+
 static int version_valid(const char *value)
 {
     const unsigned char *p = (const unsigned char *)value;
@@ -91,7 +103,7 @@ int dev_project_parse(const char *text, DevProject *project,
         }
         *equals = '\0'; key = line; value = equals + 1;
         if (strcmp(key, "id") == 0) {
-            if (project->id[0] != '\0' || !token_valid(value)
+            if (project->id[0] != '\0' || !project_id_valid(value)
                 || !copy_value(project->id, sizeof project->id, value)) {
                 return fail(reason, reason_cap, "invalid project id");
             }

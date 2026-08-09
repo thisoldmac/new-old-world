@@ -181,7 +181,7 @@ final class ProjectStoreTests: XCTestCase {
                                       contents: Data("source".utf8))])
         let candidate = try store.stageCandidate(projectID: created.projectID)
 
-        XCTAssertEqual(candidate.lifecycle, .staged)
+        XCTAssertEqual(candidate.lifecycle, .hostStaged)
         XCTAssertEqual(candidate.receipt.manifest.map(\.path),
                        ["Project.ckp", "Sources/Main.c"])
         XCTAssertEqual(try store.candidateFile(
@@ -193,6 +193,9 @@ final class ProjectStoreTests: XCTestCase {
                 XCTAssertEqual(error as? ProjectStoreError, .candidateNotBuilt)
             }
 
+        XCTAssertEqual(try store.recordGuestTransfer(
+            candidateID: candidate.receipt.candidateID).lifecycle,
+                       .guestTransferred)
         let built = try store.recordBuild(
             candidateID: candidate.receipt.candidateID,
             buildID: "build-0123456789abcdef", succeeded: true)
@@ -222,6 +225,8 @@ final class ProjectStoreTests: XCTestCase {
             message: "Agent edit")
         let candidate = try store.stageCandidate(
             projectID: created.projectID, workspaceID: workspace.workspaceID)
+        _ = try store.recordGuestTransfer(
+            candidateID: candidate.receipt.candidateID)
         _ = try store.recordBuild(candidateID: candidate.receipt.candidateID,
                                   buildID: "build-0123456789abcdef",
                                   succeeded: true)
@@ -261,6 +266,8 @@ final class ProjectStoreTests: XCTestCase {
             message: "Accepted agent edit")
         let candidate = try store.stageCandidate(
             projectID: created.projectID, workspaceID: workspace.workspaceID)
+        _ = try store.recordGuestTransfer(
+            candidateID: candidate.receipt.candidateID)
         _ = try store.recordBuild(candidateID: candidate.receipt.candidateID,
                                   buildID: "build-fedcba9876543210",
                                   succeeded: true)

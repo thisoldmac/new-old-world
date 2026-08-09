@@ -70,6 +70,7 @@ add_application(now-guest-ppc
     src/development/development_contract.c
     src/development/development_build.c
     src/development/development_project.c
+    src/development/development_candidate.c
     src/development/development_runtime.c
     src/development/development_command.c
     src/development/development_toolchain_mac.c

@@ -1,6 +1,9 @@
 import Foundation
 
 public enum AgentIntegrationDevelopmentOperation: String, Codable, Sendable {
+    case stage
+    case stageStatus = "stage-status"
+    case stageDiscard = "stage-discard"
     case buildStart = "build-start"
     case buildStatus = "build-status"
     case buildCancel = "build-cancel"
@@ -14,12 +17,17 @@ public enum AgentIntegrationDevelopmentOperation: String, Codable, Sendable {
 public struct AgentIntegrationDevelopmentRequest: Codable, Equatable, Sendable {
     public let operation: AgentIntegrationDevelopmentOperation
     public let projectID: String?
+    public let workspaceID: String?
+    public let candidateID: String?
     public let productRef: String?
 
     public init(operation: AgentIntegrationDevelopmentOperation,
-                projectID: String? = nil, productRef: String? = nil) {
+                projectID: String? = nil, workspaceID: String? = nil,
+                candidateID: String? = nil, productRef: String? = nil) {
         self.operation = operation
         self.projectID = projectID
+        self.workspaceID = workspaceID
+        self.candidateID = candidateID
         self.productRef = productRef
     }
 
@@ -31,14 +39,34 @@ public struct AgentIntegrationDevelopmentRequest: Codable, Equatable, Sendable {
             $0.range(of: #"^product-[0-9a-f]{16}$"#,
                      options: .regularExpression) != nil
         } ?? true
-        guard projectIsValid, productIsValid else { return false }
+        let workspaceIsValid = workspaceID.map {
+            $0.range(of: #"^workspace-[0-9a-f]{16}$"#,
+                     options: .regularExpression) != nil
+        } ?? true
+        let candidateIsValid = candidateID.map {
+            $0.range(of: #"^candidate-[0-9a-f]{16}$"#,
+                     options: .regularExpression) != nil
+        } ?? true
+        guard projectIsValid, productIsValid, workspaceIsValid,
+              candidateIsValid else { return false }
         switch operation {
-        case .buildStart, .openInCodeKitten:
-            return projectID != nil && productRef == nil
+        case .stage:
+            return projectID != nil && candidateID == nil && productRef == nil
+        case .stageStatus, .stageDiscard:
+            return candidateID != nil && projectID == nil
+                && workspaceID == nil && productRef == nil
+        case .buildStart:
+            return (projectID != nil) != (candidateID != nil)
+                && workspaceID == nil && productRef == nil
+        case .openInCodeKitten:
+            return projectID != nil && workspaceID == nil
+                && candidateID == nil && productRef == nil
         case .buildStatus, .buildCancel:
-            return projectID == nil && productRef == nil
+            return projectID == nil && workspaceID == nil
+                && candidateID == nil && productRef == nil
         case .run:
             return productRef != nil && projectID == nil
+                && workspaceID == nil && candidateID == nil
         }
     }
 }

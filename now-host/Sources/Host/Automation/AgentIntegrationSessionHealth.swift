@@ -49,7 +49,8 @@ final class AgentIntegrationHostAdapter {
             currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var developmentControl = AgentIntegrationDevelopmentControl(
         listener: listener,
-        currentSessionID: { [unowned self] in connectedSessionID() })
+        currentSessionID: { [unowned self] in connectedSessionID() },
+        projectStore: projectStore)
     private lazy var censusControl = AgentIntegrationCensus(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
