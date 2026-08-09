@@ -156,10 +156,12 @@ final class ConnectionsModelTests: XCTestCase {
     /// would mislead exactly when it matters, so each is its own field and
     /// none is derived from another.
     func testTheThreeIdentitiesStayApartOnTheRow() throws {
-        let live = guest("pb1400c", address: "10.91.5.34", active: true)
+        var live = guest("pb1400c", address: "10.91.5.34", active: true)
+        live.address = GuestAddress(text: "10.91.5.34", port: 49180)
         let snapshot = ConnectionsSnapshot.make(
             state: .connected(guestName: live.name),
             guests: [live], known: [], ended: [:],
+            listenPort: 5250,
             resolve: resolver(driving: "pb1400c", connected: ["pb1400c"]))
 
         let row = try XCTUnwrap(snapshot.driving)
@@ -167,7 +169,9 @@ final class ConnectionsModelTests: XCTestCase {
         XCTAssertEqual(row.liveSessionID, live.key.text)
         XCTAssertNotEqual(row.liveSessionID, row.machineID,
                           "the session is not the machine")
-        XCTAssertEqual(row.address, "10.91.5.34")
+        XCTAssertEqual(row.address, "10.91.5.34:5250",
+                       "show the stable NOW listener port, never the "
+                       + "guest's ephemeral source port")
         XCTAssertEqual(row.name, "NOW 0.14",
                        "what the Mac calls itself is a label, kept beside "
                        + "the handle and never in place of it")

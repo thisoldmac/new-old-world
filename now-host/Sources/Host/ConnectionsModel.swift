@@ -236,6 +236,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                      guests: [ConnectedGuest],
                      known: [GuestRegistry.Record],
                      ended: [String: EndedGuestSession],
+                     listenPort: UInt16 = SettingsModel.defaultPort,
                      resolve: (String) -> AgentIntegrationUnavailable?)
         -> ConnectionsSnapshot {
         var rows: [ConnectionRow] = []
@@ -252,7 +253,8 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 presence: guest.isActive ? .driving : .connected,
                 name: guest.name,
                 displayName: guest.displayName ?? guest.name,
-                address: guest.address.endpointText,
+                address: Self.listenerAddress(guest.address.text,
+                                              port: listenPort),
                 liveSessionID: guest.sessionID,
                 lastSessionID: ended[guest.id.slug]?.sessionID,
                 since: guest.connectedAt,
@@ -280,8 +282,8 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 presence: .known,
                 name: record.lastName,
                 displayName: record.displayName ?? record.lastName,
-                address: GuestAddress(text: record.address,
-                                      port: record.lastPort).endpointText,
+                address: Self.listenerAddress(record.address,
+                                              port: listenPort),
                 liveSessionID: nil,
                 lastSessionID: last,
                 since: record.lastSeen,
@@ -303,6 +305,12 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 }))
         }
         return ConnectionsSnapshot(state: state, rows: rows)
+    }
+
+    private static func listenerAddress(_ address: String,
+                                        port: UInt16) -> String {
+        let host = address.contains(":") ? "[\(address)]" : address
+        return "\(host):\(port)"
     }
 }
 
@@ -330,6 +338,7 @@ final class ConnectionsModel: ObservableObject {
     @Published private(set) var renameProblem: String?
 
     private let listener: GuestListener
+    private let listenPort: () -> UInt16
     private let resolve: (String) -> AgentIntegrationUnavailable?
     private let select: (GuestKey) -> Bool
     private let disconnect: (GuestKey) -> Bool
@@ -344,11 +353,15 @@ final class ConnectionsModel: ObservableObject {
 
     init(listener: GuestListener,
          resolve: @escaping (String) -> AgentIntegrationUnavailable?,
+         listenPort: @escaping () -> UInt16 = {
+             SettingsModel.defaultPort
+         },
          select: ((GuestKey) -> Bool)? = nil,
          disconnect: ((GuestKey) -> Bool)? = nil,
          forget: ((GuestRegistry.Record.Key) -> Bool)? = nil) {
         self.listener = listener
         self.resolve = resolve
+        self.listenPort = listenPort
         self.select = select ?? { [listener] key in listener.selectGuest(key) }
         self.disconnect = disconnect
             ?? { [listener] key in listener.removeGuest(key) }
@@ -377,11 +390,15 @@ final class ConnectionsModel: ObservableObject {
     /// adapter that actually serves them.
     convenience init(listener: GuestListener,
                      addressing: AgentIntegrationHostAdapter,
+                     listenPort: @escaping () -> UInt16 = {
+                         SettingsModel.defaultPort
+                     },
                      select: ((GuestKey) -> Bool)? = nil) {
         self.init(listener: listener,
                   resolve: { [addressing] selector in
                       addressing.addressingRefusal(selector)
                   },
+                  listenPort: listenPort,
                   select: select)
     }
 
@@ -393,6 +410,7 @@ final class ConnectionsModel: ObservableObject {
             guests: listener.guests,
             known: listener.registry.known,
             ended: ended,
+            listenPort: listenPort(),
             resolve: resolve)
     }
 

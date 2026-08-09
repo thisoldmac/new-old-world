@@ -71,8 +71,6 @@ final class GuestRegistry {
         /// Host-owned title. Nil only for records written before display
         /// names existed; those are upgraded on their next connection.
         var displayName: String? = nil
-        /// Most recently observed remote TCP port, for presentation only.
-        var lastPort: UInt16? = nil
 
         var key: Key {
             Key(address: address, fingerprint: fingerprint, slot: slot)
@@ -154,7 +152,6 @@ final class GuestRegistry {
             }
             records[index].lastSeen = now
             records[index].lastName = name ?? Session.unnamedGuest
-            records[index].lastPort = address.port
             save()
             return records[index]
         }
@@ -164,7 +161,7 @@ final class GuestRegistry {
             id: nextOrdinal(), address: address.text, fingerprint: print,
             slot: slot, autoAssigned: true, lastSeen: now,
             lastName: name ?? Session.unnamedGuest,
-            displayName: displayName, lastPort: address.port)
+            displayName: displayName)
         records.append(record)
         save()
         return record

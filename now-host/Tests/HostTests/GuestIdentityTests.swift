@@ -50,7 +50,6 @@ final class GuestIdentityTests: XCTestCase {
             occupiedSlots: [])
 
         XCTAssertEqual(reconnected.displayName, "Desk Mac")
-        XCTAssertEqual(reconnected.lastPort, 49153)
     }
 
     func testObservedEndpointFormatsIPAndPort() {
