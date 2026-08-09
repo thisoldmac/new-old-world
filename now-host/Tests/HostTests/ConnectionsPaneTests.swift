@@ -21,7 +21,7 @@ final class ConnectionsPaneTests: XCTestCase {
 
     /// The defect in one assertion: there is no longer a second module about
     /// connections. Restore the list descriptor and this fails naming it.
-    func testTheSidebarHasOneRowAboutTheConnection() {
+    func testTheSidebarHasOneConnectionsRow() {
         let registry = ModuleRegistry.standard
         XCTAssertNil(registry.module(id: "connections"),
                      "the roster pane folded into the link pane; a second "
@@ -58,6 +58,49 @@ final class ConnectionsPaneTests: XCTestCase {
                       "who is on it: \(summary)")
     }
 
+    /// Return and the visible button must share one action. Updating only
+    /// the port is not submission: the requested keyboard path also starts
+    /// the listener.
+    func testSubmittingThePortStartsListeningThroughTheButtonAction()
+        throws {
+        let source = try GateSource.hostSwift(
+            "now-host/Sources/Host/SettingsModuleView.swift")
+        XCTAssertTrue(source.contains(".onSubmit(startListening)"))
+        XCTAssertTrue(source.contains(
+            "Button(\"Start Listening\", action: startListening)"))
+    }
+
+    func testPortSubmissionValidatesAndStartsExactlyOnce() throws {
+        let suite = "ConnectionsPaneTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsModel(defaults: defaults)
+        var starts = 0
+
+        XCTAssertTrue(settings.submitListenPort("5400") { starts += 1 })
+        XCTAssertEqual(settings.listenPort, 5400)
+        XCTAssertEqual(starts, 1)
+
+        for invalid in ["", "0", "70000", "not-a-port"] {
+            XCTAssertFalse(settings.submitListenPort(invalid) { starts += 1 },
+                           invalid)
+        }
+        XCTAssertEqual(settings.listenPort, 5400)
+        XCTAssertEqual(starts, 1,
+                       "invalid Return must not start on the old port")
+    }
+
+    func testConnectionRowsExposeNativeRenameAndContextActions() throws {
+        let source = try GateSource.hostSwift(
+            "now-host/Sources/Host/ConnectionsModuleView.swift")
+        XCTAssertTrue(source.contains("Image(systemName: \"pencil\")"))
+        XCTAssertTrue(source.contains(".contextMenu"))
+        XCTAssertTrue(source.contains("Button(\"Rename…\""))
+        XCTAssertTrue(source.contains("Button(\"Delete\""))
+        XCTAssertTrue(source.contains("Button(\"Start Listening\""))
+        XCTAssertTrue(source.contains("Button(\"Stop Listening\""))
+    }
+
     // MARK: - The retired id still resolves
 
     /// **A saved selection of the retired id lands on the merged page.**
@@ -71,7 +114,7 @@ final class ConnectionsPaneTests: XCTestCase {
         XCTAssertEqual(ModuleRegistry.standard
             .resolvingRenames(id: "connections")?.id, "settings")
         XCTAssertEqual(ModuleRegistry.standard
-            .resolvingRenames(id: "connections")?.title, "Connection")
+            .resolvingRenames(id: "connections")?.title, "Connections")
     }
 
     /// The forwarding table is shared, and entries land in it from separate
@@ -226,6 +269,7 @@ final class ConnectionsPaneTests: XCTestCase {
             idIsAutoAssigned: false,
             idIsAnchored: true,
             name: "NOW 0.14",
+            displayName: id,
             address: GuestAddress(text: "10.91.5.34"),
             version: "0.14",
             build: "b12",
@@ -239,6 +283,7 @@ final class ConnectionsPaneTests: XCTestCase {
         GuestRegistry.Record(
             id: GuestID(id)!, address: "10.91.5.34",
             fingerprint: "now|9.1", slot: 0, autoAssigned: false,
-            lastSeen: Date(timeIntervalSince1970: 500), lastName: "NOW 0.13")
+            lastSeen: Date(timeIntervalSince1970: 500),
+            lastName: "NOW 0.13", displayName: id)
     }
 }

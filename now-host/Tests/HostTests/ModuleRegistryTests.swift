@@ -11,15 +11,15 @@ final class ModuleRegistryTests: XCTestCase {
         XCTAssertEqual(ModuleRegistry.standard.module(id: "screen")?.title,
                        "Screen")
         XCTAssertEqual(ModuleRegistry.standard.module(id: "settings")?.title,
-                       "Connection")
+                       "Connections")
     }
 
     func testUnknownModuleIsAbsent() {
         XCTAssertNil(ModuleRegistry.standard.module(id: "missing"))
     }
 
-    func testFooterHoldsLogsAndConnectionInOrder() {
-        /* MCP, then Logs, then Connection under the divider. MCP sits
+    func testFooterHoldsLogsAndConnectionsInOrder() {
+        /* MCP, then Logs, then Connections under the divider. MCP sits
            above Logs because part of it is the narrower reading of the same
            record — Logs is everything that happened, MCP is the part of it
            somebody else caused — and a person who wants that part should

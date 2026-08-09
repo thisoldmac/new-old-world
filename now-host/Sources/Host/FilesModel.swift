@@ -114,6 +114,10 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     @Published var lastNotice: String?
     @Published private(set) var transfer: TransferState?
     @Published var selection: FileRow.ID?
+    /// Set only for the lifetime of a local one-folder drag. The sidebar
+    /// reads source-owned state instead of accepting arbitrary text from
+    /// the pasteboard.
+    var draggedFolderPath: String?
 
     /// Where downloads land. Separate from the screenshots landing pad:
     /// files are files.
@@ -162,9 +166,30 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// editing, so the browser and the module agree on one at a time.
     @Published var renaming: FileRow.ID?
 
-    /// A folder being named before it exists, so it is a sheet rather
-    /// than a row that is not there yet.
-    @Published var newFolderName: String?
+    struct NewFolderPrompt: Identifiable, Equatable {
+        let id = UUID()
+        let initialName: String
+    }
+
+    /// Presentation state only. The sheet owns the editable draft so a
+    /// late TextField update cannot resurrect a prompt that was dismissed
+    /// before the guest's successful reply arrived.
+    @Published private(set) var newFolderPrompt: NewFolderPrompt?
+
+    func beginNewFolder() {
+        guard canBrowse, !isChanging else { return }
+        newFolderPrompt = NewFolderPrompt(initialName: "untitled folder")
+    }
+
+    func cancelNewFolder() {
+        newFolderPrompt = nil
+    }
+
+    func createFolderFromPrompt(named name: String) {
+        newFolderPrompt = nil
+        guard canBrowse, !isChanging else { return }
+        createFolder(named: name)
+    }
 
     func reportChangeFailure(_ message: String) {
         lastError = message
@@ -285,6 +310,32 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// reload a listing of a different machine's folder.
     private var busWatch: HostEventSubscription?
     private var pageCursor: Int?
+    /// Identifies the full-folder read that owns `rows`. Two refreshes may
+    /// be in flight at once (a mutation publishes an event before its own
+    /// completion runs), and a path comparison cannot distinguish them
+    /// when both asked for the same folder.
+    private var listingGeneration = 0
+
+    private lazy var promiseExporter = GuestFilePromiseExporter(
+        listPage: { [weak self] path, cursor, completion in
+            guard let self else {
+                completion(.failure(FilesError.wire(
+                    "The file browser is no longer available.")))
+                return
+            }
+            self.listener.listFiles(path: path, cursor: cursor) { result in
+                completion(result.mapError { FilesError.wire($0.message) })
+            }
+        },
+        fetchFile: { [weak self] row, destination, completion in
+            guard let self else {
+                completion(.failure(FilesError.wire(
+                    "The file browser is no longer available.")))
+                return
+            }
+            self.fetchOneForPromise(row, to: destination,
+                                    completion: completion)
+        })
 
     init(
         listener: GuestListener,
@@ -349,47 +400,58 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     // MARK: - Which machine is being browsed
 
     private func connectionChanged(from old: GuestConnectionState) {
-        guard connection != old,
-              case .switched(let restored) =
-                cache.focus(connection.key, parking: snapshot())
-        else { return }
-        let fresh = restored ?? Snapshot()
-        breadcrumb = fresh.breadcrumb
-        rows = fresh.rows
-        selection = fresh.selection
-        shareRoot = fresh.shareRoot
-        pageCursor = fresh.pageCursor
-        history = fresh.history
-        isLoading = false
-        lastError = nil
-        lastNotice = nil
-        transfer = nil
-        renaming = nil
-        newFolderName = nil
-        pendingChange = nil
-        overwritePrompt = nil
-        /* A queue of files is the one thing here that must NOT survive the
-           switch, parked or otherwise. It is a list of things to WRITE, and
-           the machine they were meant for is no longer the one on the other
-           end of the wire — sending them anyway is the destructive version
-           of the bug this whole slice is about. Dropping them says so out
-           loud rather than resuming against the wrong Mac later. */
-        if !queue.isEmpty {
-            let dropped = queue.count
-            lastError = "\(dropped) file\(dropped == 1 ? "" : "s") "
-                + "still waiting to send were dropped: they were meant for "
-                + "\(MachineNaming.simpleReference)."
+        guard connection != old else { return }
+        if case .switched(let restored) =
+            cache.focus(connection.key, parking: snapshot()) {
+            listingGeneration += 1
+            let fresh = restored ?? Snapshot()
+            breadcrumb = fresh.breadcrumb
+            rows = fresh.rows
+            selection = fresh.selection
+            shareRoot = fresh.shareRoot
+            pageCursor = fresh.pageCursor
+            history = fresh.history
+            isLoading = false
+            lastError = nil
+            lastNotice = nil
+            transfer = nil
+            renaming = nil
+            draggedFolderPath = nil
+            newFolderPrompt = nil
+            promiseExporter.cancelAll(
+                reason: "The connected guest changed while files were being copied.")
+            pendingChange = nil
+            overwritePrompt = nil
+            /* A queue of files is the one thing here that must NOT survive the
+               switch, parked or otherwise. It is a list of things to WRITE,
+               and the machine they were meant for is no longer the one on the
+               other end of the wire — sending them anyway is the destructive
+               version of the bug this whole slice is about. */
+            if !queue.isEmpty {
+                let dropped = queue.count
+                lastError = "\(dropped) file\(dropped == 1 ? "" : "s") "
+                    + "still waiting to send were dropped: they were meant for "
+                    + "\(MachineNaming.simpleReference)."
+            }
+            queue = []
+            queueTotal = 0
+            queueDone = 0
+            /* The sidebar is one machine's furniture, and the customisation
+               of it is that machine's too. Discovered rows go with the old
+               machine rather than being parked: they are a claim about a disk
+               that is no longer on the other end of the wire. */
+            discoveredLocations = []
+            reloadStoredLocations()
         }
-        queue = []
-        queueTotal = 0
-        queueDone = 0
-        /* The sidebar is one machine's furniture, and the customisation
-           of it is that machine's too. Discovered rows go with the old
-           machine rather than being parked: they are a claim about a disk
-           that is no longer on the other end of the wire, and the sweep
-           that replaces them costs a handful of small requests. */
-        discoveredLocations = []
-        reloadStoredLocations()
+
+        /* A page may already be on screen when the same guest reconnects, so
+           `onAppear` is not a connection hook. Every newly usable connection
+           revalidates both the open folder and the guest-derived Places rows. */
+        /* Even a disconnect owns the sidebar: a reply from the machine that
+           just went away must not repopulate Places after it was cleared. A
+           usable connection replaces that sweep as part of the one browser
+           refresh operation. */
+        if canBrowse { refreshBrowser() } else { cancelLocationDiscovery() }
     }
 
     private func snapshot() -> Snapshot {
@@ -402,6 +464,27 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
 
     func refresh() {
         load(path: path, resetRows: true)
+    }
+
+    /// The human-facing refresh: both surfaces that describe the guest's disk.
+    /// Internal mutation events use `refresh()` because they only invalidate
+    /// the open listing; a toolbar click or a new connection revalidates the
+    /// Places sidebar as well.
+    func refreshBrowser() {
+        cancelLocationDiscovery()
+        load(path: path, resetRows: true) { [weak self] result in
+            guard let self else { return }
+            /* A listing normally names the share root, so let that one reply
+               serve both the table and Places. Older guests may omit it; in
+               that case discovery performs its own root probe. */
+            if case .success(let listing) = result,
+               let root = listing.root, !root.isEmpty {
+                self.shareRoot = root
+                self.discoverLocations(knownRoot: true)
+            } else {
+                self.discoverLocations()
+            }
+        }
     }
 
     func open(_ row: FileRow) {
@@ -438,18 +521,28 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// the defect this whole change exists to fix.
     static let rowCeiling = 4000
 
-    private func load(path: String, resetRows: Bool, cursor: Int? = nil) {
+    private func load(
+        path: String, resetRows: Bool, cursor: Int? = nil,
+        firstPage: ((Result<FileListing, GuestListener.FileFailure>) -> Void)?
+            = nil
+    ) {
         guard canBrowse else { return }
         if resetRows {
+            listingGeneration += 1
             rows = []
             pageCursor = nil
             selection = nil
         }
+        let generation = listingGeneration
         isLoading = true
         lastError = nil
         lastNotice = nil
         listener.listFiles(path: path, cursor: cursor) { [weak self] result in
             guard let self else { return }
+            // A newer full refresh owns this same path now. Its page is the
+            // only one allowed to append; accepting both duplicates every
+            // visible row without changing anything on the guest.
+            guard generation == self.listingGeneration else { return }
             self.isLoading = false
             switch result {
             case .success(let listing):
@@ -462,6 +555,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 if let root = listing.root, !root.isEmpty {
                     self.shareRoot = root
                 }
+                firstPage?(.success(listing))
 
                 /* THE GUEST PAGES AT 16 PER FRAME, because a control
                    frame caps at 4 KB — so one reply is one PAGE, never
@@ -508,6 +602,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
             case .failure(let failure):
                 self.lastError = failure.message
                 self.pageCursor = nil
+                firstPage?(.failure(failure))
             }
         }
     }
@@ -524,9 +619,15 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     private var discoveredLocations: [FileLocation] = []
     private var storedLocations = FileLocationsStore.Stored()
     private let locationsStore: FileLocationsStore
-    /// Machines already swept, so showing the page twice is not two
-    /// sweeps. A person can still ask again.
-    private var sweptMachines = Set<GuestKey>()
+    /// The connection already swept, so showing the page twice is not two
+    /// sweeps. Guest keys are session-scoped, and retaining every old key
+    /// would grow forever; an automatic connection refresh means only the
+    /// current key can suppress an on-appear sweep.
+    private var sweptMachine: GuestKey?
+    /// Owns an in-flight Places sweep. A guest switch or explicit refresh may
+    /// start a newer sweep before the old connection answers; only the newest
+    /// one may publish locations.
+    private var locationDiscoveryGeneration = 0
 
     private var currentMachine: GuestID? { connection.key?.machine }
 
@@ -534,7 +635,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// is a handful of small requests, but it is a handful more than a
     /// person asked for, so it never repeats itself unprompted.
     func discoverLocationsIfNeeded() {
-        guard let key = connection.key, !sweptMachines.contains(key) else {
+        guard let key = connection.key, sweptMachine != key else {
             return
         }
         discoverLocations()
@@ -549,25 +650,39 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// machine's own names; then plain probing, which is a guess that
     /// either lists or does not.
     func discoverLocations() {
+        discoverLocations(knownRoot: false)
+    }
+
+    private func discoverLocations(knownRoot: Bool) {
         guard canBrowse, !isDiscoveringLocations else { return }
-        if let key = connection.key { sweptMachines.insert(key) }
+        sweptMachine = connection.key
+        locationDiscoveryGeneration += 1
+        let generation = locationDiscoveryGeneration
         isDiscoveringLocations = true
+        if knownRoot {
+            sweepFolderManager(index: 0, found: [], systemFolder: nil,
+                               generation: generation)
+            return
+        }
         /* The share root comes FIRST, and not for the sidebar's top row:
            `software.list` answers in whole HFS paths, and turning one of
            those into something this browser can ask for needs to know
            what to subtract. Sweeping before the root was known threw away
            every Folder Manager answer for want of a prefix. */
         listener.listFiles(path: "") { [weak self] result in
-            guard let self else { return }
+            guard let self,
+                  generation == self.locationDiscoveryGeneration else { return }
             switch result {
             case .success(let listing):
                 if let root = listing.root, !root.isEmpty {
                     self.shareRoot = root
                 }
                 self.sweepFolderManager(index: 0, found: [],
-                                        systemFolder: nil)
+                                        systemFolder: nil,
+                                        generation: generation)
             case .failure(let failure):
-                self.finishDiscovery(abandoned: failure.message)
+                self.finishDiscovery(abandoned: failure.message,
+                                     generation: generation)
             }
         }
     }
@@ -575,21 +690,24 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// Route one: ask for a page of each FindFolder-backed domain and
     /// read the folder out of where its entries live.
     private func sweepFolderManager(index: Int, found: [FileLocation],
-                                    systemFolder: String?) {
+                                    systemFolder: String?, generation: Int) {
         guard index < ClassicLocations.folderManagerDomains.count else {
-            sweepSystemFolder(found: found, systemFolder: systemFolder)
+            sweepSystemFolder(found: found, systemFolder: systemFolder,
+                              generation: generation)
             return
         }
         let domain = ClassicLocations.folderManagerDomains[index]
         listener.listSoftware(domain: domain.domain, cursor: 1) {
             [weak self] result in
-            guard let self else { return }
+            guard let self,
+                  generation == self.locationDiscoveryGeneration else { return }
             var found = found
             var systemFolder = systemFolder
             switch result {
             case .failure(let failure):
                 guard !FileLocationResolver.isFatal(failure.code) else {
-                    self.finishDiscovery(abandoned: failure.message)
+                    self.finishDiscovery(abandoned: failure.message,
+                                         generation: generation)
                     return
                 }
                 // A guest too old for this domain simply does not
@@ -613,7 +731,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 }
             }
             self.sweepFolderManager(index: index + 1, found: found,
-                                    systemFolder: systemFolder)
+                                    systemFolder: systemFolder,
+                                    generation: generation)
         }
     }
 
@@ -621,7 +740,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// otherwise the one thing left to guess at before its children can
     /// be probed.
     private func sweepSystemFolder(found: [FileLocation],
-                                   systemFolder: String?) {
+                                   systemFolder: String?, generation: Int) {
         if let systemFolder, !systemFolder.isEmpty {
             var found = found
             found.insert(FileLocation(
@@ -629,14 +748,19 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 name: ClassicLocations.leafName(of: systemFolder),
                 symbol: ClassicLocations.systemFolder.symbol,
                 origin: .folderManager), at: 0)
-            sweepCandidates(index: 0, found: found, systemFolder: systemFolder)
+            sweepCandidates(index: 0, found: found,
+                            systemFolder: systemFolder,
+                            generation: generation)
             return
         }
-        probe(ClassicLocations.systemFolder.names, at: 0, under: "") {
+        probe(ClassicLocations.systemFolder.names, at: 0, under: "",
+              generation: generation) {
             [weak self] resolved in
             guard let self else { return }
             guard let resolved else {
-                self.sweepCandidates(index: 0, found: found, systemFolder: nil)
+                self.sweepCandidates(index: 0, found: found,
+                                     systemFolder: nil,
+                                     generation: generation)
                 return
             }
             var found = found
@@ -646,7 +770,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 symbol: ClassicLocations.systemFolder.symbol,
                 origin: .probed), at: 0)
             self.sweepCandidates(index: 0, found: found,
-                                 systemFolder: resolved)
+                                 systemFolder: resolved,
+                                 generation: generation)
         }
     }
 
@@ -654,9 +779,9 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// back. A candidate whose every name refuses is omitted — the rule
     /// the whole sidebar rests on.
     private func sweepCandidates(index: Int, found: [FileLocation],
-                                 systemFolder: String?) {
+                                 systemFolder: String?, generation: Int) {
         guard index < ClassicLocations.candidates.count else {
-            finishDiscovery(found: found)
+            finishDiscovery(found: found, generation: generation)
             return
         }
         let candidate = ClassicLocations.candidates[index]
@@ -667,10 +792,12 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         guard let base = candidate.insideSystemFolder ? systemFolder : ""
         else {
             sweepCandidates(index: index + 1, found: found,
-                            systemFolder: systemFolder)
+                            systemFolder: systemFolder,
+                            generation: generation)
             return
         }
-        probe(candidate.names, at: 0, under: base) { [weak self] resolved in
+        probe(candidate.names, at: 0, under: base,
+              generation: generation) { [weak self] resolved in
             guard let self else { return }
             var found = found
             if let resolved, !found.contains(where: { $0.path == resolved }) {
@@ -679,7 +806,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                     symbol: candidate.symbol, origin: .probed))
             }
             self.sweepCandidates(index: index + 1, found: found,
-                                 systemFolder: systemFolder)
+                                 systemFolder: systemFolder,
+                                 generation: generation)
         }
     }
 
@@ -687,6 +815,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// that lists. One `file.list` per name — bounded by the candidate
     /// table, and every one of them a page of at most sixteen entries.
     private func probe(_ names: [String], at index: Int, under base: String,
+                       generation: Int,
                        completion: @escaping (String?) -> Void) {
         guard index < names.count else {
             completion(nil)
@@ -694,7 +823,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         }
         let path = FileLocationResolver.join(base, names[index])
         listener.listFiles(path: path) { [weak self] result in
-            guard let self else { return }
+            guard let self,
+                  generation == self.locationDiscoveryGeneration else { return }
             switch result {
             case .success(let listing):
                 if let root = listing.root, !root.isEmpty {
@@ -703,16 +833,19 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 completion(path)
             case .failure(let failure):
                 guard !FileLocationResolver.isFatal(failure.code) else {
-                    self.finishDiscovery(abandoned: failure.message)
+                    self.finishDiscovery(abandoned: failure.message,
+                                         generation: generation)
                     return
                 }
                 self.probe(names, at: index + 1, under: base,
+                           generation: generation,
                            completion: completion)
             }
         }
     }
 
-    private func finishDiscovery(found: [FileLocation]) {
+    private func finishDiscovery(found: [FileLocation], generation: Int) {
+        guard generation == locationDiscoveryGeneration else { return }
         isDiscoveringLocations = false
         var found = found
         found.insert(ClassicLocations.rootLocation(shareRoot: shareRoot),
@@ -724,9 +857,10 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// The wire went away mid-sweep. Everything not yet asked about is
     /// unknown, not absent — so nothing is recorded, and the machine is
     /// left un-swept so a reconnection tries again.
-    private func finishDiscovery(abandoned reason: String) {
+    private func finishDiscovery(abandoned reason: String, generation: Int) {
+        guard generation == locationDiscoveryGeneration else { return }
         isDiscoveringLocations = false
-        if let key = connection.key { sweptMachines.remove(key) }
+        if sweptMachine == connection.key { sweptMachine = nil }
         lastNotice = "Could not finish looking for folders on "
             + "\(connection.peerLabel): \(reason)"
     }
@@ -734,6 +868,11 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     private func republishLocations() {
         locations = FileLocationsStore.merge(discovered: discoveredLocations,
                                              stored: storedLocations)
+    }
+
+    private func cancelLocationDiscovery() {
+        locationDiscoveryGeneration += 1
+        isDiscoveringLocations = false
     }
 
     private func reloadStoredLocations() {
@@ -757,8 +896,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
 
     /// What a person may drag into the sidebar: a folder this browser can
     /// currently SEE is a folder. Nil is a refusal, and refusing is the
-    /// point — the sidebar accepts a dragged string, and a string is not
-    /// evidence of anything.
+    /// point — a path alone is not evidence of anything.
     func pinnableName(for path: String) -> String? {
         guard !path.isEmpty else { return nil }   // the root is always there
         if path == self.path { return ClassicLocations.leafName(of: path) }
@@ -1129,7 +1267,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
             case .success:
                 self.refresh()
                 self.startNextIfIdle()
-            case .failure(let failure) where failure.code == "exists":
+            case .failure(let failure)
+                where failure.code == "exists" && !overwrite:
                 // Not an error: the human has a decision to make, and
                 // the queue waits rather than racing past it.
                 self.queueDone -= 1
@@ -1174,14 +1313,20 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         clearQueue()
     }
 
-    /// Pulls a file for a drag to the Finder. The Finder asks for the
-    /// bytes only when the drop lands, so this is the moment the file
-    /// actually crosses — and the one transfer lane still applies, so a
-    /// promise asked for mid-transfer is refused rather than queued
-    /// behind something the Finder is not waiting for.
+    /// Pulls an item for a drag to the Finder. AppKit may redeem every
+    /// promise in a multi-row drag concurrently, while the guest has one
+    /// transfer lane. The exporter serializes those requests and expands
+    /// folders over the existing paged listing contract.
     func fetchForPromise(_ row: FileRow, to destination: URL,
-                         container: String? = nil,
                          completion: @escaping (Result<Void, Error>) -> Void) {
+        promiseExporter.enqueue(row, to: destination, completion: completion)
+    }
+
+    private func fetchOneForPromise(
+        _ row: FileRow,
+        to destination: URL,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
         guard transfer == nil else {
             completion(.failure(FilesError.busy))
             return
@@ -1190,7 +1335,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                                  received: 0, expected: row.sizeBytes,
                                  index: nil, total: nil)
         listener.getFile(
-            path: row.path, container: container,
+            path: row.path, container: nil,
             stagingDirectory: destination.deletingLastPathComponent()) {
             [weak self] result in
             guard let self else { return }
@@ -1275,8 +1420,6 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// classic side allows leading dots; make the name safe for APFS
     /// without renaming beyond recognition.
     private func sanitized(_ name: String) -> String {
-        var out = name.replacingOccurrences(of: "/", with: ":")
-        if out.hasPrefix(".") { out = "_" + out.dropFirst() }
-        return out.isEmpty ? "Untitled" : out
+        LocalFileName.sanitized(name)
     }
 }

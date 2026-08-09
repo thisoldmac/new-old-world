@@ -14,6 +14,85 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## Host Files export and mutation repair (2026-08-08)
+
+**Tested, not metal-verified.** Four host-side failures are repaired:
+
+- an overwrite that the guest cannot finalize after staging now reports the
+  refusal once; an already-authorized overwrite never opens a second prompt;
+- overlapping refreshes have one generation owner, so creating a folder no
+  longer appends the same guest listing twice;
+- the new-folder sheet owns its text draft and dismisses before the request,
+  so a late TextField write cannot reopen it after success; and
+- every dragged row is a real AppKit file promise. Folder promises recursively
+  follow paged guest listings, and multiple promises wait in one bounded queue
+  for the guest's single transfer lane.
+
+The new native tests pin each repair, empty directories, partial-tree cleanup,
+refusal without deleting an existing host folder, the recursive item bound,
+and multi-promise ordering. The overwrite, overlapping-refresh, folder-bound,
+cleanup and sheet-lifetime guards were each watched fail before their fixes.
+No wire message or guest behavior changed.
+
+Still unverified: Finder has not redeemed a multi-file or directory drag from
+a live guest in this pass, and a running application on a classic Mac has not
+exercised the finalization-refusal path. Those are the two useful metal checks;
+the host suites prove the state machines and app build, not those interactions.
+
+**2026-08-09 follow-up -- tested, not live-UI or metal-verified.** The Files
+page now refreshes both its open listing and Places when a connection becomes
+usable, and the toolbar Refresh action refreshes both projections as one
+operation. A disconnected or superseded Places sweep cannot publish late.
+Command-Delete and the forward-delete key use the existing Move to Trash
+confirmation; Shift-Command-N opens the existing new-folder sheet. All three
+entry points refuse to start while another guest file change is active.
+
+The delete regression now uses the listener's real connection identity and
+requires both refreshes that production emits -- the guest tree-change event
+and the successful mutation completion. It replies newest-first and proves the
+older reply cannot append a duplicate row. This settles the reported duplicate
+render at the state-machine level. The remaining useful check is a live host
+UI pass for the AppKit key events and sidebar redraw; no guest behavior or wire
+message changed.
+
+## Multi-guest host controls: tested, not visually or metal-verified (2026-08-08)
+
+The host now keeps its guest choice at the top of the sidebar as a
+live-only menu. That selection is the listener's active session, so every
+module moves with it; remembered machines cannot appear attached merely
+because their registry record survived. The menu's Add Guest action opens
+Connections.
+
+Connections is now a split view: active sessions above remembered machines
+on the left, the selected machine's link status, identity and session log on
+the right. Remembered rows are visibly secondary. The list's plus action
+opens the listening setup, while minus closes and forgets exactly a selected
+live session or forgets exactly a selected remembered record. Pressing Return
+in the port field follows the same validated Start Listening action as the
+button. Each row is headed by a host-owned display name, defaulted from the
+machine's reported name; collisions receive `-2`, `-3`, and so on. The guest
+IP and the host port that particular machine used are the subrow; remembered
+machines retain their own last-used ports when the current listener changes,
+and the guest's transient outbound source port is deliberately not shown. A
+pencil beside the detail title and the row/detail
+context menus rename that display name without changing the stable machine id;
+the same menus expose Delete and the listener's Start/Stop action.
+
+**Tested here:** `scripts/test-all` passes: 82 native tests, the complete host
+suite, and the Debug and Release app builds. Focused host tests cover
+active-versus-remembered removal, exact remembered-record removal,
+session-scoped health and logs, the plural module name, and Return starting
+the listener. Display-name tests cover default and duplicate allocation,
+persistence across reconnect, editing live and remembered rows, and preserving
+the session and stable machine identities. Two-guest socket tests remove either session and prove the
+remaining guest is still promoted or still answers. Guest cross-builds were
+skipped because this worktree has no Retro68 toolchain.
+
+**Still unverified:** nobody has looked at this layout in the running host
+app yet, and none of these controls has been exercised against two physical
+Macs. The existing two-guests-on-one-port limitation therefore remains:
+tested is not metal-verified.
+
 ## The folding sidebar, both halves (2026-08-05)
 
 The rail folds to icons on the guest and the sidebar does the same on the

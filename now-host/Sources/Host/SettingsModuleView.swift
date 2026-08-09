@@ -22,8 +22,11 @@ struct ConnectionLinkSection: View {
     @ObservedObject var listener: GuestListener
     var onStart: () -> Void
     var onStop: () -> Void
+    var focusPort = false
+    var selectedGuest: GuestKey?
 
     @State private var portText: String = ""
+    @FocusState private var portIsFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -43,14 +46,12 @@ struct ConnectionLinkSection: View {
                     .labelsHidden()
                     .frame(width: 80)
                     .disabled(isListening)
-                    .onSubmit(applyPort)
+                    .focused($portIsFocused)
+                    .onSubmit(startListening)
                 if isListening {
                     Button("Stop Listening") { onStop() }
                 } else {
-                    Button("Start Listening") {
-                        applyPort()
-                        onStart()
-                    }
+                    Button("Start Listening", action: startListening)
                     .buttonStyle(.borderedProminent)
                 }
                 Toggle("Listen when the app starts",
@@ -65,7 +66,8 @@ struct ConnectionLinkSection: View {
                second dot down here would be the same fact drawn twice, and
                the two were already worded differently. */
 
-            if let health = listener.health {
+            if let selectedGuest,
+               let health = listener.health(for: selectedGuest) {
                 healthBlock(health)
             }
         }
@@ -73,7 +75,13 @@ struct ConnectionLinkSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(Color(nsColor: .controlBackgroundColor)))
-        .onAppear { portText = String(settings.listenPort) }
+        .onAppear {
+            portText = String(settings.listenPort)
+            if focusPort { portIsFocused = true }
+        }
+        .onChange(of: focusPort) { wanted in
+            if wanted && !isListening { portIsFocused = true }
+        }
     }
 
     private var isListening: Bool {
@@ -83,12 +91,12 @@ struct ConnectionLinkSection: View {
         }
     }
 
-    private func applyPort() {
-        if let port = UInt16(portText), port > 0 {
-            settings.listenPort = port
-        } else {
+    private func startListening() {
+        guard settings.submitListenPort(portText, start: onStart) else {
             portText = String(settings.listenPort)
+            return
         }
+        portText = String(settings.listenPort)
     }
 
     /// How the paired session is actually behaving — the one thing on this
@@ -151,15 +159,24 @@ struct ConnectionLinkSection: View {
 /// the log only when one of those answers is surprising.
 struct ConnectionListenerLog: View {
     @ObservedObject var listener: GuestListener
+    var sessionIDs: Set<String>? = nil
+
+    private var entries: [GuestListener.LogEntry] {
+        guard let sessionIDs else { return listener.log }
+        return listener.log.filter { entry in
+            entry.sessionID.map(sessionIDs.contains) ?? false
+        }
+    }
 
     var body: some View {
-        if !listener.log.isEmpty {
+        let visibleEntries = entries
+        if !visibleEntries.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 SectionHead("Log", caption: "What the listener on "
                     + "\(MachineNaming.thisMac) has done, newest first.")
                 ScrollView {
                     VStack(alignment: .leading, spacing: 2) {
-                        ForEach(listener.log.reversed()) { entry in
+                        ForEach(visibleEntries.reversed()) { entry in
                             Text("\(entry.at, format: .dateTime.hour().minute().second())  \(entry.text)")
                                 .font(.system(.caption, design: .monospaced))
                                 .frame(maxWidth: .infinity, alignment: .leading)

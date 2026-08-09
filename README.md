@@ -37,7 +37,7 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Processes: list, launch, quit, front | yes | yes | emulator-verified |
 | Installed software: applications, extensions, control panels | yes | yes, without versions or a running flag | metal-verified (PPC); 68K tested only |
 | Hardware census (14 probes) | yes | 14 probes, 4 of them honestly `absent`/`refused` on this hardware | metal-verified (PPC); **68K's probes have never run at all** |
-| Two Macs on one port, with a picker for which one you are driving | yes | yes | tested; **never run against real hardware** |
+| Two Macs on one port, with a live-guest menu for which one every host module drives | yes | yes | tested; **never run against real hardware** |
 | iCloud: the host's Drive, Photos and Contacts served to the guest's iCloud page — drive browser with history and breadcrumbs, live filter-as-you-type, photo preview and download at chosen resolution, contact cards | yes | no | metal-verified (PPC) for Drive and the granted services; the newest layout pass is tested only — [docs/icloud.md](docs/icloud.md) |
 
 The cells that say "no" are not oversights.

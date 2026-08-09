@@ -29,4 +29,15 @@ final class SettingsModel: ObservableObject {
         listenAtLaunch = defaults.object(forKey: Keys.listenAtLaunch) == nil
             ? true : defaults.bool(forKey: Keys.listenAtLaunch)
     }
+
+    /// Applies the field and starts the listener as one testable action.
+    /// Return and the visible button share this seam, so invalid text can
+    /// never update one path while still starting through the other.
+    @discardableResult
+    func submitListenPort(_ text: String, start: () -> Void) -> Bool {
+        guard let port = UInt16(text), port > 0 else { return false }
+        listenPort = port
+        start()
+        return true
+    }
 }
