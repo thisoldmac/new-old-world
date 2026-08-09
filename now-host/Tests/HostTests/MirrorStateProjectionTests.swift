@@ -2,6 +2,11 @@ import XCTest
 @testable import NOWAgentIntegration
 
 final class MirrorStateProjectionTests: XCTestCase {
+    private var driveInputSchema: [String: Any] {
+        (MirrorDriveProjection.mcpDescriptor["inputSchema"]
+            as? [String: Any]) ?? [:]
+    }
+
     func testFourRowsAreRegisteredTogetherAndReadOnly() {
         let names = HostProjectionCatalog.projections.map {
             $0.capability.rawValue
@@ -68,6 +73,90 @@ final class MirrorStateProjectionTests: XCTestCase {
         let decodedResponse = try AgentIntegrationLocalCodec.decodeResponse(
             AgentIntegrationLocalCodec.encode(response))
         XCTAssertEqual(decodedResponse.mirrorReadResult?.value, value)
+    }
+
+    func testDrivePublishesTheExactGestureVocabulary() throws {
+        let properties = try XCTUnwrap(
+            driveInputSchema["properties"] as? [String: Any])
+        let gesture = try XCTUnwrap(
+            properties["gesture"] as? [String: Any])
+        let published = Set(try XCTUnwrap(gesture["enum"] as? [String]))
+        let expected: Set<String> = [
+            "select", "close", "zoom", "activate", "menuItem", "hide",
+            "hideOthers", "showAll", "key", "type", "finderOpen",
+            "finderSelect", "finderDeselect", "dialogItem",
+            "appleMenuItem", "cancel",
+        ]
+
+        XCTAssertEqual(published, expected,
+                       "an unconstrained gesture string makes callers guess")
+    }
+
+    func testDrivePublishesEachGesturesRequiredArguments() throws {
+        let allOf = try XCTUnwrap(
+            driveInputSchema["allOf"] as? [[String: Any]])
+        let alternatives = try XCTUnwrap(
+            allOf.first?["oneOf"] as? [[String: Any]])
+        var published: [String: Set<String>] = [:]
+        for alternative in alternatives {
+            let properties = try XCTUnwrap(
+                alternative["properties"] as? [String: Any])
+            let gesture = try XCTUnwrap(
+                properties["gesture"] as? [String: Any])
+            let name = try XCTUnwrap(gesture["const"] as? String)
+            let required = Set(
+                (alternative["required"] as? [String]) ?? [])
+            published[name] = required.subtracting(["gesture"])
+        }
+
+        let expected: [String: Set<String>] = [
+            "select": ["entityID"],
+            "close": ["entityID"],
+            "zoom": ["entityID"],
+            "activate": ["entityID"],
+            "menuItem": ["menuID", "itemIndex"],
+            "hide": [],
+            "hideOthers": [],
+            "showAll": [],
+            "key": ["keyCode"],
+            "type": ["text"],
+            "finderOpen": ["itemName"],
+            "finderSelect": ["itemName"],
+            "finderDeselect": [],
+            "dialogItem": ["entityID", "itemIndex"],
+            "appleMenuItem": ["itemName"],
+            "cancel": [],
+        ]
+        XCTAssertEqual(published, expected,
+                       "every gesture needs one exact required-argument branch")
+    }
+
+    func testDriveRefusesAMalformedKnownGestureBeforeTheHost() async {
+        let outcome = await MirrorDriveProjection.invoke(
+            .init(raw: ["gesture": "dialogItem"]),
+            through: MirrorReadRecordingClient())
+        guard case .invalidArguments(let message) = outcome else {
+            return XCTFail("malformed dialogItem reached the host: \(outcome)")
+        }
+        XCTAssertTrue(message.contains("dialogItem"), message)
+        XCTAssertTrue(message.contains("entityID"), message)
+        XCTAssertTrue(message.contains("itemIndex"), message)
+    }
+
+    func testDriveRefusesArgumentsBelongingToAnotherGesture() async {
+        let outcome = await MirrorDriveProjection.invoke(
+            .init(raw: [
+                "gesture": "dialogItem",
+                "entityID": "window:process-a:window-b",
+                "itemIndex": 1,
+                "text": "Open",
+            ]),
+            through: MirrorReadRecordingClient())
+        guard case .invalidArguments(let message) = outcome else {
+            return XCTFail("dialogItem accepted type's text: \(outcome)")
+        }
+        XCTAssertTrue(message.contains("does not take text"), message)
+        XCTAssertTrue(message.contains("Do not pass a now-element"), message)
     }
 }
 

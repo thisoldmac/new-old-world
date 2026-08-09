@@ -193,20 +193,52 @@ public enum MirrorDriveProjection: HostProjection {
         + "and mutation broker, exactly as a click in the Mirror window "
         + "does; settlement comes from a later guest observation."
     public static var mcpDescriptor: [String: Any] {
-        MirrorStateProjectionSchema.descriptor(
+        var descriptor = MirrorStateProjectionSchema.descriptor(
             title: "Experimental Semantic UI Action",
-            description: "Experimental. Acts through the shared semantic executor using entities from the retained snapshot. Returns an operation record; dispatch is not proof of effect, so wait or re-read state to verify.",
+            description: "Experimental. Acts through the shared semantic executor using entities from now_semantic_ui_snapshot. Choose only a published gesture and follow its per-gesture argument branch. Retained entityIDs belong here; opaque now-element references belong to the direct now_control_act, now_window_act, and now_text_* family. Returns an operation record; dispatch is not proof of effect, so wait or re-read state to verify.",
             properties: [
-                "gesture": ["type": "string"],
-                "entityID": ["type": "string"],
-                "menuID": ["type": "integer"],
-                "itemIndex": ["type": "integer"],
-                "keyCode": ["type": "integer"],
-                "keyChar": ["type": "integer"],
-                "modifiers": ["type": "integer"],
-                "text": ["type": "string"],
-                "itemName": ["type": "string"],
-                "container": ["type": "string"],
+                "gesture": [
+                    "type": "string",
+                    "enum": AgentIntegrationMirrorDriveGesture.allCases
+                        .map(\.rawValue),
+                    "description": "One exact gesture from this enum. The matching oneOf branch below states its required arguments; never guess a synonym.",
+                ],
+                "entityID": [
+                    "type": "string",
+                    "description": "A retained process or window entityID exactly as now_semantic_ui_snapshot published it. Never pass an opaque now-element reference here.",
+                ],
+                "menuID": [
+                    "type": "integer",
+                    "description": "A menu id from the retained snapshot's menu bar.",
+                ],
+                "itemIndex": [
+                    "type": "integer", "minimum": 1,
+                    "description": "A 1-based menu item index, or for dialogItem the dialog item's number from the addressed window in the retained snapshot.",
+                ],
+                "keyCode": [
+                    "type": "integer",
+                    "description": "A classic Mac virtual keycode, not a character or key name.",
+                ],
+                "keyChar": [
+                    "type": "integer",
+                    "description": "Optional classic Mac character code for a key gesture.",
+                ],
+                "modifiers": [
+                    "type": "integer",
+                    "description": "Optional classic Mac modifier bitmask.",
+                ],
+                "text": [
+                    "type": "string", "minLength": 1, "maxLength": 256,
+                    "description": "Text for the type gesture only.",
+                ],
+                "itemName": [
+                    "type": "string", "minLength": 1,
+                    "description": "An exact Finder or Apple menu item name from the retained snapshot.",
+                ],
+                "container": [
+                    "type": "string",
+                    "description": "For Finder gestures only: desktop or a retained Finder window entityID.",
+                ],
             ],
             required: ["gesture"],
             /* The one row in this file that changes the machine, so it
@@ -220,6 +252,23 @@ public enum MirrorDriveProjection: HostProjection {
                 "idempotentHint": false,
                 "openWorldHint": false,
             ])
+        var input = descriptor["inputSchema"] as? [String: Any] ?? [:]
+        input["allOf"] = [[
+            "oneOf": AgentIntegrationMirrorDriveGesture.allCases.map {
+                gesture -> [String: Any] in
+                let contract = gesture.argumentContract
+                return [
+                    "title": gesture.rawValue,
+                    "description": contract.guidance,
+                    "properties": [
+                        "gesture": ["const": gesture.rawValue],
+                    ],
+                    "required": ["gesture"] + contract.required,
+                ]
+            },
+        ]]
+        descriptor["inputSchema"] = input
+        return descriptor
     }
     public static func invoke(_ arguments: HostProjectionArguments,
                               through client: AgentIntegrationClient) async
@@ -228,30 +277,13 @@ public enum MirrorDriveProjection: HostProjection {
             tool: capability, accepting: acceptedArguments) {
             return .invalidArguments(refusal)
         }
-        let fields = arguments.object ?? [:]
-        func text(_ key: String) -> String? { fields[key] as? String }
-        func number(_ key: String) -> Int? {
-            if let value = fields[key] as? Int { return value }
-            if let value = fields[key] as? Double { return Int(value) }
-            return nil
+        switch AgentIntegrationMirrorDriveRequest.decode(
+            arguments.object ?? [:], tool: capability) {
+        case .failure(let refusal):
+            return .invalidArguments(refusal.text)
+        case .success(let request):
+            return .value(.init(await client.mirrorDrive(request)))
         }
-        guard let raw = text("gesture"),
-              let gesture = AgentIntegrationMirrorDriveGesture(
-                rawValue: raw) else {
-            return .invalidArguments(
-                "now_semantic_ui_act requires a known gesture")
-        }
-        return .value(.init(await client.mirrorDrive(.init(
-            gesture: gesture,
-            entityID: text("entityID"),
-            menuID: number("menuID"),
-            itemIndex: number("itemIndex"),
-            keyCode: number("keyCode"),
-            keyChar: number("keyChar"),
-            modifiers: number("modifiers"),
-            text: text("text"),
-            itemName: text("itemName"),
-            container: text("container")))))
     }
 }
 

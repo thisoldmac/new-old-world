@@ -378,6 +378,17 @@ Its MCP projection is intentionally **planned after the human-input proof**
 under U5/KTD11 of the [NOW Mirror UX completion plan](plans/2026-08-03-001-now-mirror-ux-completion-plan.md); the gap row below prevents that
 sequencing choice from becoming an unnoticed omission.
 
+That direct-row gap is not the retained semantic action surface.
+`now_semantic_ui_act` already reaches the same `ditemact` command through the
+shared executor with `gesture: dialogItem`, the containing window's retained
+`entityID`, and the item's 1-based `itemIndex`. The 2026-08-09 F-009 follow-up
+made this route discoverable instead of implicit: the MCP schema now publishes
+the exact 16-gesture enum and one required-argument branch per gesture, while
+the projection rejects cross-gesture argument mixtures before they reach the
+host. The enum, schema branches, and decoder derive from one Swift contract;
+focused tests pin all 16 branches and were watched failing against the old
+unconstrained string schema.
+
 Two consequences worth stating plainly:
 
 - **A call today still reaches no wire, and the missing half has moved to
