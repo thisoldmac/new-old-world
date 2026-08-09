@@ -183,21 +183,32 @@ not a hard-coded pack path; an environment override remains authoritative and
 picker changes take effect at next launch because art is process-cached. Pack
 extraction and arbitrary-path selection remain subsequent work.
 
-### UNVERIFIED: NOW may grow during a long Mirror session
+### BROKEN: the Mac OS allocation grew to 43.1 MB during a Mirror session
 
-About This Computer showed **New Old World: 7.4 MB** during the 2026-08-08
-PB1400c semantic-Finder run. That screenshot alone is not leak evidence: the
-guest's `SIZE` resource requests a fixed 6 MiB preferred application partition
-(3 MiB minimum), and About This Computer includes the application's partition
-and loaded code-fragment overhead rather than reporting only live heap blocks.
-No before/after series was captured.
+About This Computer showed **Mac OS: 43.1 MB**, virtual memory off, and only a
+**1.1 MB largest unused block** during the 2026-08-08 PB1400c semantic-Finder
+run. **New Old World: 7.4 MB** is a separate, mostly fixed application partition
+and was not the suspicious number. The screenshot therefore records severe
+system-memory pressure; it does not by itself identify the owner.
 
-The next metal run should record the number after launch, after Mirror settles,
-after repeated Start/Stop and Rebuild State cycles, and after Mirror has been
-backgrounded long enough to reproduce the desktop-roster symptom. A stable
-7.4 MB closes this as expected partition accounting; monotonic growth across
-those same operations opens a real allocation audit. Do not add heap polling to
-the already timing-sensitive scene loop until the coarse number actually moves.
+The resident extension's direct system-heap footprint cannot explain that
+number. It allocates its shared table and fixed event/content rings once at
+boot, together well under 100 KiB, and does not allocate per Mirror cycle or
+Finder target. The highest-frequency remaining suspect is the Finder complement
+path: every semantic read currently opens an AppleScript OSA component, runs
+`OSADoScript`, and closes the component. The descriptors are disposed on the
+normal and observed failure paths, so component churn or an AppleScript/Finder
+retention path is a hypothesis, not a proved leak. Repeated Finder crashes and
+relaunches are a second confounder because their system-owned allocations may
+not settle like an ordinary application partition.
+
+Do not continue a diagnostic run once the largest unused block is this small.
+After reboot, record `FreeMemSys()` and `MaxBlockSys()` at four boundaries:
+extension loaded before NOW launches; NOW idle before Mirror; before and after
+a bounded count of Finder-complement scripts; and after Stop plus Quit. Also run
+the same-duration Mirror session with automatic Finder details disabled. That
+distinguishes fixed extension cost, application-partition accounting, OSA-driven
+growth, and unrelated OS/Finder growth without adding polling to the scene loop.
 
 ### TESTED: the suspect mechanisms are now separate guest policy domains
 
