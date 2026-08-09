@@ -38,6 +38,7 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Installed software: applications, extensions, control panels | yes | yes, without versions or a running flag | metal-verified (PPC); 68K tested only |
 | Hardware census (14 probes) | yes | 14 probes, 5 of them honestly `absent`/`partial` on this hardware. **Until 2026-08-07 the `pccard` probe killed the guest on any Mac without a PC Card Manager** — the trap dispatch checked that its route was open and never that the trap existed. Gated now: `tools/census-survives.py` sweeps all 14 against a real guest inside every bake. | metal-verified (PPC, PB1400c); emulator-verified on mac99/OS 9.1 after the fix; **68K's probes have never run at all** |
 | Two Macs on one port, with a live-guest menu for which one every host module drives | yes | yes | tested; **never run against real hardware** |
+| LAN onboarding page with PPC app, personalized settings, selectable optional packages, checksum-gated dependency acquisition, and a reported fork-preserving HFS install image | yes | no — deliberately PPC/Carbon-only | MacBinary/fork-preserving downloads and cached-image rebuilds tested over the real temporary HTTP listener on loopback; **never used from a classic browser or through first `hello` on metal** — [docs/onboarding.md](docs/onboarding.md) |
 | iCloud: the host's Drive, Photos and Contacts served to the guest's iCloud page — drive browser with history and breadcrumbs, live filter-as-you-type, photo preview and download at chosen resolution, contact cards | yes | no | metal-verified (PPC) for Drive and the granted services; the newest layout pass is tested only — [docs/icloud.md](docs/icloud.md) |
 | Window **interiors** — application QuickDraw records plus semantic Finder rendering | yes, with the optional NOW Extension for application drawing; Finder never uses it | no — no resident for System 7.1 | **experimental, tested:** Finder windows always keep their guest-observed shell. Optional **Emulate Finder Window Interiors (Experimental)** replaces only the item layer with a host-native Finder model; several Finder behaviors remain incomplete. Position, size, stacking and lifecycle still follow the guest when synchronization is enabled. **Emulate Desktop** is a separate switch: off preserves Finder's live desktop roster and positions, while on lays out a host-owned Desktop Folder catalog. The exact landing candidate received a bounded PB1400c acceptance run on 2026-08-09; application P3 and the incomplete Finder behaviors remain documented at their narrower evidence levels |
 | Offscreen worlds joined to the window they land in — including a world created, drawn and disposed inside one event pass | yes | no | emulator-verified (guest side); the host's composition is tested against committed captures — **the live host app has never been watched composing** |
@@ -370,6 +371,15 @@ The PowerPC guest requires **CarbonLib 1.6** on OS 9.1 — stock 1.2
 exports no Open Transport. It resolves OT at runtime and says so kindly
 when it is missing, rather than failing to launch.
 
+To set up a physical PPC Mac without FTP, open **Connections** in the host and
+choose **Set Up a New Mac…**. The temporary old-browser-friendly page serves
+the canonical MacBinary and a generated settings file already pointed at this
+host. Dependencies are enumerated; known missing packages can be downloaded
+into the external package store with a pinned checksum and delivered in a
+MacBinary envelope. Optional dependencies stay outside Git; the package layout
+and the tested-but-not-metal-verified boundary are in
+[docs/onboarding.md](docs/onboarding.md).
+
 The optional agent companion is a separate executable with no
 checked-in client configuration:
 
@@ -407,6 +417,7 @@ enforces it.
 ## Where to read next
 
 - [docs/status.md](docs/status.md) — what works and what does not, in full.
+- [docs/onboarding.md](docs/onboarding.md) — the PPC LAN setup page, package store, generated preferences and current verification boundary.
 - [docs/architecture.md](docs/architecture.md) — the design and its rules.
 - [docs/naming.md](docs/naming.md) — the naming scheme and the `src/` domain split, and why the host has no architecture suffix.
 - [docs/open-issues.md](docs/open-issues.md) — the ledger: broken versus unverified. It opens with a dated pointer list of the biggest open items.

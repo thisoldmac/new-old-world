@@ -20,6 +20,98 @@ under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
 `MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
 retain their original path spelling so the ledger remains an honest receipt.
 
+## TESTED, NOT METAL-VERIFIED: the PPC LAN onboarding portal has not run in a classic browser (2026-08-09, `codex/onboarding-portal`)
+
+Connections now has **Set Up a New Mac…**. It starts the configured NOW wire
+listener and a separate temporary HTTP listener, displays a detected LAN IPv4
+and actual HTTP port, and serves an HTML 3.2-shaped fixed-route page. The page
+offers the canonical PPC MacBinary when installed, a per-request MacBinary
+`New Old World Prefs` aimed at the accepting interface and configured wire
+port, the optional NOW Extension, and explicitly enumerated files from the
+external dependency store. A missing CarbonLib row can download the known
+1.6.1 archive directly into that store after verifying its published SHA-1;
+NOW wraps the unchanged StuffIt bytes in MacBinary with `SIT5` / `SIT!`
+metadata before serving them. It can now also generate one setup disk: native
+packages and generated preferences on a bare HFS Plus volume, inside an
+uncompressed NDIF image with `rohd` / `ddsk` metadata, inside MacBinary for
+HTTP. The recommended `/now/setup.img` route uses the classic MacBinary MIME
+type without a forced `.bin` attachment; `/now/setup.img.bin` preserves an
+explicit envelope fallback. Unknown routes and mutation methods are refused;
+quit stops the listener. The product and server contract are in
+[onboarding.md](onboarding.md).
+
+**Updated 2026-08-09:** the original image-sizing rule admitted both a native
+`CarbonLib.bin` and its matching StuffIt archive, then reserved twice the
+combined package bytes plus 4 MiB. That produced a 19 MiB uncompressed disk
+for about 5.4 MiB of installed files; none of those extra bytes were Xcode or
+Swift content. Known dependency representations are now deduplicated with the
+native file preferred, and the image is payload plus 1 MiB, rounded up with an
+8 MiB floor. The onboarding sheet now makes each optional installed item a
+selection, explicitly rebuilds one cached image, and shows the live image's
+name, disk size, transfer size, time and contents. Selection changes are
+reported as pending until a successful rebuild replaces the bytes served by
+both setup-image routes.
+
+**Updated again 2026-08-09:** the 8 MiB floor above was still transfer padding,
+not a property of the selected files. It has been removed. The builder now
+restores the selected native files into a staging directory, measures that
+directory, creates HFS against the measured content, and uses the formatted
+volume's own free-block count to tighten the result to at most 64 KiB free.
+The realistic app, extension and CarbonLib fork sizes produce a 5,607,424-byte
+raw disk with 36,864 bytes free. The MacBinary envelope adds only its header
+and block padding to those filesystem sectors.
+
+**Host acceptance 2026-08-09:** the `457823dd` release build's item selection,
+explicit rebuild, image details and content-fitted result were exercised and
+accepted after the earlier 2.6 MiB of free space was removed. This closes the
+host UI and image-sizing acceptance question. It does not close the classic
+browser or physical-Mac boundaries named below.
+
+The focused host tests pass. Two use the real temporary listener over loopback
+to fetch the page, application and preferences, and to exercise unknown-route
+and POST refusal. The preference test separately pins the MacBinary header,
+CRC, Finder type/creator, big-endian V1 magic/format/port, and host field. The
+asset tests pin local-over-bundled precedence and dependency discovery. The
+new dependency tests pin explicit catalog enumeration, refusal before write on
+checksum mismatch, and the acquired archive's MacBinary name, data-fork
+boundary, Finder type and creator. A general encoder test pins both fork
+lengths and their independently padded regions.
+Each new guard was also watched failing against the mutation it names: a
+byte-swapped preference port, POST being admitted, and bundled assets taking
+precedence over the operator's local package store; additionally, a substituted
+Finder type, bypassed checksum comparison, and restored StuffIt archive link
+each produced the named failure. The new setup-image integration test builds
+and mounts the actual filesystem, then verifies both forks and Finder metadata;
+changing the NDIF Finder type from `rohd` to `dImg` produced its named failure.
+The 8 MiB capacity assertion, native-over-archive choice, and selection-to-
+served-image test were separately watched fail against mutations to the image
+floor, representation rank, and selection setter.
+The replacement content-fit guard was then watched fail when the old 8 MiB
+floor and 2.6 MiB free-space allowance were restored together: it named the
+8,388,608-byte carrier as exceeding the sub-6-MiB bound.
+
+`scripts/test-all` exits 0 after the HFS/NDIF checkpoint: staged-image
+discipline 28/28,
+native tests 149/149, MirrorKit, all guest/resident/instrument cross-builds,
+the complete host suites, and the Xcode app target in Debug and Release all
+pass. Stage 6 skips honestly because `NOW_GUEST_LIVE` was not set; nothing in
+that run reached a Macintosh.
+
+Disk Copy 6.3.3 on the Mac OS 9.1 QEMU guest mounted a generated setup image
+and exposed its Read Me, application, preferences, extension and Dependencies
+folder. This is emulator evidence for the image carrier, not a physical-metal
+result. What remains unverified is the browser boundary: no Netscape, Internet
+Explorer or Classilla-era browser has yet downloaded `/now/setup.img` and
+automatically decoded its MacBinary envelope; no physical PPC
+Mac has installed the generated preference file, launched the guest, and sent
+the `hello` that makes it appear under Active. CarbonLib remains external: NOW
+has pinned the mirror bytes and independently published checksum, but has not
+established Apple redistribution permission. The builder can use open-source
+`unar`/XADMaster on the host, and the test kit avoids that runtime dependency
+by carrying a locally prepared native `CarbonLib.bin`; a release-pinned helper
+bundle and its update policy remain unverified. The product intentionally does
+not create StuffIt: the HFS/NDIF disk is the single-package carrier instead.
+
 **There is a third category, and it is not on this page.**
 [known-wrong.md](known-wrong.md) is the register of things NOW knowingly
 ships that disagree with the machine, or knowingly does not do — each
