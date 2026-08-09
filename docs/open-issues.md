@@ -37,6 +37,15 @@ to fetch the page, application and preferences, and to exercise unknown-route
 and POST refusal. The preference test separately pins the MacBinary header,
 CRC, Finder type/creator, big-endian V1 magic/format/port, and host field. The
 asset tests pin local-over-bundled precedence and dependency discovery.
+Each new guard was also watched failing against the mutation it names: a
+byte-swapped preference port, POST being admitted, and bundled assets taking
+precedence over the operator's local package store.
+
+`scripts/test-all` exits 0 on this branch: staged-image discipline 28/28,
+native tests 149/149, MirrorKit, all guest/resident/instrument cross-builds,
+the complete host suites, and the Xcode app target in Debug and Release all
+pass. Stage 6 skips honestly because `NOW_GUEST_LIVE` was not set; nothing in
+that run reached a Macintosh.
 
 What remains unverified is the product path: no Netscape, Internet Explorer or
 Classilla-era browser has downloaded and decoded these files; no physical PPC
