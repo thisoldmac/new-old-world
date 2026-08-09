@@ -194,11 +194,6 @@ enum MirrorPerformDisposition: Equatable {
     /// In the broker's lane under this id, with a typed postcondition. A
     /// record for it exists in the journal already.
     case brokered(String)
-    /// Arrived while an observation was in flight, so it is held: no
-    /// record yet, and one is coming through this same door when the
-    /// cycle clears. Indistinguishable from `.direct` by journal
-    /// inspection alone, which is exactly the 2026-08-05 defect.
-    case held
     /// Dispatched with no typed postcondition. Seven of the fourteen
     /// plans are like this by construction, and nothing will ever settle
     /// them — a caller that mistook a `.held` act for one of these would
@@ -2411,8 +2406,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// at once with the reason beside it. The other three dispositions all
     /// mean the act LEFT, and none of them is evidence that it worked:
     /// `.direct` is dispatched with no typed postcondition and *nothing will
-    /// ever settle it*, `.held` has a record still coming, and `.brokered`
-    /// settles later through the broker's lane. Answering `.confirmed` for
+    /// ever settle it*, while `.brokered` settles later through the broker's
+    /// lane. Answering `.confirmed` for
     /// any of them would be reporting dispatch as success, which is the exact
     /// shape of the AppleScript lie this whole surface replaced.
     ///
@@ -2501,10 +2496,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// - `finderOpen` at a guest whose interaction plane had never armed
     ///   logged `NOT DISPATCHED: Interaction policy is off` and answered
     ///   MCP `dispatched`. Fixed by returning the sentence at all.
-    /// - A `finderOpen` that arrived mid-observation was HELD, so no
-    ///   record existed yet, and the same absence was read as the direct
-    ///   path: MCP was told `id: "direct"` — never settles, stop waiting —
-    ///   for an act that went on to settle `confirmed`. That is this type.
+    /// - A `finderOpen` that arrived mid-observation used to be held outside
+    ///   the journal, so the same absence was read as the direct path: MCP was
+    ///   told `id: "direct"` — never settles, stop waiting — for an act that
+    ///   went on to settle `confirmed`. Brokered operations are now minted
+    ///   synchronously and only their dispatch waits in the scheduler.
     @discardableResult
     func perform(_ interaction: Interaction,
                  source: MirrorOperationSource) -> MirrorPerformDisposition {

@@ -66,38 +66,6 @@ final class MirrorDriveServiceTests: XCTestCase {
                        "the direct path can never be confirmed by observation")
     }
 
-    /// **The third ending that used to be `nil` too**, and the one that
-    /// cost a live drive: an act arriving while an observation is in
-    /// flight is HELD, so no record exists yet. The old service diffed
-    /// the journal, found nothing, and answered `id: "direct",
-    /// awaitsObservation: false` — *stop waiting, this can never settle*
-    /// — about the exact act that went on to settle `confirmed`
-    /// (2026-08-05).
-    func testAHeldActIsNotReportedAsTheDirectPath() throws {
-        let service = MirrorDriveService(
-            scene: { try? self.makeScene() },
-            perform: { _ in .held },
-            journal: { MirrorOperationJournal() },   // empty, as it is then
-            cancel: { 0 })
-
-        let reply = service.drive(.init(gesture: .finderOpen,
-                                        itemName: "Macintosh HD",
-                                        container: "desktop"))
-        let operation = try XCTUnwrap(reply.operation)
-
-        XCTAssertNotEqual(operation.id, "direct",
-                          "a held act is not the direct path; the absence "
-                              + "of a record is what makes them look alike")
-        XCTAssertEqual(operation.outcome, "queued")
-        XCTAssertFalse(operation.settled)
-        XCTAssertTrue(operation.awaitsObservation,
-                      "the record is coming and it settles by observation; "
-                          + "false here is what tells a caller to give up")
-        XCTAssertTrue(operation.reason?.contains(
-            "now_semantic_ui_journal") ?? false)
-        XCTAssertFalse(operation.reason?.contains("now_mirror_") ?? true)
-    }
-
     /// And a brokered act is fetched by the id `perform` returned, rather
     /// than by looking for a record that resembles the request. The old
     /// code took `records.last { !before.contains($0.id) }`, which is a

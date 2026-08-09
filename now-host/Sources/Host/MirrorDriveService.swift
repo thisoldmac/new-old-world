@@ -73,10 +73,10 @@ struct MirrorDriveService {
              interaction plane had never armed: the host logged `NOT
              DISPATCHED: Interaction policy is off` and told MCP the act
              `dispatched`;
-           - a HELD act, waiting for the observation in flight — measured
-             the same day: a `finderOpen` was answered `id: "direct"`,
-             which says *nothing will ever settle this*, and it settled
-             `confirmed` from observation a few seconds later;
+           - a formerly HELD act, waiting for the observation in flight —
+             measured the same day: a `finderOpen` was answered `id:
+             "direct"`, which says *nothing will ever settle this*, and it
+             settled `confirmed` from observation a few seconds later;
            - and the direct path itself, the only one the reading was
              ever true of.
 
@@ -86,19 +86,6 @@ struct MirrorDriveService {
             return .init(operation: .init(
                 id: "not-dispatched", outcome: "refused", reason: refusal,
                 settled: true, awaitsObservation: false))
-
-        case .held:
-            /* No id yet — the operation is minted when it re-enters the
-               dispatch door, against whichever scene is newest then. What
-               the caller needs now is that one is coming and that it will
-               settle by observation, so it polls the journal instead of
-               giving up on a settlement that is on its way. */
-            return .init(operation: .init(
-                id: "held", outcome: "queued",
-                reason: "held behind the observation in flight; it enters "
-                    + "the lane when the cycle clears. Read "
-                    + "now_semantic_ui_journal for its record.",
-                settled: false, awaitsObservation: true))
 
         case .direct:
             return .init(operation: .init(
