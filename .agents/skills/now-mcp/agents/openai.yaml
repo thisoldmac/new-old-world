@@ -1,0 +1,12 @@
+interface:
+  display_name: "NOW MCP"
+  short_description: "Route classic Macintosh tasks through NOW"
+  default_prompt: "Use $now-mcp to inspect the connected classic Macintosh."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "now"
+      description: "NOW's local companion for a connected classic Macintosh"
+      transport: "stdio"
+policy:
+  allow_implicit_invocation: true
