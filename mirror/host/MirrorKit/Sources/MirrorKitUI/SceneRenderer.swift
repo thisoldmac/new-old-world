@@ -680,7 +680,7 @@ public struct SceneRenderer {
         // Right side, in the OS 9 order: the Application menu is RIGHTMOST —
         // it is the app switcher, and it carries the front app's icon — with
         // the clock to its left. This used to be the other way round.
-        let front = scene.apps.first(where: { $0.front })
+        let front = HitTester.switchableApps(scene).first(where: { $0.front })
         let appWidth = CGFloat(HitTester.appMenuWidth(scene))
         let appLeft = bounds.width - appWidth
         let guestAppMenuOpen = openMenu.flatMap { index in

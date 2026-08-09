@@ -194,7 +194,7 @@ public enum HitTester {
         })?.left, left > 0, left < scene.screen.w {
             return scene.screen.w - left
         }
-        let name = scene.apps.first(where: { $0.front })?.name ?? ""
+        let name = switchableApps(scene).first(where: { $0.front })?.name ?? ""
         return 24 + name.count * 6 + 10
     }
 

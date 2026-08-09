@@ -1182,7 +1182,9 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                way it does not depend on where the row was drawn, which is
                what used to make selection miss below a separator. */
             act(ObjectResolver.menuItem(item, in: menu, index: item.index,
-                                        apps: controller.scene?.apps ?? []),
+                                        apps: controller.scene.map {
+                                            HitTester.switchableApps($0)
+                                        } ?? []),
                 .click(count: 1, mods: 0, at: Point(x: p.x, y: p.y)))
         }
         // Clicking a different title while open switches menus.

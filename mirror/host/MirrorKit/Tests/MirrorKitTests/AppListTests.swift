@@ -83,13 +83,67 @@ final class AppListTests: XCTestCase {
         XCTAssertTrue(menu.items[4].mark)
     }
 
-    func testGuestApplicationMenuIsNeverReplaced() {
+    func testCompleteGuestApplicationMenuIsNeverReplaced() {
         var original = realisticScene()
         original.menubar = .init(app: "Finder", menus: [
             .init(title: "", apple: false, left: 700,
-                  id: ObjectResolver.applicationMenuID, items: [])
+                  id: ObjectResolver.applicationMenuID, items: [
+                    .init(title: "Finder", index: 9, separator: false,
+                          enabled: true, mark: true, cmd: ""),
+                    .init(title: "SimpleText", index: 10, separator: false,
+                          enabled: true, mark: false, cmd: "")
+                  ])
         ])
         XCTAssertEqual(ApplicationMenuProjection.projecting(original), original)
+    }
+
+    func testEmptyGuestApplicationMenuIsRebuiltFromProcessRoster() throws {
+        var original = scene(
+            apps: [],
+            processes: [
+                .init(psn: "0.1", name: "Finder", front: true,
+                      signature: "MACS"),
+                .init(psn: "0.2", name: "SimpleText", front: false,
+                      signature: "ttxt"),
+            ],
+            windows: [win("0.1", "Desktop", app: "Finder"),
+                      win("0.2", "Untitled 1")])
+        original.menubar = .init(app: "Finder", menus: [
+            .init(title: "", apple: false, left: 704,
+                  id: ObjectResolver.applicationMenuID, items: [])
+        ])
+
+        let projected = ApplicationMenuProjection.projecting(original)
+        let menu = try XCTUnwrap(projected.menubar?.menus.first {
+            $0.id == ObjectResolver.applicationMenuID
+        })
+
+        XCTAssertEqual(menu.left, 704,
+                       "the guest's measured title position remains true")
+        XCTAssertEqual(menu.items.dropFirst(4).map(\.title),
+                       ["Finder", "SimpleText"])
+        XCTAssertEqual(projected.apps.map(\.name), ["Finder", "SimpleText"])
+        XCTAssertEqual(HitTester.appMenuWidth(projected), 96)
+    }
+
+    func testIncompleteGuestApplicationMenuIsRebuiltInsteadOfDroppingApps()
+        throws {
+        var original = realisticScene()
+        original.menubar = .init(app: "Finder", menus: [
+            .init(title: "", apple: false, left: 700,
+                  id: ObjectResolver.applicationMenuID, items: [
+                    .init(title: "Finder", index: 5, separator: false,
+                          enabled: true, mark: true, cmd: "")
+                  ])
+        ])
+
+        let menu = try XCTUnwrap(
+            ApplicationMenuProjection.projecting(original)
+                .menubar?.menus.first {
+                    $0.id == ObjectResolver.applicationMenuID
+                })
+        XCTAssertEqual(menu.items.dropFirst(4).map(\.title),
+                       ["Finder", "SimpleText"])
     }
 
     // MARK: - includeBackground
