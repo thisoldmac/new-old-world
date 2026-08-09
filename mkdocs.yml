@@ -55,6 +55,10 @@ markdown_extensions:
 extra_css:
   - assets/stylesheets/now-docs.css
 
+extra_javascript:
+  - https://unpkg.com/mermaid@11.16.1/dist/mermaid.min.js
+  - assets/javascripts/mermaid-init.js
+
 exclude_docs: |
   *
   !index.md
@@ -131,6 +135,7 @@ nav:
           - Add a module: developer-guide/workflows/add-a-module.md
           - Emulator and metal: developer-guide/workflows/emulator-and-metal.md
           - Documentation and gates: developer-guide/workflows/documentation-and-gates.md
+          - Release documentation: developer-guide/workflows/release-documentation.md
       - Reference:
           - Verification levels: developer-guide/reference/verification-levels.md
           - Source authority: developer-guide/reference/source-authority.md

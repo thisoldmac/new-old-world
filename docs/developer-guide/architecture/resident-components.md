@@ -26,3 +26,12 @@ Text equivalent: resident callbacks observe or act in the foreign application, w
 
 `contract/peek_table.h` is compiled by every reader and writer, with layout assertions. A change to `ext/` or that header requires an exact-source bake receipt before landing on `main`; a written deferral may permit a checkpoint but never the landing.
 
+<!-- derived-doc v1
+sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
+sources-sha1: b0ddba20e9d122e0f974b1040d450772888710c1
+derive resident-contract sha256=e423b6ffb62efdc0b3f336dd334c3df87437691f7d41ddb8e81d8536e9cd15fa lines=11
+    scripts/docs-source-group resident
+rederived: pending
+rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, resident-contract 11->11
+rederived: 2026-08-09T16:29:42-0400 9034e3eb sources
+-->

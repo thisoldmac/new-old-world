@@ -29,6 +29,12 @@ REQUIRED_META = {
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+MERMAID_RE = re.compile(r"```mermaid\s*\n(.*?)\n```", re.DOTALL)
+MODULE_SECTIONS = {
+    "What it does", "Availability", "On the modern Mac", "On the classic Mac",
+    "Common tasks", "Safety, consent, and privacy", "Failure states",
+    "Current limitations", "For developers",
+}
 
 
 class DocsLoader(yaml.SafeLoader):
@@ -144,6 +150,11 @@ class SiteHTML(HTMLParser):
         self.main = 0
         self.h1 = 0
         self.skip_link = False
+        self.canonical = ""
+        self.images = 0
+        self.unlabelled_images = 0
+        self.tables = 0
+        self.mermaid = 0
         self.json_ld: list[str] = []
         self._json = False
 
@@ -162,6 +173,16 @@ class SiteHTML(HTMLParser):
         elif tag == "script" and values.get("type") == "application/ld+json":
             self._json = True
             self.json_ld.append("")
+        elif tag == "link" and "canonical" in (values.get("rel") or "").split():
+            self.canonical = values.get("href") or ""
+        elif tag == "img":
+            self.images += 1
+            if not (values.get("alt") or "").strip():
+                self.unlabelled_images += 1
+        elif tag == "table":
+            self.tables += 1
+        elif "mermaid" in (values.get("class") or "").split():
+            self.mermaid += 1
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "script":
@@ -205,6 +226,26 @@ def ref_exists(document: object, ref: str) -> bool:
             return False
         current = current[token]
     return True
+
+
+def mermaid_error(source: str) -> str | None:
+    lines = [line.strip() for line in source.splitlines() if line.strip() and not line.strip().startswith("%%")]
+    if not lines:
+        return "empty Mermaid fence"
+    first = lines[0]
+    if first.startswith(("flowchart", "graph")) and not re.match(r"^(flowchart|graph)\s+(TB|TD|BT|RL|LR)$", first):
+        return f"invalid flowchart declaration {first!r}"
+    allowed = (
+        "flowchart ", "graph ", "sequenceDiagram", "stateDiagram", "classDiagram",
+        "erDiagram", "journey", "timeline", "gitGraph", "pie", "quadrantChart",
+        "mindmap", "architecture-beta", "block-beta",
+    )
+    if not first.startswith(allowed):
+        return f"unknown Mermaid diagram declaration {first!r}"
+    for opening, closing in (("[", "]"), ("(", ")"), ("{", "}")):
+        if source.count(opening) != source.count(closing):
+            return f"unbalanced {opening}{closing} delimiters"
+    return None
 
 
 def check(root: Path, site_dir: Path | None) -> int:
@@ -268,6 +309,22 @@ def check(root: Path, site_dir: Path | None) -> int:
             r"^##\s+(Steps|Procedure|Before you begin)\s*$", body, re.MULTILINE | re.IGNORECASE
         ):
             errors.append(f"{rel}: reference page contains a procedure heading; link to a how-to page")
+        module_ids = meta.get("module_ids")
+        if module_ids:
+            present = {text for marks, text in HEADING_RE.findall(body) if len(marks) == 2}
+            missing_sections = sorted(MODULE_SECTIONS - present)
+            if missing_sections:
+                errors.append(f"{rel}: module page is missing sections: {', '.join(missing_sections)}")
+
+        for diagram in MERMAID_RE.findall(body):
+            issue = mermaid_error(diagram)
+            if issue:
+                errors.append(f"{rel}: {issue}")
+        mermaid_matches = list(MERMAID_RE.finditer(body))
+        for match in mermaid_matches:
+            following = body[match.end():match.end() + 500]
+            if not re.search(r"\bText equivalent:", following, re.IGNORECASE):
+                errors.append(f"{rel}: Mermaid diagram lacks a nearby text equivalent")
 
     published = published_files(root, nav)
     for path in published:
@@ -367,6 +424,19 @@ def check(root: Path, site_dir: Path | None) -> int:
     integration = load_yaml(docs / "site-integration.yaml")
     if integration.get("base_path") != "/docs/":
         errors.append("docs/site-integration.yaml: base_path must be /docs/")
+    required_check = str(integration.get("required_ci_check") or "")
+    workflow = (root / ".github/workflows/ci.yml").read_text()
+    if not required_check or f"name: {required_check}" not in workflow:
+        errors.append(f"CI workflow does not expose the recorded required check {required_check!r}")
+    if "run: NOW_DOCS_PYTHON=python scripts/test-docs" not in workflow:
+        errors.append("CI Documentation job does not run scripts/test-docs")
+    test_all = (root / "scripts/test-all").read_text()
+    stages = re.findall(r'echo "==> \[(\d+)/(\d+)\] ([^"]+)"', test_all)
+    if not stages or stages[0][2] != "documentation gate":
+        errors.append("scripts/test-all: documentation gate must be stage 1")
+    for hook in (".githooks/pre-commit", ".githooks/pre-merge-commit"):
+        if "docs-commit-gate" not in (root / hook).read_text():
+            errors.append(f"{hook}: documentation merge gate is not wired")
     if os.environ.get("NOW_DOCS_RELEASE"):
         for key in integration.get("release_requirements", []):
             if not integration.get(key):
@@ -380,13 +450,15 @@ def check(root: Path, site_dir: Path | None) -> int:
             )
 
     if site_dir:
-        representative = [
-            site_dir / "index.html",
-            site_dir / "user-guide/tutorials/first-connection/index.html",
-            site_dir / "user-guide/reference/modules/files/index.html",
-            site_dir / "developer-guide/architecture/system-context/index.html",
-        ]
-        for path in representative:
+        representative = {
+            site_dir / "index.html": {"product": True},
+            site_dir / "user-guide/tutorials/first-connection/index.html": {},
+            site_dir / "user-guide/how-to/configure-connection/index.html": {},
+            site_dir / "user-guide/reference/modules/files/index.html": {"images": True},
+            site_dir / "developer-guide/architecture/system-context/index.html": {"mermaid": True},
+            site_dir / "developer-guide/reference/verification-levels/index.html": {"table": True, "mermaid": True},
+        }
+        for path, expected in representative.items():
             if not path.exists():
                 errors.append(f"rendered representative page is missing: {path}")
                 continue
@@ -400,13 +472,29 @@ def check(root: Path, site_dir: Path | None) -> int:
                 errors.append(f"{path}: rendered html has {parser.h1} H1 elements")
             if not parser.skip_link:
                 errors.append(f"{path}: rendered html has no skip link")
+            if not parser.canonical:
+                errors.append(f"{path}: rendered html has no canonical URL")
+            if parser.unlabelled_images:
+                errors.append(f"{path}: rendered html has {parser.unlabelled_images} image(s) without alt text")
+            if expected.get("images") and parser.images < 1:
+                errors.append(f"{path}: representative image page rendered no images")
+            if expected.get("table") and parser.tables < 1:
+                errors.append(f"{path}: representative table page rendered no table")
+            if expected.get("mermaid") and parser.mermaid < 1:
+                errors.append(f"{path}: representative diagram page rendered no Mermaid container")
+            json_types: set[str] = set()
             for raw in parser.json_ld:
                 try:
                     value = json.loads(raw)
-                    if value.get("@type") != "TechArticle":
-                        errors.append(f"{path}: JSON-LD is not a TechArticle")
+                    if isinstance(value, dict) and isinstance(value.get("@type"), str):
+                        json_types.add(value["@type"])
                 except json.JSONDecodeError as exc:
                     errors.append(f"{path}: invalid JSON-LD: {exc}")
+            required_types = {"TechArticle", "BreadcrumbList"}
+            if expected.get("product"):
+                required_types.add("SoftwareApplication")
+            if not required_types.issubset(json_types):
+                errors.append(f"{path}: JSON-LD types are {sorted(json_types)}, need {sorted(required_types)}")
 
     placeholder = subprocess.run(
         [sys.executable, str(root / "tools/docs-placeholders"), "--check"],
@@ -426,6 +514,7 @@ def check(root: Path, site_dir: Path | None) -> int:
     notices.append(f"published links scanned: {sum(len(LINK_RE.findall(path.read_text())) for path in published)}")
     notices.append(f"media: {real_count} captured, {placeholder_count} placeholders")
     notices.append(f"module coverage: {len(rows)} host modules, {len(ppc_declared)} PPC pages")
+    notices.append(f"Mermaid diagrams: {sum(len(MERMAID_RE.findall(frontmatter(path)[1])) for path in curated)}")
     print("[docs-gate] passed")
     for notice in notices:
         print(f"  {notice}")
@@ -452,9 +541,50 @@ def contract_summary(root: Path) -> int:
     return 0
 
 
+def source_summary(root: Path, group: str) -> int:
+    if group == "contract":
+        return contract_summary(root)
+    if group == "build":
+        text = (root / "scripts/test-all").read_text()
+        for number, total, name in re.findall(r'echo "==> \[(\d+)/(\d+)\] ([^"]+)"', text):
+            print(f"{number}/{total}\t{name}")
+        return 0
+    if group == "setup":
+        naming = (root / "docs/naming.md").read_text()
+        for line in naming.splitlines():
+            if line.startswith("| ") and any(token in line for token in ("PowerPC Carbon guest", "68K guest", "Host application")):
+                print(" ".join(line.split()))
+        ppc = (root / "now-guest-ppc/CMakeLists.txt").read_text()
+        print(f"ppc-canonical-artifact\t{'New Old World.bin' if 'OUTPUT \"New Old World.bin\"' in ppc else 'missing'}")
+        guest_68k = (root / "now-guest-68k/CMakeLists.txt").read_text()
+        target = re.search(r"targets the ([^)]+)\) only", guest_68k)
+        print(f"68k-target\t{target.group(1) if target else 'unresolved'}")
+        return 0
+    if group == "resident":
+        header = (root / "contract/peek_table.h").read_text()
+        names = ["kNowPeekExtMajor", "kNowPeekMaxAnchors"]
+        names.extend(re.findall(r"\b(kNowPeekTableCap[A-Za-z]+)\s*=", header))
+        for name in names:
+            match = re.search(rf"\b{re.escape(name)}\s*=\s*([^,\n}}]+)", header)
+            if match:
+                print(f"{name}\t{' '.join(match.group(1).split())}")
+        return 0
+    if group == "mcp":
+        catalog = (root / "now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift").read_text()
+        block = catalog[catalog.index("public static let projections"):]
+        projections = re.findall(r"^\s*([A-Za-z0-9]+Projection)\.self,", block, re.MULTILINE)
+        print(f"host-projections\t{len(projections)}")
+        print(f"first\t{projections[0] if projections else 'none'}")
+        print(f"last\t{projections[-1] if projections else 'none'}")
+        return 0
+    print(f"unknown source group: {group}", file=sys.stderr)
+    return 2
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", nargs="?", default="check", choices=["check", "module-inventory", "contract-summary"])
+    parser.add_argument("command", nargs="?", default="check", choices=["check", "module-inventory", "contract-summary", "source-summary"])
+    parser.add_argument("group", nargs="?")
     parser.add_argument("--root")
     parser.add_argument("--site-dir")
     args = parser.parse_args()
@@ -463,6 +593,10 @@ def main() -> int:
         return module_inventory(root)
     if args.command == "contract-summary":
         return contract_summary(root)
+    if args.command == "source-summary":
+        if not args.group:
+            parser.error("source-summary requires a group")
+        return source_summary(root, args.group)
     site_dir = Path(args.site_dir).resolve() if args.site_dir else None
     return check(root, site_dir)
 

@@ -54,7 +54,7 @@ fi
 docs_changed=$(git diff --cached --name-only --diff-filter=ACMR | \
     grep -E '^(docs/|mkdocs\.yml$|README\.md$|CONTRIBUTING\.md$|AGENTS\.md$|contract/asyncapi\.yaml$|now-host/Sources/Host/ModuleRegistry\.swift$|now-guest-ppc/src/workshop/workshop_module\.h$|now-guest-68k/src/commands/commands68\.c$|scripts/docs-|scripts/test-docs$|tools/docs-)' || true)
 if [ -n "$docs_changed" ]; then
-    "$root/scripts/test-docs" || exit 1
+    "$root/tools/docs-commit-gate" || exit 1
 fi
 
 # ---------------------------------------------------------------------

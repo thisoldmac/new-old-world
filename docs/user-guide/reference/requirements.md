@@ -27,3 +27,13 @@ be exposed to the internet.
 The release bundle is authoritative for what ships. Source-build directories,
 emulator images, `.env.lab`, and private deployment credentials are contributor
 or lab material, not user prerequisites.
+
+<!-- derived-doc v1
+sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
+sources-sha1: a21f27b71e82651fa1271eeaf688ef82f5659224
+derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
+    scripts/docs-source-group setup
+rederived: pending
+rederived: 2026-08-09T16:22:15-0400 9034e3eb sources, setup-targets 5->5
+rederived: 2026-08-09T16:29:43-0400 9034e3eb sources
+-->

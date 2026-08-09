@@ -25,6 +25,11 @@
   border: 1px solid var(--md-default-fg-color--lighter);
 }
 
+.mermaid {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 @media (max-width: 20rem) {
   .md-content__inner {
     margin-inline: 0.35rem;

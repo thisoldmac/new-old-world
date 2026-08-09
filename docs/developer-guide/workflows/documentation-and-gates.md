@@ -38,6 +38,8 @@ tools/derived-doc-gate rederive docs/user-guide/reference/modules/index.md
 
 Use the rederive command for every page carrying a `derived-doc` block. Do not hand-edit its answers or hashes.
 
+The official AsyncAPI Generator remains a compatibility probe, not a required dependency. On 2026-08-09, its current CLI successfully parsed this contract after the missing `file.progress` channel registration was fixed, but installing it brought 1,732 packages and reported 33 dependency vulnerabilities, including seven critical. NOW's bounded projector reads the same AsyncAPI authority, includes the custom `x-commands` registry the stock Markdown template omitted, and keeps the landing gate small enough to run on every change.
+
 ## Run the landing gate
 
 ```sh

@@ -31,8 +31,8 @@ fi
 # A clean textual merge can still make a module map, contract projection, or
 # source digest stale. Run the whole docs gate on every automatic merge. The
 # conflicted-merge path is the staged-path check in pre-commit.
-if [ -x "$root/scripts/test-docs" ]; then
-    "$root/scripts/test-docs" || exit 1
+if [ -x "$root/tools/docs-commit-gate" ]; then
+    "$root/tools/docs-commit-gate" || exit 1
 fi
 
 # derived-doc-gate — BUILT, TESTED, AND DELIBERATELY NOT ARMED. It is

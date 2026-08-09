@@ -36,10 +36,12 @@ states both.
 
 <!-- derived-doc v1
 sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
-sources-sha1: e53767a359ebb3514eb9fa668ff3911c5fc6a425
+sources-sha1: a6deb21219ce5da078f95e39f9ba9f12ab52476a
 derive module-map sha256=cc0ab1776e68f234416b59a648261f6dbfa2ba5e8c3aeb38ac8031ca5a55375e lines=14
     scripts/docs-inventory
 rederived: pending
 rederived: 2026-08-09T16:10:26-0400 e74b3ab1 sources, module-map 14->14
 rederived: 2026-08-09T16:15:30-0400 e74b3ab1 sources
+rederived: 2026-08-09T16:22:21-0400 9034e3eb sources
+rederived: 2026-08-09T16:29:42-0400 9034e3eb sources
 -->

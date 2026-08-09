@@ -18,5 +18,36 @@
         }
       }
     </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Documentation",
+            "item": {{ config.site_url | tojson }}
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": {{ page.title | tojson }},
+            "item": {{ page.canonical_url | tojson }}
+          }
+        ]
+      }
+    </script>
+    {% if page.meta.page_id == "docs-home" %}
+      <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          "name": "New Old World",
+          "applicationCategory": "UtilitiesApplication",
+          "operatingSystem": "macOS, Mac OS 8.6-9.2.2, System 7.1"
+        }
+      </script>
+    {% endif %}
   {% endif %}
 {% endblock %}

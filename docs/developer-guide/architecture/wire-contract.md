@@ -64,3 +64,13 @@ Text equivalent: the initiator proposes one transfer, the receiver accepts or re
 ## Compatibility rule
 
 Fields are additive unless a revision explicitly changes meaning. Unknown enum values are not consent. Every local `$ref` must resolve, every behavior change begins in the contract, and both receiving directions must retain the same meaning.
+
+<!-- derived-doc v1
+sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
+sources-sha1: b07a826c6805e6d4f8a0201c1816e8b8f3e6f69d
+derive contract-summary sha256=55e4e7d1518abb241c6ac63a41a4f14740d239569498e3401c5940f6a44205b3 lines=6
+    scripts/docs-source-group contract
+rederived: pending
+rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, contract-summary 6->6
+rederived: 2026-08-09T16:29:42-0400 9034e3eb sources
+-->

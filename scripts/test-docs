@@ -18,10 +18,10 @@ fi
 cd "$root"
 "$python" "$root/tools/docs-placeholders" --check
 "$python" "$root/tools/docs-gate"
-"$python" "$root/tools/docs-gate-selftest"
 "$root/scripts/docs-contract" --check
 "$python" -m mkdocs build --strict --clean --quiet --site-dir "$site_dir"
 "$python" "$root/tools/docs-gate" --site-dir "$site_dir"
+"$python" "$root/tools/docs-gate-selftest" --site-dir "$site_dir"
 "$root/tools/derived-doc-gate" check-all
 
 echo "Documentation gate passed"

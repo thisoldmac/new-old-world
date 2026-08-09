@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
 import shutil
@@ -14,11 +15,14 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def run_gate(test_root: Path) -> subprocess.CompletedProcess[str]:
+def run_gate(test_root: Path, site_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["NOW_DOCS_GATE_ROOT"] = str(test_root)
+    command = [sys.executable, str(ROOT / "tools/docs-gate")]
+    if site_dir:
+        command.extend(["--site-dir", str(site_dir)])
     return subprocess.run(
-        [sys.executable, str(ROOT / "tools/docs-gate")],
+        command,
         cwd=test_root,
         env=env,
         text=True,
@@ -34,10 +38,11 @@ def replace(path: Path, old: str, new: str) -> str:
     return original
 
 
-def expect_mutation(test_root: Path, name: str, path: Path, old: str, new: str, needle: str) -> None:
+def expect_mutation(test_root: Path, name: str, path: Path, old: str, new: str, needle: str,
+                    site_dir: Path | None = None) -> None:
     original = replace(path, old, new)
     try:
-        result = run_gate(test_root)
+        result = run_gate(test_root, site_dir)
         output = result.stdout + result.stderr
         if result.returncode == 0 or needle not in output:
             raise RuntimeError(
@@ -49,14 +54,19 @@ def expect_mutation(test_root: Path, name: str, path: Path, old: str, new: str, 
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--site-dir")
+    args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="now-docs-gate-") as raw:
         test_root = Path(raw)
         shutil.copytree(ROOT / "docs", test_root / "docs")
         shutil.copytree(ROOT / "contract", test_root / "contract")
         shutil.copy2(ROOT / "mkdocs.yml", test_root / "mkdocs.yml")
+        for name in ("now-host", "now-guest-ppc", "now-guest-68k", ".github", ".githooks"):
+            shutil.copytree(ROOT / name, test_root / name)
         for name in (
             "AGENTS.md", "README.md", "CONTRIBUTING.md", "SECURITY.md",
-            "now-host", "now-guest-ppc", "now-guest-68k", "ext", "scripts", "tools",
+            "ext", "scripts", "tools",
         ):
             (test_root / name).symlink_to(ROOT / name, target_is_directory=(ROOT / name).is_dir())
 
@@ -72,6 +82,11 @@ def main() -> int:
             test_root, "broken link", test_root / "docs/index.md",
             "# New Old World documentation", "# New Old World documentation\n\n[missing](no-such-page.md)",
             "broken local link",
+        )
+        expect_mutation(
+            test_root, "broken fragment", test_root / "docs/index.md",
+            "# New Old World documentation", "# New Old World documentation\n\n[missing heading](user-guide/index.md#no-such-heading)",
+            "missing fragment",
         )
         expect_mutation(
             test_root, "image alt text", test_root / "docs/user-guide/tutorials/first-connection.md",
@@ -91,6 +106,15 @@ def main() -> int:
             "  - id: screen\n", "  - id: screen-renamed\n", "do not match host registry",
         )
         expect_mutation(
+            test_root, "host module without guide", test_root / "now-host/Sources/Host/ModuleRegistry.swift",
+            'id: "screen"', 'id: "screen-unmapped"', "do not match host registry",
+        )
+        expect_mutation(
+            test_root, "PPC page without mapping", test_root / "now-guest-ppc/src/workshop/workshop_module.h",
+            "    kWorkshopPreferences,", "    kWorkshopUnmapped,\n    kWorkshopPreferences,",
+            "do not match live enum",
+        )
+        expect_mutation(
             test_root, "AsyncAPI reference", test_root / "contract/asyncapi.yaml",
             '#/components/messages/fileProgress', '#/components/messages/doesNotExist',
             "dangling local $ref",
@@ -100,13 +124,95 @@ def main() -> int:
             "# Requirements", "# Requirements\n\n## Steps", "reference page contains a procedure heading",
         )
         expect_mutation(
+            test_root, "missing doc_type", test_root / "docs/developer-guide/index.md",
+            "doc_type: explanation\n", "", "missing front matter fields: doc_type",
+        )
+        expect_mutation(
+            test_root, "Mermaid syntax", test_root / "docs/developer-guide/architecture/system-context.md",
+            "flowchart LR", "flowchart", "invalid flowchart declaration",
+        )
+        expect_mutation(
             test_root, "source dependency", test_root / "docs/developer-guide/index.md",
             "source_dependencies: [AGENTS.md, contract/asyncapi.yaml, scripts/test-all]",
             "source_dependencies: [AGENTS.md, contract/nope.yaml, scripts/test-all]",
             "source dependency does not exist",
         )
+        expect_mutation(
+            test_root, "CI required-check wiring", test_root / ".github/workflows/ci.yml",
+            "name: Documentation", "name: Docs changed name",
+            "does not expose the recorded required check",
+        )
 
-    print("[docs-gate-selftest] all 9 source mutations refused")
+        generated = test_root / "docs/generated/asyncapi.md"
+        original_generated = replace(generated, "# Generated wire contract reference", "# Stale wire contract reference")
+        try:
+            env = os.environ.copy()
+            env["NOW_DOCS_GATE_ROOT"] = str(test_root)
+            stale = subprocess.run(
+                [sys.executable, str(ROOT / "tools/docs-contract-projector"), "--check"],
+                cwd=test_root, env=env, text=True, capture_output=True,
+            )
+            if stale.returncode == 0 or "generated reference is stale" not in stale.stderr:
+                raise RuntimeError("generated AsyncAPI mutation was not refused by name")
+            print("[docs-gate-selftest] generated AsyncAPI freshness: refused by name")
+        finally:
+            generated.write_text(original_generated)
+
+        image = test_root / "docs/assets/screenshots/overview/host.svg"
+        image_bytes = image.read_bytes()
+        image.unlink()
+        try:
+            missing_image = run_gate(test_root)
+            if missing_image.returncode == 0 or "missing file" not in missing_image.stderr:
+                raise RuntimeError("missing image mutation was not refused by name")
+            print("[docs-gate-selftest] missing image: refused by name")
+        finally:
+            image.write_bytes(image_bytes)
+
+        integration = test_root / "docs/site-integration.yaml"
+        configured = integration.read_text()
+        configured = configured.replace("canonical_origin: null", "canonical_origin: https://now.example")
+        configured = configured.replace("website_repository: null", "website_repository: https://example.invalid/now-site")
+        configured = configured.replace("security_contact: null", "security_contact: mailto:security@now.example")
+        configured = configured.replace("security_expires: null", "security_expires: 2099-08-09T00:00:00Z")
+        integration.write_text(configured)
+        release_site = test_root / "release-site"
+        env = os.environ.copy()
+        env["NOW_DOCS_GATE_ROOT"] = str(test_root)
+        generated_release = subprocess.run(
+            [sys.executable, str(ROOT / "tools/docs-release-assets"), "--site-dir", str(release_site)],
+            cwd=test_root, env=env, text=True, capture_output=True,
+        )
+        if generated_release.returncode:
+            raise RuntimeError("release asset fixture failed:\n" + generated_release.stdout + generated_release.stderr)
+        configured = integration.read_text()
+        integration.write_text(configured.replace("mailto:security@now.example", "mailto:changed@now.example"))
+        stale_security = subprocess.run(
+            [sys.executable, str(ROOT / "tools/docs-release-assets"), "--site-dir", str(release_site), "--check"],
+            cwd=test_root, env=env, text=True, capture_output=True,
+        )
+        if stale_security.returncode == 0 or "release asset is stale" not in stale_security.stderr:
+            raise RuntimeError("security.txt source mismatch was not refused by name")
+        print("[docs-gate-selftest] security.txt source mismatch: refused by name")
+
+        if args.site_dir:
+            rendered = test_root / "rendered"
+            shutil.copytree(Path(args.site_dir), rendered)
+            index = rendered / "index.html"
+            expect_mutation(
+                test_root, "rendered language", index, 'lang="en"', 'lang=""',
+                "rendered html lacks lang=en", rendered,
+            )
+            expect_mutation(
+                test_root, "canonical URL", index, 'rel="canonical"', 'rel="alternate"',
+                "rendered html has no canonical URL", rendered,
+            )
+            expect_mutation(
+                test_root, "structured data", index, '"@type": "TechArticle"', '"@type": "BrokenArticle"',
+                "JSON-LD types", rendered,
+            )
+
+    print("[docs-gate-selftest] all documentation mutations refused")
     return 0
 
 

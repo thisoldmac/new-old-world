@@ -3,9 +3,9 @@
 #
 #     scripts/test-all
 #
-#   1. image gates    - the staged-image discipline gates, ~3 seconds
-#   2. native tests   - both guests' pure logic, host cc, ~2 seconds
-#   3. documentation  - source, projection, render, and mutation gates
+#   1. documentation  - source, projection, render, and mutation gates
+#   2. image gates    - the staged-image discipline gates, ~3 seconds
+#   3. native tests   - both guests' pure logic, host cc, ~2 seconds
 #   4. MirrorKit      - the host-owned semantic/render package, ~15s
 #   5. guest builds   - both cross-compilers (skipped without Retro68)
 #   6. host gate      - suites plus both Xcode configurations
@@ -96,19 +96,19 @@ if [ "$hooks_armed" = no ] && [ -z "${TBT_ALLOW_UNARMED_HOOKS:-}" ]; then
     exit 1
 fi
 
-echo "==> [1/7] staged-image discipline gates"
+echo "==> [1/7] documentation gate"
+"$script_dir/test-docs" || fail "documentation gate"
+
+echo
+echo "==> [2/7] staged-image discipline gates"
 # First because it is cheap, and because a broken image gate is the one
 # failure that makes every LATER result unattributable rather than wrong:
 # it decides whether anybody can say which resident a measurement came from.
 "$script_dir/../tools/image-discipline-tests" || fail "staged-image gates"
 
 echo
-echo "==> [2/7] native tests"
+echo "==> [3/7] native tests"
 "$script_dir/test-native" || fail "native tests"
-
-echo
-echo "==> [3/7] documentation gate"
-"$script_dir/test-docs" || fail "documentation gate"
 
 echo
 echo "==> [4/7] MirrorKit gate"

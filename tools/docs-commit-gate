@@ -1,0 +1,27 @@
+#!/bin/sh
+# Fleet-safe entrypoint for hooks and gate-impact-sweep.
+#
+# A branch that predates the documentation system does not carry enough files
+# to run it. Passing there does not weaken main: the branch's old hook also
+# predates this entrypoint. Once that branch merges the main change, all three
+# required files arrive together and every later commit/merge runs the gate.
+set -eu
+
+root=${TBT_GATE_ROOT:-$(git rev-parse --show-toplevel)}
+if [ ! -f "$root/mkdocs.yml" ] || [ ! -f "$root/docs/requirements.txt" ] || [ ! -x "$root/scripts/test-docs" ]; then
+    echo "[docs-commit-gate] documentation infrastructure is not present on this pre-gate branch"
+    exit 0
+fi
+
+python=${NOW_DOCS_PYTHON:-python3}
+if [ -x "$root/.docs-venv/bin/python" ]; then
+    python="$root/.docs-venv/bin/python"
+fi
+if ! "$python" -c 'import mkdocs, yaml' >/dev/null 2>&1; then
+    echo "[docs-commit-gate] WARNING: local documentation dependencies are missing." >&2
+    echo "  CI and scripts/test-all remain authoritative; install locally with:" >&2
+    echo "  uv venv .docs-venv && uv pip install --python .docs-venv/bin/python -r docs/requirements.txt" >&2
+    exit 0
+fi
+
+exec "$root/scripts/test-docs"
