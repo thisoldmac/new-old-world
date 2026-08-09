@@ -1523,6 +1523,78 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     reply_rows(out, cap, id, "menuact", &rows);
 }
 
+/* P8 cursor-only adjunct. The opaque window reference supplies the owning
+   process/A5 world and bounds the point; the operation changes no selection,
+   front order, or Finder state. */
+void now_act_run_cursoract(const char *request_json, long id,
+                           char *out, long cap)
+{
+    NowObsHandle handle;
+    NowPeekActCell *cell;
+    ActRows rows;
+    char ref[kNowObsTokenMax];
+    NowActStatus st;
+    long h = 0;
+    long v = 0;
+    const NowAxWindow *w;
+
+    now_act_begin_command();
+    if (arg_int_malformed(request_json, "h")
+        || arg_int_malformed(request_json, "v")
+        || !arg_int(request_json, "h", &h)
+        || !arg_int(request_json, "v", &v)) {
+        reply_error(out, cap, id, "bad-request",
+                    "cursoract requires numeric h and v");
+        return;
+    }
+    if (!resolve_for_act(request_json, id, out, cap, kNowObsKindWindow,
+                         &handle, ref, 1)) {
+        return;
+    }
+    w = &handle.detail.window;
+    if (w->right <= w->left || w->bottom <= w->top
+        || h < w->left || h >= w->right
+        || v < w->top || v >= w->bottom) {
+        reply_error(out, cap, id, "bad-request",
+                    "cursoract's point must be inside the window named by "
+                    "its observation reference");
+        return;
+    }
+    cell = now_act_cell();
+    if (cell == NULL) {
+        reply_status(out, cap, id, now_act_why_no_cell());
+        return;
+    }
+    cell->op = kNowPeekActOpCursorPlace;
+    cell->window_ptr = (NowPeekU32)handle.detail.window.address;
+    cell->click_h = (NowPeekI32)h;
+    cell->click_v = (NowPeekI32)v;
+    st = now_act_submit(&g_target, &g_snap);
+    if (st == kNowActRefused) {
+        reply_plane_error(out, cap, id, &g_snap);
+        return;
+    }
+    if (st != kNowActOk) {
+        reply_registered_status(out, cap, id, st);
+        return;
+    }
+    if (!g_snap.fired) {
+        now_act_withdraw();
+        reply_registered_error(out, cap, id, "act-not-taken",
+                               "the resident did not place the cursor");
+        return;
+    }
+    now_act_withdraw();
+    rows_reset(&rows);
+    row_add(&rows, "Window", ref);
+    row_addf(&rows, "At h", "%ld", h);
+    row_addf(&rows, "At v", "%ld", v);
+    row_add(&rows, "Dispatch", "placed");
+    row_add(&rows, "Mechanism", "resident P8 cursor plane");
+    settlement_rows(&rows);
+    reply_rows(out, cap, id, "cursoract", &rows);
+}
+
 /* ---- dragpress / dragmove / dragrelease (P7) ---------------------------
  *
  * THREE VERBS FOR ONE GESTURE, and the asymmetry between them is the

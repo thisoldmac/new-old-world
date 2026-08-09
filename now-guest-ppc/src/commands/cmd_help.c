@@ -186,6 +186,13 @@ static const char *const d_winact[] = {
     "  with a save dialog and the window stays open. That is correct.",
     NULL
 };
+static const char *const d_cursoract[] = {
+    "  Places the drawn cursor at one point inside an observed window.",
+    "  It clicks nothing and changes no front order or selection.",
+    "  The window reference binds the point to one process and A5 world.",
+    "  NOT TYPEABLE usefully - the reference comes from observation.",
+    NULL
+};
 static const char *const d_textget[] = {
     "  The only third of the act plane that changes nothing, which is",
     "  why it is its own command: a Mac whose owner agreed to be read",
@@ -614,6 +621,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "elements [serialHi serialLo]", d_elements },
     { "winact", 1, "move, resize, zoom or close one window",
       "winact <window> <action> [geometry]", d_winact },
+    { "cursoract", 1, "place the cursor inside one observed window",
+      "cursoract <window> <h> <v>", d_cursoract },
     { "textget", 1, "read one text element's contents",
       "textget <element>", d_textget },
     { "textset", 1, "replace one text element's contents",

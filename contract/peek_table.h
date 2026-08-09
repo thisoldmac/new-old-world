@@ -301,7 +301,10 @@ enum {
        item does - it names a point, and the point is not an identity.
        What it binds instead is the SESSION nonce, which is unique to one
        gesture and is exactly what a stale request must not match. */
-    kNowPeekActKindDrag = 10
+    kNowPeekActKindDrag = 10,
+    /* P8 adjunct: place the drawn cursor in one observed window's owning
+       process without also clicking, selecting, or changing front order. */
+    kNowPeekActKindCursor = 11
 };
 
 /* What a request asks for. */
@@ -342,7 +345,8 @@ enum {
 
        So: the press is a REQUEST (it needs the target's context, its
        identity check and its A5). The rest of the gesture is a SESSION. */
-    kNowPeekActOpDragPress = 9
+    kNowPeekActOpDragPress = 9,
+    kNowPeekActOpCursorPlace = 10
 };
 
 enum {

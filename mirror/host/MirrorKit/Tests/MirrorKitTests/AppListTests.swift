@@ -71,6 +71,27 @@ final class AppListTests: XCTestCase {
                        HitTester.switchableApps(s).map(\.psn))
     }
 
+    func testApplicationMenuIsSynthesizedFromTheSameRoster() throws {
+        let projected = ApplicationMenuProjection.projecting(realisticScene())
+        let menu = try XCTUnwrap(projected.menubar?.menus.first {
+            $0.id == ObjectResolver.applicationMenuID
+        })
+        XCTAssertEqual(menu.items.prefix(4).map(\.title),
+                       ["Hide Finder", "Hide Others", "Show All", ""])
+        XCTAssertEqual(menu.items.dropFirst(4).map(\.title),
+                       ["Finder", "SimpleText"])
+        XCTAssertTrue(menu.items[4].mark)
+    }
+
+    func testGuestApplicationMenuIsNeverReplaced() {
+        var original = realisticScene()
+        original.menubar = .init(app: "Finder", menus: [
+            .init(title: "", apple: false, left: 700,
+                  id: ObjectResolver.applicationMenuID, items: [])
+        ])
+        XCTAssertEqual(ApplicationMenuProjection.projecting(original), original)
+    }
+
     // MARK: - includeBackground
 
     func testIncludeBackgroundKeepsEveryProcessAndFlagsIt() {

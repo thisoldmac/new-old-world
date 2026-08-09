@@ -358,6 +358,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// unreadable desktop or background folder must not make a successfully
     /// rendered front window re-run its AppleScripts forever.
     private var finderLayouts: [String: String] = [:]
+    private var finderArtByPath: [String: [String: (String, String)]] = [:]
+    private var finderArtCompletePaths = Set<String>()
     private var desktopIconLayout: String = "<none>"
     private var fetchingIcons = false
     private var finderReadNoticeShown = false
@@ -504,6 +506,31 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         endSessionReleasingContent(message: "stopped")
     }
 
+    /// Escape hatch for semantic state that may have gone stale without a
+    /// structural scene change. The live session and its ownership leases stay
+    /// intact; only host projections are discarded and repopulated.
+    func rebuildGuestState() {
+        guard running else { return }
+        iconTask?.cancel()
+        iconTask = nil
+        visibilityTask?.cancel()
+        visibilityTask = nil
+        fetchingIcons = false
+        finderReadNoticeShown = false
+        icons.removeAll()
+        finderPresentations.removeAll()
+        finderScrollOrigins.removeAll()
+        finderLayouts.removeAll()
+        finderArtByPath.removeAll()
+        finderArtCompletePaths.removeAll()
+        desktopIconLayout = "<none>"
+        visibilityKey = "<none>"
+        visibilityReadAt = nil
+        ambient = "discarded cached guest state; rebuilding…"
+        note("manual rebuild discarded Finder rosters and application state")
+        poll()
+    }
+
     /// Called immediately before the listener changes focus, while the
     /// outgoing guest can still receive the content owner's explicit stop.
     func activeGuestWillChange() {
@@ -585,6 +612,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         finderPresentations.removeAll()
         finderScrollOrigins.removeAll()
         finderLayouts.removeAll()
+        finderArtByPath.removeAll()
+        finderArtCompletePaths.removeAll()
         desktopIconLayout = "<none>"
         visibilityKey = "<none>"
         visibilityReadAt = nil
@@ -1042,11 +1071,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             .joined(separator: "|")
     }
 
-    private static func desktopIconLayoutKey(_ scene: MirrorKit.Scene)
+    static func desktopIconLayoutKey(_ scene: MirrorKit.Scene)
         -> String {
-        let names = (scene.desktopItems ?? []).map(\.name).sorted()
-        return "\(scene.screen.w)x\(scene.screen.h)/"
-            + names.joined(separator: "\u{1f}")
+        /* The scene alternates between the raw resident desktop roster and
+           this source's enriched roster. Including those names made each
+           projection invalidate the other and reread Finder forever. */
+        "\(scene.screen.w)x\(scene.screen.h)"
     }
 
     /// People look at the front Finder window before the desktop behind it.
@@ -1237,8 +1267,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             if desktopIsStale {
                 if let d = await self.readIcons(container: "desktop",
                                                 generation: generation) {
-                    fresh[Self.desktopKey] = d
-                    self.desktopIconLayout = desktopLayout
+                    /* A background Finder has transiently answered with a
+                       complete-looking empty desktop. Replacing a previously
+                       nonempty semantic snapshot makes every icon disappear
+                       until restart. Empty is accepted on the first read; it
+                       cannot erase stronger retained evidence mid-session.
+                       Rebuild State is the explicit way to discard it. */
+                    if d.isEmpty,
+                       self.icons[Self.desktopKey]?.isEmpty == false {
+                        self.note("Finder reported an empty desktop while a "
+                                  + "complete roster was retained; kept the "
+                                  + "last complete desktop snapshot")
+                        complete = false
+                    } else {
+                        fresh[Self.desktopKey] = d
+                        self.desktopIconLayout = desktopLayout
+                    }
                 } else {
                     complete = false
                 }
@@ -1395,6 +1439,31 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         """
     }
 
+    /// Type/creator enrichment is paged independently from geometry. It is
+    /// cached by directory path, so changing a Finder view can redraw from the
+    /// roster immediately instead of repeating this slower Apple event.
+    static func iconTypesScript(container: String, offset: Int,
+                                limit: Int) -> String {
+        """
+        tell application "Finder"
+        set fs to every file of \(container)
+        set totalCount to count fs
+        set out to "N" & tab & totalCount & return
+        set firstIndex to \(offset + 1)
+        set lastIndex to \(offset + limit)
+        if lastIndex > totalCount then set lastIndex to totalCount
+        if firstIndex <= lastIndex then
+        repeat with i from firstIndex to lastIndex
+        set f to item i of fs
+        set out to out & "F" & tab & (name of f) & tab & (file type of f) & \
+        tab & (creator type of f) & tab & "" & return
+        end repeat
+        end if
+        end tell
+        return out
+        """
+    }
+
     struct FinderSurfaceRead {
         var items: [MirrorKit.Scene.DesktopItem]
         var presentation: MirrorKit.Scene.FinderPresentation
@@ -1515,32 +1584,38 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                                 selectedNames: selectedNames,
                                 pages: pages, complete: true))
 
-        let types = """
-        tell application "Finder"
-        set fn to name of every file of \(container)
-        set ft to file type of every file of \(container)
-        set fc to creator type of every file of \(container)
-        end tell
-        set out to ""
-        repeat with i from 1 to (count fn)
-        set out to out & "F" & tab & (item i of fn) & tab & (item i of ft) & \
-        tab & (item i of fc) & tab & "" & return
-        end repeat
-        return out
-        """
-        guard complementIsCurrent(generation) else { return nil }
-        let art = await readingFinderComplement(types)
-        guard complementIsCurrent(generation) else { return nil }
-        if art.value == nil || art.truncated {
-            note("\(container): items read, but not their icon art"
-                 + " - \(art.truncated ? "guest result truncated" : "\(art.error ?? "no reason given")")")
+        let artPath = semantic.presentation.path.isEmpty
+            ? container : semantic.presentation.path
+        var typesByName = finderArtByPath[artPath] ?? [:]
+        if !finderArtCompletePaths.contains(artPath) {
+            var artOffset = 0
+            var artTotal: Int?
+            var artComplete = true
+            while artTotal == nil || artOffset < artTotal! {
+                guard complementIsCurrent(generation) else { return nil }
+                let read = await readingFinderComplement(
+                    Self.iconTypesScript(container: container,
+                                         offset: artOffset,
+                                         limit: Self.iconFallbackPageSize))
+                guard complementIsCurrent(generation) else { return nil }
+                guard let value = read.value, !read.truncated,
+                      let total = Self.iconPageTotal(value) else {
+                    note("\(container): items read, but not all icon art - "
+                         + (read.truncated ? "guest result truncated"
+                            : (read.error ?? "no reason given")))
+                    artComplete = false
+                    break
+                }
+                artTotal = total
+                let page = Self.parseIconTypes(value)
+                for (name, type) in page { typesByName[name] = type }
+                artOffset += page.count
+                if total == 0 { break }
+                if page.isEmpty { artComplete = false; break }
+            }
+            finderArtByPath[artPath] = typesByName
+            if artComplete { finderArtCompletePaths.insert(artPath) }
         }
-        /* Unquote BEFORE joining. Each script answers in SOURCE form, so
-           each blob carries its own surrounding quotes; concatenating
-           them raw would leave a `""` inside one line and eat the row on
-           either side of it. */
-        let typesByName = Dictionary(uniqueKeysWithValues:
-            Self.parseIconTypes(art.truncated ? "" : (art.value ?? "")))
 
         /* THE THIRD PASS, and its own script for the second pass's reason.
            An alias whose original is on an unmounted volume raises, and
@@ -2470,7 +2545,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Bulk Finder interactions come from host-owned interior state rather
     /// than one `MirrorGesture`, but they still use the same serialized act
     /// lane and the same stale-roster refusal as every object-first gesture.
-    private func performFinderPlan(_ plan: InteractionPlan, label: String) {
+    private func performFinderPlan(_ plan: InteractionPlan, label: String,
+                                   cursor: MirrorKit.Point? = nil) {
         if let refusal = pinnedActionRefusal() {
             report(refusal)
             return
@@ -2492,6 +2568,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.planSettlement = "unknown"
             let started = Date()
             let complaint = await self.serve(plan)
+            if complaint == nil, let cursor,
+               let window = self.finderContainerReference(for: plan),
+               let cursorComplaint = await self.act.cursorPlace(
+                    window: window, h: cursor.x, v: cursor.y) {
+                self.note("\(label) succeeded; cursor follow refused: "
+                          + cursorComplaint)
+            }
             self.actTimeline.record(.init(
                 kind: .released, operationID: "direct", label: label,
                 outcome: complaint == nil ? .dispatched : .refused,
@@ -2520,6 +2603,31 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
         if !admitted {
             report("\(label) — not sent: the act queue is full")
+        }
+    }
+
+    private func finderContainerReference(for plan: InteractionPlan)
+        -> String? {
+        guard let scene else { return nil }
+        let container: InteractionPlan.FinderContainer
+        switch plan {
+        case .finderSetSelection(_, let value),
+             .finderOpenItems(_, let value),
+             .finderRename(_, _, let value),
+             .finderSelect(_, let value),
+             .finderOpen(_, let value):
+            container = value
+        default:
+            return nil
+        }
+        switch container {
+        case .desktop:
+            return scene.windows.last(where: HitTester.isDesktopBackdrop)?.ref
+        case .window(let title):
+            let matches = scene.windows.filter {
+                $0.title == title && FinderItems.isFolderWindow($0)
+            }
+            return matches.count == 1 ? matches[0].ref : nil
         }
     }
 
@@ -2943,26 +3051,47 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             }
             return Self.hideDispatchOutcome(read.value)
 
-        case .hideOthers, .showAll:
-            /* **No route exists for these two, and pretending costs a
-               round trip to be told what this side already knows.** The
-               Finder's object model refuses `set visible` for all three
-               commands alike — that is one measurement, not three — and
-               the guest's `hide` verb hides ONE NAMED process, which is
-               what a `ShowHideProcess` call is. Hide Others and Show All
-               are therefore not "broken": they are unbuilt, and what would
-               build them is a guest-side iteration over the process list
-               calling the same verified call per process, which is its own
-               small piece of work rather than a fallback to try here.
+        case .hideOthers(let exceptPSN, let incarnation, _, _, _, _):
+            guard let scene,
+                  let front = scene.apps.first(where: { $0.psn == exceptPSN }),
+                  front.front, front.incarnation == incarnation else {
+                return "the Application-menu target changed before dispatch"
+            }
+            let others = HitTester.switchableApps(scene).filter {
+                $0.psn != exceptPSN
+            }
+            for app in others {
+                let read = await readingOutput(
+                    "hide", ["target": .text(app.name)], row: "Outcome")
+                if let error = read.error {
+                    invalidateVisibility()
+                    return "Hide Others stopped at \(app.name): \(error)"
+                }
+                if let complaint = Self.hideDispatchOutcome(read.value) {
+                    invalidateVisibility()
+                    return "Hide Others stopped at \(app.name): \(complaint)"
+                }
+            }
+            invalidateVisibility()
+            return nil
 
-               Refusing by name and immediately is the same rule that
-               stopped Hide holding the lane for 15 s: never spend the one
-               mutation lane rediscovering a route already measured dead. */
-            planRefusalReach = .notSent
-            return "the Finder will not set an application's visibility, "
-                + "and this Mac's own route hides ONE named process — so "
-                + "Hide Others and Show All are unbuilt rather than "
-                + "broken. Hiding a single application does work."
+        case .showAll:
+            guard let scene else { return "the application roster is absent" }
+            for app in HitTester.switchableApps(scene) {
+                let read = await readingOutput(
+                    "hide", ["target": .text("--show \(app.name)")],
+                    row: "Outcome")
+                if let error = read.error {
+                    invalidateVisibility()
+                    return "Show All stopped at \(app.name): \(error)"
+                }
+                if let complaint = Self.showDispatchOutcome(read.value) {
+                    invalidateVisibility()
+                    return "Show All stopped at \(app.name): \(complaint)"
+                }
+            }
+            invalidateVisibility()
+            return nil
 
         }
     }
@@ -2997,6 +3126,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return "the guest reported no hide outcome"
         default:
             return "hide: \(outcome)"
+        }
+    }
+
+    static func showDispatchOutcome(_ raw: String?) -> String? {
+        guard let raw else { return "the guest reported no show outcome" }
+        let outcome = unquote(raw).trimmingCharacters(in: .whitespaces)
+        switch outcome {
+        case "shown": return nil
+        case "unconfirmed":
+            return "show: the call was accepted and the application is still hidden"
+        case "": return "the guest reported no show outcome"
+        default: return "show: \(outcome)"
         }
     }
 
@@ -3404,29 +3545,34 @@ extension NOWMirrorSource: FinderInteractionDriver {
     var finderInteractionDriver: FinderInteractionDriver? { self }
 
     func setFinderSelection(
-        _ names: [String], in container: InteractionPlan.FinderContainer
+        _ names: [String], in container: InteractionPlan.FinderContainer,
+        at point: MirrorKit.Point?
     ) {
         performFinderPlan(.finderSetSelection(items: names,
                                               container: container),
                           label: names.isEmpty ? "deselect Finder items"
-                              : "select \(names.count) Finder item(s)")
+                              : "select \(names.count) Finder item(s)",
+                          cursor: point)
     }
 
     func openFinderItems(
-        _ names: [String], in container: InteractionPlan.FinderContainer
+        _ names: [String], in container: InteractionPlan.FinderContainer,
+        at point: MirrorKit.Point?
     ) {
         guard !names.isEmpty else { return }
         performFinderPlan(.finderOpenItems(items: names, container: container),
-                          label: "open \(names.count) Finder item(s)")
+                          label: "open \(names.count) Finder item(s)",
+                          cursor: point)
     }
 
     func renameFinderItem(
         _ name: String, to newName: String,
-        in container: InteractionPlan.FinderContainer
+        in container: InteractionPlan.FinderContainer,
+        at point: MirrorKit.Point?
     ) {
         performFinderPlan(.finderRename(item: name, to: newName,
                                         container: container),
-                          label: "rename \(name) to \(newName)")
+                          label: "rename \(name) to \(newName)", cursor: point)
     }
 }
 
@@ -3512,8 +3658,51 @@ extension NOWMirrorSource: ItemDragDriver {
 
     func dragRelease(_ plan: DragTargeting.Plan?,
                      answer: @escaping (ItemDragAnswer) -> Void) {
-        _ = plan
-        residentDragRelease(answer: answer)
+        residentDragRelease { [weak self] result in
+            if case .confirmed = result, let plan {
+                self?.applyConfirmedDrag(plan)
+            }
+            answer(result)
+        }
+    }
+
+    private func applyConfirmedDrag(_ plan: DragTargeting.Plan) {
+        guard let scene else { return }
+        switch plan.subject.container {
+        case .desktop:
+            if plan.intent == .rearrange,
+               var items = icons[Self.desktopKey],
+               let index = items.firstIndex(where: {
+                   $0.name == plan.subject.name
+               }) {
+                items[index].x = plan.dropFrame.l
+                items[index].y = plan.dropFrame.t
+                icons[Self.desktopKey] = items
+            }
+            desktopIconLayout = "<none>"
+        case .window(let id):
+            if let window = scene.windows.first(where: { $0.id == id }),
+               let key = Self.finderWindowKey(window) {
+                if plan.intent == .rearrange,
+                   var items = icons[key],
+                   let index = items.firstIndex(where: {
+                       $0.name == plan.subject.name
+                   }) {
+                    let origin = FinderItems.contentOrigin(window)
+                    items[index].x = plan.dropFrame.l - origin.x
+                    items[index].y = plan.dropFrame.t - origin.y
+                    icons[key] = items
+                }
+                finderLayouts[key] = nil
+            }
+        }
+        if case .finderWindow(let id, _, _, _) = plan.destination,
+           let window = scene.windows.first(where: { $0.id == id }),
+           let key = Self.finderWindowKey(window) {
+            finderLayouts[key] = nil
+        }
+        publishFinderComplements(for: Self.iconLayoutKey(scene))
+        poll()
     }
 
     /// The observation-minted reference for the container an item lives in.

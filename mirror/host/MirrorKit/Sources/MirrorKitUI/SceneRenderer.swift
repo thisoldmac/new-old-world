@@ -45,6 +45,9 @@ public struct SceneRenderer {
     /// Name of the desktop icon the mirror believes is selected. See
     /// LiveMirrorView.selectedItem — this is our own model, not guest truth.
     public let selectedItem: String?
+    /// Desktop selection is a set just like a Finder window's selection.
+    /// `selectedItem` remains as a compatibility shim for render-shot callers.
+    public let selectedDesktopItems: Set<String>
     /// A host-owned Finder name editor, while Return has entered rename mode.
     public let finderRename: FinderRenamePresentation?
     /// A live drag/resize outline (guest coords), drawn on top — the classic
@@ -132,6 +135,7 @@ public struct SceneRenderer {
 
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
+                selectedDesktopItems: Set<String> = [],
                 finderRename: FinderRenamePresentation? = nil,
                 dragOutline: Rect? = nil,
                 itemDrag: ProvisionalDrag? = nil,
@@ -140,6 +144,8 @@ public struct SceneRenderer {
         self.openMenu = openMenu
         self.hoveredItem = hoveredItem
         self.selectedItem = selectedItem
+        self.selectedDesktopItems = selectedDesktopItems.union(
+            selectedItem.map { Set([$0]) } ?? [])
         self.finderRename = finderRename
         self.dragOutline = dragOutline
         self.itemDrag = itemDrag
@@ -440,7 +446,7 @@ public struct SceneRenderer {
             // windows carry Finder's own selection in `FinderPresentation`;
             // desktop selection does not yet have a correlated snapshot.
             drawIcon(ctx, item, at: origin,
-                     selected: selectedItem == item.name)
+                     selected: selectedDesktopItems.contains(item.name))
         }
     }
 
@@ -509,7 +515,7 @@ public struct SceneRenderer {
            `textCovers` test a semantic label uses, and draws only where the
            replay was silent. Drawn unconditionally it was Michelle's
            "Finder item icons seem to be drawing their label twice". */
-        if replayed?.textCovers(patch) == true { return }
+        if !selected && replayed?.textCovers(patch) == true { return }
         ctx.fill(Path(patch), with: .color(selected ? Platinum.g6 : .white))
         appText(label, ctx, x: box.midX - w / 2, baselineY: labelY + ascent,
                 color: selected ? .white : Platinum.g6, small: true)

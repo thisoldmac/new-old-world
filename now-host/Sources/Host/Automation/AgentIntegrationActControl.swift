@@ -697,6 +697,29 @@ final class AgentIntegrationActControl {
                        readsSession: false)
     }
 
+    /// Cursor-follow for semantic operations that do not otherwise enter the
+    /// resident act plane. nil means the guest observed the placement.
+    func cursorPlace(window: String, h: Int, v: Int) async -> String? {
+        guard AgentIntegrationActPolicy.isValidWindowReference(window) else {
+            return "cursor follow requires one current now-window reference"
+        }
+        let outcome = await run(
+            verb: "cursoract",
+            args: ["window": .text(window), "h": .number(h),
+                   "v": .number(v)])
+        switch outcome {
+        case .timedOut:
+            return "the Macintosh did not answer cursor follow in time"
+        case .result(let result) where !result.ok:
+            return Self.bounded(result.error?.message
+                ?? "the Macintosh refused cursor follow")
+        case .result(let result):
+            let rows = Self.rows(from: result, verb: "cursoract")
+            return rows["Dispatch"] == "placed" ? nil
+                : "the guest did not report the cursor placed"
+        }
+    }
+
     /// One step, forwarded and rendered. Not `dispatch()`: the three drag
     /// verbs answer `pressed` / `want-published` / `release-asked` in their
     /// `Dispatch` row rather than `dispatched`, because none of them is a

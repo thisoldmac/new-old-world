@@ -73,6 +73,25 @@ final class AssetPackTests: XCTestCase {
                           "the banner must name the way to regenerate")
         }
     }
+
+    func testPackCatalogDiscoversOnlyFinishedPacksNewestFirst() throws {
+        let store = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("assetpack-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: store) }
+        for id in ["pack-2026-01", "pack-2026-02", "notes"] {
+            try FileManager.default.createDirectory(
+                at: store.appendingPathComponent(id)
+                    .appendingPathComponent("Resources"),
+                withIntermediateDirectories: true)
+        }
+        try Data("{}".utf8).write(to: store
+            .appendingPathComponent("pack-2026-01/Resources/manifest.json"))
+        try Data("{}".utf8).write(to: store
+            .appendingPathComponent("pack-2026-02/Resources/manifest.json"))
+
+        XCTAssertEqual(AssetPack.discover(in: store).map(\.id),
+                       ["pack-2026-02", "pack-2026-01"])
+    }
 }
 
 /// Shared by every test that needs the pack's actual bytes.

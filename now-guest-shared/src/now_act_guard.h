@@ -109,7 +109,8 @@ enum {
        are not served here and could not be, because from the press until
        the release the application is inside its own tracking loop and
        the filter this verdict comes from is never entered again. */
-    kNowActServeDragPress = 9
+    kNowActServeDragPress = 9,
+    kNowActServeCursor = 10
 };
 
 /* Claim the request if it names THIS A5 world, and say what to do with

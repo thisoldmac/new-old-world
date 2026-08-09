@@ -23,6 +23,12 @@ public struct FinderRenamePresentation: Equatable, Sendable {
 /// applies the interaction locally, then retires a scroll preview as soon as
 /// the guest reports that the corresponding control value moved.
 public struct FinderInteriorState: Equatable, Sendable {
+    /// The Finder desktop is a container with no ordinary window id. Giving
+    /// it one host-only identity lets selection and reconciliation use the
+    /// same machinery as an open folder instead of maintaining a second,
+    /// single-selection implementation in the view.
+    public static let desktopID = "\u{0}finder-desktop"
+
     public enum SelectionMode: Equatable, Sendable {
         case replace
         case toggle
@@ -40,6 +46,9 @@ public struct FinderInteriorState: Equatable, Sendable {
     private var selectionAnchors: [String: String] = [:]
     private var scrolls: [String: ScrollPreview] = [:]
     private var marqueeBases: [String: Set<String>] = [:]
+    private var pendingViews: [String: Scene.FinderPresentation.View] = [:]
+    private var viewLayouts:
+        [String: [String: [Scene.DesktopItem]]] = [:]
     public private(set) var rename: FinderRenamePresentation?
     private var renameSelectsAll = false
 
@@ -49,6 +58,14 @@ public struct FinderInteriorState: Equatable, Sendable {
         selections[windowID] = [name]
         selectionAnchors[windowID] = name
         rename = nil
+    }
+
+    @discardableResult
+    public mutating func selectDesktop(
+        _ name: String, items: [Scene.DesktopItem], mode: SelectionMode
+    ) -> Set<String> {
+        select(name, ordered: items.map(\.name), in: Self.desktopID,
+               fallback: [], mode: mode)
     }
 
     /// Apply Macintosh selection semantics and answer the exact host-owned
@@ -87,6 +104,10 @@ public struct FinderInteriorState: Equatable, Sendable {
         rename = nil
     }
 
+    public mutating func clearDesktopSelection() {
+        clearSelection(in: Self.desktopID)
+    }
+
     public mutating func setSelection(_ names: Set<String>,
                                       in windowID: String) {
         selections[windowID] = names
@@ -100,6 +121,25 @@ public struct FinderInteriorState: Equatable, Sendable {
 
     public func selectedNames(in window: Scene.Window) -> Set<String> {
         selections[window.id] ?? window.finder?.selectedNames ?? []
+    }
+
+    public var selectedDesktopNames: Set<String> {
+        selections[Self.desktopID] ?? []
+    }
+
+    /// Show a Finder view immediately from the roster already in hand. The
+    /// guest remains authoritative and retires this preview when its later
+    /// semantic snapshot reports the requested view.
+    public mutating func previewView(
+        _ view: Scene.FinderPresentation.View, in window: Scene.Window
+    ) {
+        guard FinderItems.isFolderWindow(window), view != .unknown else {
+            return
+        }
+        if let current = window.finder?.view, let items = window.items {
+            viewLayouts[window.id, default: [:]][current.rawValue] = items
+        }
+        pendingViews[window.id] = view
     }
 
     public func isSelected(_ name: String, in windowID: String) -> Bool {
@@ -248,7 +288,7 @@ public struct FinderInteriorState: Equatable, Sendable {
     /// selection remains until another host selection replaces it; Finder's
     /// global selection is not present in ordinary structural polls.
     public mutating func reconcile(with scene: Scene) {
-        let liveIDs = Set(scene.windows.map(\.id))
+        let liveIDs = Set(scene.windows.map(\.id)).union([Self.desktopID])
         selections = selections.filter { liveIDs.contains($0.key) }
         for window in scene.windows {
             guard let items = window.items, selections[window.id] != nil else {
@@ -257,6 +297,20 @@ public struct FinderInteriorState: Equatable, Sendable {
             let liveNames = Set(items.map(\.name))
             selections[window.id]?.formIntersection(liveNames)
         }
+        if selections[Self.desktopID] != nil {
+            let liveNames = Set((scene.desktopItems ?? []).map(\.name))
+            selections[Self.desktopID]?.formIntersection(liveNames)
+        }
+        for window in scene.windows where FinderItems.isFolderWindow(window) {
+            if let view = window.finder?.view, let items = window.items {
+                viewLayouts[window.id, default: [:]][view.rawValue] = items
+                if pendingViews[window.id] == view {
+                    pendingViews[window.id] = nil
+                }
+            }
+        }
+        pendingViews = pendingViews.filter { liveIDs.contains($0.key) }
+        viewLayouts = viewLayouts.filter { liveIDs.contains($0.key) }
         selectionAnchors = selectionAnchors.filter { liveIDs.contains($0.key) }
         marqueeBases = marqueeBases.filter { liveIDs.contains($0.key) }
         if let rename, !liveIDs.contains(rename.windowID) { self.rename = nil }
@@ -280,6 +334,12 @@ public struct FinderInteriorState: Equatable, Sendable {
             if let selected = selections[id], out.windows[index].finder != nil {
                 out.windows[index].finder?.selectedNames = selected
             }
+            if let view = pendingViews[id], out.windows[index].finder != nil {
+                out.windows[index].finder?.view = view
+                let remembered = viewLayouts[id]?[view.rawValue]
+                out.windows[index].items = remembered
+                    ?? Self.provisionalLayout(out.windows[index], view: view)
+            }
             guard let preview = scrolls[id], preview.delta != 0 else {
                 continue
             }
@@ -297,6 +357,61 @@ public struct FinderInteriorState: Equatable, Sendable {
             }
         }
         return out
+    }
+
+    private mutating func select(
+        _ name: String, ordered: [String], in id: String,
+        fallback: Set<String>, mode: SelectionMode
+    ) -> Set<String> {
+        var selected = selections[id] ?? fallback
+        switch mode {
+        case .replace:
+            selected = [name]
+            selectionAnchors[id] = name
+        case .toggle:
+            if selected.contains(name) { selected.remove(name) }
+            else { selected.insert(name) }
+            selectionAnchors[id] = name
+        case .range:
+            let anchor = selectionAnchors[id] ?? name
+            if let a = ordered.firstIndex(of: anchor),
+               let b = ordered.firstIndex(of: name) {
+                selected = Set(ordered[min(a, b)...max(a, b)])
+            } else {
+                selected = [name]
+            }
+        }
+        selections[id] = selected
+        rename = nil
+        return selected
+    }
+
+    private static func provisionalLayout(
+        _ window: Scene.Window, view: Scene.FinderPresentation.View
+    ) -> [Scene.DesktopItem] {
+        guard let items = window.items else { return [] }
+        let area = FinderItems.iconArea(window)
+        let visibleWidth = max(80, area.r - area.l)
+        return items.enumerated().map { index, original in
+            var item = original
+            switch view {
+            case .name:
+                item.x = area.l + 4
+                item.y = area.t + index * 19
+                item.w = 16; item.h = 16
+            case .smallIcon:
+                let rows = max(1, (area.b - area.t) / 20)
+                item.x = area.l + (index / rows) * 150 + 4
+                item.y = area.t + (index % rows) * 20 + 2
+                item.w = 16; item.h = 16
+            case .icon, .unknown:
+                let columns = max(1, visibleWidth / 96)
+                item.x = area.l + (index % columns) * 96 + 28
+                item.y = area.t + (index / columns) * 70 + 10
+                item.w = 32; item.h = 32
+            }
+            return item
+        }
     }
 
     private static func intersects(_ a: Rect, _ b: Rect) -> Bool {

@@ -923,6 +923,32 @@ final class NOWMirrorSourceTests: XCTestCase {
                         "an empty outcome is not a quiet success")
     }
 
+    func testOnlyAReadBackShownCountsAsAShow() {
+        XCTAssertNil(NOWMirrorSource.showDispatchOutcome("\"shown\""))
+        XCTAssertNotNil(NOWMirrorSource.showDispatchOutcome("\"unconfirmed\""))
+        XCTAssertNotNil(NOWMirrorSource.showDispatchOutcome(nil))
+    }
+
+    func testIconArtPassIsBoundedAndPaged() {
+        let script = NOWMirrorSource.iconTypesScript(
+            container: "desktop", offset: 8, limit: 8)
+        XCTAssertTrue(script.contains("set firstIndex to 9"))
+        XCTAssertTrue(script.contains("set lastIndex to 16"))
+        XCTAssertTrue(script.contains("set totalCount to count fs"))
+        XCTAssertFalse(script.contains("repeat with i from 1 to (count"))
+    }
+
+    func testDesktopCacheKeyDoesNotOscillateWithEnrichment() throws {
+        var a = try fixtureScene()
+        var b = a
+        a.desktopItems = nil
+        b.desktopItems = [.init(name: "Macintosh HD", kind: "disk",
+                                type: nil, creator: nil, x: 10, y: 10,
+                                placed: true, alias: false, invisible: false)]
+        XCTAssertEqual(NOWMirrorSource.desktopIconLayoutKey(a),
+                       NOWMirrorSource.desktopIconLayoutKey(b))
+    }
+
     func testKeyCapsIsOpenedFromTheGuestsAppleMenuItemsFolder() {
         let script = NOWMirrorSource.appleMenuItemScript("Key Caps")
         XCTAssertTrue(script.contains("tell application \"Finder\""))

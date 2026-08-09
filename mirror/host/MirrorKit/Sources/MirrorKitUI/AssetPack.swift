@@ -28,6 +28,15 @@ import Foundation
 /// the guest's own art belongs, with nothing saying so — the drawing
 /// would be a claim about the guest that no capture supports.
 public enum AssetPack {
+    public struct Choice: Identifiable, Equatable, Sendable {
+        public let id: String
+        public let resourcesURL: URL
+
+        public init(id: String, resourcesURL: URL) {
+            self.id = id
+            self.resourcesURL = resourcesURL
+        }
+    }
 
     /// What the search found.
     public enum Status: Equatable, Sendable {
@@ -47,6 +56,7 @@ public enum AssetPack {
     /// directory holding `fonts/`, `icons/`, `appicons/`, `cursors/`,
     /// `patterns/` and `manifest.json`.
     public static let environmentKey = "NOW_MIRROR_ASSETS"
+    public static let selectionDefaultsKey = "NOWSelectedMirrorAssetPack"
 
     /// The documented store: packs live beside the qcow2 images, newest
     /// `pack-*` wins. This is a path on a desk rather than a fact about
@@ -58,6 +68,27 @@ public enum AssetPack {
     /// that re-stats a directory per icon would spend its frame budget
     /// asking a question with a fixed answer.
     public static let status: Status = resolve()
+
+    public static var isEnvironmentManaged: Bool {
+        ProcessInfo.processInfo.environment[environmentKey] != nil
+    }
+
+    /// Valid extracted packs in the standard Lab store, newest first.
+    /// The pack identity is discovered from the directory, never compiled in.
+    public static var availablePacks: [Choice] {
+        discover(in: storeURL())
+    }
+
+    public static var selectedPackID: String? {
+        UserDefaults.standard.string(forKey: selectionDefaultsKey)
+    }
+
+    /// Selection applies on the next launch because the renderer intentionally
+    /// resolves art once and caches decoded bitmaps for the process lifetime.
+    public static func selectPack(id: String?) {
+        if let id { UserDefaults.standard.set(id, forKey: selectionDefaultsKey) }
+        else { UserDefaults.standard.removeObject(forKey: selectionDefaultsKey) }
+    }
 
     /// The pack directory, or nil.
     public static var root: URL? {
@@ -153,16 +184,21 @@ public enum AssetPack {
         }
 
         // 2. The documented store, newest pack first.
-        let store = URL(fileURLWithPath:
-                            (defaultStore as NSString).expandingTildeInPath)
-        let packs = ((try? FileManager.default.contentsOfDirectory(
-            atPath: store.path)) ?? [])
-            .filter { $0.hasPrefix("pack-") }
-            .sorted(by: >)
+        let store = storeURL()
+        let packs = discover(in: store)
+        if let selectedPackID,
+           let selected = packs.first(where: { $0.id == selectedPackID }),
+           let ok = accept(selected.resourcesURL,
+                           via: "selected pack \(selected.id)") {
+            return ok
+        }
+        if let selectedPackID, !packs.contains(where: { $0.id == selectedPackID }) {
+            warn("selected asset pack \(selectedPackID) is unavailable; "
+                 + "using the newest valid extracted pack")
+        }
         for pack in packs {
-            let url = store.appendingPathComponent(pack)
-                .appendingPathComponent("Resources")
-            if let ok = accept(url, via: "\(defaultStore)/\(pack)") {
+            if let ok = accept(pack.resourcesURL,
+                               via: "\(defaultStore)/\(pack.id)") {
                 return ok
             }
         }
@@ -185,6 +221,24 @@ public enum AssetPack {
              + "\(environmentKey), or run tools/extract-assets-offline. "
              + "Looked in: \(searched.joined(separator: ", "))")
         return .absent(searched: searched)
+    }
+
+    static func storeURL() -> URL {
+        URL(fileURLWithPath:
+                (defaultStore as NSString).expandingTildeInPath)
+    }
+
+    static func discover(in store: URL) -> [Choice] {
+        ((try? FileManager.default.contentsOfDirectory(
+            atPath: store.path)) ?? [])
+            .filter { $0.hasPrefix("pack-") }
+            .sorted(by: >)
+            .compactMap { id in
+                let resources = store.appendingPathComponent(id)
+                    .appendingPathComponent("Resources")
+                return isPack(resources)
+                    ? Choice(id: id, resourcesURL: resources) : nil
+            }
     }
 
     /// Whether a directory is a finished pack.

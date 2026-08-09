@@ -141,6 +141,17 @@
         "ext/src/now_content.c"
       ],
       "reason": "Third iteration of the metal crash fix, 04:10. Bake before landing."
+    },
+    {
+      "at": "2026-08-08T21:43:19-0400",
+      "branch": "codex/mirror-session-teardown",
+      "extDigest": "ef1d5fdcdd49346e45755c3425cf76e9dd7d1ce0",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_act.c"
+      ],
+      "reason": "checkpoint only; host gate and PowerBook metal verification remain before landing"
     }
   ]
 }

@@ -945,6 +945,14 @@ void now_ext_act_apply(NowPeekTable *table)
         now_act_v2_note(table, kNowPeekActStageFired,
                         (unsigned long)LMGetTicks());
         break;
+    case kNowActServeCursor:
+        (void)now_ext_cursor_place(cell->click_h, cell->click_v, 0u);
+        cell->fired = 1;
+        cell->armed = kNowPeekActArmNone;
+        cell->find_window_fired = 0;
+        now_act_v2_note(table, kNowPeekActStageFired,
+                        (unsigned long)LMGetTicks());
+        break;
     case kNowActServeText:
         error = act_serve_text(cell, cell->op == kNowPeekActOpTextSet);
         if (error == kNowPeekActErrNone) {

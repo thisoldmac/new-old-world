@@ -43,6 +43,8 @@ void now_act_run_ditemact(const char *request_json, long id,
                           char *out, long cap);
 void now_act_run_menuact(const char *request_json, long id,
                          char *out, long cap);
+void now_act_run_cursoract(const char *request_json, long id,
+                           char *out, long cap);
 /* P7. Three verbs for one gesture, because the press is an act request
    and the other two cannot be: once the button is down the target is
    inside its own tracking loop and the filter that serves act requests

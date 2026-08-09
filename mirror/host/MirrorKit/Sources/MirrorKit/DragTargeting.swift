@@ -120,8 +120,19 @@ public enum DragTargeting {
         /// space the destination points are in, so a snap-back and a drop
         /// never need a second frame of reference.
         public var home: Rect
+        /// The optimistic item frame at release, in global guest coordinates.
+        public var dropFrame: Rect
         public var destination: Destination
         public var intent: Intent
+
+        public init(subject: Subject, home: Rect, dropFrame: Rect? = nil,
+                    destination: Destination, intent: Intent) {
+            self.subject = subject
+            self.home = home
+            self.dropFrame = dropFrame ?? home
+            self.destination = destination
+            self.intent = intent
+        }
     }
 
     /// Why a drag will not happen, in words meant for the status line.
@@ -188,7 +199,12 @@ public enum DragTargeting {
         case .failure(let r):
             return .failure(r)
         case .success(let dest):
+            let dx = end.x - start.x
+            let dy = end.y - start.y
+            let drop = Rect(l: home.l + dx, t: home.t + dy,
+                            r: home.r + dx, b: home.b + dy)
             return .success(.init(subject: picked, home: home,
+                                  dropFrame: drop,
                                   destination: dest,
                                   intent: intent(picked, dest, in: scene)))
         }

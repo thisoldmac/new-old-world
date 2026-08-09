@@ -364,6 +364,10 @@ static void act_v2_describe(NowPeekTable *table, const NowActTarget *target,
            request satisfy the identity check for a live one. */
         v2->operation_object = cell->control_handle;
         break;
+    case kNowPeekActOpCursorPlace:
+        v2->operation_kind = kNowPeekActKindCursor;
+        v2->operation_object = cell->window_ptr;
+        break;
     default:
         v2->operation_kind = kNowPeekActKindNone;
         break;

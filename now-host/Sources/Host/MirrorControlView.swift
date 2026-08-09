@@ -1,4 +1,5 @@
 import SwiftUI
+import MirrorKitUI
 
 /// **The Mirror's chrome: what a person reaches FOR, above the picture.**
 ///
@@ -157,6 +158,7 @@ struct MirrorControlView: View {
                     MirrorLifecycleCard(model: model)
                     MirrorPlanesCard(model: model)
                     MirrorSceneFactsCard(source: source)
+                    assetPackCard
                     MirrorCyclesCard(cycles: cycles)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -181,8 +183,40 @@ struct MirrorControlView: View {
             Button("Refresh") { model.refreshLifecycle() }
                 .disabled(model.isLifecycleChecking
                           || !model.connection.canCapture)
+            Button("Rebuild State") { source.rebuildGuestState() }
+                .disabled(!source.running)
+                .help("Discard cached Finder and application state, then read the guest again")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
+    }
+
+    private var assetPackCard: some View {
+        GroupBox("Mirror Artwork") {
+            VStack(alignment: .leading, spacing: 7) {
+                if AssetPack.isEnvironmentManaged {
+                    Text(AssetPack.summaryLine)
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Set by \(AssetPack.environmentKey).")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else if AssetPack.availablePacks.isEmpty {
+                    Text(AssetPack.bannerText ?? AssetPack.summaryLine)
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Picker("Asset pack", selection: Binding(
+                        get: { AssetPack.selectedPackID ?? "" },
+                        set: { AssetPack.selectPack(id: $0.isEmpty ? nil : $0) }
+                    )) {
+                        Text("Newest valid pack").tag("")
+                        ForEach(AssetPack.availablePacks) { pack in
+                            Text(pack.id).tag(pack.id)
+                        }
+                    }
+                    Text("A changed pack is loaded on next launch.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }

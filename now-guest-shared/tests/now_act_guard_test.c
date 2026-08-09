@@ -573,6 +573,19 @@ static void test_serve_begin(void)
     check_long((long)cell.error, kNowPeekActErrBadOp,
                "an unknown visibility operation names why");
 
+    memset(&cell, 0, sizeof cell);
+    cell.op = kNowPeekActOpCursorPlace;
+    cell.target_a5 = (NowPeekU32)kTargetA5;
+    cell.status = kNowPeekActStatusPending;
+    check_long(now_act_serve_begin(&cell, kOtherA5, 1UL),
+               kNowActServeSkip,
+               "cursor placement still refuses the wrong A5 world");
+    check_long(now_act_serve_begin(&cell, kTargetA5, 1UL),
+               kNowActServeCursor,
+               "cursor placement is handed to the target-context hook");
+    check(cell.armed == kNowPeekActArmNone,
+          "cursor placement arms no click-intercepting patch");
+
     /* A failing commit must never leave a patch armed. */
     arm_menu(&cell, 52, 10);
     now_act_serve_commit(&cell, kNowPeekActErrNotOurWindow);

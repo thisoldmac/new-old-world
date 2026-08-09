@@ -116,4 +116,27 @@ final class FinderInteriorStateTests: XCTestCase {
         XCTAssertEqual(edit.original, "Documents")
         XCTAssertEqual(edit.text, "Renamed")
     }
+
+    func testViewChangeProjectsImmediatelyFromCachedRoster() {
+        let guest = Self.scene()
+        var state = FinderInteriorState()
+        state.reconcile(with: guest)
+        state.previewView(.icon, in: guest.windows[0])
+
+        let shown = state.projecting(guest).windows[0]
+        XCTAssertEqual(shown.finder?.view, .icon)
+        XCTAssertEqual(shown.items?.count, guest.windows[0].items?.count)
+        XCTAssertEqual(shown.items?.first?.w, 32)
+        XCTAssertNotEqual(shown.items?.first?.y,
+                          guest.windows[0].items?.first?.y)
+    }
+
+    func testDesktopSelectionIsMultiItemAndImmediate() {
+        let items = Self.window().items ?? []
+        var state = FinderInteriorState()
+        _ = state.selectDesktop("System Folder", items: items, mode: .replace)
+        _ = state.selectDesktop("Documents", items: items, mode: .toggle)
+        XCTAssertEqual(state.selectedDesktopNames,
+                       ["System Folder", "Documents"])
+    }
 }

@@ -9,6 +9,7 @@ public struct SceneView: View {
     public let openMenu: Int?
     public let hoveredItem: Int?
     public let selectedItem: String?
+    public let selectedDesktopItems: Set<String>
     public let finderRename: FinderRenamePresentation?
     public let dragOutline: Rect?
     public let itemDrag: SceneRenderer.ProvisionalDrag?
@@ -16,6 +17,7 @@ public struct SceneView: View {
 
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
+                selectedDesktopItems: Set<String> = [],
                 finderRename: FinderRenamePresentation? = nil,
                 dragOutline: Rect? = nil,
                 itemDrag: SceneRenderer.ProvisionalDrag? = nil,
@@ -24,6 +26,7 @@ public struct SceneView: View {
         self.openMenu = openMenu
         self.hoveredItem = hoveredItem
         self.selectedItem = selectedItem
+        self.selectedDesktopItems = selectedDesktopItems
         self.finderRename = finderRename
         self.dragOutline = dragOutline
         self.itemDrag = itemDrag
@@ -35,6 +38,7 @@ public struct SceneView: View {
             SceneRenderer(scene: scene, openMenu: openMenu,
                           hoveredItem: hoveredItem,
                           selectedItem: selectedItem,
+                          selectedDesktopItems: selectedDesktopItems,
                           finderRename: finderRename,
                           dragOutline: dragOutline,
                           itemDrag: itemDrag,

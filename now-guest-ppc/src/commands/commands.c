@@ -1692,6 +1692,10 @@ void now_command_run(const char *name, const char *request_json, long id,
         now_act_run_winact(request_json, id, out, cap);
         return;
     }
+    if (strcmp(name, "cursoract") == 0) {
+        now_act_run_cursoract(request_json, id, out, cap);
+        return;
+    }
     if (strcmp(name, "textget") == 0) {
         now_act_run_textget(request_json, id, out, cap);
         return;

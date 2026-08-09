@@ -119,6 +119,10 @@ static int v2_identity_matches(const NowPeekTable *table)
            one. The nonce is the only thing here that cannot repeat. */
         object = cell->control_handle;
         break;
+    case kNowPeekActKindCursor:
+        if (cell->op != kNowPeekActOpCursorPlace) return 0;
+        object = cell->window_ptr;
+        break;
     case kNowPeekActKindNone:
         /* The ABI selftest has no guest object, but still has an exact op. */
         if (cell->op != kNowPeekActOpSelfTest) return 0;
@@ -372,6 +376,12 @@ int now_act_serve_begin(NowPeekActCell *cell, unsigned long current_a5,
         cell->fired = 0;
         cell->armed = kNowPeekActArmNone;
         verdict = kNowActServeDragPress;
+        break;
+
+    case kNowPeekActOpCursorPlace:
+        cell->fired = 0;
+        cell->armed = kNowPeekActArmNone;
+        verdict = kNowActServeCursor;
         break;
 
     case kNowPeekActOpVisibility:

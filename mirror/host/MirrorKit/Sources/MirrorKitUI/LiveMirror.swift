@@ -153,14 +153,6 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// The row under the pointer in the open menu, 1-based. Menus are a
     /// selectable surface: this is what inverts, and what acts.
     @State private var hoveredItem: Int?
-    /// The desktop icon we last clicked.
-    ///
-    /// This is the mirror's own model of selection, not the guest's: the Finder
-    /// expresses selection only by inverting the icon on screen, and desktop
-    /// icons are not windows or controls, so nothing in `axtree` or `list`
-    /// reports it. We know what WE selected; a selection the human makes on the
-    /// guest directly is invisible to us and will not show here.
-    @State private var selectedItem: String?
     /// Host-owned interaction state for Finder window interiors. The guest
     /// remains the source of window/view geometry; selection and scroll do
     /// not wait for the next round trip to become visible here.
@@ -223,7 +215,9 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 if let observedScene = controller.scene {
-                    let scene = finderInterior.projecting(observedScene)
+                    let applicationScene = ApplicationMenuProjection
+                        .projecting(observedScene)
+                    let scene = finderInterior.projecting(applicationScene)
                     /* The keyboard, underneath everything and filling the
                        whole surface. It draws nothing; it exists to be
                        first responder, because a ⌘ combination has to be
@@ -252,7 +246,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         onFocusLost: { keyboardEngaged = false })
                     SceneView(scene: scene, openMenu: openMenu,
                               hoveredItem: hoveredItem,
-                              selectedItem: selectedItem,
+                              selectedDesktopItems:
+                                finderInterior.selectedDesktopNames,
                               finderRename: finderInterior.rename,
                               dragOutline: dragOutline,
                               itemDrag: itemDrag.map {
@@ -535,8 +530,18 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                             dragMode = beginItemDrag(scene, at: start,
                                                      now: cur)
                         }
-                    case .desktopItem:
+                    case .desktopItem(let name, _, _):
                         if abs(cur.x - start.x) + abs(cur.y - start.y) >= 6 {
+                            if !finderInterior.selectedDesktopNames
+                                .contains(name) {
+                                let names = finderInterior.selectDesktop(
+                                    name, items: scene.desktopItems ?? [],
+                                    mode: .replace)
+                                sendFinderSelection(
+                                    names, in: .desktop,
+                                    orderedBy: scene.desktopItems ?? [],
+                                    at: Point(x: start.x, y: start.y))
+                            }
                             dragMode = beginItemDrag(scene, at: start, now: cur)
                         }
                     case .content(let id, _, _, _, _):
@@ -656,7 +661,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             sendFinderSelection(names, in: window)
             if count >= 2 {
                 controller.finderInteractionDriver?.openFinderItems(
-                    [name], in: .window(title: window.title))
+                    [name], in: .window(title: window.title),
+                    at: Point(x: point.x, y: point.y))
             }
             return
         }
@@ -670,9 +676,25 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             return
         }
         if case .desktopItem(let name, _, _) = target {
-            selectedItem = name
+            let mode: FinderInteriorState.SelectionMode
+            if mods & KeyCaptureView.Mods.control != 0 { mode = .toggle }
+            else if mods & KeyCaptureView.Mods.shift != 0 { mode = .range }
+            else { mode = .replace }
+            let names = finderInterior.selectDesktop(
+                name, items: scene.desktopItems ?? [], mode: mode)
+            sendFinderSelection(names, in: .desktop,
+                                orderedBy: scene.desktopItems ?? [],
+                                at: Point(x: point.x, y: point.y))
+            if count >= 2 {
+                controller.finderInteractionDriver?.openFinderItems(
+                    [name], in: .desktop, at: Point(x: point.x, y: point.y))
+            }
+            return
         } else if case .desktop = target {
-            selectedItem = nil
+            finderInterior.clearDesktopSelection()
+            sendFinderSelection([], in: .desktop, orderedBy: [],
+                                at: Point(x: point.x, y: point.y))
+            return
         }
         if case .scrollbar(let id, let control, let part, _, _) = target,
            part != .thumb,
@@ -697,7 +719,27 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                             + "selection")
             return
         }
-        driver.setFinderSelection(ordered, in: .window(title: window.title))
+        let selected = (window.items ?? []).first { names.contains($0.name) }
+        let origin = FinderItems.contentOrigin(window)
+        let at = selected.map {
+            Point(x: origin.x + $0.x + max(1, ($0.w ?? 16) / 2),
+                  y: origin.y + $0.y + max(1, ($0.h ?? 16) / 2))
+        }
+        driver.setFinderSelection(ordered, in: .window(title: window.title),
+                                  at: at)
+    }
+
+    private func sendFinderSelection(
+        _ names: Set<String>, in container: InteractionPlan.FinderContainer,
+        orderedBy items: [MirrorKit.Scene.DesktopItem], at point: Point?
+    ) {
+        guard let driver = controller.finderInteractionDriver else {
+            controller.note("this mirror cannot send a semantic Finder "
+                            + "selection")
+            return
+        }
+        driver.setFinderSelection(items.map(\.name).filter(names.contains),
+                                  in: container, at: point)
     }
 
     /// Wheel movement is line-oriented and immediate on the host. Each
@@ -745,9 +787,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                 finderInterior.cancelRename()
             } else if enter {
                 if let edit = finderInterior.commitRename() {
+                    let origin = FinderItems.contentOrigin(window)
+                    let item = window.items?.first {
+                        $0.name == edit.original
+                    }
+                    let at = item.map {
+                        Point(x: origin.x + $0.x + max(1, ($0.w ?? 16) / 2),
+                              y: origin.y + $0.y + max(1, ($0.h ?? 16) / 2))
+                    }
                     controller.finderInteractionDriver?.renameFinderItem(
                         edit.original, to: edit.text,
-                        in: .window(title: window.title))
+                        in: .window(title: window.title), at: at)
                 }
             } else if delete {
                 finderInterior.deleteRenameCharacter()
@@ -1103,6 +1153,12 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         let screenWidth = controller.scene?.screen.w ?? 0
         if let item = SceneRenderer.dropdownItem(
             menu, x: p.x, y: p.y, screenWidth: screenWidth) {
+            if let view = Self.finderView(named: item.title),
+               let window = controller.scene?.windows.first(where: {
+                   $0.front && FinderItems.isFolderWindow($0)
+               }) {
+                finderInterior.previewView(view, in: window)
+            }
             // Dispatch by IDENTITY, and refuse rather than guess.
             //
             // A ⌘ item goes as a keystroke: deterministic, metal-safe, and it
@@ -1135,6 +1191,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
            case .menuTitle(let index) = HitTester.hitTest(scene, x: p.x,
                                                           y: p.y) {
             openMenu = index
+        }
+    }
+
+    private static func finderView(
+        named title: String
+    ) -> MirrorKit.Scene.FinderPresentation.View? {
+        switch title.lowercased() {
+        case "as icons": return .icon
+        case "as buttons": return .smallIcon
+        case "as list": return .name
+        default: return nil
         }
     }
 

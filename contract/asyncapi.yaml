@@ -4620,6 +4620,31 @@ components:
         type: object
         properties:
           winact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    cursoract:
+      description: >
+        Place the guest's drawn cursor at one point inside ONE observed
+        window, without clicking, selecting the window, or changing front
+        order. The opaque window reference binds the point to the exact
+        process and A5 world that owns it; a point outside that window is
+        refused. This is the cursor-follow adjunct for semantic operations
+        such as host-owned Finder selection, whose Apple event route does not
+        otherwise pass through the resident act plane.
+      args:
+        type: object
+        required: [window, h, v]
+        properties:
+          window:
+            type: string
+            description: An opaque now-window reference minted by observation.
+          h: { type: integer }
+          v: { type: integer }
+      x-line: >
+        NOT TYPEABLE usefully. The window reference is an observation-minted
+        capability no person has, and h/v must be inside that exact window.
+      output:
+        type: object
+        properties:
+          cursoract: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     textget:
       description: >
         Read the text of ONE addressed text element. The read half of the
