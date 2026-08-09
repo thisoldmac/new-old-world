@@ -49,7 +49,6 @@ struct FilesModuleView: View {
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
-            if model.rows.isEmpty { model.refresh() }
             model.discoverLocationsIfNeeded()
         }
         .onReceive(clock) { elapsed = $0 }

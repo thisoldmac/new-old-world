@@ -392,10 +392,6 @@ struct FileBrowserTable: NSViewRepresentable {
             parent.model.requestTrash(selected)
         }
 
-        func beginNewFolder() {
-            parent.model.beginNewFolder()
-        }
-
         @objc private func pinRow() {
             if let row = clickedRow, row.isFolder {
                 parent.model.pinLocation(path: row.path)
@@ -416,8 +412,8 @@ struct FileBrowserTable: NSViewRepresentable {
                     ? selected : [row])
         }
 
-        @objc private func newFolder() {
-            beginNewFolder()
+        @objc fileprivate func newFolder() {
+            parent.model.beginNewFolder()
         }
 
         @objc private func commitRename(_ sender: NSTextField) {
@@ -601,7 +597,7 @@ struct FileBrowserTable: NSViewRepresentable {
             case .download:
                 coordinator?.downloadSelection()
             case .newFolder:
-                coordinator?.beginNewFolder()
+                coordinator?.newFolder()
             case .open:
                 coordinator?.openSelection()
             case .trash:

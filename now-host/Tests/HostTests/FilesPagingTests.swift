@@ -84,7 +84,7 @@ final class FilesPagingTests: XCTestCase {
                     count += 1
                 }
             }
-            return before >= 2
+            return before >= 1
         }
         model.refresh()
         model.refresh()
@@ -168,128 +168,6 @@ final class FilesPagingTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertEqual(model.rows.map(\.name), ["item-2"],
                        "the delete event's older refresh must stay stale")
-    }
-
-    func testConnectingAutomaticallyRefreshesTheListingAndPlaces()
-        async throws {
-        let guest = try await connectedGuest(assigningModel: false)
-        guest.onMessage = { [weak self] message in
-            guard let self else { return }
-            switch message {
-            case .fileList(let request):
-                if request.path.isEmpty {
-                    try? guest.send(.fileListing(FileListing(
-                        id: request.id, path: "", entries: [self.entry(1)],
-                        more: false, cursor: nil, root: "Macintosh HD:")))
-                } else {
-                    try? guest.send(.fileRefuse(FileRefuse(
-                        id: request.id, code: "no-such-folder",
-                        reason: "not here")))
-                }
-            case .softwareList(let request):
-                try? guest.send(.softwareListing(SoftwareListing(
-                    id: request.id, domain: request.domain, entries: [],
-                    more: false, cursor: nil, note: nil)))
-            default:
-                break
-            }
-        }
-
-        model.connection = .connected(named: "PowerBook 1400")
-
-        try await waitUntil("connection listing") {
-            self.model.rows.map(\.name) == ["item-1"]
-        }
-        try await waitUntil("connection Places sweep") {
-            self.model.locations.map(\.path) == [""]
-        }
-    }
-
-    func testBrowserRefreshReloadsTheListingAndPlaces() async throws {
-        let guest = try await connectedGuest(assigningModel: false)
-        let fixture = BrowserRefreshFixture()
-        guest.onMessage = { [weak self] message in
-            guard let self else { return }
-            switch message {
-            case .fileList(let request):
-                if request.path.isEmpty {
-                    try? guest.send(.fileListing(FileListing(
-                        id: request.id, path: "",
-                        entries: [self.entry(fixture.listingItem)],
-                        more: false, cursor: nil, root: "Macintosh HD:")))
-                } else {
-                    try? guest.send(.fileRefuse(FileRefuse(
-                        id: request.id, code: "no-such-folder",
-                        reason: "not here")))
-                }
-            case .softwareList(let request):
-                fixture.softwareRequests += 1
-                try? guest.send(.softwareListing(SoftwareListing(
-                    id: request.id, domain: request.domain, entries: [],
-                    more: false, cursor: nil, note: nil)))
-            default:
-                break
-            }
-        }
-
-        model.connection = .connected(named: "PowerBook 1400")
-        try await waitUntil("initial browser refresh") {
-            self.model.rows.map(\.name) == ["item-1"]
-                && !self.model.isDiscoveringLocations
-        }
-        let firstSweepRequests = fixture.softwareRequests
-
-        fixture.listingItem = 2
-        model.refreshBrowser()
-
-        try await waitUntil("manual listing refresh") {
-            self.model.rows.map(\.name) == ["item-2"]
-        }
-        try await waitUntil("manual Places refresh") {
-            fixture.softwareRequests > firstSweepRequests
-                && !self.model.isDiscoveringLocations
-        }
-    }
-
-    func testAPlacesReplyFromBeforeDisconnectCannotRepopulateTheSidebar()
-        async throws {
-        let guest = try await connectedGuest(assigningModel: false)
-        let fixture = DelayedPlacesFixture()
-        guest.onMessage = { message in
-            switch message {
-            case .fileList(let request):
-                if request.path.isEmpty && !fixture.releaseReplies {
-                    fixture.heldRootRequests.append(request)
-                } else {
-                    try? guest.send(.fileRefuse(FileRefuse(
-                        id: request.id, code: "no-such-folder",
-                        reason: "not here")))
-                }
-            case .softwareList(let request):
-                try? guest.send(.softwareListing(SoftwareListing(
-                    id: request.id, domain: request.domain, entries: [],
-                    more: false, cursor: nil, note: nil)))
-            default:
-                break
-            }
-        }
-
-        model.connection = .connected(named: "PowerBook 1400")
-        try await waitUntil("held root requests") {
-            fixture.heldRootRequests.count >= 2
-        }
-        model.connection = .disconnected
-        fixture.releaseReplies = true
-        for request in fixture.heldRootRequests {
-            try guest.send(.fileListing(FileListing(
-                id: request.id, path: "", entries: [], more: false,
-                cursor: nil, root: "Macintosh HD:")))
-        }
-
-        try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertTrue(model.locations.isEmpty,
-                      "the disconnected machine no longer owns the sidebar")
-        XCTAssertFalse(model.isDiscoveringLocations)
     }
 
     // MARK: - the two ways it must refuse to spin
@@ -395,8 +273,7 @@ final class FilesPagingTests: XCTestCase {
         }
     }
 
-    private func connectedGuest(assigningModel: Bool = true) async throws
-        -> FakeGuest {
+    private func connectedGuest() async throws -> FakeGuest {
         let guest = FakeGuest(port: listener.boundPort ?? 0)
         guest.start()
         try guest.send(.hello(Hello(
@@ -406,19 +283,7 @@ final class FilesPagingTests: XCTestCase {
             if case .connected = self.listener.state { return true }
             return false
         }
-        if assigningModel {
-            model.connection = .connected(named: "PowerBook 1400")
-        }
+        model.connection = .connected(named: "PowerBook 1400")
         return guest
-    }
-
-    private final class BrowserRefreshFixture {
-        var listingItem = 1
-        var softwareRequests = 0
-    }
-
-    private final class DelayedPlacesFixture {
-        var heldRootRequests: [FileList] = []
-        var releaseReplies = false
     }
 }

@@ -279,6 +279,7 @@ final class FileLocationsTests: XCTestCase {
     func testADroppedWireAbandonsTheSweepRatherThanEmptyingTheSidebar()
         async throws {
         let bench = try await makeBench()
+        let before = bench.model.locations
         bench.exists = ["System Folder"]
         bench.refuseCode = "disconnected"
         bench.model.discoverLocations()
@@ -286,8 +287,8 @@ final class FileLocationsTests: XCTestCase {
             !bench.model.isDiscoveringLocations
         }
 
-        XCTAssertTrue(bench.model.locations.isEmpty,
-                      "nothing was learned, so nothing is claimed")
+        XCTAssertEqual(bench.model.locations, before,
+                       "a failed rescan must preserve what was already known")
         let notice = try XCTUnwrap(bench.model.lastNotice)
         XCTAssertTrue(notice.contains("Could not finish"), notice)
     }
@@ -452,6 +453,10 @@ final class FileLocationsTests: XCTestCase {
                 self.answer(message)
             }
             model.connection = .connected(named: "PowerBook 1400")
+            try await Self.until("initial connection sweep") {
+                !self.model.isDiscoveringLocations
+                    && !self.model.locations.isEmpty
+            }
         }
 
         /// Lists the share root for real, so `pinLocation` is judged

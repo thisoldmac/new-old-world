@@ -399,10 +399,6 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
 
     private func connectionChanged(from old: GuestConnectionState) {
         guard connection != old else { return }
-        // Even a disconnect owns the sidebar: a reply from the machine that
-        // just went away must not repopulate Places after it was cleared.
-        locationDiscoveryGeneration += 1
-        isDiscoveringLocations = false
         if case .switched(let restored) =
             cache.focus(connection.key, parking: snapshot()) {
             listingGeneration += 1
@@ -449,10 +445,11 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         /* A page may already be on screen when the same guest reconnects, so
            `onAppear` is not a connection hook. Every newly usable connection
            revalidates both the open folder and the guest-derived Places rows. */
-        if canBrowse {
-            refresh()
-            discoverLocations()
-        }
+        /* Even a disconnect owns the sidebar: a reply from the machine that
+           just went away must not repopulate Places after it was cleared. A
+           usable connection replaces that sweep as part of the one browser
+           refresh operation. */
+        if canBrowse { refreshBrowser() } else { cancelLocationDiscovery() }
     }
 
     private func snapshot() -> Snapshot {
@@ -472,10 +469,20 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// the open listing; a toolbar click or a new connection revalidates the
     /// Places sidebar as well.
     func refreshBrowser() {
-        refresh()
-        locationDiscoveryGeneration += 1
-        isDiscoveringLocations = false
-        discoverLocations()
+        cancelLocationDiscovery()
+        load(path: path, resetRows: true) { [weak self] result in
+            guard let self else { return }
+            /* A listing normally names the share root, so let that one reply
+               serve both the table and Places. Older guests may omit it; in
+               that case discovery performs its own root probe. */
+            if case .success(let listing) = result,
+               let root = listing.root, !root.isEmpty {
+                self.shareRoot = root
+                self.discoverLocations(knownRoot: true)
+            } else {
+                self.discoverLocations()
+            }
+        }
     }
 
     func open(_ row: FileRow) {
@@ -512,7 +519,11 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// the defect this whole change exists to fix.
     static let rowCeiling = 4000
 
-    private func load(path: String, resetRows: Bool, cursor: Int? = nil) {
+    private func load(
+        path: String, resetRows: Bool, cursor: Int? = nil,
+        firstPage: ((Result<FileListing, GuestListener.FileFailure>) -> Void)?
+            = nil
+    ) {
         guard canBrowse else { return }
         if resetRows {
             listingGeneration += 1
@@ -542,6 +553,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 if let root = listing.root, !root.isEmpty {
                     self.shareRoot = root
                 }
+                firstPage?(.success(listing))
 
                 /* THE GUEST PAGES AT 16 PER FRAME, because a control
                    frame caps at 4 KB — so one reply is one PAGE, never
@@ -588,6 +600,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
             case .failure(let failure):
                 self.lastError = failure.message
                 self.pageCursor = nil
+                firstPage?(.failure(failure))
             }
         }
     }
@@ -604,9 +617,11 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     private var discoveredLocations: [FileLocation] = []
     private var storedLocations = FileLocationsStore.Stored()
     private let locationsStore: FileLocationsStore
-    /// Machines already swept, so showing the page twice is not two
-    /// sweeps. A person can still ask again.
-    private var sweptMachines = Set<GuestKey>()
+    /// The connection already swept, so showing the page twice is not two
+    /// sweeps. Guest keys are session-scoped, and retaining every old key
+    /// would grow forever; an automatic connection refresh means only the
+    /// current key can suppress an on-appear sweep.
+    private var sweptMachine: GuestKey?
     /// Owns an in-flight Places sweep. A guest switch or explicit refresh may
     /// start a newer sweep before the old connection answers; only the newest
     /// one may publish locations.
@@ -618,7 +633,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// is a handful of small requests, but it is a handful more than a
     /// person asked for, so it never repeats itself unprompted.
     func discoverLocationsIfNeeded() {
-        guard let key = connection.key, !sweptMachines.contains(key) else {
+        guard let key = connection.key, sweptMachine != key else {
             return
         }
         discoverLocations()
@@ -633,11 +648,20 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// machine's own names; then plain probing, which is a guess that
     /// either lists or does not.
     func discoverLocations() {
+        discoverLocations(knownRoot: false)
+    }
+
+    private func discoverLocations(knownRoot: Bool) {
         guard canBrowse, !isDiscoveringLocations else { return }
-        if let key = connection.key { sweptMachines.insert(key) }
+        sweptMachine = connection.key
         locationDiscoveryGeneration += 1
         let generation = locationDiscoveryGeneration
         isDiscoveringLocations = true
+        if knownRoot {
+            sweepFolderManager(index: 0, found: [], systemFolder: nil,
+                               generation: generation)
+            return
+        }
         /* The share root comes FIRST, and not for the sidebar's top row:
            `software.list` answers in whole HFS paths, and turning one of
            those into something this browser can ask for needs to know
@@ -730,8 +754,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         probe(ClassicLocations.systemFolder.names, at: 0, under: "",
               generation: generation) {
             [weak self] resolved in
-            guard let self,
-                  generation == self.locationDiscoveryGeneration else { return }
+            guard let self else { return }
             guard let resolved else {
                 self.sweepCandidates(index: 0, found: found,
                                      systemFolder: nil,
@@ -773,8 +796,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         }
         probe(candidate.names, at: 0, under: base,
               generation: generation) { [weak self] resolved in
-            guard let self,
-                  generation == self.locationDiscoveryGeneration else { return }
+            guard let self else { return }
             var found = found
             if let resolved, !found.contains(where: { $0.path == resolved }) {
                 found.append(FileLocation(
@@ -836,7 +858,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     private func finishDiscovery(abandoned reason: String, generation: Int) {
         guard generation == locationDiscoveryGeneration else { return }
         isDiscoveringLocations = false
-        if let key = connection.key { sweptMachines.remove(key) }
+        if sweptMachine == connection.key { sweptMachine = nil }
         lastNotice = "Could not finish looking for folders on "
             + "\(connection.peerLabel): \(reason)"
     }
@@ -844,6 +866,11 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     private func republishLocations() {
         locations = FileLocationsStore.merge(discovered: discoveredLocations,
                                              stored: storedLocations)
+    }
+
+    private func cancelLocationDiscovery() {
+        locationDiscoveryGeneration += 1
+        isDiscoveringLocations = false
     }
 
     private func reloadStoredLocations() {
