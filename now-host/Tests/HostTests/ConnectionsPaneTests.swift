@@ -21,7 +21,7 @@ final class ConnectionsPaneTests: XCTestCase {
 
     /// The defect in one assertion: there is no longer a second module about
     /// connections. Restore the list descriptor and this fails naming it.
-    func testTheSidebarHasOneRowAboutTheConnection() {
+    func testTheSidebarHasOneConnectionsRow() {
         let registry = ModuleRegistry.standard
         XCTAssertNil(registry.module(id: "connections"),
                      "the roster pane folded into the link pane; a second "
@@ -58,6 +58,18 @@ final class ConnectionsPaneTests: XCTestCase {
                       "who is on it: \(summary)")
     }
 
+    /// Return and the visible button must share one action. Updating only
+    /// the port is not submission: the requested keyboard path also starts
+    /// the listener.
+    func testSubmittingThePortStartsListeningThroughTheButtonAction()
+        throws {
+        let source = try GateSource.hostSwift(
+            "now-host/Sources/Host/SettingsModuleView.swift")
+        XCTAssertTrue(source.contains(".onSubmit(startListening)"))
+        XCTAssertTrue(source.contains(
+            "Button(\"Start Listening\", action: startListening)"))
+    }
+
     // MARK: - The retired id still resolves
 
     /// **A saved selection of the retired id lands on the merged page.**
@@ -71,7 +83,7 @@ final class ConnectionsPaneTests: XCTestCase {
         XCTAssertEqual(ModuleRegistry.standard
             .resolvingRenames(id: "connections")?.id, "settings")
         XCTAssertEqual(ModuleRegistry.standard
-            .resolvingRenames(id: "connections")?.title, "Connection")
+            .resolvingRenames(id: "connections")?.title, "Connections")
     }
 
     /// The forwarding table is shared, and entries land in it from separate

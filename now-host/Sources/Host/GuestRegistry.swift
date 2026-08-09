@@ -157,6 +157,18 @@ final class GuestRegistry {
         records.first { $0.id == id }
     }
 
+    /// Removes one remembered machine. A live socket is owned by the
+    /// listener and must be closed there first; this only edits the book the
+    /// host will consult if that machine appears again.
+    @discardableResult
+    func forget(_ id: GuestID) -> Bool {
+        let before = records.count
+        records.removeAll { $0.id == id }
+        guard records.count != before else { return false }
+        save()
+        return true
+    }
+
     /// Strips the version off a guest-asserted name.
     ///
     /// `hello.name` is the deployed binary's name and the version rides in

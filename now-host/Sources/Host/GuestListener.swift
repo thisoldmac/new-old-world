@@ -39,9 +39,13 @@ final class GuestListener: ObservableObject {
         let id = UUID()
         let at: Date
         let text: String
+        /// The connection that produced the line. Nil is listener-wide
+        /// activity such as binding a port or refusing an unadmitted peer.
+        let sessionID: String?
 
         static func == (lhs: LogEntry, rhs: LogEntry) -> Bool {
             lhs.at == rhs.at && lhs.text == rhs.text
+                && lhs.sessionID == rhs.sessionID
         }
     }
 
@@ -440,9 +444,32 @@ final class GuestListener: ObservableObject {
         return outcome
     }
 
+    /// Closes one exact live session and removes its durable registry entry.
+    /// A guest configured to reconnect may immediately return; this is a
+    /// remove operation, not an implicit deny-list.
+    @discardableResult
+    func removeGuest(_ key: GuestKey) -> Bool {
+        guard let live = sessions[key] else { return false }
+        if let record = machineBySession[key] {
+            _ = registry.forget(record.id)
+        }
+        note("Removed \(machineBySession[key]?.lastName ?? live.guestName)",
+             session: key)
+        live.close(sending: Bye(code: .shuttingDown,
+                                reason: "Removed by the host"))
+        return true
+    }
+
     /// Per-guest health, so switching does not have to re-ask the wire
     /// and a background guest's ping count is not lost.
     private var healthByGuest: [GuestKey: SessionHealth] = [:]
+
+    /// The selected row's health without moving the active request plane.
+    /// Connections uses this to inspect a background guest without showing
+    /// the driven guest's counters under the wrong name.
+    func health(for key: GuestKey) -> SessionHealth? {
+        healthByGuest[key]
+    }
 
     private static let logLimit = 100
 
@@ -450,7 +477,8 @@ final class GuestListener: ObservableObject {
     /// line belongs to, so a log can be read by subsystem the way the
     /// other machine's can (docs/logging.md).
     func note(_ text: String, area: String = "wire",
-              level: HostLog.LogLevel = .info) {
+              level: HostLog.LogLevel = .info,
+              session: GuestKey? = nil) {
         if ProcessInfo.processInfo.environment["NOW_HOST_DEBUG"] != nil {
             FileHandle.standardError.write(Data("[now-host] \(text)\n".utf8))
         }
@@ -459,7 +487,7 @@ final class GuestListener: ObservableObject {
            before you looked, and what happened after you quit — is only
            in the second one. */
         HostLog.shared.write(level, area, text)
-        log.append(LogEntry(at: Date(), text: text))
+        log.append(LogEntry(at: Date(), text: text, sessionID: session?.text))
         if log.count > Self.logLimit {
             log.removeFirst(log.count - Self.logLimit)
         }
@@ -2371,7 +2399,8 @@ final class GuestListener: ObservableObject {
                 self.events.publish(.guestConnected(key))
             },
             onLog: { [weak self] text, area, level in
-                self?.note(text, area: area, level: level)
+                self?.note(text, area: area, level: level,
+                           session: origin.session?.guestKey)
             },
             /* Health is per guest and kept for all of them — a guest
                nobody is driving is still connected, still pinging, and

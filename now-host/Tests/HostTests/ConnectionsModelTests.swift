@@ -366,6 +366,33 @@ final class ConnectionsModelTests: XCTestCase {
         XCTAssertEqual(asked, 0)
     }
 
+    /// The minus button has one model seam for both halves of the list:
+    /// a live row closes that exact session, while a remembered row only
+    /// removes the durable machine record. Neither may be reinterpreted as
+    /// the other operation.
+    func testRemovingRowsUsesTheCorrectLiveOrRememberedSeam() {
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"))
+        var disconnected: [GuestKey] = []
+        var forgotten: [GuestID] = []
+        let model = ConnectionsModel(
+            listener: listener,
+            resolve: resolver(driving: "pb1400c", connected: ["pb1400c"]),
+            disconnect: { key in disconnected.append(key); return true },
+            forget: { id in forgotten.append(id); return true })
+
+        let snapshot = ConnectionsSnapshot.make(
+            state: .connected(guestName: "NOW 0.14"),
+            guests: [guest("pb1400c", active: true)],
+            known: [record("q950")], ended: [:],
+            resolve: resolver(driving: "pb1400c", connected: ["pb1400c"]))
+
+        XCTAssertTrue(model.remove(snapshot.driving!))
+        XCTAssertTrue(model.remove(snapshot.known.first!))
+        XCTAssertEqual(disconnected, [GuestKey.synthetic("pb1400c")])
+        XCTAssertEqual(forgotten, [GuestID("q950")!])
+    }
+
     /// A rename failure has to say what to do about it. `taken` names the
     /// other machine, because "that id is in use" without saying by what
     /// leaves a person guessing which Mac to go and free first.

@@ -15,6 +15,20 @@ final class GuestIdentityTests: XCTestCase {
 
     private func registry() -> GuestRegistry { GuestRegistry() }
 
+    func testForgettingAMachineRemovesOnlyThatRememberedRecord() {
+        let registry = registry()
+        let first = registry.identify(
+            address: GuestAddress(text: "10.0.0.1"), name: "First",
+            operatingSystem: "9.1", occupiedSlots: [])
+        let second = registry.identify(
+            address: GuestAddress(text: "10.0.0.2"), name: "Second",
+            operatingSystem: "8.6", occupiedSlots: [])
+
+        XCTAssertTrue(registry.forget(first.id))
+        XCTAssertFalse(registry.forget(first.id))
+        XCTAssertEqual(registry.known.map(\.id), [second.id])
+    }
+
     func testAFirstSightMachineIsAddressableWithNoConfiguration() {
         let book = registry()
         let record = book.identify(

@@ -395,6 +395,40 @@ final class GuestListenerTests: XCTestCase {
         }
     }
 
+    /// Removing a row is session-addressed. Closing the background guest
+    /// must not touch the guest every module is currently driving, even when
+    /// both machines report the same display name.
+    func testRemovingABackgroundGuestClosesOnlyThatSession() async throws {
+        let first = FakeGuest(port: listener.boundPort!)
+        first.start()
+        try first.send(guestHello(name: "Quadra 950"))
+        try await waitUntil("first connected") {
+            self.listener.guests.count == 1
+        }
+
+        let second = FakeGuest(port: listener.boundPort!)
+        second.start()
+        try second.send(guestHello(name: "Quadra 950"))
+        try await waitUntil("both connected") {
+            self.listener.guests.count == 2
+        }
+
+        let background = try XCTUnwrap(
+            listener.guests.first(where: { !$0.isActive }))
+        XCTAssertNotNil(listener.registry.record(for: background.id))
+        XCTAssertTrue(listener.removeGuest(background.key))
+        try await waitUntil("background guest removed") {
+            self.listener.guests.count == 1
+        }
+
+        XCTAssertTrue(listener.guests[0].isActive)
+        XCTAssertNil(listener.registry.record(for: background.id))
+        try first.send(.ping(id: 8))
+        try await waitUntil("driven guest still answers") {
+            first.received.contains(.pong(id: 8))
+        }
+    }
+
     func testByeDisconnectsCalmly() async throws {
         let guest = FakeGuest(port: listener.boundPort!)
         guest.start()
@@ -1069,9 +1103,12 @@ final class GuestListenerDiagnosticsTests: XCTestCase {
         XCTAssertEqual(health.guestName, "Quadra 950")
         XCTAssertEqual(health.guestVersion, "0.9")
         XCTAssertEqual(health.guestOS, "8.1")
+        let sessionID = try XCTUnwrap(listener.guests.first?.sessionID)
         XCTAssertTrue(listener.log.contains {
             $0.text.contains("Connected:")
-                && $0.text.contains("Quadra 950") })
+                && $0.text.contains("Quadra 950")
+                && $0.sessionID == sessionID
+        }, "a selected guest's log must be filterable by its session")
 
         try guest.send(.ping(id: 1))
         while (listener.health?.pingsAnswered ?? 0) == 0, Date() < deadline {
@@ -1085,7 +1122,9 @@ final class GuestListenerDiagnosticsTests: XCTestCase {
         }
         XCTAssertNil(listener.health)
         XCTAssertTrue(listener.log.contains {
-            $0.text.contains("Quadra 950 disconnected") })
+            $0.text.contains("Quadra 950 disconnected")
+                && $0.sessionID == sessionID
+        })
         listener.stop()
     }
 }
@@ -1253,6 +1292,15 @@ final class MultiGuestListenerTests: XCTestCase {
                        "exactly one is being driven, and it is the first in")
         XCTAssertEqual(listener.state,
                        .connected(guestName: "PowerBook 1400c"))
+        let powerPCKey = try XCTUnwrap(
+            listener.guests.first { $0.name == "PowerBook 1400c" }?.key)
+        let m68kKey = try XCTUnwrap(
+            listener.guests.first { $0.name == "PowerBook 180c" }?.key)
+        XCTAssertEqual(listener.health(for: powerPCKey)?.guestName,
+                       "PowerBook 1400c")
+        XCTAssertEqual(listener.health(for: m68kKey)?.guestName,
+                       "PowerBook 180c",
+                       "a background row reads its own health")
 
         // Both are live: each answers its own ping.
         try powerPC.send(.ping(id: 1))

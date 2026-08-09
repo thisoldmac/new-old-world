@@ -324,6 +324,8 @@ final class ConnectionsModel: ObservableObject {
     private let listener: GuestListener
     private let resolve: (String) -> AgentIntegrationUnavailable?
     private let select: (GuestKey) -> Bool
+    private let disconnect: (GuestKey) -> Bool
+    private let forget: (GuestID) -> Bool
     private var ended: [String: EndedGuestSession] = [:]
     private var liveGuests: [GuestKey: ConnectedGuest] = [:]
     private var watch: HostEventSubscription?
@@ -334,10 +336,16 @@ final class ConnectionsModel: ObservableObject {
 
     init(listener: GuestListener,
          resolve: @escaping (String) -> AgentIntegrationUnavailable?,
-         select: ((GuestKey) -> Bool)? = nil) {
+         select: ((GuestKey) -> Bool)? = nil,
+         disconnect: ((GuestKey) -> Bool)? = nil,
+         forget: ((GuestID) -> Bool)? = nil) {
         self.listener = listener
         self.resolve = resolve
         self.select = select ?? { [listener] key in listener.selectGuest(key) }
+        self.disconnect = disconnect
+            ?? { [listener] key in listener.removeGuest(key) }
+        self.forget = forget
+            ?? { [listener] id in listener.registry.forget(id) }
         /* This used to sink `$guests` and `$state` and hop a turn through
            the main queue, because `@Published` fires in `willSet` and a sink
            reading the listener back synchronously saw the OUTGOING value.
@@ -395,6 +403,21 @@ final class ConnectionsModel: ObservableObject {
         let moved = select(key)
         if moved { refresh() }
         return moved
+    }
+
+    /// Removes exactly what the list selection represents. Live rows are
+    /// sessions, remembered rows are registry records; keeping those paths
+    /// separate prevents a stale row from closing whichever guest happens
+    /// to be active.
+    @discardableResult
+    func remove(_ row: ConnectionRow) -> Bool {
+        if let key = row.key {
+            return disconnect(key)
+        }
+        guard let id = GuestID(row.machineID) else { return false }
+        let removed = forget(id)
+        if removed { refresh() }
+        return removed
     }
 
     /// Names a machine, which is the one act that makes its id durable —

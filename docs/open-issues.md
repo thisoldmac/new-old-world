@@ -14,6 +14,33 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## Multi-guest host controls: tested, not visually or metal-verified (2026-08-08)
+
+The host now keeps its guest choice at the top of the sidebar as a
+live-only menu. That selection is the listener's active session, so every
+module moves with it; remembered machines cannot appear attached merely
+because their registry record survived. The menu's Add Guest action opens
+Connections.
+
+Connections is now a split view: active sessions above remembered machines
+on the left, the selected machine's link status, identity and session log on
+the right. Remembered rows are visibly secondary. The list's plus action
+opens the listening setup, while minus closes and forgets exactly a selected
+live session or forgets exactly a selected remembered record. Pressing Return
+in the port field follows the same validated Start Listening action as the
+button.
+
+**Tested here:** focused host tests cover active-versus-remembered removal,
+session-scoped health and logs, the plural module name, and Return starting
+the listener. A two-guest socket test removes the background session and then
+proves the driven guest still answers. The complete repository gate is the
+remaining local check for this branch.
+
+**Still unverified:** nobody has looked at this layout in the running host
+app yet, and none of these controls has been exercised against two physical
+Macs. The existing two-guests-on-one-port limitation therefore remains:
+tested is not metal-verified.
+
 ## The folding sidebar, both halves (2026-08-05)
 
 The rail folds to icons on the guest and the sidebar does the same on the
