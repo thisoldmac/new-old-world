@@ -5492,7 +5492,7 @@ components:
         the cheap question — "is anything drawing at all, and at whom?"
         — and a reader that could not answer it without a drain would
         have made the cheap question expensive. `start` arms ONE process
-        for a bounded time in one of two modes; the caller normally names
+        for a bounded time in one of three modes; the caller normally names
         that process by its ProcessSerialNumber (or `front:true`) and the
         guest resolves its own A5 through the same validated anchor oracle
         used by observation. `stop` disarms; `drain` reads records from a
@@ -5505,6 +5505,12 @@ components:
         reports the extension's own word for what happened, beside the
         request, so a misaddressed arm is VISIBLE as a mismatch rather
         than as an absence.
+
+        Finder is permanently excluded because its interior is supplied by
+        semantic Finder state. Applications are not classified or denied by
+        identity: the safety boundary is the selected mechanism. `record`
+        touches only the exact requested WindowRecord; invasive offscreen
+        discovery is available only through explicit diagnostic `probe`.
 
         A DRAIN IS A BOUNDED CONTROL ANSWER, NOT A TRANSFER — the
         opposite of the ruling in docs/streaming-a-scene.md, for a
@@ -5554,8 +5560,8 @@ components:
               start only. When true and no serial is supplied, target the
               process that is frontmost when the guest reads the request.
               Serial identity takes precedence; false is not a selector.
-              Finder is refused even when it is selected through this route;
-              Finder interiors are served semantically and never through P3.
+              Finder is refused even when selected through this route; Finder
+              interiors are served semantically and never through P3.
           window:
             type: string
             description: >
@@ -5571,24 +5577,19 @@ components:
             enum: [count, record, probe]
             description: >
               start only. Absent means count — the cheap mode, chosen as
-              the default because the expensive one should be asked for
-              by name. `probe` is record mode plus the GWorld probe
-              (docs/gworld-probe-brief.md): the plane follows a blit into
-              the armed window back to the offscreen GWorld that sourced
-              it, hooks that port too in the same armed context, and
-              records what is drawn there under the GWorld's own port
-              key. The plane ALSO patches the QDExtensions dispatch in
-              the target's own context, so a world created, drawn and
-              disposed inside a single event pass — which the chase
-              cannot reach, and which is how Sherlock 2 and Appearance
-              draw — is hooked at creation instead. NOTE that the trap
-              patch, and the `blitsrc` / `worldborn` / `worlddied`
-              records, are NOT confined to probe mode: all of them are
-              gated on record mode OR probe mode, and the host arms with
-              `record`. Only the sight-then-chase scan is probe-only.
-              (Corrected 2026-08-06: this prose said probe-only, which
-              read as though the host's own arming mode got none of it.)
-              In either recording mode, a
+              the default because the expensive one should be asked for by
+              name. `count` and `record` install `grafProcs` only on the
+              exact requested WindowRecord; record additionally appends the
+              operations to the ring. `probe` is record plus every offscreen
+              mechanism (docs/gworld-probe-brief.md): the plane patches the
+              QDExtensions dispatch, runs one bounded application-heap census
+              at arm, follows later blits back to their source GWorlds, and
+              hooks those offscreen ports. A world created, drawn and disposed
+              inside a single event pass can then be hooked at creation.
+              These mechanisms produced useful emulator captures but
+              correlated twice with a Sherlock 2 Type 1 crash on a PB1400c;
+              `probe` is therefore an explicit diagnostic mode and the host
+              uses `record`. In probe mode, a
               `bits` record whose source resolves to
               a port this plane hooked is PRECEDED by a `blitsrc` record
               naming that port (`srcPort`), which is the join the host
@@ -5646,10 +5647,10 @@ components:
               accounting and an `ops` array of records — each record's
               `op` is one of text / line / rect / rrect / oval / arc /
               poly / rgn / bits / comment / state, plus `blitsrc`
-              (record or probe mode: carries `srcPort` and `srcPixmap`,
+              (probe mode: carries `srcPort` and `srcPixmap`,
               0x-hex strings, and joins the ops recorded under that
               offscreen port to the `bits` record that follows it) and
-              `worldborn` / `worlddied` (record or probe mode: the resident's
+              `worldborn` / `worlddied` (probe mode: the resident's
               QDExtensions trap patch reporting an offscreen world
               hooked at CREATION and released at disposal — `world` is
               the port, and `worldborn` adds `pixmap` and `rect`.

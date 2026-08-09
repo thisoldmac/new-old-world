@@ -160,6 +160,9 @@ look dead.
 | `openAppleMenuItem` | canonical broker primitive |
 | `finderSelect` | canonical broker primitive |
 | `finderOpen` | canonical broker primitive |
+| `finderSetSelection` | canonical broker primitive |
+| `finderOpenItems` | canonical broker primitive |
+| `finderRename` | canonical broker primitive |
 | `finderDeselect` | canonical broker primitive |
 | `nothing` | explicit refusal |
 | `unsupported` | explicit refusal |

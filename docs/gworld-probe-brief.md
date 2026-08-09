@@ -8,7 +8,8 @@ Everything about the Mirror's blank window interiors turns on the
 answer, so this is an experiment to run before it is an architecture to
 design. **It is scoped to measure, not to ship.**
 
-> **ANSWERED, and outcome 1 shipped (2026-08-06).** This page is kept as
+> **ANSWERED in the emulator; returned to explicit diagnostic scope on
+> 2026-08-08.** This page is kept as
 > the brief it was — the question, the three publishable outcomes, and
 > the rig — but it must not be read as open work. Hooking an offscreen
 > GWorld's `grafProcs` **does** yield the per-item drawing: probe-mode
@@ -25,8 +26,12 @@ design. **It is scoped to measure, not to ship.**
 > `_QDExtensions` (`$AB1D`) in the target's own context and hooking each
 > world at CREATION — 77 born, 77 died, 0 missed against Sherlock 2.
 >
-> All of it is emulator-only; nothing here has touched metal. The
-> architecture that came out of it is
+> On the PB1400c, Sherlock 2 disappeared with a Type 1 bus error in the
+> same cycle that the full offscreen tier became active, twice. Ordinary
+> `record` therefore hooks only the exact requested window; the trap patch,
+> arm-time heap census, and offscreen hooks now require explicit `probe`.
+> Applications are not blacklisted. The
+> emulator evidence and architecture that came out of it remain in
 > [render-composition.md](render-composition.md), the record vocabulary
 > is expanded in [contract-coverage.md](contract-coverage.md), and how
 > good the resulting picture looks is judged in

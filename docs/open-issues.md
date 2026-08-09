@@ -108,6 +108,37 @@ host-side icons are the immediate fallback; extracted asset art enriches them
 later. Completed reads are tracked per container, so a failed desktop or
 background read cannot continuously restart a successful front-window read.
 
+### METAL-VERIFIED CRASH, MECHANISM CONTAINED: P3 offscreen tier crashes Sherlock 2
+
+Two PB1400c / Mac OS 9.1 launches on 2026-08-08 produced the same boundary.
+After Finder opened Sherlock 2, the host requested P3 (`requested=15`,
+`content=requested`). Roughly six seconds later the resident reported
+`content=active-current`; in that same cycle the scene fell from two windows
+to one and Sherlock disappeared. The guest reported a Type 1 bus error. This
+is stronger than the earlier emulator captures: Sherlock can produce useful
+P3 records there, but the same hooks are not safe on this metal/application
+pair.
+
+Blacklisting Sherlock would encode a symptom rather than a safety boundary.
+The corrected boundary is the mechanism: ordinary `record` installs
+`grafProcs` only on the exact requested WindowRecord. Only explicit diagnostic
+`probe` may install the permanent `_QDExtensions` trap patch, sweep the
+application heap for existing GWorlds, or hook an offscreen port. Once the trap
+patch exists its shim also declines selector wrapping outside the armed probe
+context, including later `record` sessions and foreign applications. No
+application creator or name is denied.
+
+This is **Tested, not metal-verified**. It narrows the next metal run but does
+not yet identify which offscreen mechanism caused the Type 1 crash. Because an
+already-installed QDExtensions patch cannot safely be removed, the first test
+of the corrected resident must start from a reboot; using `probe` makes another
+reboot the honest reset boundary.
+
+The `osaErr -1753` seen while restarting Mirror is not the Type 1 crash code.
+Apple documents it as OSA's generic “script error,” and this host log contains
+the same refusal in Finder item and visibility complements outside Sherlock's
+P3-active interval. It remains a separate Finder-complement reliability issue.
+
 Scroll is no longer a roster invalidation. The host translates cached boxes by
 the guest's live scrollbar delta and projects arrow, page, wheel and resident
 thumb-drag moves immediately while the same acts travel to the guest. Selection

@@ -528,8 +528,10 @@ place nobody named.
 **Draws: false.** No `grafProcs` is installed into any port, and no
 QuickDraw trap is patched, until the content plane is armed for a named
 A5 *and* a named window. `now_content_boot` builds the hook table and
-allocates the block; it installs nothing. `content_qdext_install` runs
-only under `kNowContentVerdictArmed` and only in record mode. A machine
+allocates the block; it installs nothing. `content_qdext_install` runs only
+under `kNowContentVerdictArmed` and only in explicit probe mode. Ordinary
+record mode installs the exact requested window's `grafProcs` and nothing
+offscreen. A machine
 that never opens the Mirror never executes a draw hook — which is
 exactly what "planes, dormant until armed" promised, and it is kept.
 

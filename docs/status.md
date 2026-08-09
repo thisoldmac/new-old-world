@@ -77,22 +77,25 @@ says so at the point of claim rather than in a footnote.
   capture is a committed fixture. `qdtrace` is the verb, and
   [contract-coverage.md](contract-coverage.md) expands it record by
   record.
-- **An offscreen world is joined to the window it lands in** (2026-08-06,
-  emulator only). This is the hard half. An application that composes
+- **An offscreen world can be joined to the window it lands in** (2026-08-06
+  emulator proof; explicit diagnostic mode since 2026-08-08). This is the hard half. An application that composes
   its picture in a GWorld and blits the finished thing used to present
   as one opaque rectangle, and the after-the-fact chase that looked for
   the source could not reach a world created, drawn, blitted and
   disposed inside a single event pass — which is how Sherlock 2 and the
   Appearance control panels draw. The resident therefore patches
-  `_QDExtensions` (`$AB1D`) in the target's own context and hooks each
+  In `probe` mode the resident patches `_QDExtensions` (`$AB1D`) in the target's own context and hooks each
   world **at creation**: `worldborn` when `NewGWorld` returns,
   `worlddied` at disposal, and a `blitsrc` record naming the source port
   before the `bits` that reveals its work. The host re-homes the held
   ops into the destination — nested worlds included, an inner world
   spliced into an outer one before the outer reaches the window.
   Measured against Sherlock 2 on the emulator: 77 born, 77 died, 0
-  missed. **The patch is never removed** — disarming makes it decline —
-  because a patch withdrawn from a foreign process is how you crash one.
+  missed. On a PB1400c the offscreen tier becoming active correlated twice
+  with Sherlock Type 1 crashes. Ordinary `record` therefore hooks only the
+  exact requested window; no application is blacklisted. **The patch is never
+  removed** — outside an armed probe its shim chains without selector wrapping
+  — because a patch withdrawn while a caller is inside it is how you crash one.
 - **The render has Platinum's own numbers in it** (2026-08-06, tested).
   The 21 accent ramps come from the guest's `Apple platinum` theme file
   rather than from a spec or a guess, extracted straight off a disk

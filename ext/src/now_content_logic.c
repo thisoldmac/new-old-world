@@ -9,15 +9,18 @@
  * machine, so a host cc can run them. Everything here is reachable from
  * now-guest-ppc/tests/content_plane_test.c.
  *
- * Three decisions live here, and they are the three that can hurt:
+ * Four decisions live here, and they are the ones that can hurt:
  *
  *   1. WHETHER TO HOOK AT ALL (now_content_arm_verdict). Fail-closed in
  *      every direction: a request with no target instruments nothing, not
  *      everything.
- *   2. WHERE A RECORD GOES (now_content_ring_put). Bounded arithmetic over
+ *   2. WHETHER TO REACH OFFSCREEN (now_content_mode_allows_offscreen).
+ *      Exact-window recording is ordinary; trap patching and heap discovery
+ *      require the explicit diagnostic mode.
+ *   3. WHERE A RECORD GOES (now_content_ring_put). Bounded arithmetic over
  *      a fixed buffer; the one path in the plane that upstream shipped but
  *      never ran.
- *   3. WHAT STATE CHANGED (now_content_state_deltas). Pure comparison.
+ *   4. WHAT STATE CHANGED (now_content_state_deltas). Pure comparison.
  *
  * The Toolbox half (now_content.c) reads ports and installs procs and does
  * nothing else it could have done here.
@@ -89,6 +92,11 @@ int now_content_arm_verdict(const NowContentRequest *req,
         return kNowContentVerdictOtherContext;
     }
     return kNowContentVerdictArmed;
+}
+
+int now_content_mode_allows_offscreen(NowContentU32 mode)
+{
+    return mode == (NowContentU32)kNowContentModeProbe;
 }
 
 NowContentU32 now_content_lifecycle_decide(

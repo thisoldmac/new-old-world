@@ -120,14 +120,15 @@ enum {
    process's write. */
 enum {
     kNowContentModeOff = 0,
-    kNowContentModeCount = 1,   /* bump counters only */
-    kNowContentModeRecord = 2,  /* count + append ring records */
+    kNowContentModeCount = 1,   /* exact window: bump counters only */
+    kNowContentModeRecord = 2,  /* exact window: count + ring records */
     /* THE GWORLD PROBE (docs/gworld-probe-brief.md): record mode, plus
        the plane follows a window blit back to the offscreen GWorld that
        sourced it and hooks THAT port too, so the drawing that BUILT the
        composite is recorded under the GWorld's own port key. An
-       experiment, not a shipping mode: it is armed the same way, scoped
-       to the same one process, and everything it hooks beyond the scene
+       experiment, not a shipping mode: it is the ONLY mode that installs
+       the QDExtensions patch, runs the application-heap census, or hooks a
+       port beyond the exact scene window. Everything it hooks beyond that
        window is counted in the probe_* fields below. An extension that
        predates this value reads it as unrecognised and stays idle -
        fail closed, per the rule above. */
@@ -670,6 +671,11 @@ enum {
 int now_content_arm_verdict(const NowContentRequest *req,
                             NowContentU32 current_a5,
                             NowContentU32 now_ticks);
+
+/* The invasive offscreen mechanisms are one explicit tier. Count and record
+   touch only the exact requested WindowRecord; probe additionally permits the
+   QDExtensions trap patch, arm-time heap census, and discovered GWorld hooks. */
+int now_content_mode_allows_offscreen(NowContentU32 mode);
 
 /* Append one record. Returns 1 if committed, 0 if dropped (and bumps
    `dropped`). Bounded, allocation-free, and the ONLY writer of the ring

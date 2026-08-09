@@ -152,6 +152,18 @@
         "ext/src/now_ext_act.c"
       ],
       "reason": "checkpoint only; host gate and PowerBook metal verification remain before landing"
+    },
+    {
+      "at": "2026-08-08T23:34:28-0400",
+      "branch": "codex/mirror-session-teardown",
+      "extDigest": "a55431e159895a3aca000066ed0f134753c58482",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c",
+        "ext/src/now_content_logic.c",
+        "ext/src/now_content_qdext.S"
+      ],
+      "reason": "Metal safety fix requires a clean-boot PB1400c run before promoting this resident into the shared emulator oracle"
     }
   ]
 }

@@ -51,6 +51,7 @@
     .extern gNowContentQDExtOut
     .extern gNowContentQDExtRet
     .extern gNowContentQDExtBusy
+    .extern gNowContentQDExtDispatchAllowed
 
 /*
  * Entry state is the caller's, exactly as the dispatcher would see it:
@@ -70,6 +71,13 @@ now_content_qdext_patch:
     jsr now_content_qdext_note
     addq.l #4,%sp                   /* C is caller-pops                */
     movem.l (%sp)+,%d0-%d2/%a0-%a1  /* d0 restored: the dispatcher's   */
+
+    /* The patch cannot safely be removed once installed, but its invasive
+       selector wrappers are probe-only. The note function sets this word
+       only for the armed probe context; record mode and foreign processes
+       take the incumbent dispatch with the original frame untouched. */
+    tst.w gNowContentQDExtDispatchAllowed
+    beq.w now_content_qdext_chain
 
 /*
  * E2, THE TAIL WRAP - and it applies to selector 0 alone.

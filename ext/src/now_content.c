@@ -109,6 +109,7 @@ void *gNowContentOldQDExt = NULL;
 void *gNowContentQDExtOut = NULL;
 void *gNowContentQDExtRet = NULL;
 short gNowContentQDExtBusy = 0;
+short gNowContentQDExtDispatchAllowed = 0;
 extern void now_content_qdext_patch(void);
 
 static short content_slot_for(GrafPtr port, NowPeekU32 a5);
@@ -118,15 +119,17 @@ static short content_slot_for(GrafPtr port, NowPeekU32 a5);
 static Boolean content_probe_addr_ok(NowPeekU32 addr, unsigned long size);
 
 /* Called from the shim on every $AB1D dispatch, with the selector word
-   the caller loaded into d0. Counts and nothing else: E1 exists to find
-   out whether this runs at all for a CFM caller, and a slice that also
-   hooked would confuse "the patch fires" with "the hook works".
+   the caller loaded into d0. It both counts the diagnostic probe and writes
+   the one-shot verdict the shim reads before wrapping a selector. E1 began as
+   counting only; the runtime gate now matters because the patch, once present,
+   cannot safely be removed.
 
    Bounded and allocation-free by construction - two reads and an
    increment - because this runs inside whatever process called
    NewGWorld, at whatever moment it chose to. */
 void now_content_qdext_note(long selector)
 {
+    gNowContentQDExtDispatchAllowed = 0;
     if (gBlock == NULL) {
         return;
     }
@@ -139,6 +142,10 @@ void now_content_qdext_note(long selector)
         gBlock->qdext_foreign++;
         return;
     }
+    if (!now_content_mode_allows_offscreen(gArmedMode)) {
+        return;
+    }
+    gNowContentQDExtDispatchAllowed = 1;
     gBlock->qdext_calls++;
     gBlock->qdext_last_selector = (NowPeekU32)selector;
     /* NewGWorld is selector 0 on this dispatch; the high word is the
@@ -260,10 +267,12 @@ static Boolean content_capture_enabled(void)
         short slot;
 
         /* An offscreen port records iff WE hooked it for this armed
-           context - in record mode as well as probe, now that worlds
-           are hooked at creation by the trap patch rather than found by
-           the experimental scan. Any other port stays strict
-           pass-through, exactly as before. */
+           context AND the caller explicitly selected probe mode. Record
+           mode is the metal-facing baseline and never reaches beyond the
+           exact requested window. Any other port stays strict pass-through. */
+        if (!now_content_mode_allows_offscreen(gArmedMode)) {
+            return false;
+        }
         slot = content_slot_for(port, gArmedA5);
         return slot >= 0 && gPorts[slot].offscreen;
     }
@@ -484,9 +493,7 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
         return;
     }
     content_emit_state(port);
-    /* THE JOIN, record or probe mode (013 A2.2 — it was probe-only when
-       written, and the gate below has been content_mode_records() since
-       the trap patch landed): name the source port before
+    /* THE JOIN, probe mode only: name the source port before
        the bits record that reveals its work. Each offscreen row's handle
        is dereferenced HERE, at the same instant the comparison runs -
        never stashed at hook time - because LockPixels relocates the
@@ -499,7 +506,7 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
        BitMap resolves to nothing. A source that resolves to no hooked
        row emits nothing: absence is the pre-join behaviour, not a
        zero. */
-    if (content_mode_records() && src_bits != NULL
+    if (now_content_mode_allows_offscreen(gArmedMode) && src_bits != NULL
         && ((unsigned short)src_bits->rowBytes & 0x8000U) != 0) {
         NowContentBlitSourceRow rows[kNowContentMaxPorts];
         NowContentU32 src_port;
@@ -1014,7 +1021,7 @@ void now_content_qdext_born(GrafPtr port)
     short slot;
 
     if (gBlock == NULL || port == NULL || gArmedA5 == 0
-        || !content_mode_records()
+        || !now_content_mode_allows_offscreen(gArmedMode)
         || (NowPeekU32)LMGetCurrentA5() != gArmedA5) {
         return;
     }
@@ -1162,7 +1169,8 @@ static void content_census_run(NowPeekU32 a5, NowPeekU32 generation)
     UnsignedWide t1;
     unsigned long span;
 
-    if (gBlock == NULL || !content_mode_records()) {
+    if (gBlock == NULL
+        || !now_content_mode_allows_offscreen(gArmedMode)) {
         return;
     }
     zone = ApplicationZone();
@@ -1936,17 +1944,14 @@ void now_content_gne(NowPeekTable *table)
         gBlock->active_generation = generation;
         table->arm_active |= (NowPeekU32)kNowPeekTableCapContent;
 
-        /* THE TRAP PATCH SHIPS; THE HEAP SCAN DOES NOT, and the split
-           is by cost rather than by novelty. Hooking a world at
-           creation is O(1) per NewGWorld, needs no search, and is the
-           only route to an application whose worlds do not outlive the
-           pass that made them - it earned record mode by being both
-           proven (E1/E2/E3: 77 born, 77 died, 0 missed against
-           Sherlock 2) and cheap. The sight-then-chase scan below stays
-           probe-only: it walks two heaps at draw time, and an
-           unbounded search inside another process's draw path is not
-           something to arm by default. */
-        if (content_mode_records()) {
+        /* OFFSCREEN INTERCEPTION IS ONE EXPLICIT DIAGNOSTIC TIER. Record
+           mode installs only the exact window's grafProcs. Probe mode adds
+           the permanent QDExtensions trap patch, arm-time application-heap
+           census, and sight-then-chase discovery. Those mechanisms produced
+           useful emulator captures, but have now correlated with Type 1
+           crashes on metal; they do not belong in the default arm merely
+           because a target happens not to be Finder. */
+        if (now_content_mode_allows_offscreen(gArmedMode)) {
             content_qdext_install();
         }
 
@@ -1959,7 +1964,8 @@ void now_content_gne(NowPeekTable *table)
            generation rather than a bare flag so a re-arm of a different
            window - or of the same one after a disarm - sweeps again,
            which is what the caller means by re-arming. */
-        if (gCensusGeneration != generation || gCensusA5 != a5) {
+        if (now_content_mode_allows_offscreen(gArmedMode)
+            && (gCensusGeneration != generation || gCensusA5 != a5)) {
             gCensusGeneration = generation;
             gCensusA5 = a5;
             content_census_run(a5, generation);

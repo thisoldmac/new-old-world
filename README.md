@@ -158,9 +158,11 @@ icon-art pages fill in, rather than blocking the presentation on a new full
 Finder draw. The right-aligned application menu is synthesized from the live
 process roster when Finder omits its rows, including Hide, Hide Others, Show
 All, and application switching. A **Rebuild State** button discards the retained
-guest projection when an escape hatch is needed. P3 remains available to
-ordinary applications so its existing rendering work can be evaluated without
-exposing Finder again.
+guest projection when an escape hatch is needed. P3 remains available to every
+non-Finder application, but the host's ordinary `record` arm now touches only
+the exact requested window. The QDExtensions patch, heap census, and offscreen
+GWorld hooks are one explicit `probe` diagnostic tier after that tier correlated
+twice with Sherlock 2 Type 1 crashes on a PB1400c.
 
 The host has a second, deliberately independent Finder experiment. Enabling
 **Emulate Finder Windows** removes guest Finder folder windows from the
@@ -258,21 +260,23 @@ declared, not what the application had *drawn* inside it. The content
 plane now carries that — a ring of QuickDraw records, drained and
 replayed — and the hard case is solved rather than deferred: an
 application that composes its picture in an offscreen world and blits
-the finished thing in used to present as one opaque rectangle, so the
-resident patches the QDExtensions dispatch in the target's own context
+the finished thing in used to present as one opaque rectangle. Diagnostic
+`probe` mode patches the QDExtensions dispatch in the target's own context
 and hooks each world **at creation**, before anything is drawn into it.
 A world created, drawn, blitted and disposed inside a single event pass
-— which is how Sherlock 2 and Appearance draw, and which no
+— which is how the emulator captures of Sherlock 2 and Appearance draw, and which no
 after-the-fact search can reach — is joined to the window it lands in,
 nested worlds included.
 
 **What that costs, stated plainly.** It needs the optional NOW
 Extension: without the resident there is no interior at all, and the
-verb says so rather than answering emptily. Nothing here has touched
-metal — the records were watched crossing the wire from a live Finder
-and from Sherlock 2 on an emulated Mac OS 9.1, and **the live host
-application has never been watched composing one**; the composition is
-proven only by replaying committed captures in tests. The ring is 64 KiB
+verb says so rather than answering emptily. The records were watched crossing
+the wire from Sherlock 2 on an emulated Mac OS 9.1. On a PB1400c the full
+offscreen tier becoming active was followed by Sherlock's Type 1 crash twice.
+Applications are not blacklisted: ordinary `record` now keeps only the exact-
+window hook, while `probe` names and contains the metal-unsafe mechanisms. A
+reboot is required after using `probe`, because the QDExtensions trap patch
+cannot safely be removed while code may be inside it. The ring is 64 KiB
 and the host drains twelve pages a cycle, so a busy application can
 still outrun it — the drain reports what it lost rather than presenting
 a gap as a picture. And a render is not a photograph: where the host has

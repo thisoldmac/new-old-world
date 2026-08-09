@@ -376,15 +376,13 @@ is read back under a length gate (`qdtrace_read.c`), so a build talking
 to an older resident reports the object absent rather than reading past
 the block.
 
-**Correction to what this file said before (2026-08-06):** the three new
-records were described here, and in `contract/asyncapi.yaml`, as **probe
-mode only**. They are not. All three are gated on
-`content_mode_records()` in `ext/src/now_content.c`, which is record mode
-**or** probe mode, and the QDExtensions patch is installed under the same
-gate — while the host arms with `"mode": "record"`. Read literally, the
-old wording said the host's own arming mode gets none of this, which is
-backwards. The contract's prose has been corrected to match the code;
-no schema, field or behaviour changed.
+**Safety correction (2026-08-08):** the three offscreen records and their
+mechanisms are now **probe mode only**. The former implementation installed the
+QDExtensions patch and ran the arm-time heap census for `record` as well as
+`probe`; on a PB1400c, Sherlock 2 disappeared with a Type 1 bus error in the
+same cycle that tier became active, twice. Ordinary host arming remains
+`"mode": "record"` and now hooks only the exact requested WindowRecord. This
+is a mechanism boundary, not an application compatibility list.
 
 **How far it is proven.** 1000 `blitsrc` records crossed the wire
 against the loop control on the emulator the same day — every one naming
@@ -392,8 +390,9 @@ the port the applet reported for itself, every one immediately preceding
 its `bits` record — and one against the live CFM Finder, whose capture is
 the committed fixture behind the host's slice-D test. The trap-patch path
 was watched against Sherlock 2 on the same emulator: 77 born, 77 died, 0
-missed. **Nothing here has touched metal**, and no `qdext` counter has
-been read on a Macintosh.
+missed. On metal, that offscreen tier is correlated with two Sherlock Type 1
+crashes; the new record/probe separation is tested but has not yet been run on
+the PowerBook.
 
 **Served is not consumed.** Two of these are guest-side only today:
 `srcPixmap` is printed by the guest and decoded by nothing on the host,

@@ -261,6 +261,20 @@ static void test_arm_probe_mode(void)
              "probe mode without a target instruments nothing");
 }
 
+static void test_offscreen_mechanisms_are_probe_only(void)
+{
+    check(!now_content_mode_allows_offscreen(kNowContentModeOff),
+          "off mode permits no offscreen interception");
+    check(!now_content_mode_allows_offscreen(kNowContentModeCount),
+          "count mode is exact-window only");
+    check(!now_content_mode_allows_offscreen(kNowContentModeRecord),
+          "record mode is exact-window only");
+    check(now_content_mode_allows_offscreen(kNowContentModeProbe),
+          "probe mode explicitly permits offscreen interception");
+    check(!now_content_mode_allows_offscreen(0xFFFFFFFFu),
+          "unknown mode permits no offscreen interception");
+}
+
 /* The probe's port match: what earns a grafProcs write after a linear
    zone scan. Every refusal here is a heap block the probe must not
    touch. */
@@ -1008,6 +1022,7 @@ int main(void)
     test_arm_expiry();
     test_arm_null_request();
     test_arm_probe_mode();
+    test_offscreen_mechanisms_are_probe_only();
     test_probe_match();
     test_probe_pixmap_match();
     test_blit_source();
