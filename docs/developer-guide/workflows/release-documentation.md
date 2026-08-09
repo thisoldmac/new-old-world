@@ -6,7 +6,7 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [docs/site-integration.yaml, scripts/test-docs]
-source_dependencies: [docs/site-integration.yaml, docs/assets/screenshots/manifest.yaml, scripts/test-docs, scripts/docs-build, docs/status.md, docs/known-wrong.md, docs/open-issues.md]
+source_dependencies: [docs/site-integration.yaml, docs/assets/screenshots/manifest.yaml, docs/feature-catalog.yaml, scripts/test-docs, scripts/docs-build, docs/status.md, docs/known-wrong.md, docs/open-issues.md]
 media_ids: []
 last_verified: 2026-08-09
 ---
@@ -25,7 +25,12 @@ The release mode refuses incomplete integration and generates `security.txt` and
 ## Review truth and artifacts
 
 - Compare compatibility and limitations with `docs/status.md`, `docs/known-wrong.md`, `docs/open-issues.md`, contract coverage, and MCP coverage.
-- Install the actual host, PowerPC, 68K, and optional extension artifacts by the documented path.
+- Compare every packaged artifact with the active profile in
+  `docs/feature-catalog.yaml`; excluded features must not appear in release
+  setup instructions or the bundle.
+- Install the actual host and PowerPC artifacts by the documented path, then
+  test the optional extension both installed and absent. The initial profile
+  excludes the stale NOW-68K artifact.
 - Do not close a screenshot gap for a placeholder. List all remaining placeholder IDs in the release notes.
 - Confirm no page describes tested or emulator evidence as metal-verified.
 

@@ -1,17 +1,22 @@
 ---
 page_id: install-68k-how-to
 title: Install NOW-68K
-description: Transfer and launch the System 7.1 MacTCP guest on the currently supported 68K target profile.
+description: Retained contributor instructions for the stale, initial-alpha-excluded System 7.1 MacTCP guest.
 doc_type: how-to
 audience: user
-lifecycle: current
+lifecycle: reference
 authority: [README.md, now-guest-68k/CMakeLists.txt]
-source_dependencies: [now-guest-68k/CMakeLists.txt, now-guest-68k/src/ui/window.c, now-guest-68k/src/connection/n68_devsettings.h]
+source_dependencies: [now-guest-68k/CMakeLists.txt, now-guest-68k/src/ui/window.c, now-guest-68k/src/connection/n68_devsettings.h, docs/feature-catalog.yaml]
+feature_ids: [classic.pre-carbon]
 media_ids: [setup-68k-install]
 last_verified: 2026-08-09
 ---
 
 # Install NOW-68K
+
+This page is retained for contributors and future pre-Carbon work. The current
+NOW-68K build is stale and is not planned for the initial alpha. Do not treat
+these steps as a supported release path.
 
 ## Goal
 
@@ -20,7 +25,7 @@ Transport instructions to it.
 
 ## Steps
 
-1. Confirm the target matches the current 68K profile: System 7.1, 68030, and
+1. Confirm the target matches the retained 68K profile: System 7.1, 68030, and
    MacTCP.
 2. Transfer `now-guest-68k.bin` with MacBinary decoding enabled.
 3. Launch NOW-68K and inspect the host, port, timeout, health, and status

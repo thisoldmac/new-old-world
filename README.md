@@ -1,6 +1,6 @@
 # New Old World (NOW)
 
-Use a classic Macintosh from a modern Mac without turning either interface into a web replica. New Old World is a native macOS host, a PowerPC Carbon guest for Mac OS 8.6–9.2.2, and a 68K Toolbox guest for System 7.1-era machines. Both guests speak one versioned contract and initiate the connection to the host.
+Use a classic Macintosh from a modern Mac without turning either interface into a web replica. New Old World is a native macOS host and a PowerPC Carbon guest for Mac OS 8.6–9.2.2. The initial alpha centers that pair and its optional NOW Extension. A pre-Carbon 68K sibling remains in source, but its current build is stale and is not planned for the initial release.
 
 > **Pre-alpha:** useful paths exist, but installation is still manual, compatibility is deliberately narrow, and several features are tested or emulator-verified rather than proven on physical hardware. Read [current limitations](docs/user-guide/reference/limitations.md) before relying on it.
 
@@ -11,7 +11,8 @@ Use a classic Macintosh from a modern Mac without turning either interface into 
 ## Start here
 
 - [Connect your first classic Mac](docs/user-guide/tutorials/first-connection.md)
-- [Choose the PowerPC or 68K guest](docs/user-guide/how-to/choose-a-guest.md)
+- [See what the optional NOW Extension adds](docs/user-guide/explanation/optional-extension.md)
+- [Review the initial-alpha feature profile](docs/user-guide/reference/release-profile.md)
 - [Browse every module](docs/user-guide/reference/modules/index.md)
 - [Read the developer orientation](docs/developer-guide/orientation.md)
 - [See the generated protocol reference](docs/generated/asyncapi.md)
@@ -21,27 +22,27 @@ The web documentation is built from `mkdocs.yml` at the `/docs/` base path. Run 
 ## Product shape
 
 ```text
-PowerPC Carbon guest ─┐
-                      ├─ guest-initiated TCP, framed control + bulk ─ macOS host
-68K Toolbox guest ────┘
+PowerPC Carbon guest ─ guest-initiated TCP, framed control + bulk ─ macOS host
 
 optional NOW Extension ─ versioned memory table ─ PowerPC guest
+
+pre-Carbon NOW-68K ─ retained in source; excluded from initial alpha
 ```
 
 - The host accepts several named guest sessions and drives one selected machine.
 - The PowerPC guest is one Workshop window with native module pages.
-- NOW-68K implements an explicit subset of the same contract without shaping the PowerPC codebase.
-- The optional resident extension adds bounded observation and act planes; the rest of the product must degrade honestly without it.
+- The optional NOW Extension adds bounded structure, semantics, content, interaction, transition, liveness, drag, and cursor planes; the rest of the product degrades honestly without it.
+- NOW-68K implements an explicit subset of the same contract without shaping the PowerPC codebase, but is not an initial-alpha release artifact.
 - Agent access is a bounded projection of host capabilities, not a second route to the guest socket.
 
 ## Capability summary
 
-| Area | PowerPC | 68K | Current evidence |
+| Area | PowerPC initial alpha | Optional NOW Extension | Pre-Carbon/NOW-68K |
 |---|---|---|---|
-| Connection, console, files, processes, software, hardware facts | broad support | supported subset | mixed tested, emulator, and metal evidence |
-| Screenshots and streaming | capture and live stream | capture subset | PowerPC metal evidence; 68K gaps remain |
-| iCloud, Chat, MCP companion | host + PowerPC surfaces | unavailable | feature-specific evidence |
-| Mirror and resident observation | experimental | unavailable | tested/emulator evidence; some metal risks remain |
+| Connection, console, files, processes, software, hardware facts | included | not required | excluded from release |
+| Screenshots and streaming | included with stated limitations | not required | excluded from release |
+| Mirror structure and semantic observation | experimental | provides process-local planes | unavailable |
+| In-context interaction, transitions, modal-safe liveness, drag, and cursor following | experimental | provides resident vehicles | unavailable |
 
 The short table is navigation, not a claim of parity. The [module reference](docs/user-guide/reference/modules/index.md) states availability, safety, data movement, and failures per module. `docs/contract-coverage.md` keeps **served** separate from **proven**.
 
@@ -50,7 +51,7 @@ The short table is navigation, not a claim of parity. The [module reference](doc
 - The listener is for a trusted local network; secure transport is not available yet.
 - Distribution is not a signed installer flow. Classic artifacts require fork-preserving transfer.
 - Resume-by-offset and some large-transfer behavior remain unreliable.
-- NOW-68K has a smaller surface and less physical-machine verification.
+- Pre-Carbon/NOW-68K support is excluded from the initial alpha; its source and contributor documentation remain for later feature-flagged work.
 - Mirror is experimental. Drawing-content tracing remains off by default and has caused Finder instability on a PowerBook 1400c.
 - The documentation currently contains clearly labeled screenshot placeholders; captures must be privacy-reviewed and replace them at the declared dimensions.
 

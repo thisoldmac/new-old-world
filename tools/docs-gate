@@ -35,6 +35,7 @@ MODULE_SECTIONS = {
     "Common tasks", "Safety, consent, and privacy", "Failure states",
     "Current limitations", "For developers",
 }
+ALLOWED_RELEASE_STATES = {"included", "optional", "excluded"}
 
 
 class DocsLoader(yaml.SafeLoader):
@@ -155,6 +156,7 @@ class SiteHTML(HTMLParser):
         self.unlabelled_images = 0
         self.tables = 0
         self.mermaid = 0
+        self.release_banners = 0
         self.json_ld: list[str] = []
         self._json = False
 
@@ -183,6 +185,8 @@ class SiteHTML(HTMLParser):
             self.tables += 1
         elif "mermaid" in (values.get("class") or "").split():
             self.mermaid += 1
+        elif "now-release-banner" in (values.get("class") or "").split():
+            self.release_banners += 1
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "script":
@@ -391,6 +395,92 @@ def check(root: Path, site_dir: Path | None) -> int:
                 f"{path.relative_to(root)}: image links and media_ids disagree "
                 f"(links={sorted(actual_paths)}, declared={sorted(declared_paths)})"
             )
+
+    feature_catalog = load_yaml(docs / "feature-catalog.yaml")
+    if feature_catalog.get("schema_version") != 1:
+        errors.append("docs/feature-catalog.yaml: schema_version must be 1")
+    feature_defs = feature_catalog.get("features", {})
+    if not isinstance(feature_defs, dict) or not feature_defs:
+        errors.append("docs/feature-catalog.yaml: features must be a non-empty mapping")
+        feature_defs = {}
+    active_profile_id = feature_catalog.get("active_profile")
+    profiles = feature_catalog.get("profiles", {})
+    active_profile = profiles.get(active_profile_id, {}) if isinstance(profiles, dict) else {}
+    profile_features = active_profile.get("features", {}) if isinstance(active_profile, dict) else {}
+    if not active_profile:
+        errors.append(f"docs/feature-catalog.yaml: active profile {active_profile_id!r} does not exist")
+    elif set(profile_features) != set(feature_defs):
+        errors.append(
+            "docs/feature-catalog.yaml: active profile feature IDs differ from catalog "
+            f"(profile={sorted(profile_features)}, catalog={sorted(feature_defs)})"
+        )
+    for feature_id, feature in feature_defs.items():
+        if not isinstance(feature, dict):
+            errors.append(f"feature {feature_id}: definition must be a mapping")
+            continue
+        binding = feature.get("runtime_binding")
+        flag_key = feature.get("flag_key")
+        if binding == "planned" and not flag_key:
+            errors.append(f"feature {feature_id}: planned runtime binding needs flag_key")
+        if binding != "planned" and flag_key:
+            errors.append(f"feature {feature_id}: flag_key requires runtime_binding: planned")
+        entry = profile_features.get(feature_id, {})
+        state = entry.get("state") if isinstance(entry, dict) else None
+        if state not in ALLOWED_RELEASE_STATES:
+            errors.append(f"feature {feature_id}: invalid release state {state!r}")
+        primary_pages = feature.get("primary_pages", [])
+        if not isinstance(primary_pages, list) or not primary_pages:
+            errors.append(f"feature {feature_id}: primary_pages must be a non-empty list")
+            continue
+        for page_rel in primary_pages:
+            page = docs / str(page_rel)
+            if not page.exists():
+                errors.append(f"feature {feature_id}: primary page does not exist: {page_rel}")
+                continue
+            page_features = metadata.get(page, {}).get("feature_ids", [])
+            if feature_id not in page_features:
+                errors.append(f"feature {feature_id}: primary page {page_rel} does not declare feature_ids")
+    for path, meta in metadata.items():
+        page_features = meta.get("feature_ids", [])
+        if not isinstance(page_features, list):
+            errors.append(f"{path.relative_to(root)}: feature_ids must be a list")
+            continue
+        unknown_features = sorted(set(page_features) - set(feature_defs))
+        if unknown_features:
+            errors.append(f"{path.relative_to(root)}: unknown feature_ids: {', '.join(unknown_features)}")
+
+    capabilities = feature_catalog.get("extension_capabilities", [])
+    capability_ids = [row.get("id") for row in capabilities if isinstance(row, dict)]
+    capability_planes = [row.get("plane") for row in capabilities if isinstance(row, dict)]
+    if len(capability_ids) != len(set(capability_ids)):
+        errors.append("docs/feature-catalog.yaml: duplicate extension capability id")
+    expected_planes = {f"P{number}" for number in range(9)}
+    if set(capability_planes) != expected_planes or len(capability_planes) != len(expected_planes):
+        errors.append(
+            "docs/feature-catalog.yaml: extension capability planes must be exactly P0-P8 "
+            f"(got={capability_planes})"
+        )
+    declared_symbols = [
+        symbol
+        for row in capabilities if isinstance(row, dict)
+        for symbol in row.get("symbols", [])
+    ]
+    header = (root / "contract/peek_table.h").read_text()
+    live_symbols = re.findall(r"^\s*(kNowPeekTableCap[A-Za-z]+)\s*=", header, re.MULTILINE)
+    if set(declared_symbols) != set(live_symbols) or len(declared_symbols) != len(live_symbols):
+        errors.append(
+            "docs/feature-catalog.yaml: extension capability symbols differ from peek_table.h "
+            f"(catalog={declared_symbols}, live={live_symbols})"
+        )
+    release_page = docs / "user-guide/reference/release-profile.md"
+    extension_page = docs / "user-guide/explanation/optional-extension.md"
+    if release_page.read_text().count("<!-- release-feature-table -->") != 1:
+        errors.append("release-profile.md: expected exactly one release-feature-table marker")
+    if extension_page.read_text().count("<!-- extension-capability-table -->") != 1:
+        errors.append("optional-extension.md: expected exactly one extension-capability-table marker")
+    hooks = config.get("hooks", [])
+    if "docs/hooks/release_features.py" not in hooks:
+        errors.append("mkdocs.yml: release feature hook is not configured")
     orphan_media = sorted(set(by_id) - referenced_media)
     if orphan_media:
         errors.append(f"media manifest entries are unused: {', '.join(orphan_media)}")
@@ -454,7 +544,10 @@ def check(root: Path, site_dir: Path | None) -> int:
             site_dir / "index.html": {"product": True},
             site_dir / "user-guide/tutorials/first-connection/index.html": {},
             site_dir / "user-guide/how-to/configure-connection/index.html": {},
-            site_dir / "user-guide/reference/modules/files/index.html": {"images": True},
+            site_dir / "user-guide/how-to/install-68k/index.html": {"release_banner": True},
+            site_dir / "user-guide/explanation/optional-extension/index.html": {"table": True, "release_banner": True},
+            site_dir / "user-guide/reference/release-profile/index.html": {"table": True},
+            site_dir / "user-guide/reference/modules/files/index.html": {"images": True, "release_banner": True},
             site_dir / "developer-guide/architecture/system-context/index.html": {"mermaid": True},
             site_dir / "developer-guide/reference/verification-levels/index.html": {"table": True, "mermaid": True},
         }
@@ -482,6 +575,8 @@ def check(root: Path, site_dir: Path | None) -> int:
                 errors.append(f"{path}: representative table page rendered no table")
             if expected.get("mermaid") and parser.mermaid < 1:
                 errors.append(f"{path}: representative diagram page rendered no Mermaid container")
+            if expected.get("release_banner") and parser.release_banners != 1:
+                errors.append(f"{path}: rendered feature page has {parser.release_banners} release banners")
             json_types: set[str] = set()
             for raw in parser.json_ld:
                 try:
@@ -514,6 +609,8 @@ def check(root: Path, site_dir: Path | None) -> int:
     notices.append(f"published links scanned: {sum(len(LINK_RE.findall(path.read_text())) for path in published)}")
     notices.append(f"media: {real_count} captured, {placeholder_count} placeholders")
     notices.append(f"module coverage: {len(rows)} host modules, {len(ppc_declared)} PPC pages")
+    notices.append(f"release profile: {active_profile_id}, {len(feature_defs)} product features")
+    notices.append(f"extension capabilities: {len(capabilities)} planes, {len(declared_symbols)} capability bits")
     notices.append(f"Mermaid diagrams: {sum(len(MERMAID_RE.findall(frontmatter(path)[1])) for path in curated)}")
     print("[docs-gate] passed")
     for notice in notices:

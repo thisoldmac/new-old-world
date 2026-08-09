@@ -12,11 +12,13 @@ last_verified: 2026-08-09
 ---
 # Developer guide
 
-New Old World is a native macOS host, a PowerPC Carbon guest, a 68K Toolbox guest, and an optional resident extension. They share a versioned wire contract, but not a UI architecture or an implementation language.
+New Old World is a native macOS host, a PowerPC Carbon guest, an optional resident extension, and a retained 68K Toolbox sibling. The initial alpha includes the first pair, offers the extension as an optional component, and excludes the currently stale pre-Carbon build. They share a versioned wire contract, but not a UI architecture or an implementation language.
 
 Start with [orientation](orientation.md), then use the architecture pages to find the owning boundary. The workflow pages turn the repository's working rules into executable paths. The generated [AsyncAPI reference](../generated/asyncapi.md) is useful for lookup; `contract/asyncapi.yaml` remains authoritative.
 
 The [documentation standard](reference/documentation-standard.md) records the web-facing choices: Diátaxis, AsyncAPI 3.0, Mermaid with text equivalents, a WCAG 2.2 AA target, Schema.org metadata, and RFC 9116 release assets.
+The [initial-alpha feature profile](../user-guide/reference/release-profile.md)
+is machine-readable and drives feature-page availability notices.
 
 ## Change map
 

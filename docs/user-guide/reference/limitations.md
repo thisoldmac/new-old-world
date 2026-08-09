@@ -6,7 +6,7 @@ doc_type: reference
 audience: user
 lifecycle: current
 authority: [docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md]
-source_dependencies: [docs/status.md, docs/known-wrong.md, SECURITY.md]
+source_dependencies: [docs/status.md, docs/known-wrong.md, SECURITY.md, docs/feature-catalog.yaml]
 media_ids: []
 last_verified: 2026-08-09
 ---
@@ -18,8 +18,13 @@ last_verified: 2026-08-09
 - **Pre-alpha packaging.** The exact release bundle and website integration
   must be reviewed at the release commit. Do not infer an installer, updater,
   notarization flow, or download URL from source-build scripts.
-- **Two unequal guests.** NOW-68K intentionally lacks iCloud, Chat, Mirror,
-  MCP consent UI, and the optional resident.
+- **PowerPC-only initial alpha.** The NOW-68K/pre-Carbon build is currently
+  stale and excluded from the initial release. Its source and contributor
+  documentation remain, but are not a support or packaging promise.
+- **Optional resident.** The NOW Extension is required for its process-local
+  structure, semantic, content, interaction, transition, liveness, drag, and
+  cursor planes. Ordinary application-level modules remain available without
+  it at their declared levels.
 - **Mirror remains experimental.** Finder and application-window interiors
   have narrower evidence and known incomplete behaviors. Absence of a resident
   plane is not evidence that a window has no content.

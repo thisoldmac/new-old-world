@@ -115,6 +115,21 @@ def main() -> int:
             "do not match live enum",
         )
         expect_mutation(
+            test_root, "release profile coverage", test_root / "docs/feature-catalog.yaml",
+            "      classic.pre-carbon:\n", "      classic.pre-carbon-renamed:\n",
+            "active profile feature IDs differ from catalog",
+        )
+        expect_mutation(
+            test_root, "extension capability inventory", test_root / "docs/feature-catalog.yaml",
+            "symbols: [kNowPeekTableCapAnchors]", "symbols: []",
+            "extension capability symbols differ from peek_table.h",
+        )
+        expect_mutation(
+            test_root, "feature page binding", test_root / "docs/user-guide/how-to/install-extension.md",
+            "feature_ids: [resident.extension]", "feature_ids: [classic.powerpc]",
+            "primary page user-guide/how-to/install-extension.md does not declare feature_ids",
+        )
+        expect_mutation(
             test_root, "AsyncAPI reference", test_root / "contract/asyncapi.yaml",
             '#/components/messages/fileProgress', '#/components/messages/doesNotExist',
             "dangling local $ref",
@@ -210,6 +225,12 @@ def main() -> int:
             expect_mutation(
                 test_root, "structured data", index, '"@type": "TechArticle"', '"@type": "BrokenArticle"',
                 "JSON-LD types", rendered,
+            )
+            extension = rendered / "user-guide/explanation/optional-extension/index.html"
+            expect_mutation(
+                test_root, "rendered release banner", extension,
+                'class="now-release-banner"', 'class="now-release-banner-missing"',
+                "rendered feature page has 0 release banners", rendered,
             )
 
     print("[docs-gate-selftest] all documentation mutations refused")

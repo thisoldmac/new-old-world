@@ -5,6 +5,7 @@ description: Transfer the canonical MacBinary PowerPC guest to Mac OS 8.6–9.2.
 doc_type: how-to
 audience: user
 lifecycle: current
+feature_ids: [classic.powerpc]
 authority: [docs/naming.md, AGENTS.md]
 source_dependencies: [now-guest-ppc/CMakeLists.txt, now-guest-ppc/tools/name_macbinary.py, docs/naming.md]
 media_ids: [setup-ppc-install]

@@ -20,6 +20,22 @@ under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
 `MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
 retain their original path spelling so the ledger remains an honest receipt.
 
+## PLANNED RELEASE CONTROL: documentation has a feature profile; runtime flags do not yet exist (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+
+`docs/feature-catalog.yaml` now declares the initial-alpha product boundary:
+the PowerPC Carbon guest is included, NOW Extension is optional, and the stale
+NOW-68K/pre-Carbon build is excluded. MkDocs renders those states on owning
+pages and generates the public release table and P0–P8 extension inventory from
+the catalog. The documentation gate rejects an incomplete profile, a page
+bound to an unknown feature, or an extension capability list that differs from
+`contract/peek_table.h`; its mutation suite has watched each refusal run.
+
+This is documentation control, not runtime control. No application feature-flag
+system reads the catalog yet. The future implementation must either consume
+the reserved `classic.pre-carbon` key and active-profile default or replace the
+catalog as the single authority. Landing a second runtime-only availability
+matrix would recreate the release drift this gate is intended to prevent.
+
 **There is a third category, and it is not on this page.**
 [known-wrong.md](known-wrong.md) is the register of things NOW knowingly
 ships that disagree with the machine, or knowingly does not do — each

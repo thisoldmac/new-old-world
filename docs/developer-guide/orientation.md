@@ -21,7 +21,9 @@ Use a branch and run `tools/setup-hooks` once per clone. This repository is comm
 1. Read `AGENTS.md` for the full operating rules.
 2. Read [system context](architecture/system-context.md) and [source authority](reference/source-authority.md).
 3. Inspect `contract/asyncapi.yaml` before changing behavior that crosses the wire.
-4. For PowerPC UI work, read `docs/guest-ui-start-here.md`. For 68K work, preserve its non-Carbon Toolbox boundary.
+4. For PowerPC UI work, read `docs/guest-ui-start-here.md`. For 68K work,
+   preserve its non-Carbon Toolbox boundary and remember that
+   `classic.pre-carbon` is excluded from the initial release profile.
 
 ## Establish a baseline
 
@@ -34,4 +36,3 @@ The command orders the gates from cheap to expensive. A skip means the necessary
 ## Find the owner
 
 Use the [repository map](reference/repository-map.md). If the change affects both applications, begin with the contract rather than implementing one half first. If it affects how a person uses a feature, update the corresponding user module page in the same change.
-

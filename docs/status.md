@@ -20,6 +20,20 @@ than any hardware this project targets, with an emulated bus. It is
 never a substitute for metal, and every emulator-verified claim here
 says so at the point of claim rather than in a footnote.
 
+## Initial alpha release profile
+
+The planned first public alpha includes the macOS host and PowerPC Carbon
+guest, with NOW Extension as an optional artifact. The current NOW-68K build is
+stale and excluded from that release profile; its source evidence below remains
+useful engineering history, not a packaging or support claim. The
+machine-readable authority is `docs/feature-catalog.yaml`, rendered in the
+[initial-alpha feature page](user-guide/reference/release-profile.md).
+
+Runtime feature flags are not implemented yet. The catalog reserves
+`classic.pre-carbon` as the planned binding for pre-Carbon support so future
+runtime defaults and documentation can share one key instead of maintaining
+parallel availability lists.
+
 - [docs/mirror-state-of-play-2026-08-06.md](mirror-state-of-play-2026-08-06.md)
   is the short version **for the Mirror specifically** — what a person
   driving it will actually experience, good and bad, in the order they

@@ -36,6 +36,9 @@ theme:
 plugins:
   - search
 
+hooks:
+  - docs/hooks/release_features.py
+
 markdown_extensions:
   - admonition
   - attr_list
@@ -81,13 +84,14 @@ nav:
   - Docs home: index.md
   - User guide:
       - Overview: user-guide/index.md
+      - NOW Extension: user-guide/explanation/optional-extension.md
       - Tutorial:
           - Connect your first classic Mac: user-guide/tutorials/first-connection.md
       - How-to guides:
           - Choose the right guest: user-guide/how-to/choose-a-guest.md
           - Install the macOS host: user-guide/how-to/install-host.md
           - Install the PowerPC guest: user-guide/how-to/install-ppc.md
-          - Install NOW-68K: user-guide/how-to/install-68k.md
+          - Install NOW-68K (future): user-guide/how-to/install-68k.md
           - Configure a connection: user-guide/how-to/configure-connection.md
           - Install the NOW Extension: user-guide/how-to/install-extension.md
           - Recover a connection: user-guide/how-to/recover-a-connection.md
@@ -97,8 +101,8 @@ nav:
           - Two Macs, one contract: user-guide/explanation/two-macs-one-contract.md
           - Guests and compatibility: user-guide/explanation/guests-and-compatibility.md
           - Verification and safety: user-guide/explanation/verification-and-safety.md
-          - The optional extension: user-guide/explanation/optional-extension.md
       - Reference:
+          - Initial alpha features: user-guide/reference/release-profile.md
           - Requirements: user-guide/reference/requirements.md
           - Current limitations: user-guide/reference/limitations.md
           - Modules:

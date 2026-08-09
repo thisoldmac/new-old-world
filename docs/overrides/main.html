@@ -51,3 +51,34 @@
     {% endif %}
   {% endif %}
 {% endblock %}
+
+{% block content %}
+  {% if page and page.meta and page.meta.feature_ids %}
+    <aside class="now-release-banner" aria-label="Release availability">
+      <strong>{{ config.extra.feature_catalog.active.title }} availability</strong>
+      <ul>
+        {% for feature_id in page.meta.feature_ids %}
+          {% set feature = config.extra.feature_catalog.active.features[feature_id] %}
+          <li>
+            <span class="now-release-state now-release-state--{{ feature.state }}">{{ feature.state }}</span>
+            <strong>{{ feature.title }}</strong>: {{ feature.note }}
+            {% if feature.flag_key %}
+              Planned flag: <code>{{ feature.flag_key }}</code>; runtime binding is not implemented yet.
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </aside>
+  {% endif %}
+  {% if page and page.meta and page.meta.module_ids and config.extra.feature_catalog.active.features["classic.pre-carbon"].state == "excluded" %}
+    <aside class="now-release-banner" aria-label="Module release scope">
+      <strong>{{ config.extra.feature_catalog.active.title }} module scope</strong>
+      <p>
+        The PowerPC Workshop is the release surface. Any NOW-68K availability
+        on this page records retained source behavior for future pre-Carbon
+        work; it is not included in this release profile.
+      </p>
+    </aside>
+  {% endif %}
+  {{ super() }}
+{% endblock %}

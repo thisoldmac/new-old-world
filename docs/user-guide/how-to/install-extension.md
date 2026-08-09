@@ -6,9 +6,10 @@ doc_type: how-to
 audience: operator
 lifecycle: experimental
 authority: [docs/resident-components.md, docs/staged-images.md]
-source_dependencies: [ext, contract/peek_table.h, docs/resident-components.md]
+source_dependencies: [ext, contract/peek_table.h, docs/resident-components.md, docs/feature-catalog.yaml]
 media_ids: [setup-extension]
 last_verified: 2026-08-09
+feature_ids: [resident.extension]
 ---
 
 # Install the NOW Extension
@@ -17,6 +18,8 @@ last_verified: 2026-08-09
 
 Enable optional PowerPC observation planes while preserving a boot-without-it
 recovery path.
+
+Before installing it, review [the complete capability inventory](../explanation/optional-extension.md#what-the-extension-adds).
 
 ## Prerequisites
 

@@ -1,0 +1,98 @@
+schema_version: 1
+active_profile: initial-alpha
+
+features:
+  classic.powerpc:
+    title: PowerPC Carbon guest
+    description: The initial classic-Mac guest for Mac OS 8.6–9.2.2 with CarbonLib 1.6.
+    flag_key: null
+    runtime_binding: intrinsic
+    primary_pages:
+      - user-guide/how-to/install-ppc.md
+  resident.extension:
+    title: NOW Extension
+    description: The optional resident that adds process-local observation, interaction, transition, and liveness planes.
+    flag_key: null
+    runtime_binding: capability-negotiated
+    primary_pages:
+      - user-guide/explanation/optional-extension.md
+      - user-guide/how-to/install-extension.md
+  classic.pre-carbon:
+    title: Pre-Carbon support (NOW-68K)
+    description: The non-Carbon Toolbox and MacTCP guest for older 68K Macintosh systems.
+    flag_key: classic.pre-carbon
+    runtime_binding: planned
+    primary_pages:
+      - user-guide/how-to/install-68k.md
+      - developer-guide/architecture/68k-guest.md
+
+profiles:
+  initial-alpha:
+    title: Initial alpha
+    description: The public release profile planned for the first downloadable alpha.
+    features:
+      classic.powerpc:
+        state: included
+        note: Primary classic guest and the only supported initial-alpha path.
+      resident.extension:
+        state: optional
+        note: Shipped separately; install it only for the resident-backed features listed below.
+      classic.pre-carbon:
+        state: excluded
+        note: The current NOW-68K build is stale and is not planned for the initial alpha.
+
+extension_capabilities:
+  - id: discovery
+    plane: P0
+    title: Discovery and lifecycle
+    symbols: []
+    exposes: Installed, restart-needed, wrong-version, build identity, writer, and negotiated-capability state.
+    posture: Core contract; the product remains usable when it reports the extension absent.
+  - id: structure
+    plane: P1
+    title: Process-local structure
+    symbols: [kNowPeekTableCapAnchors]
+    exposes: Per-process window and menu anchors, front-window geometry, and bounded window discovery.
+    posture: Armed only while requested; stale and absent observations remain distinct.
+  - id: semantics
+    plane: P2
+    title: Semantic controls
+    symbols: [kNowPeekTableCapTree]
+    exposes: Bounded classification of standard controls, list cells, and system menu items.
+    posture: Experimental; custom controls and unsupported shapes remain explicit.
+  - id: content
+    plane: P3
+    title: Structured drawing content
+    symbols: [kNowPeekTableCapContent]
+    exposes: Target-scoped QuickDraw records used to reconstruct window interiors without treating a screenshot as structure.
+    posture: Experimental and high risk; compiled dark and armed only for an exact target.
+  - id: interaction
+    plane: P4
+    title: In-context interaction
+    symbols: [kNowPeekTableCapAct]
+    exposes: Guarded menus, controls, dialog items, text, visibility, and window move, resize, zoom, close, and selection requests.
+    posture: Experimental; effects require application-owned confirmation, not merely a resident reply.
+  - id: transitions
+    plane: P5
+    title: UI transitions
+    symbols: [kNowPeekTableCapEvents]
+    exposes: A bounded event tail for observing UI changes that can disappear between full scene reads.
+    posture: Experimental; availability and freshness are reported rather than inferred.
+  - id: liveness
+    plane: P6
+    title: Liveness below the application
+    symbols: [kNowPeekTableCapLiveness, kNowPeekTableCapLivenessNet]
+    exposes: A resident-owned host channel that can remain alive while the foreground application is starved by a modal or tracking loop.
+    posture: Emulator-verified; the vehicle and network transport are negotiated separately.
+  - id: drag
+    plane: P7
+    title: Drag sessions
+    symbols: [kNowPeekTableCapDrag]
+    exposes: A held mouse button across tracking loops, with resident-enforced idle and maximum-duration release.
+    posture: Builds and native tests pass; the vehicle has not yet been machine-verified.
+  - id: cursor
+    plane: P8
+    title: Cursor following
+    symbols: [kNowPeekTableCapCursor]
+    exposes: A drawn cursor that follows remote actions while yielding after physical mouse movement.
+    posture: Emulator-verified; absence affects cursor presentation, not the underlying action.
