@@ -110,6 +110,12 @@ or metal-verified.
 Two preservation/settlement limits are still open and are intentionally not
 hidden behind a successful receipt:
 
+- The first agent and host surface has distinct build and run receipts, but no
+  typed test operation or test receipt yet. Treating Build or Run as Test would
+  erase the result boundary required by the project contract; the next slice
+  must define a closed declarative test plan and its expected product identity
+  before adding that operation.
+
 - Source-tree manifests currently bind data-fork SHA-256 only. A nonempty
   source resource fork is refused both when the host stages a candidate and
   when the guest manifests or serves an import, so the lane fails instead of

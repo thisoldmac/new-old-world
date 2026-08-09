@@ -15,9 +15,11 @@ is an optional human-only `odoc` handoff. NOW-68K reports typed absence.
 This is **tested and builds**, not emulator- or metal-verified. Source resource
 forks are refused at host staging and guest import instead of being silently
 lost; Finder metadata is not yet preserved by the Git mirror/candidate round
-trip. CodeKitten event dispatch has no returned acceptance receipt, and the
-host import sheet requires a project ID rather than listing guest projects.
-Details and the operational model are in [development.md](development.md).
+trip. A distinct test operation/receipt is not implemented; build and run must
+not be relabeled as test. CodeKitten event dispatch has no returned acceptance
+receipt, and the host import sheet requires a project ID rather than listing
+guest projects. Details and the operational model are in
+[development.md](development.md).
 
 This is the long form of the README's status table — every capability
 with its evidence, and every gap with what is actually unknown about it.

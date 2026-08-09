@@ -11,7 +11,14 @@ successful promote and exact run with CodeKitten absent. Metal then owes exact
 MPW toolchain/version, both product fork sizes/digest, process identity and an
 `odoc` edit imported as a new revision.
 
-Two implementation gaps block a full preservation/acceptance claim today:
+Three implementation gaps block a full development/preservation/acceptance
+claim today:
+
+- `now_development` has separate build and exact-product run outcomes, but no
+  test operation or `ckproject.test-receipt/1`. A test cannot be reported as a
+  build configuration or a successful launch: its closed declarative action
+  vocabulary, expected product identity and terminal receipt still need to be
+  added to `Project.ckp`, the ToolServer service and both human/agent faces.
 
 - Guest source manifests and the host Git mirror bind data-fork SHA-256 only.
   Resource forks and Finder type/creator are not represented or reconstructed
