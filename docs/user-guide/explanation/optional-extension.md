@@ -1,56 +1,62 @@
 ---
 page_id: optional-extension-explanation
-title: The optional NOW Extension
-description: Why the PowerPC resident exists, what it may observe, and why NOW must remain useful without it.
+title: Core features and the NOW Extension
+description: See which initial-alpha features work in the normal application, which need the optional NOW Extension, and which remain experimental.
 doc_type: explanation
 audience: user
-lifecycle: experimental
-authority: [contract/peek_table.h, docs/resident-components.md, docs/feature-catalog.yaml]
-source_dependencies: [docs/resident-components.md, contract/peek_table.h, ext, docs/feature-catalog.yaml]
+lifecycle: current
+authority: [docs/feature-catalog.yaml, docs/status.md, docs/user-guide/reference/limitations.md]
+source_dependencies: [docs/feature-catalog.yaml, docs/status.md, docs/user-guide/reference/limitations.md, docs/module-manifest.yaml, docs/resident-components.md, contract/peek_table.h]
 media_ids: []
 last_verified: 2026-08-09
 feature_ids: [resident.extension]
 ---
 
-# The optional NOW Extension
+# Core features and the NOW Extension
 
-The NOW Extension is the optional component that turns Mirror from ordinary
-application-level inspection into process-local observation and interaction.
-It ships as one classic Mac OS extension, loads at startup, and exposes a
-versioned set of independently negotiated planes to the PowerPC guest.
+Start with the normal PowerPC application. It connects, transfers files,
+captures the screen, reports processes and machine details, and provides the
+Workshop without installing anything in the classic Mac's Extensions folder.
 
-Some classic Macintosh facts exist only while another application is drawing
-or handling events. The optional resident can observe those moments and publish
-bounded state through one versioned in-memory table. The normal application
-reads the table later; the host still communicates with the application over
-the ordinary wire.
+The optional **NOW Extension** is for deeper Mirror features. It lets NOW
+observe and interact while another classic application is drawing, tracking a
+drag, showing a menu, or holding the machine inside a modal loop. Installing it
+does not replace the application or unlock ordinary connection, file, screen,
+console, process, hardware, or software features.
 
-That ownership boundary is strict: foreign-context execution stays in the
-resident, foreign-memory reads stay in the application, and the shared layout
-lives once in `contract/peek_table.h`. The resident does not become a second
-network stack or a required service.
+## Feature coverage
 
-## What the extension adds
+<!-- extension-feature-matrix -->
 
-<!-- extension-capability-table -->
+**Included** rows are part of the initial-alpha PowerPC path, subject to the
+linked limitations. **Experimental** rows are available for evaluation but do
+not carry the same release confidence. Emulator-verified or tested rows have
+not necessarily been observed on physical hardware.
 
-The list is derived from `docs/feature-catalog.yaml`, and the documentation gate
-checks its capability symbols against every `kNowPeekTableCap*` bit in
-`contract/peek_table.h`. P0 is the discovery core and therefore has no plane
-bit. P6 deliberately owns two bits: one says the liveness vehicle exists and
-one says the resident can open the network transport.
+## Decide whether to install it
 
-The table describes what the current source exposes, not a blanket statement
-of hardware verification. A running extension publishes its actual capability
-word, formats, active planes, and evidence; the app must believe those values
-rather than the product version or this page.
+- Skip it when you want the normal NOW connection, file, screen, inventory, or
+  console experience.
+- Install it when you are deliberately evaluating the Extension-required
+  Mirror rows in the matrix and can recover by booting with Extensions
+  disabled.
+- Leave structured drawing capture off unless you are working on that
+  experimental path; it remains the highest-risk Extension feature.
 
-## What still works without it
+The application reports whether the Extension is absent, active, incompatible,
+or waiting for a restart. It also reports the capabilities the installed build
+actually negotiated; the matrix does not override that live state.
 
-Without the extension, Files, Processes, Screen, Console, Hardware, Software,
-and the rest of the ordinary application continue to work at their declared
-levels. Mirror reports the missing planes and degrades rather than pretending
-that empty observation is a valid result.
+## How it fits together
 
-Install it only with a recovery path. See
-[Install the NOW Extension](../how-to/install-extension.md).
+The Extension runs only the small amount of work that must occur inside another
+classic process. The normal application remains the network endpoint and reads
+the Extension's bounded state later. Removing the Extension returns NOW to the
+application-only coverage shown above.
+
+For installation and recovery, see [Install the NOW
+Extension](../how-to/install-extension.md). Developers looking for the P0–P8
+contract and capability-bit mapping should use [Resident
+components](../../developer-guide/architecture/resident-components.md); those
+implementation details are deliberately not the primary user-facing feature
+list.

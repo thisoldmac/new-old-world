@@ -18,16 +18,9 @@ Mac supplies native browsing, services, and agent integration; the classic Mac
 supplies its own files, processes, screen, software inventory, and human-facing
 Workshop. They meet through one versioned contract.
 
-The first alpha targets the PowerPC Carbon guest. The optional **NOW
-Extension** is a first-class part of that story: install it when you need
-process-local UI structure, semantic controls, structured drawing content,
-in-context interaction, transition observation, modal-safe liveness, drag, or
-cursor following. Ordinary files, processes, screenshots, console, hardware,
-and software features remain usable without it. [See every extension
-capability and its current posture](user-guide/explanation/optional-extension.md).
-
-The pre-Carbon NOW-68K source remains in the repository, but its current build
-is stale and is not planned for the initial alpha. The
+The first alpha targets the PowerPC Carbon guest. The pre-Carbon NOW-68K source
+remains in the repository, but its current build is stale and is not planned
+for the initial alpha. The
 [initial-alpha feature profile](user-guide/reference/release-profile.md) is the
 authoritative release-facing statement.
 
@@ -39,8 +32,9 @@ authoritative release-facing statement.
 
 - [Connect your first classic Mac](user-guide/tutorials/first-connection.md)
   for the guided path from artifacts to a named session.
-- [Understand the NOW Extension](user-guide/explanation/optional-extension.md)
-  before deciding whether to install the optional resident.
+- [Explore core features and Extension coverage](user-guide/explanation/optional-extension.md)
+  after connecting, including which features work without the optional
+  component and which remain experimental.
 - [Review initial-alpha features](user-guide/reference/release-profile.md) for
   what is included, optional, and excluded.
 - [Browse the module reference](user-guide/reference/modules/index.md) when

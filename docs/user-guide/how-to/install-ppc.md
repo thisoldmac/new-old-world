@@ -32,7 +32,8 @@ product identity intact.
 ## Expected result
 
 The Workshop opens with its navigation rail. The exact product name matters:
-preferences and optional resident planes use it as part of their identity.
+preferences and optional Extension-backed features use it as part of their
+identity.
 
 ## Recovery
 

@@ -62,8 +62,8 @@ session, and disconnect are distinct outcomes. A partial frame is not a still.
 
 ## Current limitations
 
-Screen transport and Mirror's semantic/window rendering are different planes.
-A successful still does not prove Mirror content observation.
+Screen capture and Mirror's structured window rendering are different
+features. A successful still does not prove Mirror content observation.
 
 ## For developers
 

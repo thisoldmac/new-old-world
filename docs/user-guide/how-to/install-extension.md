@@ -16,10 +16,11 @@ feature_ids: [resident.extension]
 
 ## Goal
 
-Enable optional PowerPC observation planes while preserving a boot-without-it
-recovery path.
+Enable deeper PowerPC Mirror observation and interaction while preserving a
+boot-without-it recovery path.
 
-Before installing it, review [the complete capability inventory](../explanation/optional-extension.md#what-the-extension-adds).
+Before installing it, review the [feature coverage
+matrix](../explanation/optional-extension.md#feature-coverage).
 
 ## Prerequisites
 

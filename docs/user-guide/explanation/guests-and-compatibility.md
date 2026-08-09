@@ -22,7 +22,7 @@ stale and its source-level capabilities are not an initial-release promise.
 
 The PowerPC guest uses CarbonLib and provides the one-window Workshop across
 Mac OS 8.6–9.2.2. It carries the broadest UI surface and is the only guest that
-can use the optional NOW Extension and Mirror planes.
+can use the optional NOW Extension and its deeper Mirror features.
 
 NOW-68K is a non-Carbon Toolbox application for the historically targeted System
 7.1/MacTCP environment. Its compact main window and console preserve the

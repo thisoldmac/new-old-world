@@ -18,6 +18,7 @@ theme:
   language: en
   features:
     - navigation.indexes
+    - navigation.instant
     - navigation.sections
     - navigation.top
     - search.highlight
@@ -86,9 +87,9 @@ nav:
   - Docs home: index.md
   - User guide:
       - Overview: user-guide/index.md
-      - NOW Extension: user-guide/explanation/optional-extension.md
-      - Tutorial:
+      - Getting started:
           - Connect your first classic Mac: user-guide/tutorials/first-connection.md
+          - Core features and the NOW Extension: user-guide/explanation/optional-extension.md
       - How-to guides:
           - Choose the right guest: user-guide/how-to/choose-a-guest.md
           - Install the macOS host: user-guide/how-to/install-host.md

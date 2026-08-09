@@ -41,6 +41,98 @@ profiles:
         state: excluded
         note: The current NOW-68K build is stale and is not planned for the initial alpha.
 
+extension_feature_coverage:
+  - id: connections
+    title: Connect and identify a classic Mac
+    without_extension: Full feature.
+    extension_required: false
+    status: Included in the initial alpha.
+    capability_ids: []
+  - id: files
+    title: Browse, transfer, and manage files
+    without_extension: Full feature.
+    extension_required: false
+    status: Included, with the documented resume and large-transfer limitations.
+    capability_ids: []
+  - id: screen
+    title: Capture or stream the classic Mac screen
+    without_extension: Full feature.
+    extension_required: false
+    status: Included, with the documented streaming and transfer limitations.
+    capability_ids: []
+  - id: inventory
+    title: Inspect processes, hardware, and software
+    without_extension: Full feature.
+    extension_required: false
+    status: Included in the initial alpha.
+    capability_ids: []
+  - id: workshop
+    title: Use the Workshop and console
+    without_extension: Full feature.
+    extension_required: false
+    status: Included in the initial alpha.
+    capability_ids: []
+  - id: mirror-shell
+    title: Open Mirror and inspect its application-level shell
+    without_extension: Basic shell only.
+    extension_required: false
+    status: Experimental; deeper observation uses the rows below.
+    capability_ids: []
+  - id: extension-health
+    title: See whether the Extension is active and compatible
+    without_extension: Reports that the Extension is not installed.
+    extension_required: false
+    status: Included diagnostic for an optional component.
+    capability_ids: [discovery]
+  - id: window-structure
+    title: See live windows and menus from other applications
+    without_extension: Not available.
+    extension_required: true
+    status: Experimental; absence and stale observations remain visible.
+    capability_ids: [structure]
+  - id: semantic-controls
+    title: Recognize standard controls, list items, and menu items
+    without_extension: Not available.
+    extension_required: true
+    status: Experimental; custom and unsupported controls remain explicit.
+    capability_ids: [semantics]
+  - id: structured-content
+    title: Reconstruct application interiors from drawing activity
+    without_extension: Not available.
+    extension_required: true
+    status: Experimental and high risk; off by default and armed for an exact target only.
+    capability_ids: [content]
+  - id: interaction
+    title: Interact with windows, menus, controls, text, and selections
+    without_extension: Not available through process-local Mirror actions.
+    extension_required: true
+    status: Experimental; success requires application-owned confirmation.
+    capability_ids: [interaction]
+  - id: transitions
+    title: Follow short-lived interface changes
+    without_extension: Changes between scene reads may be missed.
+    extension_required: true
+    status: Experimental; availability and freshness are reported.
+    capability_ids: [transitions]
+  - id: modal-liveness
+    title: Stay reachable while an application is in a modal or tracking loop
+    without_extension: The normal guest connection may pause until the loop exits.
+    extension_required: true
+    status: Experimental and emulator-verified; not a blanket hardware claim.
+    capability_ids: [liveness]
+  - id: drag
+    title: Carry a drag through classic tracking loops
+    without_extension: Not available as a held remote drag session.
+    extension_required: true
+    status: Experimental; builds and native tests pass, but it is not machine-verified.
+    capability_ids: [drag]
+  - id: cursor-following
+    title: Show a classic cursor following remote actions
+    without_extension: The action can still occur, but the remote cursor is not drawn.
+    extension_required: true
+    status: Experimental and emulator-verified; physical mouse movement takes priority.
+    capability_ids: [cursor]
+
 extension_capabilities:
   - id: discovery
     plane: P0

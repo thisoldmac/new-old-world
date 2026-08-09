@@ -257,6 +257,14 @@ def check(root: Path, site_dir: Path | None) -> int:
     notices: list[str] = []
     docs = root / "docs"
     config = load_yaml(root / "mkdocs.yml", docs_loader=True)
+    theme_features = config.get("theme", {}).get("features", [])
+    if "navigation.instant" not in theme_features:
+        errors.append("mkdocs.yml: navigation.instant must be enabled for partial-page navigation")
+    mermaid_init = (docs / "assets/javascripts/mermaid-init.js").read_text()
+    if "document$.subscribe" not in mermaid_init:
+        errors.append(
+            "docs/assets/javascripts/mermaid-init.js: Mermaid must subscribe to instant-navigation page updates"
+        )
     nav = nav_paths(config.get("nav", []))
     nav_counts = Counter(nav)
     for rel, count in nav_counts.items():
@@ -477,12 +485,44 @@ def check(root: Path, site_dir: Path | None) -> int:
             "docs/feature-catalog.yaml: extension capability symbols differ from peek_table.h "
             f"(catalog={declared_symbols}, live={live_symbols})"
         )
+    coverage = feature_catalog.get("extension_feature_coverage", [])
+    coverage_ids = [row.get("id") for row in coverage if isinstance(row, dict)]
+    if not coverage or len(coverage_ids) != len(set(coverage_ids)):
+        errors.append("docs/feature-catalog.yaml: extension feature coverage needs unique rows")
+    covered_capabilities: list[str] = []
+    required_coverage_fields = {
+        "id", "title", "without_extension", "extension_required", "status", "capability_ids",
+    }
+    for row in coverage:
+        if not isinstance(row, dict):
+            errors.append("docs/feature-catalog.yaml: extension feature coverage rows must be mappings")
+            continue
+        missing_fields = sorted(required_coverage_fields - set(row))
+        if missing_fields:
+            errors.append(
+                f"extension feature coverage {row.get('id', '<unknown>')}: missing fields: "
+                f"{', '.join(missing_fields)}"
+            )
+            continue
+        if not isinstance(row["extension_required"], bool):
+            errors.append(
+                f"extension feature coverage {row['id']}: extension_required must be true or false"
+            )
+        if not isinstance(row["capability_ids"], list):
+            errors.append(f"extension feature coverage {row['id']}: capability_ids must be a list")
+            continue
+        covered_capabilities.extend(row["capability_ids"])
+    if set(covered_capabilities) != set(capability_ids) or len(covered_capabilities) != len(capability_ids):
+        errors.append(
+            "docs/feature-catalog.yaml: feature coverage capability IDs differ from extension "
+            f"capability inventory (coverage={covered_capabilities}, inventory={capability_ids})"
+        )
     release_page = docs / "user-guide/reference/release-profile.md"
     extension_page = docs / "user-guide/explanation/optional-extension.md"
     if release_page.read_text().count("<!-- release-feature-table -->") != 1:
         errors.append("release-profile.md: expected exactly one release-feature-table marker")
-    if extension_page.read_text().count("<!-- extension-capability-table -->") != 1:
-        errors.append("optional-extension.md: expected exactly one extension-capability-table marker")
+    if extension_page.read_text().count("<!-- extension-feature-matrix -->") != 1:
+        errors.append("optional-extension.md: expected exactly one extension-feature-matrix marker")
     hooks = config.get("hooks", [])
     if "docs/hooks/release_features.py" not in hooks:
         errors.append("mkdocs.yml: release feature hook is not configured")
@@ -617,6 +657,7 @@ def check(root: Path, site_dir: Path | None) -> int:
     notices.append(f"module coverage: {len(rows)} host modules, {len(ppc_declared)} PPC pages")
     notices.append(f"release profile: {active_profile_id}, {len(feature_defs)} product features")
     notices.append(f"extension capabilities: {len(capabilities)} planes, {len(declared_symbols)} capability bits")
+    notices.append(f"extension feature coverage: {len(coverage)} user-facing rows")
     notices.append(f"Mermaid diagrams: {sum(len(MERMAID_RE.findall(frontmatter(path)[1])) for path in curated)}")
     print("[docs-gate] passed")
     for notice in notices:

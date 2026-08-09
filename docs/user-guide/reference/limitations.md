@@ -21,13 +21,15 @@ last_verified: 2026-08-09
 - **PowerPC-only initial alpha.** The NOW-68K/pre-Carbon build is currently
   stale and excluded from the initial release. Its source and contributor
   documentation remain, but are not a support or packaging promise.
-- **Optional resident.** The NOW Extension is required for its process-local
-  structure, semantic, content, interaction, transition, liveness, drag, and
-  cursor planes. Ordinary application-level modules remain available without
-  it at their declared levels.
+- **Optional Extension.** The NOW Extension is required only for the deeper
+  Mirror features listed in the [feature coverage
+  matrix](../explanation/optional-extension.md#feature-coverage), including
+  live interface structure, guarded interaction, modal-loop reachability,
+  remote drag sessions, and cursor following. Ordinary modules remain
+  available without it at their declared levels.
 - **Mirror remains experimental.** Finder and application-window interiors
-  have narrower evidence and known incomplete behaviors. Absence of a resident
-  plane is not evidence that a window has no content.
+  have narrower evidence and known incomplete behaviors. An unavailable
+  Extension feature is not evidence that a window has no content.
 - **File resume remains narrower than basic transfer.** The repository records
   resume-by-offset hangs even where ordinary transfers are proven.
 - **Hardware evidence is specific.** A result on the PowerBook 1400c does not

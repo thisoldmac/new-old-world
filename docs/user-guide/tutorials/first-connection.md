@@ -61,8 +61,8 @@ connection light.
 
 You now have a normal NOW session without a resident extension. Continue with
 [Transfer a file](../how-to/transfer-a-file.md), browse the
-[module reference](../reference/modules/index.md), or read
-[what the optional extension adds](../explanation/optional-extension.md).
+[module reference](../reference/modules/index.md), or compare
+[core features and NOW Extension coverage](../explanation/optional-extension.md).
 
 If the dial is refused or never settles, use
 [Recover a connection](../how-to/recover-a-connection.md). Do not weaken the

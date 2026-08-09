@@ -16,8 +16,9 @@ last_verified: 2026-08-09
 Use this guide when you want to run NOW, not build it.
 
 1. Follow [Connect your first classic Mac](tutorials/first-connection.md).
-2. Read [what the NOW Extension adds](explanation/optional-extension.md) and
-   decide whether its resident-backed features belong in your setup.
+2. Review [core features and NOW Extension coverage](explanation/optional-extension.md)
+   to see what works in the normal app and which experimental features need
+   the optional component.
 3. Check the [initial-alpha feature profile](reference/release-profile.md).
 4. Use the [how-to guides](how-to/choose-a-guest.md) for one concrete task.
 5. Open the [module reference](reference/modules/index.md) for controls,

@@ -20,6 +20,26 @@ under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
 `MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
 retain their original path spelling so the ledger remains an honest receipt.
 
+## RESOLVED DOCUMENTATION UX: navigation is incremental and Extension coverage is feature-first (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+
+The initial site performed a full document load for every internal link, and
+the User guide placed NOW Extension ahead of the first-connection tutorial.
+Its main Extension table then exposed P0–P8 implementation planes rather than
+answering the reader's first questions: what works normally, what needs the
+Extension, and what remains experimental.
+
+MkDocs Material instant navigation now replaces the document content for
+internal links, while the Mermaid initializer subscribes to each navigation
+update. User-guide navigation begins with a Getting started group: connect a
+classic Mac first, then review core features and Extension coverage. The
+coverage page now renders 15 user-facing feature rows from
+`docs/feature-catalog.yaml`, including app-only coverage, whether the Extension
+is required, and current maturity or evidence. The technical P0–P8 inventory
+remains in developer documentation. The docs gate maps every human-facing
+Extension row back to the complete resident capability inventory and its
+mutation suite proves that navigation, script lifecycle, or capability
+coverage cannot be removed silently.
+
 ## DEFERRED WEBSITE HANDOFF: app documentation will be assembled by the separate website repository (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
 The public website now lives at

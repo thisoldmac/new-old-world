@@ -16,17 +16,19 @@ last_verified: 2026-08-09
 
 ## What it does
 
-Mirror combines guest-observed structure, optional content planes, and
-host-native rendering. Actions drive the guest and settle by rereading guest
-state.
+Mirror combines guest-observed window and interface information, optional
+structured content, and host-native rendering. Actions drive the guest and
+settle by rereading guest state.
 
 ![The macOS Mirror module with provenance visible](../../../assets/screenshots/modules/mirror/host.svg){ .now-placeholder }
 
 ## Availability
 
-Mirror is PowerPC-only and experimental. The ordinary shell can work without
-the optional extension, while application drawing and other planes may require
-it. NOW-68K has no Mirror subsystem.
+Mirror is PowerPC-only and experimental. Its ordinary shell can work without
+the optional Extension; live application structure, drawing activity, and
+other deeper features may require it. The [feature coverage
+matrix](../../explanation/optional-extension.md#feature-coverage) states which
+user outcomes require the Extension. NOW-68K has no Mirror subsystem.
 
 ## On the modern Mac
 
@@ -35,15 +37,16 @@ settlement. A host-rendered interior never becomes authority for guest state.
 
 ## On the classic Mac
 
-The PowerPC page reports which planes exist and what is armed. The guest app
-remains the wire owner even when the resident observes foreign contexts.
+The PowerPC page reports which Extension features are available and active.
+The guest app remains the wire owner even when the Extension observes another
+application.
 
 ![The PowerPC Mirror page](../../../assets/screenshots/modules/mirror/ppc.svg){ .now-placeholder }
 
 ## Common tasks
 
 - Observe before enabling act controls.
-- Read provenance and plane state before interpreting an empty interior.
+- Read provenance and Extension status before interpreting an empty interior.
 
 ![A settled Mirror action followed by an authoritative reread](../../../assets/screenshots/modules/mirror/detail.svg){ .now-placeholder }
 
@@ -54,14 +57,14 @@ actions remain bounded by the machine's consent ceiling and visible host state.
 
 ## Failure states
 
-No plane, no writer, stale reference, not addressed, unavailable capability,
+Missing Extension feature, no writer, stale reference, not addressed,
 timed-out settlement, and authoritative refusal are not interchangeable.
 
 ## Current limitations
 
-Finder and application interiors retain known incomplete behaviors. A plane
-that was intended to arm but wrote no artifact cannot support a rendering
-claim.
+Finder and application interiors retain known incomplete behaviors. An
+observation feature that was requested but produced no artifact cannot support
+a rendering claim.
 
 ## For developers
 

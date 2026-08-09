@@ -8,7 +8,7 @@ import yaml
 
 
 RELEASE_TABLE = "<!-- release-feature-table -->"
-EXTENSION_TABLE = "<!-- extension-capability-table -->"
+EXTENSION_MATRIX = "<!-- extension-feature-matrix -->"
 
 
 def _load(config):
@@ -50,15 +50,16 @@ def _release_table(catalog) -> str:
     return "\n".join(rows)
 
 
-def _extension_table(catalog) -> str:
+def _extension_matrix(catalog) -> str:
     rows = [
-        "| Plane | Feature | What it exposes | Current posture |",
+        "| Feature | Without the Extension | Extension required? | Current status |",
         "|---|---|---|---|",
     ]
-    for capability in catalog["extension_capabilities"]:
+    for feature in catalog["extension_feature_coverage"]:
+        required = "**Yes**" if feature["extension_required"] else "No"
         rows.append(
-            f"| {capability['plane']} | **{capability['title']}** | "
-            f"{capability['exposes']} | {capability['posture']} |"
+            f"| **{feature['title']}** | {feature['without_extension']} | "
+            f"{required} | {feature['status']} |"
         )
     return "\n".join(rows)
 
@@ -66,5 +67,5 @@ def _extension_table(catalog) -> str:
 def on_page_markdown(markdown, page, config, files):
     catalog = config.extra["feature_catalog"]
     return markdown.replace(RELEASE_TABLE, _release_table(catalog)).replace(
-        EXTENSION_TABLE, _extension_table(catalog)
+        EXTENSION_MATRIX, _extension_matrix(catalog)
     )

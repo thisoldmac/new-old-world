@@ -79,6 +79,17 @@ def main() -> int:
             "      - Overview: user-guide/index.md\n", "", "curated page is absent from navigation",
         )
         expect_mutation(
+            test_root, "partial-page navigation", test_root / "mkdocs.yml",
+            "    - navigation.instant\n", "",
+            "navigation.instant must be enabled for partial-page navigation",
+        )
+        expect_mutation(
+            test_root, "instant-navigation Mermaid lifecycle",
+            test_root / "docs/assets/javascripts/mermaid-init.js",
+            "document$.subscribe", "documentFullPage.subscribe",
+            "Mermaid must subscribe to instant-navigation page updates",
+        )
+        expect_mutation(
             test_root, "broken link", test_root / "docs/index.md",
             "# New Old World documentation", "# New Old World documentation\n\n[missing](no-such-page.md)",
             "broken local link",
@@ -123,6 +134,11 @@ def main() -> int:
             test_root, "extension capability inventory", test_root / "docs/feature-catalog.yaml",
             "symbols: [kNowPeekTableCapAnchors]", "symbols: []",
             "extension capability symbols differ from peek_table.h",
+        )
+        expect_mutation(
+            test_root, "extension feature coverage", test_root / "docs/feature-catalog.yaml",
+            "capability_ids: [structure]", "capability_ids: []",
+            "feature coverage capability IDs differ from extension capability inventory",
         )
         expect_mutation(
             test_root, "feature page binding", test_root / "docs/user-guide/how-to/install-extension.md",

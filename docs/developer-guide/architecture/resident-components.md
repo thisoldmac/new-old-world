@@ -15,10 +15,10 @@ feature_ids: [resident.extension]
 
 The NOW Extension performs only work that must run in a foreign application context. The PowerPC application is the sole reader of foreign memory and exposes the result to the rest of the product. The extension is optional: the application must report an unavailable plane honestly and keep non-resident features usable.
 
-The public [extension capability inventory](../../user-guide/explanation/optional-extension.md#what-the-extension-adds)
-maps P0–P8 to user outcomes. Its symbols are gated against this branch's shared
-header; this page owns the deeper execution, memory, bake, and recovery
-contracts.
+The public [Extension feature coverage
+matrix](../../user-guide/explanation/optional-extension.md#feature-coverage)
+starts with user outcomes. This page owns the deeper P0–P8 execution, memory,
+shared-header, bake, and recovery contracts.
 
 ```mermaid
 flowchart LR
@@ -34,7 +34,7 @@ Text equivalent: resident callbacks observe or act in the foreign application, w
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 3818002d6b9490ab1cc787270997aabc63194fc8
+sources-sha1: 26082812f53cc4619214a9251fa3b6be3996d62b
 derive resident-contract sha256=e423b6ffb62efdc0b3f336dd334c3df87437691f7d41ddb8e81d8536e9cd15fa lines=11
     scripts/docs-source-group resident
 rederived: pending
@@ -43,4 +43,6 @@ rederived: 2026-08-09T16:29:42-0400 9034e3eb sources
 rederived: 2026-08-09T17:05:28-0400 446cf620 sources
 rederived: 2026-08-09T17:08:03-0400 446cf620 sources
 rederived: 2026-08-09T17:53:28-0400 ed9436c0 sources
+rederived: 2026-08-09T18:53:51-0400 181db7a5 sources
+rederived: 2026-08-09T18:56:22-0400 181db7a5 unchanged
 -->

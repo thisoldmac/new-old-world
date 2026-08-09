@@ -11,7 +11,7 @@ Use a classic Macintosh from a modern Mac without turning either interface into 
 ## Start here
 
 - [Connect your first classic Mac](docs/user-guide/tutorials/first-connection.md)
-- [See what the optional NOW Extension adds](docs/user-guide/explanation/optional-extension.md)
+- [Compare core features and NOW Extension coverage](docs/user-guide/explanation/optional-extension.md)
 - [Review the initial-alpha feature profile](docs/user-guide/reference/release-profile.md)
 - [Browse every module](docs/user-guide/reference/modules/index.md)
 - [Read the developer orientation](docs/developer-guide/orientation.md)
@@ -31,7 +31,10 @@ pre-Carbon NOW-68K ─ retained in source; excluded from initial alpha
 
 - The host accepts several named guest sessions and drives one selected machine.
 - The PowerPC guest is one Workshop window with native module pages.
-- The optional NOW Extension adds bounded structure, semantics, content, interaction, transition, liveness, drag, and cursor planes; the rest of the product degrades honestly without it.
+- The optional NOW Extension adds deeper Mirror observation and interaction,
+  including live interface structure, guarded controls, modal-loop reachability,
+  drag sessions, and visible cursor following; ordinary NOW features remain
+  available without it.
 - NOW-68K implements an explicit subset of the same contract without shaping the PowerPC codebase, but is not an initial-alpha release artifact.
 - Agent access is a bounded projection of host capabilities, not a second route to the guest socket.
 
@@ -41,7 +44,7 @@ pre-Carbon NOW-68K ─ retained in source; excluded from initial alpha
 |---|---|---|---|
 | Connection, console, files, processes, software, hardware facts | included | not required | excluded from release |
 | Screenshots and streaming | included with stated limitations | not required | excluded from release |
-| Mirror structure and semantic observation | experimental | provides process-local planes | unavailable |
+| Deeper Mirror observation and interaction | experimental | provides the required classic-process access | unavailable |
 | In-context interaction, transitions, modal-safe liveness, drag, and cursor following | experimental | provides resident vehicles | unavailable |
 
 The short table is navigation, not a claim of parity. The [module reference](docs/user-guide/reference/modules/index.md) states availability, safety, data movement, and failures per module. `docs/contract-coverage.md` keeps **served** separate from **proven**.
