@@ -1,6 +1,6 @@
-import Compression
 import CryptoKit
 import Foundation
+import zlib
 
 /// A deliberately small writer for the stable loose-object/ref portion of Git.
 /// It ships no command runner, reads no user configuration, and exposes no Git
@@ -118,23 +118,21 @@ struct LooseGitRepository {
     }
 
     private func zlib(_ source: Data) throws -> Data {
-        let destinationSize = max(4096, source.count + source.count / 8 + 128)
-        var destination = Data(count: destinationSize)
-        let encoded = source.withUnsafeBytes { sourceBytes in
+        var destinationLength = compressBound(uLong(source.count))
+        var destination = Data(count: Int(destinationLength))
+        let status = source.withUnsafeBytes { sourceBytes in
             destination.withUnsafeMutableBytes { destinationBytes in
-                compression_encode_buffer(
+                compress2(
                     destinationBytes.bindMemory(to: UInt8.self).baseAddress!,
-                    destinationSize,
+                    &destinationLength,
                     sourceBytes.bindMemory(to: UInt8.self).baseAddress!,
-                    source.count,
-                    nil,
-                    COMPRESSION_ZLIB)
+                    uLong(source.count), Z_BEST_SPEED)
             }
         }
-        guard encoded > 0 else {
+        guard status == Z_OK else {
             throw ProjectStoreError.unavailable("Git object compression failed.")
         }
-        destination.count = encoded
+        destination.count = Int(destinationLength)
         return destination
     }
 }

@@ -317,6 +317,8 @@ public struct AgentIntegrationLocalClient: Sendable {
             preconditionFailure(
                 "An observation says which process it walks, or says "
                     + "frontmost by passing nil")
+        case .projects:
+            preconditionFailure("A Projects request names its operation")
         }
     }
 
@@ -595,6 +597,16 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func projects(_ project: AgentIntegrationProjectRequest) async throws
+        -> AgentIntegrationProjectResult {
+        let response = try await send(.projects(project))
+        guard let result = response.projectResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no Projects result")
+        }
+        return result
+    }
+
     /// A copy of this client that says which machine it is asking about.
     ///
     /// A machine id (`pb1400c`) means "whatever is connected to that Mac
@@ -746,6 +758,8 @@ public struct AgentIntegrationLocalClient: Sendable {
                    existing long read window and let the typed timeout remain
                    the result rather than turning it into a transport error. */
                 timeout = captureReceiveTimeout
+            case .projects:
+                timeout = readOnlyReceiveTimeout
             }
             let response = try sendRaw(
                 AgentIntegrationLocalCodec.encode(request),

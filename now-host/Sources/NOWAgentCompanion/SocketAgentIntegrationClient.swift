@@ -35,6 +35,16 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func projects(_ request: AgentIntegrationProjectRequest) async
+        -> AgentIntegrationProjectResult {
+        guard let client else { return .hostUnavailable }
+        do {
+            return try await client.projects(request)
+        } catch {
+            return .init(failure: unavailable(for: error))
+        }
+    }
+
     func sessionCapabilities(probeCostly: Bool) async
         -> AgentIntegrationSessionCapabilitiesResult {
         guard let client else {

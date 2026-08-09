@@ -69,6 +69,36 @@ final class ProjectStoreTests: XCTestCase {
                        Data("int main(void) { return 1; }".utf8))
     }
 
+    func testSystemGitAcceptsTheEmbeddedHistoryAsAStandardRepository() throws {
+        let root = try root()
+        let store = try ProjectStore(root: root)
+        let created = try store.create(
+            name: "Git Oracle", home: .host, projectDocument: document,
+            files: [ProjectFileChange(path: "Sources/Main.c",
+                                      contents: Data("int x;".utf8))])
+        _ = try store.apply(
+            projectID: created.projectID, expectedRevision: 1,
+            changes: [ProjectFileChange(path: "Sources/Main.c",
+                                        contents: Data("int y;".utf8))],
+            message: "Second revision")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = [
+            "--git-dir", root.appendingPathComponent("Repositories")
+                .appendingPathComponent(created.projectID.rawValue + ".git").path,
+            "fsck", "--strict",
+        ]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        process.waitUntilExit()
+        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(),
+                          as: UTF8.self)
+        XCTAssertEqual(process.terminationStatus, 0, text)
+    }
+
     func testStaleRevisionAndPriorDigestLeaveWholeBatchUntouched() throws {
         let store = try ProjectStore(root: try root())
         let created = try store.create(

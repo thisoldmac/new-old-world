@@ -2,7 +2,8 @@
 
 [contract-coverage.md](contract-coverage.md) answers **what each guest
 serves**. This file answers the other half: **what any host face can ask a
-guest to do**, and — where those two differ — whether the difference is a
+guest to do, plus the deliberately separate host-owned Projects authority**,
+and — where those two differ — whether the difference is a
 decision or an accident.
 
 It exists because of drift nobody was watching for. The guests handle far more
@@ -138,6 +139,7 @@ The test compares both against the code literally.
 
 | MCP tool | Requires | Exposes | Guest plane |
 |---|---|---|---|
+| `now_projects` | — | — | none; bounded host-owned project storage and recoverable history, independent of guest consent |
 | `now_list_machines` | — | — | none; host listener state |
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
 | `now_hardware_census` | `census.request` | `census.request` | message family |

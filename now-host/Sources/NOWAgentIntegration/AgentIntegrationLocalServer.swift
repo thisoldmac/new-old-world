@@ -358,6 +358,9 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     observeElementsResult: result)
+            case .projects(let result):
+                response = .init(requestID: request.requestID,
+                                 projectResult: result)
             case .notImplemented(let unavailable):
                 response = .init(
                     requestID: request.requestID,

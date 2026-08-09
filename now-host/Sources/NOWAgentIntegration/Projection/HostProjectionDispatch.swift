@@ -122,6 +122,9 @@ public struct HostProjectionDispatch {
         invoking projection: any HostProjection.Type,
         through client: AgentIntegrationClient
     ) async -> HostProjectionConsentDenial? {
+        if case .hostProjects = projection.authorityDomain {
+            return nil
+        }
         guard case .available(let health) = await client.sessionHealth(),
               let guest = health.guest,
               let answer = guest.agentAccess else {

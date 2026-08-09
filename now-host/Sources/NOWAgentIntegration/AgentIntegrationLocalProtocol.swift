@@ -202,6 +202,7 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// `serialHi`/`serialLo` pair aims the WALK — there is no spelling
         /// anywhere downstream for "whatever is frontmost".
         case observeElements = "observe_elements"
+        case projects = "projects"
     }
 
     public let version: Int
@@ -354,6 +355,7 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// `AgentIntegrationProcessSerial.decode`; by the time a value reaches
     /// this field it is a whole serial number or nothing.
     public var observeProcess: AgentIntegrationProcessSerial? = nil
+    public var projectRequest: AgentIntegrationProjectRequest? = nil
 
     private init(requestID: UUID,
                  operation: Operation,
@@ -917,6 +919,15 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         request.observeProcess = process
         return request
     }
+
+    public static func projects(
+        _ project: AgentIntegrationProjectRequest,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.projects, requestID: requestID)
+        request.projectRequest = project
+        return request
+    }
 }
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
@@ -982,6 +993,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     /// answer is navigated and then addressed, and flattening it would
     /// destroy the containment that makes a reference mean anything.
     case observeElements(AgentIntegrationElementObservationResult)
+    case projects(AgentIntegrationProjectResult)
 
     /// The operation is carried by this protocol and NOTHING SERVES IT YET.
     ///
@@ -1080,6 +1092,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     /// than ambiguous.
     public var observeElementsResult:
         AgentIntegrationElementObservationResult? = nil
+    public var projectResult: AgentIntegrationProjectResult? = nil
     /// The operation exists here and no capability serves it yet. Set
     /// INSTEAD of any result, and counted with them: a response carrying
     /// both would be claiming to have answered a call it also says it
@@ -1503,6 +1516,12 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         self.notImplemented = notImplemented
     }
 
+    public init(requestID: UUID,
+                projectResult: AgentIntegrationProjectResult) {
+        self.init(empty: requestID)
+        self.projectResult = projectResult
+    }
+
     public init(requestID: UUID? = nil,
                 error: AgentIntegrationLocalError) {
         version = AgentIntegrationLocalProtocol.version
@@ -1541,6 +1560,7 @@ public enum AgentIntegrationLocalCodec {
         "textGetResult", "textSetResult",
         // The walk that mints what those five address.
         "observeElementsResult",
+        "projectResult",
         // Set INSTEAD of any of them, so it is counted with them.
         "notImplemented",
     ]
@@ -1654,6 +1674,7 @@ public enum AgentIntegrationLocalCodec {
             "actElement", "actText",
             // The observation's aim, clearing the same two gates.
             "observeProcess",
+            "projectRequest",
             // Orthogonal to every operation, so it clears BOTH gates:
             // this allowlist, and the per-operation key set below.
             "guestSelector",
@@ -2271,6 +2292,15 @@ public enum AgentIntegrationLocalCodec {
                 observeKeys.insert("observeProcess")
             }
             expectedKeys = observeKeys
+        case .projects:
+            expectedKeys = [
+                "version", "requestID", "operation", "projectRequest",
+            ]
+            guard let project = request.projectRequest,
+                  project.isWellFormed else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Projects request does not match the schema")
+            }
         }
         /* Addressing belongs to no operation, so it is admitted for all of
            them rather than repeated in twelve key sets — and only when the

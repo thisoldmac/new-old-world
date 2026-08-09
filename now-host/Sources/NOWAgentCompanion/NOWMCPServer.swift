@@ -259,10 +259,12 @@ actor NOWMCPServer {
             }
             var properties =
                 (schema["properties"] as? [String: Any]) ?? [:]
-            properties["guest"] = [
-                "type": "string",
-                "description": Self.guestSelectorHelp,
-            ]
+            if projection.acceptsGuestAddressing {
+                properties["guest"] = [
+                    "type": "string",
+                    "description": Self.guestSelectorHelp,
+                ]
+            }
             schema["properties"] = properties
             tool["inputSchema"] = schema
             return tool
@@ -276,7 +278,7 @@ actor NOWMCPServer {
     private func callTool(_ request: [String: Any], id: Any) async -> Data {
         guard var params = request["params"] as? [String: Any],
               let name = params["name"] as? String,
-              registry.projection(named: name) != nil else {
+              let projection = registry.projection(named: name) else {
             return errorResponse(id: id, code: -32602,
                                  message: "Unknown tool")
         }
@@ -288,6 +290,11 @@ actor NOWMCPServer {
         var selector: String?
         if var object = params["arguments"] as? [String: Any],
            let raw = object.removeValue(forKey: "guest") {
+            guard projection.acceptsGuestAddressing else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message: "\(name) operates on host-owned project storage and does not accept guest addressing")
+            }
             guard let text = raw as? String, !text.isEmpty,
                   text.count <= 128 else {
                 return errorResponse(

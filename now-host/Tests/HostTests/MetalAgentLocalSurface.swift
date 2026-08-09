@@ -221,6 +221,11 @@ final class MetalAgentLocalSurface {
             return record(.notAddressed(refusal))
         }
         switch request.operation {
+        case .projects:
+            guard let project = request.projectRequest else {
+                return record(.projects(.hostUnavailable))
+            }
+            return record(.projects(adapter.projects(project)))
         case .sessionHealth:
             return record(.sessionHealth(adapter.sessionHealth()))
         case .sessionCapabilities:

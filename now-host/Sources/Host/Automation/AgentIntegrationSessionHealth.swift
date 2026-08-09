@@ -19,6 +19,7 @@ final class AgentIntegrationHostAdapter {
     private let diagnosticsTimeout: TimeInterval
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private let mirrorEngines: MirrorStateEngineRegistry?
+    private let projectStore: ProjectStore?
     private lazy var processControl = AgentIntegrationProcessControl(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() },
@@ -174,7 +175,8 @@ final class AgentIntegrationHostAdapter {
         diagnosticsTimeout: TimeInterval =
             AgentIntegrationDiagnosticsPolicy.commandTimeout,
         artifactApprovals: AgentIntegrationArtifactApprovalStore? = nil,
-        mirrorEngines: MirrorStateEngineRegistry? = nil
+        mirrorEngines: MirrorStateEngineRegistry? = nil,
+        projectStore: ProjectStore? = try? ProjectStore()
     ) {
         self.listener = listener
         self.launchCommandTimeout = launchCommandTimeout
@@ -182,6 +184,175 @@ final class AgentIntegrationHostAdapter {
         self.diagnosticsTimeout = diagnosticsTimeout
         self.artifactApprovals = artifactApprovals
         self.mirrorEngines = mirrorEngines
+        self.projectStore = projectStore
+    }
+
+    func projects(_ request: AgentIntegrationProjectRequest)
+        -> AgentIntegrationProjectResult {
+        guard request.isWellFormed, let projectStore else {
+            return request.isWellFormed ? .hostUnavailable : .init(
+                failure: .init(code: "now-projects-invalid-request",
+                               message: "The project request does not match its operation."))
+        }
+        do {
+            switch request.operation {
+            case .list:
+                return .init(projects: try projectStore.list().map(projectSummary))
+            case .create:
+                let name = request.name!
+                let changes = try request.changes!.map(projectChange)
+                let paths = changes.compactMap { $0.contents == nil ? nil : $0.path }
+                let identity = String(repeating: "0", count: 32)
+                let fileLines = paths.map { "file=\($0)" }.joined(separator: "\n")
+                let document = Data("""
+                    CKPROJECT 1
+                    id=\(identity)
+                    name=\(name)
+                    target=application
+                    configuration=debug
+                    toolchain=unselected@0
+                    product=Build/Product
+                    type=APPL
+                    creator=????
+                    architecture=powerpc
+                    \(fileLines)
+                    """.utf8)
+                let receipt = try projectStore.create(
+                    name: name, home: .host, projectDocument: document,
+                    files: changes)
+                return .init(project: try projectSummary(
+                    projectStore.status(projectID: receipt.projectID)),
+                    revision: try latestProjectRevision(
+                        projectStore, projectID: receipt.projectID))
+            case .status:
+                return .init(project: try projectSummary(projectStore.status(
+                    projectID: try projectID(request.projectID!))))
+            case .read:
+                let data = try projectStore.read(
+                    projectID: try projectID(request.projectID!),
+                    path: request.path!, maximumBytes: request.maximumBytes ?? 65_536)
+                return .init(contentsBase64: data.base64EncodedString())
+            case .apply:
+                let changes = try request.changes!.map(projectChange)
+                if let raw = request.projectID {
+                    let receipt = try projectStore.apply(
+                        projectID: try projectID(raw),
+                        expectedRevision: request.expectedRevision!,
+                        changes: changes, message: request.message!)
+                    return .init(project: try projectSummary(projectStore.status(
+                        projectID: receipt.projectID)),
+                        revision: try latestProjectRevision(
+                            projectStore, projectID: receipt.projectID))
+                }
+                let workspace = try projectStore.apply(
+                    workspaceID: try workspaceID(request.workspaceID!),
+                    expectedCommit: request.expectedCommit!, changes: changes,
+                    message: request.message!)
+                return .init(workspace: projectWorkspace(workspace))
+            case .history:
+                let history = try projectStore.history(
+                    projectID: try projectID(request.projectID!))
+                return .init(history: history.map(projectRevision))
+            case .workspaceOpen:
+                return .init(workspace: projectWorkspace(try projectStore.openWorkspace(
+                    projectID: try projectID(request.projectID!))))
+            case .workspaceResume:
+                return .init(workspace: projectWorkspace(try projectStore.resumeWorkspace(
+                    workspaceID: try workspaceID(request.workspaceID!))))
+            case .workspaceDiscard:
+                try projectStore.discardWorkspace(
+                    workspaceID: try workspaceID(request.workspaceID!))
+                return .init(workspace: nil)
+            }
+        } catch {
+            return .init(failure: .init(code: projectErrorCode(error),
+                                       message: error.localizedDescription))
+        }
+    }
+
+    private func projectID(_ raw: String) throws -> ProjectID {
+        guard let value = ProjectID(rawValue: raw) else {
+            throw ProjectStoreError.projectNotFound
+        }
+        return value
+    }
+
+    private func workspaceID(_ raw: String) throws -> ProjectWorkspaceID {
+        guard let value = ProjectWorkspaceID(rawValue: raw) else {
+            throw ProjectStoreError.workspaceNotFound
+        }
+        return value
+    }
+
+    private func projectChange(_ change: AgentIntegrationProjectChange) throws
+        -> ProjectFileChange {
+        let contents: Data?
+        switch change.action {
+        case .write:
+            guard let encoded = change.contentsBase64,
+                  let decoded = Data(base64Encoded: encoded) else {
+                throw ProjectStoreError.invalidProject("A write has invalid base64 contents.")
+            }
+            contents = decoded
+        case .delete:
+            contents = nil
+        }
+        return ProjectFileChange(path: change.path,
+                                 expectedDigest: change.expectedDigest,
+                                 contents: contents)
+    }
+
+    private func projectSummary(_ status: ProjectStatus)
+        -> AgentIntegrationProjectSummary {
+        .init(projectID: status.projectID.rawValue, name: status.name,
+              home: status.home.rawValue, revision: status.revision,
+              commit: status.currentCommit, contentDigest: status.contentDigest,
+              guestState: status.guestState.rawValue,
+              workspaceID: status.activeWorkspaceID?.rawValue)
+    }
+
+    private func latestProjectRevision(_ store: ProjectStore,
+                                       projectID: ProjectID) throws
+        -> AgentIntegrationProjectRevision {
+        guard let entry = try store.history(projectID: projectID).last else {
+            throw ProjectStoreError.unavailable(
+                "The project has no accepted revision.")
+        }
+        return projectRevision(entry)
+    }
+
+    private func projectRevision(_ entry: ProjectHistoryEntry)
+        -> AgentIntegrationProjectRevision {
+        .init(revision: entry.revision, commit: entry.commit, parent: entry.parent,
+              contentDigest: entry.contentDigest, message: entry.message,
+              committedAt: entry.committedAt)
+    }
+
+    private func projectWorkspace(_ workspace: ProjectWorkspace)
+        -> AgentIntegrationProjectWorkspace {
+        .init(workspaceID: workspace.workspaceID.rawValue,
+              projectID: workspace.projectID.rawValue,
+              baseRevision: workspace.baseRevision,
+              baseGuestDigest: workspace.baseGuestDigest,
+              currentCommit: workspace.currentCommit,
+              contentDigest: workspace.contentDigest,
+              lifecycle: workspace.lifecycle.rawValue)
+    }
+
+    private func projectErrorCode(_ error: Error) -> String {
+        guard let error = error as? ProjectStoreError else {
+            return "now-projects-failed"
+        }
+        switch error {
+        case .revisionConflict: return "now-projects-revision-conflict"
+        case .commitConflict: return "now-projects-commit-conflict"
+        case .digestConflict: return "now-projects-digest-conflict"
+        case .invalidPath, .linkEscape: return "now-projects-path-refused"
+        case .unpromotedWorkspace: return "now-projects-unpromoted-workspace"
+        case .projectNotFound: return "now-projects-project-not-found"
+        case .workspaceNotFound: return "now-projects-workspace-not-found"
+        default: return "now-projects-failed"
+        }
     }
 
     func sessionHealth(observedAt: Date = Date())

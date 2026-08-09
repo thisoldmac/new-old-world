@@ -31,6 +31,11 @@ struct ChatAgentClient: AgentIntegrationClient {
         await adapter.addressingRefusal(selector)
     }
 
+    func projects(_ request: AgentIntegrationProjectRequest) async
+        -> AgentIntegrationProjectResult {
+        await adapter.projects(request)
+    }
+
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
         await adapter.sessionHealth()
     }

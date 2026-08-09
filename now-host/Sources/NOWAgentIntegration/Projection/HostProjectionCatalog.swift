@@ -8,6 +8,7 @@ import Foundation
 /// family. It is not alphabetical and should not become so.
 public enum HostProjectionCatalog {
     public static let projections: [any HostProjection.Type] = [
+        ProjectsProjection.self,
         SessionHealthProjection.self,
         SessionCapabilitiesProjection.self,
         /* First of the observations, because it is the machine's standing
