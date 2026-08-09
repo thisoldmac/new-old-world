@@ -11,21 +11,27 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: assets, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporary) }
+        let applicationData = Data(repeating: 1, count: 1_180_130)
+        let applicationResources = Data(repeating: 2, count: 5_287)
         try XCTUnwrap(MacBinaryEncoder.data(
             name: "New Old World", type: "APPL", creator: "NOWo",
-            dataFork: Data([1, 2, 3]), resourceFork: Data([4, 5])))
+            dataFork: applicationData,
+            resourceFork: applicationResources))
             .write(to: assets.appendingPathComponent("New Old World.bin"))
+        let extensionResources = Data(repeating: 3, count: 81_226)
         try XCTUnwrap(MacBinaryEncoder.data(
             name: "NowExt", type: "INIT", creator: "NOWx",
-            dataFork: Data(), resourceFork: Data([6, 7, 8])))
+            dataFork: Data(), resourceFork: extensionResources))
             .write(to: assets.appendingPathComponent("NOW Extension.bin"))
         let dependencies = assets.appendingPathComponent(
             "Dependencies", isDirectory: true)
         try FileManager.default.createDirectory(
             at: dependencies, withIntermediateDirectories: true)
+        let carbonData = Data(repeating: 4, count: 3_521_726)
+        let carbonResources = Data(repeating: 5, count: 602_358)
         try XCTUnwrap(MacBinaryEncoder.data(
             name: "CarbonLib", type: "INIT", creator: "cbon",
-            dataFork: Data([9]), resourceFork: Data([10])))
+            dataFork: carbonData, resourceFork: carbonResources))
             .write(to: dependencies.appendingPathComponent("CarbonLib.bin"))
         try XCTUnwrap(MacBinaryEncoder.data(
             name: "CarbonLib_161.sit", type: "SIT5", creator: "SIT!",
@@ -42,7 +48,8 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
                        ClassicSetupImageBuilder.classicImageName)
         XCTAssertEqual(nativeImage.type, "rohd")
         XCTAssertEqual(nativeImage.creator, "ddsk")
-        XCTAssertEqual(nativeImage.dataFork.count, 8 * 1_024 * 1_024)
+        XCTAssertGreaterThan(nativeImage.dataFork.count, 5 * 1_024 * 1_024)
+        XCTAssertLessThan(nativeImage.dataFork.count, 6 * 1_024 * 1_024)
 
         let raw = temporary.appendingPathComponent("setup.raw")
         try nativeImage.dataFork.write(to: raw)
@@ -56,22 +63,28 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
         defer { _ = try? run("/usr/sbin/diskutil", ["eject", device]) }
 
         let application = mount.appendingPathComponent("New Old World")
-        XCTAssertEqual(try Data(contentsOf: application), Data([1, 2, 3]))
-        XCTAssertEqual(try resourceFork(at: application), Data([4, 5]))
+        XCTAssertEqual(try Data(contentsOf: application), applicationData)
+        XCTAssertEqual(try resourceFork(at: application),
+                       applicationResources)
         let extensionComponent = mount.appendingPathComponent("NOW Extension")
         XCTAssertEqual(try resourceFork(at: extensionComponent),
-                       Data([6, 7, 8]))
+                       extensionResources)
         XCTAssertTrue(FileManager.default.fileExists(atPath: mount
             .appendingPathComponent("New Old World Prefs").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: mount
             .appendingPathComponent("Read Me First").path))
         let carbonLib = mount.appendingPathComponent(
             "Dependencies/CarbonLib")
-        XCTAssertEqual(try Data(contentsOf: carbonLib), Data([9]))
-        XCTAssertEqual(try resourceFork(at: carbonLib), Data([10]))
+        XCTAssertEqual(try Data(contentsOf: carbonLib), carbonData)
+        XCTAssertEqual(try resourceFork(at: carbonLib), carbonResources)
         XCTAssertFalse(FileManager.default.fileExists(atPath: mount
             .appendingPathComponent(
                 "Dependencies/CarbonLib_161.sit").path))
+        let fileSystem = try FileManager.default.attributesOfFileSystem(
+            forPath: mount.path)
+        let free = try XCTUnwrap(
+            fileSystem[.systemFreeSize] as? NSNumber).int64Value
+        XCTAssertLessThan(free, 128 * 1_024)
     }
 
     private func resourceFork(at url: URL) throws -> Data {

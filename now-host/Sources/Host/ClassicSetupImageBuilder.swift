@@ -42,18 +42,11 @@ struct ClassicSetupImageBuilder: Sendable {
     private func buildSynchronously(host: String, wirePort: UInt16,
                                     assets: OnboardingAssetSnapshot)
         throws -> Data {
-        guard let application = assets.application else {
+        guard assets.application != nil else {
             throw BuildError.missingApplication
         }
         let selectedDependencies = OnboardingDependencyCatalog.setupAssets(
             in: assets)
-        let estimatedContents = [application, assets.extensionComponent]
-            .compactMap { $0 }.map(estimatedInstalledBytes).reduce(0, +)
-            + selectedDependencies.map(estimatedInstalledBytes).reduce(0, +)
-        let capacity = imageCapacity(for: estimatedContents)
-        guard capacity <= Self.maximumImageBytes else {
-            throw BuildError.packageTooLarge
-        }
 
         let workspace = fileManager.temporaryDirectory
             .appendingPathComponent("NOW-Setup-\(UUID().uuidString)",
@@ -61,32 +54,20 @@ struct ClassicSetupImageBuilder: Sendable {
         try fileManager.createDirectory(
             at: workspace, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: workspace) }
+        let contents = workspace.appendingPathComponent(
+            "contents", isDirectory: true)
+        try fileManager.createDirectory(
+            at: contents, withIntermediateDirectories: true)
+        try populate(destination: contents, host: host,
+                     wirePort: wirePort, assets: assets,
+                     dependencies: selectedDependencies)
+
+        let fittedImage = workspace.appendingPathComponent(
+            "setup.dmg", isDirectory: false)
         let rawImage = workspace.appendingPathComponent(
             "setup.raw", isDirectory: false)
-        let mountPoint = workspace.appendingPathComponent(
-            "volume", isDirectory: true)
-
-        try run("/usr/sbin/diskutil", [
-            "image", "create", "blank", "--format", "RAW", "--fs", "None",
-            "--size", String(capacity), rawImage.path
-        ])
-        let formatAttachment = try attach(rawImage, mountPoint: nil)
-        defer { try? eject(formatAttachment) }
-        try run("/sbin/newfs_hfs", [
-            "-v", Self.volumeName, "/dev/r\(formatAttachment)"
-        ])
-        try eject(formatAttachment)
-
-        let mountedDevice = try attach(rawImage, mountPoint: mountPoint)
-        do {
-            try populate(mountPoint: mountPoint, host: host,
-                         wirePort: wirePort, assets: assets,
-                         dependencies: selectedDependencies)
-            try eject(mountedDevice)
-        } catch {
-            try? eject(mountedDevice)
-            throw error
-        }
+        try createFittedHFSImage(from: contents, at: fittedImage)
+        try extractRawDisk(from: fittedImage, to: rawImage)
 
         let disk = try Data(contentsOf: rawImage, options: [.mappedIfSafe])
         guard let image = NDIFImage.macBinary(
@@ -95,31 +76,32 @@ struct ClassicSetupImageBuilder: Sendable {
         return image
     }
 
-    private func populate(mountPoint: URL, host: String, wirePort: UInt16,
+    private func populate(destination: URL, host: String, wirePort: UInt16,
                           assets: OnboardingAssetSnapshot,
                           dependencies selectedDependencies:
                             [OnboardingAsset]) throws {
         guard let application = assets.application else {
             throw BuildError.missingApplication
         }
-        try writeMacBinary(application.fileURL, to: mountPoint)
+        try writeMacBinary(application.fileURL, to: destination)
         guard let preferences = OnboardingPreferences.macBinary(
             host: host, port: wirePort) else {
             throw BuildError.couldNotEncode
         }
-        _ = try MacBinaryFile.decode(preferences).write(to: mountPoint)
+        _ = try MacBinaryFile.decode(preferences).write(to: destination)
         if let extensionComponent = assets.extensionComponent {
-            try writeMacBinary(extensionComponent.fileURL, to: mountPoint,
+            try writeMacBinary(extensionComponent.fileURL, to: destination,
                                nameOverride: "NOW Extension")
         }
 
-        let dependencies = mountPoint.appendingPathComponent(
+        let dependencies = destination.appendingPathComponent(
             "Dependencies", isDirectory: true)
         try fileManager.createDirectory(
             at: dependencies, withIntermediateDirectories: true)
         for asset in selectedDependencies {
             try installDependency(asset, in: dependencies,
-                                  workspace: mountPoint.deletingLastPathComponent())
+                                  workspace:
+                                    destination.deletingLastPathComponent())
         }
 
         let readMe = MacBinaryFile(
@@ -128,7 +110,7 @@ struct ClassicSetupImageBuilder: Sendable {
             dataFork: instructions(host: host, port: wirePort)
                 .data(using: .macOSRoman) ?? Data(),
             resourceFork: Data())
-        _ = try readMe.write(to: mountPoint)
+        _ = try readMe.write(to: destination)
     }
 
     private func writeMacBinary(_ url: URL, to directory: URL,
@@ -188,24 +170,91 @@ struct ClassicSetupImageBuilder: Sendable {
         }
     }
 
-    private func imageCapacity(for packageBytes: Int64) -> Int {
-        let minimum = 8 * 1_024 * 1_024
-        let desired = Int(min(Int64(Int.max), packageBytes
-            + 1 * 1_024 * 1_024))
-        let megabyte = 1_024 * 1_024
-        return max(minimum, (desired + megabyte - 1) / megabyte * megabyte)
+    private func createFittedHFSImage(from contents: URL,
+                                      at image: URL) throws {
+        let kibibyte = 1_024
+        let allocationBlock = 4 * kibibyte
+        let minimumHFSVolume = 512 * kibibyte
+        let hfsStructures = 192 * kibibyte
+        let growthStep = 32 * kibibyte
+        let maximumFreeBytes = 64 * kibibyte
+        let allocated = try allocatedBytes(in: contents)
+        var capacity = max(minimumHFSVolume,
+            roundUp(allocated + hfsStructures, to: allocationBlock))
+        var insufficientCapacity = 0
+
+        /* The prepared native files are the measurement. The structure
+           estimate avoids a knowingly-too-small first attempt; hdiutil's
+           ENOSPC is authoritative when the catalog or allocation bitmap needs
+           more. After a successful format, measured HFS free blocks tighten
+           the result again so the estimate can never become transfer padding. */
+        while capacity <= Self.maximumImageBytes {
+            try? fileManager.removeItem(at: image)
+            do {
+                try run("/usr/bin/hdiutil", [
+                    "create", "-srcfolder", contents.path,
+                    "-size", String(capacity), "-fs", "HFS+",
+                    "-volname", Self.volumeName, "-layout", "NONE",
+                    "-format", "UDRW", image.path
+                ])
+                let free = try availableBytes(in: image)
+                let fitted = max(insufficientCapacity + growthStep, roundUp(
+                    capacity - max(0, free - maximumFreeBytes),
+                    to: allocationBlock))
+                if fitted < capacity {
+                    capacity = fitted
+                    continue
+                }
+                return
+            } catch BuildError.commandFailed(let detail)
+                    where detail.contains("No space left on device") {
+                insufficientCapacity = max(insufficientCapacity, capacity)
+                capacity += growthStep
+            }
+        }
+        throw BuildError.packageTooLarge
     }
 
-    private func estimatedInstalledBytes(_ asset: OnboardingAsset) -> Int64 {
-        guard let raw = try? Data(contentsOf: asset.fileURL,
-                                  options: [.mappedIfSafe]),
-              let file = try? MacBinaryFile.decode(raw) else {
-            return asset.byteCount * 2
+    private func allocatedBytes(in directory: URL) throws -> Int {
+        let output = try run("/usr/bin/du", ["-sk", directory.path])
+        guard let text = String(data: output, encoding: .utf8),
+              let field = text.split(whereSeparator: { $0.isWhitespace }).first,
+              let kibibytes = Int(field) else {
+            throw BuildError.commandFailed(
+                "macOS could not measure the prepared setup files.")
         }
-        if isStuffIt(file) {
-            return Int64(file.dataFork.count) * 3
+        return kibibytes * 1_024
+    }
+
+    private func availableBytes(in image: URL) throws -> Int {
+        let mountPoint = image.deletingLastPathComponent()
+            .appendingPathComponent("fit-mount", isDirectory: true)
+        try? fileManager.removeItem(at: mountPoint)
+        try fileManager.createDirectory(
+            at: mountPoint, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: mountPoint) }
+        let device = try attach(image, mountPoint: mountPoint)
+        defer { try? eject(device) }
+        let attributes = try fileManager.attributesOfFileSystem(
+            forPath: mountPoint.path)
+        guard let free = attributes[.systemFreeSize] as? NSNumber else {
+            throw BuildError.commandFailed(
+                "macOS could not measure the fitted HFS volume.")
         }
-        return Int64(file.dataFork.count + file.resourceFork.count + 4_096)
+        return free.intValue
+    }
+
+    private func roundUp(_ value: Int, to multiple: Int) -> Int {
+        (value + multiple - 1) / multiple * multiple
+    }
+
+    private func extractRawDisk(from image: URL, to rawImage: URL) throws {
+        let device = try attach(image, mountPoint: nil)
+        defer { try? eject(device) }
+        try run("/bin/dd", [
+            "if=/dev/r\(URL(fileURLWithPath: device).lastPathComponent)",
+            "of=\(rawImage.path)", "bs=1048576"
+        ])
     }
 
     private func attach(_ image: URL, mountPoint: URL?) throws -> String {

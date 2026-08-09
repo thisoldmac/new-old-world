@@ -52,11 +52,16 @@ The builder keeps one completed image in memory. `/now/setup.img` and its
 explicit `.bin` fallback serve those exact cached bytes; changing a checkbox
 marks the image as having pending changes, and **Rebuild Install Image** swaps
 in the replacement only after it finishes. For the shipped application,
-extension and native CarbonLib test package, the raw HFS disk is 8 MiB rather
-than the former 19 MiB. Larger selections grow in one-MiB steps with one MiB
-of filesystem headroom. When native CarbonLib and its StuffIt download are
-both present, the native file wins and the archive is not included a second
-time.
+extension and native CarbonLib package, the raw HFS disk is calculated from
+the native files after their forks have been restored. The builder measures
+that prepared directory, lets HFS account for its catalog and allocation
+structures, and then measures the formatted volume's free blocks and tightens
+it to at most 64 KiB free. If the filesystem refuses the first size, the host
+grows it in 32 KiB steps until the contents fit; there is no package-size floor
+or MiB rounding. The representative test payload produces a 5,607,424-byte
+disk with 36,864 bytes free, rather than the former 19 MiB and then 8 MiB
+carriers. When native CarbonLib and its StuffIt download are both present, the
+native file wins and the archive is not included a second time.
 
 The NOW Extension is optional. Put its decoded file in
 `System Folder:Extensions` and restart the classic Mac. The application works
@@ -170,10 +175,11 @@ image routes and their headers, application and generated-settings downloads,
 method and unknown-route refusals, package precedence, explicit dependency
 enumeration, selection and cached-image replacement, checksum refusal, and
 MacBinary fork boundaries plus preference bytes. A macOS integration test
-builds the actual 8 MiB HFS Plus volume, decodes the NDIF's MacBinary envelope,
-mounts the raw disk read-only, and verifies native application, extension and
-CarbonLib resource forks plus preferences and instructions. It also proves
-that a native CarbonLib supersedes the matching StuffIt representation.
+builds a realistically sized HFS Plus volume, decodes the NDIF's MacBinary
+envelope, mounts the raw disk read-only, and verifies native application,
+extension and CarbonLib resource forks plus preferences and instructions. It
+also asserts a sub-6-MiB carrier with less than 128 KiB free, and proves that a
+native CarbonLib supersedes the matching StuffIt representation.
 
 Separately, the generated NDIF image was transferred into a Mac OS 9.1 QEMU
 guest and mounted by its stock Disk Copy 6.3.3. That proves the carrier and its

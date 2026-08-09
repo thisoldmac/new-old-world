@@ -52,6 +52,15 @@ name, disk size, transfer size, time and contents. Selection changes are
 reported as pending until a successful rebuild replaces the bytes served by
 both setup-image routes.
 
+**Updated again 2026-08-09:** the 8 MiB floor above was still transfer padding,
+not a property of the selected files. It has been removed. The builder now
+restores the selected native files into a staging directory, measures that
+directory, creates HFS against the measured content, and uses the formatted
+volume's own free-block count to tighten the result to at most 64 KiB free.
+The realistic app, extension and CarbonLib fork sizes produce a 5,607,424-byte
+raw disk with 36,864 bytes free. The MacBinary envelope adds only its header
+and block padding to those filesystem sectors.
+
 The focused host tests pass. Two use the real temporary listener over loopback
 to fetch the page, application and preferences, and to exercise unknown-route
 and POST refusal. The preference test separately pins the MacBinary header,
@@ -71,6 +80,9 @@ changing the NDIF Finder type from `rohd` to `dImg` produced its named failure.
 The 8 MiB capacity assertion, native-over-archive choice, and selection-to-
 served-image test were separately watched fail against mutations to the image
 floor, representation rank, and selection setter.
+The replacement content-fit guard was then watched fail when the old 8 MiB
+floor and 2.6 MiB free-space allowance were restored together: it named the
+8,388,608-byte carrier as exceeding the sub-6-MiB bound.
 
 `scripts/test-all` exits 0 after the HFS/NDIF checkpoint: staged-image
 discipline 28/28,
