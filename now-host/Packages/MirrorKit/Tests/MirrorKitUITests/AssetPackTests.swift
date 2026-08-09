@@ -92,6 +92,13 @@ final class AssetPackTests: XCTestCase {
         XCTAssertEqual(AssetPack.discover(in: store).map(\.id),
                        ["pack-2026-02", "pack-2026-01"])
     }
+
+    func testPackStoreIsConfigurableWithoutNamingAPackInCode() {
+        let custom = "/private/tmp/now-asset-pack-store"
+        XCTAssertEqual(AssetPack.storeURL(environment: [
+            AssetPack.storeEnvironmentKey: custom,
+        ]).path, custom)
+    }
 }
 
 /// Shared by every test that needs the pack's actual bytes.

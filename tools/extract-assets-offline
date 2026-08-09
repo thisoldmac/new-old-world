@@ -13,18 +13,18 @@ as dead ends — is written up in docs/asset-extraction-offline.md:
      where. Carve it to its own file and macOS mounts it normally.
   4. Resource forks are then ordinary files at <path>/..namedfork/rsrc.
 
-The parsers are the ones the live-pull extractor already uses
-(mirror/tools/extract-assets); this script only replaces the transport,
+The parsers are shared with the archived live-pull extractor
+(tools/asset-pack); this script only replaces the transport,
 so the two routes cannot disagree about what an icl8 means.
 
-    tools/extract-assets-offline                       # default image + pack
+    tools/extract-assets-offline                       # default image + new pack
     tools/extract-assets-offline --image X.qcow2       # another image
     tools/extract-assets-offline --reuse-work          # skip convert+carve
     tools/extract-assets-offline --theme-report        # census the theme file
     tools/extract-assets-offline --accent-ramps        # print the 21 clut ramps
 
-RULES, not preferences. These are Apple's bitmaps. The pack stays in this
-private repo, never publishes, never ships as an artifact. The source
+RULES, not preferences. These are Apple's bitmaps. The pack stays in a
+private external store, never publishes, never ships as an artifact. The source
 image is opened READ-ONLY and every step operates on the converted COPY;
 nothing is ever written into a guest System Folder.
 """
@@ -44,28 +44,30 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, ".."))
-PARSERS = os.path.join(REPO, "mirror", "tools", "extract-assets")
+PARSERS = os.path.join(REPO, "tools", "asset-pack")
 sys.path.insert(0, PARSERS)
 
-from PIL import Image     # noqa: E402
-
-import cursors            # noqa: E402
-import fonts              # noqa: E402
-import icons              # noqa: E402
-import patterns           # noqa: E402
-import resfork            # noqa: E402
+# Loaded after argument parsing so `--help` remains useful on a machine that
+# has not installed the optional extraction dependencies.
+Image = None
+cursors = None
+fonts = None
+icons = None
+patterns = None
+resfork = None
 
 DEFAULT_IMAGE = os.path.expanduser(
     "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2")
-DEFAULT_OUT = os.path.join(
-    REPO, "mirror/host/MirrorKit/Sources/MirrorKitUI/Resources")
+ASSET_STORE_ENV = "NOW_MIRROR_ASSET_STORE"
+DEFAULT_STORE = os.path.expanduser(os.environ.get(
+    ASSET_STORE_ENV, "~/Lab/Assets/now-mirror-assets"))
 DEFAULT_WORK = "/private/tmp/now-assets-work"
 # The accent ramps are numbers, not art, so they are generated as SOURCE
 # rather than dropped in the pack beside the bitmaps: 168 integers the
 # renderer needs at static-init, with no bundle lookup and no parse that
 # could fail silently into a fallback nobody notices.
 DEFAULT_SWIFT_OUT = os.path.join(
-    REPO, "mirror/host/MirrorKit/Sources/MirrorKitUI/PlatinumAccentRamps.swift")
+    REPO, "now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumAccentRamps.swift")
 
 SYSTEM_FILE = "System Folder/System"
 THEME_FILE = "System Folder/Appearance/Theme Files/Apple platinum"
@@ -115,6 +117,26 @@ MAX_FORK_BYTES = 12 << 20
 
 
 # --- image plumbing ------------------------------------------------------
+
+def load_extractors() -> None:
+    global Image, cursors, fonts, icons, patterns, resfork
+    try:
+        from PIL import Image as pillow_image
+        import cursors as cursor_parser
+        import fonts as font_parser
+        import icons as icon_parser
+        import patterns as pattern_parser
+        import resfork as resource_fork_parser
+    except ModuleNotFoundError as exc:
+        raise SystemExit(
+            f"missing extraction dependency: {exc.name}; install Pillow "
+            "and the documented tool requirements") from exc
+    Image = pillow_image
+    cursors = cursor_parser
+    fonts = font_parser
+    icons = icon_parser
+    patterns = pattern_parser
+    resfork = resource_fork_parser
 
 def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=True, capture_output=True, text=True, **kw)
@@ -705,7 +727,7 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
 def parse_bundle(fork: resfork.ResourceFork):
     """(creator, {fileType: iconResID}) from BNDL/FREF, or None.
 
-    Same walk as mirror/tools/extract-assets/iconpack.py — kept here rather
+    Same walk as tools/asset-pack/iconpack.py — kept here rather
     than imported because that module runs its harness at import time.
     """
     bndls = fork.of_type("BNDL")
@@ -1175,7 +1197,16 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--image", default=DEFAULT_IMAGE,
                     help="guest disk image, qcow2 or raw (READ-ONLY)")
-    ap.add_argument("--out", default=DEFAULT_OUT, help="pack directory")
+    ap.add_argument("--out", help="explicit Resources directory; otherwise "
+                                  "create a new pack in --store")
+    ap.add_argument("--store", default=DEFAULT_STORE,
+                    help=f"asset-pack store (default: ${ASSET_STORE_ENV} or "
+                         "~/Lab/Assets/now-mirror-assets)")
+    ap.add_argument("--pack-id",
+                    help="directory name under --store (default: generated "
+                         "pack-YYYY-MM-DD-HHMMSS)")
+    ap.add_argument("--print-destination", action="store_true",
+                    help="print the resolved Resources destination and stop")
     ap.add_argument("--work", default=DEFAULT_WORK,
                     help="scratch for the converted copy and the mount")
     ap.add_argument("--reuse-work", action="store_true",
@@ -1193,6 +1224,22 @@ def main() -> None:
                     help="generated Swift source for the accent ramps")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+
+    if args.out is None:
+        pack_id = args.pack_id or datetime.datetime.now().strftime(
+            "pack-%Y-%m-%d-%H%M%S")
+        if not pack_id.startswith("pack-") or os.path.basename(pack_id) != pack_id:
+            raise SystemExit("--pack-id must be one directory name beginning pack-")
+        args.out = os.path.join(os.path.expanduser(args.store), pack_id,
+                                "Resources")
+    elif args.pack_id:
+        raise SystemExit("--pack-id cannot be combined with explicit --out")
+
+    if args.print_destination:
+        print(args.out)
+        return
+
+    load_extractors()
 
     if not os.path.exists(args.image):
         raise SystemExit(f"no such image: {args.image}")
@@ -1248,12 +1295,12 @@ def main() -> None:
         apps_sum = extract_appicons(mnt, args.out, prov, args.verbose)
 
         manifest = {
-            "pack": "platinum-pack",
+            "pack": os.path.basename(os.path.dirname(args.out)),
             "version": "0.2.0",
             "route": "offline (disk image, no VM) — tools/extract-assets-offline",
             "source_image": os.path.basename(args.image),
             "extracted": datetime.date.today().isoformat(),
-            "clut": "generated system 8-bit CLUT (mirror/tools/extract-assets/clut.py)",
+            "clut": "generated system 8-bit CLUT (tools/asset-pack/clut.py)",
             "icons": icons_sum,
             "cursors": cursors_sum,
             "patterns": patterns_sum,

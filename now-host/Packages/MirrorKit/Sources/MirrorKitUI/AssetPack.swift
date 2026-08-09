@@ -16,8 +16,8 @@ import Foundation
 ///
 /// It is regenerable, which is what makes not-in-git viable at all.
 /// `tools/extract-assets-offline` rebuilds it byte-identically from a
-/// local OS 9 image, and its default output directory is search step 3
-/// below — so "run the extractor" is the whole recovery procedure.
+/// local OS 9 image into the configured external store — so "run the
+/// extractor" is the whole recovery procedure.
 ///
 /// **Absent is a first-class state, and it is loud.** A missing
 /// dependency that looks like working software is the failure this
@@ -56,12 +56,11 @@ public enum AssetPack {
     /// directory holding `fonts/`, `icons/`, `appicons/`, `cursors/`,
     /// `patterns/` and `manifest.json`.
     public static let environmentKey = "NOW_MIRROR_ASSETS"
+    public static let storeEnvironmentKey = "NOW_MIRROR_ASSET_STORE"
     public static let selectionDefaultsKey = "NOWSelectedMirrorAssetPack"
 
-    /// The documented store: packs live beside the qcow2 images, newest
-    /// `pack-*` wins. This is a path on a desk rather than a fact about
-    /// the software, which is exactly why it is only step 2 — the
-    /// environment variable is the supported way to say something else.
+    /// A conventional fallback, not a compiled pack selection. The store
+    /// itself is configurable independently from the one-pack override.
     static let defaultStore = "~/Lab/Assets/now-mirror-assets"
 
     /// Resolved once. The pack does not appear mid-run, and a renderer
@@ -198,23 +197,11 @@ public enum AssetPack {
         }
         for pack in packs {
             if let ok = accept(pack.resourcesURL,
-                               via: "\(defaultStore)/\(pack.id)") {
+                               via: "\(store.path)/\(pack.id)") {
                 return ok
             }
         }
         if packs.isEmpty { searched.append("\(store.path)/pack-*/Resources") }
-
-        // 3. The extractor's own default output, in a working checkout.
-        //    `#filePath` is the source location of this file, so this
-        //    step exists for a developer who has just run the extractor
-        //    and is building from the same tree; a shipped app resolves
-        //    by 1 or 2, and it must never ship the pack inside itself.
-        let here = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        if let ok = accept(here.appendingPathComponent("Resources"),
-                           via: "checkout (tools/extract-assets-offline "
-                           + "default output)") {
-            return ok
-        }
 
         warn("Platinum asset pack NOT FOUND. The mirror will draw "
              + "procedural stand-ins, NOT the guest's own art. Set "
@@ -223,9 +210,11 @@ public enum AssetPack {
         return .absent(searched: searched)
     }
 
-    static func storeURL() -> URL {
-        URL(fileURLWithPath:
-                (defaultStore as NSString).expandingTildeInPath)
+    static func storeURL(environment: [String: String] = ProcessInfo
+        .processInfo.environment) -> URL {
+        let configured = environment[storeEnvironmentKey] ?? defaultStore
+        return URL(fileURLWithPath:
+                (configured as NSString).expandingTildeInPath)
     }
 
     static func discover(in store: URL) -> [Choice] {
