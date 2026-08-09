@@ -98,6 +98,8 @@ private final class ChatProcessInvocation: @unchecked Sendable {
 
     private let request: ChatSubprocessRequest
     private let lock = NSLock()
+    private let stdoutQueue = DispatchQueue(
+        label: "dev.newoldworld.now.chat-subprocess.stdout")
     private var process: Process?
     private var stdoutBuffer = Data()
     private var outputBytes = 0
@@ -139,8 +141,7 @@ private final class ChatProcessInvocation: @unchecked Sendable {
         }
 
         stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            if !data.isEmpty { self?.receiveStdout(data) }
+            self?.readAvailableStdout(handle)
         }
         // Drain diagnostics to prevent child backpressure, but never retain or
         // log provider payloads.
@@ -150,7 +151,9 @@ private final class ChatProcessInvocation: @unchecked Sendable {
         process.terminationHandler = { [weak self] process in
             stdout.fileHandleForReading.readabilityHandler = nil
             stderr.fileHandleForReading.readabilityHandler = nil
-            self?.terminated(status: process.terminationStatus)
+            self?.finishStdout(
+                stdout.fileHandleForReading,
+                status: process.terminationStatus)
         }
 
         lock.withLock { self.process = process }
@@ -194,6 +197,21 @@ private final class ChatProcessInvocation: @unchecked Sendable {
         } else {
             let current = lock.withLock { continuation }
             lines.forEach { current?.yield($0) }
+        }
+    }
+
+    private func readAvailableStdout(_ handle: FileHandle) {
+        stdoutQueue.sync {
+            let data = handle.availableData
+            if !data.isEmpty { receiveStdout(data) }
+        }
+    }
+
+    private func finishStdout(_ handle: FileHandle, status: Int32) {
+        stdoutQueue.sync {
+            let remaining = handle.readDataToEndOfFile()
+            if !remaining.isEmpty { receiveStdout(remaining) }
+            terminated(status: status)
         }
     }
 

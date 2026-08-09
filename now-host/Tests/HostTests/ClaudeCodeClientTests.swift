@@ -107,6 +107,24 @@ final class ClaudeCodeClientTests: XCTestCase {
                        Data(ClaudeCodeClient.prompt(completion).utf8))
     }
 
+    func testSystemRunnerDrainsFastProcessOutputBeforeExit() async throws {
+        let runner = SystemChatSubprocessRunner()
+        let request = ChatSubprocessRequest(
+            executable: URL(fileURLWithPath: "/usr/bin/seq"),
+            arguments: ["1", "20000"], standardInput: nil, timeout: 10,
+            environment: ChatSubprocessEnvironment.minimal(),
+            workingDirectory: nil)
+        var lines: [String] = []
+
+        for try await line in runner.stdoutLines(request) {
+            lines.append(line)
+        }
+
+        XCTAssertEqual(lines.count, 20_000)
+        XCTAssertEqual(lines.first, "1")
+        XCTAssertEqual(lines.last, "20000")
+    }
+
     func testMinimalEnvironmentStripsProviderSecrets() {
         let environment = ChatSubprocessEnvironment.minimal(from: [
             "HOME": "/tmp/home", "PATH": "/usr/bin",
