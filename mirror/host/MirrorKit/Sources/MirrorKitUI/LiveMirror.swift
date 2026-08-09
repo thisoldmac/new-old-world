@@ -353,25 +353,6 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .allowsHitTesting(false)
                 }
-                /* The Platinum asset pack is a dependency, not repository
-                   content (docs/asset-pack.md), and without it the icons,
-                   cursors and text on screen are procedural stand-ins.
-                   That is a legitimate way to run — but a picture of
-                   another machine drawn from art that machine does not
-                   own is a CLAIM, and an unmarked one is the failure this
-                   project keeps paying for. So the mirror says so, for as
-                   long as it is true, where the person looking at it is
-                   already looking. It is not in SceneView, deliberately:
-                   the render screenshots must stay pixel-comparable. */
-                if let banner = AssetPack.bannerText {
-                    Text(banner)
-                        .font(.system(size: 11))
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Color.yellow.opacity(0.25))
-                        .allowsHitTesting(false)
-                }
                 /* The SAME rule, one level finer. An absent pack is a
                    loud state; a present pack that is missing one FACE is
                    a quiet one, and the quiet one has already cost this

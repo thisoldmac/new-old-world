@@ -126,6 +126,47 @@ enum HostFinderDomain {
             display: nil)
     }
 
+    /// The emulated desktop is the Finder's Desktop Folder plus the mounted
+    /// share volume. Positions are host state: file.list deliberately carries
+    /// catalog facts, not the guest Finder's saved icon grid.
+    static func projectedDesktop(_ entries: [FileEntry], rootLabel: String?,
+                                 screen: Scene.ScreenSize)
+        -> [Scene.DesktopItem] {
+        let right = max(8, screen.w - 58)
+        var result: [Scene.DesktopItem] = []
+        if let root = rootLabel?.trimmingCharacters(in:
+            CharacterSet(charactersIn: ":")), !root.isEmpty {
+            result.append(.init(name: root, kind: "disk", type: nil,
+                                creator: nil, x: right, y: 14, placed: true,
+                                alias: false, invisible: false, w: 32, h: 32,
+                                origin: .drawn))
+        }
+        for (index, entry) in entries.enumerated() {
+            let row = index % max(1, (screen.h - 90) / 68)
+            let column = index / max(1, (screen.h - 90) / 68)
+            result.append(.init(
+                name: entry.name,
+                kind: entry.isFolder ? "folder"
+                    : entry.fileType == "APPL" ? "application" : "file",
+                type: entry.fileType, creator: entry.creator,
+                x: max(8, right - column * 84), y: 82 + row * 68,
+                placed: true, alias: false, invisible: false, w: 32, h: 32,
+                origin: .drawn))
+        }
+        return result
+    }
+
+    static func relativePath(_ path: String, root: String?) -> String {
+        var path = path.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+        guard var root, !root.isEmpty else { return path }
+        root = root.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+        if path == root { return "" }
+        if path.hasPrefix(root + ":") {
+            path.removeFirst(root.count + 1)
+        }
+        return path
+    }
+
     static func finderMenubar(from base: Scene.Menubar?, window: Window? = nil)
         -> Scene.Menubar {
         let apple = base?.menus.first(where: \.apple)

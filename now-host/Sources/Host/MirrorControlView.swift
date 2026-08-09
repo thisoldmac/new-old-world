@@ -199,8 +199,23 @@ struct MirrorControlView: View {
                     get: { source.emulateFinderWindows },
                     set: { source.emulateFinderWindows = $0 }
                 ))
-                Text("Folder windows are owned by this Mac and browse the guest's configured file share. The guest Finder is not opened or selected.")
+                Text("Finder interiors and interaction are owned by this Mac and browse the guest's configured file share.")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Divider()
+                Toggle("Sync window opens and closes", isOn: Binding(
+                    get: { source.syncEmulatedFinderLifecycle },
+                    set: { source.syncEmulatedFinderLifecycle = $0 }
+                ))
+                .disabled(!source.emulateFinderWindows)
+                Toggle("Sync window position and size", isOn: Binding(
+                    get: { source.syncEmulatedFinderGeometry },
+                    set: { source.syncEmulatedFinderGeometry = $0 }
+                ))
+                .disabled(!source.emulateFinderWindows)
+                Text("Development controls. Host actions appear immediately; later guest observations reconcile lifecycle and geometry.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
@@ -219,18 +234,20 @@ struct MirrorControlView: View {
     }
 
     private var assetPackCard: some View {
-        GroupBox("Mirror Artwork") {
+        GroupBox("Asset Packs") {
             VStack(alignment: .leading, spacing: 7) {
                 if AssetPack.isEnvironmentManaged {
-                    Text(AssetPack.summaryLine)
+                    LabeledContent("Selected", value: AssetPack.summaryLine)
                         .font(.caption).foregroundStyle(.secondary)
                     Text("Set by \(AssetPack.environmentKey).")
                         .font(.caption2).foregroundStyle(.secondary)
                 } else if AssetPack.availablePacks.isEmpty {
-                    Text(AssetPack.bannerText ?? AssetPack.summaryLine)
+                    LabeledContent("Selected",
+                                   value: AssetPack.bannerText
+                                        ?? AssetPack.summaryLine)
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Picker("Asset pack", selection: Binding(
+                    Picker("Selected", selection: Binding(
                         get: { AssetPack.selectedPackID ?? "" },
                         set: { AssetPack.selectPack(id: $0.isEmpty ? nil : $0) }
                     )) {

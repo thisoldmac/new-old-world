@@ -26,37 +26,24 @@ import Combine
 final class MirrorRunControl: ObservableObject {
 
     private let source: NOWMirrorSource
-    private let defaults: UserDefaults
-    private static let wantsRunningKey = "mirrorWantsRunning"
-
-    /// What the person last asked for, which is not the same as whether
-    /// it is running: a "yes" with no Mac connected is still a yes, and
-    /// it is what makes the Mirror come back by itself on the next
-    /// connection and across a relaunch.
-    @Published private(set) var wantsRunning: Bool {
-        didSet { defaults.set(wantsRunning, forKey: Self.wantsRunningKey) }
-    }
+    /// What the person asked for during this host process. It deliberately
+    /// survives a guest reconnect but not an application relaunch: starting a
+    /// new host must never begin probing a classic Mac merely because the last
+    /// process happened to be mirroring when it quit.
+    @Published private(set) var wantsRunning = false
 
     /// Whether the poll is actually going. Republished from the source so
     /// a view observing this object alone still sees it change.
     @Published private(set) var running = false
-
-    /// The persisted answer, readable **without constructing anything**.
-    /// `HostAppState` asks this on every connection change, and asking
-    /// the run control itself would build `NOWMirrorSource` on every host
-    /// with a Mac on the wire — the mistake the metrics reader is already
-    /// guarded against.
-    static func storedWantsRunning(_ defaults: UserDefaults) -> Bool {
-        defaults.bool(forKey: wantsRunningKey)
-    }
 
     private var retry: Task<Void, Never>?
     private var runningMirror: AnyCancellable?
 
     init(source: NOWMirrorSource, defaults: UserDefaults = ProductIdentity.defaults) {
         self.source = source
-        self.defaults = defaults
-        wantsRunning = defaults.bool(forKey: Self.wantsRunningKey)
+        /* Retire the old persisted bit as well as ignoring it. A downgrade may
+           still understand the key, but this build's launch contract is off. */
+        defaults.removeObject(forKey: "mirrorWantsRunning")
         running = source.running
         runningMirror = source.$running.sink { [weak self] value in
             self?.running = value
@@ -91,10 +78,8 @@ final class MirrorRunControl: ObservableObject {
         resumeIfWanted()
     }
 
-    /// Called on every connection change. A Mirror that was running when
-    /// the app last quit — or when the guest last dropped — comes back by
-    /// itself, because "running" is a state of the product and not of the
-    /// session that happened to be up.
+    /// Called on every connection change. Only an intent established during
+    /// this process is eligible to resume.
     func resumeIfWanted() {
         guard wantsRunning, !source.running else { return }
         source.start()

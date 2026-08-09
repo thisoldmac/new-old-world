@@ -20,6 +20,8 @@ final class HostFinderSessionTests: XCTestCase {
         suiteName = "HostFinderSessionTests.\(UUID())"
         defaults = UserDefaults(suiteName: suiteName)!
         defaults.set(true, forKey: HostFinderSession.preferenceKey)
+        defaults.set(false, forKey: HostFinderSession.lifecycleSyncPreferenceKey)
+        defaults.set(false, forKey: HostFinderSession.geometrySyncPreferenceKey)
     }
 
     override func tearDown() async throws {
@@ -87,6 +89,70 @@ final class HostFinderSessionTests: XCTestCase {
         XCTAssertEqual(guest.received.count, before)
     }
 
+    func testDesktopAndGuestWindowCatalogsProjectWithoutFinderRoster()
+        async throws {
+        defaults.set(false, forKey: HostFinderSession.preferenceKey)
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        let folder = finderWindow(path: "Macintosh HD:Control Panels")
+        session.observe(scene: scene(windows: [folder]))
+
+        _ = try await answerNextList(
+            guest, path: "Desktop Folder",
+            entries: [entry("Read Me", kind: "file")])
+        _ = try await answerNextList(
+            guest, path: "Control Panels",
+            entries: [entry("Mouse", kind: "file")])
+        try await waitUntil("semantic catalogs") {
+            let projected = session.project(self.scene(windows: [folder]))
+            return projected.desktopItems?.contains { $0.name == "Read Me" }
+                == true
+                && projected.windows.first?.items?.contains {
+                    $0.name == "Mouse"
+                } == true
+        }
+
+        let projected = session.project(scene(windows: [folder]))
+        XCTAssertEqual(projected.desktopItems?.first?.name, "Macintosh HD")
+        XCTAssertEqual(projected.windows.first?.items?.map(\.name), ["Mouse"])
+    }
+
+    func testLifecycleAndGeometryCouplingAreOptimisticAndReconcile()
+        async throws {
+        defaults.set(true, forKey: HostFinderSession.lifecycleSyncPreferenceKey)
+        defaults.set(true, forKey: HostFinderSession.geometrySyncPreferenceKey)
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        session.observe(screen: .init(w: 640, h: 480))
+        _ = try await answerNextList(guest, path: "", entries: [])
+
+        try await waitUntil("optimistic guest open") {
+            guest.received.contains { message in
+                guard case .commandRequest(let request) = message else {
+                    return false
+                }
+                return request.name == "script"
+            }
+        }
+        let rootID = try XCTUnwrap(session.windows.first?.id)
+        let observed = finderWindow(path: "Macintosh HD", ref: "now-window-42",
+                                    rect: Rect(l: 40, t: 50, r: 440, b: 350))
+        session.observe(scene: scene(windows: [observed]))
+        XCTAssertEqual(session.windows.first?.frame, observed.rect)
+
+        session.windowAct(id: rootID, act: .move(left: 90, top: 100))
+        XCTAssertEqual(session.windows.first?.frame.l, 90,
+                       "the host moves before the guest answers")
+        try await waitUntil("guest geometry act") {
+            guest.received.contains { message in
+                guard case .commandRequest(let request) = message else {
+                    return false
+                }
+                return request.name == "winact"
+            }
+        }
+    }
+
     private func connectedGuest() async throws -> FakeGuest {
         let guest = FakeGuest(port: try XCTUnwrap(listener.boundPort))
         guest.start()
@@ -126,10 +192,23 @@ final class HostFinderSessionTests: XCTestCase {
               creator: nil, dataBytes: 1, rsrcBytes: 0, modified: 0)
     }
 
-    private func scene() -> Scene {
+    private func scene(windows: [Scene.Window] = []) -> Scene {
         .init(version: 1, seq: 1, source: "test", capturedAt: 0,
-              screen: .init(w: 640, h: 480), apps: [], windows: [],
+              screen: .init(w: 640, h: 480), apps: [], windows: windows,
               meta: .init())
+    }
+
+    private func finderWindow(path: String, ref: String = "now-window-1",
+                              rect: Rect = Rect(l: 60, t: 50, r: 500, b: 380))
+        -> Scene.Window {
+        .init(id: "finder-window", app: "Finder", psn: "0.1",
+              title: path.components(separatedBy: ":").last ?? path,
+              kind: 20, rect: rect, front: true, z: 0, visible: true,
+              controls: [], ref: ref, addr: 42,
+              incarnation: "finder-incarnation", closeBox: true,
+              zoomBox: true, finder: .init(path: path, view: .icon,
+                                           selectedNames: [], pages: 1,
+                                           complete: true))
     }
 
     private struct WaitTimeout: Error {}

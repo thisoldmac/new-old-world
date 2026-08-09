@@ -467,6 +467,16 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         set { hostFinder.enabled = newValue }
     }
 
+    var syncEmulatedFinderLifecycle: Bool {
+        get { hostFinder.syncLifecycle }
+        set { hostFinder.syncLifecycle = newValue }
+    }
+
+    var syncEmulatedFinderGeometry: Bool {
+        get { hostFinder.syncGeometry }
+        set { hostFinder.syncGeometry = newValue }
+    }
+
     var hostFinderStatus: String { hostFinder.status }
 
     func refreshHostFinder() { hostFinder.refresh() }
@@ -1384,7 +1394,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         let guest = Self.projectedScene(snapshot: shadowEngine?.snapshot,
                                         fallback: fallback)
         lastGuestScene = guest
-        hostFinder.observe(screen: guest.screen)
+        hostFinder.observe(scene: guest)
         return hostFinder.project(guest)
     }
 

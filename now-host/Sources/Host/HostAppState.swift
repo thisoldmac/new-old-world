@@ -226,34 +226,15 @@ final class HostAppState: ObservableObject {
     /// 1. `--open-mirror` on argv, once per launch. It means *start*,
     ///    and shows the Mirror wherever the person last left it — the
     ///    headless sweep needs the poll and has no opinion about windows.
-    /// 2. A persisted "it was running when you last quit". Running is a
-    ///    state of the product rather than of one session, so it comes
-    ///    back by itself; every request the Mirror serves refuses while
-    ///    it is stopped, and a person who left it running would have to
-    ///    rediscover why before anything worked.
-    ///
-    /// Every later connection change comes through this same door, which
-    /// is what makes the retry inside `MirrorRunControl` a belt rather
-    /// than the only route: `start()` refuses while the listener has no
-    /// active key, and that is the ordinary order of events at launch.
+    /// Every later connection change reaches the already-created run control
+    /// through `repointModels()`. Its in-process intent may resume there, but
+    /// ordinary app launch always leaves Mirror off.
     private func mirrorFollowsTheConnection() {
         if MirrorLaunchOptions.parse(ProcessInfo.processInfo.arguments)
             .openAtLaunch, !didHonourMirrorLaunchRequest {
             didHonourMirrorLaunchRequest = true
             showMirror()
             return
-        }
-        /* **Read from `defaults` rather than from `mirrorRun`.** Touching
-           the run control constructs `mirrorSource`, and this runs on
-           every connection — so asking it "were you running?" would make
-           every host with a Mac on the wire build the Mirror, which is
-           the same mistake as letting a metrics read construct the
-           measurer. The stored answer costs nothing and is the same
-           answer. */
-        guard MirrorRunControl.storedWantsRunning(defaults) else { return }
-        mirrorRun.resumeIfWanted()
-        if mirrorPresentation.isDetached, mirrorSource.running {
-            mirrorWindow.show(title: "Mirror — \(connectedMachineName)")
         }
     }
 

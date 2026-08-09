@@ -112,7 +112,7 @@ final class MirrorContainerTests: XCTestCase {
                        + "that has been running for a minute")
     }
 
-    func testTheRunControlRemembersThatItWasRunningAcrossALaunch() {
+    func testTheRunControlAlwaysStartsOffButResumesWithinOneLaunch() {
         let name = "test.mirror.run.\(UUID().uuidString)"
         let defaults = suite(name)
         let key = GuestKey.synthetic("resume")
@@ -122,19 +122,19 @@ final class MirrorContainerTests: XCTestCase {
             listener: listener, engineRegistry: MirrorStateEngineRegistry(),
             act: testAct(listener), interval: 3_600, cycleIO: harness.io)
 
+        defaults.set(true, forKey: "mirrorWantsRunning")
         let run = MirrorRunControl(source: source, defaults: defaults)
         XCTAssertFalse(run.wantsRunning)
+        XCTAssertNil(defaults.object(forKey: "mirrorWantsRunning"),
+                     "the retired launch bit must not remain for an older "
+                     + "host build to interpret")
         run.start()
         XCTAssertTrue(run.running)
-        XCTAssertTrue(MirrorRunControl.storedWantsRunning(defaults),
-                      "the stored answer must be readable WITHOUT building "
-                      + "the run control, because HostAppState asks it on "
-                      + "every connection and building it builds the source")
+        XCTAssertTrue(run.wantsRunning)
 
         run.stop()
         XCTAssertFalse(run.running)
-        XCTAssertFalse(MirrorRunControl.storedWantsRunning(defaults),
-                       "stopping is a decision, and it persists too")
+        XCTAssertFalse(run.wantsRunning)
         UserDefaults().removePersistentDomain(forName: name)
     }
 
