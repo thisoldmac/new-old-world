@@ -456,7 +456,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         self.visibilityRefreshOverride = visibilityRefreshOverride
         self.lifecycleDidChange = lifecycleDidChange
         self.hostFinder.onChange = { [weak self] in
-            guard let self, let base = self.lastGuestScene else { return }
+            guard let self, self.running,
+                  let base = self.lastGuestScene else { return }
             self.scene = self.hostFinder.project(base)
         }
     }
@@ -631,6 +632,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
         scene = nil
         sceneGuestKey = nil
+        lastGuestScene = nil
         icons.removeAll()
         finderPresentations.removeAll()
         finderScrollOrigins.removeAll()

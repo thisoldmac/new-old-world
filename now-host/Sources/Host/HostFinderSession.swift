@@ -65,8 +65,12 @@ final class HostFinderSession {
         generation &+= 1
         windows.removeAll()
         seeded = false
+        /* Screen geometry belongs to the session that reported it. Keeping
+           the old screen here would immediately seed a new host Finder and
+           let it repaint over a replacement connection before that Mac had
+           published even one frame. */
+        screen = nil
         status = enabled ? "Opening the guest disk…" : "Host Finder is off"
-        seedIfNeeded()
         onChange()
     }
 
