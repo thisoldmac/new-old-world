@@ -71,6 +71,41 @@ final class FilesPagingTests: XCTestCase {
                        + "restarting it")
     }
 
+    /// A mutation completion and the file-tree event it publishes can both
+    /// refresh the visible folder. Only the newest refresh owns the rows;
+    /// otherwise both replies append the same page and every item appears
+    /// twice even though the guest contains only one copy.
+    func testOnlyTheNewestOverlappingRefreshMayPublishRows() async throws {
+        let guest = try await connectedGuest()
+        model.refresh()
+        model.refresh()
+
+        var ids: [Int] = []
+        try await waitUntil("two overlapping file.list requests") {
+            ids = guest.received.compactMap { message in
+                guard case .fileList(let list) = message,
+                      list.path.isEmpty else { return nil }
+                return list.id
+            }
+            return ids.count == 2
+        }
+
+        let row = entry(1)
+        try guest.send(.fileListing(FileListing(
+            id: ids[1], path: "", entries: [row], more: false,
+            cursor: nil)))
+        try guest.send(.fileListing(FileListing(
+            id: ids[0], path: "", entries: [row], more: false,
+            cursor: nil)))
+
+        try await waitUntil("newest listing published") {
+            self.model.rows.count >= 1
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(model.rows.map(\.name), ["item-1"],
+                       "a stale full refresh must not append its page")
+    }
+
     // MARK: - the two ways it must refuse to spin
 
     /// A guest that answers `more` without advancing its cursor would

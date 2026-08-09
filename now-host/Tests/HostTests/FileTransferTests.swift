@@ -898,6 +898,66 @@ final class TransferQueueTests: XCTestCase {
         XCTAssertTrue(model.queue.isEmpty)
     }
 
+    /// Replacing a running or locked classic application can accept every
+    /// byte and still fail when the receiver tries to delete-and-rename the
+    /// temporary file. That second `exists` is the final answer to an
+    /// already-authorized overwrite, not a new collision question.
+    func testAnOverwriteThatCannotFinalizeFailsWithoutPromptingAgain()
+        async throws {
+        let guest = try await silentGuest()
+        let url = try XCTUnwrap(tempFiles(["Running App.bin"]).first)
+        model.send(url)
+
+        var firstID: Int?
+        try await waitUntil("initial file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message,
+                   offer.name == "Running App.bin",
+                   offer.overwrite != true {
+                    firstID = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        try guest.send(.fileRefuse(FileRefuse(
+            id: try XCTUnwrap(firstID), code: "exists",
+            reason: "a file of that name is already there")))
+        try await waitUntil("overwrite prompt") {
+            self.model.overwritePrompt != nil
+        }
+
+        model.confirmOverwrite()
+        var overwriteID: Int?
+        try await waitUntil("overwrite file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message,
+                   offer.name == "Running App.bin",
+                   offer.overwrite == true {
+                    overwriteID = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(overwriteID)
+        try guest.send(.fileAccept(FileAccept(id: id)))
+        try await waitUntil("overwrite bytes staged") {
+            !guest.bulkReceived.isEmpty
+        }
+        try guest.send(.fileDone(FileDone(
+            id: id, ok: false, code: "exists",
+            reason: "the running application could not be replaced")))
+
+        try await waitUntil("overwrite failure settled") {
+            self.model.transfer == nil
+        }
+        XCTAssertNil(model.overwritePrompt,
+                     "an overwrite refusal must fail closed, not loop")
+        XCTAssertTrue(model.lastError?.contains("could not be replaced")
+                      == true)
+    }
+
     func testADeadWireStopsTheQueueInsteadOfFailingEveryFile()
         async throws {
         let guest = try await silentGuest()

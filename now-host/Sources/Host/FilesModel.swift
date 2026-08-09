@@ -285,6 +285,11 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// reload a listing of a different machine's folder.
     private var busWatch: HostEventSubscription?
     private var pageCursor: Int?
+    /// Identifies the full-folder read that owns `rows`. Two refreshes may
+    /// be in flight at once (a mutation publishes an event before its own
+    /// completion runs), and a path comparison cannot distinguish them
+    /// when both asked for the same folder.
+    private var listingGeneration = 0
 
     init(
         listener: GuestListener,
@@ -353,6 +358,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
               case .switched(let restored) =
                 cache.focus(connection.key, parking: snapshot())
         else { return }
+        listingGeneration += 1
         let fresh = restored ?? Snapshot()
         breadcrumb = fresh.breadcrumb
         rows = fresh.rows
@@ -441,15 +447,21 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     private func load(path: String, resetRows: Bool, cursor: Int? = nil) {
         guard canBrowse else { return }
         if resetRows {
+            listingGeneration += 1
             rows = []
             pageCursor = nil
             selection = nil
         }
+        let generation = listingGeneration
         isLoading = true
         lastError = nil
         lastNotice = nil
         listener.listFiles(path: path, cursor: cursor) { [weak self] result in
             guard let self else { return }
+            // A newer full refresh owns this same path now. Its page is the
+            // only one allowed to append; accepting both duplicates every
+            // visible row without changing anything on the guest.
+            guard generation == self.listingGeneration else { return }
             self.isLoading = false
             switch result {
             case .success(let listing):
@@ -1129,7 +1141,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
             case .success:
                 self.refresh()
                 self.startNextIfIdle()
-            case .failure(let failure) where failure.code == "exists":
+            case .failure(let failure)
+                where failure.code == "exists" && !overwrite:
                 // Not an error: the human has a decision to make, and
                 // the queue waits rather than racing past it.
                 self.queueDone -= 1
