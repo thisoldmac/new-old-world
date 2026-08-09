@@ -1484,6 +1484,48 @@ final class NOWMirrorSourceTests: XCTestCase {
             data: try JSONEncoder().encode(projected), encoding: .utf8))
         XCTAssertTrue(encoded.contains("already on its way"), encoded)
     }
+
+    func testInvalidationsCoalesceIntoOneFollowUpScene() throws {
+        let key = GuestKey.synthetic("invalidation-follow-up")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        var commands: [(String, [String: CommandArg]?)] = []
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io,
+            transitionInvalidation: true,
+            sendCommand: { verb, args, completion in
+                commands.append((verb, args))
+                completion(.init(id: 1, ok: true))
+            })
+        source.start()
+        XCTAssertEqual(harness.sceneRequests.count, 1)
+
+        let first = MirrorInvalidate(
+            session: "1", generation: 2,
+            domains: .init(structure: 2), quality: .sampled,
+            lost: 0, source: .transitions)
+        listener.events.publish(.mirrorInvalidated(key, first))
+        listener.events.publish(.mirrorInvalidated(key, first))
+        listener.events.publish(.mirrorInvalidated(
+            GuestKey.synthetic("another-mac"), first))
+        XCTAssertEqual(harness.sceneRequests.count, 1,
+                       "an active observation is never overlapped")
+
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        XCTAssertEqual(commands.first?.0, "transitions")
+        XCTAssertEqual(commands.first?.1?["op"], .text("start"))
+        XCTAssertNotNil(commands.first?.1?["serialLo"],
+                        "the sampled process is addressed by exact PSN")
+        XCTAssertEqual(commands.first?.1?["ttlTicks"], .number(36_000),
+                       "resident sampling remains leased, never always-on")
+        harness.completeJoin(0)
+        XCTAssertEqual(harness.sceneRequests.count, 2,
+                       "newest matching generation earns one prompt repair")
+    }
 }
 
 /// The icon reader, pinned against what the machine actually returned.

@@ -2345,6 +2345,10 @@ final class GuestListener: ObservableObject {
                                        tuning: tuning)
     }
 
+    func invalidateSceneBaseline(for key: GuestKey) {
+        sessions[key]?.invalidateSceneBaseline()
+    }
+
     fileprivate func deliverScene(
         _ result: Result<SceneDelivery, SceneFailure>,
         from guestKey: GuestKey? = nil) {
@@ -2902,6 +2906,12 @@ final class GuestListener: ObservableObject {
             onProcessResult: { [weak self] result in
                 guard fromActive() else { return }
                 self?.resolveProcessResult(result)
+            },
+            onMirrorInvalidation: { [weak self] hint in
+                guard let self, let key = origin.session?.guestKey else {
+                    return
+                }
+                self.events.publish(.mirrorInvalidated(key, hint))
             },
             onReceived: { [weak self] url in
                 guard let self, let sender = origin.session else { return }

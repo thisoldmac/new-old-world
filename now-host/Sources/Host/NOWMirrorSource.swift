@@ -314,6 +314,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private let cycleIO: NOWMirrorCycleIO
     private let sendCommand: GuestCommandSend
     private let workScheduler: GuestWorkScheduler
+    private var invalidationSubscription: HostEventSubscription?
+    private var lastInvalidationGeneration = 0
+    private var transitionTarget: String?
+    private var transitionLeaseTask: Task<Void, Never>?
+    private let transitionInvalidationEnabled: Bool
     private let interval: TimeInterval
     private let planePolicy: @MainActor (GuestKey) -> Set<MirrorPlaneID>
     private let finderComplementPolicy: @MainActor (GuestKey) -> Bool
@@ -433,6 +438,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
              MirrorKit.Scene, Int, @escaping () -> Void
          ) -> Void)? = nil,
          cycleIO: NOWMirrorCycleIO? = nil,
+         transitionInvalidation: Bool? = nil,
          sendCommand: GuestCommandSend? = nil,
          hostFinderDefaults: UserDefaults? = nil,
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
@@ -445,6 +451,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         self.act = act
         let content = NOWMirrorContentPlane(listener: listener)
         self.cycleIO = cycleIO ?? .live(listener: listener, content: content)
+        self.transitionInvalidationEnabled = transitionInvalidation
+            ?? (cycleIO == nil)
         self.sendCommand = sendCommand ?? { verb, args, completion in
             listener.runCommand(verb, typed: args, completion: completion)
         }
@@ -458,6 +466,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard let self, self.running,
                   let base = self.lastGuestScene else { return }
             self.scene = self.hostFinder.project(base)
+        }
+        self.invalidationSubscription = listener.events.subscribe {
+            [weak self] event in
+            guard case .mirrorInvalidated(let key, let hint) = event else {
+                return
+            }
+            self?.receivedMirrorInvalidation(hint, from: key)
         }
     }
 
@@ -516,6 +531,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return
         }
         pinnedGuestKey = key
+        lastInvalidationGeneration = 0
+        transitionTarget = nil
+        transitionLeaseTask?.cancel()
+        transitionLeaseTask = nil
         shadowEngine = engineRegistry?.engine(for: key)
         _ = shadowEngine?.setEnabledPlanes(planePolicy(key))
         scene = shadowEngine?.snapshot?.scene ?? scene
@@ -655,6 +674,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         mutationBroker = nil
         if let endedKey { engineRegistry?.remove(endedKey) }
         pinnedGuestKey = nil
+        lastInvalidationGeneration = 0
+        transitionTarget = nil
+        transitionLeaseTask?.cancel()
+        transitionLeaseTask = nil
         shadowEngine = nil
 
         scene = nil
@@ -792,6 +815,67 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
     }
 
+    private func receivedMirrorInvalidation(_ hint: MirrorInvalidate,
+                                            from key: GuestKey) {
+        guard running, key == pinnedGuestKey,
+              hint.generation > lastInvalidationGeneration else { return }
+        lastInvalidationGeneration = hint.generation
+        if hint.quality != .sampled {
+            /* A gap cannot safely earn a scene.same against the old digest.
+               Clearing the transport baseline makes the next normal read a
+               whole-scene repair without inventing another request family. */
+            listener.invalidateSceneBaseline(for: key)
+        }
+        if cycleGeneration != nil {
+            pollRequestedAfterCycle = true
+        } else {
+            poll()
+        }
+    }
+
+    private func armTransitionSampler(for scene: MirrorKit.Scene) {
+        guard transitionInvalidationEnabled, running,
+              let process = Self.frontProcess(in: scene) else { return }
+        let target = "\(process.high).\(process.low)"
+        guard target != transitionTarget else { return }
+        transitionTarget = target
+        let generation = runGeneration
+        let retryAfter: UInt64 = 30_000_000_000
+        let renewAfter: UInt64 = 8 * 60 * 1_000_000_000
+        workScheduler.submitCallback(
+            .command("transitions start"), as: .structuralRepair,
+            coalescingKey: "mirror:transitions",
+            onCancel: { [weak self] in
+                guard self?.transitionTarget == target else { return }
+                self?.transitionTarget = nil
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.sendCommand("transitions", [
+                    "op": .text("start"),
+                    "serialHi": .number(process.high),
+                    "serialLo": .number(process.low),
+                    "ttlTicks": .number(36_000),
+                ]) { [weak self] result in
+                    finish()
+                    guard let self, self.running,
+                          self.runGeneration == generation,
+                          self.transitionTarget == target else { return }
+                    self.transitionLeaseTask?.cancel()
+                    self.transitionLeaseTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds:
+                            result.ok ? renewAfter : retryAfter)
+                        guard let self, !Task.isCancelled, self.running,
+                              self.runGeneration == generation,
+                              self.transitionTarget == target else { return }
+                        self.transitionTarget = nil
+                        if let latest = self.lastGuestScene {
+                            self.armTransitionSampler(for: latest)
+                        }
+                    }
+                }
+            }
+    }
+
     /// **A window that is drawn is not necessarily a window that was
     /// seen, and the status line has to say which.**
     ///
@@ -862,6 +946,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             sceneGuestKey = delivery.guestKey
             decoded = continuity.scene
             decoded = withIcons(decoded)
+            armTransitionSampler(for: decoded)
             _ = shadowEngine?.enrichFinder(decoded)
             scene = projectedScene(fallback: decoded)
             /* Everything above is this host's own CPU on the delivery;

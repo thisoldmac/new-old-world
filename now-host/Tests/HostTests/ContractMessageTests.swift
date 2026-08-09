@@ -16,6 +16,17 @@ final class ContractMessageTests: XCTestCase {
                        .sceneRequest(request))
     }
 
+    func testCommandArgumentsPreserveBooleanSelectors() throws {
+        let request = CommandRequest(
+            id: 3, name: "transitions",
+            args: ["op": .text("start"), "front": .flag(true)])
+        let data = try ControlMessageCodec.encode(.commandRequest(request))
+        XCTAssertTrue(String(decoding: data, as: UTF8.self)
+            .contains("\"front\":true"))
+        XCTAssertEqual(try ControlMessageCodec.decode(data),
+                       .commandRequest(request))
+    }
+
     func testMirrorInvalidationIsAnAdditiveGenerationHint() throws {
         let hint = MirrorInvalidate(
             session: "boot-42", generation: 7,

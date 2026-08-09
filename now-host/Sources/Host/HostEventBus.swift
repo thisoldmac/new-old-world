@@ -219,6 +219,9 @@ enum HostEvent {
     /// a front, a quit that took. The guests do not push this, so it is
     /// only ever as good as what we did to them.
     case processListChanged(GuestKey?)
+    /// The peer that serves scene state says one or more domain generations
+    /// advanced. This is a scheduling hint, never replacement state.
+    case mirrorInvalidated(GuestKey, MirrorInvalidate)
     /// A guest reported an error that no pending request claimed. The one
     /// signal a refused `stream.start` has.
     case guestReportedError(GuestKey?, ErrorMessage)
@@ -254,6 +257,7 @@ enum HostEvent {
         case .fileReceived(let key, _, _, _): return key
         case .fileTreeChanged(let key, _, _): return key
         case .processListChanged(let key): return key
+        case .mirrorInvalidated(let key, _): return key
         case .guestReportedError(let key, _): return key
         }
     }

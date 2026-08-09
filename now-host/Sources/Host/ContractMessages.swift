@@ -532,6 +532,7 @@ struct ErrorMessage: Codable, Equatable, Sendable {
 enum CommandArg: Codable, Equatable, Sendable, ExpressibleByStringLiteral {
     case text(String)
     case number(Int)
+    case flag(Bool)
 
     init(stringLiteral value: String) { self = .text(value) }
 
@@ -540,11 +541,13 @@ enum CommandArg: Codable, Equatable, Sendable, ExpressibleByStringLiteral {
         switch self {
         case .text(let v): try c.encode(v)
         case .number(let v): try c.encode(v)
+        case .flag(let v): try c.encode(v)
         }
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
+        if let v = try? c.decode(Bool.self) { self = .flag(v); return }
         if let v = try? c.decode(Int.self) { self = .number(v); return }
         self = .text(try c.decode(String.self))
     }
@@ -556,6 +559,7 @@ enum CommandArg: Codable, Equatable, Sendable, ExpressibleByStringLiteral {
         switch self {
         case .text(let v): return v
         case .number(let v): return String(v)
+        case .flag(let v): return String(v)
         }
     }
 }
