@@ -183,6 +183,48 @@ not a hard-coded pack path; an environment override remains authoritative and
 picker changes take effect at next launch because art is process-cached. Pack
 extraction and arbitrary-path selection remain subsequent work.
 
+**UPDATE 2026-08-08, independent host Finder windows.** The persisted host
+toggle **Emulate Finder Windows** now creates a second ownership mode rather
+than another cache over the guest Finder. When enabled, guest Finder folder
+windows are removed from the projection. The host owns their lifecycle,
+frontness, geometry, icon/list/small-icon layout, sort field and direction,
+selection, marquee, rename and scrolling. It lists the root and each folder
+through the existing Files contract; double-clicking a folder creates another
+host window and emits `file.list`, not a `command.request` that opens or fronts
+the guest Finder. File launches, document opens, renames and moves still cross
+the wire because they change the Macintosh, while presentation changes do not.
+
+The mode is bounded by the configured guest share. **Share entire boot volume**
+makes that share the disk root, which is the expected whole-disk Finder setup;
+a narrower share remains a real authority boundary. Only an open directory is
+paged and no parent prewalks its descendants. The existing guest-follow mode is
+unchanged when the toggle is off and can still mirror a Finder window opened
+outside the Files share. These two paths must not be described as one boundary.
+
+The host projection carries selection in the rendered scene, uses the same
+semantic rectangles for clicks and rubber-band selection, keeps scroll-wheel
+and thumb motion local, and retains icon positions across view switches.
+Right/control-click now targets an unselected item without manufacturing a
+multi-selection and preserves an existing multi-selection; a contextual menu
+is not yet implemented. Group drag, expandable list disclosure rows, Finder
+desktop replacement, and path-title navigation remain open. The inspector's
+**Refresh** button discards and rebuilds every open host directory as an escape
+hatch.
+
+The independent Finder domain and session tests are green: six focused tests
+cover selected rendering, list-row targeting, stable sort, host menus,
+multi-window folder navigation, local view/sort/scroll, and the absence of a
+guest command when opening a folder. This is **Tested**, not Metal-verified.
+
+**UPDATE 2026-08-08, empty Application menu.** Presence of menu `-16489` is
+not evidence that Finder supplied its rows. An empty or incomplete menu is now
+rebuilt from the same switchable-process roster used by the agent surface,
+while preserving the guest-measured title position. The roster honors the
+process's `modeOnlyBackground` declaration, so a desktop application with no
+open windows remains switchable and a declared faceless agent remains absent.
+The 18 focused Application-menu tests pass; switching and Hide/Hide Others/Show
+All still require the next metal run.
+
 ### BROKEN: the Mac OS allocation grew to 43.1 MB during a Mirror session
 
 About This Computer showed **Mac OS: 43.1 MB**, virtual memory off, and only a

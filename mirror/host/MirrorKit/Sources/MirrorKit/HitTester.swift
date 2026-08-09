@@ -168,15 +168,15 @@ public enum HitTester {
         }
 
         for app in scene.apps
-        where app.front || withWindows.contains(app.psn)
-            || app.psn == desktop {
+        where app.backgroundOnly == false || app.front
+            || withWindows.contains(app.psn) || app.psn == desktop {
             offer(app)
         }
         for proc in scene.processes ?? []
-        where proc.front || withWindows.contains(proc.psn)
-            || proc.psn == desktop {
+        where proc.backgroundOnly == false || proc.front
+            || withWindows.contains(proc.psn) || proc.psn == desktop {
             offer(.init(psn: proc.psn, name: proc.name, front: proc.front,
-                        error: nil))
+                        backgroundOnly: proc.backgroundOnly, error: nil))
         }
         return out
     }

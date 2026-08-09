@@ -557,7 +557,7 @@ public struct Scene: Codable, Equatable, Sendable {
         public var contentPlane: ContentPlaneAttention? = nil
 
         public init(id: String, app: String, psn: String, title: String,
-                    kind: Int?, rect: Rect, front: Bool, z: Int,
+                    kind: Int? = nil, rect: Rect, front: Bool, z: Int,
                     visible: Bool, controls: [Control],
                     controlsState: String? = nil,
                     dialogItems: [DialogItem]? = nil, ref: String? = nil,

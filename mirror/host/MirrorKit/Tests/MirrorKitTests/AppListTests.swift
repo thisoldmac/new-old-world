@@ -126,6 +126,33 @@ final class AppListTests: XCTestCase {
         XCTAssertEqual(HitTester.appMenuWidth(projected), 96)
     }
 
+    func testEmptyMenuIncludesDeclaredDesktopAppWithoutAWindow() throws {
+        var original = scene(
+            apps: [],
+            processes: [
+                .init(psn: "0.1", name: "Finder", front: true,
+                      signature: "MACS", backgroundOnly: false),
+                .init(psn: "0.2", name: "SimpleText", front: false,
+                      signature: "ttxt", backgroundOnly: false),
+                .init(psn: "0.3", name: "mirror-agent", front: false,
+                      signature: "NOWA", backgroundOnly: true),
+            ],
+            windows: [win("0.1", "Desktop", app: "Finder")])
+        original.menubar = .init(app: "Finder", menus: [
+            .init(title: "", apple: false, left: 704,
+                  id: ObjectResolver.applicationMenuID, items: [])
+        ])
+
+        let projected = ApplicationMenuProjection.projecting(original)
+        let menu = try XCTUnwrap(projected.menubar?.menus.first {
+            $0.id == ObjectResolver.applicationMenuID
+        })
+
+        XCTAssertEqual(menu.items.dropFirst(4).map(\.title),
+                       ["Finder", "SimpleText"])
+        XCTAssertFalse(menu.items.contains { $0.title == "mirror-agent" })
+    }
+
     func testIncompleteGuestApplicationMenuIsRebuiltInsteadOfDroppingApps()
         throws {
         var original = realisticScene()

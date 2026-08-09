@@ -39,7 +39,7 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Hardware census (14 probes) | yes | 14 probes, 5 of them honestly `absent`/`partial` on this hardware. **Until 2026-08-07 the `pccard` probe killed the guest on any Mac without a PC Card Manager** — the trap dispatch checked that its route was open and never that the trap existed. Gated now: `tools/census-survives.py` sweeps all 14 against a real guest inside every bake. | metal-verified (PPC, PB1400c); emulator-verified on mac99/OS 9.1 after the fix; **68K's probes have never run at all** |
 | Two Macs on one port, with a picker for which one you are driving | yes | yes | tested; **never run against real hardware** |
 | iCloud: the host's Drive, Photos and Contacts served to the guest's iCloud page — drive browser with history and breadcrumbs, live filter-as-you-type, photo preview and download at chosen resolution, contact cards | yes | no | metal-verified (PPC) for Drive and the granted services; the newest layout pass is tested only — [docs/icloud.md](docs/icloud.md) |
-| Window **interiors** — application QuickDraw records plus semantic Finder directories and desktop | yes, with the optional NOW Extension for application drawing; Finder never uses it | no — no resident for System 7.1 | **tested:** Finder is denied before P3 arms; its host-owned desktop and folder interiors draw semantic items, project selection/view/scroll immediately, and reconcile acts against the guest. Finder reads only the displayed directory, and icon art is enriched in bounded pages. Application P3 remains emulator-verified only. The Finder exclusion and new interaction path have not yet been re-run on metal |
+| Window **interiors** — application QuickDraw records plus two semantic Finder modes | yes, with the optional NOW Extension for application drawing; Finder never uses it | no — no resident for System 7.1 | **tested:** normal mode follows guest-owned Finder windows and renders their semantic desktop/folder state. Optional **Emulate Finder Windows** instead owns folder-window lifecycle, geometry, view, sorting, selection and scrolling on the host, pages only each open directory through the Files contract, and never asks the guest Finder to open that folder. Application P3 remains emulator-verified only. Neither Finder mode has been re-run on metal after this split |
 | Offscreen worlds joined to the window they land in — including a world created, drawn and disposed inside one event pass | yes | no | emulator-verified (guest side); the host's composition is tested against committed captures — **the live host app has never been watched composing** |
 | Rendering that interior: measured Platinum accent ramps, real per-application icons, inverted selection, scrollbar arrows, derived cell grids, and placeholders graded to the evidence | host-side | host-side | tested against committed captures; judged by eye in [docs/fidelity-sweep-2026-08-06.md](docs/fidelity-sweep-2026-08-06.md), which is a baseline taken **before** the icon pack could resolve — the after-picture has not been measured |
 | Showing the Mirror in an already-running host — from the host's Window menu, from an agent over the socket, and from a button on the guest's own Mirror page | asks (button + `showmirror`) | no — out of scope for the arc, not a limit of the machine | emulator-verified (2026-08-06), against the WINDOW-only lifecycle this predates; since 019 the same faces start the poll and then show it wherever the person left it. Original run: against a host launched **without** `--open-mirror` and a guest on mac99/OS 9.1, the Mirror was opened by the guest's own button and, on a second run, by `now_mirror_open` over the agent socket — each time going from "no published Mirror snapshot" to a live polling engine. The console verb answered too. **The menu item is tested only** — driving it means scripting macOS, which is the habit this row exists to make unnecessary |
@@ -161,6 +161,19 @@ All, and application switching. A **Rebuild State** button discards the retained
 guest projection when an escape hatch is needed. P3 remains available to
 ordinary applications so its existing rendering work can be evaluated without
 exposing Finder again.
+
+The host has a second, deliberately independent Finder experiment. Enabling
+**Emulate Finder Windows** removes guest Finder folder windows from the
+projection and opens host-owned Platinum windows over the existing `file.list`,
+`file.move`, `launch`, and script operations. Window frontness, geometry,
+icon/list/small-icon layout, sort direction, selection, marquee, rename,
+scrolling, and folder navigation settle locally; opening a folder sends only a
+bounded listing request for that directory and does not select or open the
+guest Finder. The root is the guest's configured file share—normally the whole
+boot volume when **Share entire boot volume** is enabled—not an authority bypass.
+This mode is Tested and still needs its first metal run. The guest-follow mode
+remains available when the toggle is off; proving the independent model does
+not replace the stricter mirror.
 
 **The slow loops had a second cause on our own side, and it is now
 fixed — by spending a safety argument.** The guest's act client waits for
