@@ -470,6 +470,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         set { hostFinder.enabled = newValue }
     }
 
+    var emulateDesktop: Bool {
+        get { hostFinder.emulateDesktop }
+        set { hostFinder.emulateDesktop = newValue }
+    }
+
     var syncEmulatedFinderLifecycle: Bool {
         get { hostFinder.syncLifecycle }
         set { hostFinder.syncLifecycle = newValue }
@@ -1079,7 +1084,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             }
         shadowEngine?.noteFinderItems(complete: foldersComplete)
         var out = scene
-        if let desktop = icons[Self.desktopKey] { out.desktopItems = desktop }
+        if let desktop = icons[Self.desktopKey] {
+            out.desktopItems = Self.mergeDesktopRoster(
+                guest: scene.desktopItems, finder: desktop)
+        }
         out.windows = out.windows.map { win in
             guard FinderItems.isFolderWindow(win),
                   !FinderItems.isHostOwnedWindow(win) else { return win }
@@ -1109,6 +1117,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     private static let desktopKey = "\u{0}desktop"
+
+    /// A Finder roster read reports desktop catalog items, not the mounted
+    /// volume/trash rows already supplied by the structural scene. Replacing
+    /// the array here erased every disk as soon as the first roster arrived.
+    /// Keep the guest's system objects (and their exact positions), letting a
+    /// same-named Finder row win only when it actually exists.
+    static func mergeDesktopRoster(
+        guest: [MirrorKit.Scene.DesktopItem]?,
+        finder: [MirrorKit.Scene.DesktopItem]
+    ) -> [MirrorKit.Scene.DesktopItem] {
+        let finderNames = Set(finder.map(\.name))
+        let system = (guest ?? []).filter {
+            ($0.kind == "disk" || $0.kind == "trash")
+                && !finderNames.contains($0.name)
+        }
+        return system + finder
+    }
 
     private static func finderWindowKey(_ window: MirrorKit.Scene.Window)
         -> String? {
@@ -1403,8 +1428,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// is selected, so cutover drift remains inspectable without two owners
     /// competing to draw the window.
     private func projectedScene(fallback: MirrorKit.Scene) -> MirrorKit.Scene {
-        let guest = Self.projectedScene(snapshot: shadowEngine?.snapshot,
-                                        fallback: fallback)
+        /* The state engine can legitimately be one complement behind the
+           source cache. Reapply the current semantic roster after choosing
+           the authoritative structural snapshot so guest-follow mode cannot
+           lose icons merely because enrichment and projection crossed. */
+        let guest = withIcons(Self.projectedScene(
+            snapshot: shadowEngine?.snapshot, fallback: fallback))
         lastGuestScene = guest
         hostFinder.observe(scene: guest)
         return hostFinder.project(guest)
@@ -3698,7 +3727,7 @@ extension NOWMirrorSource: FinderInteractionDriver {
             hostFinder.open(names, in: id)
             return
         }
-        if case .desktop = container, hostFinder.enabled,
+        if case .desktop = container, hostFinder.emulateDesktop,
            hostFinder.openDesktop(names) {
             return
         }

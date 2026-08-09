@@ -193,13 +193,21 @@ struct MirrorControlView: View {
     }
 
     private var hostFinderCard: some View {
-        GroupBox("Finder Windows") {
+        GroupBox("Finder") {
             VStack(alignment: .leading, spacing: 8) {
-                Toggle("Emulate Finder Windows", isOn: Binding(
+                Toggle("Emulate Finder Window Interiors", isOn: Binding(
                     get: { source.emulateFinderWindows },
                     set: { source.emulateFinderWindows = $0 }
                 ))
-                Text("Finder interiors and interaction are owned by this Mac and browse the guest's configured file share.")
+                Text("The guest owns which Finder windows exist and their chrome; this Mac renders and operates their interiors from semantic file data.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle("Emulate Desktop", isOn: Binding(
+                    get: { source.emulateDesktop },
+                    set: { source.emulateDesktop = $0 }
+                ))
+                Text("Off uses the guest's desktop roster and exact icon positions. On lays out the Desktop Folder and mounted volumes locally.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -225,7 +233,8 @@ struct MirrorControlView: View {
                         .lineLimit(2)
                     Spacer()
                     Button("Refresh") { source.refreshHostFinder() }
-                        .disabled(!source.emulateFinderWindows
+                        .disabled((!source.emulateFinderWindows
+                                   && !source.emulateDesktop)
                                   || !model.connection.canCapture)
                 }
             }

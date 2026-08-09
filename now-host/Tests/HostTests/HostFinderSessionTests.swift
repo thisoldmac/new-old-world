@@ -20,6 +20,7 @@ final class HostFinderSessionTests: XCTestCase {
         suiteName = "HostFinderSessionTests.\(UUID())"
         defaults = UserDefaults(suiteName: suiteName)!
         defaults.set(true, forKey: HostFinderSession.preferenceKey)
+        defaults.set(true, forKey: HostFinderSession.desktopPreferenceKey)
         defaults.set(false, forKey: HostFinderSession.lifecycleSyncPreferenceKey)
         defaults.set(false, forKey: HostFinderSession.geometrySyncPreferenceKey)
     }
@@ -219,7 +220,7 @@ final class HostFinderSessionTests: XCTestCase {
         }
     }
 
-    func testModeChangeAndRefreshDiscardAndReloadDesktopCatalog() async throws {
+    func testDesktopModeChangeAndRefreshDiscardAndReloadDesktopCatalog() async throws {
         let guest = try await connectedGuest()
         let session = HostFinderSession(listener: listener, defaults: defaults)
         session.observe(screen: .init(w: 640, h: 480))
@@ -232,7 +233,14 @@ final class HostFinderSessionTests: XCTestCase {
             } == true
         }
 
-        session.enabled = false
+        session.emulateDesktop = false
+        XCTAssertEqual(session.project(scene(desktopItems: [
+            .init(name: "Guest Positioned", kind: "file", type: nil,
+                  creator: nil, x: 17, y: 23, placed: true, alias: false,
+                  invisible: false, w: 32, h: 32, origin: .drawn),
+        ])).desktopItems?.first?.x, 17,
+        "desktop emulation off must pass the guest roster through untouched")
+        session.emulateDesktop = true
         let second = try await nextList(after: 1, guest: guest,
                                         path: "Desktop Folder")
         try guest.send(.fileListing(.init(
@@ -291,6 +299,74 @@ final class HostFinderSessionTests: XCTestCase {
                 && names?.contains("External") == true
                 && names?.contains("Read Me") == true
         }
+    }
+
+    func testFinderRosterEnrichmentCannotEraseGuestVolumesOrTrash() {
+        let disk = Scene.DesktopItem(
+            name: "Macintosh HD", kind: "disk", type: nil, creator: nil,
+            x: 511, y: 31, placed: true, alias: false, invisible: false,
+            w: 32, h: 32, origin: .drawn)
+        let trash = Scene.DesktopItem(
+            name: "Trash", kind: "trash", type: nil, creator: nil,
+            x: 512, y: 410, placed: true, alias: false, invisible: false,
+            w: 32, h: 32, origin: .drawn)
+        let file = Scene.DesktopItem(
+            name: "Read Me", kind: "file", type: "TEXT", creator: nil,
+            x: 40, y: 90, placed: true, alias: false, invisible: false,
+            w: 32, h: 32, origin: .drawn)
+
+        let merged = NOWMirrorSource.mergeDesktopRoster(
+            guest: [disk, trash], finder: [file])
+
+        XCTAssertEqual(merged.map(\.name), ["Macintosh HD", "Trash", "Read Me"])
+        XCTAssertEqual(merged.first?.x, 511,
+                       "guest-owned volume geometry must remain exact")
+    }
+
+    func testFinderInteriorUsesObservedGuestWindowShell() async throws {
+        defaults.set(true, forKey: HostFinderSession.lifecycleSyncPreferenceKey)
+        defaults.set(true, forKey: HostFinderSession.geometrySyncPreferenceKey)
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        let observed = finderWindow(
+            path: "Macintosh HD:Control Panels", ref: "now-window-42",
+            rect: Rect(l: 91, t: 73, r: 511, b: 401))
+        session.observe(scene: scene(windows: [observed]))
+        _ = try await answerNextList(
+            guest, path: "Desktop Folder", entries: [])
+        _ = try await answerNextList(
+            guest, path: "Control Panels",
+            entries: [entry("Mouse", kind: "file")])
+        try await waitUntil("coupled Finder interior") {
+            session.windows.first?.entries.count == 1
+        }
+
+        let projected = try XCTUnwrap(session.project(
+            scene(windows: [observed])).windows.first)
+        XCTAssertTrue(HostFinderDomain.isWindowID(projected.id))
+        XCTAssertEqual(projected.title, observed.title)
+        XCTAssertEqual(projected.rect, observed.rect)
+        XCTAssertEqual(projected.front, observed.front)
+        XCTAssertEqual(projected.z, observed.z)
+        XCTAssertEqual(projected.items?.map(\.name), ["Mouse"])
+        XCTAssertEqual(session.project(scene(windows: [observed])).windows.count, 1,
+                       "the emulated interior must replace, not accompany, the guest window")
+    }
+
+    func testGeometrySyncAlsoFollowsGuestWindowLifecycle() async throws {
+        defaults.set(false, forKey: HostFinderSession.lifecycleSyncPreferenceKey)
+        defaults.set(true, forKey: HostFinderSession.geometrySyncPreferenceKey)
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        let observed = finderWindow(path: "Macintosh HD:Control Panels")
+        session.observe(scene: scene(windows: [observed]))
+        _ = try await answerNextList(guest, path: "Desktop Folder", entries: [])
+        _ = try await answerNextList(guest, path: "Control Panels", entries: [])
+        try await waitUntil("guest window adoption") { session.windows.count == 1 }
+
+        session.observe(scene: scene())
+        XCTAssertTrue(session.windows.isEmpty,
+                      "geometry sync cannot leave a second lifecycle behind")
     }
 
     private func connectedGuest() async throws -> FakeGuest {

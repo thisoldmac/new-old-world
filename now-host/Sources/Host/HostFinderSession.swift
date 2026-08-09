@@ -9,6 +9,7 @@ import MirrorKit
 @MainActor
 final class HostFinderSession {
     static let preferenceKey = "mirror.emulateFinderWindows"
+    static let desktopPreferenceKey = "mirror.emulateDesktop"
     static let lifecycleSyncPreferenceKey = "mirror.emulatedFinder.syncLifecycle"
     static let geometrySyncPreferenceKey = "mirror.emulatedFinder.syncGeometry"
 
@@ -49,10 +50,6 @@ final class HostFinderSession {
             defaults.set(enabled, forKey: Self.preferenceKey)
             generation &+= 1
             windows.removeAll()
-            desktopEntries.removeAll()
-            desktopRootLabel = nil
-            desktopLoading = false
-            desktopLoaded = false
             guestCatalogs.removeAll()
             loadingGuestCatalogs.removeAll()
             guestIdentityByWindowID.removeAll()
@@ -64,9 +61,25 @@ final class HostFinderSession {
             active = enabled
             status = enabled ? "Reading open Finder windows…"
                 : "Reading guest Finder state…"
-            seedDesktopIfNeeded()
             if enabled { reconcileGuestWindows(lastGuestWindows) }
             else { observeGuestCatalogs(lastGuestWindows) }
+            onChange()
+        }
+    }
+
+    var emulateDesktop: Bool {
+        didSet {
+            guard emulateDesktop != oldValue else { return }
+            defaults.set(emulateDesktop, forKey: Self.desktopPreferenceKey)
+            generation &+= 1
+            desktopEntries.removeAll()
+            desktopRootLabel = nil
+            desktopLoading = false
+            desktopLoaded = false
+            status = emulateDesktop ? "Reading the guest Desktop Folder…"
+                : enabled ? "Emulating Finder window interiors"
+                : "Reading guest Finder state…"
+            seedDesktopIfNeeded()
             onChange()
         }
     }
@@ -75,6 +88,7 @@ final class HostFinderSession {
         didSet {
             guard syncLifecycle != oldValue else { return }
             defaults.set(syncLifecycle, forKey: Self.lifecycleSyncPreferenceKey)
+            if enabled { reconcileGuestWindows(lastGuestWindows) }
             onChange()
         }
     }
@@ -86,6 +100,7 @@ final class HostFinderSession {
             pendingGeometry.removeAll()
             pendingGeometryActions.removeAll()
             dispatchedGeometry.removeAll()
+            if enabled { reconcileGuestWindows(lastGuestWindows) }
             onChange()
         }
     }
@@ -95,6 +110,7 @@ final class HostFinderSession {
         self.listener = listener
         self.defaults = defaults
         enabled = defaults.bool(forKey: Self.preferenceKey)
+        emulateDesktop = defaults.bool(forKey: Self.desktopPreferenceKey)
         syncLifecycle = defaults.object(forKey: Self.lifecycleSyncPreferenceKey)
             as? Bool ?? true
         syncGeometry = defaults.object(forKey: Self.geometrySyncPreferenceKey)
@@ -191,7 +207,7 @@ final class HostFinderSession {
 
     func project(_ base: Scene) -> Scene {
         var result = base
-        if desktopLoaded, let screen {
+        if emulateDesktop, desktopLoaded, let screen {
             let systemItems = (base.desktopItems ?? []).filter {
                 $0.kind == "disk" || $0.kind == "trash"
             }
@@ -206,20 +222,29 @@ final class HostFinderSession {
             result.windows = result.windows.map(projectGuestFinderFallback)
             return result
         }
-        result.windows.removeAll {
-            FinderItems.isFolderWindow($0)
-                && !FinderItems.isHostOwnedWindow($0)
+        var localByGuestIdentity: [String: HostFinderDomain.Window] = [:]
+        for local in windows {
+            if let identity = guestIdentityByWindowID[local.id] {
+                localByGuestIdentity[identity] = local
+            }
         }
-        if !windows.isEmpty, active {
-            for index in result.windows.indices { result.windows[index].front = false }
-            let projected = windows.enumerated().map {
+        result.windows = result.windows.map { guest in
+            guard FinderItems.isFolderWindow(guest),
+                  !FinderItems.isHostOwnedWindow(guest),
+                  let local = localByGuestIdentity[Self.guestIdentity(guest)]
+            else { return guest }
+            return project(local, z: guest.z, guest: guest)
+        }
+        let independent = windows.filter { guestIdentityByWindowID[$0.id] == nil }
+        if !independent.isEmpty, active {
+            for index in result.windows.indices {
+                result.windows[index].front = false
+                result.windows[index].z += independent.count
+            }
+            let projected = independent.enumerated().map {
                 HostFinderDomain.projectedWindow($0.element, z: $0.offset)
             }
-            result.windows = projected + result.windows.enumerated().map {
-                var window = $0.element
-                window.z = windows.count + $0.offset
-                return window
-            }
+            result.windows = projected + result.windows
             for index in result.apps.indices {
                 result.apps[index].front = result.apps[index].name == "Finder"
             }
@@ -230,10 +255,10 @@ final class HostFinderSession {
                 result.processes = processes
             }
             result.menubar = HostFinderDomain.finderMenubar(
-                from: base.menubar, window: windows.first)
-        } else if !windows.isEmpty {
+                from: base.menubar, window: independent.first)
+        } else if !independent.isEmpty {
             let offset = result.windows.count
-            let projected = windows.enumerated().map { pair -> Scene.Window in
+            let projected = independent.enumerated().map { pair -> Scene.Window in
                 var window = HostFinderDomain.projectedWindow(
                     pair.element, z: offset + pair.offset)
                 window.front = false
@@ -294,7 +319,7 @@ final class HostFinderSession {
             active = true
             bringFront(index)
         case .close:
-            if syncLifecycle {
+            if syncLifecycle || syncGeometry {
                 closeGuestWindow(for: windows[index])
                 if let identity = guestIdentityByWindowID[id] {
                     suppressedGuestIdentities[identity] = Date()
@@ -456,7 +481,8 @@ final class HostFinderSession {
     // MARK: - Guest reconciliation and semantic catalogs
 
     private func seedDesktopIfNeeded() {
-        guard !desktopLoaded, !desktopLoading, screen != nil else { return }
+        guard emulateDesktop, !desktopLoaded, !desktopLoading,
+              screen != nil else { return }
         loadDesktop()
     }
 
@@ -582,7 +608,7 @@ final class HostFinderSession {
                 guestIdentityByWindowID[$0.id] == identity
             }
             if index == nil { index = windows.firstIndex { $0.path == path } }
-            if index == nil, syncLifecycle, let screen {
+            if index == nil, let screen {
                 serial &+= 1
                 windows.insert(.init(
                     id: HostFinderDomain.windowID(serial), path: path,
@@ -598,6 +624,9 @@ final class HostFinderSession {
             guestIdentityByWindowID[id] = identity
             if let ref = guest.ref { guestRefByWindowID[id] = ref }
             guestOpenRequested.insert(id)
+            if let view = guest.finder?.view, view != .unknown {
+                windows[index].view = view
+            }
             if syncGeometry {
                 if let pending = pendingGeometry[id], pending.1 > now,
                    pending.0 != guest.rect {
@@ -611,7 +640,7 @@ final class HostFinderSession {
             }
         }
 
-        guard syncLifecycle else { return }
+        guard syncLifecycle || syncGeometry else { return }
         let vanished = guestIdentityByWindowID.filter {
             !identities.contains($0.value)
         }.map(\.key)
@@ -695,7 +724,8 @@ final class HostFinderSession {
     }
 
     private func openGuestWindowIfNeeded(id: String) {
-        guard enabled, syncLifecycle, !guestOpenRequested.contains(id),
+        guard enabled, (syncLifecycle || syncGeometry),
+              !guestOpenRequested.contains(id),
               let window = windows.first(where: { $0.id == id }),
               let full = HostFinderDomain.fullPath(
                 root: window.rootLabel ?? desktopRootLabel,
@@ -737,6 +767,31 @@ final class HostFinderSession {
             return "\(window.incarnation ?? window.psn):\(address)"
         }
         return window.id
+    }
+
+    /// Replace only the Finder interior. The guest window remains the shell
+    /// authority: title, rectangle, stacking, visibility and window chrome
+    /// all come from the observed window while the host supplies semantic
+    /// items, selection and scroll controls under a host-routable identity.
+    private func project(_ local: HostFinderDomain.Window, z: Int,
+                         guest: Scene.Window?) -> Scene.Window {
+        var projected = HostFinderDomain.projectedWindow(local, z: z)
+        guard let guest else { return projected }
+        projected.app = guest.app
+        projected.psn = guest.psn
+        projected.title = guest.title
+        projected.kind = guest.kind
+        let pendingLocalGeometry = pendingGeometry[local.id]?.1 ?? .distantPast
+        projected.rect = syncGeometry && pendingLocalGeometry <= Date()
+            ? guest.rect : local.frame
+        projected.front = guest.front
+        projected.z = guest.z
+        projected.visible = guest.visible
+        projected.addr = guest.addr
+        projected.incarnation = guest.incarnation
+        projected.closeBox = guest.closeBox
+        projected.zoomBox = guest.zoomBox
+        return projected
     }
 
     private static func volumeRoot(of listingRoot: String?) -> String? {
