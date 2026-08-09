@@ -81,8 +81,9 @@
 /* The resident's own version string. It is NOT the application's and
    must not borrow it: the two halves are separately deployable, and a
    channel reporting the version of a binary it is not is worse than one
-   reporting nothing. Display only, per the contract. */
-#define kNowResidentVersion "0.1"
+   reporting nothing. resident_version.h is also what the shared table
+   reads, so the resident cannot report two different versions through its
+   two faces again. Display only, per the contract. */
 
 enum {
     /* MacTCP refuses a stream buffer under 4 KB. Doubled, because this
@@ -291,7 +292,7 @@ static unsigned long build_hello(const NowPeekTable *table)
     put_cstr(&b, "{\"type\":\"hello\",\"contract\":");
     put_u32(&b, (NowPeekU32)NOW_WIRE_CONTRACT_REVISION);
     put_cstr(&b, ",\"side\":\"guest\",\"role\":\"resident\",\"version\":\""
-                 kNowResidentVersion "\",\"name\":\"");
+                 NOW_RESIDENT_VERSION_STRING "\",\"name\":\"");
     put_pascal_json(&b, table->endpoint.guest_name,
                     sizeof table->endpoint.guest_name);
     put_cstr(&b, "\",\"os\":\"");

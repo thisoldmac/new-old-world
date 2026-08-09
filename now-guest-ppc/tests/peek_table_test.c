@@ -52,10 +52,18 @@ static int table_usable(const NowPeekTable *t, size_t want_length)
 
 int main(void)
 {
+    char release[24];
     NowPeekTable t;
 
     check(kNowPeekGestaltSelector == 0x4E576578L, "selector is 'NWex'");
     check(kNowPeekTableMagic == 0x4E577074L, "magic is 'NWpt'");
+    check(kNowPeekExtMajor == NOW_RESIDENT_VERSION_MAJOR
+              && kNowPeekExtMinor == NOW_RESIDENT_VERSION_MINOR,
+          "table version comes from the resident release identity");
+    snprintf(release, sizeof release, "%d.%d", NOW_RESIDENT_VERSION_MAJOR,
+             NOW_RESIDENT_VERSION_MINOR);
+    check(strcmp(release, NOW_RESIDENT_VERSION_STRING) == 0,
+          "resident release string agrees with its numeric tuple");
     check((kNowPeekTableCapAnchors | kNowPeekTableCapTree
            | kNowPeekTableCapAct | kNowPeekTableCapContent) == 0x0f
               && (kNowPeekTableCapAnchors & kNowPeekTableCapTree) == 0

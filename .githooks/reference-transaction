@@ -23,6 +23,17 @@ gate="$root/tools/ext-bake-gate"
 while read -r old new ref; do
     case "$ref" in
         refs/heads/main|refs/heads/master)
+            # `git branch -f` reports an all-zero old id in this hook even
+            # when the ref already exists (watched by the version mutation
+            # test). During `prepared` the old ref is still readable, so
+            # recover it; otherwise a 1.0 -> 1.0 update looks like the first
+            # resident release and evades the monotonic version check.
+            case "$old" in
+                0000000000000000000000000000000000000000)
+                    prior=$(git rev-parse --verify "$ref" 2>/dev/null || true)
+                    [ -z "$prior" ] || old=$prior
+                    ;;
+            esac
             "$gate" main-ref-check "$old" "$new" || exit $?
             ;;
     esac

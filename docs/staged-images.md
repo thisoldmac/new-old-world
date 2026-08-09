@@ -238,11 +238,11 @@ more than the gates themselves.
 
 | Gate | Asserts | May it refuse? |
 |---|---|---|
-| `ext-bake-gate check` | a receipt in this tree records a bake of exactly this resident source | **yes** — a fact about two files in git, entirely in the committer's power |
+| `ext-bake-gate check` | the resident release tuple advanced and a receipt in this tree records a bake of exactly this resident source | **yes** — both are facts in git, entirely in the committer's power |
 | `ext-bake-gate verify-image` | the bytes at the oracle's path hash to what the newest receipt claims | **no, on the commit path** — a fact about a shared file any lane can invalidate a second later. It warns, loudly. `--require` refuses for a caller who has asked for it |
 | the staged-receipt check | a receipt being *written* is true when written | **yes, in one case** — see below |
 | `ext-bake-gate merge-check` | a merge did not silently combine two branches' claims | **yes** — via `pre-merge-commit` |
-| `ext-bake-gate main-ref-check` | the exact resident tree proposed for `main` is covered by a verified shared bake and promotion | **yes** — via `reference-transaction`; sees merge commits, fast-forwards and direct ref updates, with no branch-deferral override |
+| `ext-bake-gate main-ref-check` | the exact resident tree proposed for `main` has a newer release tuple and is covered by a verified shared bake and promotion | **yes** — via `reference-transaction`; sees merge commits, fast-forwards and direct ref updates, with no branch-deferral override |
 | `tools/image-provenance` | these bytes are (or are not) claimed by a receipt, **and whether the volume inside them is cleanly unmounted** | nothing; it only speaks |
 | `tools/base-image fit` | this base is (or is not) the designated one for a stated purpose, its volume's state, and whether its baked resident predates this checkout's `ext/` | **per check** — see *Warn or refuse, argued per check*. It is the only gate here that runs **before a clone**, which is why it may refuse at all |
 
@@ -312,7 +312,10 @@ file, which makes it worse.
   `.githooks/pre-merge-commit` re-checks the result and aborts the merge
   *commit*. `.githooks/reference-transaction` separately gates the proposed
   `main` object before any merge commit, fast-forward, fetch refspec, or forced
-  ref update lands; `.githooks/post-merge` then reports what image exists.
+  ref update lands. It also compares `contract/resident_version.h` in the old
+  and proposed trees, so a freshly promoted binary cannot keep presenting the
+  prior resident's version; `.githooks/post-merge` then reports what image
+  exists.
 
 Resolve it by **asking the file**, not the receipts: `tools/ext-bake-gate
 verify-image` prints the sha on disk and which receipt claims it. If it
