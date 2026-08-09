@@ -269,6 +269,13 @@ one directory supplies fallback icons. The current icon cache is reapplied
 after state-engine projection so a one-complement-behind snapshot cannot blank
 the window. Neither path walks descendants.
 
+**EMULATOR-VERIFIED 2026-08-09:** the final host build read the live OS 9.1
+desktop as 19 semantic items, including `Macintosh HD` as `disk` at Finder's
+reported bounds and `Trash` as `trash`, and the already-open `Macintosh HD`
+window carried all 13 visible semantic rows. This proves the desktop system
+query and guest-follow roster path against Finder, not the still-owed
+Wallstreet/PB1400c rendering pass.
+
 The host no longer persists Mirror's run intent across app launches. It deletes
 the retired preference and starts stopped; only `--open-mirror` or an explicit
 start in the current process can begin it. A reconnect during that same process

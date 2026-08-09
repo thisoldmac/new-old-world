@@ -234,7 +234,10 @@ says so at the point of claim rather than in a footnote.
   The roster now explicitly requests disks and Trash with live bounds, merges
   rather than replaces structural system items, and reapplies cached folder
   rosters after the state-engine projection. These corrections are host-tested
-  and still await a Wallstreet/PB1400c run.
+  and still await a Wallstreet/PB1400c run. The final build was also
+  emulator-verified against OS 9.1: Finder returned 19 desktop rows including
+  a correctly classified `Macintosh HD` disk and Trash, and the open disk
+  window retained all 13 semantic items in guest-follow mode.
 - **The guest is woken by its socket, not by a timer expiring**
   (2026-08-06, emulator-verified; **a metal pass is owed and this is the
   change most likely to behave differently there**). A request arriving

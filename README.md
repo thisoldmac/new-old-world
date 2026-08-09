@@ -194,6 +194,11 @@ bounded file-list catalog supplies a semantic icon fallback. No path recursively
 walks the disk. The host itself always launches with Mirror stopped; reconnects
 can resume only an intent established during that same host process.
 
+The final host build has been emulator-verified against OS 9.1 for the Finder
+read boundary: the live desktop roster contained the mounted `Macintosh HD`
+volume and correctly classified Trash, and the open disk window retained all
+13 visible semantic items. The equivalent Wallstreet/PB1400c pass remains due.
+
 **The slow loops had a second cause on our own side, and it is now
 fixed — by spending a safety argument.** The guest's act client waits for
 a target to take an armed act in two phases of 5 s each, and that wait
