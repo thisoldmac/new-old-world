@@ -43,6 +43,10 @@ final class AgentIntegrationHostAdapter {
     private lazy var machineFactsControl = AgentIntegrationMachineFacts(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var developmentEnvironmentControl =
+        AgentIntegrationDevelopmentEnvironment(
+            listener: listener,
+            currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var censusControl = AgentIntegrationCensus(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
@@ -463,6 +467,11 @@ final class AgentIntegrationHostAdapter {
     /// `MachineFactsProjection` carry the difference in plane and shape.
     func machineFacts() async -> AgentIntegrationGuestRowReportResult {
         await machineFactsControl.read()
+    }
+
+    func developmentEnvironment() async
+        -> AgentIntegrationGuestRowReportResult {
+        await developmentEnvironmentControl.read()
     }
 
     /// One page of one software domain. The domain is required and there is no

@@ -266,6 +266,8 @@ public struct AgentIntegrationLocalClient: Sendable {
             return try await send(.transferCancel())
         case .machineFacts:
             return try await send(.machineFacts())
+        case .developmentEnvironment:
+            return try await send(.developmentEnvironment())
         case .catalogSearch:
             return try await send(.catalogSearch())
         case .census:
@@ -607,6 +609,16 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func developmentEnvironment() async throws
+        -> AgentIntegrationGuestRowReportResult {
+        let response = try await send(.developmentEnvironment())
+        guard let result = response.developmentEnvironmentResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no development environment result")
+        }
+        return result
+    }
+
     /// A copy of this client that says which machine it is asking about.
     ///
     /// A machine id (`pb1400c`) means "whatever is connected to that Mac
@@ -758,7 +770,7 @@ public struct AgentIntegrationLocalClient: Sendable {
                    existing long read window and let the typed timeout remain
                    the result rather than turning it into a transport error. */
                 timeout = captureReceiveTimeout
-            case .projects:
+            case .projects, .developmentEnvironment:
                 timeout = readOnlyReceiveTimeout
             }
             let response = try sendRaw(

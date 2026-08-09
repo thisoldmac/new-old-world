@@ -107,6 +107,8 @@ enum MCPConformanceRecipes {
             "Lists the bounded host-owned Projects root without changing it "
                 + "and without addressing a Macintosh.",
             ["operation": "list"]),
+        "now_development_environment": .fixed(
+            "Reads the guest's path-free qualified environment; needs nothing."),
 
         // MARK: Session
 

@@ -267,6 +267,10 @@ public enum AgentIntegrationCapabilityNames {
     /// per-probe reading of adjacent hardware facts, and a second family for
     /// the same machine would be two mechanisms for one question.
     public static let gestaltCommand = "gestalt"
+    /// The PPC guest's qualified, path-free development environment.
+    /// A COMMAND so availability follows from `help`; NOW-68K simply does
+    /// not advertise it.
+    public static let developmentCommand = "development"
     /// The guest's own log for this launch. A COMMAND, like `reveal` and for
     /// the same mechanical reason: the ledger resolves it against the
     /// guest's `help` table, which is what makes the row PowerPC-only
@@ -404,7 +408,8 @@ public enum AgentIntegrationCapabilityNames {
         fileGet, filePut, fileCancel, fileMove, fileTrash, fileRestore,
         fileMkdir, censusRequest, captureRequest, streamStart, streamStop,
         streamRefresh, launchCommand, revealCommand, catsearchCommand,
-        gestaltCommand, tailCommand, vprobeCommand, shotdiagCommand,
+        gestaltCommand, developmentCommand, tailCommand, vprobeCommand,
+        shotdiagCommand,
         putstatCommand, windowActCommand, textGetCommand, textSetCommand,
         controlActCommand, menuActCommand, elementsCommand, mirrorCommand,
     ]

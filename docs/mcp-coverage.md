@@ -140,6 +140,7 @@ The test compares both against the code literally.
 | MCP tool | Requires | Exposes | Guest plane |
 |---|---|---|---|
 | `now_projects` | — | — | none; bounded host-owned project storage and recoverable history, independent of guest consent |
+| `now_development_environment` | `development` | `development` | command; path-free PPC guest qualification facts |
 | `now_list_machines` | — | — | none; host listener state |
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
 | `now_hardware_census` | `census.request` | `census.request` | message family |

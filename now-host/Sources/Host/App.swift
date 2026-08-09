@@ -832,6 +832,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                        strict key list. */
                     return .machineFacts(
                         await agentIntegration.machineFacts())
+                case .developmentEnvironment:
+                    return .developmentEnvironment(
+                        await agentIntegration.developmentEnvironment())
                 case .softwareInventory:
                     /* P1 #3. The domain is REQUIRED by the contract and by
                        the codec, so a request without one never reached a

@@ -379,6 +379,18 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func developmentEnvironment() async
+        -> AgentIntegrationGuestRowReportResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.developmentEnvironment()
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     /// The end of the guest's own log. `lines` is passed through as it
     /// arrived, absent included: absent means the guest's own default and is
     /// a COMPLETE request, so substituting a number here would send a

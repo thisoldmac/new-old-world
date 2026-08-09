@@ -260,7 +260,8 @@ final class MetalAgentLocalSurface {
                 be measuring nothing. */
              .census, .softwareInventory, .guestFileDownload,
              .bringToFront, .guestFileMutation, .transferCancel,
-             .guestLogTail, .machineFacts, .catalogSearch, .revealItem,
+             .guestLogTail, .machineFacts, .developmentEnvironment,
+             .catalogSearch, .revealItem,
              .diagnostics, .mirrorRead, .mirrorDrive,
              /* And opening the Mirror, refused here for a reason unlike
                 every neighbour's: this rig has no window layer at all, so

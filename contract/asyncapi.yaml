@@ -3757,6 +3757,19 @@ components:
   # is forbidden from knowing it. No x-line means the command takes no
   # console arguments and ignores the line.
   x-commands:
+    development:
+      description: >
+        The PPC guest's human-registered Projects and MPW environment.
+        Returns opaque toolchain identity and measured capabilities, never
+        either registered path. NOW-68K does not register this command, so
+        capability discovery reports it unavailable there without identity
+        guessing.
+      args: {}
+      output:
+        type: object
+        properties:
+          development:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
     help:
       description: >
         What commands THIS machine serves, asked of the machine that

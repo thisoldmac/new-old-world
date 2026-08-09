@@ -75,6 +75,11 @@ public protocol AgentIntegrationClient: Sendable {
     /// console's line, whose presence is what tells the guest a human is
     /// typing. See `MachineFactsProjection`.
     func machineFacts() async -> AgentIntegrationGuestRowReportResult
+    /// The connected guest's human-qualified Projects and toolchain state.
+    /// Paths never cross this boundary; the guest returns an opaque
+    /// toolchain identity and measured capabilities only.
+    func developmentEnvironment() async
+        -> AgentIntegrationGuestRowReportResult
     /// The end of the guest's own log for this launch. `lines` is a count,
     /// never a file: the verb names nothing on the disk and this side must
     /// not invent a way for it to — see `GuestLogTailProjection`. Absent
@@ -217,6 +222,10 @@ public protocol AgentIntegrationClient: Sendable {
 }
 
 extension AgentIntegrationClient {
+    public func developmentEnvironment() async
+        -> AgentIntegrationGuestRowReportResult {
+        .unavailable(.host)
+    }
     public func projects(_ request: AgentIntegrationProjectRequest) async
         -> AgentIntegrationProjectResult {
         .hostUnavailable

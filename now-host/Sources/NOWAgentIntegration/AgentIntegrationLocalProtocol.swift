@@ -103,6 +103,8 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         case guestLogTail = "guest_log_tail"
         /// The machine's own account of itself, via Gestalt.
         case machineFacts = "machine_facts"
+        /// The PPC guest's qualified, path-free development registration.
+        case developmentEnvironment = "development_environment"
         /// Time a whole-volume catalog search for applications.
         case catalogSearch = "catalog_search"
         /// Show an item in the machine's own Finder. Opens nothing.
@@ -758,6 +760,12 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         projected(.machineFacts, requestID: requestID)
     }
 
+    public static func developmentEnvironment(
+        requestID: UUID = UUID()
+    ) -> Self {
+        projected(.developmentEnvironment, requestID: requestID)
+    }
+
     /// #11 — time a whole-volume catalog search for applications.
     public static func catalogSearch(requestID: UUID = UUID()) -> Self {
         projected(.catalogSearch, requestID: requestID)
@@ -972,6 +980,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
        separately. */
     case guestLogTail(AgentIntegrationGuestRowReportResult)
     case machineFacts(AgentIntegrationGuestRowReportResult)
+    case developmentEnvironment(AgentIntegrationGuestRowReportResult)
     case catalogSearch(AgentIntegrationGuestRowReportResult)
     case revealItem(AgentIntegrationGuestRowReportResult)
     case diagnostics(AgentIntegrationGuestRowReportResult)
@@ -1063,6 +1072,8 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public var guestLogTailResult:
         AgentIntegrationGuestRowReportResult? = nil
     public var machineFactsResult:
+        AgentIntegrationGuestRowReportResult? = nil
+    public var developmentEnvironmentResult:
         AgentIntegrationGuestRowReportResult? = nil
     public var catalogSearchResult:
         AgentIntegrationGuestRowReportResult? = nil
@@ -1426,6 +1437,14 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
 
     public init(
         requestID: UUID,
+        developmentEnvironmentResult: AgentIntegrationGuestRowReportResult
+    ) {
+        self.init(empty: requestID)
+        self.developmentEnvironmentResult = developmentEnvironmentResult
+    }
+
+    public init(
+        requestID: UUID,
         catalogSearchResult: AgentIntegrationGuestRowReportResult
     ) {
         self.init(empty: requestID)
@@ -1551,6 +1570,7 @@ public enum AgentIntegrationLocalCodec {
         "guestFileDownloadResult", "bringToFrontResult",
         "guestFileMutationResult", "transferCancelResult",
         "guestLogTailResult", "machineFactsResult",
+        "developmentEnvironmentResult",
         "catalogSearchResult", "revealItemResult",
         "diagnosticsResult", "mirrorReadResult", "mirrorDriveResult",
         "mirrorOpenResult",
@@ -2074,7 +2094,8 @@ public enum AgentIntegrationLocalCodec {
                 }
             }
             expectedKeys = mutationKeys
-        case .transferCancel, .machineFacts, .catalogSearch:
+        case .transferCancel, .machineFacts, .developmentEnvironment,
+             .catalogSearch:
             /* Three operations that say only their own name. Grouped
                because they are the same request, not because they are the
                same kind of thing: a cancel MUTATES and the other two read,

@@ -20,6 +20,13 @@ static const char *const d_gestalt[] = {
     NULL
 };
 
+static const char *const d_development[] = {
+    "  Reports only opaque registration and measured capability facts.",
+    "  Toolchain and Projects paths remain on this Mac and are never",
+    "  returned to the other machine.",
+    NULL
+};
+
 static const char *const d_screenshot[] = {
     "  Captures the whole screen as a packed PICT. Depth",
     "  defaults to the Screenshots panel setting; --no-save",
@@ -564,6 +571,8 @@ static const char *const d_chat[] = {
 
 /* Order is display order on both consoles. */
 const NowCommandDoc kNowCommandDocs[] = {
+    { "development", 1, "registered Projects and build environment",
+      "development", d_development },
     { "gestalt", 1, "report this Mac: system, model, RAM, CarbonLib",
       "gestalt [group] [--full]", d_gestalt },
     { "screenshot", 1, "capture this Mac's screen to its desktop",

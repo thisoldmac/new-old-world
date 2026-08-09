@@ -306,6 +306,10 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     machineFactsResult: result)
+            case .developmentEnvironment(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    developmentEnvironmentResult: result)
             case .catalogSearch(let result):
                 response = .init(
                     requestID: request.requestID,
