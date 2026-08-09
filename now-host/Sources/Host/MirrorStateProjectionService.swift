@@ -639,7 +639,14 @@ final class MirrorStateProjectionService {
               digest: projection.digest,
               baseComplete: projection.baseComplete,
               sceneGeneration: projection.sceneGeneration,
-              contentGeneration: projection.contentGeneration)
+              contentGeneration: projection.contentGeneration,
+              generations: .init(
+                structure: projection.generations.structure,
+                semantics: projection.generations.semantics,
+                finder: projection.generations.finder,
+                visibility: projection.generations.visibility,
+                content: projection.generations.content),
+              publicationReason: projection.publicationReason.rawValue)
     }
 
     private func processID(_ identity: MirrorProcessIdentity) -> String {

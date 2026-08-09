@@ -59,7 +59,7 @@ public enum MirrorStatusProjection: HostProjection {
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
             title: "Experimental Semantic UI Status",
-            description: "Experimental. Returns the retained semantic UI snapshot identity, sequence, digest, completeness, and generations without polling the guest again.",
+            description: "Experimental. Returns the retained semantic UI snapshot identity, sequence, digest, completeness, exact reducer generations, and publication reason without polling the guest again.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,
@@ -92,7 +92,7 @@ public enum MirrorMetricsProjection: HostProjection {
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
             title: "Experimental Semantic UI Metrics",
-            description: "Experimental. Returns semantic action clocks and scene-cycle clocks without polling the guest.",
+            description: "Experimental. Returns semantic action clocks, scene-cycle clocks, and unified guest-work queue brackets without polling the guest.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,

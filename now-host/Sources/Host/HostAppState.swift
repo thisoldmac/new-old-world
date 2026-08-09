@@ -455,7 +455,9 @@ final class HostAppState: ObservableObject {
             guard let self, self.madeMirrorSource else { return nil }
             return self.mirrorSource.actTimeline.projected(
                 cycles: self.mirrorSource.cycleTimeline,
-                running: self.mirrorSource.running)
+                running: self.mirrorSource.running,
+                scheduler: self.listener.workScheduler.snapshot(),
+                work: self.listener.workTimeline.entries)
         }
         if settings.listenAtLaunch {
             startListening()

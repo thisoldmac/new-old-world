@@ -2616,8 +2616,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                and every one of those clicks was a control click, which is
                precisely the kind that never reaches the broker's lane.
                The guest's own interlock says a caller told "busy" can
-               decide; this is that side deciding. See
-               ``MirrorDirectActLane``. */
+               decide; the session ``GuestWorkScheduler`` is now that one
+               decision point for direct and brokered acts alike. */
             let enqueuedAt = Date()
             let depthAtEntry = workScheduler.depth
             report(label + (depthAtEntry > 0 ? " — queued" : "…"))

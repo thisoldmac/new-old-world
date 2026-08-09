@@ -69,10 +69,14 @@ public struct AgentIntegrationMirrorSnapshotMetadata:
     public let baseComplete: Bool
     public let sceneGeneration: Int
     public let contentGeneration: Int
+    public let generations: AgentIntegrationMirrorGenerationSet
+    public let publicationReason: String
 
     public init(guest: String, session: String, snapshotID: Int,
                 sequence: Int, digest: String, baseComplete: Bool,
-                sceneGeneration: Int, contentGeneration: Int) {
+                sceneGeneration: Int, contentGeneration: Int,
+                generations: AgentIntegrationMirrorGenerationSet? = nil,
+                publicationReason: String = "structure") {
         self.guest = guest
         self.session = session
         self.snapshotID = snapshotID
@@ -81,6 +85,28 @@ public struct AgentIntegrationMirrorSnapshotMetadata:
         self.baseComplete = baseComplete
         self.sceneGeneration = sceneGeneration
         self.contentGeneration = contentGeneration
+        self.generations = generations ?? .init(
+            structure: sceneGeneration, semantics: 0, finder: 0,
+            visibility: 0, content: contentGeneration)
+        self.publicationReason = publicationReason
+    }
+}
+
+public struct AgentIntegrationMirrorGenerationSet:
+    Codable, Equatable, Sendable {
+    public let structure: Int
+    public let semantics: Int
+    public let finder: Int
+    public let visibility: Int
+    public let content: Int
+
+    public init(structure: Int, semantics: Int, finder: Int,
+                visibility: Int, content: Int) {
+        self.structure = structure
+        self.semantics = semantics
+        self.finder = finder
+        self.visibility = visibility
+        self.content = content
     }
 }
 
@@ -648,14 +674,74 @@ public struct AgentIntegrationMirrorMetrics:
     public let laneDepth: Int
     public let acts: [AgentIntegrationMirrorActMetric]
     public let cycles: [AgentIntegrationMirrorCycleMetric]
+    /// The unified guest-work lane right now. Unlike `laneDepth`, which is
+    /// retained for compatibility and describes the act broker, this includes
+    /// scenes, enrichment, content drains and non-Mirror request families.
+    public let scheduler: AgentIntegrationMirrorSchedulerMetric?
+    /// Bounded request brackets, newest last. These distinguish time waiting
+    /// on this host from time spent in the guest handler and in reduction.
+    public let work: [AgentIntegrationMirrorWorkMetric]
 
     public init(running: Bool, laneDepth: Int,
                 acts: [AgentIntegrationMirrorActMetric],
-                cycles: [AgentIntegrationMirrorCycleMetric]) {
+                cycles: [AgentIntegrationMirrorCycleMetric],
+                scheduler: AgentIntegrationMirrorSchedulerMetric? = nil,
+                work: [AgentIntegrationMirrorWorkMetric] = []) {
         self.running = running
         self.laneDepth = laneDepth
         self.acts = acts
         self.cycles = cycles
+        self.scheduler = scheduler
+        self.work = work
+    }
+}
+
+public struct AgentIntegrationMirrorSchedulerMetric:
+    Codable, Equatable, Sendable {
+    public let activePurpose: String?
+    public let activeAgeMs: Int?
+    public let queuedHumanCount: Int
+    public let queueDepth: Int
+    public let oldestHumanWaitMs: Int?
+
+    public init(activePurpose: String?, activeAgeMs: Int?,
+                queuedHumanCount: Int, queueDepth: Int,
+                oldestHumanWaitMs: Int?) {
+        self.activePurpose = activePurpose
+        self.activeAgeMs = activeAgeMs
+        self.queuedHumanCount = queuedHumanCount
+        self.queueDepth = queueDepth
+        self.oldestHumanWaitMs = oldestHumanWaitMs
+    }
+}
+
+public struct AgentIntegrationMirrorWorkMetric:
+    Codable, Equatable, Sendable {
+    public let traceID: String
+    public let session: String
+    public let purpose: String
+    public let admissionWaitMs: Int?
+    public let guestRoundTripMs: Int?
+    public let settlementWaitMs: Int?
+    public let publicationWaitMs: Int?
+    public let totalMs: Int?
+    public let guestHandlerMs: Int?
+    public let outcome: String?
+
+    public init(traceID: String, session: String, purpose: String,
+                admissionWaitMs: Int?, guestRoundTripMs: Int?,
+                settlementWaitMs: Int?, publicationWaitMs: Int?,
+                totalMs: Int?, guestHandlerMs: Int?, outcome: String?) {
+        self.traceID = traceID
+        self.session = session
+        self.purpose = purpose
+        self.admissionWaitMs = admissionWaitMs
+        self.guestRoundTripMs = guestRoundTripMs
+        self.settlementWaitMs = settlementWaitMs
+        self.publicationWaitMs = publicationWaitMs
+        self.totalMs = totalMs
+        self.guestHandlerMs = guestHandlerMs
+        self.outcome = outcome
     }
 }
 
