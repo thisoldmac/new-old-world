@@ -213,10 +213,26 @@ final class FinderItemsTests: XCTestCase {
         XCTAssertEqual(afterScroll.y, 124)
     }
 
-    func testLayoutKeyChangesWhenTheWindowMovesOrResizes() {
+    func testLayoutKeyIgnoresMovingButChangesWhenTheWindowResizes() {
         let before = Self.folderWindow(items: [])
+        var moved = before
+        moved.rect.l += 40
+        moved.rect.r += 40
+        XCTAssertEqual(FinderItems.layoutKey(before),
+                       FinderItems.layoutKey(moved))
         var after = before
         after.rect.r += 40
+        XCTAssertNotEqual(FinderItems.layoutKey(before),
+                          FinderItems.layoutKey(after))
+    }
+
+    func testLayoutKeyChangesWhenListViewAddsColumnHeaders() {
+        let before = Self.folderWindow(items: [])
+        var after = before
+        after.controls.append(.init(
+            ref: "name-header", role: "button", title: "Name",
+            rect: Rect(l: 0, t: 21, r: 214, b: 42), enabled: true,
+            visible: true, value: 0, min: 0, max: 1, checked: false))
         XCTAssertNotEqual(FinderItems.layoutKey(before),
                           FinderItems.layoutKey(after))
     }

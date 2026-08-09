@@ -340,17 +340,12 @@ final class FinderItemArbitrationTests: XCTestCase {
             + "roster's name is the only one anybody has: it must draw")
     }
 
-    /// **The icon box silences the machine's unjoined blit, and nothing
-    /// else.** `DisplayReplay.semanticOwns` only ever silences a `bits` op —
-    /// text, lines and shapes are the machine's own drawing and pass through
-    /// any exclusion — so this claim is bounded by construction. What it
-    /// removes is the "unavailable" hatch the replay would otherwise paint
-    /// inside a box the roster is about to fill with the pack's own art.
-    ///
-    /// **Watched to fail against**: removing `+ finderItemFrames(...)` from
-    /// `semanticFrames`, and against widening the blit past the icon box (a
-    /// frame silences a blit only when it CONTAINS it).
-    func testTheIconBoxSilencesTheHatchTheReplayWouldPaintUnderIt() throws {
+    /// Finder's display stream is categorically outside the interior now —
+    /// before the first roster page as well as after it. A stale P3 frame must
+    /// not briefly hatch the blank host surface and then disappear when icons
+    /// arrive; that transition is the static-image ownership this boundary
+    /// removes.
+    func testFinderDisplayNeverOwnsTheInterior() throws {
         let o = Self.contentOrigin
         let hatched = Self.folder(items: nil,
                                   display: [Self.blit([40, 60, 72, 92])])
@@ -360,11 +355,10 @@ final class FinderItemArbitrationTests: XCTestCase {
 
         let bare = try RenderShot.png(
             scene: Self.scene([Self.folder(items: nil, display: [])]))
-        let hatchPixels = differences(
+        let leakedBeforeRoster = differences(
             bare, try RenderShot.png(scene: Self.scene([hatched])), in: box)
-        XCTAssertGreaterThan(hatchPixels, 0,
-                             "the fixture must actually produce a hatch, or "
-                             + "this proves nothing")
+        XCTAssertEqual(leakedBeforeRoster, 0,
+                       "Finder P3 leaked before semantic items arrived")
 
         /* The roster's own art is drawn in the same box, so the reading that
            separates the two is the box with the roster present and the blit

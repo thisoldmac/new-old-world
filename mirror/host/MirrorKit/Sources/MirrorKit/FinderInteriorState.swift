@@ -118,13 +118,12 @@ public struct FinderInteriorState: Equatable, Sendable {
             guard let preview = scrolls[id], preview.delta != 0 else {
                 continue
             }
-            if let controlIndex = out.windows[index].controls.firstIndex(
-                    where: { $0.ref == preview.controlRef }) {
-                let value = out.windows[index].controls[controlIndex].value
-                    ?? preview.baseline
-                out.windows[index].controls[controlIndex].value =
-                    value + preview.delta
-            }
+            guard let controlIndex = out.windows[index].controls.firstIndex(
+                    where: { $0.ref == preview.controlRef }),
+                  out.windows[index].controls[controlIndex].value
+                    == preview.baseline else { continue }
+            out.windows[index].controls[controlIndex].value =
+                preview.baseline + preview.delta
             out.windows[index].items = out.windows[index].items?.map { item in
                 var shifted = item
                 if preview.vertical { shifted.y -= preview.delta }

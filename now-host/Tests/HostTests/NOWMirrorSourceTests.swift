@@ -1907,6 +1907,63 @@ final class NOWMirrorRosterReasonTests: XCTestCase {
         XCTAssertTrue(settled)
     }
 
+    func testEachRosterPagePublishesWithoutWaitingForTheDirectory() async {
+        var replies: [(CommandResult) -> Void] = []
+        let listener = GuestListener(
+            identity: .init(version: "test", name: "Test Host"))
+        let src = NOWMirrorSource(
+            listener: listener,
+            act: AgentIntegrationActControl(listener: listener,
+                                            currentSessionID: { nil }),
+            interval: 3_600,
+            sendCommand: { _, _, completion in replies.append(completion) })
+        var paints: [(count: Int, complete: Bool)] = []
+
+        let read = Task { @MainActor in
+            await src.readFinderSurface(
+                container: "window \"Macintosh HD\"",
+                rosterReady: {
+                    paints.append(($0.items.count,
+                                   $0.presentation.complete))
+                })
+        }
+        while replies.isEmpty { await Task.yield() }
+        let firstRows = (0..<16).map {
+            "I\tItem \($0)\t20\t\(30 + $0 * 19)\t36\t"
+                + "\(46 + $0 * 19)\tfolder\tfalse"
+        }.joined(separator: "\r")
+        replies.removeFirst()(.init(
+            id: 1, ok: true,
+            output: ["script": [
+                ["output", "\"N\t17\rV\tname\rP\tMacintosh HD:\r"
+                    + firstRows + "\r\""],
+                ["osaErr", "0"], ["truncated", "false"],
+            ]]))
+        while replies.isEmpty { await Task.yield() }
+
+        XCTAssertEqual(paints.map(\.count), [16])
+        XCTAssertEqual(paints.map(\.complete), [false])
+
+        replies.removeFirst()(.init(
+            id: 2, ok: true,
+            output: ["script": [
+                ["output", "\"N\t17\rV\tname\rP\tMacintosh HD:\r"
+                    + "I\tItem 16\t20\t334\t36\t350\tfolder\tfalse\r\""],
+                ["osaErr", "0"], ["truncated", "false"],
+            ]]))
+        while replies.isEmpty { await Task.yield() }
+
+        XCTAssertEqual(paints.map(\.count), [16, 17])
+        XCTAssertEqual(paints.map(\.complete), [false, true])
+
+        replies.removeFirst()(.init(
+            id: 3, ok: true,
+            output: ["script": [["output", "\"\""],
+                                 ["osaErr", "0"],
+                                 ["truncated", "false"]]]))
+        _ = await read.value
+    }
+
     /// The opposite half, so the fix cannot be "call everything an error".
     /// A guest that reports no failure reported no failure.
     func testAnEmptyContainerIsStillAnEmptyContainer() async {

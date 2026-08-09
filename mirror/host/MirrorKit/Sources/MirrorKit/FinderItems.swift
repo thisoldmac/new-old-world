@@ -531,12 +531,17 @@ public enum FinderItems {
         return point
     }
 
-    /// A cache key for the identity and viewport geometry of a Finder
-    /// container. Scroll values are deliberately absent: scrolling changes
-    /// the viewport, not the directory model, and `scrollPosition` projects
-    /// cached item geometry into the new viewport immediately.
+    /// A cache key for the identity and size of a Finder container. Window
+    /// position and scroll values are deliberately absent: moving changes no
+    /// content-local coordinate, and `scrollPosition` projects cached item
+    /// geometry into a new viewport immediately.
     public static func layoutKey(_ win: Scene.Window) -> String {
-        return "\(win.title)@\(win.rect.l),\(win.rect.t),\(win.rect.r),"
-            + "\(win.rect.b)"
+        let controls = win.controls.filter(\.visible).map { control in
+            let r = control.rect
+            return "\(control.role):\(control.title)@"
+                + "\(r?.l ?? 0),\(r?.t ?? 0),\(r?.r ?? 0),\(r?.b ?? 0)"
+        }.sorted().joined(separator: ";")
+        return "\(win.title)@\(win.rect.r - win.rect.l)x"
+            + "\(win.rect.b - win.rect.t)/\(controls)"
     }
 }

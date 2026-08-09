@@ -351,7 +351,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var finderPresentations:
         [String: MirrorKit.Scene.FinderPresentation] = [:]
     private var finderScrollOrigins: [String: Point] = [:]
-    private var iconLayout: String = "<none>"
+    /// Completed semantic reads are tracked per visible container. One
+    /// unreadable desktop or background folder must not make a successfully
+    /// rendered front window re-run its AppleScripts forever.
+    private var finderLayouts: [String: String] = [:]
+    private var desktopIconLayout: String = "<none>"
     private var fetchingIcons = false
     private var finderReadNoticeShown = false
     private var iconTask: Task<Void, Never>?
@@ -577,7 +581,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         icons.removeAll()
         finderPresentations.removeAll()
         finderScrollOrigins.removeAll()
-        iconLayout = "<none>"
+        finderLayouts.removeAll()
+        desktopIconLayout = "<none>"
         visibilityKey = "<none>"
         visibilityReadAt = nil
         settlementTracker = MirrorSettlementTracker()
@@ -979,8 +984,15 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            "was this roster read for what is on screen", so the claim is
            made from it rather than from a flag somebody has to remember
            to clear. */
-        shadowEngine?.noteFinderItems(
-            complete: Self.iconLayoutKey(scene) == iconLayout)
+        let foldersComplete = scene.windows
+            .filter(FinderItems.isFolderWindow)
+            .allSatisfy { window in
+                guard let key = Self.finderWindowKey(window) else {
+                    return false
+                }
+                return finderLayouts[key] == FinderItems.layoutKey(window)
+            }
+        shadowEngine?.noteFinderItems(complete: foldersComplete)
         var out = scene
         if let desktop = icons[Self.desktopKey] { out.desktopItems = desktop }
         out.windows = out.windows.map { win in
@@ -1022,6 +1034,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         let folders = scene.windows.filter(FinderItems.isFolderWindow)
         return (["desktop"] + folders.map(FinderItems.layoutKey))
             .joined(separator: "|")
+    }
+
+    private static func desktopIconLayoutKey(_ scene: MirrorKit.Scene)
+        -> String {
+        let names = (scene.desktopItems ?? []).map(\.name).sorted()
+        return "\(scene.screen.w)x\(scene.screen.h)/"
+            + names.joined(separator: "\u{1f}")
     }
 
     /// People look at the front Finder window before the desktop behind it.
@@ -1103,6 +1122,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return
         }
         let folders = Self.prioritizedFinderWindows(scene)
+        let staleFolders = folders.filter { window in
+            guard let surface = Self.finderWindowKey(window) else {
+                return true
+            }
+            return finderLayouts[surface] != FinderItems.layoutKey(window)
+        }
+        let desktopLayout = Self.desktopIconLayoutKey(scene)
+        let desktopIsStale = desktopIconLayout != desktopLayout
         /* The leading "desktop" is not decoration. The key used to be just
            the folder windows joined, so a machine with NO Finder window
            open produced "" - which equals the initial value of iconLayout,
@@ -1110,7 +1137,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            fetched at all. Watched: a mirror with a bare desktop drew no
            icons, ever, while every folder window drew its own. */
         let key = Self.iconLayoutKey(scene)
-        guard key != iconLayout else { return completion() }
+        guard !staleFolders.isEmpty || desktopIsStale else {
+            return completion()
+        }
         guard !fetchingIcons else {
             if !finderReadNoticeShown {
                 finderReadNoticeShown = true
@@ -1130,7 +1159,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             var complete = true
             let duplicateTitles = Dictionary(grouping: folders, by: \.title)
                 .filter { $0.value.count > 1 }.keys
-            for win in folders {
+            for win in staleFolders {
                 guard !duplicateTitles.contains(win.title) else {
                     self.note("could not read Finder window \(win.title) - "
                               + "duplicate titles are ambiguous to Finder "
@@ -1175,6 +1204,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                        window where a same-named file would become selected. */
                     if !win.front { presentation.selectedNames.removeAll() }
                     presentations[surfaceKey] = presentation
+                    self.finderLayouts[surfaceKey] =
+                        FinderItems.layoutKey(win)
                     ActLog.note(
                         action: "finder snapshot\n    "
                             + BaselineLine.line("container", [
@@ -1197,11 +1228,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                Finder window in the latency queue. The old desktop-first
                order made Macintosh HD stay blank for nine seconds while the
                host learned about icons a person could already see behind it. */
-            if let d = await self.readIcons(container: "desktop",
-                                            generation: generation) {
-                fresh[Self.desktopKey] = d
-            } else {
-                complete = false
+            if desktopIsStale {
+                if let d = await self.readIcons(container: "desktop",
+                                                generation: generation) {
+                    fresh[Self.desktopKey] = d
+                    self.desktopIconLayout = desktopLayout
+                } else {
+                    complete = false
+                }
             }
             /* A canceled read can outlive a guest switch. Do not let its
                unwind clear the replacement run's in-flight bookkeeping. */
@@ -1236,7 +1270,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             for (container, presentation) in presentations {
                 self.finderPresentations[container] = presentation
             }
-            if complete { self.iconLayout = key }
             self.publishFinderComplements(for: key)
             completion()
         }

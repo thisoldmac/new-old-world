@@ -1503,12 +1503,23 @@ public struct SceneRenderer {
         ctx.stroke(Path(box), with: .color(Platinum.g6), lineWidth: 1)
         bevel(ctx, box.insetBy(dx: 1, dy: 1),
               light: Platinum.g0, shadow: Platinum.g4)
-        // Two diagonal hatch lines — the classic grow-box glyph.
-        for off in [4, 8] {
-            var p = Path()
-            p.move(to: CGPoint(x: box.minX + CGFloat(off), y: box.maxY - 2))
-            p.addLine(to: CGPoint(x: box.maxX - 2, y: box.minY + CGFloat(off)))
-            ctx.stroke(p, with: .color(Platinum.g5), lineWidth: 1)
+        // Three bevelled diagonal grips. A single mid-grey stroke vanished
+        // into the checker at live display scale and left a blank square that
+        // no longer read as draggable; the dark edge plus lit neighbour is
+        // the same raised vocabulary as the surrounding Platinum chrome.
+        for off in [3, 6, 9] {
+            var shadow = Path()
+            shadow.move(to: CGPoint(x: box.minX + CGFloat(off),
+                                    y: box.maxY - 2))
+            shadow.addLine(to: CGPoint(x: box.maxX - 2,
+                                       y: box.minY + CGFloat(off)))
+            ctx.stroke(shadow, with: .color(Platinum.g6), lineWidth: 1)
+            var light = Path()
+            light.move(to: CGPoint(x: box.minX + CGFloat(off - 1),
+                                   y: box.maxY - 2))
+            light.addLine(to: CGPoint(x: box.maxX - 2,
+                                      y: box.minY + CGFloat(off - 1)))
+            ctx.stroke(light, with: .color(Platinum.g0), lineWidth: 1)
         }
     }
 

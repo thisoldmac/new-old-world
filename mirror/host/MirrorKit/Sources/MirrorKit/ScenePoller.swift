@@ -353,9 +353,9 @@ public struct ScenePoller {
     /// costs 1–2 s (measured 2026-07-31) — an order of magnitude more than a
     /// whole poll, so paying it every poll would make the mirror unusable.
     /// The refresh trigger is a layout signature over every folder window's
-    /// geometry AND its scroll values, so a scroll (which moves every reported
-    /// position by exactly the scroll delta) invalidates the snapshot. What is
-    /// cached is never *silently* stale: any change we can observe re-fetches.
+    /// size and non-value control geometry. Scrolling projects the cached
+    /// roster by its control-value delta; resizing or switching to a view that
+    /// changes the Finder's headers invalidates it.
     mutating func attachWindowItems(_ scene: inout Scene) {
         let folders = scene.windows.filter(FinderItems.isFolderWindow)
         /* NOT gated on there being a folder window. The desktop rides in the
