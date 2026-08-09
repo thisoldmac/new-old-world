@@ -35,44 +35,42 @@ public enum SessionHealthProjection: HostProjection {
         "Reads host-owned listener state and sends the guest no message, "
         + "so it is available whatever the guest implements."
 
-    private static var guestReferenceSchema: [String: Any] {
-        [
-            "type": "object",
-            "properties": [
-                "id": [
-                    "type": "string",
-                    "description":
-                        "Stable host-assigned machine id used for addressing.",
-                ],
-                "sessionID": [
-                    "type": "string",
-                    "description":
-                        "Exact connection id; stale after that connection ends.",
-                ],
-                "name": [
-                    "type": "string",
-                    "description":
-                        "Host-owned title shown in NOW's Connections page.",
-                ],
-                "reportedName": [
-                    "type": ["string", "null"],
-                    "description":
-                        "Name the guest reported at hello, when present.",
-                ],
-                "idIsAutoAssigned": ["type": "boolean"],
-                "idIsAnchored": [
-                    "type": "boolean",
-                    "description":
-                        "False when stable identity across reconnect is uncertain.",
-                ],
+    private static let guestReferenceSchema: [String: Any] = [
+        "type": "object",
+        "properties": [
+            "id": [
+                "type": "string",
+                "description":
+                    "Stable host-assigned machine id used for addressing.",
             ],
-            "required": [
-                "id", "sessionID", "name", "reportedName",
-                "idIsAutoAssigned", "idIsAnchored",
+            "sessionID": [
+                "type": "string",
+                "description":
+                    "Exact connection id; stale after that connection ends.",
             ],
-            "additionalProperties": false,
-        ]
-    }
+            "name": [
+                "type": "string",
+                "description":
+                    "Host-owned title shown in NOW's Connections page.",
+            ],
+            "reportedName": [
+                "type": ["string", "null"],
+                "description":
+                    "Name the guest reported at hello, when present.",
+            ],
+            "idIsAutoAssigned": ["type": "boolean"],
+            "idIsAnchored": [
+                "type": "boolean",
+                "description":
+                    "False when stable identity across reconnect is uncertain.",
+            ],
+        ],
+        "required": [
+            "id", "sessionID", "name", "reportedName",
+            "idIsAutoAssigned", "idIsAnchored",
+        ],
+        "additionalProperties": false,
+    ]
 
     public static var mcpDescriptor: [String: Any] {
         [

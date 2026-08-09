@@ -40,10 +40,9 @@ enum MCPConformanceRecipes {
         /// A bounded HFS-safe folder this run alone may create and use.
         let scratchFolder: String
 
-        init(scratchFolder: String? = nil) {
-            self.scratchFolder = scratchFolder
-                ?? "NOW Conformance "
-                    + String(UUID().uuidString.prefix(8))
+        init() {
+            scratchFolder = "NOW Conformance "
+                + String(UUID().uuidString.prefix(8))
         }
     }
 
