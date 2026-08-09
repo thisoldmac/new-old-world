@@ -135,4 +135,47 @@ final class ChatSystemPromptTests: XCTestCase {
             health: result, origin: .hostPane)
         XCTAssertTrue(whole.contains(block))
     }
+
+    func testProjectAuthorityNamesBothHomesAndDoesNotConflateWorkspaceTruth() {
+        let result = health(guest: machine("pb1400c"))
+        let ordinary = ChatSystemPrompt.compose(
+            health: result, origin: .hostPane)
+        let development = ChatSystemPrompt.compose(
+            health: result, origin: .hostPane, development: true)
+        XCTAssertTrue(ordinary.contains(
+            "No project or Development tools are supplied"), ordinary)
+        XCTAssertTrue(development.contains("host-home project is authoritative"),
+                      development)
+        XCTAssertTrue(development.contains("guest-home project is authoritative"),
+                      development)
+        XCTAssertTrue(development.contains(
+            "Never describe that workspace or its history mirror as current guest truth"),
+            development)
+    }
+
+    func testDevelopmentToolsAreFilteredFromOrdinaryTurnsAndBoundedWhenRelevant() {
+        XCTAssertFalse(ChatDevelopmentContext.isRelevant([.user("how much RAM?")]))
+        XCTAssertTrue(ChatDevelopmentContext.isRelevant(
+            [.user("build me a memory monitor applet")]))
+
+        let ordinary = ChatToolRendering.descriptors(
+            include: ChatDevelopmentContext.capabilityFilter(development: false))
+        let development = ChatToolRendering.descriptors(
+            include: ChatDevelopmentContext.capabilityFilter(development: true))
+        let ordinaryNames = Set(ordinary.map(\.name))
+        XCTAssertFalse(ordinaryNames.contains("now_projects"))
+        XCTAssertFalse(ordinaryNames.contains("now_development_environment"))
+        XCTAssertFalse(ordinaryNames.contains("now_development"))
+        XCTAssertEqual(development.count - ordinary.count, 3)
+
+        let addedBytes = development.reduce(0) {
+            $0 + $1.name.utf8.count + $1.description.utf8.count
+                + $1.inputSchemaJSON.count
+        } - ordinary.reduce(0) {
+            $0 + $1.name.utf8.count + $1.description.utf8.count
+                + $1.inputSchemaJSON.count
+        }
+        XCTAssertLessThan(addedBytes, 6_000,
+                          "Development context must stay a compact opt-in lane")
+    }
 }

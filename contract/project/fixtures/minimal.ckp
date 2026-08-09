@@ -1,0 +1,8 @@
+CKPROJECT 1
+id=0123456789abcdef0123456789abcdef
+name=Memory Meter
+target=application
+configuration=debug
+toolchain=mpw-golden@3.6
+product=Build/Memory Meter
+file=Sources/Main.c

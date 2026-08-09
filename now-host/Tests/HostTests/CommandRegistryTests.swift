@@ -85,7 +85,7 @@ final class CommandRegistryTests: XCTestCase {
             return []
         }
         var names: Set<String> = []
-        let pattern = #"strcmp\(name, "([a-z]+)"\) == 0"#
+        let pattern = #"strcmp\(name, "([a-z-]+)"\) == 0"#
         let regex = try NSRegularExpression(pattern: pattern)
         let tail = String(text[body.lowerBound...])
         for match in regex.matches(in: tail,
@@ -110,7 +110,7 @@ final class CommandRegistryTests: XCTestCase {
         }
         var names: Set<String> = []
         // { "quit", 1, "…"  — the 1 is the wire flag; a 0 is console-local.
-        let pattern = #"\{\s*"([a-z]+)",\s*1,"#
+        let pattern = #"\{\s*"([a-z-]+)",\s*1,"#
         let regex = try NSRegularExpression(pattern: pattern)
         let tail = String(text[table.lowerBound...])
         for match in regex.matches(in: tail,
@@ -299,7 +299,7 @@ final class CommandRegistryTests: XCTestCase {
         let text = try read("now-guest-68k/src/commands/commands68.c")
         var names: Set<String> = []
         let regex = try NSRegularExpression(
-            pattern: #"strcmp\(name, "([a-z]+)"\) == 0"#)
+            pattern: #"strcmp\(name, "([a-z-]+)"\) == 0"#)
         for match in regex.matches(
             in: text, range: NSRange(text.startIndex..., in: text)) {
             if let r = Range(match.range(at: 1), in: text) {
@@ -321,7 +321,7 @@ final class CommandRegistryTests: XCTestCase {
             return []
         }
         var names: Set<String> = []
-        let regex = try NSRegularExpression(pattern: #"\{\s*"([a-z]+)",\s*""#)
+        let regex = try NSRegularExpression(pattern: #"\{\s*"([a-z-]+)",\s*""#)
         let tail = String(text[table.lowerBound...])
         for match in regex.matches(
             in: tail, range: NSRange(tail.startIndex..., in: tail)) {

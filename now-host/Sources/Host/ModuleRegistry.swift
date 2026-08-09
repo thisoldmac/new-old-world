@@ -150,6 +150,13 @@ struct ModuleRegistry: Sendable {
                 + "\(MachineNaming.simpleReference)"
         ),
         ModuleDescriptor(
+            id: "development",
+            title: "Development",
+            symbol: "hammer",
+            summary: "Projects, toolchains, builds and runs for "
+                + "\(MachineNaming.simpleReference)"
+        ),
+        ModuleDescriptor(
             id: "census",
             title: "Hardware",
             symbol: "cpu",

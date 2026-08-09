@@ -8,6 +8,7 @@
 #include "console_module.h"
 #include "control_kind.h"
 #include "diagnostics_module.h"
+#include "development_module.h"
 #include "network_module.h"
 #include "chat_module.h"
 #include "cloud_module.h"
@@ -87,6 +88,9 @@ static const struct {
       "Mirror's own extensions and agent on this Mac. NOW reads them; it "
       "installs nothing.",
       "Mirror has not moved in yet." },
+    { "Development",
+      "Project roots, registered toolchains and headless build jobs on this Mac.",
+      "Development has not moved in yet." },
     { "Preferences",
       "How this window behaves. Rearrange the rail by Option-dragging a "
       "row; everything here is remembered between launches.",
@@ -228,6 +232,7 @@ Boolean workshop_open(void)
     g_ops[kWorkshopCloud] = cloud_module_ops();
     g_ops[kWorkshopChat] = chat_module_ops();
     g_ops[kWorkshopMirror] = mirror_module_ops();
+    g_ops[kWorkshopDevelopment] = development_module_ops();
     g_ops[kWorkshopPreferences] = preferences_module_ops();
     g_ops[kWorkshopLogs] = logs_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();

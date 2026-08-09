@@ -112,6 +112,17 @@ typedef struct {
     Boolean mirror_finder_complements;
     Boolean mirror_content;
     Boolean mirror_foreground_cycle;
+
+    /* Development roots are chosen on this Mac. The display path is never
+       resolved as authority; the volume/ref pair and directory ID are the
+       identity used by the project and toolchain services. */
+    short projects_vref;
+    long projects_dir;
+    char projects_root[128];
+    short toolchain_vref;
+    long toolchain_dir;
+    char toolchain_root[128];
+    Boolean toolchain_qualified;
 } NowPrefs;
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
@@ -124,7 +135,8 @@ typedef struct {
    pair), v18 (Chat, likewise), and v19 (adds the sidebar order and
    density, and renumbers the pinned group again for the Preferences
    page), v20 (the collapsed sidebar), v21 (Mirror's module-id
-   renumbering), and v22 (the four Mirror policy domains). */
+   renumbering), v22 (the four Mirror policy domains), and v23
+   (Development roots plus its module-id renumbering). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

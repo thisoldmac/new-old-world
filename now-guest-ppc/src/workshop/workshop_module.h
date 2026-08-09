@@ -24,6 +24,7 @@ typedef enum {
     kWorkshopCloud,
     kWorkshopChat,
     kWorkshopMirror,         /* the last nav row, above the pinned group */
+    kWorkshopDevelopment,
 
     /* The pinned group, in the order it sits at the foot of the rail.
        These three are NOT in the person's rearrangeable order: the rail
@@ -39,7 +40,7 @@ typedef enum {
                                 nothing); see now_prefs_load */
 } WorkshopModuleID;
 
-enum { kWorkshopModuleCount = 15 };
+enum { kWorkshopModuleCount = 16 };
 
 /* The nav range is a CONTIGUOUS prefix, 1..kWorkshopNavRows, and the
    pinned group is everything after it. The sidebar's saved order stores

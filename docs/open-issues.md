@@ -1,5 +1,38 @@
 # Open issues
 
+## UNVERIFIED: Projects and Development have not completed a guest workflow (2026-08-09)
+
+The host Projects store, guest Development module, private import/candidate
+lanes, declarative ToolServer runtime, promotion guard, exact-product run and
+optional CodeKitten handoff are locally tested and both guests build. None has
+run end to end in the PPC emulator or on a PowerBook. The first emulator run
+must cover import, workspace restart, stage, build, cancel, divergent promote,
+successful promote and exact run with CodeKitten absent. Metal then owes exact
+MPW toolchain/version, both product fork sizes/digest, process identity and an
+`odoc` edit imported as a new revision.
+
+Three implementation gaps block a full development/preservation/acceptance
+claim today:
+
+- `now_development` has separate build and exact-product run outcomes, but no
+  test operation or `ckproject.test-receipt/1`. A test cannot be reported as a
+  build configuration or a successful launch: its closed declarative action
+  vocabulary, expected product identity and terminal receipt still need to be
+  added to `Project.ckp`, the ToolServer service and both human/agent faces.
+
+- Guest source manifests and the host Git mirror bind data-fork SHA-256 only.
+  Resource forks and Finder type/creator are not represented or reconstructed
+  in candidates. Nonempty resource forks are now refused at host staging and
+  guest import; Finder metadata still needs first-class preservation semantics.
+- `development-open` proves CodeKitten launch, `odoc` dispatch and foregrounding
+  without blocking the guest loop, but `kAENoReply` cannot prove the handler
+  accepted the document. CodeKitten now has the handler; the remaining seam is
+  an asynchronous acceptance receipt, not another IDE dependency.
+
+The host Development import sheet also requires an opaque project ID. A
+bounded guest project catalog is still needed before that is a discoverable
+human workflow.
+
 Things known to be wrong, unfinished, or unverified, with enough detail
 to pick any one of them up cold. Nothing here is being worked on right
 now; each is parked deliberately.

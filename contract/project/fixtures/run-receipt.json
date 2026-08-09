@@ -1,0 +1,11 @@
+{
+  "schema": "ckproject.run-receipt/1",
+  "runID": "run-0123456789abcdef",
+  "productRef": "product-0123456789abcdef",
+  "productDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "state": "accepted",
+  "applicationCreator": "MMTR",
+  "startedAt": "2026-08-09T12:01:05Z",
+  "finishedAt": "2026-08-09T12:01:10Z",
+  "acceptance": "mirror-visible"
+}

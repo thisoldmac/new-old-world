@@ -657,6 +657,19 @@ run_c now-guest-ppc processes_layout_test.c  ""  src/processes/processes_layout.
 run_c now-guest-ppc software_layout_test.c   ""  src/software/software_layout.c
 run_c now-guest-ppc sw_vers_parse_test.c     ""  src/software/sw_vers_parse.c
 run_c now-guest-ppc workshop_layout_test.c   ""  src/workshop/workshop_layout.c
+run_c now-guest-ppc development_contract_test.c "" \
+      src/development/development_contract.c
+run_c now-guest-ppc development_build_test.c "" \
+      src/development/development_contract.c \
+      src/development/development_build.c
+run_c now-guest-ppc development_project_test.c "" \
+      src/development/development_contract.c \
+      src/development/development_build.c \
+      src/development/development_project.c
+run_c now-guest-ppc development_sha256_test.c "" \
+      src/development/development_sha256.c
+run_c now-guest-ppc development_layout_test.c "" \
+      src/development/development_layout.c
 run_c now-guest-ppc cmd_help_test.c         ""  src/commands/cmd_help.c
 run_c now-guest-ppc cmd_line_test.c         ""  src/commands/cmd_line.c src/core/json.c
 run_c now-guest-ppc console_reply_test.c  ""  src/console/console_reply.c \

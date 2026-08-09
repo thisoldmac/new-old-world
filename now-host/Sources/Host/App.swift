@@ -492,11 +492,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                    line the person needs. */
                 if request.operation != .sessionHealth,
                    request.operation != .audit,
+                   request.operation != .projects,
                    let refusal = agentIntegration.addressingRefusal(
                        request.guestSelector) {
                     return .notAddressed(refusal)
                 }
                 switch request.operation {
+                case .projects:
+                    guard let project = request.projectRequest else {
+                        return .projects(.init(failure: .init(
+                            code: "now-projects-invalid-request",
+                            message: "The Projects request is missing.")))
+                    }
+                    return .projects(agentIntegration.projects(project))
+                case .development:
+                    guard let development = request.developmentRequest else {
+                        return .development(.refused(.init(
+                            code: "now-development-invalid-request",
+                            message: "The Development request is missing.")))
+                    }
+                    return .development(
+                        await agentIntegration.development(development))
                 case .sessionHealth:
                     return .sessionHealth(
                         agentIntegration.sessionHealth())
@@ -824,6 +840,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                        strict key list. */
                     return .machineFacts(
                         await agentIntegration.machineFacts())
+                case .developmentEnvironment:
+                    return .developmentEnvironment(
+                        await agentIntegration.developmentEnvironment())
                 case .softwareInventory:
                     /* P1 #3. The domain is REQUIRED by the contract and by
                        the codec, so a request without one never reached a

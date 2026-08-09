@@ -2756,6 +2756,13 @@ components:
         type: { const: file.listing }
         id: { type: integer }
         path: { type: string }
+        developmentProject:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+          description: >
+            Internal Development import scope. When present, path is resolved
+            only beneath that active project in the selected Projects root;
+            it is never exposed by generic Files, Chat, or MCP schemas.
         entries:
           type: array
           maxItems: 16
@@ -3129,6 +3136,14 @@ components:
             file.accept with `have` > 0 only when it holds a partial
             recorded under this exact token, so an offer with no token,
             or with a token it has not seen, always starts at zero.
+        developmentCandidate:
+          type: string
+          pattern: "^candidate-[0-9a-f]{16}$"
+          description: >
+            Internal Development-coordinator destination. When present the
+            guest resolves path beneath this previously prepared inactive
+            candidate rather than beneath the generic Files share. It is not
+            accepted by any Files, Chat or MCP request schema.
     FileAccept:
       type: object
       required: [type, id]
@@ -3831,6 +3846,143 @@ components:
   # is forbidden from knowing it. No x-line means the command takes no
   # console arguments and ignores the line.
   x-commands:
+    development:
+      description: >
+        The PPC guest's human-registered Projects and MPW environment.
+        Returns opaque toolchain identity and measured capabilities, never
+        either registered path. NOW-68K does not register this command, so
+        capability discovery reports it unavailable there without identity
+        guessing.
+      args: {}
+      output:
+        type: object
+        properties:
+          development:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
+    development-build:
+      description: >
+        Starts, observes or cancels the PPC guest's page-neutral MPW
+        ToolServer service. Active source is selected by opaque CKPROJECT id,
+        or an inactive staged tree by opaque candidate id;
+        Project.ckp supplies a closed declarative action plan. No caller may
+        provide a path, MPW command or shell text. NOW-68K does not register
+        this command.
+      args:
+        type: object
+        required: [action]
+        additionalProperties: false
+        properties:
+          action: { enum: [start, status, cancel] }
+          projectID:
+            type: string
+            pattern: "^[0-9a-f]{32}$"
+          candidateID:
+            type: string
+            pattern: "^candidate-[0-9a-f]{16}$"
+      x-line: "status, cancel, or start followed by one project or candidate ID."
+      output:
+        type: object
+        properties:
+          development-build:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
+    development-project:
+      description: >
+        Measures and pages one active source tree beneath the human-selected
+        Projects root. Only opaque project identity and project-relative
+        manifest entries cross; the Projects root and HFS path remain private.
+        NOW-68K does not register this command.
+      args:
+        type: object
+        required: [projectID]
+        additionalProperties: false
+        properties:
+          projectID:
+            type: string
+            pattern: "^[0-9a-f]{32}$"
+          cursor:
+            type: integer
+            minimum: 0
+            maximum: 128
+      x-line: "One project ID; optional cursor is host paging state."
+      output:
+        type: object
+        properties:
+          development-project:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
+    development-stage:
+      description: >
+        Prepares, observes or discards one inactive guest project candidate.
+        Files enter only through file.offer messages carrying the prepared
+        opaque candidate identity; no generic Files root or caller path can
+        select this destination. NOW-68K does not register this command.
+      args:
+        type: object
+        required: [action, candidateID]
+        additionalProperties: false
+        properties:
+          action: { enum: [prepare, finalize, promote, status, discard] }
+          candidateID:
+            type: string
+            pattern: "^candidate-[0-9a-f]{16}$"
+          projectID:
+            type: string
+            pattern: "^[0-9a-f]{32}$"
+          expectedDigest:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+          expectedFiles:
+            type: integer
+            minimum: 1
+            maximum: 128
+          baseGuestDigest:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+      x-line: "prepare/finalize/promote a candidate, or status/discard candidateID."
+      output:
+        type: object
+        properties:
+          development-stage:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
+    development-run:
+      description: >
+        Launches only the unchanged opaque product measured by the last
+        successful Development build. Launch dispatch is a separate outcome
+        from build success and does not claim runtime acceptance.
+      args:
+        type: object
+        required: [productRef]
+        additionalProperties: false
+        properties:
+          productRef:
+            type: string
+            pattern: "^product-[0-9a-f]{16}$"
+      x-line: "One opaque product reference from development-build status."
+      output:
+        type: object
+        properties:
+          development-run:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
+    development-open:
+      description: >
+        Optionally locates and launches CodeKitten through the classic Desktop
+        database, then sends the active Project.ckp for one opaque project ID
+        using the standard open-documents Apple Event. A launching response is
+        retried by the host without blocking the guest event loop. CodeKitten
+        absence does not affect headless project or build work.
+      args:
+        type: object
+        required: [projectID]
+        additionalProperties: false
+        properties:
+          projectID:
+            type: string
+            pattern: "^[0-9a-f]{32}$"
+      x-line: "One opaque project ID."
+      output:
+        type: object
+        properties:
+          development-open:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
     help:
       description: >
         What commands THIS machine serves, asked of the machine that

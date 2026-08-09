@@ -57,10 +57,11 @@ enum ChatSystemPrompt {
 
     static func compose(
         health: AgentIntegrationSessionHealthResult, origin: Origin,
-        screen: Screen? = nil
+        screen: Screen? = nil, development: Bool = false
     ) -> String {
         var sections = [preamble]
         sections.append(machineFrame(health: health, origin: origin))
+        sections.append(projectAuthority(development: development))
         sections.append(toolGuidance)
         if case .guestWire = origin {
             sections.append(wireOutputRules(screen: screen))
@@ -70,10 +71,27 @@ enum ChatSystemPrompt {
 
     private static let preamble = """
         You are the assistant built into New Old World, a bridge between \
-        a modern Mac and a classic Macintosh running Mac OS. Your tools \
-        observe and act ONLY on the classic machine, never on the modern \
-        Mac.
+        a modern Mac and a classic Macintosh running Mac OS. Machine \
+        tools observe and act only on the connected classic machine. \
+        Project tools, when supplied, act only inside New Old World's \
+        application-owned Projects storage on the modern Mac.
         """
+
+    private static func projectAuthority(development: Bool) -> String {
+        guard development else {
+            return "No project or Development tools are supplied for this machine-only turn."
+        }
+        return """
+            Project and Development tools are supplied for this turn. Every \
+            project result names its home. A host-home project is authoritative \
+            in New Old World's bounded Projects storage. A guest-home project \
+            is authoritative on the connected classic machine; edits happen in \
+            a recoverable host workspace until a separately authorized, \
+            digest-guarded promotion. Never describe that workspace or its \
+            history mirror as current guest truth. Guest reads require Read \
+            Only access; publication, build, run and handoff require Full access.
+            """
+    }
 
     /// The one part of the prompt that is not fixed: who is speaking,
     /// which machines are on the wire this second, and therefore what

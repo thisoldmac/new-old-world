@@ -12,9 +12,11 @@ import NOWAgentIntegration
 enum ChatToolRendering {
     /// One descriptor per registry row, in registry order.
     static func descriptors(
-        registry: HostProjectionRegistry = .hostFaces
+        registry: HostProjectionRegistry = .hostFaces,
+        include: (String) -> Bool = { _ in true }
     ) -> [ChatToolDescriptor] {
         registry.projections.compactMap { projection in
+            guard include(projection.capability.rawValue) else { return nil }
             let descriptor = projection.mcpDescriptor
             let schema = apiSafeSchema(
                 (descriptor["inputSchema"] as? [String: Any])

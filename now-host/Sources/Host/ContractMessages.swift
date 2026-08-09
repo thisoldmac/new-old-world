@@ -872,6 +872,7 @@ struct FileGet: Codable, Equatable, Sendable {
     var id: Int
     var path: String
     var container: String?
+    var developmentProject: String? = nil
 }
 
 /// Ask the other machine for its running processes. Read-only and
@@ -1053,6 +1054,9 @@ struct FileOffer: Codable, Equatable, Sendable {
     /// so resuming can never land the tail of one file onto the head of
     /// another. Must change whenever the bytes would.
     var resumeToken: String?
+    /// Private Development coordinator destination. No agent-facing file
+    /// request can set this field.
+    var developmentCandidate: String? = nil
 }
 
 struct FileAccept: Codable, Equatable, Sendable {

@@ -226,8 +226,9 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **48 verbs.** Sixteen of
-them landed on 2026-07-31 and are grouped at the foot of the table; the
+The registry is `x-commands` in the contract: **54 verbs.** The six
+Development verbs landed on 2026-08-09 and are grouped at the foot of the
+table. Sixteen earlier verbs landed on 2026-07-31; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
 about the machine's own state, the input plane's three, and the content
@@ -296,6 +297,12 @@ number here has been found wrong by re-deriving it.
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
 | `transitions` | what changed between two event passes, from the transition plane's ring | ✅ | ❌ |
 | `mirror` | one NOW Extension: lifecycle/build and P1-P4 support, format, request, active, freshness, generation, degradation and refusal | ✅ | ❌ |
+| `development` | configured Projects root, selected MPW toolchain and active jobs | ✅ | ❌ — typed unavailable |
+| `development-project` | measure and page one active guest project's source manifest | ✅ | ❌ — typed unavailable |
+| `development-stage` | prepare, inspect, verify, discard or promote an inactive candidate | ✅ | ❌ — typed unavailable |
+| `development-build` | start, inspect or cancel one declarative ToolServer build | ✅ | ❌ — typed unavailable |
+| `development-run` | launch the exact built product and verify the resulting process identity | ✅ | ❌ — typed unavailable |
+| `development-open` | human-only optional handoff of `Project.ckp` to CodeKitten | ✅ | ❌ — typed unavailable |
 
 *(`key` and `net` were listed twice in this table until 2026-08-06 —
 once here and once in the body above — so it carried 44 rows for 42
@@ -979,19 +986,19 @@ without anyone noticing, and how `key` and `net` sat here twice. Run
 these from the repository root:
 
 ```sh
-# the registry — 47
+# the registry — 54
 awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
-     f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
+     f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
     contract/asyncapi.yaml | sort -u
 
-# what the PowerPC guest serves — 44
-grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
+# what the PowerPC guest serves — 51
+grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
     now-guest-ppc/src/commands/commands.c \
-  | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+  | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 
 # what NOW-68K serves — 13
-grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
-  | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+grep -oE '\{ *"[a-z0-9-]+"' now-guest-68k/src/commands/commands68.c \
+  | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 ```
 
 The registry command tracks the block by indentation deliberately: a
@@ -1013,6 +1020,17 @@ between two derivations on one day is not a property of the command.)*
 > settled by RUNNING the commands below against the merged tree, which
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
+
+## Re-derived for Projects and Development, 2026-08-09
+
+**This supersedes every derivation below.** The commands above derive **54
+contract verbs, 51 PowerPC verbs and 13 NOW-68K verbs**. The three
+contract-only names remain `cancel`, `put` and `shotdiag`; they are deliberate
+console/UI or NOW-68K asymmetries described in their rows. The new six-command
+Development family is PowerPC-only and NOW-68K answers through the typed
+capability-absence path. Served is not emulator- or metal-proven: the local
+suites pass and both guests cross-compile, but no Development workflow has run
+on a guest yet.
 
 ## Re-derived at the 019 integration round 8, 2026-08-07 (`claude/019-integration-8`)
 
@@ -1317,24 +1335,24 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: fabd700ebcc683f168c3e591ecd0b1139702efc5
+sources-sha1: 5b5db45d5aa4110cd20d4093e2f291504a26a083
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=dcbff7909f3d815b2153a13307d6e0a539e2b9f8867fa50ea1f56ce7dd56ddfc lines=48 published
+derive x-commands-registry sha256=86f38d261a980a5b99c365193997ef8ee0a8f61aed0498f62e564d810a8a66a3 lines=54 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
-         f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
+         f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=2bf9d842cd04b191e3e7aac83b5c68a221bb95f9605b10ccf60a0d6e79f957f5 lines=45 published
-    grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
+derive ppc-verbs sha256=317e5d8bc728c6c77ec5758c860086d53b9740a8ec255156e2f6803c6307dc47 lines=51 published
+    grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
         now-guest-ppc/src/commands/commands.c \
-      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+      | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 derive 68k-verbs sha256=70a32cc1ffb1933862444e2c0a0d7972fb6f1b68e40d34a2fd6bb5ef729e78d2 lines=13 published
-    grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
-      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+    grep -oE '\{ *"[a-z0-9-]+"' now-guest-68k/src/commands/commands68.c \
+      | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 rederived: 2026-08-07T03:49:51-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, x-commands-registry 0->42, ppc-verbs 0->39, 68k-verbs 0->13 (first declaration)
 rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
 rederived: 2026-08-07T12:06:15-0400 c76fea99 sources, ppc-inbound-types 48->49, x-commands-registry 42->47, ppc-verbs 39->44
@@ -1359,4 +1377,7 @@ rederived: 2026-08-09T16:17:39-0400 451d757c sources
 rederived: 2026-08-09T17:11:01-0400 5c773d12 unchanged
 rederived: 2026-08-09T17:11:40-0400 5c773d12 unchanged
 rederived: 2026-08-09T17:29:58-0400 b5f126e7 unchanged
+rederived: 2026-08-09T18:18:25-0400 a1883ceb sources, x-commands-registry 48->49, ppc-verbs 45->51
+rederived: 2026-08-09T18:18:50-0400 a1883ceb x-commands-registry 49->54
+rederived: 2026-08-09T19:12:11-0400 a1df31e3 sources
 -->

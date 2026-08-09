@@ -1551,6 +1551,27 @@ final class GuestListener: ObservableObject {
                 ?? FileManager.default.temporaryDirectory)
     }
 
+    func getDevelopmentProjectFile(projectID: String, path: String,
+                                   stagingDirectory: URL,
+                                   completion: @escaping (
+                                    Result<FileDelivery, FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No classic Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingFile = completion
+        fileWatchdogId = id
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            self?.deliverFile(.failure(.init(code: "timeout", message: reason)))
+        }
+        session.sendDevelopmentProjectFileGet(
+            id: id, projectID: projectID, path: path,
+            stagingDirectory: stagingDirectory)
+    }
+
     /// Sends a file into the guest's share. `path` is the destination
     /// folder relative to the share root ("" is the root); the source is
     /// any file the human picked, since a share bounds what the other
@@ -1588,7 +1609,8 @@ final class GuestListener: ObservableObject {
             name: name, into: path, container: container,
             byteCount: bytes.count, crc32: checksum,
             fileType: fileType, creator: creator, modified: modified,
-            createParents: true, overwrite: overwrite, completion: completion
+            createParents: true, overwrite: overwrite,
+            developmentCandidate: nil, completion: completion
         ) { [weak session] offer in
             session?.sendFileOffer(
                 offer, bytes: bytes, crc32: checksum)
@@ -1612,9 +1634,33 @@ final class GuestListener: ObservableObject {
             name: name, into: path, container: container,
             byteCount: source.byteCount, crc32: source.crc32,
             fileType: fileType, creator: creator, modified: modified,
-            createParents: false, overwrite: overwrite, completion: completion
+            createParents: false, overwrite: overwrite,
+            developmentCandidate: nil, completion: completion
         ) { [weak session] offer in
             session?.sendFileOffer(offer, source: source)
+        }
+    }
+
+    /// Project publication uses the ordinary checked bulk lane but gives the
+    /// guest a candidate identity instead of a Files-share path. This method
+    /// is intentionally internal to the host coordinator; no projection or
+    /// local-protocol request carries its destination field.
+    func putDevelopmentCandidateFileWithReceipt(
+        candidateID: String,
+        name: String,
+        into path: String,
+        bytes: Data,
+        completion: @escaping (Result<PutReceipt, FileFailure>) -> Void
+    ) {
+        let checksum = TransferIdentity.crc32(bytes)
+        startPut(
+            name: name, into: path, container: "data",
+            byteCount: bytes.count, crc32: checksum,
+            fileType: nil, creator: nil, modified: nil,
+            createParents: true, overwrite: false,
+            developmentCandidate: candidateID, completion: completion
+        ) { [weak session] offer in
+            session?.sendFileOffer(offer, bytes: bytes, crc32: checksum)
         }
     }
 
@@ -1629,6 +1675,7 @@ final class GuestListener: ObservableObject {
         modified: Int?,
         createParents: Bool,
         overwrite: Bool,
+        developmentCandidate: String?,
         completion: @escaping (Result<PutReceipt, FileFailure>) -> Void,
         offer: (FileOffer) -> Void
     ) {
@@ -1675,7 +1722,8 @@ final class GuestListener: ObservableObject {
             modified: modified, createParents: createParents,
             overwrite: overwrite,
             resumeToken: TransferIdentity.token(
-                bytes: byteCount, crc32: crc32)))
+                bytes: byteCount, crc32: crc32),
+            developmentCandidate: developmentCandidate))
     }
 
     private var pendingPut: ((Result<PutReceipt, FileFailure>) -> Void)?

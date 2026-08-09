@@ -121,6 +121,17 @@ typedef struct {
     short mirror_foreground_cycle;
 } PrefsRecordV22;
 
+typedef struct {
+    PrefsRecordV22 v22;               /* format = 23 */
+    short projects_vref;
+    long projects_dir;
+    char projects_root[128];
+    short toolchain_vref;
+    long toolchain_dir;
+    char toolchain_root[128];
+    short toolchain_qualified;
+} PrefsRecordV23;
+
 /* Format 16 reuses the V15 layout, bumping only the number to mark that
    Networking joined as nav id 9 (Logs and Connection shifted down
    again). It adds no persisted field, like formats 10, 11 and 14 before
@@ -239,7 +250,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV22);
+    long count = sizeof(PrefsRecordV23);
+    PrefsRecordV23 v23;
     PrefsRecordV22 v22;
     PrefsRecordV20 v20;
     PrefsRecordV19 v19;
@@ -258,9 +270,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v22, 0, sizeof v22);
-    err = FSRead(ref, &count, &v22);
+    memset(&v23, 0, sizeof v23);
+    err = FSRead(ref, &count, &v23);
     FSClose(ref);
+    v22 = v23.v22;
     v20 = v22.v20;
     v19 = v20.v19;
     v15 = v19.v15;
@@ -415,12 +428,21 @@ void now_prefs_load(NowPrefs *prefs)
                 module = 13;          /* Preferences */
             }
         }
+        if (record.format <= 22) {
+            if (module == 15) {
+                module = 16;          /* Connection */
+            } else if (module == 14) {
+                module = 15;          /* Logs */
+            } else if (module == 13) {
+                module = 14;          /* Preferences */
+            }
+        }
         /* 15 rather than kWorkshopModuleCount: prefs is core and the
            module id list is UI, so this file does not include the
            Workshop's header. The number is a literal here for the same
            reason it always was, and the remaps above are what keep it
            meaningful. */
-        if (module >= 1 && module <= 15) {
+        if (module >= 1 && module <= 16) {
             prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
@@ -455,6 +477,17 @@ void now_prefs_load(NowPrefs *prefs)
             prefs->mirror_foreground_cycle =
                 v22.mirror_foreground_cycle != 0;
         }
+        if (record.format >= 23 && count >= (long)sizeof(PrefsRecordV23)) {
+            prefs->projects_vref = v23.projects_vref;
+            prefs->projects_dir = v23.projects_dir;
+            strncpy(prefs->projects_root, v23.projects_root,
+                    sizeof prefs->projects_root - 1);
+            prefs->toolchain_vref = v23.toolchain_vref;
+            prefs->toolchain_dir = v23.toolchain_dir;
+            strncpy(prefs->toolchain_root, v23.toolchain_root,
+                    sizeof prefs->toolchain_root - 1);
+            prefs->toolchain_qualified = v23.toolchain_qualified != 0;
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -467,7 +500,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV22);
+    long count = sizeof(PrefsRecordV23);
+    PrefsRecordV23 v23;
     PrefsRecordV22 v22;
     PrefsRecordV20 v20;
     PrefsRecordV19 v19;
@@ -480,8 +514,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 22;               /* Mirror policy fields; format 21
-                                         was the module-id renumber only */
+    record.format = 23;               /* Development roots and module id */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -543,7 +576,18 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     v22.mirror_finder_complements = prefs->mirror_finder_complements ? 1 : 0;
     v22.mirror_content = prefs->mirror_content ? 1 : 0;
     v22.mirror_foreground_cycle = prefs->mirror_foreground_cycle ? 1 : 0;
-    err = FSWrite(ref, &count, &v22);
+    memset(&v23, 0, sizeof v23);
+    v23.v22 = v22;
+    v23.projects_vref = prefs->projects_vref;
+    v23.projects_dir = prefs->projects_dir;
+    strncpy(v23.projects_root, prefs->projects_root,
+            sizeof v23.projects_root - 1);
+    v23.toolchain_vref = prefs->toolchain_vref;
+    v23.toolchain_dir = prefs->toolchain_dir;
+    strncpy(v23.toolchain_root, prefs->toolchain_root,
+            sizeof v23.toolchain_root - 1);
+    v23.toolchain_qualified = prefs->toolchain_qualified ? 1 : 0;
+    err = FSWrite(ref, &count, &v23);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }

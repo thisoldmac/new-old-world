@@ -101,6 +101,20 @@ enum MCPConformanceRecipes {
     /// longer exists fails too.
     static let all: [String: Recipe] = [
 
+        // MARK: Host projects
+
+        "now_projects": .fixed(
+            "Lists the bounded host-owned Projects root without changing it "
+                + "and without addressing a Macintosh.",
+            ["operation": "list"]),
+        "now_development_environment": .fixed(
+            "Reads the guest's path-free qualified environment; needs nothing."),
+        "now_development": .fixed(
+            "Build status is the read-only member of the closed Development "
+                + "family. It needs no project or product reference and "
+                + "does not start, cancel, launch or hand off anything.",
+            ["operation": "build-status"]),
+
         // MARK: Session
 
         "now_list_machines": .fixed(

@@ -221,6 +221,17 @@ final class MetalAgentLocalSurface {
             return record(.notAddressed(refusal))
         }
         switch request.operation {
+        case .projects:
+            guard let project = request.projectRequest else {
+                return record(.projects(.hostUnavailable))
+            }
+            return record(.projects(adapter.projects(project)))
+        case .development:
+            guard let development = request.developmentRequest else {
+                return record(.development(.unavailable(.host)))
+            }
+            return record(.development(
+                await adapter.development(development)))
         case .sessionHealth:
             return record(.sessionHealth(adapter.sessionHealth()))
         case .sessionCapabilities:
@@ -255,7 +266,8 @@ final class MetalAgentLocalSurface {
                 be measuring nothing. */
              .census, .softwareInventory, .guestFileDownload,
              .bringToFront, .guestFileMutation, .transferCancel,
-             .guestLogTail, .machineFacts, .catalogSearch, .revealItem,
+             .guestLogTail, .machineFacts, .developmentEnvironment,
+             .catalogSearch, .revealItem,
              .diagnostics, .mirrorRead, .mirrorDrive,
              /* And opening the Mirror, refused here for a reason unlike
                 every neighbour's: this rig has no window layer at all, so

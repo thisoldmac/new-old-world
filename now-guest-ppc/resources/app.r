@@ -219,6 +219,16 @@ resource 'ics#' (143) {
     }
 };
 
+/* 144: Development. A compact hammer over a project sheet. */
+resource 'ics#' (144) {
+    {
+        $"0000 1800 3C00 1C00 0E00 0700 0380 01C0"
+        $"00E0 0070 0038 001C 001E 003F 0000 0000",
+        $"0000 3C00 7E00 3E00 1F00 0F80 07C0 03E0"
+        $"01F0 00F8 007C 003E 003F 007F 0000 0000"
+    }
+};
+
 resource 'SIZE' (-1) {
     reserved,
     acceptSuspendResumeEvents,
