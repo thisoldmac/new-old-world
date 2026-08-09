@@ -68,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        state.onboarding.stop()
         agentIntegrationServer?.stop()
     }
 
@@ -84,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         -> NSApplication.TerminateReply {
         guard !isTerminating else { return .terminateNow }
         isTerminating = true
+        state.onboarding.stop()
         state.listener.shutDown { [weak sender] in
             sender?.reply(toApplicationShouldTerminate: true)
         }

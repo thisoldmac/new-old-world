@@ -20,6 +20,34 @@ under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
 `MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
 retain their original path spelling so the ledger remains an honest receipt.
 
+## TESTED, NOT METAL-VERIFIED: the PPC LAN onboarding portal has not run in a classic browser (2026-08-09, `codex/onboarding-portal`)
+
+Connections now has **Set Up a New Mac…**. It starts the configured NOW wire
+listener and a separate temporary HTTP listener, displays a detected LAN IPv4
+and actual HTTP port, and serves an HTML 3.2-shaped fixed-route page. The page
+offers the canonical PPC MacBinary when installed, a per-request MacBinary
+`New Old World Prefs` aimed at the accepting interface and configured wire
+port, the optional NOW Extension and `.sit`, and files from the external
+dependency store. Unknown routes and mutation methods are refused; quit stops
+the listener. The product and server contract are in
+[onboarding.md](onboarding.md).
+
+Six focused host tests pass. Two use the real temporary listener over loopback
+to fetch the page, application and preferences, and to exercise unknown-route
+and POST refusal. The preference test separately pins the MacBinary header,
+CRC, Finder type/creator, big-endian V1 magic/format/port, and host field. The
+asset tests pin local-over-bundled precedence and dependency discovery.
+
+What remains unverified is the product path: no Netscape, Internet Explorer or
+Classilla-era browser has downloaded and decoded these files; no physical PPC
+Mac has installed the generated preference file, launched the guest, and sent
+the `hello` that makes it appear under Active. A `.sit` is pass-through only
+and no archive has been supplied or checked. CarbonLib remains operator-
+provided: the Macintosh Garden page was live over HTTP on 2026-08-09, but NOW
+has established neither Apple redistribution permission nor provenance for a
+particular installer. None of those absences changes the focused result from
+Tested to Metal-verified.
+
 **There is a third category, and it is not on this page.**
 [known-wrong.md](known-wrong.md) is the register of things NOW knowingly
 ships that disagree with the machine, or knowingly does not do — each

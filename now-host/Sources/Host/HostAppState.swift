@@ -68,6 +68,7 @@ final class HostAppState: ObservableObject {
     /// Drives the menu bar's connection glyph and status line.
     private(set) lazy var guestStatus = GuestStatusMonitor(listener: listener)
     let settings: SettingsModel
+    let onboarding: OnboardingPortal
     /// Not lazy: constructing it applies the saved disk-persistence switch
     /// to HostLog before the first wire event has a line to write.
     let logs: LogsModel
@@ -328,6 +329,7 @@ final class HostAppState: ObservableObject {
              suiteName: ProductIdentity.preferencesSuite) ?? .standard) {
         self.defaults = defaults
         settings = SettingsModel(defaults: defaults)
+        onboarding = OnboardingPortal()
         logs = LogsModel(log: .shared, defaults: defaults)
         mirrorEngines = MirrorStateEngineRegistry()
         listener = GuestListener(
