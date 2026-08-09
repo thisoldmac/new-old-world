@@ -1,0 +1,132 @@
+site_name: New Old World
+site_description: User and developer documentation for New Old World
+site_url: !ENV [NOW_DOCS_SITE_URL, "https://example.invalid/docs/"]
+docs_dir: docs
+site_dir: build-docs/site
+use_directory_urls: true
+strict: true
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  language: en
+  features:
+    - navigation.indexes
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: deep orange
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue grey
+      accent: orange
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra_css:
+  - assets/stylesheets/now-docs.css
+
+exclude_docs: |
+  local/
+  overrides/
+  requirements.txt
+  reference-index.yaml
+  module-manifest.yaml
+  site-integration.yaml
+  assets/screenshots/manifest.yaml
+
+nav:
+  - Docs home: index.md
+  - User guide:
+      - Overview: user-guide/index.md
+      - Tutorial:
+          - Connect your first classic Mac: user-guide/tutorials/first-connection.md
+      - How-to guides:
+          - Choose the right guest: user-guide/how-to/choose-a-guest.md
+          - Install the macOS host: user-guide/how-to/install-host.md
+          - Install the PowerPC guest: user-guide/how-to/install-ppc.md
+          - Install NOW-68K: user-guide/how-to/install-68k.md
+          - Configure a connection: user-guide/how-to/configure-connection.md
+          - Install the NOW Extension: user-guide/how-to/install-extension.md
+          - Recover a connection: user-guide/how-to/recover-a-connection.md
+          - Transfer a file: user-guide/how-to/transfer-a-file.md
+          - Upgrade, roll back, or remove: user-guide/how-to/upgrade-rollback-remove.md
+      - Explanations:
+          - Two Macs, one contract: user-guide/explanation/two-macs-one-contract.md
+          - Guests and compatibility: user-guide/explanation/guests-and-compatibility.md
+          - Verification and safety: user-guide/explanation/verification-and-safety.md
+          - The optional extension: user-guide/explanation/optional-extension.md
+      - Reference:
+          - Requirements: user-guide/reference/requirements.md
+          - Current limitations: user-guide/reference/limitations.md
+          - Modules:
+              - Module index: user-guide/reference/modules/index.md
+              - Screen: user-guide/reference/modules/screen.md
+              - Files: user-guide/reference/modules/files.md
+              - iCloud: user-guide/reference/modules/icloud.md
+              - Processes: user-guide/reference/modules/processes.md
+              - Mirror: user-guide/reference/modules/mirror.md
+              - Console: user-guide/reference/modules/console.md
+              - Chat: user-guide/reference/modules/chat.md
+              - Hardware: user-guide/reference/modules/hardware.md
+              - Diagnostics: user-guide/reference/modules/diagnostics.md
+              - Networking: user-guide/reference/modules/networking.md
+              - Software: user-guide/reference/modules/software.md
+              - MCP: user-guide/reference/modules/mcp.md
+              - Logs: user-guide/reference/modules/logs.md
+              - Connections and preferences: user-guide/reference/modules/connections-and-preferences.md
+  - Developer guide:
+      - Overview: developer-guide/index.md
+      - Orientation: developer-guide/orientation.md
+      - Architecture:
+          - System context: developer-guide/architecture/system-context.md
+          - Wire contract: developer-guide/architecture/wire-contract.md
+          - Host: developer-guide/architecture/host.md
+          - PowerPC guest: developer-guide/architecture/ppc-guest.md
+          - 68K guest: developer-guide/architecture/68k-guest.md
+          - Resident components: developer-guide/architecture/resident-components.md
+          - Mirror: developer-guide/architecture/mirror.md
+          - Agent boundary: developer-guide/architecture/agent-boundary.md
+      - Workflows:
+          - Build and test: developer-guide/workflows/build-and-test.md
+          - Change the contract: developer-guide/workflows/change-the-contract.md
+          - Add a module: developer-guide/workflows/add-a-module.md
+          - Emulator and metal: developer-guide/workflows/emulator-and-metal.md
+          - Documentation and gates: developer-guide/workflows/documentation-and-gates.md
+      - Reference:
+          - Verification levels: developer-guide/reference/verification-levels.md
+          - Source authority: developer-guide/reference/source-authority.md
+          - Repository map: developer-guide/reference/repository-map.md
+          - Generated AsyncAPI reference: generated/asyncapi.md
+  - Engineering records:
+      - Current status: status.md
+      - Known wrong: known-wrong.md
+      - Open issues ledger: open-issues.md
+      - Architecture record: architecture.md
+      - Contract coverage: contract-coverage.md
+      - MCP coverage: mcp-coverage.md
+      - Security: developer-guide/reference/security.md
+      - Contributing: developer-guide/workflows/contributing.md

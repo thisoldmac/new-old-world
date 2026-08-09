@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+site_dir=${NOW_DOCS_SITE_DIR:-"$root/build-docs/site"}
+
+cd "$root"
+python3 -m mkdocs build --strict --clean --site-dir "$site_dir"
+"$root/tools/docs-gate" --site-dir "$site_dir"
+printf '%s\n' "Documentation site: $site_dir"

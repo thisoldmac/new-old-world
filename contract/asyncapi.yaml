@@ -257,6 +257,7 @@ channels:
       fileAccept: { $ref: "#/components/messages/fileAccept" }
       fileRefuse: { $ref: "#/components/messages/fileRefuse" }
       fileDone: { $ref: "#/components/messages/fileDone" }
+      fileProgress: { $ref: "#/components/messages/fileProgress" }
       fileBegin: { $ref: "#/components/messages/fileBegin" }
       fileEnd: { $ref: "#/components/messages/fileEnd" }
       fileCancel: { $ref: "#/components/messages/fileCancel" }

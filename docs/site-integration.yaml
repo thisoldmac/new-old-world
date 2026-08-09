@@ -1,0 +1,15 @@
+version: 1
+base_path: /docs/
+global_nav_label: Docs
+required_ci_check: Documentation
+canonical_origin: null
+website_repository: null
+security_contact: null
+release_requirements:
+  - canonical_origin
+  - website_repository
+  - security_contact
+notes:
+  - The NOW website source and Git remote are not present in this checkout.
+  - scripts/test-docs validates the standalone artifact in normal mode.
+  - NOW_DOCS_RELEASE=1 refuses until all release requirements are supplied.

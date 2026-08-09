@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="744" height="478" viewBox="0 0 744 478" role="img" aria-labelledby="title desc">
+  <title id="title">Screenshot placeholder for PowerPC Chat page</title>
+  <desc id="desc">Conversation about this Mac with access state visible. Replace with a privacy-reviewed capture at 744 by 478 pixels.</desc>
+  <rect width="744" height="478" fill="#f4f2e8"/>
+  <rect x="16" y="16" width="712" height="446" rx="8" fill="none" stroke="#3a3a3a" stroke-width="3" stroke-dasharray="12 8"/>
+  <path d="M32 32 L712 446 M712 32 L32 446" stroke="#c7c3b3" stroke-width="2"/>
+  <rect x="122" y="122" width="500" height="210" rx="8" fill="#f4f2e8" stroke="#777"/>
+  <text text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="18" fill="#202020">
+    <tspan x="372" y="167">SCREENSHOT NEEDED</tspan>
+    <tspan x="372" y="198">PowerPC Chat page</tspan>
+    <tspan x="372" y="229">Conversation about this Mac with access state visible</tspan>
+    <tspan x="372" y="260">Rig: Mac OS 9</tspan>
+    <tspan x="372" y="291">Privacy: remove names, addresses, contacts, paths, and message content</tspan>
+    <tspan x="372" y="322">Final size: 744 x 478 pixels</tspan>
+  </text>
+</svg>

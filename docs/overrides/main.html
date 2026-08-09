@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  {% if page and page.meta and page.meta.page_id %}
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": {{ page.title | tojson }},
+        "description": {{ page.meta.description | tojson }},
+        "dateModified": {{ page.meta.last_verified | string | tojson }},
+        "inLanguage": "en",
+        "isPartOf": {
+          "@type": "SoftwareApplication",
+          "name": "New Old World",
+          "applicationCategory": "UtilitiesApplication"
+        }
+      }
+    </script>
+  {% endif %}
+{% endblock %}

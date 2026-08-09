@@ -1,0 +1,23 @@
+version: 1
+entries:
+  - path: status.md
+    lifecycle: current
+    audience: developer
+  - path: known-wrong.md
+    lifecycle: current
+    audience: developer
+  - path: open-issues.md
+    lifecycle: reference
+    audience: developer
+  - path: architecture.md
+    lifecycle: current
+    audience: developer
+  - path: contract-coverage.md
+    lifecycle: current
+    audience: developer
+  - path: mcp-coverage.md
+    lifecycle: current
+    audience: developer
+  - path: plans/README.md
+    lifecycle: historical
+    audience: developer

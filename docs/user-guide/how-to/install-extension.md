@@ -1,0 +1,47 @@
+---
+page_id: install-extension-how-to
+title: Install the NOW Extension
+description: Add the optional PowerPC resident component with an explicit recovery path.
+doc_type: how-to
+audience: operator
+lifecycle: experimental
+authority: [docs/resident-components.md, docs/staged-images.md]
+source_dependencies: [ext, contract/peek_table.h, docs/resident-components.md]
+media_ids: [setup-extension]
+last_verified: 2026-08-09
+---
+
+# Install the NOW Extension
+
+## Goal
+
+Enable optional PowerPC observation planes while preserving a boot-without-it
+recovery path.
+
+## Prerequisites
+
+- A PowerPC Mac in the documented Carbon guest range.
+- A backup or removable way to disable Extensions during startup.
+- The extension artifact paired with the release build.
+
+## Steps
+
+1. Quit New Old World on the classic Mac.
+2. Place **NOW Extension** in the System Folder's Extensions folder.
+3. Restart the classic Mac.
+4. Launch the canonical **New Old World** application.
+5. Open **Mirror** and confirm the extension state and capabilities. Absence
+   must remain a supported degraded state.
+
+![The PowerPC Workshop showing extension state and capabilities](../../assets/screenshots/getting-started/extension.svg){ .now-placeholder }
+
+## Expected result
+
+The app reports the resident contract it actually discovered. The extension
+does not replace the application and never becomes required for ordinary
+files, processes, screen capture, or console use.
+
+## Recovery
+
+If startup becomes unstable, boot with Extensions disabled and remove NOW
+Extension. Report whether the behavior occurred on hardware or in an emulator.

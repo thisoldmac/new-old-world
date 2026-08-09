@@ -1,0 +1,457 @@
+#!/usr/bin/env python3
+"""Fast, host-only checks for NOW's curated and generated documentation."""
+
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+import hashlib
+from html.parser import HTMLParser
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+from urllib.parse import unquote, urlsplit
+import xml.etree.ElementTree as ET
+
+import yaml
+
+
+ALLOWED_DOC_TYPES = {"tutorial", "how-to", "reference", "explanation"}
+ALLOWED_AUDIENCES = {"user", "developer", "operator"}
+ALLOWED_LIFECYCLES = {"current", "experimental", "reference", "historical"}
+REQUIRED_META = {
+    "page_id", "title", "description", "doc_type", "audience", "lifecycle",
+    "authority", "source_dependencies", "media_ids", "last_verified",
+}
+LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+
+
+class DocsLoader(yaml.SafeLoader):
+    pass
+
+
+def _env(loader: DocsLoader, node: yaml.Node) -> str:
+    if isinstance(node, yaml.SequenceNode):
+        values = loader.construct_sequence(node)
+        return os.environ.get(str(values[0]), str(values[1]) if len(values) > 1 else "")
+    return os.environ.get(loader.construct_scalar(node), "")
+
+
+DocsLoader.add_constructor("!ENV", _env)
+DocsLoader.add_multi_constructor(
+    "tag:yaml.org,2002:python/name:",
+    lambda loader, suffix, node: suffix,
+)
+
+
+def repo_root(value: str | None = None) -> Path:
+    raw = value or os.environ.get("NOW_DOCS_GATE_ROOT")
+    return Path(raw).resolve() if raw else Path(__file__).resolve().parent.parent
+
+
+def load_yaml(path: Path, docs_loader: bool = False) -> dict:
+    loader = DocsLoader if docs_loader else yaml.SafeLoader
+    value = yaml.load(path.read_text(), Loader=loader)
+    if not isinstance(value, dict):
+        raise ValueError(f"{path}: expected a YAML mapping")
+    return value
+
+
+def frontmatter(path: Path) -> tuple[dict, str]:
+    text = path.read_text()
+    if not text.startswith("---\n"):
+        return {}, text
+    end = text.find("\n---\n", 4)
+    if end < 0:
+        raise ValueError(f"{path}: unterminated front matter")
+    meta = yaml.safe_load(text[4:end]) or {}
+    if not isinstance(meta, dict):
+        raise ValueError(f"{path}: front matter must be a mapping")
+    return meta, text[end + 5:]
+
+
+def curated_files(root: Path) -> list[Path]:
+    docs = root / "docs"
+    files = [docs / "index.md"] if (docs / "index.md").exists() else []
+    for subtree in (docs / "user-guide", docs / "developer-guide"):
+        if subtree.exists():
+            files.extend(sorted(subtree.rglob("*.md")))
+    return files
+
+
+def all_markdown(root: Path) -> list[Path]:
+    return [p for p in sorted((root / "docs").rglob("*.md"))
+            if "local" not in p.relative_to(root / "docs").parts]
+
+
+def nav_paths(node: object) -> list[str]:
+    found: list[str] = []
+    if isinstance(node, str) and node.endswith(".md"):
+        found.append(node)
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(nav_paths(item))
+    elif isinstance(node, dict):
+        for value in node.values():
+            found.extend(nav_paths(value))
+    return found
+
+
+def slug(text: str) -> str:
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"[*_~]", "", text).strip().lower()
+    text = re.sub(r"[^\w\- ]", "", text)
+    return re.sub(r"[-\s]+", "-", text).strip("-")
+
+
+def headings(path: Path) -> set[str]:
+    _, body = frontmatter(path)
+    return {slug(text) for _, text in HEADING_RE.findall(body)}
+
+
+def resolve_doc_link(source: Path, raw: str) -> tuple[Path | None, str]:
+    raw = raw.strip().strip("<>")
+    parts = urlsplit(raw)
+    if parts.scheme or parts.netloc or raw.startswith(("mailto:", "tel:")):
+        return None, ""
+    fragment = unquote(parts.fragment)
+    if not parts.path:
+        return source, fragment
+    target = (source.parent / unquote(parts.path)).resolve()
+    if target.is_dir():
+        target = target / "index.md"
+    elif not target.suffix:
+        md = target.with_suffix(".md")
+        target = md if md.exists() else target / "index.md"
+    return target, fragment
+
+
+class SiteHTML(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.lang = ""
+        self.main = 0
+        self.h1 = 0
+        self.skip_link = False
+        self.json_ld: list[str] = []
+        self._json = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if tag == "html":
+            self.lang = values.get("lang") or ""
+        elif tag == "main":
+            self.main += 1
+        elif tag == "h1":
+            self.h1 += 1
+        elif tag == "a" and (values.get("href") or "").startswith("#"):
+            classes = (values.get("class") or "").split()
+            if "md-skip" in classes:
+                self.skip_link = True
+        elif tag == "script" and values.get("type") == "application/ld+json":
+            self._json = True
+            self.json_ld.append("")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script":
+            self._json = False
+
+    def handle_data(self, data: str) -> None:
+        if self._json:
+            self.json_ld[-1] += data
+
+
+def extract_host_ids(root: Path) -> list[str]:
+    text = (root / "now-host/Sources/Host/ModuleRegistry.swift").read_text()
+    return re.findall(r"\bid:\s*\"([^\"]+)\"", text[text.index("static let standard"):])
+
+
+def extract_ppc_pages(root: Path) -> list[str]:
+    text = (root / "now-guest-ppc/src/workshop/workshop_module.h").read_text()
+    block = text[text.index("typedef enum {"):text.index("} WorkshopModuleID")]
+    return re.findall(r"\b(kWorkshop[A-Za-z0-9]+)\b", block)
+
+
+def local_refs(value: object) -> list[str]:
+    refs: list[str] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "$ref" and isinstance(child, str) and child.startswith("#/"):
+                refs.append(child)
+            else:
+                refs.extend(local_refs(child))
+    elif isinstance(value, list):
+        for child in value:
+            refs.extend(local_refs(child))
+    return refs
+
+
+def ref_exists(document: object, ref: str) -> bool:
+    current = document
+    for raw in ref[2:].split("/"):
+        token = raw.replace("~1", "/").replace("~0", "~")
+        if not isinstance(current, dict) or token not in current:
+            return False
+        current = current[token]
+    return True
+
+
+def check(root: Path, site_dir: Path | None) -> int:
+    errors: list[str] = []
+    notices: list[str] = []
+    docs = root / "docs"
+    config = load_yaml(root / "mkdocs.yml", docs_loader=True)
+    nav = nav_paths(config.get("nav", []))
+    nav_counts = Counter(nav)
+    for rel, count in nav_counts.items():
+        if count > 1:
+            errors.append(f"mkdocs.yml: {rel} appears in navigation {count} times")
+        target = (docs / rel).resolve()
+        if not target.exists():
+            errors.append(f"mkdocs.yml: navigation target does not exist: {rel}")
+
+    curated = curated_files(root)
+    curated_rel = {str(path.relative_to(docs)) for path in curated}
+    missing_nav = sorted(curated_rel - set(nav))
+    for rel in missing_nav:
+        errors.append(f"{rel}: curated page is absent from navigation")
+
+    ids: dict[str, Path] = {}
+    metadata: dict[Path, dict] = {}
+    for path in curated:
+        rel = path.relative_to(root)
+        try:
+            meta, body = frontmatter(path)
+        except (ValueError, yaml.YAMLError) as exc:
+            errors.append(str(exc))
+            continue
+        metadata[path] = meta
+        missing = sorted(REQUIRED_META - set(meta))
+        if missing:
+            errors.append(f"{rel}: missing front matter fields: {', '.join(missing)}")
+            continue
+        page_id = str(meta["page_id"])
+        if page_id in ids:
+            errors.append(f"{rel}: duplicate page_id {page_id!r} also used by {ids[page_id].relative_to(root)}")
+        ids[page_id] = path
+        if meta["doc_type"] not in ALLOWED_DOC_TYPES:
+            errors.append(f"{rel}: invalid doc_type {meta['doc_type']!r}")
+        if meta["audience"] not in ALLOWED_AUDIENCES:
+            errors.append(f"{rel}: invalid audience {meta['audience']!r}")
+        if meta["lifecycle"] not in ALLOWED_LIFECYCLES:
+            errors.append(f"{rel}: invalid lifecycle {meta['lifecycle']!r}")
+        if not isinstance(meta["authority"], list) or not meta["authority"]:
+            errors.append(f"{rel}: authority must be a non-empty list")
+        if not isinstance(meta["source_dependencies"], list):
+            errors.append(f"{rel}: source_dependencies must be a list")
+        else:
+            for source in meta["source_dependencies"]:
+                if not (root / str(source)).exists():
+                    errors.append(f"{rel}: source dependency does not exist: {source}")
+        if not isinstance(meta["media_ids"], list):
+            errors.append(f"{rel}: media_ids must be a list")
+        h1 = [text for marks, text in HEADING_RE.findall(body) if len(marks) == 1]
+        if len(h1) != 1:
+            errors.append(f"{rel}: expected exactly one H1, found {len(h1)}")
+        if meta["doc_type"] == "reference" and re.search(
+            r"^##\s+(Steps|Procedure|Before you begin)\s*$", body, re.MULTILINE | re.IGNORECASE
+        ):
+            errors.append(f"{rel}: reference page contains a procedure heading; link to a how-to page")
+
+    for path in all_markdown(root):
+        text = path.read_text()
+        for raw in LINK_RE.findall(text):
+            target, fragment = resolve_doc_link(path, raw)
+            if target is None:
+                continue
+            if not target.exists():
+                errors.append(f"{path.relative_to(root)}: broken local link {raw!r}")
+                continue
+            if fragment and target.suffix.lower() == ".md" and fragment not in headings(target):
+                errors.append(f"{path.relative_to(root)}: missing fragment #{fragment} in {target.relative_to(root)}")
+
+    media = load_yaml(docs / "assets/screenshots/manifest.yaml")
+    image_items = media.get("images", [])
+    by_id = {item["id"]: item for item in image_items}
+    if len(by_id) != len(image_items):
+        errors.append("docs/assets/screenshots/manifest.yaml: duplicate image id")
+    referenced_media: set[str] = set()
+    placeholder_count = 0
+    real_count = 0
+    for item in image_items:
+        target = docs / item["path"]
+        status = item.get("status", media.get("defaults", {}).get("status"))
+        placeholder_count += status == "placeholder"
+        real_count += status == "captured"
+        if status not in {"placeholder", "captured"}:
+            errors.append(f"media {item['id']}: invalid status {status!r}")
+        if not target.exists():
+            errors.append(f"media {item['id']}: missing file {item['path']}")
+            continue
+        if target.suffix.lower() == ".svg":
+            try:
+                root_el = ET.parse(target).getroot()
+                width = int(float(root_el.attrib["width"]))
+                height = int(float(root_el.attrib["height"]))
+                if (width, height) != (int(item["width"]), int(item["height"])):
+                    errors.append(f"media {item['id']}: SVG is {width}x{height}, manifest says {item['width']}x{item['height']}")
+            except (ET.ParseError, KeyError, ValueError) as exc:
+                errors.append(f"media {item['id']}: invalid SVG dimensions: {exc}")
+
+    for path, meta in metadata.items():
+        body = frontmatter(path)[1]
+        actual_paths: set[str] = set()
+        for alt, raw in IMAGE_RE.findall(body):
+            if not alt.strip():
+                errors.append(f"{path.relative_to(root)}: image has empty alt text: {raw}")
+            target, _ = resolve_doc_link(path, raw)
+            if target is not None:
+                try:
+                    actual_paths.add(str(target.relative_to(docs)))
+                except ValueError:
+                    errors.append(f"{path.relative_to(root)}: guide image escapes docs/: {raw}")
+        declared_ids = set(meta.get("media_ids", []))
+        referenced_media.update(declared_ids)
+        unknown = sorted(declared_ids - set(by_id))
+        if unknown:
+            errors.append(f"{path.relative_to(root)}: unknown media_ids: {', '.join(unknown)}")
+        declared_paths = {by_id[mid]["path"] for mid in declared_ids if mid in by_id}
+        if actual_paths != declared_paths:
+            errors.append(
+                f"{path.relative_to(root)}: image links and media_ids disagree "
+                f"(links={sorted(actual_paths)}, declared={sorted(declared_paths)})"
+            )
+    orphan_media = sorted(set(by_id) - referenced_media)
+    if orphan_media:
+        errors.append(f"media manifest entries are unused: {', '.join(orphan_media)}")
+
+    modules = load_yaml(docs / "module-manifest.yaml")
+    rows = modules.get("modules", [])
+    manifest_ids = [row["id"] for row in rows]
+    host_ids = extract_host_ids(root)
+    if manifest_ids != host_ids:
+        errors.append(f"module manifest IDs do not match host registry (manifest={manifest_ids}, host={host_ids})")
+    ppc_declared = [page for row in rows for page in row.get("ppc_pages", [])]
+    ppc_live = extract_ppc_pages(root)
+    if ppc_declared != ppc_live:
+        errors.append(f"module manifest PPC pages do not match live enum (manifest={ppc_declared}, live={ppc_live})")
+    for row in rows:
+        page = docs / row["page"]
+        if not page.exists():
+            errors.append(f"module {row['id']}: guide page does not exist: {row['page']}")
+            continue
+        meta = metadata.get(page, {})
+        if meta.get("module_ids") != [row["id"]]:
+            errors.append(f"module {row['id']}: page module_ids must be exactly [{row['id']!r}]")
+        if len(meta.get("media_ids", [])) < 2:
+            errors.append(f"module {row['id']}: page needs at least host and PPC media slots")
+
+    contract = load_yaml(root / "contract/asyncapi.yaml")
+    missing_refs = sorted(set(ref for ref in local_refs(contract) if not ref_exists(contract, ref)))
+    for ref in missing_refs:
+        errors.append(f"contract/asyncapi.yaml: dangling local $ref: {ref}")
+
+    integration = load_yaml(docs / "site-integration.yaml")
+    if integration.get("base_path") != "/docs/":
+        errors.append("docs/site-integration.yaml: base_path must be /docs/")
+    if os.environ.get("NOW_DOCS_RELEASE"):
+        for key in integration.get("release_requirements", []):
+            if not integration.get(key):
+                errors.append(f"release integration is incomplete: {key} is not set")
+
+    if site_dir:
+        representative = [
+            site_dir / "index.html",
+            site_dir / "user-guide/tutorials/first-connection/index.html",
+            site_dir / "user-guide/reference/modules/files/index.html",
+            site_dir / "developer-guide/architecture/system-context/index.html",
+        ]
+        for path in representative:
+            if not path.exists():
+                errors.append(f"rendered representative page is missing: {path}")
+                continue
+            parser = SiteHTML()
+            parser.feed(path.read_text())
+            if parser.lang != "en":
+                errors.append(f"{path}: rendered html lacks lang=en")
+            if parser.main != 1:
+                errors.append(f"{path}: rendered html has {parser.main} main landmarks")
+            if parser.h1 != 1:
+                errors.append(f"{path}: rendered html has {parser.h1} H1 elements")
+            if not parser.skip_link:
+                errors.append(f"{path}: rendered html has no skip link")
+            for raw in parser.json_ld:
+                try:
+                    value = json.loads(raw)
+                    if value.get("@type") != "TechArticle":
+                        errors.append(f"{path}: JSON-LD is not a TechArticle")
+                except json.JSONDecodeError as exc:
+                    errors.append(f"{path}: invalid JSON-LD: {exc}")
+
+    placeholder = subprocess.run(
+        [str(root / "tools/docs-placeholders"), "--check"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if placeholder.returncode:
+        errors.append((placeholder.stderr or placeholder.stdout).strip())
+
+    if errors:
+        print("[docs-gate] FAILED", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 1
+    notices.append(f"curated pages: {len(curated)} ({dict(Counter(meta['doc_type'] for meta in metadata.values()))})")
+    notices.append(f"links scanned: {sum(len(LINK_RE.findall(path.read_text())) for path in all_markdown(root))}")
+    notices.append(f"media: {real_count} captured, {placeholder_count} placeholders")
+    notices.append(f"module coverage: {len(rows)} host modules, {len(ppc_declared)} PPC pages")
+    print("[docs-gate] passed")
+    for notice in notices:
+        print(f"  {notice}")
+    return 0
+
+
+def module_inventory(root: Path) -> int:
+    manifest = load_yaml(root / "docs/module-manifest.yaml")
+    for row in manifest["modules"]:
+        print(f"{row['id']}\t{','.join(row['ppc_pages'])}\t{row['guest_68k']}\t{row['page']}")
+    return 0
+
+
+def contract_summary(root: Path) -> int:
+    contract = load_yaml(root / "contract/asyncapi.yaml")
+    messages = contract.get("components", {}).get("messages", {})
+    commands = contract.get("components", {}).get("x-commands", {})
+    print(f"asyncapi\t{contract.get('asyncapi')}")
+    print(f"contract-revision\t{contract.get('info', {}).get('x-contract-revision')}")
+    print(f"channels\t{len(contract.get('channels', {}))}")
+    print(f"operations\t{len(contract.get('operations', {}))}")
+    print(f"messages\t{len(messages)}")
+    print(f"commands\t{len(commands)}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", nargs="?", default="check", choices=["check", "module-inventory", "contract-summary"])
+    parser.add_argument("--root")
+    parser.add_argument("--site-dir")
+    args = parser.parse_args()
+    root = repo_root(args.root)
+    if args.command == "module-inventory":
+        return module_inventory(root)
+    if args.command == "contract-summary":
+        return contract_summary(root)
+    site_dir = Path(args.site_dir).resolve() if args.site_dir else None
+    return check(root, site_dir)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

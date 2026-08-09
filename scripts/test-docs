@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+site_dir=$(mktemp -d "${TMPDIR:-/tmp}/now-docs-site.XXXXXX")
+trap 'rm -rf "$site_dir"' EXIT HUP INT TERM
+
+cd "$root"
+"$root/tools/docs-placeholders" --check
+"$root/tools/docs-gate"
+"$root/scripts/docs-contract" --check
+python3 -m mkdocs build --strict --clean --site-dir "$site_dir"
+"$root/tools/docs-gate" --site-dir "$site_dir"
+"$root/tools/derived-doc-gate" check-all
+
+echo "Documentation gate passed"
