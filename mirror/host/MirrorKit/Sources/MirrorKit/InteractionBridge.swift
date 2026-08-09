@@ -60,7 +60,8 @@ public enum InteractionBridge {
                routes that reported success without changing the machine. */
             return []
 
-        case .finderSelect, .finderOpen, .finderDeselect:
+        case .finderSelect, .finderOpen, .finderSetSelection,
+             .finderOpenItems, .finderRename, .finderDeselect:
             /* No action case names a file. A driver that speaks to the
                Finder by name serves these itself; one that does not falls
                back to the icon's own centre, which is what it had. */

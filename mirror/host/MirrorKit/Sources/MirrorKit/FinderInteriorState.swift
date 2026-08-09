@@ -1,5 +1,20 @@
 import Foundation
 
+/// Host-only edit presentation. It deliberately does not enter `Scene`: the
+/// guest reported an item named `original`, while the text field is an
+/// interaction the person is still composing on this host.
+public struct FinderRenamePresentation: Equatable, Sendable {
+    public var windowID: String
+    public var original: String
+    public var text: String
+
+    public init(windowID: String, original: String, text: String) {
+        self.windowID = windowID
+        self.original = original
+        self.text = text
+    }
+}
+
 /// Immediate host-side interaction state for semantic Finder interiors.
 ///
 /// The guest remains authoritative for which windows exist, their geometry,
@@ -8,6 +23,12 @@ import Foundation
 /// applies the interaction locally, then retires a scroll preview as soon as
 /// the guest reports that the corresponding control value moved.
 public struct FinderInteriorState: Equatable, Sendable {
+    public enum SelectionMode: Equatable, Sendable {
+        case replace
+        case toggle
+        case range
+    }
+
     private struct ScrollPreview: Equatable, Sendable {
         var controlRef: String
         var baseline: Int
@@ -16,16 +37,150 @@ public struct FinderInteriorState: Equatable, Sendable {
     }
 
     private var selections: [String: Set<String>] = [:]
+    private var selectionAnchors: [String: String] = [:]
     private var scrolls: [String: ScrollPreview] = [:]
+    private var marqueeBases: [String: Set<String>] = [:]
+    public private(set) var rename: FinderRenamePresentation?
+    private var renameSelectsAll = false
 
     public init() {}
 
     public mutating func select(_ name: String, in windowID: String) {
         selections[windowID] = [name]
+        selectionAnchors[windowID] = name
+        rename = nil
+    }
+
+    /// Apply Macintosh selection semantics and answer the exact host-owned
+    /// set that should be sent to Finder.
+    @discardableResult
+    public mutating func select(_ name: String, in window: Scene.Window,
+                                mode: SelectionMode) -> Set<String> {
+        let id = window.id
+        var selected = selections[id] ?? window.finder?.selectedNames ?? []
+        switch mode {
+        case .replace:
+            selected = [name]
+            selectionAnchors[id] = name
+        case .toggle:
+            if selected.contains(name) { selected.remove(name) }
+            else { selected.insert(name) }
+            selectionAnchors[id] = name
+        case .range:
+            let ordered = FinderItems.itemTargetRects(window).map(\.item.name)
+            let anchor = selectionAnchors[id] ?? name
+            if let a = ordered.firstIndex(of: anchor),
+               let b = ordered.firstIndex(of: name) {
+                selected = Set(ordered[min(a, b)...max(a, b)])
+            } else {
+                selected = [name]
+            }
+        }
+        selections[id] = selected
+        rename = nil
+        return selected
     }
 
     public mutating func clearSelection(in windowID: String) {
         selections[windowID] = []
+        selectionAnchors[windowID] = nil
+        rename = nil
+    }
+
+    public mutating func setSelection(_ names: Set<String>,
+                                      in windowID: String) {
+        selections[windowID] = names
+        selectionAnchors[windowID] = names.count == 1 ? names.first : nil
+        rename = nil
+    }
+
+    public func selectedNames(in windowID: String) -> Set<String> {
+        selections[windowID] ?? []
+    }
+
+    public func selectedNames(in window: Scene.Window) -> Set<String> {
+        selections[window.id] ?? window.finder?.selectedNames ?? []
+    }
+
+    public func isSelected(_ name: String, in windowID: String) -> Bool {
+        selectedNames(in: windowID).contains(name)
+    }
+
+    public func isSelected(_ name: String, in window: Scene.Window) -> Bool {
+        selectedNames(in: window).contains(name)
+    }
+
+    /// Begin and update a rubber-band selection. `rect` is global guest
+    /// geometry, while Finder item targets are content-local.
+    public mutating func beginMarquee(in window: Scene.Window,
+                                     extending: Bool) {
+        marqueeBases[window.id] = extending
+            ? (selections[window.id] ?? window.finder?.selectedNames ?? []) : []
+        if !extending { selections[window.id] = [] }
+        rename = nil
+    }
+
+    @discardableResult
+    public mutating func updateMarquee(in window: Scene.Window, rect: Rect)
+        -> Set<String> {
+        let origin = FinderItems.contentOrigin(window)
+        let local = Rect(l: rect.l - origin.x, t: rect.t - origin.y,
+                         r: rect.r - origin.x, b: rect.b - origin.y)
+        let hits = Set(FinderItems.itemTargetRects(window).compactMap {
+            Self.intersects(local, $0.rect) ? $0.item.name : nil
+        })
+        let selected = (marqueeBases[window.id] ?? []).union(hits)
+        selections[window.id] = selected
+        return selected
+    }
+
+    public mutating func endMarquee(in windowID: String) {
+        marqueeBases[windowID] = nil
+    }
+
+    @discardableResult
+    public mutating func beginRename(in windowID: String) -> Bool {
+        guard let name = selections[windowID], name.count == 1,
+              let only = name.first else { return false }
+        rename = .init(windowID: windowID, original: only, text: only)
+        renameSelectsAll = true
+        return true
+    }
+
+    public mutating func appendRenameText(_ text: String) {
+        guard rename != nil else { return }
+        let safe = text.filter { $0 != ":" }
+        if renameSelectsAll {
+            rename?.text = safe
+            renameSelectsAll = false
+        } else {
+            rename?.text.append(contentsOf: safe)
+        }
+    }
+
+    public mutating func deleteRenameCharacter() {
+        guard rename != nil else { return }
+        if renameSelectsAll {
+            rename?.text = ""
+            renameSelectsAll = false
+        } else if rename?.text.isEmpty == false {
+            rename?.text.removeLast()
+        }
+    }
+
+    public mutating func cancelRename() {
+        rename = nil
+        renameSelectsAll = false
+    }
+
+    /// End editing and return a real rename only when the text changed and is
+    /// nonempty. Finder remains authoritative if it refuses that name.
+    public mutating func commitRename() -> FinderRenamePresentation? {
+        guard let edit = rename else { return nil }
+        rename = nil
+        renameSelectsAll = false
+        guard !edit.text.isEmpty, edit.text != edit.original else { return nil }
+        return edit
     }
 
     /// Preview one scrollbar part immediately. The value delta and item
@@ -95,6 +250,16 @@ public struct FinderInteriorState: Equatable, Sendable {
     public mutating func reconcile(with scene: Scene) {
         let liveIDs = Set(scene.windows.map(\.id))
         selections = selections.filter { liveIDs.contains($0.key) }
+        for window in scene.windows {
+            guard let items = window.items, selections[window.id] != nil else {
+                continue
+            }
+            let liveNames = Set(items.map(\.name))
+            selections[window.id]?.formIntersection(liveNames)
+        }
+        selectionAnchors = selectionAnchors.filter { liveIDs.contains($0.key) }
+        marqueeBases = marqueeBases.filter { liveIDs.contains($0.key) }
+        if let rename, !liveIDs.contains(rename.windowID) { self.rename = nil }
         scrolls = scrolls.filter { windowID, preview in
             guard let window = scene.windows.first(where: {
                       $0.id == windowID
@@ -132,5 +297,9 @@ public struct FinderInteriorState: Equatable, Sendable {
             }
         }
         return out
+    }
+
+    private static func intersects(_ a: Rect, _ b: Rect) -> Bool {
+        a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t
     }
 }

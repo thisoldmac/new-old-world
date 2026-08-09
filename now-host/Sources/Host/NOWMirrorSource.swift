@@ -304,6 +304,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// between gestures — and nil is not "released": the resident's own
     /// dead-man is what guarantees the button comes up, never this field.
     fileprivate var dragSession: Int?
+    private var dragPressInFlight = false
+    private var pendingDragPoint: MirrorKit.Point?
+    private var pendingDragRelease: ((ItemDragAnswer) -> Void)?
     private let cycleIO: NOWMirrorCycleIO
     private let sendCommand: GuestCommandSend
     private let interval: TimeInterval
@@ -591,6 +594,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         planRefusalReach = .unknown
         mutationWaiting = false
         dragSession = nil
+        dragPressInFlight = false
+        pendingDragPoint = nil
+        pendingDragRelease = nil
         cycleAsked = nil
         cycleDelivered = nil
         cycleOutcome = "no-reply"
@@ -2461,6 +2467,62 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
     }
 
+    /// Bulk Finder interactions come from host-owned interior state rather
+    /// than one `MirrorGesture`, but they still use the same serialized act
+    /// lane and the same stale-roster refusal as every object-first gesture.
+    private func performFinderPlan(_ plan: InteractionPlan, label: String) {
+        if let refusal = pinnedActionRefusal() {
+            report(refusal)
+            return
+        }
+        guard currentPlanePolicy.contains(.interaction) else {
+            report("\(label): Interaction is off; the Mirror is read-only.")
+            return
+        }
+        if let stale = staleTargetComplaint(for: plan) {
+            report("\(label) — \(stale)")
+            return
+        }
+        let enqueuedAt = Date()
+        let depthAtEntry = directActLane.depth
+        report(label + (depthAtEntry > 0 ? " — queued" : "…"))
+        let admitted = directActLane.submit { [weak self] in
+            guard let self else { return }
+            self.planCorrelation = nil
+            self.planSettlement = "unknown"
+            let started = Date()
+            let complaint = await self.serve(plan)
+            self.actTimeline.record(.init(
+                kind: .released, operationID: "direct", label: label,
+                outcome: complaint == nil ? .dispatched : .refused,
+                queueDepthAtEntry: depthAtEntry,
+                enqueuedAt: enqueuedAt, dispatchStartedAt: started,
+                dispatchReturnedAt: Date(), settledAt: nil,
+                releasedAt: Date()))
+            ActLog.note(action: "\(label)  plan=\(plan)",
+                        outcome: complaint ?? self.planSettlement,
+                        ms: Int(Date().timeIntervalSince(started) * 1000))
+            if complaint == nil,
+               case .finderRename(_, _, let container) = plan,
+               case .window(let title) = container,
+               let window = self.scene?.windows.first(where: {
+                   $0.title == title && FinderItems.isFolderWindow($0)
+               }), let key = Self.finderWindowKey(window) {
+                /* The directory identity and geometry did not change, but
+                   one roster name did. Force exactly that container's next
+                   semantic read; leaving the layout key complete would keep
+                   drawing the pre-rename name forever. */
+                self.finderLayouts[key] = nil
+            }
+            self.report(complaint.map { "\(label) — \($0)" }
+                        ?? "\(label) — \(self.planSettlement)")
+            self.poll()
+        }
+        if !admitted {
+            report("\(label) — not sent: the act queue is full")
+        }
+    }
+
     private var currentPlanePolicy: Set<MirrorPlaneID> {
         pinnedGuestKey.map(planePolicy) ?? [.structure]
     }
@@ -2538,31 +2600,45 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return "the scene moved on — that window is no longer on the "
                 + "machine, so the act was not sent. Read it again."
         }
-        if let (item, container) = finderItemReference(in: plan),
+        if let (items, container) = finderItemReferences(in: plan),
            let published = MirrorActionExecutor.publishedItems(of: container,
                                                                in: scene),
-           !published.contains(where: { $0.name == item }) {
+           let missing = items.first(where: { name in
+               !published.contains(where: { $0.name == name })
+           }) {
             let place: String
             switch container {
             case .desktop: place = "on the desktop"
             case .window(let title): place = "in \(title)"
             }
-            return "the Finder shows no item named \(item) \(place), so "
+            return "the Finder shows no item named \(missing) \(place), so "
                 + "the act was not sent. Read it again."
         }
         return nil
     }
 
     /// The Finder item a plan acts on, or nil for a plan that names none.
-    static func finderItemReference(in plan: InteractionPlan)
-        -> (String, InteractionPlan.FinderContainer)? {
+    static func finderItemReferences(in plan: InteractionPlan)
+        -> ([String], InteractionPlan.FinderContainer)? {
         switch plan {
         case .finderOpen(let item, let container),
              .finderSelect(let item, let container):
-            return (item, container)
+            return ([item], container)
+        case .finderSetSelection(let items, let container),
+             .finderOpenItems(let items, let container):
+            return (items, container)
+        case .finderRename(let item, _, let container):
+            return ([item], container)
         default:
             return nil
         }
+    }
+
+    static func finderItemReference(in plan: InteractionPlan)
+        -> (String, InteractionPlan.FinderContainer)? {
+        guard let (items, container) = finderItemReferences(in: plan),
+              let first = items.first else { return nil }
+        return (first, container)
     }
 
     /// The window reference a plan acts on, or nil for a plan that does
@@ -2690,6 +2766,24 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return await finder(
                 "open \(reference(item, in: container))",
                 activate: !ownApp)
+        case .finderSetSelection(let items, let container):
+            let refs = items.map { reference($0, in: container) }
+                .joined(separator: ", ")
+            return await finder("select {\(refs)}")
+        case .finderOpenItems(let items, let container):
+            guard !items.isEmpty else { return nil }
+            let refs = items.map { reference($0, in: container) }
+                .joined(separator: ", ")
+            /* The selection command already made Finder visible. Activating
+               it after opening would cover an application that one of these
+               items launched, the same failure the single-item path avoids. */
+            return await finder("open {\(refs)}", activate: false)
+        case .finderRename(let item, let newName, let container):
+            let escaped = newName.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            return await finder(
+                "set name of \(reference(item, in: container)) to \"\(escaped)\"",
+                activate: false)
         case .finderDeselect:
             /* CLEARING a selection has nothing to show, so the visibility
                argument that justifies fronting on a select does not reach
@@ -3221,6 +3315,142 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return reason
         }
     }
+
+    /// One race-safe resident drag lane shared by Finder items and scroll
+    /// thumbs. Motion and release can arrive while `dragpress` is still on the
+    /// wire; retaining the latest point and release request prevents a quick
+    /// drag from becoming "no drag is being held" followed by a stuck button.
+    fileprivate func residentDragPress(window: String, at point: MirrorKit.Point,
+                                        answer: @escaping (ItemDragAnswer) -> Void) {
+        guard dragSession == nil, !dragPressInFlight else {
+            answer(.refused("another drag is already being held"))
+            return
+        }
+        dragPressInFlight = true
+        pendingDragPoint = point
+        pendingDragRelease = nil
+        Task { @MainActor in
+            switch await act.dragPress(window: window, h: point.x, v: point.y) {
+            case .done(let minted):
+                guard let minted else {
+                    self.dragPressInFlight = false
+                    answer(.refused("the Macintosh did not identify the drag"))
+                    self.pendingDragRelease?(.refused(
+                        "the Macintosh did not identify the drag"))
+                    self.pendingDragRelease = nil
+                    return
+                }
+                self.dragPressInFlight = false
+                self.dragSession = minted
+                answer(.confirmed)
+                if let latest = self.pendingDragPoint,
+                   latest != point {
+                    _ = await self.act.dragMove(session: minted,
+                                                h: latest.x, v: latest.y)
+                }
+                if let release = self.pendingDragRelease {
+                    self.pendingDragRelease = nil
+                    self.dragSession = nil
+                    self.pendingDragPoint = nil
+                    switch await self.act.dragRelease(session: minted) {
+                    case .done: release(.confirmed)
+                    case .refused(let why): release(.refused(why))
+                    }
+                }
+            case .refused(let why):
+                self.dragPressInFlight = false
+                self.dragSession = nil
+                self.pendingDragPoint = nil
+                answer(.refused(why))
+                self.pendingDragRelease?(.refused(why))
+                self.pendingDragRelease = nil
+            }
+        }
+    }
+
+    fileprivate func residentDragMove(to point: MirrorKit.Point) {
+        pendingDragPoint = point
+        guard let session = dragSession else { return }
+        Task { @MainActor in
+            _ = await act.dragMove(session: session, h: point.x, v: point.y)
+        }
+    }
+
+    fileprivate func residentDragRelease(
+        answer: @escaping (ItemDragAnswer) -> Void
+    ) {
+        if dragPressInFlight {
+            pendingDragRelease = answer
+            return
+        }
+        guard let session = dragSession else {
+            answer(.refused("no drag is being held"))
+            return
+        }
+        dragSession = nil
+        pendingDragPoint = nil
+        Task { @MainActor in
+            switch await act.dragRelease(session: session) {
+            case .done: answer(.confirmed)
+            case .refused(let why): answer(.refused(why))
+            }
+        }
+    }
+}
+
+// MARK: - Host-owned Finder interior mutations
+
+extension NOWMirrorSource: FinderInteractionDriver {
+    var finderInteractionDriver: FinderInteractionDriver? { self }
+
+    func setFinderSelection(
+        _ names: [String], in container: InteractionPlan.FinderContainer
+    ) {
+        performFinderPlan(.finderSetSelection(items: names,
+                                              container: container),
+                          label: names.isEmpty ? "deselect Finder items"
+                              : "select \(names.count) Finder item(s)")
+    }
+
+    func openFinderItems(
+        _ names: [String], in container: InteractionPlan.FinderContainer
+    ) {
+        guard !names.isEmpty else { return }
+        performFinderPlan(.finderOpenItems(items: names, container: container),
+                          label: "open \(names.count) Finder item(s)")
+    }
+
+    func renameFinderItem(
+        _ name: String, to newName: String,
+        in container: InteractionPlan.FinderContainer
+    ) {
+        performFinderPlan(.finderRename(item: name, to: newName,
+                                        container: container),
+                          label: "rename \(name) to \(newName)")
+    }
+}
+
+extension NOWMirrorSource: ScrollbarDragDriver {
+    var scrollbarDragDriver: ScrollbarDragDriver? { self }
+
+    func thumbPress(windowID: String, at point: MirrorKit.Point,
+                    answer: @escaping (ItemDragAnswer) -> Void) {
+        guard let ref = scene?.windows.first(where: { $0.id == windowID })?.ref,
+              !ref.isEmpty else {
+            answer(.refused("the scrollbar's Finder window has no live "
+                            + "guest reference"))
+            return
+        }
+        residentDragPress(window: ref, at: point, answer: answer)
+    }
+
+    func thumbMove(to point: MirrorKit.Point) {
+        residentDragMove(to: point)
+    }
+
+    func thumbRelease(answer: @escaping (ItemDragAnswer) -> Void) {
+        residentDragRelease(answer: answer)
+    }
 }
 
 // MARK: - Holding the mouse button down
@@ -3273,54 +3503,17 @@ extension NOWMirrorSource: ItemDragDriver {
                     + "it"))
             return
         }
-        Task { @MainActor in
-            switch await act.dragPress(window: window, h: point.x,
-                                       v: point.y) {
-            case .done(let session):
-                /* The session is what dragmove and dragrelease name. A
-                   press whose nonce this side lost is a button down that
-                   nothing here can ask about, so it is refused rather than
-                   confirmed — and the resident's dead-man is what actually
-                   lets go. */
-                guard let session else {
-                    answer(.refused("the Macintosh did not say which "
-                                    + "gesture the press belongs to"))
-                    return
-                }
-                self.dragSession = session
-                answer(.confirmed)
-            case .refused(let why):
-                self.dragSession = nil
-                answer(.refused(why))
-            }
-        }
+        residentDragPress(window: window, at: point, answer: answer)
     }
 
     func dragMove(to point: MirrorKit.Point) {
-        guard let session = dragSession else { return }
-        Task { @MainActor in
-            _ = await act.dragMove(session: session, h: point.x, v: point.y)
-        }
+        residentDragMove(to: point)
     }
 
     func dragRelease(_ plan: DragTargeting.Plan?,
                      answer: @escaping (ItemDragAnswer) -> Void) {
-        guard let session = dragSession else {
-            /* Nothing is held. Saying so is not the same as saying the
-               drag worked, and the view's abandonment path calls this with
-               no plan precisely when there may be nothing to release. */
-            answer(.refused("no drag is being held"))
-            return
-        }
-        dragSession = nil
-        Task { @MainActor in
-            switch await act.dragRelease(session: session) {
-            case .done:
-                answer(.confirmed)
-            case .refused(let why):
-                answer(.refused(why))
-            }
-        }
+        _ = plan
+        residentDragRelease(answer: answer)
     }
 
     /// The observation-minted reference for the container an item lives in.

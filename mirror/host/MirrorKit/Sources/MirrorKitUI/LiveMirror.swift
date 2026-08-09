@@ -50,6 +50,10 @@ public protocol MirrorSceneSource: ObservableObject {
     /// a sustained press the semantic act plane has no way to express, and a
     /// driver without one refuses in words rather than dropping the gesture.
     var itemDragDriver: ItemDragDriver? { get }
+    /// Resident pointer tracking for a live scrollbar thumb.
+    var scrollbarDragDriver: ScrollbarDragDriver? { get }
+    /// Bulk selection, open-selection, and rename for host-owned Finder UI.
+    var finderInteractionDriver: FinderInteractionDriver? { get }
     /// Abandon the in-flight act and everything queued behind it,
     /// answering how many acts were ended. The default does nothing, for
     /// a driver with no lane to free.
@@ -88,6 +92,8 @@ public extension MirrorSceneSource {
 
     var waitingActs: Int { 0 }
     var itemDragDriver: ItemDragDriver? { nil }
+    var scrollbarDragDriver: ScrollbarDragDriver? { nil }
+    var finderInteractionDriver: FinderInteractionDriver? { nil }
     @discardableResult
     func cancelPendingActs() -> Int { 0 }
 
@@ -163,6 +169,9 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     @State private var dragOutline: Rect?
     @State private var dragMode: DragMode?
     @State private var dragStart: (x: Int, y: Int) = (0, 0)
+    /// Modifier bits sampled at mouse-down. `DragGesture` exposes neither
+    /// modifiers nor button identity, so the AppKit pointer seam records them.
+    @State private var pointerMods: Int = 0
     /// What the pointer is over, named for a person. A mirror is a
     /// picture of another machine and a person cannot tell a live control
     /// from a drawn one by looking; saying so is most of what makes it
@@ -196,6 +205,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// instead of being re-derived and re-announced sixty times a second.
     private enum DragMode { case move(Rect), resize(Rect)
                             case thumb(String, MirrorKit.Scene.Control)
+                            case marquee(String)
                             case item, refusedItem }
 
     /// `keyboard` defaults to `.ownsWindow`, which is what every caller
@@ -220,11 +230,18 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                        caught before the host's menu bar claims it. */
                     KeyCaptureView(
                         onKey: { code, char, mods in
-                            act(ObjectResolver.focus(in: scene),
-                                .key(code: code, char: char, mods: mods))
+                            if !handleFinderKey(scene, code: code,
+                                                char: char, mods: mods) {
+                                act(ObjectResolver.focus(in: scene),
+                                    .key(code: code, char: char, mods: mods))
+                            }
                         },
                         onText: { text in
-                            act(ObjectResolver.focus(in: scene), .type(text))
+                            if finderInterior.rename != nil {
+                                finderInterior.appendRenameText(text)
+                            } else {
+                                act(ObjectResolver.focus(in: scene), .type(text))
+                            }
                         },
                         onReserved: { combo in
                             controller.note("\(combo) is the host's; the "
@@ -236,6 +253,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     SceneView(scene: scene, openMenu: openMenu,
                               hoveredItem: hoveredItem,
                               selectedItem: selectedItem,
+                              finderRename: finderInterior.rename,
                               dragOutline: dragOutline,
                               itemDrag: itemDrag.map {
                                   SceneRenderer.ProvisionalDrag(
@@ -247,6 +265,29 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                       $0, now: pressClock)
                               })
                         .gesture(mouseGesture(scene: scene, size: geo.size))
+                        .overlay {
+                            PointerCaptureView(
+                                onLeftDown: { _, mods in pointerMods = mods },
+                                onRightDown: { point, mods in
+                                    if case .sharesWindow = keyboard {
+                                        keyboardEngaged = true
+                                    }
+                                    guard let guest = guestPoint(
+                                        point, scene: scene, size: geo.size)
+                                    else { return }
+                                    handleFinderAwareClick(
+                                        scene, at: guest, count: 1, mods: mods)
+                                },
+                                onScroll: { point, notches in
+                                    guard let guest = guestPoint(
+                                        point, scene: scene, size: geo.size)
+                                    else { return }
+                                    scrollFinder(scene, at: guest,
+                                                 notches: notches)
+                                })
+                                .frame(maxWidth: .infinity,
+                                       maxHeight: .infinity)
+                        }
                         /* THE CLOCK THE DEADLINE NEEDS. Armed only while a
                            press is in flight — a timer that ran all the time
                            would redraw the whole mirror ten times a second
@@ -464,19 +505,50 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         }
                     case .scrollbar(let id, let control, let part, _, _)
                             where part == .thumb:
-                        // The guest's TrackControl live-tracks the real mouse;
-                        // we just hold the button and move (no outline — the
-                        // content itself follows).
+                        guard let driver = controller.scrollbarDragDriver else {
+                            controller.note("this mirror cannot hold a scroll "
+                                            + "thumb on the Macintosh")
+                            break
+                        }
                         dragMode = .thumb(id, control)
-                    case .desktopItem, .windowItem:
+                        driver.thumbPress(
+                            windowID: id, at: Point(x: start.x, y: start.y)
+                        ) { answer in
+                            if case .refused(let why) = answer {
+                                controller.note(why)
+                            }
+                        }
+                    case .windowItem(let id, let name, _, _):
                         /* Not on the first pixel: a CLICK also arrives here,
                            and taking hold of an item on one would send the
                            guest a press it then has to have released for it.
                            The same 6-px threshold `onEnded` uses to tell a
                            click from a drag decides it, in one place. */
                         if abs(cur.x - start.x) + abs(cur.y - start.y) >= 6 {
+                            if let window = scene.windows.first(where: {
+                                $0.id == id
+                            }), !finderInterior.isSelected(name, in: window) {
+                                let names = finderInterior.select(
+                                    name, in: window, mode: .replace)
+                                sendFinderSelection(names, in: window)
+                            }
                             dragMode = beginItemDrag(scene, at: start,
                                                      now: cur)
+                        }
+                    case .desktopItem:
+                        if abs(cur.x - start.x) + abs(cur.y - start.y) >= 6 {
+                            dragMode = beginItemDrag(scene, at: start, now: cur)
+                        }
+                    case .content(let id, _, _, _, _):
+                        if abs(cur.x - start.x) + abs(cur.y - start.y) >= 6,
+                           let window = scene.windows.first(where: {
+                               $0.id == id
+                           }), FinderItems.isFolderWindow(window) {
+                            finderInterior.beginMarquee(
+                                in: window,
+                                extending: pointerMods
+                                    & KeyCaptureView.Mods.control != 0)
+                            dragMode = .marquee(id)
                         }
                     default:
                         break
@@ -498,6 +570,15 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         finderInterior.previewThumb(
                             in: window, control: control,
                             pointerDelta: delta)
+                        controller.scrollbarDragDriver?.thumbMove(
+                            to: Point(x: cur.x, y: cur.y))
+                    }
+                case .marquee(let id):
+                    let outline = Self.normalizedRect(from: dragStart, to: cur)
+                    dragOutline = outline
+                    if let window = scene.windows.first(where: { $0.id == id }) {
+                        _ = finderInterior.updateMarquee(in: window,
+                                                        rect: outline)
                     }
                 case .item:
                     /* RULE 1: no waiting. The ghost is under the pointer on
@@ -527,53 +608,192 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                 }
 
                 if moved < 6 {
-                    let target = HitTester.hitTest(scene, x: start.x, y: start.y)
-                    if case .menuTitle(let index) = target {
-                        openMenu = index
-                        return
-                    }
-                    let count = clickCount(at: start)
-                    // Selection feedback is ours to draw: the guest expresses it
-                    // by inverting the icon and reports it nowhere, so without
-                    // this a click on an icon looks like nothing happened even
-                    // though the Finder did select it.
-                    if case .desktopItem(let name, _, _) = target {
-                        selectedItem = name
-                    } else if case .windowItem(let id, let name, _, _) = target {
-                        finderInterior.select(name, in: id)
-                    } else if case .desktop = target {
-                        selectedItem = nil      // clicking empty desktop clears
-                    } else if case .content(let id, _, _, _, _) = target,
-                              scene.windows.first(where: { $0.id == id })
-                                .map(FinderItems.isFolderWindow) == true {
-                        finderInterior.clearSelection(in: id)
-                    }
-                    if case .scrollbar(let id, let control, let part, _, _)
-                            = target, part != .thumb,
-                       let window = scene.windows.first(where: { $0.id == id }) {
-                        finderInterior.previewScroll(
-                            in: window, control: control, part: part)
-                    }
-                    guard let object = ObjectResolver.resolve(target,
-                                                              in: scene) else {
-                        controller.note("nothing under the pointer")
-                        return
-                    }
-                    act(object, .click(count: count, mods: 0,
-                                       at: Point(x: start.x, y: start.y)),
-                        pressing: object)
+                    handleFinderAwareClick(
+                        scene, at: start, count: clickCount(at: start),
+                        mods: pointerMods)
                 } else if case .move = mode {
                     dragged(scene, from: start, to: end)
                 } else if case .resize = mode {
                     dragged(scene, from: start, to: end)
                 } else if case .thumb = mode {
-                    controller.perform(
-                        ActionModel.thumbTracking(from: start, to: end),
-                        label: "scroll thumb \(start) → \(end)")
+                    controller.scrollbarDragDriver?.thumbRelease { answer in
+                        if case .refused(let why) = answer {
+                            controller.note(why)
+                        }
+                    }
+                } else if case .marquee(let id) = mode {
+                    if let window = scene.windows.first(where: { $0.id == id }) {
+                        finderInterior.endMarquee(in: id)
+                        sendFinderSelection(
+                            finderInterior.selectedNames(in: window), in: window)
+                    }
                 } else if case .item = mode {
                     endItemDrag(scene, from: start, to: end)
                 }
             }
+    }
+
+    /// Click handling for both the primary button and the AppKit-captured
+    /// secondary button. Finder items are consumed here because their visible
+    /// state is host-owned; sending the generic window-content interaction as
+    /// well would reproduce the "that window is already front" fall-through.
+    private func handleFinderAwareClick(
+        _ scene: MirrorKit.Scene, at point: (x: Int, y: Int),
+        count: Int, mods: Int
+    ) {
+        let target = HitTester.hitTest(scene, x: point.x, y: point.y)
+        if case .menuTitle(let index) = target {
+            openMenu = index
+            return
+        }
+        if case .windowItem(let id, let name, _, _) = target,
+           let window = scene.windows.first(where: { $0.id == id }) {
+            let mode: FinderInteriorState.SelectionMode
+            if mods & KeyCaptureView.Mods.control != 0 { mode = .toggle }
+            else if mods & KeyCaptureView.Mods.shift != 0 { mode = .range }
+            else { mode = .replace }
+            let names = finderInterior.select(name, in: window, mode: mode)
+            sendFinderSelection(names, in: window)
+            if count >= 2 {
+                controller.finderInteractionDriver?.openFinderItems(
+                    [name], in: .window(title: window.title))
+            }
+            return
+        }
+        if case .content(let id, _, _, _, _) = target,
+           let window = scene.windows.first(where: { $0.id == id }),
+           FinderItems.isFolderWindow(window) {
+            if mods & KeyCaptureView.Mods.control == 0 {
+                finderInterior.clearSelection(in: id)
+                sendFinderSelection([], in: window)
+            }
+            return
+        }
+        if case .desktopItem(let name, _, _) = target {
+            selectedItem = name
+        } else if case .desktop = target {
+            selectedItem = nil
+        }
+        if case .scrollbar(let id, let control, let part, _, _) = target,
+           part != .thumb,
+           let window = scene.windows.first(where: { $0.id == id }) {
+            finderInterior.previewScroll(in: window, control: control,
+                                         part: part)
+        }
+        guard let object = ObjectResolver.resolve(target, in: scene) else {
+            controller.note("nothing under the pointer")
+            return
+        }
+        act(object, .click(count: count, mods: mods,
+                           at: Point(x: point.x, y: point.y)),
+            pressing: object)
+    }
+
+    private func sendFinderSelection(_ names: Set<String>,
+                                     in window: MirrorKit.Scene.Window) {
+        let ordered = (window.items ?? []).map(\.name).filter(names.contains)
+        guard let driver = controller.finderInteractionDriver else {
+            controller.note("this mirror cannot send a semantic Finder "
+                            + "selection")
+            return
+        }
+        driver.setFinderSelection(ordered, in: .window(title: window.title))
+    }
+
+    /// Wheel movement is line-oriented and immediate on the host. Each
+    /// bounded notch is also a semantic Control Manager part on the guest;
+    /// no Finder roster is invalidated by either half.
+    private func scrollFinder(_ scene: MirrorKit.Scene,
+                              at point: (x: Int, y: Int), notches: Int) {
+        guard notches != 0,
+              let window = scene.windows.first(where: {
+                  FinderItems.isFolderWindow($0)
+                      && point.x >= $0.rect.l && point.x < $0.rect.r
+                      && point.y >= $0.rect.t && point.y < $0.rect.b
+              }),
+              let control = window.controls.first(where: {
+                  $0.visible && $0.role == "scrollbar"
+                      && Scrollbar.isVertical($0)
+              }) else { return }
+        let part: Scrollbar.Part = notches > 0 ? .lineDown : .lineUp
+        guard let object = ObjectResolver.resolve(
+            .scrollbar(windowID: window.id, control: control, part: part,
+                       x: point.x, y: point.y), in: scene)
+        else { return }
+        for _ in 0..<abs(notches) {
+            finderInterior.previewScroll(in: window, control: control,
+                                         part: part)
+            act(object, .scroll(notches: notches > 0 ? 1 : -1,
+                                at: Point(x: point.x, y: point.y)))
+        }
+    }
+
+    /// Finder keyboard ownership while a semantic folder window is front.
+    /// Return enters/commits rename, Escape cancels or deselects, Command-O
+    /// opens the exact host selection, and Command-A selects the directory.
+    private func handleFinderKey(_ scene: MirrorKit.Scene, code: Int,
+                                 char: Int, mods: Int) -> Bool {
+        guard let window = scene.windows.first(where: {
+            $0.front && FinderItems.isFolderWindow($0)
+        }) else { return false }
+        let escape = code == 53 || char == 27
+        let enter = code == 36 || code == 76 || char == 13
+        let delete = code == 51 || code == 117 || char == 8
+
+        if finderInterior.rename != nil {
+            if escape {
+                finderInterior.cancelRename()
+            } else if enter {
+                if let edit = finderInterior.commitRename() {
+                    controller.finderInteractionDriver?.renameFinderItem(
+                        edit.original, to: edit.text,
+                        in: .window(title: window.title))
+                }
+            } else if delete {
+                finderInterior.deleteRenameCharacter()
+            } else if mods & (KeyCaptureView.Mods.cmd
+                              | KeyCaptureView.Mods.control) == 0,
+                      let scalar = UnicodeScalar(char), scalar.value >= 32 {
+                finderInterior.appendRenameText(String(Character(scalar)))
+            }
+            return true
+        }
+
+        if escape {
+            finderInterior.clearSelection(in: window.id)
+            sendFinderSelection([], in: window)
+            return true
+        }
+        if enter {
+            if !finderInterior.beginRename(in: window.id) {
+                controller.note("select one Finder item before renaming")
+            }
+            return true
+        }
+        if mods & KeyCaptureView.Mods.cmd != 0,
+           code == ActionModel.keycodes["o"] {
+            let names = finderInterior.selectedNames(in: window)
+            let ordered = (window.items ?? []).map(\.name).filter(names.contains)
+            controller.finderInteractionDriver?.openFinderItems(
+                ordered, in: .window(title: window.title))
+            return true
+        }
+        if mods & KeyCaptureView.Mods.cmd != 0,
+           code == ActionModel.keycodes["a"] {
+            let names = Set((window.items ?? []).filter {
+                $0.placed && !$0.invisible
+            }.map(\.name))
+            finderInterior.setSelection(names, in: window.id)
+            sendFinderSelection(names, in: window)
+            return true
+        }
+        return false
+    }
+
+    private static func normalizedRect(from start: (x: Int, y: Int),
+                                       to end: (x: Int, y: Int)) -> Rect {
+        Rect(l: min(start.x, end.x), t: min(start.y, end.y),
+             r: max(start.x, end.x) + 1, b: max(start.y, end.y) + 1)
     }
 
     // MARK: - Dragging an item

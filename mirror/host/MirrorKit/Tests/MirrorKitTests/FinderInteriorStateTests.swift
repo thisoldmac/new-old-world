@@ -19,10 +19,12 @@ final class FinderInteriorStateTests: XCTestCase {
             rect: Rect(l: 48, t: 83, r: 452, b: 321),
             front: true, z: 0, visible: true,
             controls: [vertical, horizontal], text: nil,
-            items: [.init(name: "System Folder", kind: "folder",
-                          type: nil, creator: nil, x: 22, y: 43,
-                          placed: true, alias: false, invisible: false,
-                          w: 16, h: 16)],
+            items: ["System Folder", "Applications", "Documents"]
+                .enumerated().map { index, name in
+                    .init(name: name, kind: "folder", type: nil, creator: nil,
+                          x: 22, y: 43 + index * 19, placed: true,
+                          alias: false, invisible: false, w: 16, h: 16)
+                },
             finder: .init(path: "Macintosh HD:", view: .name),
             display: nil)
     }
@@ -79,5 +81,39 @@ final class FinderInteriorStateTests: XCTestCase {
             .windows[0].items?.first?.y, 43,
             "the source has already projected the guest's new value; the "
                 + "optimistic delta must not be applied twice")
+    }
+
+    func testToggleAndRangeSelectionAreImmediateExactSets() {
+        let window = Self.window()
+        var state = FinderInteriorState()
+        XCTAssertEqual(state.select("System Folder", in: window,
+                                    mode: .replace), ["System Folder"])
+        XCTAssertEqual(state.select("Documents", in: window, mode: .toggle),
+                       ["System Folder", "Documents"])
+        XCTAssertEqual(state.select("Applications", in: window, mode: .range),
+                       ["Applications", "Documents"])
+    }
+
+    func testMarqueeSelectsEveryIntersectingListRow() {
+        let window = Self.window()
+        let origin = FinderItems.contentOrigin(window)
+        var state = FinderInteriorState()
+        state.beginMarquee(in: window, extending: false)
+        let selected = state.updateMarquee(
+            in: window,
+            rect: Rect(l: origin.x + 100, t: origin.y + 44,
+                       r: origin.x + 200, b: origin.y + 79))
+        XCTAssertEqual(selected, ["System Folder", "Applications"])
+    }
+
+    func testRenameIsHostLocalUntilCommit() throws {
+        let window = Self.window()
+        var state = FinderInteriorState()
+        state.select("Documents", in: window.id)
+        XCTAssertTrue(state.beginRename(in: window.id))
+        state.appendRenameText("Renamed")
+        let edit = try XCTUnwrap(state.commitRename())
+        XCTAssertEqual(edit.original, "Documents")
+        XCTAssertEqual(edit.text, "Renamed")
     }
 }

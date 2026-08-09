@@ -58,6 +58,12 @@ public enum InteractionPlan: Equatable, Sendable {
     /// always known it by name.
     case finderSelect(item: String, container: FinderContainer)
     case finderOpen(item: String, container: FinderContainer)
+    /// Exact host-owned selection and keyboard operations. These are bulk so
+    /// a marquee does not become N serial AppleScripts and visibly walk
+    /// through every intermediate selection.
+    case finderSetSelection(items: [String], container: FinderContainer)
+    case finderOpenItems(items: [String], container: FinderContainer)
+    case finderRename(item: String, to: String, container: FinderContainer)
     /// Clear the Finder's selection — what clicking empty desktop does.
     case finderDeselect
 
@@ -203,10 +209,10 @@ public enum InteractionPolicy {
             return .controlPart(ref: c.ref, part: 10, mods: mods)
 
         case .scroll(let notches, _):
-            /* A wheel is pages, not lines: OS 8/9 has no wheel, so there
-               is no "right" mapping to inherit - pages are what the
-               scroll bar itself offers and they move a readable amount. */
-            let part = notches > 0 ? Scrollbar.Part.pageDown : .pageUp
+            /* OS 8/9 has no native wheel convention. A host wheel is mapped
+               to the scrollbar's line parts so a trackpad gesture remains
+               incremental; page parts made one wheel tick jump a viewport. */
+            let part = notches > 0 ? Scrollbar.Part.lineDown : .lineUp
             return .controlPart(ref: c.ref,
                                 part: ActionModel.partCode(part), mods: 0)
 

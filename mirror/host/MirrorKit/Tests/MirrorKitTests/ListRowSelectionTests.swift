@@ -224,6 +224,21 @@ final class ListRowSelectionTests: XCTestCase {
         XCTAssertEqual(name, "TBT")
     }
 
+    func testRowTargetingInfersNameViewWhileViewMetadataIsUnknown() {
+        var window = Self.listWindow()
+        window.finder?.view = .unknown
+        var scene = Self.scene()
+        scene.windows = [window]
+        let origin = Self.contentOrigin
+        let hit = HitTester.hitTest(scene, x: origin.x + 150,
+                                    y: origin.y + 146)
+        guard case .windowItem(_, let name, _, _) = hit else {
+            return XCTFail("drawn list row fell through to \(hit)")
+        }
+        XCTAssertEqual(name, "TBT")
+        XCTAssertEqual(FinderItems.presentationView(window), .name)
+    }
+
     /// The header is a control and wins over the rows under it, which is
     /// the ordering that keeps a column sort clickable.
     func testTheColumnHeaderIsAControlAndNotARow() {

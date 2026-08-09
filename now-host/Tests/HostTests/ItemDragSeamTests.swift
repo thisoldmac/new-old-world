@@ -86,6 +86,17 @@ final class ItemDragSeamTests: XCTestCase {
                 + "check with it.")
     }
 
+    func testScrollbarThumbUsesTheResidentDragVehicle() throws {
+        let source = try read(Self.conformer)
+        XCTAssertTrue(source.contains("var scrollbarDragDriver:"),
+                      "thumb dragging fell back to the input-device action "
+                        + "NOW cannot serve")
+        XCTAssertTrue(source.contains("residentDragPress(window:"))
+        XCTAssertTrue(source.contains("residentDragMove(to:"))
+        XCTAssertTrue(source.contains("residentDragRelease(answer:"))
+        XCTAssertTrue(try read(Self.actControl).contains("\"dragpress\""))
+    }
+
     // MARK: - Reading the source
 
     private static var repoRoot: URL {

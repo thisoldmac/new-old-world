@@ -45,6 +45,8 @@ public struct SceneRenderer {
     /// Name of the desktop icon the mirror believes is selected. See
     /// LiveMirrorView.selectedItem — this is our own model, not guest truth.
     public let selectedItem: String?
+    /// A host-owned Finder name editor, while Return has entered rename mode.
+    public let finderRename: FinderRenamePresentation?
     /// A live drag/resize outline (guest coords), drawn on top — the classic
     /// Mac dotted-gray tracking rectangle. nil = not dragging.
     public let dragOutline: Rect?
@@ -130,6 +132,7 @@ public struct SceneRenderer {
 
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
+                finderRename: FinderRenamePresentation? = nil,
                 dragOutline: Rect? = nil,
                 itemDrag: ProvisionalDrag? = nil,
                 pressed: PressedControl? = nil) {
@@ -137,6 +140,7 @@ public struct SceneRenderer {
         self.openMenu = openMenu
         self.hoveredItem = hoveredItem
         self.selectedItem = selectedItem
+        self.finderRename = finderRename
         self.dragOutline = dragOutline
         self.itemDrag = itemDrag
         self.pressed = pressed
@@ -1242,8 +1246,11 @@ public struct SceneRenderer {
                                at: CGPoint(
                                 x: content.minX + CGFloat(item.x),
                                 y: content.minY + CGFloat(item.y)),
-                               view: win.finder?.view ?? .unknown,
+                               view: FinderItems.presentationView(win),
                                selected: selected,
+                               renameText: finderRename?.windowID == win.id
+                                    && finderRename?.original == item.name
+                                    ? finderRename?.text : nil,
                                replayed: replayCoverage)
             }
         }
@@ -1261,11 +1268,18 @@ public struct SceneRenderer {
     private func drawFinderItem(
         _ ctx: GraphicsContext, _ item: MirrorKit.Scene.DesktopItem,
         at origin: CGPoint, view: MirrorKit.Scene.FinderPresentation.View,
-        selected: Bool, replayed: DisplayReplay.Coverage?
+        selected: Bool, renameText: String?,
+        replayed: DisplayReplay.Coverage?
     ) {
         if view == .icon || view == .unknown && Self.itemDrawsItsOwnLabel(item) {
             drawIcon(ctx, item, at: origin, selected: selected,
                      replayed: replayed)
+            if let renameText {
+                drawRenameEditor(ctx, text: renameText,
+                                 iconBox: CGRect(origin: origin,
+                                                 size: Self.iconBoxSize(item)),
+                                 beside: false)
+            }
             return
         }
 
@@ -1285,6 +1299,29 @@ public struct SceneRenderer {
         appText(item.name, ctx, x: label.minX + 2,
                 baselineY: label.minY + ascent,
                 color: selected ? .white : Platinum.g6, small: true)
+        if let renameText {
+            drawRenameEditor(ctx, text: renameText, iconBox: box, beside: true)
+        }
+    }
+
+    /// Finder's host-owned inline name field. The item itself is still the
+    /// guest's old name until Return commits and a later roster confirms it.
+    private func drawRenameEditor(_ ctx: GraphicsContext, text: String,
+                                  iconBox: CGRect, beside: Bool) {
+        let ascent = CGFloat(FontBook.small?.ascent ?? 9)
+        let textWidth = CGFloat(FontBook.small?.width(text)
+                                ?? max(1, text.count) * 6)
+        let field = beside
+            ? CGRect(x: iconBox.maxX + 3, y: iconBox.minY - 1,
+                     width: max(42, textWidth + 7), height: ascent + 5)
+            : CGRect(x: iconBox.midX - max(42, textWidth + 7) / 2,
+                     y: iconBox.maxY, width: max(42, textWidth + 7),
+                     height: ascent + 5)
+        ctx.fill(Path(field), with: .color(.white))
+        ctx.stroke(Path(field), with: .color(Platinum.g6), lineWidth: 1)
+        appText(text, ctx, x: field.minX + 3,
+                baselineY: field.minY + 2 + ascent,
+                color: Platinum.g6, small: true)
     }
 
     /// The Platinum title bar, drawn the way the machine draws it.

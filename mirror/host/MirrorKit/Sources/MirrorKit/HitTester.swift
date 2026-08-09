@@ -129,33 +129,12 @@ public enum HitTester {
     /// on that and the caller checks it.
     public static func windowItem(_ win: Scene.Window, x: Int, y: Int)
         -> Scene.DesktopItem? {
-        guard let items = win.items else { return nil }
         let origin = FinderItems.contentOrigin(win)
         let cx = x - origin.x, cy = y - origin.y
-        let area = FinderItems.iconArea(win)
-        let listView = win.finder?.view == .name
-        let orderedRows = listView ? items.filter { $0.placed && !$0.invisible }
-            .sorted { $0.y < $1.y } : []
-        var rowBottoms: [String: Int] = [:]
-        if listView {
-            for (index, item) in orderedRows.enumerated() {
-                let natural = item.y + max(item.h ?? 16, 16)
-                let next = orderedRows.indices.contains(index + 1)
-                    ? orderedRows[index + 1].y : natural + 3
-                rowBottoms[item.name] = min(area.b, max(natural, next))
-            }
-        }
         var hit: Scene.DesktopItem?
-        for item in items where item.placed && !item.invisible {
-            let box = targetSize(item)
-            let left = listView ? area.l : item.x
-            let right = listView ? area.r : item.x + box.w
-            let bottom = listView ? (rowBottoms[item.name]
-                                     ?? item.y + max(item.h ?? 16, 16))
-                                  : item.y + box.h
-            if cx >= left, cx < right,
-               cy >= item.y, cy < bottom {
-                hit = item
+        for target in FinderItems.itemTargetRects(win) {
+            if contains(target.rect, cx, cy) {
+                hit = target.item
             }
         }
         return hit

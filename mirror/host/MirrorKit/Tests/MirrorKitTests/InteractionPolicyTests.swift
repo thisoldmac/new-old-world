@@ -146,15 +146,15 @@ final class InteractionPolicyTests: XCTestCase {
         }
     }
 
-    func testTheWheelPagesRatherThanLines() {
+    func testTheWheelUsesIncrementalLineParts() {
         XCTAssertEqual(
             plan(.control(bar(part: nil)),
                  .scroll(notches: 3, at: Point(x: 0, y: 0))),
-            .controlPart(ref: "now-element-bar", part: 23, mods: 0))
+            .controlPart(ref: "now-element-bar", part: 21, mods: 0))
         XCTAssertEqual(
             plan(.control(bar(part: nil)),
                  .scroll(notches: -3, at: Point(x: 0, y: 0))),
-            .controlPart(ref: "now-element-bar", part: 22, mods: 0))
+            .controlPart(ref: "now-element-bar", part: 20, mods: 0))
     }
 
     // MARK: - Windows

@@ -1098,6 +1098,14 @@ final class NOWMirrorSourceTests: XCTestCase {
         XCTAssertEqual(inWindow, "the Finder shows no item named Date & Time "
                            + "in Extensions, so the act was not sent. "
                            + "Read it again.")
+
+        let bulk = NOWMirrorSource.staleTargetComplaint(
+            for: .finderSetSelection(
+                items: ["Macintosh HD", "Date & Time"], container: .desktop),
+            in: scene)
+        XCTAssertEqual(bulk, "the Finder shows no item named Date & Time "
+                          + "on the desktop, so the act was not sent. "
+                          + "Read it again.")
     }
 
     /// **An unread container claims nothing**, which is the same rule as

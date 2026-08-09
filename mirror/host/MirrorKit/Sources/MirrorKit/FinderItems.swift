@@ -509,6 +509,62 @@ public enum FinderItems {
         win.app == "Finder" && !HitTester.isDesktopBackdrop(win) && win.visible
     }
 
+    /// The presentation the host can prove from the whole Finder surface.
+    ///
+    /// A roster page can arrive before (or without) a usable AppleScript view
+    /// word. The item boxes and column controls are still semantic facts: a
+    /// run of 16-pixel boxes on one x origin beneath named column headers is a
+    /// name view, not an icon grid. Rendering already made that visual
+    /// distinction from the boxes; hit testing must make the same decision or
+    /// it draws a selectable row and resolves its label as bare window body.
+    public static func presentationView(_ win: Scene.Window)
+        -> Scene.FinderPresentation.View {
+        if let view = win.finder?.view, view != .unknown { return view }
+        let hasColumns = win.controls.contains {
+            $0.visible && $0.role != "scrollbar" && !$0.title.isEmpty
+        }
+        let placed = (win.items ?? []).filter { $0.placed && !$0.invisible }
+        let small = placed.filter {
+            ($0.w ?? HitTester.iconSize) <= 16
+                && ($0.h ?? HitTester.iconSize) <= 16
+        }
+        let oneColumn = Set(small.map(\.x)).count == 1
+        if hasColumns || (small.count >= 2 && oneColumn) { return .name }
+        if !placed.isEmpty && small.count == placed.count { return .smallIcon }
+        return .icon
+    }
+
+    /// Semantic selection targets in content-local coordinates.
+    ///
+    /// Name view owns the whole visible row. Icon and small-icon views own
+    /// the box Finder supplied plus the label area `HitTester.targetSize`
+    /// defines. This is shared by hit testing and marquee selection so the
+    /// pixels that light up are the same objects the pointer can select.
+    public static func itemTargetRects(_ win: Scene.Window)
+        -> [(item: Scene.DesktopItem, rect: Rect)] {
+        guard let items = win.items else { return [] }
+        let visible = items.filter { $0.placed && !$0.invisible }
+        let area = iconArea(win)
+        guard presentationView(win) == .name else {
+            return visible.map { item in
+                let size = HitTester.targetSize(item)
+                return (item, Rect(l: item.x, t: item.y,
+                                   r: item.x + size.w,
+                                   b: item.y + size.h))
+            }
+        }
+        let ordered = visible.sorted {
+            $0.y == $1.y ? $0.x < $1.x : $0.y < $1.y
+        }
+        return ordered.enumerated().map { index, item in
+            let natural = item.y + max(item.h ?? 16, 16)
+            let next = ordered.indices.contains(index + 1)
+                ? ordered[index + 1].y : natural + 3
+            return (item, Rect(l: area.l, t: item.y, r: area.r,
+                               b: min(area.b, max(natural, next))))
+        }
+    }
+
     /// The current document scroll offset carried by the Finder's two live
     /// scrollbars. Missing or inactive bars contribute zero.
     ///
