@@ -42,8 +42,8 @@ The release mode refuses incomplete integration and generates `security.txt` and
   `docs/feature-catalog.yaml`; excluded features must not appear in release
   setup instructions or the bundle.
 - Install the actual host and PowerPC artifacts by the documented path, then
-  test the optional extension both installed and absent. The initial profile
-  excludes the stale NOW-68K artifact.
+  test the bundled optional Extension both installed and absent. The alpha
+  profile excludes the stale NOW-68K artifact.
 - Do not close a screenshot gap for a placeholder. List all remaining placeholder IDs in the release notes.
 - Confirm no page describes tested or emulator evidence as metal-verified.
 

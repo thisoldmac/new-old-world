@@ -20,14 +20,14 @@ than any hardware this project targets, with an emulated bus. It is
 never a substitute for metal, and every emulator-verified claim here
 says so at the point of claim rather than in a footnote.
 
-## Initial alpha release profile
+## Alpha release profile
 
-The planned first public alpha includes the macOS host and PowerPC Carbon
-guest, with NOW Extension as an optional artifact. The current NOW-68K build is
+The public alpha includes the macOS host, PowerPC Carbon guest, and bundled NOW
+Extension. Installing the Extension is optional. The current NOW-68K build is
 stale and excluded from that release profile; its source evidence below remains
 useful engineering history, not a packaging or support claim. The
 machine-readable authority is `docs/feature-catalog.yaml`, rendered in the
-[initial-alpha feature page](user-guide/reference/release-profile.md).
+[alpha feature page](user-guide/reference/release-profile.md).
 
 Runtime feature flags are not implemented yet. The catalog reserves
 `classic.pre-carbon` as the planned binding for pre-Carbon support so future

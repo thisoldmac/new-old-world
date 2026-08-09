@@ -16,13 +16,13 @@ last_verified: 2026-08-09
 
 The two guests are siblings, not ports.
 
-Only the PowerPC guest is planned for the initial alpha. NOW-68K is retained as
-a pre-Carbon architecture and future release feature; its current build is
-stale and its source-level capabilities are not an initial-release promise.
+The alpha includes the PowerPC guest. NOW-68K is retained as a pre-Carbon
+architecture and future release feature; its current build is stale and its
+source-level capabilities are not an alpha promise.
 
 The PowerPC guest uses CarbonLib and provides the one-window Workshop across
 Mac OS 8.6–9.2.2. It carries the broadest UI surface and is the only guest that
-can use the optional NOW Extension and its deeper Mirror features.
+can use the bundled, optional NOW Extension and its deeper Mirror features.
 
 NOW-68K is a non-Carbon Toolbox application for the historically targeted System
 7.1/MacTCP environment. Its compact main window and console preserve the

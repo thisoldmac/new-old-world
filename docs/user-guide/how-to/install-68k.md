@@ -1,7 +1,7 @@
 ---
 page_id: install-68k-how-to
 title: Install NOW-68K
-description: Retained contributor instructions for the stale, initial-alpha-excluded System 7.1 MacTCP guest.
+description: Retained contributor instructions for the stale, alpha-excluded System 7.1 MacTCP guest.
 doc_type: how-to
 audience: user
 lifecycle: reference
@@ -15,7 +15,7 @@ last_verified: 2026-08-09
 # Install NOW-68K
 
 This page is retained for contributors and future pre-Carbon work. The current
-NOW-68K build is stale and is not planned for the initial alpha. Do not treat
+NOW-68K build is stale and excluded from the alpha. Do not treat
 these steps as a supported release path.
 
 ## Goal

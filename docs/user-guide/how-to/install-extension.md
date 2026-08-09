@@ -1,7 +1,7 @@
 ---
 page_id: install-extension-how-to
 title: Install the NOW Extension
-description: Add the optional PowerPC resident component with an explicit recovery path.
+description: Install the bundled, optional PowerPC resident component with an explicit recovery path.
 doc_type: how-to
 audience: operator
 lifecycle: experimental
@@ -20,13 +20,13 @@ Enable deeper PowerPC Mirror observation and interaction while preserving a
 boot-without-it recovery path.
 
 Before installing it, review the [feature coverage
-matrix](../explanation/optional-extension.md#feature-coverage).
+matrix](../explanation/core-features.md#feature-coverage).
 
 ## Prerequisites
 
 - A PowerPC Mac in the documented Carbon guest range.
 - A backup or removable way to disable Extensions during startup.
-- The extension artifact paired with the release build.
+- The **NOW Extension** included in the same alpha bundle as the PowerPC guest.
 
 ## Steps
 

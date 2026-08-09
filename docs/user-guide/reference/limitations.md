@@ -18,12 +18,12 @@ last_verified: 2026-08-09
 - **Pre-alpha packaging.** The exact release bundle and website integration
   must be reviewed at the release commit. Do not infer an installer, updater,
   notarization flow, or download URL from source-build scripts.
-- **PowerPC-only initial alpha.** The NOW-68K/pre-Carbon build is currently
-  stale and excluded from the initial release. Its source and contributor
+- **PowerPC-only alpha.** The NOW-68K/pre-Carbon build is currently stale and
+  excluded from the alpha. Its source and contributor
   documentation remain, but are not a support or packaging promise.
 - **Optional Extension.** The NOW Extension is required only for the deeper
   Mirror features listed in the [feature coverage
-  matrix](../explanation/optional-extension.md#feature-coverage), including
+  matrix](../explanation/core-features.md#feature-coverage), including
   live interface structure, guarded interaction, modal-loop reachability,
   remote drag sessions, and cursor following. Ordinary modules remain
   available without it at their declared levels.

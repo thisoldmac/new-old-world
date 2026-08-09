@@ -1,7 +1,7 @@
 ---
 page_id: release-profile-reference
-title: Initial alpha features
-description: The machine-readable release profile for what is included, optional, and excluded from the first public alpha.
+title: Alpha features
+description: The machine-readable release profile for what is included, optional, and excluded from the public alpha.
 doc_type: reference
 audience: user
 lifecycle: current
@@ -11,12 +11,12 @@ media_ids: []
 last_verified: 2026-08-09
 ---
 
-# Initial alpha features
+# Alpha features
 
-This is the planned public shape of the first downloadable alpha. **Included**
-means part of the supported release path, **optional** means shipped but not
-required, and **excluded** means source may exist while the release does not
-promise or package it.
+This is the planned public shape of the downloadable alpha. Availability in
+the PowerPC application is the default. **Optional** means bundled but not
+installed or required by default, and **excluded** means source may exist while
+the alpha does not promise or package it.
 
 <!-- release-feature-table -->
 

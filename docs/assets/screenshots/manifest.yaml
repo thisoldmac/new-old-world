@@ -22,7 +22,7 @@ images:
     width: 980
     height: 650
     surface: release artifacts
-    state: Host app, PPC guest, 68K guest, and optional extension identified
+    state: Alpha bundle with host app, PPC guest, and bundled optional extension identified
     machine: modern macOS
   - id: setup-host-install
     path: assets/screenshots/getting-started/host-install.svg
@@ -71,7 +71,7 @@ images:
     width: 744
     height: 478
     surface: PowerPC Workshop
-    state: Optional NOW Extension active and its capabilities stated
+    state: Bundled optional NOW Extension active and its capabilities stated
     machine: Mac OS 9
   - id: setup-recovery
     path: assets/screenshots/getting-started/recovery.svg

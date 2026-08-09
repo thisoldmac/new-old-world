@@ -27,7 +27,7 @@ settle by rereading guest state.
 Mirror is PowerPC-only and experimental. Its ordinary shell can work without
 the optional Extension; live application structure, drawing activity, and
 other deeper features may require it. The [feature coverage
-matrix](../../explanation/optional-extension.md#feature-coverage) states which
+matrix](../../explanation/core-features.md#feature-coverage) states which
 user outcomes require the Extension. NOW-68K has no Mirror subsystem.
 
 ## On the modern Mac

@@ -50,6 +50,16 @@ exactly with `docs/module-manifest.yaml`, while the existing capability check
 continues to compare the Extension rows with P0–P8; its mutation suite has
 watched both omissions refuse by name.
 
+**Corrected again later on 2026-08-09:** “initial alpha availability” was
+being presented as a tag even though alpha availability is the default, and
+the text incorrectly said the NOW Extension shipped separately. The profile
+and navigation now say **alpha**; included PowerPC pages and ordinary module
+pages no longer receive redundant availability banners. Optional and excluded
+states remain called out. The Extension is documented as a component included
+in the alpha bundle but optional to install, and the first-connection tutorial
+introduces that choice before sending the reader to the renamed **Core
+features** page.
+
 ## DEFERRED WEBSITE HANDOFF: app documentation will be assembled by the separate website repository (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
 The public website now lives at

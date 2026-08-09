@@ -1,6 +1,6 @@
 # New Old World (NOW)
 
-Use a classic Macintosh from a modern Mac without turning either interface into a web replica. New Old World is a native macOS host and a PowerPC Carbon guest for Mac OS 8.6–9.2.2. The initial alpha centers that pair and its optional NOW Extension. A pre-Carbon 68K sibling remains in source, but its current build is stale and is not planned for the initial release.
+Use a classic Macintosh from a modern Mac without turning either interface into a web replica. New Old World is a native macOS host and a PowerPC Carbon guest for Mac OS 8.6–9.2.2. The alpha centers that pair and includes the NOW Extension in the bundle as an optional installation. A pre-Carbon 68K sibling remains in source, but its current build is stale and excluded from the alpha.
 
 > **Pre-alpha:** useful paths exist, but installation is still manual, compatibility is deliberately narrow, and several features are tested or emulator-verified rather than proven on physical hardware. Read [current limitations](docs/user-guide/reference/limitations.md) before relying on it.
 
@@ -11,8 +11,8 @@ Use a classic Macintosh from a modern Mac without turning either interface into 
 ## Start here
 
 - [Connect your first classic Mac](docs/user-guide/tutorials/first-connection.md)
-- [Compare core features and NOW Extension coverage](docs/user-guide/explanation/optional-extension.md)
-- [Review the initial-alpha feature profile](docs/user-guide/reference/release-profile.md)
+- [Compare core features and NOW Extension coverage](docs/user-guide/explanation/core-features.md)
+- [Review the alpha feature profile](docs/user-guide/reference/release-profile.md)
 - [Browse every module](docs/user-guide/reference/modules/index.md)
 - [Read the developer orientation](docs/developer-guide/orientation.md)
 - [See the generated protocol reference](docs/generated/asyncapi.md)
@@ -24,23 +24,23 @@ The web documentation is built from `mkdocs.yml` at the `/docs/` base path. Run 
 ```text
 PowerPC Carbon guest ─ guest-initiated TCP, framed control + bulk ─ macOS host
 
-optional NOW Extension ─ versioned memory table ─ PowerPC guest
+bundled, optional NOW Extension ─ versioned memory table ─ PowerPC guest
 
-pre-Carbon NOW-68K ─ retained in source; excluded from initial alpha
+pre-Carbon NOW-68K ─ retained in source; excluded from alpha
 ```
 
 - The host accepts several named guest sessions and drives one selected machine.
 - The PowerPC guest is one Workshop window with native module pages.
-- The optional NOW Extension adds deeper Mirror observation and interaction,
+- The bundled, optional NOW Extension adds deeper Mirror observation and interaction,
   including live interface structure, guarded controls, modal-loop reachability,
   drag sessions, and visible cursor following; ordinary NOW features remain
   available without it.
-- NOW-68K implements an explicit subset of the same contract without shaping the PowerPC codebase, but is not an initial-alpha release artifact.
+- NOW-68K implements an explicit subset of the same contract without shaping the PowerPC codebase, but is not an alpha release artifact.
 - Agent access is a bounded projection of host capabilities, not a second route to the guest socket.
 
 ## Capability summary
 
-| Area | PowerPC initial alpha | Optional NOW Extension | Pre-Carbon/NOW-68K |
+| Area | PowerPC alpha | Bundled, optional NOW Extension | Pre-Carbon/NOW-68K |
 |---|---|---|---|
 | Connection, console, files, processes, software, hardware facts | included | not required | excluded from release |
 | Screenshots and streaming | included with stated limitations | not required | excluded from release |
@@ -54,7 +54,7 @@ The short table is navigation, not a claim of parity. The [module reference](doc
 - The listener is for a trusted local network; secure transport is not available yet.
 - Distribution is not a signed installer flow. Classic artifacts require fork-preserving transfer.
 - Resume-by-offset and some large-transfer behavior remain unreliable.
-- Pre-Carbon/NOW-68K support is excluded from the initial alpha; its source and contributor documentation remain for later feature-flagged work.
+- Pre-Carbon/NOW-68K support is excluded from the alpha; its source and contributor documentation remain for later feature-flagged work.
 - Mirror is experimental. Drawing-content tracing remains off by default and has caused Finder instability on a PowerBook 1400c.
 - The documentation currently contains clearly labeled screenshot placeholders; captures must be privacy-reviewed and replace them at the declared dimensions.
 

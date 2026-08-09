@@ -1,5 +1,5 @@
 schema_version: 1
-active_profile: initial-alpha
+active_profile: alpha
 
 features:
   classic.powerpc:
@@ -15,7 +15,7 @@ features:
     flag_key: null
     runtime_binding: capability-negotiated
     primary_pages:
-      - user-guide/explanation/optional-extension.md
+      - user-guide/explanation/core-features.md
       - user-guide/how-to/install-extension.md
   classic.pre-carbon:
     title: Pre-Carbon support (NOW-68K)
@@ -27,19 +27,19 @@ features:
       - developer-guide/architecture/68k-guest.md
 
 profiles:
-  initial-alpha:
-    title: Initial alpha
-    description: The public release profile planned for the first downloadable alpha.
+  alpha:
+    title: Alpha
+    description: The public release profile planned for the downloadable alpha.
     features:
       classic.powerpc:
         state: included
-        note: Primary classic guest and the only supported initial-alpha path.
+        note: Primary classic guest and the supported alpha path.
       resident.extension:
         state: optional
-        note: Shipped separately; install it only for the resident-backed features listed below.
+        note: Bundled with the alpha; install it only for the resident-backed features listed below.
       classic.pre-carbon:
         state: excluded
-        note: The current NOW-68K build is stale and is not planned for the initial alpha.
+        note: The current NOW-68K build is stale and excluded from the alpha.
 
 module_feature_coverage:
   - module_id: screen

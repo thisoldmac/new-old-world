@@ -101,7 +101,7 @@ def main() -> int:
         )
         expect_mutation(
             test_root, "image alt text", test_root / "docs/user-guide/tutorials/first-connection.md",
-            "![The four pre-alpha artifacts identified by destination and optional status]",
+            "![The alpha bundle with the host, PowerPC guest, and bundled optional Extension identified]",
             "![]", "image has empty alt text",
         )
         expect_mutation(
@@ -257,11 +257,18 @@ def main() -> int:
                 test_root, "structured data", index, '"@type": "TechArticle"', '"@type": "BrokenArticle"',
                 "JSON-LD types", rendered,
             )
-            extension = rendered / "user-guide/explanation/optional-extension/index.html"
+            extension = rendered / "user-guide/explanation/core-features/index.html"
             expect_mutation(
                 test_root, "rendered release banner", extension,
                 'class="now-release-banner"', 'class="now-release-banner-missing"',
                 "rendered feature page has 0 release banners", rendered,
+            )
+            files = rendered / "user-guide/reference/modules/files/index.html"
+            expect_mutation(
+                test_root, "redundant default availability banner", files,
+                '<h1 id="files-module">',
+                '<aside class="now-release-banner"></aside><h1 id="files-module">',
+                "need 0", rendered,
             )
 
     print("[docs-gate-selftest] all documentation mutations refused")

@@ -20,11 +20,11 @@ the optional resident component.
 
 ## Steps
 
-1. Keep the previous host app, both guest artifacts, and extension artifact as
-   one rollback set.
+1. Keep the previous bundle—host app, guest artifacts, and NOW Extension—as one
+   rollback set.
 2. Disconnect sessions and quit the host and guest applications.
 3. Replace the host and the guest together when the contract revision changes.
-4. If the release includes a new NOW Extension, replace it and restart the
+4. If the bundle includes a new NOW Extension, replace it and restart the
    classic Mac before judging resident behavior.
 5. Reconnect and verify the named session and one capability.
 6. To roll back, restore the entire previous set rather than mixing revisions.

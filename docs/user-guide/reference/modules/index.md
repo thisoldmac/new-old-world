@@ -1,7 +1,7 @@
 ---
 page_id: module-index-reference
 title: Module reference
-description: Map every macOS host module to the initial-alpha PowerPC Workshop and retained pre-Carbon source posture.
+description: Map every macOS host module to the alpha PowerPC Workshop and retained pre-Carbon source posture.
 doc_type: reference
 audience: user
 lifecycle: current
@@ -13,7 +13,7 @@ last_verified: 2026-08-09
 
 # Module reference
 
-| Module | PowerPC Workshop | Pre-Carbon source (not in initial alpha) |
+| Module | PowerPC Workshop | Pre-Carbon source (excluded from alpha) |
 |---|---|---|
 | [Screen](screen.md) | Screenshots | supported subset |
 | [Files](files.md) | Files | supported subset |
@@ -33,11 +33,11 @@ last_verified: 2026-08-09
 This table is a reader-facing projection of the machine-readable module
 manifest. Capability coverage and proof remain separate questions; each page
 states both. The third column records retained implementation shape for future
-work; it does not mean NOW-68K ships in the initial alpha.
+work; it does not mean NOW-68K ships in the alpha.
 
 <!-- derived-doc v1
 sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
-sources-sha1: 1b3f05b40606bcfeac41e0c3b661fdabf19940f7
+sources-sha1: 57ea43261d14476994bed177450bba23190cc2c3
 derive module-map sha256=cc0ab1776e68f234416b59a648261f6dbfa2ba5e8c3aeb38ac8031ca5a55375e lines=14
     scripts/docs-inventory
 rederived: pending
@@ -51,4 +51,5 @@ rederived: 2026-08-09T17:53:28-0400 ed9436c0 sources
 rederived: 2026-08-09T18:53:52-0400 181db7a5 sources
 rederived: 2026-08-09T18:56:23-0400 181db7a5 unchanged
 rederived: 2026-08-09T19:21:55-0400 dc5bfcd2 sources
+rederived: 2026-08-09T19:33:56-0400 c854246d sources
 -->

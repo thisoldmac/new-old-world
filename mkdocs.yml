@@ -89,7 +89,7 @@ nav:
       - Overview: user-guide/index.md
       - Getting started:
           - Connect your first classic Mac: user-guide/tutorials/first-connection.md
-          - Core features and the NOW Extension: user-guide/explanation/optional-extension.md
+          - Core features: user-guide/explanation/core-features.md
       - How-to guides:
           - Choose the right guest: user-guide/how-to/choose-a-guest.md
           - Install the macOS host: user-guide/how-to/install-host.md
@@ -105,7 +105,7 @@ nav:
           - Guests and compatibility: user-guide/explanation/guests-and-compatibility.md
           - Verification and safety: user-guide/explanation/verification-and-safety.md
       - Reference:
-          - Initial alpha features: user-guide/reference/release-profile.md
+          - Alpha features: user-guide/reference/release-profile.md
           - Requirements: user-guide/reference/requirements.md
           - Current limitations: user-guide/reference/limitations.md
           - Modules:

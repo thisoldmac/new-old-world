@@ -17,14 +17,14 @@ last_verified: 2026-08-09
 |---|---|---|
 | macOS host | macOS 13 or later | `New Old World.app` |
 | PowerPC guest | PowerPC, Mac OS 8.6–9.2.2, CarbonLib 1.6 | `New Old World.bin` |
-| Optional NOW Extension | PowerPC classic range only; restart and disable-Extensions recovery available | `NOW Extension` |
-| Pre-Carbon/NOW-68K | Excluded from initial alpha; retained target was 68030, System 7.1, MacTCP | No initial-alpha artifact |
+| Bundled, optional NOW Extension | PowerPC classic range only; restart and disable-Extensions recovery available | `NOW Extension` in the alpha bundle |
+| Pre-Carbon/NOW-68K | Excluded from alpha; retained target was 68030, System 7.1, MacTCP | No alpha artifact |
 
 Both machines need IP connectivity on a trusted local network. The classic
 wire is plaintext TCP and has no authentication. The host's listener must not
 be exposed to the internet.
 
-The [initial-alpha feature profile](release-profile.md) is the release-facing
+The [alpha feature profile](release-profile.md) is the release-facing
 authority until a concrete bundle is cut. The release bundle then becomes
 authoritative for what ships. Source-build directories,
 emulator images, `.env.lab`, and private deployment credentials are contributor
@@ -32,7 +32,7 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: a74ce2f40bb1a481ccbe1bd2bd15dd11226aa09b
+sources-sha1: cf9e758d2b5fd3fac972f3a6aec7ae4e7aee4960
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -44,4 +44,5 @@ rederived: 2026-08-09T17:53:28-0400 ed9436c0 sources
 rederived: 2026-08-09T18:53:52-0400 181db7a5 sources
 rederived: 2026-08-09T18:56:23-0400 181db7a5 unchanged
 rederived: 2026-08-09T19:21:56-0400 dc5bfcd2 sources
+rederived: 2026-08-09T19:33:56-0400 c854246d sources
 -->

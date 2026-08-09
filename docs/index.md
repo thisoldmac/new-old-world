@@ -18,10 +18,10 @@ Mac supplies native browsing, services, and agent integration; the classic Mac
 supplies its own files, processes, screen, software inventory, and human-facing
 Workshop. They meet through one versioned contract.
 
-The first alpha targets the PowerPC Carbon guest. The pre-Carbon NOW-68K source
+The alpha targets the PowerPC Carbon guest. The pre-Carbon NOW-68K source
 remains in the repository, but its current build is stale and is not planned
-for the initial alpha. The
-[initial-alpha feature profile](user-guide/reference/release-profile.md) is the
+for the alpha. The
+[alpha feature profile](user-guide/reference/release-profile.md) is the
 authoritative release-facing statement.
 
 ![The modern macOS host showing a connected classic Mac and its modules](assets/screenshots/overview/host.svg){ .now-placeholder }
@@ -32,10 +32,10 @@ authoritative release-facing statement.
 
 - [Connect your first classic Mac](user-guide/tutorials/first-connection.md)
   for the guided path from artifacts to a named session.
-- [Explore core features and Extension coverage](user-guide/explanation/optional-extension.md)
+- [Explore core features and Extension coverage](user-guide/explanation/core-features.md)
   after connecting, including which features work without the optional
   component and which remain experimental.
-- [Review initial-alpha features](user-guide/reference/release-profile.md) for
+- [Review alpha features](user-guide/reference/release-profile.md) for
   what is included, optional, and excluded.
 - [Browse the module reference](user-guide/reference/modules/index.md) when
   you already have a connection and want to understand one surface.

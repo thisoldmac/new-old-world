@@ -15,8 +15,8 @@ feature_ids: [resident.extension]
 
 The NOW Extension performs only work that must run in a foreign application context. The PowerPC application is the sole reader of foreign memory and exposes the result to the rest of the product. The extension is optional: the application must report an unavailable plane honestly and keep non-resident features usable.
 
-The public [Extension feature coverage
-matrix](../../user-guide/explanation/optional-extension.md#feature-coverage)
+The public [feature coverage
+matrix](../../user-guide/explanation/core-features.md#feature-coverage)
 starts with user outcomes. This page owns the deeper P0–P8 execution, memory,
 shared-header, bake, and recovery contracts.
 
@@ -34,7 +34,7 @@ Text equivalent: resident callbacks observe or act in the foreign application, w
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: e7046f6e3965a69dc4f479391f5e630f43d75f8e
+sources-sha1: 75cf7d940bf840bb76e2053414d99887aa605b66
 derive resident-contract sha256=e423b6ffb62efdc0b3f336dd334c3df87437691f7d41ddb8e81d8536e9cd15fa lines=11
     scripts/docs-source-group resident
 rederived: pending
@@ -46,4 +46,5 @@ rederived: 2026-08-09T17:53:28-0400 ed9436c0 sources
 rederived: 2026-08-09T18:53:51-0400 181db7a5 sources
 rederived: 2026-08-09T18:56:22-0400 181db7a5 unchanged
 rederived: 2026-08-09T19:21:55-0400 dc5bfcd2 sources
+rederived: 2026-08-09T19:33:55-0400 c854246d sources
 -->

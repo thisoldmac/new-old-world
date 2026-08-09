@@ -550,11 +550,11 @@ def check(root: Path, site_dir: Path | None) -> int:
             f"capability inventory (coverage={covered_capabilities}, inventory={capability_ids})"
         )
     release_page = docs / "user-guide/reference/release-profile.md"
-    extension_page = docs / "user-guide/explanation/optional-extension.md"
+    extension_page = docs / "user-guide/explanation/core-features.md"
     if release_page.read_text().count("<!-- release-feature-table -->") != 1:
         errors.append("release-profile.md: expected exactly one release-feature-table marker")
     if extension_page.read_text().count("<!-- extension-feature-matrix -->") != 1:
-        errors.append("optional-extension.md: expected exactly one extension-feature-matrix marker")
+        errors.append("core-features.md: expected exactly one extension-feature-matrix marker")
     hooks = config.get("hooks", [])
     if "docs/hooks/release_features.py" not in hooks:
         errors.append("mkdocs.yml: release feature hook is not configured")
@@ -618,10 +618,11 @@ def check(root: Path, site_dir: Path | None) -> int:
             site_dir / "index.html": {"product": True},
             site_dir / "user-guide/tutorials/first-connection/index.html": {},
             site_dir / "user-guide/how-to/configure-connection/index.html": {},
-            site_dir / "user-guide/how-to/install-68k/index.html": {"release_banner": True},
-            site_dir / "user-guide/explanation/optional-extension/index.html": {"tables_min": 2, "release_banner": True},
+            site_dir / "user-guide/how-to/install-ppc/index.html": {"release_banners": 0},
+            site_dir / "user-guide/how-to/install-68k/index.html": {"release_banners": 1},
+            site_dir / "user-guide/explanation/core-features/index.html": {"tables_min": 2, "release_banners": 1},
             site_dir / "user-guide/reference/release-profile/index.html": {"table": True},
-            site_dir / "user-guide/reference/modules/files/index.html": {"images": True, "release_banner": True},
+            site_dir / "user-guide/reference/modules/files/index.html": {"images": True, "release_banners": 0},
             site_dir / "developer-guide/architecture/system-context/index.html": {"mermaid": True},
             site_dir / "developer-guide/reference/verification-levels/index.html": {"table": True, "mermaid": True},
             site_dir / "agent-guide/index.html": {},
@@ -655,8 +656,12 @@ def check(root: Path, site_dir: Path | None) -> int:
                 )
             if expected.get("mermaid") and parser.mermaid < 1:
                 errors.append(f"{path}: representative diagram page rendered no Mermaid container")
-            if expected.get("release_banner") and parser.release_banners != 1:
-                errors.append(f"{path}: rendered feature page has {parser.release_banners} release banners")
+            if ("release_banners" in expected
+                    and parser.release_banners != expected["release_banners"]):
+                errors.append(
+                    f"{path}: rendered feature page has {parser.release_banners} release banners; "
+                    f"need {expected['release_banners']}"
+                )
             json_types: set[str] = set()
             for raw in parser.json_ld:
                 try:

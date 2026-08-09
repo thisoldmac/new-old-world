@@ -36,7 +36,7 @@ def on_config(config):
 
 def _release_table(catalog) -> str:
     rows = [
-        "| Product area | Initial-alpha state | Runtime binding | Notes |",
+        "| Product area | Alpha state | Runtime binding | Notes |",
         "|---|---|---|---|",
     ]
     for feature in catalog["active"]["features"].values():

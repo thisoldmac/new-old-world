@@ -1,7 +1,7 @@
 ---
-page_id: optional-extension-explanation
-title: Core features and the NOW Extension
-description: See which initial-alpha features work in the normal application, which need the optional NOW Extension, and which remain experimental.
+page_id: core-features-explanation
+title: Core features
+description: See the alpha feature set, what works without the bundled NOW Extension, and what remains experimental.
 doc_type: explanation
 audience: user
 lifecycle: current
@@ -12,13 +12,14 @@ last_verified: 2026-08-09
 feature_ids: [resident.extension]
 ---
 
-# Core features and the NOW Extension
+# Core features
 
 Start with the normal PowerPC application. It connects, transfers files,
 captures the screen, and provides the complete application module set listed
 below without installing anything in the classic Mac's Extensions folder.
 
-The optional **NOW Extension** is for deeper Mirror features. It lets NOW
+The alpha bundle includes the **NOW Extension**, but installing it is optional.
+It is for deeper Mirror features: it lets NOW
 observe and interact while another classic application is drawing, tracking a
 drag, showing a menu, or holding the machine inside a modal loop. Installing it
 does not replace the application or unlock ordinary connection, file, screen,
@@ -29,14 +30,14 @@ console, process, hardware, or software features.
 The application table is complete by construction: every module in the
 published [module reference](../reference/modules/index.md) must appear exactly
 once. The second table separates the deeper Mirror outcomes added by the
-optional Extension.
+bundled Extension.
 
 <!-- extension-feature-matrix -->
 
-**Current** rows are part of the initial-alpha PowerPC path, subject to the
-linked limitations. **Experimental** rows are available for evaluation but do
-not carry the same release confidence. Emulator-verified or tested rows have
-not necessarily been observed on physical hardware.
+**Current** is the default alpha availability and is not a separate release
+tag. **Experimental** rows are available for evaluation but do not carry the
+same release confidence. Emulator-verified or tested rows have not necessarily
+been observed on physical hardware.
 
 ## Decide whether to install it
 

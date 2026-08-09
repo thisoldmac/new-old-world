@@ -17,10 +17,10 @@ boundary exists, tracing a behavior across processes, finding the
 implementation that owns it, running the right test, and preparing a
 reviewable change.
 
-New Old World is a native macOS host, a PowerPC Carbon guest, an optional
-resident extension, and a retained 68K Toolbox sibling. The initial alpha
-includes the first pair, offers the extension as an optional component, and
-excludes the currently stale pre-Carbon build. They share a versioned wire
+New Old World is a native macOS host, a PowerPC Carbon guest, a bundled optional
+resident extension, and a retained 68K Toolbox sibling. The alpha includes the
+first three but does not install the extension by default, and excludes the
+currently stale pre-Carbon build. They share a versioned wire
 contract, but not a UI architecture or implementation language.
 
 Start with [orientation](orientation.md), then use the architecture pages to
@@ -33,7 +33,7 @@ guide](../agent-guide/index.md). It overlays operating protocol on this guide;
 it does not duplicate the architecture.
 
 The [documentation standard](reference/documentation-standard.md) records the web-facing choices: Diátaxis, AsyncAPI 3.0, Mermaid with text equivalents, a WCAG 2.2 AA target, Schema.org metadata, and RFC 9116 release assets.
-The [initial-alpha feature profile](../user-guide/reference/release-profile.md)
+The [alpha feature profile](../user-guide/reference/release-profile.md)
 is machine-readable and drives feature-page availability notices.
 
 ## Change map

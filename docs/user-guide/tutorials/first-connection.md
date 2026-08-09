@@ -1,7 +1,7 @@
 ---
 page_id: first-connection-tutorial
 title: Connect your first classic Mac
-description: A guided first run from the pre-alpha artifacts to a named, verified NOW session.
+description: A guided first run from the alpha bundle to a named, verified NOW session.
 doc_type: tutorial
 audience: user
 lifecycle: current
@@ -14,23 +14,25 @@ last_verified: 2026-08-09
 # Connect your first classic Mac
 
 This tutorial gets one modern Mac and one classic Mac to the first named
-session. It uses the normal applications and does not require the optional NOW
-Extension.
+session. The alpha bundle includes the NOW Extension, but this first connection
+uses the normal applications and leaves the Extension uninstalled.
 
 ## What you need
 
 - A Mac running macOS 13 or later.
 - A PowerPC Mac running Mac OS 8.6–9.2.2 with CarbonLib 1.6.
 - Both machines on a local network you control.
-- The host app and the guest matching the classic Mac.
+- The alpha bundle containing the host app, PowerPC guest, and optional NOW
+  Extension.
 
-![The four pre-alpha artifacts identified by destination and optional status](../../assets/screenshots/getting-started/artifacts.svg){ .now-placeholder }
+![The alpha bundle with the host, PowerPC guest, and bundled optional Extension identified](../../assets/screenshots/getting-started/artifacts.svg){ .now-placeholder }
 
 ## 1. Put each application on its machine
 
 Install **New Old World.app** on the modern Mac. On a PowerPC Mac, transfer the
 MacBinary artifact **New Old World.bin** and let the transfer tool restore its
-forks.
+forks. Keep the bundled **NOW Extension** available, but do not install it for
+the first connection.
 
 ## 2. Start the host listener
 
@@ -57,12 +59,20 @@ connection light.
 
 ![A named connected session with its capability state visible](../../assets/screenshots/getting-started/connected.svg){ .now-placeholder }
 
+## 5. Decide whether to install the bundled Extension
+
+Open [Core features](../explanation/core-features.md). Ordinary modules do not
+need the Extension. Install the bundled component only when you want to
+evaluate the Extension-required Mirror features and can recover by booting
+with Extensions disabled.
+
 ## Result
 
-You now have a normal NOW session without a resident extension. Continue with
+You now have a normal NOW session without the bundled Extension installed.
+Continue with
 [Transfer a file](../how-to/transfer-a-file.md), browse the
 [module reference](../reference/modules/index.md), or compare
-[core features and NOW Extension coverage](../explanation/optional-extension.md).
+[core feature coverage](../explanation/core-features.md).
 
 If the dial is refused or never settles, use
 [Recover a connection](../how-to/recover-a-connection.md). Do not weaken the

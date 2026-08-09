@@ -25,7 +25,7 @@ model is:
 - the macOS host listens, chooses the active classic Mac, and owns modern
   integrations;
 - the PowerPC guest owns the Workshop and facts or actions on Mac OS 8.6–9.2.2;
-- the optional NOW Extension owns only work that must execute inside another
+- the bundled, optional NOW Extension owns only work that must execute inside another
   classic process;
 - `contract/asyncapi.yaml` is the wire boundary between host and guests;
 - `contract/peek_table.h` is the in-memory boundary between the PowerPC guest
@@ -33,7 +33,7 @@ model is:
 
 The retained NOW-68K tree is a sibling implementation of a contract subset,
 not a portability layer beneath the PowerPC guest. It is excluded from the
-initial alpha but remains relevant when studying pre-Carbon constraints.
+alpha but remains relevant when studying pre-Carbon constraints.
 
 ## Trace one behavior from the outside in
 

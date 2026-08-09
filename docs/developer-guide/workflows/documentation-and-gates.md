@@ -50,9 +50,11 @@ Use Mermaid for source-controlled diagrams and provide a text equivalent immedia
 
 `docs/feature-catalog.yaml` declares the active release profile, stable feature
 IDs, planned runtime flag keys, and the NOW Extension capability inventory.
-Add `feature_ids` to a curated page to render its release-state notice. Use
-`<!-- release-feature-table -->` or `<!-- extension-capability-table -->` only
-on the owning reference pages; the MkDocs hook renders them from the catalog.
+Add `feature_ids` to bind a curated page to that authority. Included alpha
+features are the default and render no availability banner; optional or
+excluded features render a notice. Use `<!-- release-feature-table -->` or
+`<!-- extension-feature-matrix -->` only on the owning pages; the MkDocs hook
+renders them from the catalog.
 
 The catalog is documentation authority until runtime feature flags exist. A
 future flag implementation must consume the same keys or replace the catalog
