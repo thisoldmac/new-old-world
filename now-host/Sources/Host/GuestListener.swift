@@ -39,9 +39,13 @@ final class GuestListener: ObservableObject {
         let id = UUID()
         let at: Date
         let text: String
+        /// The connection that produced the line. Nil is listener-wide
+        /// activity such as binding a port or refusing an unadmitted peer.
+        let sessionID: String?
 
         static func == (lhs: LogEntry, rhs: LogEntry) -> Bool {
             lhs.at == rhs.at && lhs.text == rhs.text
+                && lhs.sessionID == rhs.sessionID
         }
     }
 
@@ -361,6 +365,8 @@ final class GuestListener: ObservableObject {
                 idIsAutoAssigned: machine?.autoAssigned ?? true,
                 idIsAnchored: live.guestAddress.distinguishesMachines,
                 name: live.guestName,
+                displayName: machine?.displayName,
+                listenPort: machine?.listenPort,
                 address: live.guestAddress,
                 version: record.guestVersion,
                 build: record.guestBuild,
@@ -378,7 +384,8 @@ final class GuestListener: ObservableObject {
     /// reconnect is told its session ended rather than being retargeted
     /// at the successor while believing it holds continuity.
     private func mintSessionKey(hello: Hello,
-                                address: GuestAddress) -> GuestKey {
+                                address: GuestAddress,
+                                listenPort: UInt16?) -> GuestKey {
         let print = GuestRegistry.fingerprint(
             name: hello.name, operatingSystem: hello.os)
         /* Only slots held by a LIVE session count. A machine reconnecting
@@ -388,7 +395,7 @@ final class GuestListener: ObservableObject {
         }.map(\.slot))
         let record = registry.identify(
             address: address, name: hello.name, operatingSystem: hello.os,
-            occupiedSlots: occupied)
+            occupiedSlots: occupied, listenPort: listenPort)
         let key = GuestKey(machine: record.id, session: UUID())
         machineBySession[key] = record
         return key
@@ -440,9 +447,50 @@ final class GuestListener: ObservableObject {
         return outcome
     }
 
+    /// Retitles a machine without changing the stable id held by callers.
+    @discardableResult
+    func renameGuestDisplayName(_ key: GuestKey, to proposed: String)
+        -> Result<String, GuestRegistry.DisplayNameFailure> {
+        guard let record = machineBySession[key] else {
+            return .failure(.notFound)
+        }
+        let outcome = registry.renameDisplayName(record.key, to: proposed)
+        if case .success(let renamed) = outcome {
+            for (session, held) in machineBySession
+                where held.key == record.key {
+                machineBySession[session]?.displayName = renamed
+            }
+            publishActive()
+        }
+        return outcome
+    }
+
+    /// Closes one exact live session and removes its durable registry entry.
+    /// A guest configured to reconnect may immediately return; this is a
+    /// remove operation, not an implicit deny-list.
+    @discardableResult
+    func removeGuest(_ key: GuestKey) -> Bool {
+        guard let live = sessions[key] else { return false }
+        if let record = machineBySession[key] {
+            _ = registry.forget(record.key)
+        }
+        note("Removed \(machineBySession[key]?.lastName ?? live.guestName)",
+             session: key)
+        live.close(sending: Bye(code: .shuttingDown,
+                                reason: "Removed by the host"))
+        return true
+    }
+
     /// Per-guest health, so switching does not have to re-ask the wire
     /// and a background guest's ping count is not lost.
     private var healthByGuest: [GuestKey: SessionHealth] = [:]
+
+    /// The selected row's health without moving the active request plane.
+    /// Connections uses this to inspect a background guest without showing
+    /// the driven guest's counters under the wrong name.
+    func health(for key: GuestKey) -> SessionHealth? {
+        healthByGuest[key]
+    }
 
     private static let logLimit = 100
 
@@ -450,7 +498,8 @@ final class GuestListener: ObservableObject {
     /// line belongs to, so a log can be read by subsystem the way the
     /// other machine's can (docs/logging.md).
     func note(_ text: String, area: String = "wire",
-              level: HostLog.LogLevel = .info) {
+              level: HostLog.LogLevel = .info,
+              session: GuestKey? = nil) {
         if ProcessInfo.processInfo.environment["NOW_HOST_DEBUG"] != nil {
             FileHandle.standardError.write(Data("[now-host] \(text)\n".utf8))
         }
@@ -459,7 +508,7 @@ final class GuestListener: ObservableObject {
            before you looked, and what happened after you quit — is only
            in the second one. */
         HostLog.shared.write(level, area, text)
-        log.append(LogEntry(at: Date(), text: text))
+        log.append(LogEntry(at: Date(), text: text, sessionID: session?.text))
         if log.count > Self.logLimit {
             log.removeFirst(log.count - Self.logLimit)
         }
@@ -771,7 +820,7 @@ final class GuestListener: ObservableObject {
             note("#\(request.id) listed \(page.entries.count) "
                  + "item\(page.entries.count == 1 ? "" : "s") of "
                  + "\(request.path.isEmpty ? "the share root" : request.path)",
-                 area: "files")
+                 area: "files", session: session.guestKey)
             session.send(.fileListing(FileListing(
                 id: request.id, path: request.path, entries: page.entries,
                 more: page.more, cursor: page.next,
@@ -792,7 +841,8 @@ final class GuestListener: ObservableObject {
                 convertText: convertServedText
                     && request.container != "data")
             note("#\(request.id) serving \(plan.name), "
-                 + "\(plan.bytes.count) bytes", area: "files")
+                 + "\(plan.bytes.count) bytes", area: "files",
+                 session: session.guestKey)
             session.serveFile(id: request.id, plan: plan,
                               container: request.container,
                               modified: plan.modified)
@@ -812,7 +862,8 @@ final class GuestListener: ObservableObject {
                 createParents: offer.createParents ?? true,
                 overwrite: offer.overwrite ?? false)
             note("#\(offer.id) accepting \(offer.name), "
-                 + "\(offer.bytes) bytes, into the share", area: "files")
+                 + "\(offer.bytes) bytes, into the share", area: "files",
+                 session: session.guestKey)
             try session.beginReceiving(offer: offer, to: url)
         } catch {
             session.refuseFile(id: offer.id, error: error)
@@ -846,7 +897,7 @@ final class GuestListener: ObservableObject {
                                             overwrite: request.overwrite
                                                 ?? false)
                 note("#\(request.id) moved \(request.path) to \(landed)",
-                     area: "files")
+                     area: "files", session: session.guestKey)
                 served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
@@ -856,7 +907,8 @@ final class GuestListener: ObservableObject {
                 /* The other machine putting a file of yours in the
                    Trash is the line most worth having later. */
                 note("#\(request.id) trashed \(request.path), it is in the "
-                     + "Trash as \(landed)", area: "files")
+                     + "Trash as \(landed)", area: "files",
+                     session: session.guestKey)
                 served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: request.path,
@@ -865,7 +917,8 @@ final class GuestListener: ObservableObject {
                 let landed = try share.restore(trashedAs: request.trashedAs,
                                                to: request.toPath)
                 note("#\(request.id) restored \(request.trashedAs) to "
-                     + "\(landed)", area: "files")
+                     + "\(landed)", area: "files",
+                     session: session.guestKey)
                 served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
@@ -873,7 +926,7 @@ final class GuestListener: ObservableObject {
             case .mkdir(let request):
                 let landed = try share.makeFolder(path: request.path)
                 note("#\(request.id) made the folder \(landed)",
-                     area: "files")
+                     area: "files", session: session.guestKey)
                 served = landed
                 session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
@@ -882,7 +935,8 @@ final class GuestListener: ObservableObject {
         } catch {
             let fault = HostShare.WireFault(error)
             note("#\(change.id) change refused: \(fault.code) "
-                 + "(\(fault.reason))", area: "files", level: .warn)
+                 + "(\(fault.reason))", area: "files", level: .warn,
+                 session: session.guestKey)
             session.send(.fileResult(FileResult(
                 id: change.id, ok: false, path: nil, trashedAs: nil,
                 code: fault.code, reason: fault.reason)))
@@ -2323,6 +2377,7 @@ final class GuestListener: ObservableObject {
            itself has been read. This is the fact the machine registry
            anchors on precisely because the guest had no say in it. */
         let address = GuestAddress(endpoint: connection.endpoint)
+        let listenPort = boundPort
         /// True when this connection is the one the request-shaped API is
         /// driving — so its answers are the ones our waiters are owed.
         func fromActive() -> Bool {
@@ -2357,7 +2412,8 @@ final class GuestListener: ObservableObject {
                     return GuestKey(machine: GuestID("guest")!,
                                     session: UUID())
                 }
-                return self.mintSessionKey(hello: hello, address: address)
+                return self.mintSessionKey(
+                    hello: hello, address: address, listenPort: listenPort)
             },
             onActive: { [weak self] activated in
                 guard let self, let key = activated.guestKey else { return }
@@ -2371,7 +2427,8 @@ final class GuestListener: ObservableObject {
                 self.events.publish(.guestConnected(key))
             },
             onLog: { [weak self] text, area, level in
-                self?.note(text, area: area, level: level)
+                self?.note(text, area: area, level: level,
+                           session: origin.session?.guestKey)
             },
             /* Health is per guest and kept for all of them — a guest
                nobody is driving is still connected, still pinging, and

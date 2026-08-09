@@ -92,13 +92,13 @@ struct EndedGuestSession: Equatable, Sendable {
 /// - `machineID` is what a person or an agent TYPES. Stable, host-assigned.
 /// - `liveSessionID` is THIS connection. Refused once it has ended, rather
 ///   than answered by its successor.
-/// - `address` is where the host saw it. Authoritative for which socket,
-///   useless as a name — and on loopback it cannot even tell two Macs
-///   apart, which is what `idIsAnchored` says out loud.
+/// - `address` pairs the guest IP the host saw with the host port that
+///   accepted that machine. It is useful reconnect information, not a
+///   durable identity — on loopback it cannot even tell two Macs apart,
+///   which is what `idIsAnchored` says out loud.
 ///
-/// `name` is a fourth thing and deliberately not an identity: it is what
-/// the machine calls itself, it carries the deployed binary's version, and
-/// it is shown and never compared.
+/// `name` is what the machine reported; `displayName` is the host-owned title
+/// that defaults from it and may be edited without changing identity.
 struct ConnectionRow: Identifiable, Equatable, Sendable {
     /// Where this machine stands with the host.
     enum Presence: Equatable, Sendable {
@@ -119,6 +119,9 @@ struct ConnectionRow: Identifiable, Equatable, Sendable {
     /// What the machine calls itself — live for a connected row, and the
     /// last name it used for a remembered one.
     let name: String
+    let displayName: String
+    /// Guest IP plus the host listener port this machine used. This is not
+    /// the transient remote source port from its TCP socket.
     let address: String
     let liveSessionID: String?
     /// The last session this machine had, when the pane watched it end.
@@ -141,6 +144,9 @@ struct ConnectionRow: Identifiable, Equatable, Sendable {
     /// The session handle the pane needs to drive or rename this machine.
     /// Nil for a remembered row: neither is possible without a connection.
     let key: GuestKey?
+    /// Exact durable registry record, only for remembered rows. A machine id
+    /// is human-editable and therefore cannot safely identify a deletion.
+    let registryKey: GuestRegistry.Record.Key?
     /// What an agent naming this row's MACHINE id would be told.
     let byMachineID: ConnectionAddressing
     /// What an agent holding this row's SESSION id would be told — the live
@@ -215,7 +221,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
         guard rows.count > 1 else {
             return "1 \(MachineNaming.commonNoun) connected"
         }
-        let driving = rows.first { $0.presence == .driving }?.machineID
+        let driving = rows.first { $0.presence == .driving }?.displayName
         guard let driving else {
             return "\(rows.count) \(MachineNaming.commonNounPlural) connected"
         }
@@ -248,7 +254,9 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 machineID: guest.id.slug,
                 presence: guest.isActive ? .driving : .connected,
                 name: guest.name,
-                address: guest.address.text,
+                displayName: guest.displayName ?? guest.name,
+                address: Self.listenerAddress(guest.address.text,
+                    port: guest.listenPort ?? SettingsModel.defaultPort),
                 liveSessionID: guest.sessionID,
                 lastSessionID: ended[guest.id.slug]?.sessionID,
                 since: guest.connectedAt,
@@ -259,6 +267,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 idIsAutoAssigned: guest.idIsAutoAssigned,
                 idIsAnchored: guest.idIsAnchored,
                 key: guest.key,
+                registryKey: nil,
                 byMachineID: ConnectionAddressing(
                     refusal: resolve(guest.id.slug)),
                 bySessionID: ConnectionAddressing(
@@ -274,7 +283,9 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 machineID: record.id.slug,
                 presence: .known,
                 name: record.lastName,
-                address: record.address,
+                displayName: record.displayName ?? record.lastName,
+                address: Self.listenerAddress(record.address,
+                    port: record.listenPort ?? SettingsModel.defaultPort),
                 liveSessionID: nil,
                 lastSessionID: last,
                 since: record.lastSeen,
@@ -288,6 +299,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 idIsAnchored: GuestAddress(text: record.address)
                     .distinguishesMachines,
                 key: nil,
+                registryKey: record.key,
                 byMachineID: ConnectionAddressing(
                     refusal: resolve(record.id.slug)),
                 bySessionID: last.map {
@@ -295,6 +307,12 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 }))
         }
         return ConnectionsSnapshot(state: state, rows: rows)
+    }
+
+    private static func listenerAddress(_ address: String,
+                                        port: UInt16) -> String {
+        let host = address.contains(":") ? "[\(address)]" : address
+        return "\(host):\(port)"
     }
 }
 
@@ -324,6 +342,8 @@ final class ConnectionsModel: ObservableObject {
     private let listener: GuestListener
     private let resolve: (String) -> AgentIntegrationUnavailable?
     private let select: (GuestKey) -> Bool
+    private let disconnect: (GuestKey) -> Bool
+    private let forget: (GuestRegistry.Record.Key) -> Bool
     private var ended: [String: EndedGuestSession] = [:]
     private var liveGuests: [GuestKey: ConnectedGuest] = [:]
     private var watch: HostEventSubscription?
@@ -334,10 +354,16 @@ final class ConnectionsModel: ObservableObject {
 
     init(listener: GuestListener,
          resolve: @escaping (String) -> AgentIntegrationUnavailable?,
-         select: ((GuestKey) -> Bool)? = nil) {
+         select: ((GuestKey) -> Bool)? = nil,
+         disconnect: ((GuestKey) -> Bool)? = nil,
+         forget: ((GuestRegistry.Record.Key) -> Bool)? = nil) {
         self.listener = listener
         self.resolve = resolve
         self.select = select ?? { [listener] key in listener.selectGuest(key) }
+        self.disconnect = disconnect
+            ?? { [listener] key in listener.removeGuest(key) }
+        self.forget = forget
+            ?? { [listener] key in listener.registry.forget(key) }
         /* This used to sink `$guests` and `$state` and hop a turn through
            the main queue, because `@Published` fires in `willSet` and a sink
            reading the listener back synchronously saw the OUTGOING value.
@@ -397,6 +423,21 @@ final class ConnectionsModel: ObservableObject {
         return moved
     }
 
+    /// Removes exactly what the list selection represents. Live rows are
+    /// sessions, remembered rows are registry records; keeping those paths
+    /// separate prevents a stale row from closing whichever guest happens
+    /// to be active.
+    @discardableResult
+    func remove(_ row: ConnectionRow) -> Bool {
+        if let key = row.key {
+            return disconnect(key)
+        }
+        guard let key = row.registryKey else { return false }
+        let removed = forget(key)
+        if removed { refresh() }
+        return removed
+    }
+
     /// Names a machine, which is the one act that makes its id durable —
     /// until a human does this the id is an ordinal that says nothing.
     ///
@@ -417,6 +458,38 @@ final class ConnectionsModel: ObservableObject {
             renameProblem = Self.explain(why, proposed: proposed)
             return false
         }
+    }
+
+    /// Changes the title people see without touching the stable machine id.
+    /// Remembered rows are valid targets because the registry owns the title.
+    @discardableResult
+    func renameDisplayName(_ row: ConnectionRow, to proposed: String) -> Bool {
+        renameProblem = nil
+        let outcome: Result<String, GuestRegistry.DisplayNameFailure>
+        if let key = row.key {
+            outcome = listener.renameGuestDisplayName(key, to: proposed)
+        } else if let registryKey = row.registryKey {
+            outcome = listener.registry.renameDisplayName(
+                registryKey, to: proposed)
+        } else {
+            outcome = .failure(.notFound)
+        }
+        switch outcome {
+        case .success:
+            refresh()
+            return true
+        case .failure(.notFound):
+            renameProblem = "That machine is no longer available."
+        case .failure(.empty):
+            renameProblem = "Enter a name for this machine."
+        case .failure(.tooLong):
+            renameProblem = "Machine names may be at most 80 characters."
+        }
+        return false
+    }
+
+    func clearRenameProblem() {
+        renameProblem = nil
     }
 
     /// The failure in the words of what to do about it. `taken` names the

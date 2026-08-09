@@ -55,6 +55,44 @@ render at the state-machine level. The remaining useful check is a live host
 UI pass for the AppKit key events and sidebar redraw; no guest behavior or wire
 message changed.
 
+## Multi-guest host controls: tested, not visually or metal-verified (2026-08-08)
+
+The host now keeps its guest choice at the top of the sidebar as a
+live-only menu. That selection is the listener's active session, so every
+module moves with it; remembered machines cannot appear attached merely
+because their registry record survived. The menu's Add Guest action opens
+Connections.
+
+Connections is now a split view: active sessions above remembered machines
+on the left, the selected machine's link status, identity and session log on
+the right. Remembered rows are visibly secondary. The list's plus action
+opens the listening setup, while minus closes and forgets exactly a selected
+live session or forgets exactly a selected remembered record. Pressing Return
+in the port field follows the same validated Start Listening action as the
+button. Each row is headed by a host-owned display name, defaulted from the
+machine's reported name; collisions receive `-2`, `-3`, and so on. The guest
+IP and the host port that particular machine used are the subrow; remembered
+machines retain their own last-used ports when the current listener changes,
+and the guest's transient outbound source port is deliberately not shown. A
+pencil beside the detail title and the row/detail
+context menus rename that display name without changing the stable machine id;
+the same menus expose Delete and the listener's Start/Stop action.
+
+**Tested here:** `scripts/test-all` passes: 82 native tests, the complete host
+suite, and the Debug and Release app builds. Focused host tests cover
+active-versus-remembered removal, exact remembered-record removal,
+session-scoped health and logs, the plural module name, and Return starting
+the listener. Display-name tests cover default and duplicate allocation,
+persistence across reconnect, editing live and remembered rows, and preserving
+the session and stable machine identities. Two-guest socket tests remove either session and prove the
+remaining guest is still promoted or still answers. Guest cross-builds were
+skipped because this worktree has no Retro68 toolchain.
+
+**Still unverified:** nobody has looked at this layout in the running host
+app yet, and none of these controls has been exercised against two physical
+Macs. The existing two-guests-on-one-port limitation therefore remains:
+tested is not metal-verified.
+
 ## The folding sidebar, both halves (2026-08-05)
 
 The rail folds to icons on the guest and the sidebar does the same on the
