@@ -149,8 +149,17 @@ enum AnthropicOAuth {
 /// rotation — the second caller waits for the first refresh and gets
 /// its result.
 actor AnthropicTokenRefresher {
+    private struct RefreshFlight {
+        let id: UUID
+        let source: ChatOAuthTokens
+        let task: Task<ChatOAuthTokens, Error>
+    }
+
     private let store: ChatCredentialStore
-    private var inFlight: Task<ChatOAuthTokens, Error>?
+    private var inFlight: RefreshFlight?
+    private var lastRefresh: (
+        source: ChatOAuthTokens, fresh: ChatOAuthTokens
+    )?
 
     init(store: ChatCredentialStore) {
         self.store = store
@@ -161,24 +170,56 @@ actor AnthropicTokenRefresher {
     func liveTokens(
         stored data: Data, transport: ChatHTTPTransport
     ) async throws -> ChatOAuthTokens {
-        guard let tokens = try? JSONDecoder().decode(
+        guard var tokens = try? JSONDecoder().decode(
             ChatOAuthTokens.self, from: data)
         else {
             throw ChatFault.refuse(
                 code: "no-credentials", reason: "Unreadable saved sign-in")
         }
         guard tokens.isExpired else { return tokens }
-        if let running = inFlight {
-            return try await running.value
+        // An operation cache may hand us the blob it read before another
+        // operation refreshed. Prefer the authoritative no-UI value when
+        // available, then retain the last successful source/result pair for
+        // provider instances whose store is itself an operation cache.
+        if let current = store.read(
+            .anthropicOAuth, interaction: .forbid).data,
+           let decoded = try? JSONDecoder().decode(
+               ChatOAuthTokens.self, from: current) {
+            tokens = decoded
         }
+        guard tokens.isExpired else { return tokens }
+        return try await refresh(tokens, transport: transport)
+    }
+
+    private func refresh(
+        _ source: ChatOAuthTokens, transport: ChatHTTPTransport
+    ) async throws -> ChatOAuthTokens {
+        if let lastRefresh, lastRefresh.source == source {
+            return lastRefresh.fresh
+        }
+        if let running = inFlight {
+            let fresh = try await running.task.value
+            lastRefresh = (running.source, fresh)
+            if inFlight?.id == running.id { inFlight = nil }
+            if running.source == source { return fresh }
+            return try await refresh(source, transport: transport)
+        }
+        let id = UUID()
         let task = Task<ChatOAuthTokens, Error> {
             let fresh = try await AnthropicOAuth.refresh(
-                tokens, transport: transport)
+                source, transport: transport)
             try store.write(.anthropicOAuth, JSONEncoder().encode(fresh))
             return fresh
         }
-        inFlight = task
-        defer { inFlight = nil }
-        return try await task.value
+        inFlight = RefreshFlight(id: id, source: source, task: task)
+        do {
+            let fresh = try await task.value
+            lastRefresh = (source, fresh)
+            if inFlight?.id == id { inFlight = nil }
+            return fresh
+        } catch {
+            if inFlight?.id == id { inFlight = nil }
+            throw error
+        }
     }
 }

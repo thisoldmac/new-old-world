@@ -64,6 +64,8 @@ for configuration in Debug Release; do
                 || tail -40 "$scratch_root/xcodebuild-$configuration.log" >&2
             exit 1
         }
+    "$script_dir/verify-host-signature" \
+        "$scratch_root/xcode-$configuration/Build/Products/$configuration/New Old World.app"
 done
 
 echo "==> host gate passed"

@@ -26,11 +26,21 @@ case "$output_root/" in
         ;;
 esac
 
-mkdir -p "$output_root"
-output_root=$(CDPATH= cd -- "$output_root" && pwd -P)
 if [ "$output_root" = / ]; then
     echo "output directory must not be the filesystem root" >&2
     exit 64
+fi
+
+if [ -d "$output_root" ]; then
+    output_root=$(CDPATH= cd -- "$output_root" && pwd -P)
+else
+    output_parent=$(dirname -- "$output_root")
+    if [ ! -d "$output_parent" ]; then
+        echo "output directory's parent must already exist" >&2
+        exit 64
+    fi
+    output_parent=$(CDPATH= cd -- "$output_parent" && pwd -P)
+    output_root="$output_parent/$(basename -- "$output_root")"
 fi
 case "$output_root/" in
     "$repo_root"/*)
@@ -38,10 +48,12 @@ case "$output_root/" in
         exit 64
         ;;
 esac
+mkdir -p "$output_root"
 
 bundle="$output_root/New Old World.app"
 
 if [ "$signing" = developer ]; then
+    rm -rf "$bundle"
     xcodebuild \
         -project "$repo_root/now-host/NewOldWorld.xcodeproj" \
         -scheme "New Old World" \
@@ -50,7 +62,7 @@ if [ "$signing" = developer ]; then
         -allowProvisioningUpdates \
         CONFIGURATION_BUILD_DIR="$output_root" \
         build
-    codesign --verify --strict "$bundle"
+    "$script_dir/verify-host-signature" "$bundle"
 else
     scratch="$output_root/swift-build"
     binary="$scratch/debug/Host"

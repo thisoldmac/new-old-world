@@ -213,6 +213,26 @@ final class AnthropicProviderTests: XCTestCase {
         XCTAssertEqual(store.reads.first?.1, .forbid)
     }
 
+    func testProtectedOAuthFallsBackToWorkingAPIKey() async throws {
+        let store = RecordingChatCredentialStore(values: [
+            .anthropicOAuth: .authorizationRequired,
+            .anthropicAPIKey: .value(Data("sk-fallback".utf8)),
+        ])
+        let transport = FakeChatTransport([
+            .init(data: try JSONSerialization.data(withJSONObject: ["data": []]))
+        ])
+        let provider = AnthropicChatProvider(store: store, transport: transport)
+
+        _ = try await provider.listModels()
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "x-api-key"), "sk-fallback")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        let entry = await provider.entry()
+        XCTAssertEqual(entry.state, "serving")
+        XCTAssertTrue(entry.detail.contains("API key"))
+    }
+
     func testSubscriptionIsPreferredOverAStoredKey() async throws {
         // Both credentials present: the sign-in wins - a person who
         // signed in did so to use their plan (metal, 2026-08-02).
@@ -488,11 +508,8 @@ final class OpenAICompatibleProviderTests: XCTestCase {
                 "",
             ]),
         ])
-        let store = RecordingChatCredentialStore(values: [
-            .openAIAPIKey: .value(Data("sk-test".utf8)),
-        ])
-        let provider = OpenAICompatibleChatProvider.openAI(
-            store: store, transport: transport)
+        let provider = OpenAICompatibleChatProvider.oMLX(
+            store: InMemoryChatCredentialStore(), transport: transport)
         let schema = try JSONSerialization.data(
             withJSONObject: ["type": "object"])
         let out = try await collect(provider.stream(ChatCompletionRequest(
@@ -502,17 +519,45 @@ final class OpenAICompatibleProviderTests: XCTestCase {
             maxTokens: 64)))
         XCTAssertEqual(out.text, "Second try.")
         XCTAssertEqual(transport.requests.count, 2)
+        let retryBody = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: XCTUnwrap(transport.requests[1].httpBody))
+                as? [String: Any])
+        XCTAssertNil(retryBody["tools"], "the retry strips the tools")
+    }
+
+    func testStoredKeyIsReadOnceAcrossToolFallbackRetry() async throws {
+        let empty = """
+            {"choices":[{"message":{"content":""},"finish_reason":"stop"}]}
+            """
+        let transport = FakeChatTransport([
+            .init(lines: [empty]),
+            .init(lines: [
+                "data: {\"choices\":[{\"delta\":{\"content\":\"Second try.\"}}]}",
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}",
+                "data: [DONE]",
+            ]),
+        ])
+        let store = RecordingChatCredentialStore(values: [
+            .openAIAPIKey: .value(Data("sk-test".utf8)),
+        ])
+        let provider = OpenAICompatibleChatProvider.openAI(
+            store: store, transport: transport)
+        let schema = try JSONSerialization.data(
+            withJSONObject: ["type": "object"])
+
+        _ = try await collect(provider.stream(ChatCompletionRequest(
+            model: "gpt", system: "", turns: [.user("hi")],
+            tools: [ChatToolDescriptor(
+                name: "f", description: "d", inputSchemaJSON: schema)],
+            maxTokens: 64)))
+
         XCTAssertEqual(store.reads.count, 1)
         XCTAssertEqual(store.reads.first?.0, .openAIAPIKey)
         XCTAssertEqual(store.reads.first?.1, .forbid)
         XCTAssertTrue(transport.requests.allSatisfy {
             $0.value(forHTTPHeaderField: "Authorization") == "Bearer sk-test"
         })
-        let retryBody = try XCTUnwrap(
-            try JSONSerialization.jsonObject(
-                with: XCTUnwrap(transport.requests[1].httpBody))
-                as? [String: Any])
-        XCTAssertNil(retryBody["tools"], "the retry strips the tools")
     }
 
     func testUnreadableAnswersQuoteThemselvesAndFastAPIDetails() async throws {
@@ -673,5 +718,32 @@ final class AnthropicOAuthTests: XCTestCase {
             ChatOAuthTokens.self, from: XCTUnwrap(store.read(
                 .anthropicOAuth, interaction: .forbid).data))
         XCTAssertEqual(stored.refreshToken, "rt-2")
+    }
+
+    func testRefresherDoesNotReplayACompletedStaleSnapshot() async throws {
+        let store = InMemoryChatCredentialStore()
+        let stale = ChatOAuthTokens(
+            accessToken: "stale", refreshToken: "rt-old",
+            expiresAt: .distantPast)
+        let original = try JSONEncoder().encode(stale)
+        try store.write(.anthropicOAuth, original)
+        let transport = FakeChatTransport([
+            .init(data: try JSONSerialization.data(withJSONObject: [
+                "access_token": "at-fresh", "refresh_token": "rt-rotated",
+                "expires_in": 3600,
+            ]))
+        ])
+        let refresher = AnthropicTokenRefresher(store: store)
+
+        let first = try await refresher.liveTokens(
+            stored: original, transport: transport)
+        // A second operation captured `original` before the first completed,
+        // but did not enter the actor until after the rotated token was saved.
+        let second = try await refresher.liveTokens(
+            stored: original, transport: transport)
+
+        XCTAssertEqual(first.accessToken, "at-fresh")
+        XCTAssertEqual(second.accessToken, "at-fresh")
+        XCTAssertEqual(transport.requests.count, 1)
     }
 }

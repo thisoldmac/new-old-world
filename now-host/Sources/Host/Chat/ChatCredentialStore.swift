@@ -26,6 +26,8 @@ enum ChatCredentialRead: Equatable, Sendable {
     case value(Data)
     case missing
     case authorizationRequired
+    case cleanupRequired(OSStatus)
+    case operationFailed(String)
     case unavailable(OSStatus)
 
     var data: Data? {
@@ -47,6 +49,10 @@ enum ChatCredentialRead: Equatable, Sendable {
             return nil
         case .authorizationRequired:
             return "Authorize saved credentials"
+        case .cleanupRequired(let status):
+            return "Saved credential copied, but its old Keychain item could not be removed (\(status))"
+        case .operationFailed(let reason):
+            return reason
         case .unavailable(errSecMissingEntitlement):
             return "Saved credentials require a Developer-signed build"
         case .unavailable(let status):
@@ -59,7 +65,7 @@ protocol ChatCredentialStore: Sendable {
     func read(_ key: ChatCredentialKey, interaction: ChatCredentialInteraction)
         -> ChatCredentialRead
     func write(_ key: ChatCredentialKey, _ data: Data) throws
-    func delete(_ key: ChatCredentialKey)
+    func delete(_ key: ChatCredentialKey) throws
 }
 
 extension ChatCredentialStore {
@@ -76,6 +82,10 @@ extension ChatCredentialStore {
             return .missing
         case .authorizationRequired:
             return .authorizationRequired
+        case .cleanupRequired(let status):
+            return .cleanupRequired(status)
+        case .operationFailed(let reason):
+            return .operationFailed(reason)
         case .unavailable(let status):
             return .unavailable(status)
         }
@@ -128,7 +138,8 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
         switch protected {
         case .missing:
             break
-        case .value, .authorizationRequired, .unavailable:
+        case .value, .authorizationRequired, .cleanupRequired,
+             .operationFailed, .unavailable:
             return protected
         }
 
@@ -143,10 +154,14 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
               interaction == .allow else { return legacy }
         do {
             try writeDataProtection(key, data)
-            SecItemDelete(query(key, dataProtection: false) as CFDictionary)
+            let status = deleteStatus(key, dataProtection: false)
+            guard Self.deleteSucceeded(status) else {
+                return .cleanupRequired(status)
+            }
         } catch {
             // The readable legacy value is still intact. Migration failure
-            // must not turn a usable credential into apparent absence.
+            // must be visible rather than becoming an authorization loop.
+            return .operationFailed(ChatFault.from(error).reason)
         }
         return .value(data)
     }
@@ -180,13 +195,9 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
 
     func write(_ key: ChatCredentialKey, _ data: Data) throws {
         try writeDataProtection(key, data)
-        // A successful new write owns the value. Best-effort retirement of
-        // the legacy duplicate cannot jeopardize it or put up UI from an
-        // OAuth refresh running behind a page update.
-        var legacy = query(key, dataProtection: false)
-        legacy[kSecUseAuthenticationUI as String] =
-            kSecUseAuthenticationUIFail
-        SecItemDelete(legacy as CFDictionary)
+        try requireDeleted(
+            deleteStatus(key, dataProtection: false),
+            action: "Old Keychain credential cleanup")
     }
 
     private func writeDataProtection(
@@ -216,51 +227,75 @@ struct KeychainChatCredentialStore: ChatCredentialStore {
         }
     }
 
-    func delete(_ key: ChatCredentialKey) {
-        SecItemDelete(query(key, dataProtection: true) as CFDictionary)
-        SecItemDelete(query(key, dataProtection: false) as CFDictionary)
+    private func deleteStatus(
+        _ key: ChatCredentialKey, dataProtection: Bool
+    ) -> OSStatus {
+        var item = query(key, dataProtection: dataProtection)
+        item[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        return SecItemDelete(item as CFDictionary)
+    }
+
+    private static func deleteSucceeded(_ status: OSStatus) -> Bool {
+        status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    private func requireDeleted(_ status: OSStatus, action: String) throws {
+        guard Self.deleteSucceeded(status) else {
+            throw ChatFault.refuse(
+                code: "no-credentials", reason: "\(action) failed (\(status))")
+        }
+    }
+
+    func delete(_ key: ChatCredentialKey) throws {
+        // Remove the fallback first. If it survives, keep the protected copy
+        // too so a failed sign-out never appears to succeed and then undo
+        // itself on the next read.
+        try requireDeleted(
+            deleteStatus(key, dataProtection: false),
+            action: "Old Keychain credential removal")
+        try requireDeleted(
+            deleteStatus(key, dataProtection: true),
+            action: "Saved credential removal")
     }
 }
 
-/// A single passive operation's view of Keychain. It performs one
-/// noninteractive read per credential, then lets provider status and model
-/// discovery reuse those outcomes without re-entering Keychain. Writes still
-/// flow to the source so an OAuth refresh is not stranded in the snapshot.
-final class SnapshotChatCredentialStore: ChatCredentialStore,
+/// One operation's lazy credential cache. It fixes the source interaction
+/// policy at construction, reads each key at most once, and lets provider
+/// status and discovery reuse that outcome without re-entering Keychain.
+/// Writes still flow through so an OAuth refresh is not stranded in the cache.
+final class OperationChatCredentialStore: ChatCredentialStore,
     @unchecked Sendable {
     private let lock = NSLock()
     private let source: ChatCredentialStore
+    private let sourceInteraction: ChatCredentialInteraction
     private var values: [ChatCredentialKey: ChatCredentialRead]
 
     init(
         source: ChatCredentialStore, interaction: ChatCredentialInteraction
     ) {
         self.source = source
-        values = Dictionary(uniqueKeysWithValues:
-            ChatCredentialKey.allCases.map {
-                ($0, source.read($0, interaction: interaction))
-            })
+        self.sourceInteraction = interaction
+        values = [:]
     }
 
     func read(_ key: ChatCredentialKey, interaction: ChatCredentialInteraction)
         -> ChatCredentialRead {
-        lock.lock()
-        defer { lock.unlock() }
-        return values[key] ?? .missing
+        lock.withLock {
+            if let cached = values[key] { return cached }
+            let value = source.read(key, interaction: sourceInteraction)
+            values[key] = value
+            return value
+        }
     }
 
     func write(_ key: ChatCredentialKey, _ data: Data) throws {
         try source.write(key, data)
-        lock.lock()
-        defer { lock.unlock() }
-        values[key] = .value(data)
+        lock.withLock { values[key] = .value(data) }
     }
 
-    func delete(_ key: ChatCredentialKey) {
-        source.delete(key)
-        lock.lock()
-        defer { lock.unlock() }
-        values[key] = .missing
+    func delete(_ key: ChatCredentialKey) throws {
+        try source.delete(key)
+        lock.withLock { values[key] = .missing }
     }
 }
 
@@ -271,20 +306,16 @@ final class InMemoryChatCredentialStore: ChatCredentialStore, @unchecked Sendabl
 
     func read(_ key: ChatCredentialKey, interaction: ChatCredentialInteraction)
         -> ChatCredentialRead {
-        lock.lock()
-        defer { lock.unlock() }
-        return values[key].map(ChatCredentialRead.value) ?? .missing
+        lock.withLock {
+            values[key].map(ChatCredentialRead.value) ?? .missing
+        }
     }
 
     func write(_ key: ChatCredentialKey, _ data: Data) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        values[key] = data
+        lock.withLock { values[key] = data }
     }
 
-    func delete(_ key: ChatCredentialKey) {
-        lock.lock()
-        defer { lock.unlock() }
-        values[key] = nil
+    func delete(_ key: ChatCredentialKey) throws {
+        lock.withLock { values[key] = nil }
     }
 }

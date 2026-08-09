@@ -70,7 +70,7 @@ final class ChatCredentialStoreTests: XCTestCase {
             ChatOAuthTokens.self, from: XCTUnwrap(store.read(
                 .anthropicOAuth, interaction: .allow).data))
         XCTAssertEqual(back, tokens)
-        store.delete(.anthropicOAuth)
+        try store.delete(.anthropicOAuth)
         XCTAssertEqual(
             store.read(.anthropicOAuth, interaction: .allow), .missing)
     }
@@ -86,38 +86,36 @@ final class ChatCredentialStoreTests: XCTestCase {
         XCTAssertTrue(nearlyOut.isExpired)
     }
 
-    func testPassiveSnapshotReadsEachCredentialOnceWithoutAuthenticationUI() {
+    func testOperationCacheReadsOnlyUsedCredentialsAndOnlyOnce() {
         let source = RecordingChatCredentialStore(values: [
             .anthropicOAuth: .value(Data("oauth".utf8)),
         ])
-        let snapshot = SnapshotChatCredentialStore(
+        let cache = OperationChatCredentialStore(
             source: source, interaction: .forbid)
 
+        XCTAssertTrue(source.reads.isEmpty)
         XCTAssertEqual(
-            snapshot.read(.anthropicOAuth, interaction: .allow),
+            cache.read(.anthropicOAuth, interaction: .allow),
             .value(Data("oauth".utf8)))
         XCTAssertEqual(
-            snapshot.read(.anthropicOAuth, interaction: .forbid),
+            cache.read(.anthropicOAuth, interaction: .forbid),
             .value(Data("oauth".utf8)))
-        XCTAssertEqual(source.reads.count, ChatCredentialKey.allCases.count)
-        for (read, expectedKey) in zip(
-            source.reads, ChatCredentialKey.allCases) {
-            XCTAssertEqual(read.0, expectedKey)
-            XCTAssertEqual(read.1, .forbid)
-        }
+        XCTAssertEqual(source.reads.count, 1)
+        XCTAssertEqual(source.reads.first?.0, .anthropicOAuth)
+        XCTAssertEqual(source.reads.first?.1, .forbid)
     }
 
     func testAuthorizationRequirementIsNotCollapsedIntoMissingCredential() {
         let source = RecordingChatCredentialStore(values: [
             .anthropicOAuth: .authorizationRequired,
         ])
-        let snapshot = SnapshotChatCredentialStore(
+        let cache = OperationChatCredentialStore(
             source: source, interaction: .forbid)
 
         XCTAssertEqual(
-            snapshot.read(.anthropicOAuth, interaction: .forbid),
+            cache.read(.anthropicOAuth, interaction: .forbid),
             .authorizationRequired)
-        XCTAssertFalse(snapshot.read(.anthropicOAuth, interaction: .forbid)
+        XCTAssertFalse(cache.read(.anthropicOAuth, interaction: .forbid)
             .isAvailable)
     }
 }
@@ -126,7 +124,13 @@ final class RecordingChatCredentialStore: ChatCredentialStore,
     @unchecked Sendable {
     private let lock = NSLock()
     private var values: [ChatCredentialKey: ChatCredentialRead]
-    private(set) var reads: [(ChatCredentialKey, ChatCredentialInteraction)] = []
+    private var recordedReads: [
+        (ChatCredentialKey, ChatCredentialInteraction)
+    ] = []
+
+    var reads: [(ChatCredentialKey, ChatCredentialInteraction)] {
+        lock.withLock { recordedReads }
+    }
 
     init(values: [ChatCredentialKey: ChatCredentialRead] = [:]) {
         self.values = values
@@ -134,22 +138,18 @@ final class RecordingChatCredentialStore: ChatCredentialStore,
 
     func read(_ key: ChatCredentialKey, interaction: ChatCredentialInteraction)
         -> ChatCredentialRead {
-        lock.lock()
-        defer { lock.unlock() }
-        reads.append((key, interaction))
-        return values[key] ?? .missing
+        lock.withLock {
+            recordedReads.append((key, interaction))
+            return values[key] ?? .missing
+        }
     }
 
     func write(_ key: ChatCredentialKey, _ data: Data) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        values[key] = .value(data)
+        lock.withLock { values[key] = .value(data) }
     }
 
-    func delete(_ key: ChatCredentialKey) {
-        lock.lock()
-        defer { lock.unlock() }
-        values[key] = .missing
+    func delete(_ key: ChatCredentialKey) throws {
+        lock.withLock { values[key] = .missing }
     }
 }
 

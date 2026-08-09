@@ -18,11 +18,12 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
     init(
         store: ChatCredentialStore,
         transport: ChatHTTPTransport = URLSessionChatTransport(),
-        base: URL = URL(string: "https://api.anthropic.com/v1")!
+        base: URL = URL(string: "https://api.anthropic.com/v1")!,
+        refresher: AnthropicTokenRefresher? = nil
     ) {
         self.store = store
         self.transport = transport
-        self.refresher = AnthropicTokenRefresher(store: store)
+        self.refresher = refresher ?? AnthropicTokenRefresher(store: store)
         self.base = base
     }
 
@@ -39,43 +40,37 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
     private func auth(
         interaction: ChatCredentialInteraction
     ) async throws -> Auth {
-        switch store.read(.anthropicOAuth, interaction: interaction) {
+        let oauth = store.read(.anthropicOAuth, interaction: interaction)
+        var oauthFailure: String?
+        switch oauth {
         case .value(let stored):
             let tokens = try await refresher.liveTokens(
                 stored: stored, transport: transport)
             return .oauth(tokens.accessToken)
         case .authorizationRequired:
-            throw ChatFault.refuse(
-                code: "no-credentials",
-                reason: "Authorize the saved Anthropic sign-in")
-        case .unavailable(let status):
-            throw ChatFault.refuse(
-                code: "no-credentials",
-                reason: ChatCredentialRead.unavailable(status).statusReason
-                    ?? "Keychain unavailable")
+            oauthFailure = "Authorize the saved Anthropic sign-in"
+        case .cleanupRequired, .operationFailed, .unavailable:
+            oauthFailure = oauth.statusReason
         case .missing:
             break
         }
-        switch store.readString(
-            .anthropicAPIKey, interaction: interaction) {
-        case .value(let data)
-            where !(String(data: data, encoding: .utf8) ?? "").isEmpty:
-            let key = String(decoding: data, as: UTF8.self)
+        let apiKey = store.readString(
+            .anthropicAPIKey, interaction: interaction)
+        switch apiKey {
+        case .value where !(apiKey.string ?? "").isEmpty:
+            let key = apiKey.string!
             return .apiKey(key)
         case .authorizationRequired:
-            throw ChatFault.refuse(
-                code: "no-credentials",
-                reason: "Authorize the saved Anthropic API key")
-        case .unavailable(let status):
-            throw ChatFault.refuse(
-                code: "no-credentials",
-                reason: ChatCredentialRead.unavailable(status).statusReason
-                    ?? "Keychain unavailable")
+            oauthFailure = oauthFailure
+                ?? "Authorize the saved Anthropic API key"
+        case .cleanupRequired, .operationFailed, .unavailable:
+            oauthFailure = oauthFailure ?? apiKey.statusReason
         case .missing, .value:
             break
         }
         throw ChatFault.refuse(
-            code: "no-credentials", reason: "Not signed in and no API key")
+            code: "no-credentials",
+            reason: oauthFailure ?? "Not signed in and no API key")
     }
 
     private func request(path: String, auth: Auth) -> URLRequest {
@@ -100,15 +95,15 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
                 id: id, label: label, state: "serving",
                 detail: "Using your Claude subscription")
         }
-        if let reason = oauth.statusReason {
-            return ChatProviderEntry(
-                id: id, label: label, state: "unavailable", detail: reason)
-        }
         let apiKey = store.readString(
             .anthropicAPIKey, interaction: .forbid)
         if let key = apiKey.string, !key.isEmpty {
             return ChatProviderEntry(
                 id: id, label: label, state: "serving", detail: "Using an API key")
+        }
+        if let reason = oauth.statusReason {
+            return ChatProviderEntry(
+                id: id, label: label, state: "unavailable", detail: reason)
         }
         if let reason = apiKey.statusReason {
             return ChatProviderEntry(
