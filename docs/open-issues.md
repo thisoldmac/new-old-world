@@ -283,6 +283,28 @@ can still resume the current intent. Asset-pack provenance moved to the
 inspector's **Asset Packs** scaffold and is no longer painted over the mirrored
 desktop. All of this remains unverified on the PB1400c/Wallstreet.
 
+**UPDATE 2026-08-09, Finder opens and view ownership.** Emulated view changes
+are now disentangled from the guest scene by default. Icon, name/list and
+small-icon switches update the retained host directory immediately, and a
+later guest poll cannot silently put that host-owned presentation back. The
+new **Sync Finder view type** development control opts into the second axis:
+the local change remains optimistic, Finder receives its measured bare view
+word (`icon`, `name`, or `small icon`) against the exact HFS window, and later
+guest scenes confirm or reconcile it in either direction. A request made
+before the file listing supplies the volume root is retained and dispatched
+once that state arrives. This is Tested and not metal-verified.
+
+Opening an item from an emulated interior now uses Finder's measured
+`item "X" of window "Y"` reference whenever the guest shell exists, with a
+nested disk/folder reference for a host-only window. `cdev` control panels no
+longer go to the application-only `launch` verb—the same category error already
+recorded when `launch` refused a control panel as “not an application.” Script
+settlement also inspects nonzero `osaErr`; a Finder refusal can no longer be
+reported as an open merely because the command envelope said `ok: true`.
+Focused tests cover the control-panel route, host-only view retention,
+optimistic synchronization and guest-to-host reconciliation. Metal remains
+owed.
+
 **CORRECTION 2026-08-09, authority must not seed state.** Enabling emulation
 no longer synthesizes a root-volume window or sends a guest open. The host
 starts with no emulated folder windows, adopts folders already present in the

@@ -485,6 +485,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         set { hostFinder.syncGeometry = newValue }
     }
 
+    var syncEmulatedFinderView: Bool {
+        get { hostFinder.syncView }
+        set { hostFinder.syncView = newValue }
+    }
+
     var hostFinderStatus: String { hostFinder.status }
 
     func refreshHostFinder() { hostFinder.refresh() }

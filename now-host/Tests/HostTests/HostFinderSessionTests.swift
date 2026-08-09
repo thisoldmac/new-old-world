@@ -23,6 +23,7 @@ final class HostFinderSessionTests: XCTestCase {
         defaults.set(true, forKey: HostFinderSession.desktopPreferenceKey)
         defaults.set(false, forKey: HostFinderSession.lifecycleSyncPreferenceKey)
         defaults.set(false, forKey: HostFinderSession.geometrySyncPreferenceKey)
+        defaults.set(false, forKey: HostFinderSession.viewSyncPreferenceKey)
     }
 
     override func tearDown() async throws {
@@ -107,6 +108,118 @@ final class HostFinderSessionTests: XCTestCase {
         XCTAssertEqual(session.windows.first?.view, .name)
         XCTAssertFalse(session.windows.first?.ascending ?? true)
         XCTAssertEqual(guest.received.count, before)
+    }
+
+    func testLocalViewDoesNotReconcileFromGuestWhenViewSyncIsOff()
+        async throws {
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        let observed = finderWindow(path: "Macintosh HD:Control Panels",
+                                    view: .icon)
+        session.observe(scene: scene(windows: [observed]))
+        _ = try await answerNextList(guest, path: "Desktop Folder", entries: [])
+        _ = try await answerNextList(guest, path: "Control Panels", entries: [])
+        try await waitUntil("Finder window") { session.windows.count == 1 }
+        let id = try XCTUnwrap(session.windows.first?.id)
+
+        session.setView(.name, in: id)
+        session.observe(scene: scene(windows: [observed]))
+
+        XCTAssertEqual(session.windows.first?.view, .name,
+                       "a guest poll must not overwrite the host-owned view")
+        XCTAssertFalse(guest.received.contains { message in
+            guard case .commandRequest(let request) = message else {
+                return false
+            }
+            return request.name == "script"
+        })
+    }
+
+    func testViewSyncIsOptimisticThenReconcilesBothDirections() async throws {
+        defaults.set(true, forKey: HostFinderSession.viewSyncPreferenceKey)
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        let icon = finderWindow(path: "Macintosh HD:Control Panels", view: .icon)
+        session.observe(scene: scene(windows: [icon]))
+        _ = try await answerNextList(guest, path: "Desktop Folder", entries: [])
+        _ = try await answerNextList(guest, path: "Control Panels", entries: [])
+        try await waitUntil("Finder window") { session.windows.count == 1 }
+        let id = try XCTUnwrap(session.windows.first?.id)
+
+        session.setView(.name, in: id)
+        XCTAssertEqual(session.windows.first?.view, .name)
+        session.observe(scene: scene(windows: [icon]))
+        XCTAssertEqual(session.windows.first?.view, .name,
+                       "the stale guest read must not undo an optimistic change")
+        try await waitUntil("guest view script") {
+            guest.received.contains { message in
+                guard case .commandRequest(let request) = message,
+                      request.name == "script",
+                      case .text(let source) = request.args?["source"] else {
+                    return false
+                }
+                return source.contains("set view of w to name")
+                    && source.contains("Macintosh HD:Control Panels")
+            }
+        }
+
+        let name = finderWindow(path: "Macintosh HD:Control Panels", view: .name)
+        session.observe(scene: scene(windows: [name]))
+        let small = finderWindow(path: "Macintosh HD:Control Panels",
+                                 view: .smallIcon)
+        session.observe(scene: scene(windows: [small]))
+        XCTAssertEqual(session.windows.first?.view, .smallIcon,
+                       "after settlement, a guest-side change must synchronize back")
+    }
+
+    func testControlPanelOpensThroughFinderUsingTheObservedWindow()
+        async throws {
+        let guest = try await connectedGuest()
+        let session = HostFinderSession(listener: listener, defaults: defaults)
+        let observed = finderWindow(path: "Macintosh HD:Control Panels")
+        session.observe(scene: scene(windows: [observed]))
+        _ = try await answerNextList(guest, path: "Desktop Folder", entries: [])
+        _ = try await answerNextList(
+            guest, path: "Control Panels",
+            entries: [.init(name: "Mouse", kind: "file", fileType: "cdev",
+                            creator: nil, dataBytes: 1, rsrcBytes: 1,
+                            modified: 0)])
+        try await waitUntil("control panel") {
+            session.windows.first?.entries.count == 1
+        }
+        let id = try XCTUnwrap(session.windows.first?.id)
+
+        session.open(["Mouse"], in: id)
+
+        try await waitUntil("Finder open") {
+            guest.received.contains { message in
+                guard case .commandRequest(let request) = message,
+                      request.name == "script",
+                      case .text(let source) = request.args?["source"] else {
+                    return false
+                }
+                return source.contains(
+                    "open item \"Mouse\" of window \"Control Panels\"")
+            }
+        }
+        XCTAssertFalse(guest.received.contains { message in
+            guard case .commandRequest(let request) = message else {
+                return false
+            }
+            return request.name == "launch"
+        }, "a cdev is a Finder-opened document, not an application")
+        let openRequest = try XCTUnwrap(guest.received.compactMap {
+            message -> CommandRequest? in
+            guard case .commandRequest(let request) = message,
+                  request.name == "script" else { return nil }
+            return request
+        }.last)
+        try guest.send(.commandResult(.init(
+            id: openRequest.id, ok: true,
+            output: ["script": [["osaErr", "-1728"]]], error: nil)))
+        try await waitUntil("OSA refusal") {
+            session.status == "Open failed: AppleScript error -1728"
+        }
     }
 
     func testDesktopAndGuestWindowCatalogsProjectWithoutFinderRoster()
@@ -477,14 +590,15 @@ final class HostFinderSessionTests: XCTestCase {
     }
 
     private func finderWindow(path: String, ref: String = "now-window-1",
-                              rect: Rect = Rect(l: 60, t: 50, r: 500, b: 380))
+                              rect: Rect = Rect(l: 60, t: 50, r: 500, b: 380),
+                              view: Scene.FinderPresentation.View = .icon)
         -> Scene.Window {
         .init(id: "finder-window", app: "Finder", psn: "0.1",
               title: path.components(separatedBy: ":").last ?? path,
               kind: 20, rect: rect, front: true, z: 0, visible: true,
               controls: [], ref: ref, addr: 42,
               incarnation: "finder-incarnation", closeBox: true,
-              zoomBox: true, finder: .init(path: path, view: .icon,
+              zoomBox: true, finder: .init(path: path, view: view,
                                            selectedNames: [], pages: 1,
                                            complete: true))
     }

@@ -173,10 +173,15 @@ over the existing `file.list`, `file.move`, `launch`, and script operations.
 Selection, marquee, rename, scrolling, sorting and folder navigation settle
 locally. The guest remains authoritative for the window title, chrome,
 frontness and visibility. The synchronization controls couple open/close and
-position/size to that same guest window; acts are optimistic, then a later
-guest scene confirms or reconciles them. Enabling the mode never invents or
-opens a root window. Geometry acts made before the guest names its window are
-held and dispatched once that exact reference arrives. The root is the guest's configured file share—normally
+position/size to that same guest window. A separate **Sync Finder view type**
+control deliberately couples the otherwise host-owned view to Finder; with it
+off, guest polling cannot overwrite a local icon/list/small-icon switch. With
+it on, the host changes immediately, sends Finder the measured OS 9 view word,
+then confirms or reconciles from a later scene. Enabling the mode never invents
+or opens a root window. Geometry and view acts made before the guest has named
+enough state are held and dispatched after the identity/path join. Documents
+and control panels open through Finder's item model; only actual applications
+use the application-only `launch` verb. The root is the guest's configured file share—normally
 the whole boot volume when **Share entire boot volume** is enabled—not an
 authority bypass. This mode is Tested and still needs its first metal run. The
 guest-follow mode remains available when the toggle is off.

@@ -222,7 +222,12 @@ struct MirrorControlView: View {
                     set: { source.syncEmulatedFinderGeometry = $0 }
                 ))
                 .disabled(!source.emulateFinderWindows)
-                Text("Development controls. Host actions appear immediately; later guest observations reconcile lifecycle and geometry.")
+                Toggle("Sync Finder view type", isOn: Binding(
+                    get: { source.syncEmulatedFinderView },
+                    set: { source.syncEmulatedFinderView = $0 }
+                ))
+                .disabled(!source.emulateFinderWindows)
+                Text("Development controls. Host actions appear immediately; enabled properties reconcile with later guest observations. View type remains host-only unless its sync is enabled.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
