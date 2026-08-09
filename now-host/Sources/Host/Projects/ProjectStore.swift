@@ -1,0 +1,390 @@
+import Foundation
+
+/// The single host-owned authority boundary for projects and agent workspaces.
+/// Callers hold opaque IDs; URLs never cross this API.
+final class ProjectStore {
+    private struct CatalogRecord: Codable {
+        var projectID: ProjectID
+        var name: String
+        var home: ProjectHome
+        var formatVersion: Int
+        var revision: Int
+        var currentCommit: String
+        var contentDigest: String
+        var verifiedGuestDigest: String?
+        var guestState: GuestProjectSyncState
+        var history: [ProjectHistoryEntry]
+        var activeWorkspaceID: ProjectWorkspaceID?
+    }
+
+    let root: URL
+    private let fileManager: FileManager
+    private let encoder: JSONEncoder
+    private let decoder = JSONDecoder()
+
+    static func applicationSupportRoot(fileManager: FileManager = .default) throws -> URL {
+        guard let support = fileManager.urls(for: .applicationSupportDirectory,
+                                             in: .userDomainMask).first else {
+            throw ProjectStoreError.unavailable("Application Support is unavailable.")
+        }
+        return support.appendingPathComponent("New Old World/Projects", isDirectory: true)
+    }
+
+    convenience init() throws {
+        try self.init(root: Self.applicationSupportRoot())
+    }
+
+    init(root: URL, fileManager: FileManager = .default) throws {
+        self.root = root
+        self.fileManager = fileManager
+        encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try fileManager.createDirectory(at: projectsURL,
+                                        withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: repositoriesURL,
+                                        withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: catalogURL,
+                                        withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: workspacesURL,
+                                        withIntermediateDirectories: true)
+    }
+
+    func list() throws -> [ProjectStatus] {
+        try fileManager.contentsOfDirectory(at: catalogURL,
+                                            includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" }
+            .map { try decoder.decode(CatalogRecord.self,
+                                      from: Data(contentsOf: $0)) }
+            .map(status)
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    @discardableResult
+    func create(name: String, home: ProjectHome, guestDigest: String? = nil,
+                projectDocument: Data,
+                files: [ProjectFileChange]) throws -> ProjectRevisionReceipt {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              name.unicodeScalars.count <= 64 else {
+            throw ProjectStoreError.invalidProject("The display name must be 1-64 characters.")
+        }
+        if home == .guest {
+            guard let guestDigest, isSHA256(guestDigest) else {
+                throw ProjectStoreError.invalidProject(
+                    "A guest-home project requires a verified guest digest.")
+            }
+        }
+        let parsed = try CKProjectDocument.parse(projectDocument)
+        let projectID = ProjectID.mint()
+        let projectContainer = projectsURL.appendingPathComponent(projectID.rawValue)
+        let staging = projectsURL.appendingPathComponent(".staging-\(UUID().uuidString)")
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+        var committed = false
+        defer { if !committed { try? fileManager.removeItem(at: staging) } }
+        try parsed.replacingID(projectID).write(
+            to: staging.appendingPathComponent("Project.ckp"), options: .atomic)
+        try preflight(files, under: staging, allowMissingExpected: true)
+        try apply(files, to: staging)
+        _ = try CKProjectDocument.parse(Data(contentsOf:
+            staging.appendingPathComponent("Project.ckp")))
+        let digest = try ProjectDigest.tree(at: staging, fileManager: fileManager)
+        let repository = try repository(for: projectID)
+        let date = Date()
+        let commit = try repository.commit(tree: staging, parent: nil,
+                                           message: "Create project", date: date)
+        try fileManager.createDirectory(at: projectContainer,
+                                        withIntermediateDirectories: true)
+        let working = projectContainer.appendingPathComponent("Working")
+        try fileManager.moveItem(at: staging, to: working)
+        try repository.update(branch: "main", to: commit)
+        let entry = ProjectHistoryEntry(revision: 1, commit: commit, parent: nil,
+                                        contentDigest: digest,
+                                        message: "Create project", committedAt: date)
+        let record = CatalogRecord(
+            projectID: projectID, name: name, home: home, formatVersion: 1,
+            revision: 1, currentCommit: commit, contentDigest: digest,
+            verifiedGuestDigest: guestDigest,
+            guestState: home == .guest ? .verified : .notApplicable,
+            history: [entry], activeWorkspaceID: nil)
+        try save(record)
+        committed = true
+        return ProjectRevisionReceipt(projectID: projectID, home: home,
+                                      revision: 1, commit: commit,
+                                      contentDigest: digest,
+                                      changedPaths: (["Project.ckp"] + files.map(\.path)).sorted(),
+                                      committedAt: date)
+    }
+
+    func status(projectID: ProjectID) throws -> ProjectStatus {
+        status(try load(projectID))
+    }
+
+    func history(projectID: ProjectID) throws -> [ProjectHistoryEntry] {
+        try load(projectID).history
+    }
+
+    func read(projectID: ProjectID, path: String, maximumBytes: Int = 262_144) throws -> Data {
+        let record = try load(projectID)
+        let url = try ProjectPath.checkedURL(path, under: workingURL(record.projectID),
+                                             fileManager: fileManager)
+        let attributes = try fileManager.attributesOfItem(atPath: url.path)
+        guard let size = attributes[.size] as? NSNumber,
+              size.intValue <= maximumBytes else {
+            throw ProjectStoreError.unavailable("The bounded read exceeds \(maximumBytes) bytes.")
+        }
+        return try Data(contentsOf: url)
+    }
+
+    @discardableResult
+    func apply(projectID: ProjectID, expectedRevision: Int,
+               changes: [ProjectFileChange], message: String) throws -> ProjectRevisionReceipt {
+        var record = try load(projectID)
+        guard record.revision == expectedRevision else {
+            throw ProjectStoreError.revisionConflict(expected: expectedRevision,
+                                                     current: record.revision)
+        }
+        let result = try commitBatch(
+            source: workingURL(projectID), changes: changes,
+            repository: repository(for: projectID), parent: record.currentCommit,
+            branch: "main", message: message)
+        let date = result.date
+        record.revision += 1
+        record.currentCommit = result.commit
+        record.contentDigest = result.digest
+        record.history.append(ProjectHistoryEntry(
+            revision: record.revision, commit: result.commit,
+            parent: result.parent, contentDigest: result.digest,
+            message: result.message, committedAt: date))
+        try save(record)
+        return ProjectRevisionReceipt(
+            projectID: projectID, home: record.home, revision: record.revision,
+            commit: result.commit, contentDigest: result.digest,
+            changedPaths: changes.map(\.path).sorted(), committedAt: date)
+    }
+
+    func openWorkspace(projectID: ProjectID) throws -> ProjectWorkspace {
+        var project = try load(projectID)
+        if let current = project.activeWorkspaceID,
+           let workspace = try? loadWorkspace(current), workspace.lifecycle == .active {
+            return workspace
+        }
+        let workspaceID = ProjectWorkspaceID.mint()
+        let container = workspaceContainer(workspaceID)
+        try fileManager.createDirectory(at: container, withIntermediateDirectories: true)
+        try fileManager.copyItem(at: workingURL(projectID),
+                                 to: container.appendingPathComponent("Working"))
+        let now = Date()
+        let workspace = ProjectWorkspace(
+            workspaceID: workspaceID, projectID: projectID,
+            baseRevision: project.revision, baseProjectCommit: project.currentCommit,
+            baseGuestDigest: project.verifiedGuestDigest,
+            currentCommit: project.currentCommit, contentDigest: project.contentDigest,
+            lifecycle: .active, promotedCommit: nil,
+            createdAt: now, updatedAt: now)
+        try saveWorkspace(workspace)
+        project.activeWorkspaceID = workspaceID
+        try save(project)
+        return workspace
+    }
+
+    func resumeWorkspace(workspaceID: ProjectWorkspaceID) throws -> ProjectWorkspace {
+        try loadWorkspace(workspaceID)
+    }
+
+    @discardableResult
+    func apply(workspaceID: ProjectWorkspaceID, expectedCommit: String,
+               changes: [ProjectFileChange], message: String) throws -> ProjectWorkspace {
+        var workspace = try loadWorkspace(workspaceID)
+        guard workspace.lifecycle == .active else {
+            throw ProjectStoreError.unavailable("The workspace is not active.")
+        }
+        guard workspace.currentCommit == expectedCommit else {
+            throw ProjectStoreError.commitConflict(expected: expectedCommit,
+                                                   current: workspace.currentCommit)
+        }
+        let result = try commitBatch(
+            source: workspaceContainer(workspaceID).appendingPathComponent("Working"),
+            changes: changes, repository: repository(for: workspace.projectID),
+            parent: workspace.currentCommit,
+            branch: "workspaces/\(workspaceID.rawValue)", message: message)
+        workspace.currentCommit = result.commit
+        workspace.contentDigest = result.digest
+        workspace.updatedAt = result.date
+        try saveWorkspace(workspace)
+        return workspace
+    }
+
+    func discardWorkspace(workspaceID: ProjectWorkspaceID) throws {
+        var workspace = try loadWorkspace(workspaceID)
+        guard workspace.currentCommit == workspace.baseProjectCommit
+                || workspace.promotedCommit == workspace.currentCommit else {
+            throw ProjectStoreError.unpromotedWorkspace
+        }
+        workspace.lifecycle = .discarded
+        workspace.updatedAt = Date()
+        try saveWorkspace(workspace)
+        try? fileManager.removeItem(at: workspaceContainer(workspaceID)
+            .appendingPathComponent("Working"))
+        var project = try load(workspace.projectID)
+        if project.activeWorkspaceID == workspaceID {
+            project.activeWorkspaceID = nil
+            try save(project)
+        }
+    }
+
+    func testingWorkingURL(projectID: ProjectID) -> URL {
+        workingURL(projectID)
+    }
+
+    private struct BatchResult {
+        let commit: String
+        let parent: String
+        let digest: String
+        let message: String
+        let date: Date
+    }
+
+    private func commitBatch(source: URL, changes: [ProjectFileChange],
+                             repository: LooseGitRepository, parent: String,
+                             branch: String, message: String) throws -> BatchResult {
+        guard !changes.isEmpty, changes.count <= 128 else {
+            throw ProjectStoreError.invalidProject("A batch must contain 1-128 changes.")
+        }
+        try preflight(changes, under: source, allowMissingExpected: false)
+        let container = source.deletingLastPathComponent()
+        let staging = container.appendingPathComponent(".staging-\(UUID().uuidString)")
+        let backup = container.appendingPathComponent(".backup-\(UUID().uuidString)")
+        try fileManager.copyItem(at: source, to: staging)
+        var installed = false
+        defer {
+            try? fileManager.removeItem(at: staging)
+            if !installed { try? fileManager.removeItem(at: backup) }
+        }
+        try apply(changes, to: staging)
+        _ = try CKProjectDocument.parse(Data(contentsOf:
+            staging.appendingPathComponent("Project.ckp")))
+        let digest = try ProjectDigest.tree(at: staging, fileManager: fileManager)
+        let date = Date()
+        let cleanMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanMessage.isEmpty, cleanMessage.count <= 256 else {
+            throw ProjectStoreError.invalidProject("A commit message must be 1-256 characters.")
+        }
+        let commit = try repository.commit(tree: staging, parent: parent,
+                                           message: cleanMessage, date: date)
+        try fileManager.moveItem(at: source, to: backup)
+        do {
+            try fileManager.moveItem(at: staging, to: source)
+            try repository.update(branch: branch, to: commit)
+            try fileManager.removeItem(at: backup)
+            installed = true
+        } catch {
+            try? fileManager.removeItem(at: source)
+            try? fileManager.moveItem(at: backup, to: source)
+            throw error
+        }
+        return BatchResult(commit: commit, parent: parent, digest: digest,
+                           message: cleanMessage, date: date)
+    }
+
+    private func preflight(_ changes: [ProjectFileChange], under root: URL,
+                           allowMissingExpected: Bool) throws {
+        var seen = Set<String>()
+        for change in changes {
+            try ProjectPath.validate(change.path)
+            guard seen.insert(change.path).inserted else {
+                throw ProjectStoreError.duplicatePath(change.path)
+            }
+            let url = try ProjectPath.checkedURL(change.path, under: root,
+                                                 fileManager: fileManager)
+            if let expected = change.expectedDigest {
+                guard isSHA256(expected) else {
+                    throw ProjectStoreError.invalidProject("An expected digest is malformed.")
+                }
+                let current = fileManager.fileExists(atPath: url.path)
+                    ? ProjectDigest.sha256(try Data(contentsOf: url)) : nil
+                guard current == expected else {
+                    throw ProjectStoreError.digestConflict(path: change.path,
+                                                           expected: expected,
+                                                           current: current)
+                }
+            } else if !allowMissingExpected && change.contents == nil
+                        && !fileManager.fileExists(atPath: url.path) {
+                throw ProjectStoreError.invalidProject("Cannot delete a missing file.")
+            }
+        }
+    }
+
+    private func apply(_ changes: [ProjectFileChange], to root: URL) throws {
+        for change in changes {
+            let url = try ProjectPath.checkedURL(change.path, under: root,
+                                                 fileManager: fileManager)
+            if let contents = change.contents {
+                try fileManager.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+                try contents.write(to: url, options: .atomic)
+            } else {
+                try fileManager.removeItem(at: url)
+            }
+        }
+    }
+
+    private func status(_ record: CatalogRecord) -> ProjectStatus {
+        ProjectStatus(projectID: record.projectID, name: record.name,
+                      home: record.home, formatVersion: record.formatVersion,
+                      revision: record.revision,
+                      currentCommit: record.currentCommit,
+                      contentDigest: record.contentDigest,
+                      verifiedGuestDigest: record.verifiedGuestDigest,
+                      guestState: record.guestState,
+                      activeWorkspaceID: record.activeWorkspaceID)
+    }
+
+    private func repository(for projectID: ProjectID) throws -> LooseGitRepository {
+        try LooseGitRepository(url: repositoriesURL
+            .appendingPathComponent(projectID.rawValue + ".git"),
+            fileManager: fileManager)
+    }
+
+    private func load(_ id: ProjectID) throws -> CatalogRecord {
+        let url = catalogURL.appendingPathComponent(id.rawValue + ".json")
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw ProjectStoreError.projectNotFound
+        }
+        return try decoder.decode(CatalogRecord.self, from: Data(contentsOf: url))
+    }
+
+    private func save(_ record: CatalogRecord) throws {
+        try encoder.encode(record).write(
+            to: catalogURL.appendingPathComponent(record.projectID.rawValue + ".json"),
+            options: .atomic)
+    }
+
+    private func loadWorkspace(_ id: ProjectWorkspaceID) throws -> ProjectWorkspace {
+        let url = workspaceContainer(id).appendingPathComponent("Workspace.json")
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw ProjectStoreError.workspaceNotFound
+        }
+        return try decoder.decode(ProjectWorkspace.self, from: Data(contentsOf: url))
+    }
+
+    private func saveWorkspace(_ workspace: ProjectWorkspace) throws {
+        let url = workspaceContainer(workspace.workspaceID)
+        try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+        try encoder.encode(workspace).write(to: url.appendingPathComponent("Workspace.json"),
+                                            options: .atomic)
+    }
+
+    private func isSHA256(_ value: String) -> Bool {
+        value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+    }
+
+    private var projectsURL: URL { root.appendingPathComponent("WorkingTrees") }
+    private var repositoriesURL: URL { root.appendingPathComponent("Repositories") }
+    private var catalogURL: URL { root.appendingPathComponent("Catalog") }
+    private var workspacesURL: URL { root.appendingPathComponent("Workspaces") }
+    private func workingURL(_ id: ProjectID) -> URL {
+        projectsURL.appendingPathComponent(id.rawValue).appendingPathComponent("Working")
+    }
+    private func workspaceContainer(_ id: ProjectWorkspaceID) -> URL {
+        workspacesURL.appendingPathComponent(id.rawValue)
+    }
+}
