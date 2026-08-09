@@ -205,6 +205,7 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// anywhere downstream for "whatever is frontmost".
         case observeElements = "observe_elements"
         case projects = "projects"
+        case development = "development"
     }
 
     public let version: Int
@@ -358,6 +359,7 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// this field it is a whole serial number or nothing.
     public var observeProcess: AgentIntegrationProcessSerial? = nil
     public var projectRequest: AgentIntegrationProjectRequest? = nil
+    public var developmentRequest: AgentIntegrationDevelopmentRequest? = nil
 
     private init(requestID: UUID,
                  operation: Operation,
@@ -936,6 +938,15 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         request.projectRequest = project
         return request
     }
+
+    public static func development(
+        _ development: AgentIntegrationDevelopmentRequest,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.development, requestID: requestID)
+        request.developmentRequest = development
+        return request
+    }
 }
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
@@ -1003,6 +1014,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     /// destroy the containment that makes a reference mean anything.
     case observeElements(AgentIntegrationElementObservationResult)
     case projects(AgentIntegrationProjectResult)
+    case development(AgentIntegrationGuestRowReportResult)
 
     /// The operation is carried by this protocol and NOTHING SERVES IT YET.
     ///
@@ -1104,6 +1116,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public var observeElementsResult:
         AgentIntegrationElementObservationResult? = nil
     public var projectResult: AgentIntegrationProjectResult? = nil
+    public var developmentResult: AgentIntegrationGuestRowReportResult? = nil
     /// The operation exists here and no capability serves it yet. Set
     /// INSTEAD of any result, and counted with them: a response carrying
     /// both would be claiming to have answered a call it also says it
@@ -1541,6 +1554,12 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         self.projectResult = projectResult
     }
 
+    public init(requestID: UUID,
+                developmentResult: AgentIntegrationGuestRowReportResult) {
+        self.init(empty: requestID)
+        self.developmentResult = developmentResult
+    }
+
     public init(requestID: UUID? = nil,
                 error: AgentIntegrationLocalError) {
         version = AgentIntegrationLocalProtocol.version
@@ -1581,6 +1600,7 @@ public enum AgentIntegrationLocalCodec {
         // The walk that mints what those five address.
         "observeElementsResult",
         "projectResult",
+        "developmentResult",
         // Set INSTEAD of any of them, so it is counted with them.
         "notImplemented",
     ]
@@ -1695,6 +1715,7 @@ public enum AgentIntegrationLocalCodec {
             // The observation's aim, clearing the same two gates.
             "observeProcess",
             "projectRequest",
+            "developmentRequest",
             // Orthogonal to every operation, so it clears BOTH gates:
             // this allowlist, and the per-operation key set below.
             "guestSelector",
@@ -2321,6 +2342,15 @@ public enum AgentIntegrationLocalCodec {
                   project.isWellFormed else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Projects request does not match the schema")
+            }
+        case .development:
+            expectedKeys = [
+                "version", "requestID", "operation", "developmentRequest",
+            ]
+            guard let development = request.developmentRequest,
+                  development.isWellFormed else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Development request does not match the schema")
             }
         }
         /* Addressing belongs to no operation, so it is admitted for all of

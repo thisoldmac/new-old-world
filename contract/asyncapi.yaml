@@ -3770,6 +3770,66 @@ components:
         properties:
           development:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
+    development-build:
+      description: >
+        Starts, observes or cancels the PPC guest's page-neutral MPW
+        ToolServer service. The project is selected by opaque CKPROJECT id;
+        Project.ckp supplies a closed declarative action plan. No caller may
+        provide a path, MPW command or shell text. NOW-68K does not register
+        this command.
+      args:
+        type: object
+        required: [action]
+        additionalProperties: false
+        properties:
+          action: { enum: [start, status, cancel] }
+          projectID:
+            type: string
+            pattern: "^[0-9a-f]{32}$"
+      x-line: "status, cancel, or start followed by one project ID."
+      output:
+        type: object
+        properties:
+          development-build:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
+    development-run:
+      description: >
+        Launches only the unchanged opaque product measured by the last
+        successful Development build. Launch dispatch is a separate outcome
+        from build success and does not claim runtime acceptance.
+      args:
+        type: object
+        required: [productRef]
+        additionalProperties: false
+        properties:
+          productRef:
+            type: string
+            pattern: "^product-[0-9a-f]{16}$"
+      x-line: "One opaque product reference from development-build status."
+      output:
+        type: object
+        properties:
+          development-run:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
+    development-open:
+      description: >
+        Optionally sends the active Project.ckp for one opaque project ID to a
+        running CodeKitten using the standard open-documents Apple Event.
+        CodeKitten absence does not affect headless project or build work.
+      args:
+        type: object
+        required: [projectID]
+        additionalProperties: false
+        properties:
+          projectID:
+            type: string
+            pattern: "^[0-9a-f]{32}$"
+      x-line: "One opaque project ID."
+      output:
+        type: object
+        properties:
+          development-open:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
     help:
       description: >
         What commands THIS machine serves, asked of the machine that

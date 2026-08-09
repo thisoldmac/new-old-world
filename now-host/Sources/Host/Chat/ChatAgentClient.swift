@@ -98,6 +98,12 @@ struct ChatAgentClient: AgentIntegrationClient {
         return await adapter.developmentEnvironment()
     }
 
+    func development(_ request: AgentIntegrationDevelopmentRequest) async
+        -> AgentIntegrationGuestRowReportResult {
+        if let refusal = await refusal() { return .unavailable(refusal) }
+        return await adapter.development(request)
+    }
+
     func tailGuestLog(lines: Int?) async
         -> AgentIntegrationGuestRowReportResult {
         if let refusal = await refusal() { return .unavailable(refusal) }

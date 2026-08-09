@@ -505,6 +505,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                             message: "The Projects request is missing.")))
                     }
                     return .projects(agentIntegration.projects(project))
+                case .development:
+                    guard let development = request.developmentRequest else {
+                        return .development(.refused(.init(
+                            code: "now-development-invalid-request",
+                            message: "The Development request is missing.")))
+                    }
+                    return .development(
+                        await agentIntegration.development(development))
                 case .sessionHealth:
                     return .sessionHealth(
                         agentIntegration.sessionHealth())

@@ -133,6 +133,10 @@ final class CommandParityTests: XCTestCase {
             "maps aesend's `event` argument onto one of the four core Apple "
           + "Events. The vocabulary is closed by design (input_args.h), so "
           + "this is exactly a value lookup and never a dispatch",
+        "now-guest-ppc/src/development/development_build.c":
+            "maps a CKPROJECT build-action name onto the closed declarative "
+          + "action enum; it receives no command request and cannot dispatch "
+          + "a console or wire verb",
     ]
 
     /// NOW-68K's console face, which is **two** files: the shared dispatch in

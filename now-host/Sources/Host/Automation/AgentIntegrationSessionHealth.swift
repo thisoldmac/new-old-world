@@ -47,6 +47,9 @@ final class AgentIntegrationHostAdapter {
         AgentIntegrationDevelopmentEnvironment(
             listener: listener,
             currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var developmentControl = AgentIntegrationDevelopmentControl(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var censusControl = AgentIntegrationCensus(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
@@ -472,6 +475,11 @@ final class AgentIntegrationHostAdapter {
     func developmentEnvironment() async
         -> AgentIntegrationGuestRowReportResult {
         await developmentEnvironmentControl.read()
+    }
+
+    func development(_ request: AgentIntegrationDevelopmentRequest) async
+        -> AgentIntegrationGuestRowReportResult {
+        await developmentControl.perform(request)
     }
 
     /// One page of one software domain. The domain is required and there is no

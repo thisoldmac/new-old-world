@@ -141,6 +141,7 @@ The test compares both against the code literally.
 |---|---|---|---|
 | `now_projects` | — | — | none; bounded host-owned project storage and recoverable history, independent of guest consent |
 | `now_development_environment` | `development` | `development` | command; path-free PPC guest qualification facts |
+| `now_development` | `development-build`, `development-run`, `development-open` | `development-build`, `development-run`, `development-open` | command; one closed semantic family for declarative ToolServer jobs, exact-product launch and optional bounded CodeKitten handoff |
 | `now_list_machines` | — | — | none; host listener state |
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
 | `now_hardware_census` | `census.request` | `census.request` | message family |

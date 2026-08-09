@@ -365,6 +365,9 @@ public final class AgentIntegrationLocalServer {
             case .projects(let result):
                 response = .init(requestID: request.requestID,
                                  projectResult: result)
+            case .development(let result):
+                response = .init(requestID: request.requestID,
+                                 developmentResult: result)
             case .notImplemented(let unavailable):
                 response = .init(
                     requestID: request.requestID,

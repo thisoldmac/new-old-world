@@ -321,6 +321,8 @@ public struct AgentIntegrationLocalClient: Sendable {
                     + "frontmost by passing nil")
         case .projects:
             preconditionFailure("A Projects request names its operation")
+        case .development:
+            preconditionFailure("A Development request names its operation")
         }
     }
 
@@ -609,6 +611,17 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func development(
+        _ development: AgentIntegrationDevelopmentRequest
+    ) async throws -> AgentIntegrationGuestRowReportResult {
+        let response = try await send(.development(development))
+        guard let result = response.developmentResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no Development result")
+        }
+        return result
+    }
+
     public func developmentEnvironment() async throws
         -> AgentIntegrationGuestRowReportResult {
         let response = try await send(.developmentEnvironment())
@@ -770,7 +783,7 @@ public struct AgentIntegrationLocalClient: Sendable {
                    existing long read window and let the typed timeout remain
                    the result rather than turning it into a transport error. */
                 timeout = captureReceiveTimeout
-            case .projects, .developmentEnvironment:
+            case .projects, .development, .developmentEnvironment:
                 timeout = readOnlyReceiveTimeout
             }
             let response = try sendRaw(

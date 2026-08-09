@@ -10,6 +10,7 @@ public enum HostProjectionCatalog {
     public static let projections: [any HostProjection.Type] = [
         ProjectsProjection.self,
         DevelopmentEnvironmentProjection.self,
+        DevelopmentProjection.self,
         SessionHealthProjection.self,
         SessionCapabilitiesProjection.self,
         /* First of the observations, because it is the machine's standing

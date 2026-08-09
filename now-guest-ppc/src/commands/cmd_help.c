@@ -27,6 +27,25 @@ static const char *const d_development[] = {
     NULL
 };
 
+static const char *const d_development_build[] = {
+    "  Starts, observes or cancels one declarative ToolServer build.",
+    "  Project.ckp supplies the closed build actions; this command never",
+    "  accepts MPW text or a path.",
+    NULL
+};
+
+static const char *const d_development_run[] = {
+    "  Launches only the unchanged product measured by a successful build.",
+    "  Build success and launch dispatch remain separate outcomes.",
+    NULL
+};
+
+static const char *const d_development_open[] = {
+    "  Sends the active Project.ckp to a running CodeKitten with odoc.",
+    "  CodeKitten is optional and this command never participates in builds.",
+    NULL
+};
+
 static const char *const d_screenshot[] = {
     "  Captures the whole screen as a packed PICT. Depth",
     "  defaults to the Screenshots panel setting; --no-save",
@@ -573,6 +592,13 @@ static const char *const d_chat[] = {
 const NowCommandDoc kNowCommandDocs[] = {
     { "development", 1, "registered Projects and build environment",
       "development", d_development },
+    { "development-build", 1, "build one project through MPW ToolServer",
+      "development-build <status | cancel | start projectID>",
+      d_development_build },
+    { "development-run", 1, "launch the exact last built product",
+      "development-run <productRef>", d_development_run },
+    { "development-open", 1, "open one active Project.ckp in CodeKitten",
+      "development-open <projectID>", d_development_open },
     { "gestalt", 1, "report this Mac: system, model, RAM, CarbonLib",
       "gestalt [group] [--full]", d_gestalt },
     { "screenshot", 1, "capture this Mac's screen to its desktop",

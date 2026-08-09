@@ -38,6 +38,7 @@
 #include "proc_actions.h"
 #include "proc_roster.h"
 #include "development_command.h"
+#include "development_runtime.h"
 
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
@@ -1593,6 +1594,18 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "development") == 0) {
         now_development_command(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "development-build") == 0) {
+        now_development_build_command(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "development-run") == 0) {
+        now_development_run_command(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "development-open") == 0) {
+        now_development_open_command(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "screenshot") == 0) {

@@ -80,6 +80,8 @@ public protocol AgentIntegrationClient: Sendable {
     /// toolchain identity and measured capabilities only.
     func developmentEnvironment() async
         -> AgentIntegrationGuestRowReportResult
+    func development(_ request: AgentIntegrationDevelopmentRequest) async
+        -> AgentIntegrationGuestRowReportResult
     /// The end of the guest's own log for this launch. `lines` is a count,
     /// never a file: the verb names nothing on the disk and this side must
     /// not invent a way for it to — see `GuestLogTailProjection`. Absent
@@ -223,6 +225,10 @@ public protocol AgentIntegrationClient: Sendable {
 
 extension AgentIntegrationClient {
     public func developmentEnvironment() async
+        -> AgentIntegrationGuestRowReportResult {
+        .unavailable(.host)
+    }
+    public func development(_ request: AgentIntegrationDevelopmentRequest) async
         -> AgentIntegrationGuestRowReportResult {
         .unavailable(.host)
     }

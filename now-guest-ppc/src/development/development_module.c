@@ -6,6 +6,7 @@
 #include "control_kind.h"
 #include "development_layout.h"
 #include "development_toolchain_mac.h"
+#include "development_runtime.h"
 #include "fileshare.h"
 #include "prefs.h"
 #include "pump.h"
@@ -125,7 +126,8 @@ static void development_draw(void)
         strcpy(line, "No MPW toolchain is registered.");
     }
     draw_line(&g_r.toolchain_status, line);
-    draw_line(&g_r.jobs_status, "No build job is active.");
+    now_development_runtime_status(line, sizeof line);
+    draw_line(&g_r.jobs_status, line);
 }
 
 static int choose_root(Boolean toolchain)
@@ -184,7 +186,14 @@ static Boolean development_click(const EventRecord *event, Point local)
         }
         return true;
     }
-    return control == g_cancel;
+    if (control == g_cancel) {
+        if (TrackControl(control, local, now_pump_action()) != 0) {
+            now_development_runtime_cancel();
+            InvalWindowRect(g_owner, &g_r.jobs_status);
+        }
+        return true;
+    }
+    return false;
 }
 
 static void development_activate(Boolean active)
@@ -209,10 +218,23 @@ static void development_status(char *out, long cap)
     }
 }
 
+static void development_idle(void)
+{
+    static int was_active;
+    int active;
+    now_development_runtime_idle();
+    active = now_development_runtime_active();
+    if (active != was_active && g_owner != NULL) {
+        was_active = active;
+        HiliteControl(g_cancel, active ? 0 : 255);
+        InvalWindowRect(g_owner, &g_r.jobs_status);
+    }
+}
+
 static const WorkshopModuleOps k_ops = {
     development_create, development_dispose, development_show,
     development_layout, development_draw, development_click, NULL,
-    development_activate, NULL, development_status, NULL
+    development_activate, development_idle, development_status, NULL
 };
 
 const WorkshopModuleOps *development_module_ops(void) { return &k_ops; }
