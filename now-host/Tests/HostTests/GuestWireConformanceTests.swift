@@ -578,6 +578,7 @@ final class GuestWireConformanceTests: XCTestCase {
         // CHEAPEST and most common answer in the scene family, which is
         // exactly why it needs a fixture: nothing else exercises the path.
         "scene.same": "testSceneSameAsTheGuestWritesIt",
+        "mirror.invalidate": "testMirrorInvalidationAsTheGuestWritesIt",
         "hello": "test68KHelloAsTheGuestWritesIt",
         "ping": "test68KPingAsTheGuestWritesIt",
         "error": "test68KErrorReplyAsTheGuestWritesIt",

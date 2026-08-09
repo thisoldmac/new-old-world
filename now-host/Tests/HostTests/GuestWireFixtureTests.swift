@@ -99,6 +99,25 @@ final class GuestWireFixtureTests: XCTestCase {
                          + "settlements, it did not report none")
     }
 
+    /// service_mirror_invalidation() appends the evidence-quality tail after
+    /// the cumulative domain generations. This is copied from that two-call
+    /// emitter rather than built through the Swift encoder.
+    func testMirrorInvalidationAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"mirror.invalidate","session":"712340",\
+        "generation":9,"domains":{"structure":4,"front":2,"menus":3,\
+        "finder":1,"content":1},"quality":"gap","lost":5,\
+        "source":"transitions"}
+        """
+        guard case .mirrorInvalidate(let hint) = try decode(json) else {
+            return XCTFail("not a mirror.invalidate")
+        }
+        XCTAssertEqual(hint.generation, 9)
+        XCTAssertEqual(hint.domains.structure, 4)
+        XCTAssertEqual(hint.quality, .gap)
+        XCTAssertEqual(hint.lost, 5)
+    }
+
     /// now_wire_chat_send() in now-guest-ppc/src/core/wire.c, its prompt
     /// carrying the one guest-emitted chat string with arbitrary human
     /// text. Pinned for exec.output's reason: escaping is the one place

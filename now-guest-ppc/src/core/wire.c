@@ -32,6 +32,7 @@
 #include "scene_collect.h"
 #include "scene_phase.h"
 #include "software.h"
+#include "transitions_cmd.h"
 #include "wire_sleep.h"
 
 enum {
@@ -6858,9 +6859,47 @@ void now_wire_pump(void)
     pumping = false;
 }
 
+static void service_mirror_invalidation(void)
+{
+    NowMirrorInvalidation hint;
+    char json[384];
+    const char *quality;
+    long pos;
+
+    if (g.phase != kConnConnected
+        || !now_transitions_take_invalidation(&hint)) {
+        return;
+    }
+    quality = hint.quality == kNowInvalidationGap ? "gap"
+        : hint.quality == kNowInvalidationUnknown ? "unknown" : "sampled";
+    pos = snprintf(json, sizeof json,
+                   "{\"type\":\"mirror.invalidate\","
+                   "\"session\":\"%lu\",\"generation\":%lu,"
+                   "\"domains\":{\"structure\":%lu,\"front\":%lu,"
+                   "\"menus\":%lu,\"finder\":%lu,\"content\":%lu},",
+                   g.connected_tick, (unsigned long)hint.generation,
+                   (unsigned long)hint.structure, (unsigned long)hint.front,
+                   (unsigned long)hint.menus, (unsigned long)hint.finder,
+                   (unsigned long)hint.content);
+    if (pos < 0 || pos >= (long)sizeof json) {
+        return;
+    }
+    snprintf(json + pos, sizeof json - (size_t)pos,
+             "\"quality\":\"%s\",\"lost\":%lu,"
+             "\"source\":\"transitions\"}", quality,
+             (unsigned long)hint.lost);
+    /* Best effort by contract. A later event carries cumulative generations;
+       cadence polling remains the recovery when this queue is full. */
+    (void)send_control(json);
+}
+
 void conn_service(void)
 {
     ++g_service_passes;
+    /* Ordinary application context, including nested Toolbox pumps. This is
+       the sole drain of the resident P5 cursor; it never runs in the OT
+       notifier or resident filter. */
+    now_transitions_poll();
     /* The loop's own rhythm, sampled where the loop reaches the wire
        rather than in main.c: every nested Toolbox loop pumps through
        here too (pump.h), so this counts the passes that could have
@@ -6917,6 +6956,9 @@ void conn_service(void)
         }
         if (g.phase == kConnConnected) {
             service_transfer();
+        }
+        if (g.phase == kConnConnected) {
+            service_mirror_invalidation();
         }
         if (g.phase == kConnConnected) {
             service_heartbeat();

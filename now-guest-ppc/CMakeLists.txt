@@ -93,6 +93,7 @@ add_application(now-guest-ppc
     src/peek/peek_validate.c
     src/peek/peek_oracle.c
     src/peek/event_read.c
+    src/peek/transition_coordinator.c
     src/peek/arm_target.c
     src/peek/anchor_acquire.c
     src/peek/anchor_cycle.c

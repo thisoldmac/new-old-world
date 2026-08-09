@@ -302,6 +302,9 @@ run_c now-guest-ppc now_ext_core_logic_test.c \
       ../ext/src/now_ext_core_logic.c
 run_c now-guest-ppc event_read_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/peek/event_read.c
+run_c now-guest-ppc transition_coordinator_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/peek/transition_coordinator.c \
+      src/peek/transitions_logic.c src/peek/event_read.c src/core/json.c
 # P5's command layer, above the ring: the expiry a lapsed request does not
 # clear, the forward-only reader mark that makes `dropped` mean anything,
 # and the console line's grammar.

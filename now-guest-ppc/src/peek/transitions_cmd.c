@@ -29,6 +29,18 @@
 #include <stdio.h>
 #include <string.h>
 
+static NowTransitionCoordinator g_transition_coordinator;
+static int g_transition_coordinator_ready;
+
+static NowTransitionCoordinator *transition_coordinator(void)
+{
+    if (!g_transition_coordinator_ready) {
+        now_transition_coordinator_init(&g_transition_coordinator);
+        g_transition_coordinator_ready = 1;
+    }
+    return &g_transition_coordinator;
+}
+
 /* ---- finding the block ----------------------------------------------
  *
  * Three gates, in the order an older resident fails them: the table must
@@ -66,7 +78,9 @@ NowEventBlock *now_transitions_block(void)
 
 void now_transitions_status(NowEventU32 cursor, NowTransitionsStatus *out)
 {
-    now_transitions_fill_status(now_transitions_block(), cursor,
+    now_transitions_poll();
+    now_transitions_fill_status(now_transition_coordinator_ledger(
+                                    transition_coordinator()), cursor,
                                 (NowEventU32)TickCount(), out);
 }
 
@@ -272,7 +286,10 @@ unsigned long now_transitions_read(NowEventU32 cursor, NowEventRecord *out,
                                    unsigned long max, NowEventU32 *next,
                                    unsigned long *lost, int *usable)
 {
-    const NowEventBlock *block = now_transitions_block();
+    const NowEventBlock *block;
+
+    now_transitions_poll();
+    block = now_transition_coordinator_ledger(transition_coordinator());
 
     if (usable != NULL) {
         *usable = now_event_block_usable(block);
@@ -282,13 +299,20 @@ unsigned long now_transitions_read(NowEventU32 cursor, NowEventRecord *out,
 
 void now_transitions_commit_read(NowEventU32 next)
 {
-    NowEventBlock *block = now_transitions_block();
+    now_transition_coordinator_commit(transition_coordinator(), next);
+}
 
-    if (!now_event_block_usable(block)) {
-        return;
-    }
-    block->reader_cursor = now_transitions_reader_advance(
-        block->reader_cursor, next);
+void now_transitions_poll(void)
+{
+    (void)now_transition_coordinator_ingest(transition_coordinator(),
+                                            now_transitions_block(), 32);
+}
+
+int now_transitions_take_invalidation(NowMirrorInvalidation *out)
+{
+    now_transitions_poll();
+    return now_transition_coordinator_take_invalidation(
+        transition_coordinator(), out);
 }
 
 /* ---- the wire face ---------------------------------------------------
