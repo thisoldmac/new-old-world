@@ -28,7 +28,7 @@ renderer draws from, one by one, over the host's agent socket.
 
 That is not a compromise, it is the sharper measurement, and the reason
 is a property of the renderer: `SceneRenderer.draw(in:size:)`
-(mirror/host/MirrorKit/Sources/MirrorKitUI/SceneRenderer.swift:63) is a
+(now-host/Packages/MirrorKit/Sources/MirrorKitUI/SceneRenderer.swift:63) is a
 pure function of one immutable `Scene` plus four bits of mirror-local UI
 state, and the live view and `RenderShot` share it — one draw path, one
 set of pixels. So the sequence of scene documents FULLY DETERMINES the

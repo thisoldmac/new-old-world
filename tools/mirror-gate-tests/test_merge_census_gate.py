@@ -39,7 +39,9 @@ TOOL = ROOT / "tools" / "merge-census-gate"
 INT_SIDE = "b64a15049502c61e336a5481f1b050d0fe59b149"
 LANE_SIDE = "0bbf6f7db41fbb8a82f5a0e750c1b9e53d18e66f"
 INCIDENT = "fe4d8179567d1ef35b6f89dfe3fa2a8e81bf7a5a"
-SCENE = "mirror/host/MirrorKit/Sources/MirrorKit/Scene.swift"
+# This is the path in the historical commits replayed below, not the current
+# production location. Changing it would make the incident fixture invisible.
+INCIDENT_SCENE = "mirror/host/MirrorKit/Sources/MirrorKit/Scene.swift"
 
 
 def load():
@@ -321,7 +323,7 @@ class MergeCensusGate(unittest.TestCase):
         self.assertTrue(tree, "merge-tree produced no tree")
 
         _, _, lost, _ = self.mod.compare(INT_SIDE, tree, str(ROOT))
-        self.assertIn((SCENE, "prop", "cdef"), lost,
+        self.assertIn((INCIDENT_SCENE, "prop", "cdef"), lost,
                       "the auto-merge dropped Scene.swift's `cdef` and the "
                       "census did not see it")
 

@@ -44,7 +44,7 @@ THREE RULES THIS TOOL ENFORCES rather than asking anyone to remember:
                   for half its own captures.
   garbage and all the corpus keeps corrupt titles, unavailable coverage and
                   stale rows. A corpus of only healthy scenes tests nothing
-                  (mirror/AGENTS.md).
+                  (archive/mirror-standalone-2026-08-09/AGENTS.md).
 
     tools/mirror-corpus capture date-and-time
     tools/mirror-corpus ledger

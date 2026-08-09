@@ -5,7 +5,7 @@
 #
 #   1. image gates    - the staged-image discipline gates, ~3 seconds
 #   2. native tests   - both guests' pure logic, host cc, ~2 seconds
-#   3. MirrorKit      - the vendored Mirror host package, 165 tests, ~15s
+#   3. MirrorKit      - the host-owned semantic/render package, ~15s
 #   4. guest builds   - both cross-compilers (skipped without Retro68)
 #   5. host gate      - 556 tests plus both Xcode configurations
 #   6. live guest     - the census, against a REAL guest (opt-in, see below)
@@ -14,9 +14,8 @@
 # two seconds to discover, not the four minutes it takes xcodebuild to
 # reach the same conclusion by a longer route.
 #
-# Stage 2 was added on 2026-08-06 because it was missing. `mirror/` is
-# vendored into this tree as tracked files and carries a full SwiftPM
-# package with its own suite, and no gate here ran it — so this script
+# Stage 3 was added on 2026-08-06 because it was missing. MirrorKit carries a
+# full SwiftPM package with its own suite, and no gate here ran it — so this script
 # read green for three days while seven of those tests were red. That is
 # the same hole as "every other gate can be green while neither guest
 # compiles": a gate is only as wide as the tools it invokes.

@@ -108,10 +108,9 @@ SAYS_SO = re.compile(r"\brevert(s|ed|ing)?\b|\bundo(es|ing|ne)?\b|"
                      re.IGNORECASE)
 HEXISH = re.compile(r"\b[0-9a-f]{7,40}\b")
 
-# Skipped for the same reason merge-census-gate skips them: five nested agent
-# checkouts under mirror/ carrying their own copy of everything, so a line
-# "added" and "removed" there is six lines of noise per real one.
-SKIP_PREFIXES = ("mirror/.claude/", "archive/", "qemu/", ".claude/worktrees/")
+# Skipped for the same reason merge-census-gate skips them: archives, upstream
+# clones, and nested agent checkouts are not this project's live code.
+SKIP_PREFIXES = ("archive/", "qemu/", ".claude/worktrees/")
 
 
 def run(args, cwd=None):

@@ -102,14 +102,10 @@ import re
 import subprocess
 import sys
 
-# Trees that are not this project's live code. `mirror/.claude/worktrees/`
-# is five whole nested agent checkouts, 3,789 tracked files carrying their
-# own copies of MirrorKit (docs/open-issues.md, 2026-08-07): censusing them
-# would triple every count and make a real loss unfindable among six copies
-# of the same name. `archive/` is by definition code that was removed on
-# purpose. `qemu/` is a large upstream clone.
+# Trees that are not this project's live code. `archive/` is by definition
+# code that was removed on purpose, `.claude/worktrees/` contains nested agent
+# checkouts, and `qemu/` is a large upstream clone.
 SKIP_PREFIXES = (
-    "mirror/.claude/",
     "archive/",
     "qemu/",
     ".claude/worktrees/",
