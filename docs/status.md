@@ -199,6 +199,19 @@ says so at the point of claim rather than in a footnote.
   target-context probe can establish their WDEF variant. Ordinary application
   P3 remains experimental and off by default. The latency and resize changes
   are host-tested but have not yet been rerun on metal.
+
+  The Finder interior is now host-owned as interaction state too, not merely
+  a semantic layer painted after a guest snapshot. A folder window becomes a
+  blank host Finder surface immediately; each roster page adds individually
+  rendered asset-pack or generic icons as it arrives. Selection is projected
+  locally per window and name-view rows target their full visible row while
+  the guest receives the same select-by-name act. Scroll arrows, pages, and
+  thumb drags translate the cached items and thumb on the host immediately,
+  then yield when the guest reports its new control value. Scroll and window
+  movement no longer invalidate the directory roster or start another Finder
+  AppleScript; resize and view-header changes do. Completed rosters are tracked
+  per container, so a failed desktop read cannot make a successful front
+  folder repeat forever. These additions are tested, not metal-verified.
 - **The guest is woken by its socket, not by a timer expiring**
   (2026-08-06, emulator-verified; **a metal pass is owed and this is the
   change most likely to behave differently there**). A request arriving

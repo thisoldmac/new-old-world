@@ -211,14 +211,21 @@ that is *about metal*.
   field reports itself as not actionable and the act path refuses.
   Inventing a point for an icon the Finder is not showing is precisely
   how a click lands on the wrong file.
-- **Positions are cached; the cache key includes scroll.** One script
-  round trip through the Finder costs **1–2 s** (measured, mac99) — far
-  too much per poll. The snapshot refreshes when a window's geometry *or
-  scroll value* changes, and the act path forces a refresh before it
-  aims. **A cached position is fine to draw with and not fine to aim
-  with.**
-- **Two windows with the same title get no items** rather than each
-  other's. A window name is the only key the Finder gives you here.
+- **The directory model is cached; scrolling is a projection.** One script
+  round trip through the Finder costs **1–2 s** (measured, mac99) — far too
+  much per scroll. The cache key includes container identity, viewport size,
+  and non-value control geometry (so list headers invalidate icon geometry),
+  but excludes window position and scrollbar values. Cached item boxes are
+  translated by the live scroll-value delta; the host also applies the
+  pending delta immediately while the guest act settles. Resize or a view
+  change refreshes the roster; moving or scrolling does not.
+- **A list row is a semantic target.** `bounds of every item` supplies a
+  16-pixel glyph in name view, but the host-owned list presents each visible
+  row as the named item. Clicking the label or the rest of that row resolves
+  to a select-by-name act, never to an invented coordinate in empty content.
+- **Two windows with the same title get no items** rather than each other's.
+  AppleScript addresses them by title even though the host joins the answer
+  to an exact WindowRecord identity.
 - **A failure the cache could hold.** One busy-Finder script timeout
   marked a layout resolved anyway, and that window then served **no items
   at all** for the rest of the process's life. The layout signature is

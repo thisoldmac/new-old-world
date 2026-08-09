@@ -102,10 +102,20 @@ snapshot at 19:54:09. The measured complement was **12,983 ms** because the
 host read the desktop first, then read the folder in eight-row pages, then
 waited for type/creator icon-art enrichment before publishing anything. The
 host now reads the front Finder window first, starts ordinary pages at sixteen
-rows with an eight-row truncation fallback, and publishes the complete
-name/order/bounds/selection roster before icon art settles. Generic host-side
-icons are the immediate fallback; extracted asset art enriches them later.
-This latency correction is **Tested, not yet metal-verified**.
+rows with an eight-row truncation fallback, publishes every completed page,
+and never waits for type/creator art before drawing semantic items. Generic
+host-side icons are the immediate fallback; extracted asset art enriches them
+later. Completed reads are tracked per container, so a failed desktop or
+background read cannot continuously restart a successful front-window read.
+
+Scroll is no longer a roster invalidation. The host translates cached boxes by
+the guest's live scrollbar delta and projects a pending arrow/page/thumb move
+immediately while the same act travels to the guest. Selection is likewise
+local-first and scoped to the exact window. Name-view hit testing covers the
+visible semantic row instead of only its 16x16 glyph, but still sends a
+select-by-name act. Finder owns window existence, frontness, geometry, view,
+and eventual control state; the host owns the interior presentation. This
+latency and interaction correction is **Tested, not yet metal-verified**.
 
 Paging remains scoped to the one displayed container. Opening another folder
 starts a read for that directory; a later host-side expandable list must apply
@@ -1241,9 +1251,14 @@ a fresh boot cleared the modal rather than answering the question. The
 guest is a Carbon-era alert in a foreign application, which is the
 `dialogItem` path — a second data point for whatever picks that up.
 
-## OPEN: the Finder item roster reverts to the PRE-SWITCH geometry for ~0.8 s, seconds after the view has changed (2026-08-07, `claude/019-flicker-bc`)
+## SUPERSEDED BY SEMANTIC FINDER: the Finder item roster reverted to PRE-SWITCH geometry for ~0.8 s (2026-08-07, `claude/019-flicker-bc`)
 
-**Verification level: TESTED** (emulator; nothing here touched metal).
+**Historical verification level: TESTED** (emulator). The competing P3/roster
+composition described below no longer exists for Finder: Finder is denied P3,
+its host interior is semantic, and a structural change in list-header geometry
+invalidates the per-container roster. A post-change metal view-switch run is
+still owed, so this is superseded as a mechanism rather than closed by metal
+evidence.
 **Found by `tools/fidelity-live.py`'s second-ever run** — the measurement
 nobody had managed to take twice.
 
