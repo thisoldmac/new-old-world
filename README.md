@@ -157,8 +157,10 @@ metal-verified**. View switches reuse retained directory state while bounded
 icon-art pages fill in, rather than blocking the presentation on a new full
 Finder draw. The right-aligned application menu is synthesized from the live
 process roster when Finder omits its rows, including Hide, Hide Others, Show
-All, and application switching. A **Rebuild State** button discards the retained
-guest projection when an escape hatch is needed. P3 remains available to every
+All, and application switching. A **Rebuild State** button now invalidates the
+in-flight observation generation, retained scene engine/history, content and
+Finder catalogs, blanks the old projection, and starts a fresh read while
+preserving the operation journal. P3 remains available to every
 non-Finder application, but the host's ordinary `record` arm now touches only
 the exact requested window. The QDExtensions patch, heap census, and offscreen
 GWorld hooks are one explicit `probe` diagnostic tier after that tier correlated
@@ -174,13 +176,20 @@ scrolling, and folder navigation settle locally. Two development switches can
 also mirror window opens/closes and window position/size to the guest. Those
 acts are optimistic: the host changes immediately, then a later guest scene
 confirms or reconciles it. Turning either switch off restores independent host
-ownership for that axis. The root is the guest's configured file share—normally
+ownership for that axis. Enabling the mode never invents or opens a root
+window: only a folder opened by the person or already open on the guest becomes
+a host window. Geometry acts made before the guest names its window are held
+and dispatched once that exact reference arrives. The root is the guest's configured file share—normally
 the whole boot volume when **Share entire boot volume** is enabled—not an
 authority bypass. This mode is Tested and still needs its first metal run. The
 guest-follow mode remains available when the toggle is off.
 
 Desktop icons in both modes come from a bounded `Desktop Folder` file listing,
-with the shared volume added as a disk icon. When the guest-follow Finder roster
+with the configured share added as a disk icon and guest-observed mounted
+volumes retained beside it. Changing Finder mode invalidates and repopulates
+that catalog. In emulated mode, opening a desktop folder creates and fills the
+host window first, then optionally couples the matching open to the guest.
+When the guest-follow Finder roster
 cannot provide an open window's items but has named its directory, the same
 bounded file-list catalog supplies a semantic icon fallback. No path recursively
 walks the disk. The host itself always launches with Mirror stopped; reconnects

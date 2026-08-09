@@ -274,6 +274,28 @@ can still resume the current intent. Asset-pack provenance moved to the
 inspector's **Asset Packs** scaffold and is no longer painted over the mirrored
 desktop. All of this remains unverified on the PB1400c/Wallstreet.
 
+**CORRECTION 2026-08-09, authority must not seed state.** Enabling emulation
+no longer synthesizes a root-volume window or sends a guest open. The host
+starts with no emulated folder windows, adopts folders already present in the
+guest scene when lifecycle coupling is enabled, and creates a local window
+when a person opens a semantic desktop folder or volume. The local window
+precedes its optional guest script. A host move or resize made before that
+script yields a live guest window reference is retained and dispatched after
+the exact identity/path join; geometry commands are serialized rather than
+raced into the guest's one act cell.
+
+Desktop state is invalidated on every mode transition and repaged in both
+modes. The bounded `Desktop Folder` catalog supplies files, the configured
+share supplies a fallback root-volume icon, and every disk the guest actually
+reported is retained beside it rather than erased by host projection. The
+Finder-card Refresh invalidates semantic catalogs without closing host-owned
+windows. The top-level **Rebuild State** is deliberately destructive: it
+invalidates any in-flight generation, clears the reducer snapshot and bounded
+history, content state, displayed scene, icon/visibility/Finder caches and
+host Finder windows, then begins a new observation. It preserves the operation
+journal. These corrections are covered by focused host tests and remain
+unverified on metal.
+
 **UPDATE 2026-08-08, empty Application menu.** Presence of menu `-16489` is
 not evidence that Finder supplied its rows. An empty or incomplete menu is now
 rebuilt from the same switchable-process roster used by the agent surface,
