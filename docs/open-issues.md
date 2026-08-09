@@ -50,7 +50,8 @@ precedence over the operator's local package store; additionally, a substituted
 Finder type, bypassed checksum comparison, and restored StuffIt archive link
 each produced the named failure.
 
-`scripts/test-all` exits 0 on this branch: staged-image discipline 28/28,
+`scripts/test-all` exits 0 at follow-up checkpoint `a9ad5dbf`: staged-image
+discipline 28/28,
 native tests 149/149, MirrorKit, all guest/resident/instrument cross-builds,
 the complete host suites, and the Xcode app target in Debug and Release all
 pass. Stage 6 skips honestly because `NOW_GUEST_LIVE` was not set; nothing in
