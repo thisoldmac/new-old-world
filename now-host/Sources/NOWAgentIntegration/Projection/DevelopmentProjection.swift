@@ -8,7 +8,10 @@ import Foundation
 public enum DevelopmentProjection: HostProjection {
     public static let capability = HostCapabilityID("now_development")
     public static let requires = [
-        "development-project", "development-stage", "development-build", "development-run",
+        AgentIntegrationCapabilityNames.developmentProjectCommand,
+        AgentIntegrationCapabilityNames.developmentStageCommand,
+        AgentIntegrationCapabilityNames.developmentBuildCommand,
+        AgentIntegrationCapabilityNames.developmentRunCommand,
     ]
     public static let exposes = requires
     public static let authorityDomain =

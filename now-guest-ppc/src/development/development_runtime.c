@@ -13,6 +13,8 @@
 #include "fileshare.h"
 #include "json.h"
 #include "prefs.h"
+#include "proc_actions.h"
+#include "proc_roster.h"
 
 enum {
     kRuntimeTextCap = 131072,
@@ -283,23 +285,23 @@ static OSErr write_text(const FSSpec *spec, const char *text)
     return err;
 }
 
-static OSErr find_toolserver(ProcessSerialNumber *found)
+static OSErr find_process_by_creator(OSType creator,
+                                     ProcessSerialNumber *found)
 {
-    ProcessSerialNumber psn = { 0, kNoProcess };
-    while (GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        FSSpec spec;
-        Str255 name;
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        info.processAppSpec = &spec;
-        if (GetProcessInformation(&psn, &info) == noErr
-            && info.processSignature == 'MPSX') {
-            *found = psn; return noErr;
+    NowProcRosterIter iterator;
+    NowProcRosterRow process;
+    now_proc_roster_begin(&iterator);
+    while (now_proc_roster_next(&iterator, &process)) {
+        if (process.creator == creator) {
+            *found = process.psn; return noErr;
         }
     }
     return procNotFound;
+}
+
+static OSErr find_toolserver(ProcessSerialNumber *found)
+{
+    return find_process_by_creator('MPSX', found);
 }
 
 static OSErr send_toolserver(const char *command)
@@ -739,9 +741,7 @@ void now_development_run_command(const char *request_json, long id,
 {
     char product_ref[40];
     LaunchParamBlockRec launch;
-    ProcessInfoRec process;
-    FSSpec launched_spec;
-    Str255 launched_name;
+    NowProcRosterRow process;
     OSErr err;
     long pos;
     char ignored[16];
@@ -767,15 +767,12 @@ void now_development_run_command(const char *request_json, long id,
         reply_error(out, cap, id, "launch-failed",
                     "The exact built product did not launch."); return;
     }
-    memset(&process, 0, sizeof process);
-    process.processInfoLength = sizeof process;
-    process.processName = launched_name;
-    process.processAppSpec = &launched_spec;
-    err = GetProcessInformation(&launch.launchProcessSN, &process);
-    if (err != noErr || process.processSignature != g_runtime.product.creator
-        || launched_spec.vRefNum != g_runtime.product.spec.vRefNum
-        || launched_spec.parID != g_runtime.product.spec.parID
-        || EqualString(launched_spec.name, g_runtime.product.spec.name,
+    if (!now_proc_roster_read(&launch.launchProcessSN, &process)
+        || process.creator != g_runtime.product.creator
+        || !process.have_spec
+        || process.spec.vRefNum != g_runtime.product.spec.vRefNum
+        || process.spec.parID != g_runtime.product.spec.parID
+        || EqualString(process.spec.name, g_runtime.product.spec.name,
                        false, true) == false) {
         reply_error(out, cap, id, "launch-unconfirmed",
                     "Launch returned, but the resulting process identity did not match the built product.");
@@ -792,21 +789,7 @@ void now_development_run_command(const char *request_json, long id,
 
 static OSErr find_codekitten(ProcessSerialNumber *found)
 {
-    ProcessSerialNumber psn = { 0, kNoProcess };
-    while (GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        FSSpec spec;
-        Str255 name;
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        info.processAppSpec = &spec;
-        if (GetProcessInformation(&psn, &info) == noErr
-            && info.processSignature == 'O9ID') {
-            *found = psn; return noErr;
-        }
-    }
-    return procNotFound;
+    return find_process_by_creator('O9ID', found);
 }
 
 /* The Desktop database is the classic Mac authority for locating an
@@ -936,7 +919,12 @@ void now_development_open_command(const char *request_json, long id,
                     "CodeKitten did not accept the bounded open-document event.");
         return;
     }
-    SetFrontProcess(&psn);
+    if (now_proc_front_confirm(&psn, kProcFrontWaitSecs * 60)
+        != kProcFrontConfirmed) {
+        reply_error(out, cap, id, "codekitten-front-unconfirmed",
+                    "CodeKitten received the document, but did not become frontmost.");
+        return;
+    }
     pos = snprintf(out, (size_t)cap,
         "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
         "\"output\":{\"development-open\":[", id);

@@ -89,7 +89,7 @@ public enum DevelopmentEnvironmentProjection: HostProjection {
         return [
             "title": "Read the Classic Mac Development Environment",
             "description":
-                "Reads the PPC guest's human-selected Projects and MPW registration as path-free status rows: opaque toolchain identity, measured qualification version, and required component presence. It never returns a guest path and cannot execute an arbitrary command. NOW-68K does not advertise this capability.",
+                "Reads the connected guest's human-selected Projects and MPW registration as path-free status rows: opaque toolchain identity, measured qualification version, and required component presence. It never returns a guest path and cannot execute an arbitrary command. Availability follows the connected guest's advertised command table.",
             "inputSchema": HostProjectionSchema.emptyInput,
             "outputSchema": [
                 "oneOf": [
