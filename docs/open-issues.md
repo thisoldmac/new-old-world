@@ -39,6 +39,22 @@ a live guest in this pass, and a running application on a classic Mac has not
 exercised the finalization-refusal path. Those are the two useful metal checks;
 the host suites prove the state machines and app build, not those interactions.
 
+**2026-08-09 follow-up -- tested, not live-UI or metal-verified.** The Files
+page now refreshes both its open listing and Places when a connection becomes
+usable, and the toolbar Refresh action refreshes both projections as one
+operation. A disconnected or superseded Places sweep cannot publish late.
+Command-Delete and the forward-delete key use the existing Move to Trash
+confirmation; Shift-Command-N opens the existing new-folder sheet. All three
+entry points refuse to start while another guest file change is active.
+
+The delete regression now uses the listener's real connection identity and
+requires both refreshes that production emits -- the guest tree-change event
+and the successful mutation completion. It replies newest-first and proves the
+older reply cannot append a duplicate row. This settles the reported duplicate
+render at the state-machine level. The remaining useful check is a live host
+UI pass for the AppKit key events and sidebar redraw; no guest behavior or wire
+message changed.
+
 ## The folding sidebar, both halves (2026-08-05)
 
 The rail folds to icons on the guest and the sidebar does the same on the
