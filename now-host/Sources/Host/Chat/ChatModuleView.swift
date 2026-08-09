@@ -318,6 +318,7 @@ struct ChatProvidersSheet: View {
                     anthropicCard
                     claudeCard
                     openAICard
+                    codexCard
                     localsCard
                 }
                 .padding()
@@ -413,6 +414,83 @@ struct ChatProvidersSheet: View {
                     clear: { model.setOpenAIKey("") })
             }
             .padding(6)
+        }
+    }
+
+    private var codexCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 9) {
+                cardHeader("Codex (ChatGPT)", entry("codex"))
+                Text("ChatGPT subscription access through the installed "
+                     + "Codex runtime. Codex owns the browser callback and "
+                     + "credentials; NOW never receives the tokens.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let account = model.codexAccount, account.isChatGPT {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.email ?? "ChatGPT account")
+                                .font(.callout.weight(.medium))
+                            if let plan = account.planType {
+                                Text("\(plan.capitalized) plan")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button("Sign Out") { model.signOutCodex() }
+                    }
+                    if let usage = model.codexUsage {
+                        HStack(spacing: 14) {
+                            quotaLabel("Current", usage.primary)
+                            quotaLabel("Secondary", usage.secondary)
+                            if let tokens = usage.lifetimeTokens {
+                                Text("\(tokens.formatted()) lifetime tokens")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                } else {
+                    switch model.codexSignIn {
+                    case .idle:
+                        Button("Sign in with ChatGPT") {
+                            model.beginCodexSignIn()
+                        }
+                        .accessibilityHint(
+                            "Opens the Codex browser sign-in and returns "
+                            + "automatically after authorization")
+                    case .signingIn:
+                        HStack {
+                            ProgressView().controlSize(.small)
+                            Text("Waiting for the browser callback…")
+                                .font(.callout)
+                        }
+                        .accessibilityElement(children: .combine)
+                    case .failed(let reason):
+                        HStack {
+                            Text(reason).font(.callout).foregroundStyle(.red)
+                            Spacer()
+                            Button("Try Again") { model.beginCodexSignIn() }
+                        }
+                    }
+                }
+            }
+            .padding(6)
+        }
+    }
+
+    private func quotaLabel(
+        _ title: String, _ window: CodexQuotaWindow?
+    ) -> some View {
+        Group {
+            if let window {
+                Text("\(title): \(window.usedPercent)% used")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

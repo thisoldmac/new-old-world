@@ -59,6 +59,12 @@ private func makePassiveChatProviderRegistry(
 
 @MainActor
 final class ChatModuleModel: ObservableObject {
+    enum CodexSignInState: Equatable {
+        case idle
+        case signingIn
+        case failed(String)
+    }
+
     private struct CredentialAccess: Equatable {
         var notice: String?
         var authorizationKeys: [ChatCredentialKey] = []
@@ -98,6 +104,9 @@ final class ChatModuleModel: ObservableObject {
     @Published private(set) var isStreaming = false
     @Published private(set) var hasAnthropicKey = false
     @Published private(set) var hasOpenAIKey = false
+    @Published private(set) var codexAccount: CodexAccount?
+    @Published private(set) var codexUsage: CodexUsageSnapshot?
+    @Published private(set) var codexSignIn: CodexSignInState = .idle
     @Published private var credentialAccess = CredentialAccess()
     @Published private(set) var isAuthorizingCredentials = false
 
@@ -110,6 +119,7 @@ final class ChatModuleModel: ObservableObject {
     private let store: ChatCredentialStore
     private let transport: ChatHTTPTransport
     private let runtimeProviders: [ChatProvider]
+    private let codexClient: CodexAppServerClient
     private let defaults: UserDefaults
     private var conversation: [ChatTurn] = []
     private static let modelKey = "chat.selectedModel"
@@ -129,7 +139,11 @@ final class ChatModuleModel: ObservableObject {
         self.defaults = defaults
         selectedWireModelID = defaults.string(forKey: Self.modelKey) ?? ""
 
-        let runtimeProviders: [ChatProvider] = [ClaudeCodeChatProvider()]
+        let codexClient = CodexAppServerClient()
+        self.codexClient = codexClient
+        let runtimeProviders: [ChatProvider] = [
+            ClaudeCodeChatProvider(), CodexChatProvider(client: codexClient),
+        ]
         self.runtimeProviders = runtimeProviders
         let registry = makeChatProviderRegistry(
             store: store, transport: transport,
@@ -158,6 +172,7 @@ final class ChatModuleModel: ObservableObject {
         let store = store
         let transport = transport
         let runtimeProviders = runtimeProviders
+        let codexClient = codexClient
         /* Detached: Keychain reads and local-runtime probes must never
            run on the main actor (see init). */
         Task.detached { [weak self] in
@@ -191,12 +206,16 @@ final class ChatModuleModel: ObservableObject {
                 hasOpenAIKey:
                     !(credentialReads[.openAIAPIKey]?.string ?? "").isEmpty,
                 notice: preservedNotice ?? keychainNotice,
-                authorizationKeys: authorizationKeys)
+                authorizationKeys: authorizationKeys,
+                codexAccount: try? await codexClient.account(),
+                codexUsage: try? await codexClient.usage())
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 let models = found.models
                 self.hasAnthropicKey = found.hasAnthropicKey
                 self.hasOpenAIKey = found.hasOpenAIKey
+                self.codexAccount = found.codexAccount ?? nil
+                self.codexUsage = found.codexUsage ?? nil
                 self.credentialAccess = CredentialAccess(
                     notice: found.notice,
                     authorizationKeys: found.authorizationKeys)
@@ -355,6 +374,42 @@ final class ChatModuleModel: ObservableObject {
             let reason = ChatFault.from(error).reason
             credentialAccess.notice = reason
             refresh(preservingCredentialNotice: reason)
+        }
+    }
+
+    func beginCodexSignIn() {
+        guard codexSignIn != .signingIn else { return }
+        codexSignIn = .signingIn
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let login = try await self.codexClient.beginLogin()
+                guard NSWorkspace.shared.open(login.authorizationURL) else {
+                    throw ChatFault.refuse(
+                        code: "unreachable",
+                        reason: "The ChatGPT sign-in page could not open")
+                }
+                try await self.codexClient.waitForLogin(login.loginID)
+                self.codexSignIn = .idle
+                self.refresh()
+            } catch is CancellationError {
+                self.codexSignIn = .idle
+            } catch {
+                self.codexSignIn = .failed(ChatFault.from(error).reason)
+            }
+        }
+    }
+
+    func signOutCodex() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.codexClient.logout()
+                self.codexSignIn = .idle
+                self.refresh()
+            } catch {
+                self.codexSignIn = .failed(ChatFault.from(error).reason)
+            }
         }
     }
 
