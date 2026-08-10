@@ -273,6 +273,28 @@
         "ext/CMakeLists.txt"
       ],
       "reason": "Shared oracle bake blocked on 2026-08-10 by active QEMU guests PIDs 75829 and 77338; do not force while other sessions may be measuring. Bake resident 1.2 when the machine is free before landing on main."
+    },
+    {
+      "at": "2026-08-10T04:48:27-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/host-owned-updater",
+      "commit": "85c938368543be2d7f46c25066599f24d2732bea",
+      "extBuildFingerprint": "085c4ebf8457083acf4eb7da9c14ab31b40fc615",
+      "extDigest": "c727a4562b75bc4532f6b9c05dacd168f5afff49",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 640483328,
+      "imageName": "codex-host-owned-updater",
+      "imageSha256": "e760bb6cc964dfc00c628df5ef7ca4747e699870c380c4053a01bf65a8a9e56e",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260810",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "28ef6c07ee6d0b2978378551367b1393f406ed6f",
+      "volumeClean": "clean"
     }
   ]
 }
