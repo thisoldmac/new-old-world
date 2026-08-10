@@ -283,6 +283,19 @@ contract or guest-served behavior reaches `main` with only one half present.
 
 ## Verification and closeout
 
+Current receipt on `ab34d8d1`:
+
+- `scripts/test-all` completed stages 1-7: documentation, staged-image
+  discipline, Web Bridge, native tests, MirrorKit, both guest cross-builds and
+  the host package/Debug/Release gate. Stage 8 reported its expected skip
+  because `NOW_GUEST_LIVE` was not set; nothing in this run reached a classic
+  Macintosh.
+- A separate retained Debug build contained
+  `Contents/Resources/WebBridge/nowweb/__main__.py`, and the bundled package's
+  CLI entry point launched successfully.
+- No mac99, q800, Classilla, MacWeb or physical-machine acceptance row ran.
+  The implementation is Tested, not emulator- or metal-verified.
+
 - Helper Python suite and a spawned HTTP integration test.
 - Host package suites plus Debug and Release app targets.
 - PPC and 68K native tests registered in `scripts/test-native`.
