@@ -5,11 +5,12 @@
 #
 #   1. documentation  - source, projection, render, and mutation gates
 #   2. image gates    - the staged-image discipline gates, ~3 seconds
-#   3. native tests   - both guests' pure logic, host cc, ~2 seconds
-#   4. MirrorKit      - the host-owned semantic/render package, ~15s
-#   5. guest builds   - both cross-compilers (skipped without Retro68)
-#   6. host gate      - suites plus both Xcode configurations
-#   7. live guest     - the census, against a REAL guest (opt-in, see below)
+#   3. Web Bridge     - deterministic proxy and policy tests, <1 second
+#   4. native tests   - both guests' pure logic, host cc, ~2 seconds
+#   5. MirrorKit      - the host-owned semantic/render package, ~15s
+#   6. guest builds   - both cross-compilers (skipped without Retro68)
+#   7. host gate      - suites plus both Xcode configurations
+#   8. live guest     - the census, against a REAL guest (opt-in, see below)
 #
 # Cheapest first is the whole design. A broken frame codec should cost
 # two seconds to discover, not the four minutes it takes xcodebuild to
@@ -21,8 +22,8 @@
 # the same hole as "every other gate can be green while neither guest
 # compiles": a gate is only as wide as the tools it invokes.
 #
-# STAGE 7 IS OPT-IN, AND ONCE OPTED IN IT FAILS RATHER THAN SKIPS. Every
-# stage above this line boots nothing: 1-6 read text, compile, and run host
+# STAGE 8 IS OPT-IN, AND ONCE OPTED IN IT FAILS RATHER THAN SKIPS. Every
+# stage above this line boots nothing: 1-7 read text, compile, and run host
 # code. That is why `census` could kill the Workshop on 2026-08-07 while
 # 1,902 tests were green — the probe that did it dispatches a 68K trap that
 # does not exist on that Mac, and no amount of host-side testing can reach
@@ -96,22 +97,26 @@ if [ "$hooks_armed" = no ] && [ -z "${TBT_ALLOW_UNARMED_HOOKS:-}" ]; then
     exit 1
 fi
 
-echo "==> [1/7] documentation gate"
+echo "==> [1/8] documentation gate"
 "$script_dir/test-docs" || fail "documentation gate"
 
 echo
-echo "==> [2/7] staged-image discipline gates"
+echo "==> [2/8] staged-image discipline gates"
 # First because it is cheap, and because a broken image gate is the one
 # failure that makes every LATER result unattributable rather than wrong:
 # it decides whether anybody can say which resident a measurement came from.
 "$script_dir/../tools/image-discipline-tests" || fail "staged-image gates"
 
 echo
-echo "==> [3/7] native tests"
+echo "==> [3/8] Web Bridge gate"
+"$script_dir/test-web-bridge" || fail "Web Bridge gate"
+
+echo
+echo "==> [4/8] native tests"
 "$script_dir/test-native" || fail "native tests"
 
 echo
-echo "==> [4/7] MirrorKit gate"
+echo "==> [5/8] MirrorKit gate"
 # The XCTest transcript is more than a green run should print, so it is logged
 # rather than shown — but a SKIP is pulled back out and echoed. A gate that
 # quietly declines to run is exactly how this stage came to be missing, so
@@ -127,11 +132,11 @@ else
 fi
 
 echo
-echo "==> [5/7] guest cross-builds"
+echo "==> [6/8] guest cross-builds"
 "$script_dir/build-guests" || fail "guest cross-builds"
 
 echo
-echo "==> [6/7] host gate"
+echo "==> [7/8] host gate"
 "$script_dir/test-host" >/dev/null 2>&1 || {
     # Re-run showing output: the host gate is verbose enough that hiding
     # it on the happy path is worth the second run on the sad one.
@@ -140,10 +145,10 @@ echo "==> [6/7] host gate"
 echo "==> host gate passed"
 
 echo
-echo "==> [7/7] live-guest gate"
+echo "==> [8/8] live-guest gate"
 if [ -z "${NOW_GUEST_LIVE:-}" ]; then
     echo "==> SKIP: no NOW_GUEST_LIVE — nothing in this run reached a Macintosh."
-    echo "    Stages 1-6 boot nothing. Set NOW_GUEST_LIVE=<wire port> against a"
+    echo "    Stages 1-7 boot nothing. Set NOW_GUEST_LIVE=<wire port> against a"
     echo "    guest you have up (scripts/spin-up-ppc leaves one) to run the"
     echo "    census against it. scripts/bake-ext-image runs it unconditionally."
 else
