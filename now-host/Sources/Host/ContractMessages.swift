@@ -903,6 +903,7 @@ struct FileGet: Codable, Equatable, Sendable {
     var id: Int
     var path: String
     var container: String?
+    var developmentProject: String? = nil
 }
 
 /// Ask the other machine for its running processes. Read-only and
@@ -1090,6 +1091,9 @@ struct FileOffer: Codable, Equatable, Sendable {
     /// SHA-256 of the exact bytes on the bulk lane. Updates require it;
     /// ordinary transfers retain their existing CRC-32 settlement.
     var sha256: String? = nil
+    /// Private Development coordinator destination. No agent-facing file
+    /// request can set this field.
+    var developmentCandidate: String? = nil
 }
 
 struct FileAccept: Codable, Equatable, Sendable {

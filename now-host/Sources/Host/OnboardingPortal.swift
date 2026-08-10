@@ -160,7 +160,8 @@ final class OnboardingPortal: ObservableObject {
     }
 
     var selectableAssets: [OnboardingAsset] {
-        [assets.application, assets.extensionComponent].compactMap { $0 }
+        [assets.application, assets.codeKitten,
+         assets.extensionComponent].compactMap { $0 }
             + OnboardingDependencyCatalog.setupAssets(in: assets)
     }
 
@@ -237,6 +238,9 @@ final class OnboardingPortal: ObservableObject {
             application: assets.application.flatMap {
                 selection.contains($0.id) ? $0 : nil
             },
+            codeKitten: assets.codeKitten.flatMap {
+                selection.contains($0.id) ? $0 : nil
+            },
             extensionComponent: assets.extensionComponent.flatMap {
                 selection.contains($0.id) ? $0 : nil
             },
@@ -251,6 +255,7 @@ final class OnboardingPortal: ObservableObject {
         let diskBytes = (try? MacBinaryFile.decode(image))
             .map { Int64($0.dataFork.count) } ?? 0
         var items = ["New Old World", "Host settings", "Read Me First"]
+        if assets.codeKitten != nil { items.append("CodeKitten") }
         if assets.extensionComponent != nil { items.append("NOW Extension") }
         items += OnboardingDependencyCatalog.setupAssets(in: assets).map {
             asset in
@@ -448,6 +453,8 @@ final class OnboardingPortal: ObservableObject {
                              contentType: "application/macbinary")
         case "/now/application.bin":
             return assetResponse(assets.application)
+        case "/now/codekitten.bin":
+            return assetResponse(assets.codeKitten)
         case "/now/extension.bin":
             return assetResponse(assets.extensionComponent)
         default:

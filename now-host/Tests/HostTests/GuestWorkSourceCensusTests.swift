@@ -119,6 +119,24 @@ final class GuestWorkSourceCensusTests: XCTestCase {
         XCTAssertTrue(content.contains("workClass: .ambient"))
     }
 
+    func testDevelopmentCommandsAndCandidateTransferEnterTheScheduler()
+        throws {
+        let control = try GateSource.raw(
+            "now-host/Sources/Host/Automation/AgentIntegrationDevelopmentControl.swift")
+        let environment = try GateSource.raw(
+            "now-host/Sources/Host/Automation/AgentIntegrationDevelopmentEnvironment.swift")
+        XCTAssertTrue(control.contains("listener.runScheduledCommand("))
+        XCTAssertTrue(environment.contains("listener.runScheduledCommand("))
+        XCTAssertFalse(control.contains("listener.runCommand("))
+        XCTAssertFalse(environment.contains("listener.runCommand("))
+
+        let listenerSource = try GateSource.raw(listener)
+        XCTAssertTrue(listenerSource.contains(
+            ".bulk(\"publish project candidate\"), as: .bulk"))
+        XCTAssertTrue(listenerSource.contains(
+            "private func putDevelopmentCandidateFileAdmitted("))
+    }
+
     func testTheOldParallelDirectActLaneCannotReturn() throws {
         let source = GateSource.repoRoot.appendingPathComponent(
             "now-host/Sources/Host/MirrorDirectActLane.swift")

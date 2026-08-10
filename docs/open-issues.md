@@ -4,6 +4,161 @@ search:
 ---
 # Open issues
 
+## METAL-VERIFIED: host project, classic identity, MPW build/run/dialog (2026-08-09)
+
+The host Projects store, guest Development module, private import/candidate
+lanes, declarative ToolServer runtime, promotion guard, exact-product run and
+optional CodeKitten handoff are locally tested and both guests build. One
+bounded PPC emulator rung now passes: on mac99/OS 9.1, guest build
+`15a1c3087007` qualified `mpw-ffff-00000cf0@structural-1`, measured the active
+three-file project, completed MrC/PPCLink/Rez, reported an `APPL/MMTR` product
+at 1,700 data and 568 resource bytes, launched the exact product with matching
+process identity, cancelled another job and completed a later build.
+
+That run did not exercise import, workspace restart, inactive candidate stage,
+divergent promote, successful promote or CodeKitten handoff. Those remain the
+emulator acceptance gap. The PowerBook metal rung still owes the exact MPW
+toolchain/version, both product fork sizes/digest, process identity and an
+`odoc` edit imported as a new revision.
+
+The first PowerBook 1400c candidate-publication attempt on 2026-08-09 found a
+reproducible blocker before MPW ran. Guest build `15a1c3087007` qualified
+`mpw-ffff-00007b37@structural-1`; a NOW-owned host-home Hello World project
+was committed at revision 2 and staged twice. On both attempts the guest log
+reported `Project.ckp`, `Hello.r` and `Main.c` received with checksums OK, then
+candidate finalization refused `candidate-unavailable` with "The candidate
+request is malformed or no longer accepting files." A fresh build status was
+`Job none`, `State idle`, `Actions 0 of 0`, so this is a candidate
+acceptance/sealing defect, not an MPW result. Preserve that boundary when
+diagnosing it: transfer completion is proven; candidate re-find/seal is not.
+The refused `stage` result also omits the minted candidate ID, so MCP cannot
+address `stage-status` or `stage-discard`; the host's finalize-refusal path
+does not automatically discard the guest candidate. The two attempts may
+therefore have left inactive residue with no agent-visible recovery handle.
+
+**Updated 2026-08-10:** the candidate was accepting. The host encoded
+`expectedFiles` as the JSON string `"3"`, while the contract and guest parser
+require an integer; the parser therefore saw zero and the old compound guard
+collapsed that type error into `candidate-unavailable`. Project import had the
+same latent defect for its numeric cursor. Both fields now cross as typed JSON
+integers. The guest reports malformed digest, count, candidate root/folder,
+seal, measurement and marker failures separately and logs the failed
+predicate. The host logs each publication phase and, after a finalize refusal,
+either discards both candidates or retains the host receipt and returns its
+candidate ID for `stage-status` / `stage-discard`. A mutation-checked wire test
+guards both number fields. On a private mac99/OS 9.1 guest running build
+`995a13285c98`, MCP staged the same revision-2 project, transferred its three
+files, sealed candidate `candidate-fb94b4e9b84e4fd0` at the exact
+`f3401211847f396634542276c44243a1262871510bdadcc8ca7238a36739c730`
+digest, observed it with `stage-status`, then discarded it. Candidate staging
+is therefore emulator-verified. The PowerBook has not yet rerun this patched
+stack, so the original metal failure is diagnosed and fixed but not
+metal-reverified.
+
+The onboarding server can now place a separately supplied CodeKitten
+MacBinary at the setup-volume root, select it by default, advertise it as a
+standalone optional IDE, and serve it directly at `/now/codekitten.bin`. The
+host-mounted combined image preserved CodeKitten's 628,086-byte data fork,
+6,888-byte resource fork and `APPL/O9ID` identity. On the Mac OS 9.1 emulator,
+the exact payload transferred and `LaunchApplication` returned success, but
+CodeKitten left the process table before the five-second observation. This is
+not a passed CodeKitten handoff or runtime gate. The combined image's Disk Copy
+mount was separately blocked by the pristine snapshot's unaccepted Apple
+license; the earlier image-carrier mount result below remains valid for the
+carrier, not for this new payload set.
+
+**Updated 2026-08-10, classic file preservation and complete host-home rung:**
+The PowerBook rerun with the numeric candidate fix sealed the project, then MPW
+refused `Sources:Main.c` as “not a TEXT file.” Generic upload had reconstructed
+the bytes as `BINA/ttxt`; the development contract had treated a classic file
+as one data blob. The current branch makes data/resource forks and Finder
+type, creator and flags first-class through `now_projects`, project digests,
+candidate receipts, MacBinary guest transport/import and the host Git recovery
+archive. Legacy projects remain readable with identity reported as unknown,
+but staging refuses to invent metadata.
+
+A fresh mac99/OS 9.1 acceptance used only the MCP Development/Projects surface
+after fixture-only registration of the emulator's existing MPW. Guest build
+`44a214ae1141` qualified `mpw-ffff-00000cf0@structural-1`; project
+`95ceb07504374a568705336a5728d19a` carried a nonempty source resource fork and
+`TEXT/MPS ` identity, candidate `candidate-1c3ca2817afe4c24` sealed at digest
+`2d692e6239cb90862bb1a15c7d6f42ce63ea9026ac35663e9c41913725e417d0`, and
+MrC/PPCLink/Rez produced `APPL/H14E` product `product-5c96932bd4b1cd44`
+with 1,832 data and 578 resource bytes. Exact-product run matched the process;
+retained semantic UI observed the live frontmost alert and enabled `OK` item.
+After semantic dismissal the process disappeared and candidate discard passed.
+
+That acceptance also found two authoring constraints rather than transport
+defects: the first sample omitted its application-owned `QDGlobals qd`, and a
+26-byte debug product name left no room for PPCLink's `.xcoff` sidecar inside
+HFS's 31-byte component limit. The project was revised through MCP. Host and
+guest parsers now refuse the derived `.xcoff` overflow before staging; both
+guards were mutation-tested. The current fork/identity stack has not run on the
+PowerBook, so it remains emulator-verified rather than metal-verified.
+
+**Updated 2026-08-10, PowerBook acceptance complete:** the signed host at
+source `3de370bf` connected to PowerBook guest build `33bfe4e3e211` with Full
+Access. The guest qualified its selected
+`mpw-ffff-00007b37@structural-1` ToolServer/MrC installation. MCP changed only
+the emulator project's toolchain pin, producing host revision 5, then sealed
+candidate `candidate-d4752f9e46d84f9c` at digest
+`6c3e96f8e4e368fc5004e2817ab9bcc087bd1eacba5bdd5cb0437c3b77a13669`.
+MrC, PPCLink and Rez completed 3 of 3 actions. Product
+`product-cf2b162d6ea8648a` measured `APPL/H14E`, 1,832 data-fork bytes and 578
+resource-fork bytes, digest
+`cf2b162d6ea8648a7108b10b3732994ebc647f39c40ba74a1986ada1f6e564a8`.
+Exact-product run reported a matched process identity. Retained semantic state
+and the person at the machine observed the frontmost Hello World alert and its
+enabled OK item; after the person dismissed it, a fresh process census showed
+`HelloForks` absent. Candidate discard then completed. The fork/Finder identity
+repair and complete host-home build/run/dialog lane are therefore
+metal-verified on the PowerBook 1400c. The test-receipt, guest-home promotion
+and CodeKitten handoff gaps below remain open and are not covered by this claim.
+
+The run also exposed one agent-loop settlement defect that does not invalidate
+the build/run receipt. The first retained MCP snapshot contained the correct
+frontmost `HelloForks` process, dialog surface and enabled OK item, but carried
+`baseComplete=false`; the immediately following `dialogItem` act refused
+`now-mirror-snapshot-unavailable` before sending. Source inspection names two
+authorities at that seam: `MirrorStateProjectionService` reads
+`MirrorStateEngineRegistry.snapshot`, while `MirrorDriveService` resolves the
+act against `NOWMirrorSource.scene`. The former had the scene and the latter was
+nil. A separate process-list request transiently returned
+`now-host-communication-failed`, then succeeded on retry. An attended human can
+reconcile both cases, as this run did; an unattended agent cannot yet treat a
+published snapshot as proof that its named entities are actable. Reconcile the
+read and drive authorities and mutation-test that exact split before calling
+semantic runtime settlement autonomous-loop reliable.
+
+Two MCP contract edges made diagnosis harder than it needed to be. The local
+server does not expose an early host-build/protocol compatibility verdict, so
+an older running host reported the generic `now-host-invalid-response` for
+each new Projects/Development call instead of naming that its response shape
+predated those tools. Separately, `now_projects` publishes one broad input
+schema for all operations, while project `apply` and workspace `apply` accept
+mutually exclusive revision/commit guards; supplying both reached only the
+generic invalid-arguments sentence. A version handshake and discriminated
+per-operation schema are required before treating ordinary agent mistakes or a
+stale deployment as product-domain failures.
+
+Two implementation gaps block a full development/preservation/acceptance
+claim today:
+
+- `now_development` has separate build and exact-product run outcomes, but no
+  test operation or `ckproject.test-receipt/1`. A test cannot be reported as a
+  build configuration or a successful launch: its closed declarative action
+  vocabulary, expected product identity and terminal receipt still need to be
+  added to `Project.ckp`, the ToolServer service and both human/agent faces.
+
+- `development-open` proves CodeKitten launch, `odoc` dispatch and foregrounding
+  without blocking the guest loop, but `kAENoReply` cannot prove the handler
+  accepted the document. CodeKitten now has the handler; the remaining seam is
+  an asynchronous acceptance receipt, not another IDE dependency.
+
+The host Development import sheet also requires an opaque project ID. A
+bounded guest project catalog is still needed before that is a discoverable
+human workflow.
+
 Things known to be wrong, unfinished, or unverified, with enough detail
 to pick any one of them up cold. Nothing here is being worked on right
 now; each is parked deliberately.
@@ -170,8 +325,9 @@ listener and a separate temporary HTTP listener, displays a detected LAN IPv4
 and actual HTTP port, and serves an HTML 3.2-shaped fixed-route page. The page
 offers the canonical PPC MacBinary when installed, a per-request MacBinary
 `New Old World Prefs` aimed at the accepting interface and configured wire
-port, the optional NOW Extension, and explicitly enumerated files from the
-external dependency store. A missing CarbonLib row can download the known
+port, the optional standalone CodeKitten IDE, the optional NOW Extension, and
+explicitly enumerated files from the external dependency store. A missing
+CarbonLib row can download the known
 1.6.1 archive directly into that store after verifying its published SHA-1;
 NOW wraps the unchanged StuffIt bytes in MacBinary with `SIT5` / `SIT!`
 metadata before serving them. It can now also generate one setup disk: native
@@ -243,7 +399,12 @@ that run reached a Macintosh.
 Disk Copy 6.3.3 on the Mac OS 9.1 QEMU guest mounted a generated setup image
 and exposed its Read Me, application, preferences, extension and Dependencies
 folder. This is emulator evidence for the image carrier, not a physical-metal
-result. What remains unverified is the browser boundary: no Netscape, Internet
+result. A later CodeKitten-bearing image reached Disk Copy through the same
+wire and `odoc` path, but the pristine snapshot presented Apple's first-run
+license; it was not accepted automatically, so that image's guest mount remains
+unverified. Direct deployment proved the payload's forks and identity, then
+exposed CodeKitten's pre-existing early process exit. What remains unverified
+is the browser boundary: no Netscape, Internet
 Explorer or Classilla-era browser has yet downloaded `/now/setup.img` and
 automatically decoded its MacBinary envelope; no physical PPC
 Mac has installed the generated preference file, launched the guest, and sent

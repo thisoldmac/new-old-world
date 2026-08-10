@@ -71,6 +71,8 @@ int now_files_list(const char *rel_path, short start,
    the whole artifact). */
 int now_files_stage(const char *rel_path, FileContainer container,
                     FileStage *stage);
+int now_files_stage_under(short vref, long root_dir, const char *rel_path,
+                          FileContainer container, FileStage *stage);
 int now_files_stage_spec(const FSSpec *from, FileContainer container,
                          FileStage *stage);
 int now_files_stage_open(FileStage *stage);
@@ -196,6 +198,17 @@ int now_files_receive_begin_at(short vref, long dir_id, const char *name,
                                unsigned long modified, Boolean overwrite,
                                const char *resume_token, long resume_offset,
                                FileReceive *rx);
+
+/* Development's private candidate lane reuses the checked receiver beneath
+   a directory the guest Development service owns. `rel_path` is still a
+   bounded colon-relative folder path; it is never resolved through Files'
+   human share root. Missing parents may be created only under `dir_id`. */
+int now_files_receive_begin_under(short vref, long dir_id,
+                                  const char *rel_path, const char *name,
+                                  FileContainer container, long bytes,
+                                  OSType file_type, OSType creator,
+                                  unsigned long modified, Boolean overwrite,
+                                  FileReceive *rx);
 
 /* The downloads folder from preferences, or the Desktop. */
 int now_files_downloads(short *vref, long *dir);

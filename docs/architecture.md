@@ -399,6 +399,21 @@ than trusting the guest to answer.
   sequence. `ConsoleInputField` is AppKit because ↑/↓ and Tab are out of
   SwiftUI's reach on macOS 13.
 
+### Projects are a second authority domain
+
+The host owns one bounded Projects root in Application Support, including its
+Git object store, persistent workspaces and candidate receipts. A guest-home
+project does not move into that domain when imported: the host copy is a
+history mirror and scratch workspace until a digest-guarded promotion settles
+on the classic Mac. Toolchains and active guest projects remain guest-owned;
+their private import and candidate transfer scopes never join generic Files.
+
+The Development service is headless and page-neutral. The host module, Chat
+and MCP use one typed adapter; the PPC Workshop page and wire commands use one
+guest runtime. CodeKitten consumes the shared project format and is only an
+optional human handoff. The complete ownership and lifecycle description is
+[development.md](development.md).
+
 ## Naming seam
 
 Display names, creator codes, bundle identifiers, and preference keys

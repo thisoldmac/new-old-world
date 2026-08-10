@@ -260,6 +260,22 @@ The implemented V0 surface exposes only five host-owned projections.
 | `now_request_quit` | `process.list` / `process.listing`, then `process.quit` / `process.result` | Accepts only a current opaque process reference issued within 30 seconds. The host re-lists, verifies the same PSN still has the same name, kind, type, and creator, then sends cooperative quit. The guest revalidates the live PSN again. Success means only that the quit request was sent, never that the process exited. |
 | `now_transfer_approved_artifact` | Native Files approval, then `GuestListener.putFile` and `file.done` | The Files page stages one human-selected regular file in a private read-only copy and copies a one-use receipt. The MCP can redeem only that receipt for the approved current guest folder. Redemption rechecks session, expiry, inode, link count, mode, size, and SHA-256 before entering the existing one-at-a-time transfer lane with overwrite disabled. Success requires the matching `file.done ok:true`. |
 
+The Projects/Development addition is three compact rows rather than a generic
+filesystem, Git or shell surface:
+
+| Tool contract | Existing NOW owner | Implemented projection |
+| --- | --- | --- |
+| `now_projects` | Host `ProjectStore` beneath the app-owned Application Support Projects root | Lists/creates named projects, opens persistent workspaces, performs bounded reads and expected-revision atomic applies, and returns Git-backed history without accepting a host path or Git command. |
+| `now_development_environment` | PPC guest `development` qualification report | Returns path-free Projects/toolchain/backend/version/capability facts. NOW-68K is unavailable by the command ledger, not by identity inference. |
+| `now_development` | PPC `development-project`, `development-stage`, `development-build` and `development-run` over `AgentIntegrationDevelopmentControl` | Imports a verified guest snapshot, stages and verifies an inactive candidate, promotes with a base/current digest guard, drives one declarative ToolServer job, cancels it, and launches only its unchanged measured product. It accepts opaque IDs only. CodeKitten handoff remains an explicit app action. |
+
+These rows cross two authority domains. Host-home project work is confined by
+product contract to NOW's same-user Projects root and needs no guest grant.
+Guest import needs Read Only; candidate transfer, build, promotion and run need
+Full. Chat receives the same rows only when its transcript has Development
+intent, so ordinary machine questions do not pay their schema cost. See
+[development.md](development.md) for project-home truth and current limits.
+
 The parity-slice addition (W1 #1) is:
 
 | Tool contract | Existing NOW owner | Implemented projection |

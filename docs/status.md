@@ -1,5 +1,54 @@
 # Status: what works and what does not
 
+## 2026-08-09 — Onboarding carries optional CodeKitten; its runtime gate remains open
+
+The PPC onboarding package now recognizes a top-level `CodeKitten.bin`, shows
+it as a first-class optional application selected by default, includes its
+native forks at the setup-volume root, serves `/now/codekitten.bin`, and names
+it in the generated Read Me. It remains a standalone human IDE: NOW's headless
+Projects and Development services neither launch nor depend on it.
+
+This packaging slice is tested and host-image-verified, not metal-verified. A
+host mount of the exact combined image preserved CodeKitten as `APPL/O9ID`
+with 628,086 data-fork and 6,888 resource-fork bytes. On the Mac OS 9.1
+emulator, those exact payload bytes transferred and LaunchApplication returned
+success, but CodeKitten exited before the five-second process observation. The
+combined image itself reached Disk Copy and received `odoc`; mounting stopped
+at Apple's first-run Disk Copy license, which the automation did not accept.
+The package is therefore ready for continued diagnosis, not evidence that
+CodeKitten persists or that the one-disk flow works on physical hardware.
+
+## 2026-08-10 — Host-home MPW Development is metal-verified
+
+NOW now owns a bounded host Projects root with pure Git history, recoverable
+agent workspaces and explicit host/guest project homes. A guest-only project
+can be imported into a verified host mirror for scratch editing and commits;
+publication creates an inactive guest candidate, verifies it there, builds it
+through declarative MPW ToolServer actions, and promotes only while the active
+guest digest still matches the workspace base. Build and run are separate;
+run rechecks both product forks and metadata and observes the launched process
+identity. The Development module exposes the same services, while CodeKitten
+is an optional human-only `odoc` handoff. NOW-68K reports typed absence.
+
+The complete host-home lane is **metal-verified on the PowerBook 1400c**. The
+MCP revised a fork-bearing project for the machine's qualified MPW, preserved
+the source resource fork and `TEXT/MPS ` identity, sealed an inactive
+candidate, completed MrC/PPCLink/Rez, measured both forks and `APPL/H14E`
+identity of the exact product, launched it, and matched its process identity.
+Retained semantic state and the person at the PowerBook observed the Hello
+World alert; after dismissal a fresh process census showed the application
+absent, and candidate discard completed.
+
+That proof is narrower than a reliable autonomous agent loop. Guest-home
+import/promotion and CodeKitten handoff remain unverified, typed test actions
+and receipts are absent, and the metal run exposed a split between the
+semantic snapshot read authority and the scene used to resolve an act. The
+MCP also lacks an early host/companion compatibility verdict and publishes a
+broad Projects schema where some operations require mutually exclusive guard
+fields. The current state, exact receipt, and next hardening work are in
+[development.md](development.md) and the [dated hardening
+plan](plans/2026-08-10-031-feat-development-agent-loop-hardening-plan.md).
+
 This is the long form of the README's status table — every capability
 with its evidence, and every gap with what is actually unknown about it.
 It is deliberately exhaustive. A feature list without its companion is a

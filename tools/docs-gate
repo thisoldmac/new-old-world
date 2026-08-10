@@ -908,7 +908,8 @@ def source_summary(root: Path, group: str) -> int:
             if line.startswith("| ") and any(token in line for token in ("PowerPC Carbon guest", "68K guest", "Host application")):
                 print(" ".join(line.split()))
         ppc = (root / "now-guest-ppc/CMakeLists.txt").read_text()
-        print(f"ppc-canonical-artifact\t{'New Old World.bin' if 'OUTPUT \"New Old World.bin\"' in ppc else 'missing'}")
+        canonical_artifact = "New Old World.bin" if 'OUTPUT "New Old World.bin"' in ppc else "missing"
+        print(f"ppc-canonical-artifact\t{canonical_artifact}")
         guest_68k = (root / "now-guest-68k/CMakeLists.txt").read_text()
         target = re.search(r"targets the ([^)]+)\) only", guest_68k)
         print(f"68k-target\t{target.group(1) if target else 'unresolved'}")

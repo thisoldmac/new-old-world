@@ -89,6 +89,9 @@ exclude_docs: |
   !mirror-knowledge.md
   !processes-and-peek.md
   !software-module.md
+  !development.md
+  !plans/2026-08-10-030-handoff.md
+  !plans/2026-08-10-031-feat-development-agent-loop-hardening-plan.md
 
 nav:
   - Docs home: index.md
@@ -125,6 +128,7 @@ nav:
               - Mirror: user-guide/reference/modules/mirror.md
               - Console: user-guide/reference/modules/console.md
               - Chat: user-guide/reference/modules/chat.md
+              - Development: user-guide/reference/modules/development.md
               - Hardware: user-guide/reference/modules/hardware.md
               - Diagnostics: user-guide/reference/modules/diagnostics.md
               - Networking: user-guide/reference/modules/networking.md
@@ -146,6 +150,7 @@ nav:
           - Resident components: developer-guide/architecture/resident-components.md
           - Mirror: developer-guide/architecture/mirror.md
           - Product agent integration: developer-guide/architecture/agent-boundary.md
+          - Projects and Development: developer-guide/architecture/development.md
       - Workflows:
           - Build and test: developer-guide/workflows/build-and-test.md
           - Change the contract: developer-guide/workflows/change-the-contract.md

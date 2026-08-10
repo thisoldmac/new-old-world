@@ -103,6 +103,8 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         case guestLogTail = "guest_log_tail"
         /// The machine's own account of itself, via Gestalt.
         case machineFacts = "machine_facts"
+        /// The PPC guest's qualified, path-free development registration.
+        case developmentEnvironment = "development_environment"
         /// Time a whole-volume catalog search for applications.
         case catalogSearch = "catalog_search"
         /// Show an item in the machine's own Finder. Opens nothing.
@@ -202,6 +204,8 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// `serialHi`/`serialLo` pair aims the WALK — there is no spelling
         /// anywhere downstream for "whatever is frontmost".
         case observeElements = "observe_elements"
+        case projects = "projects"
+        case development = "development"
     }
 
     public let version: Int
@@ -354,6 +358,8 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// `AgentIntegrationProcessSerial.decode`; by the time a value reaches
     /// this field it is a whole serial number or nothing.
     public var observeProcess: AgentIntegrationProcessSerial? = nil
+    public var projectRequest: AgentIntegrationProjectRequest? = nil
+    public var developmentRequest: AgentIntegrationDevelopmentRequest? = nil
 
     private init(requestID: UUID,
                  operation: Operation,
@@ -756,6 +762,12 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         projected(.machineFacts, requestID: requestID)
     }
 
+    public static func developmentEnvironment(
+        requestID: UUID = UUID()
+    ) -> Self {
+        projected(.developmentEnvironment, requestID: requestID)
+    }
+
     /// #11 — time a whole-volume catalog search for applications.
     public static func catalogSearch(requestID: UUID = UUID()) -> Self {
         projected(.catalogSearch, requestID: requestID)
@@ -917,6 +929,24 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         request.observeProcess = process
         return request
     }
+
+    public static func projects(
+        _ project: AgentIntegrationProjectRequest,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.projects, requestID: requestID)
+        request.projectRequest = project
+        return request
+    }
+
+    public static func development(
+        _ development: AgentIntegrationDevelopmentRequest,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.development, requestID: requestID)
+        request.developmentRequest = development
+        return request
+    }
 }
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
@@ -961,6 +991,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
        separately. */
     case guestLogTail(AgentIntegrationGuestRowReportResult)
     case machineFacts(AgentIntegrationGuestRowReportResult)
+    case developmentEnvironment(AgentIntegrationGuestRowReportResult)
     case catalogSearch(AgentIntegrationGuestRowReportResult)
     case revealItem(AgentIntegrationGuestRowReportResult)
     case diagnostics(AgentIntegrationGuestRowReportResult)
@@ -982,6 +1013,8 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     /// answer is navigated and then addressed, and flattening it would
     /// destroy the containment that makes a reference mean anything.
     case observeElements(AgentIntegrationElementObservationResult)
+    case projects(AgentIntegrationProjectResult)
+    case development(AgentIntegrationGuestRowReportResult)
 
     /// The operation is carried by this protocol and NOTHING SERVES IT YET.
     ///
@@ -1052,6 +1085,8 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         AgentIntegrationGuestRowReportResult? = nil
     public var machineFactsResult:
         AgentIntegrationGuestRowReportResult? = nil
+    public var developmentEnvironmentResult:
+        AgentIntegrationGuestRowReportResult? = nil
     public var catalogSearchResult:
         AgentIntegrationGuestRowReportResult? = nil
     public var revealItemResult:
@@ -1080,6 +1115,8 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     /// than ambiguous.
     public var observeElementsResult:
         AgentIntegrationElementObservationResult? = nil
+    public var projectResult: AgentIntegrationProjectResult? = nil
+    public var developmentResult: AgentIntegrationGuestRowReportResult? = nil
     /// The operation exists here and no capability serves it yet. Set
     /// INSTEAD of any result, and counted with them: a response carrying
     /// both would be claiming to have answered a call it also says it
@@ -1413,6 +1450,14 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
 
     public init(
         requestID: UUID,
+        developmentEnvironmentResult: AgentIntegrationGuestRowReportResult
+    ) {
+        self.init(empty: requestID)
+        self.developmentEnvironmentResult = developmentEnvironmentResult
+    }
+
+    public init(
+        requestID: UUID,
         catalogSearchResult: AgentIntegrationGuestRowReportResult
     ) {
         self.init(empty: requestID)
@@ -1503,6 +1548,18 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         self.notImplemented = notImplemented
     }
 
+    public init(requestID: UUID,
+                projectResult: AgentIntegrationProjectResult) {
+        self.init(empty: requestID)
+        self.projectResult = projectResult
+    }
+
+    public init(requestID: UUID,
+                developmentResult: AgentIntegrationGuestRowReportResult) {
+        self.init(empty: requestID)
+        self.developmentResult = developmentResult
+    }
+
     public init(requestID: UUID? = nil,
                 error: AgentIntegrationLocalError) {
         version = AgentIntegrationLocalProtocol.version
@@ -1532,6 +1589,7 @@ public enum AgentIntegrationLocalCodec {
         "guestFileDownloadResult", "bringToFrontResult",
         "guestFileMutationResult", "transferCancelResult",
         "guestLogTailResult", "machineFactsResult",
+        "developmentEnvironmentResult",
         "catalogSearchResult", "revealItemResult",
         "diagnosticsResult", "mirrorReadResult", "mirrorDriveResult",
         "mirrorOpenResult",
@@ -1541,6 +1599,8 @@ public enum AgentIntegrationLocalCodec {
         "textGetResult", "textSetResult",
         // The walk that mints what those five address.
         "observeElementsResult",
+        "projectResult",
+        "developmentResult",
         // Set INSTEAD of any of them, so it is counted with them.
         "notImplemented",
     ]
@@ -1654,6 +1714,8 @@ public enum AgentIntegrationLocalCodec {
             "actElement", "actText",
             // The observation's aim, clearing the same two gates.
             "observeProcess",
+            "projectRequest",
+            "developmentRequest",
             // Orthogonal to every operation, so it clears BOTH gates:
             // this allowlist, and the per-operation key set below.
             "guestSelector",
@@ -2053,7 +2115,8 @@ public enum AgentIntegrationLocalCodec {
                 }
             }
             expectedKeys = mutationKeys
-        case .transferCancel, .machineFacts, .catalogSearch:
+        case .transferCancel, .machineFacts, .developmentEnvironment,
+             .catalogSearch:
             /* Three operations that say only their own name. Grouped
                because they are the same request, not because they are the
                same kind of thing: a cancel MUTATES and the other two read,
@@ -2271,6 +2334,24 @@ public enum AgentIntegrationLocalCodec {
                 observeKeys.insert("observeProcess")
             }
             expectedKeys = observeKeys
+        case .projects:
+            expectedKeys = [
+                "version", "requestID", "operation", "projectRequest",
+            ]
+            guard let project = request.projectRequest,
+                  project.isWellFormed else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Projects request does not match the schema")
+            }
+        case .development:
+            expectedKeys = [
+                "version", "requestID", "operation", "developmentRequest",
+            ]
+            guard let development = request.developmentRequest,
+                  development.isWellFormed else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Development request does not match the schema")
+            }
         }
         /* Addressing belongs to no operation, so it is admitted for all of
            them rather than repeated in twelve key sets — and only when the

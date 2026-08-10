@@ -758,6 +758,18 @@ final class Session {
         send(.fileGet(FileGet(id: id, path: path, container: container)))
     }
 
+    func sendDevelopmentProjectFileGet(id: Int, projectID: String,
+                                       path: String,
+                                       stagingDirectory: URL) {
+        fileBegin = nil
+        fileSink?.abort()
+        fileSink = nil
+        fileStagingDirectory = stagingDirectory
+        fileStart = Date()
+        send(.fileGet(FileGet(id: id, path: path, container: "macbinary",
+                              developmentProject: projectID)))
+    }
+
     func cancelFile() {
         guard let begin = fileBegin else { return }
         discardingTransfer = begin.transfer

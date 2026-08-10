@@ -2,7 +2,8 @@
 
 [contract-coverage.md](contract-coverage.md) answers **what each guest
 serves**. This file answers the other half: **what any host face can ask a
-guest to do**, and — where those two differ — whether the difference is a
+guest to do, plus the deliberately separate host-owned Projects authority**,
+and — where those two differ — whether the difference is a
 decision or an accident.
 
 It exists because of drift nobody was watching for. The guests handle far more
@@ -138,6 +139,9 @@ The test compares both against the code literally.
 
 | MCP tool | Requires | Exposes | Guest plane |
 |---|---|---|---|
+| `now_projects` | — | — | none; bounded host-owned project storage and recoverable history, independent of guest consent |
+| `now_development_environment` | `development` | `development` | command; path-free PPC guest qualification facts |
+| `now_development` | `development-project`, `development-stage`, `development-build`, `development-run` | `development-project`, `development-stage`, `development-build`, `development-run` | command; one closed semantic family for verified guest snapshots, inactive candidates, declarative ToolServer jobs and exact-product launch; optional CodeKitten handoff remains a human-only app action |
 | `now_list_machines` | — | — | none; host listener state |
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
 | `now_hardware_census` | `census.request` | `census.request` | message family |
@@ -662,6 +666,7 @@ to exist:
 | `aesend` | command | ppc | unnoticed | One of four core Apple Events — quit, oapp, odoc, pdoc — to a process named by its serial. A closed vocabulary, not a class/id pipe, which is what makes it a candidate at all. Nobody has decided. What a row would have to settle first: `quit` overlaps `now_request_quit` outright, so a row would either drop that op or be a second route to a capability already projected; and the two document ops are the only way this product can open or print a file on the guest, which is a capability no tool has and nobody has asked for. Deciding it means deciding those two questions separately, not deciding one verb. |
 | `key` | command | ppc | planned | **W3** of the parity slice. **The pane face landed 2026-08-01; this row tracks the MCP face, which has not.** One keystroke, posted through the Event Manager — the ground `now_text_set` cannot cover: a dialog that answers only keystrokes, and keys that carry no text (Return, Escape, the arrows). **The row that landed is the human-facing one, and it is `mods`-gated rather than blanket.** `ActionModel.availability(.key)` is now a function of `mods`: `mods == 0` answers `.available(command: "key")` and routes through `AgentIntegrationHostAdapter.key` → `AgentIntegrationActControl.key` (reads the input plane's own lower-case `posted` row, not the act plane's `Dispatch`); `mods != 0` still answers `.unavailable`, refused before a request is built. `MirrorModuleView`'s drawing captures a `keyDown` (`MirrorKeyCaptureView`, an AppKit view because `.onKeyPress` needs macOS 14 and this app supports 13) and `ActionModel.paneKeystroke` translates it, folding Shift into the character rather than into `mods` — the guest's own key table is case-sensitive on the char, not on a bit. **Not landed:** the *agent*-facing row — no `KeyProjection.swift`, no `AgentIntegrationClient.key` on the protocol, no MCP/`appIntents` face — so an MCP caller still gets no `key` tool. **Not verified:** the capture view's AppKit/SwiftUI integration has not been run in the built app (no display attached to this work); `docs/pane-keys-audit.md` names the specific risk and the check that would retire it. What a row must still decide for the modified half is the honest limit stated here since: an event's modifiers live on the Event Manager's queue element, and the only call that returns it is `PPostEvent`, which is `CALL_NOT_IN_CARBON` — so this verb refuses `mods != 0` outright rather than posting a bare key and reporting success ([input-plane-decisions.md](input-plane-decisions.md)). |
 | `cycle` | command | ppc | unnoticed | Brings each faced application forward in turn with the anchor plane held armed, so each executes its own event loop once and the resident captures its anchor, then restores the previously frontmost application. Landed 2026-08-07 (plan 018 slice 15) as the guest half only. **The gap is honest rather than argued: nobody has decided whether an agent should be able to ask for it.** **What a row would have to settle first:** this verb DISTURBS THE MACHINE on purpose — windows come forward and flash past — so exposing it to an agent is a question about consent and surprise rather than about plumbing. It is the one verb on this surface whose whole point is a visible side effect, and the argument against a tool is that an agent could invoke it while a person is working; the argument for is that an agent facing a freshly booted Mac currently sees one window and has no way to fix it, which is exactly the hole that drove agents to macOS accessibility scripting. The capability itself is not in doubt. |
+| `development-open` | command | ppc | deliberate | The optional transition from headless work to a human editor. It locates and launches CodeKitten, opens only the active `Project.ckp`, and brings the IDE forward, but it is intentionally an explicit app action rather than agent authority: project sync, build, promote and run do not depend on an IDE. A distinct test operation is still open and is not being implied by build or run ([development.md](development.md)). This is the initial projection boundary in the [Projects and Development plan](plans/2026-08-09-029-feat-projects-and-development-plan.md) (projection-family table and U9). |
 | `mirror` | command | ppc | unnoticed | What this Mac can say about MIRROR - whether each of its three resident extensions is loaded, whether its agent is running, and which port the file beside the agent names. Landed 2026-08-02 as the guest half only, and the gap is honest rather than argued: nobody has decided whether an agent should be able to ask it. **What a row would have to settle first:** Mirror is a SEPARATE application that happens to run on the same Macintosh, so a tool here would be NOW reporting on a neighbour - which is defensible (the host's own Mirror page does exactly that, one step less truthfully, off a folder listing) but is a boundary question rather than a plumbing one. The capability itself is not in doubt: residency is a Gestalt answer and the guest is the only side that can give it, which is why the verb exists at all ([contract-coverage.md](contract-coverage.md)). The pane face is owed the same upgrade and has not had it either - the host page still lists the Extensions folder, so today NEITHER face reads this verb. |
 | `mouseloc` | command | ppc | deliberate | Where the pointer IS — an instrument, not a capability. It exists because an emulator's relative mouse is acceleration-distorted, so the host's own drag plane positions by reading this and correcting; every hop calibration closes its loop against it. A caller that is not driving a pointer has nothing to do with the answer, and a caller that IS driving one is the host, which calls it directly rather than through a tool. Projecting it would put a calibration read on a surface whose other rows are capabilities. The closed loop it is the far end of is described in [emu-readiness.md](emu-readiness.md), which is also where the probes that depend on it are listed. |
 | `net` | command | ppc | unnoticed | What a Mac says about its own networking: the link it holds to this host, its TCP/IP configuration, its network ports, and — last — why a list of that machine's connections is not among them. **Landed 2026-08-01 as a spike, guest page and host pane, with no projection deliberately.** Nobody has decided whether an agent should get it. What a row would have to settle first: nearly all of it is *read-only and harmless*, which argues for a plain row — but the fourth group is a statement about an API rather than about a machine, and a capability report that says "this Mac cannot list its connections" would be the wrong shape of true. A tool would have to carry that distinction into typed unavailability, or drop the group and answer three. There is also a real question of whether `now_hardware_census` already covers the hardware half, which would make a `net` row a second route to a capability already projected — the thing this column exists to refuse. PowerPC only: it is built on Open Transport, and the 68K guest speaks MacTCP ([ot-networking-surface.md](ot-networking-surface.md)). |
@@ -1151,7 +1156,7 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 19afe35db1b757b377cfc4ceea91e3e8029b1e64
+sources-sha1: 06ed3b0a39c64d6dfc4c2b6b39b753a15279546d
 derive ppc-inbound-types sha256=29ff3abf372ea8de2e8cd4b487efb7dcb7b9fa03d5e20959f10c127320146842 lines=50 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1210,6 +1215,7 @@ rederived: 2026-08-09T16:17:39-0400 451d757c sources
 rederived: 2026-08-09T17:11:01-0400 5c773d12 disposition-census 3->3
 rederived: 2026-08-09T17:11:40-0400 5c773d12 unchanged
 rederived: 2026-08-09T17:29:58-0400 b5f126e7 unchanged
+rederived: 2026-08-09T19:12:11-0400 a1df31e3 sources
 rederived: 2026-08-09T20:56:35-0400 9864da82 sources
 rederived: 2026-08-09T21:05:28-0400 9864da82 unchanged
 rederived: 2026-08-09T21:43:47-0400 2b3c2c0e unchanged
@@ -1221,4 +1227,6 @@ rederived: 2026-08-10T03:08:46-0400 9cbb4c28 unchanged
 rederived: 2026-08-10T03:11:42-0400 9cbb4c28 sources
 rederived: 2026-08-10T03:46:11-0400 68d74d72 sources
 rederived: 2026-08-10T03:46:36-0400 68d74d72 unchanged
+rederived: 2026-08-10T02:53:59-0400 62603174 sources
+rederived: 2026-08-10T04:18:15-0400 423ef214 sources
 -->

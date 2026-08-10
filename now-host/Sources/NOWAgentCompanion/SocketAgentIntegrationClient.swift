@@ -35,6 +35,28 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func projects(_ request: AgentIntegrationProjectRequest) async
+        -> AgentIntegrationProjectResult {
+        guard let client else { return .hostUnavailable }
+        do {
+            return try await client.projects(request)
+        } catch {
+            return .init(failure: unavailable(for: error))
+        }
+    }
+
+    func development(_ request: AgentIntegrationDevelopmentRequest) async
+        -> AgentIntegrationGuestRowReportResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.development(request)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func sessionCapabilities(probeCostly: Bool) async
         -> AgentIntegrationSessionCapabilitiesResult {
         guard let client else {
@@ -364,6 +386,18 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
         do {
             return try await client.machineFacts()
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func developmentEnvironment() async
+        -> AgentIntegrationGuestRowReportResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.developmentEnvironment()
         } catch {
             return .unavailable(unavailable(for: error))
         }

@@ -1578,6 +1578,12 @@ static void console_model_dispatch(const char *input)
         console_model_append("  offered; the File Sharing panel reports the rest");
         return;
     }
+    /* `development` takes no line and uses the generic row renderer below.
+       Name that registration here: the generic fallback also renders a real
+       unknown-command, so merely reaching it is not console capability. */
+    if (strcmp(name, "development") == 0) {
+        /* Fall through to the one command-result renderer. */
+    }
     /* THE ARGUMENTS A PERSON TYPED, handed on rather than dropped.
      *
      * This call passed NULL for as long as it has existed, so every verb

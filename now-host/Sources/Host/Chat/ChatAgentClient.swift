@@ -31,6 +31,11 @@ struct ChatAgentClient: AgentIntegrationClient {
         await adapter.addressingRefusal(selector)
     }
 
+    func projects(_ request: AgentIntegrationProjectRequest) async
+        -> AgentIntegrationProjectResult {
+        await adapter.projects(request)
+    }
+
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
         await adapter.sessionHealth()
     }
@@ -85,6 +90,18 @@ struct ChatAgentClient: AgentIntegrationClient {
     func machineFacts() async -> AgentIntegrationGuestRowReportResult {
         if let refusal = await refusal() { return .unavailable(refusal) }
         return await adapter.machineFacts()
+    }
+
+    func developmentEnvironment() async
+        -> AgentIntegrationGuestRowReportResult {
+        if let refusal = await refusal() { return .unavailable(refusal) }
+        return await adapter.developmentEnvironment()
+    }
+
+    func development(_ request: AgentIntegrationDevelopmentRequest) async
+        -> AgentIntegrationGuestRowReportResult {
+        if let refusal = await refusal() { return .unavailable(refusal) }
+        return await adapter.development(request)
     }
 
     func tailGuestLog(lines: Int?) async

@@ -18,6 +18,13 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
             dataFork: applicationData,
             resourceFork: applicationResources))
             .write(to: assets.appendingPathComponent("New Old World.bin"))
+        let codeKittenData = Data(repeating: 6, count: 620_000)
+        let codeKittenResources = Data(repeating: 7, count: 6_888)
+        try XCTUnwrap(MacBinaryEncoder.data(
+            name: "codekitten", type: "APPL", creator: "O9ID",
+            dataFork: codeKittenData,
+            resourceFork: codeKittenResources))
+            .write(to: assets.appendingPathComponent("CodeKitten.bin"))
         let extensionResources = Data(repeating: 3, count: 81_226)
         try XCTUnwrap(MacBinaryEncoder.data(
             name: "NowExt", type: "INIT", creator: "NOWx",
@@ -49,7 +56,7 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
         XCTAssertEqual(nativeImage.type, "rohd")
         XCTAssertEqual(nativeImage.creator, "ddsk")
         XCTAssertGreaterThan(nativeImage.dataFork.count, 5 * 1_024 * 1_024)
-        XCTAssertLessThan(nativeImage.dataFork.count, 6 * 1_024 * 1_024)
+        XCTAssertLessThan(nativeImage.dataFork.count, 7 * 1_024 * 1_024)
 
         let raw = temporary.appendingPathComponent("setup.raw")
         try nativeImage.dataFork.write(to: raw)
@@ -66,6 +73,10 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: application), applicationData)
         XCTAssertEqual(try resourceFork(at: application),
                        applicationResources)
+        let codeKitten = mount.appendingPathComponent("CodeKitten")
+        XCTAssertEqual(try Data(contentsOf: codeKitten), codeKittenData)
+        XCTAssertEqual(try resourceFork(at: codeKitten),
+                       codeKittenResources)
         let extensionComponent = mount.appendingPathComponent("NOW Extension")
         XCTAssertEqual(try resourceFork(at: extensionComponent),
                        extensionResources)

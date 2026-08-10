@@ -144,6 +144,12 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 
 | Command | Arguments | Output keys | Summary |
 |---|---|---|---|
+| `development` | — | `development` | The PPC guest's human-registered Projects and MPW environment. |
+| `development-build` | `action` (required), `projectID`, `candidateID` | `development-build` | Starts, observes or cancels the PPC guest's page-neutral MPW ToolServer service. |
+| `development-project` | `projectID` (required), `cursor` | `development-project` | Measures and pages one active source tree beneath the human-selected Projects root. |
+| `development-stage` | `action` (required), `candidateID` (required), `projectID`, `expectedDigest`, `expectedFiles`, `baseGuestDigest` | `development-stage` | Prepares, observes or discards one inactive guest project candidate. |
+| `development-run` | `productRef` (required) | `development-run` | Launches only the unchanged opaque product measured by the last successful Development build. |
+| `development-open` | `projectID` (required) | `development-open` | Optionally locates and launches CodeKitten through the classic Desktop database, then sends the active Project.ckp for one opaque project ID using the standard open-documents Apple Event. |
 | `help` | `topic` | `help` | What commands THIS machine serves, asked of the machine that serves them. |
 | `update` | `component` | `update` | Reads the exact application and extension builds the connected host has published. |
 | `gestalt` | — | `snapshot`, `cpu`, `memory`, `os`, `network`, `hw`, `notice` | The guest's own account of itself, via the Gestalt Manager. |

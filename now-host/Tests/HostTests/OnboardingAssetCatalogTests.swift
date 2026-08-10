@@ -20,6 +20,8 @@ final class OnboardingAssetCatalogTests: XCTestCase {
             .appendingPathComponent("New Old World.bin"))
         try Data("bundled-app".utf8).write(to: bundled
             .appendingPathComponent("New Old World.bin"))
+        try Data("codekitten".utf8).write(to: bundled
+            .appendingPathComponent("codekitten.bin"))
         try Data("extension".utf8).write(to: bundled
             .appendingPathComponent("NowExt.bin"))
         try Data("carbon-user".utf8).write(to: writable
@@ -35,6 +37,8 @@ final class OnboardingAssetCatalogTests: XCTestCase {
 
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(
             snapshot.application?.fileURL)), Data("user-app".utf8))
+        XCTAssertEqual(snapshot.codeKitten?.fileName, "CodeKitten.bin")
+        XCTAssertEqual(snapshot.codeKitten?.kind, .codeKitten)
         XCTAssertEqual(snapshot.extensionComponent?.fileName, "NowExt.bin")
         XCTAssertEqual(snapshot.dependencies.map(\.fileName),
                        ["CarbonLib 1.6.smi.bin", "StuffIt Expander.bin"])

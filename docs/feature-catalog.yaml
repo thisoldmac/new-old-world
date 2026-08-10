@@ -85,6 +85,11 @@ module_feature_coverage:
     without_extension: Available.
     extension_required: false
     status: Experimental; provider credentials remain on the modern Mac.
+  - module_id: development
+    title: Build and run classic software with a guest-owned toolchain
+    without_extension: Available on the PowerPC guest.
+    extension_required: false
+    status: Experimental; the host-home MPW build and run loop is metal-verified, while guest-home promotion, typed tests, and CodeKitten acceptance remain incomplete or unverified.
   - module_id: census
     title: Inspect classic Mac hardware
     without_extension: Available.

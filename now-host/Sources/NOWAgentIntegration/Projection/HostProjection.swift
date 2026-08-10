@@ -52,6 +52,14 @@ public enum HostCapabilityFace: String, CaseIterable, Sendable {
     case appIntents = "AppIntents"
 }
 
+/// The owner whose authority a projection spends. Guest consent is not a
+/// proxy for access to this Mac's application-owned storage.
+public enum HostProjectionAuthorityDomain: Equatable, Sendable {
+    case guest
+    case hostProjects
+    case hostProjectsAndGuest
+}
+
 /// Whether one `HostCapabilityFace` reaches one capability, and the evidence
 /// or the reason.
 ///
@@ -239,6 +247,12 @@ public protocol HostProjection {
     /// it and none can forget to.
     static var acceptedArguments: Set<String> { get }
 
+    static var authorityDomain: HostProjectionAuthorityDomain { get }
+
+    /// Whether this capability can be addressed to one connected Macintosh.
+    /// Host-owned project storage is deliberately outside that namespace.
+    static var acceptsGuestAddressing: Bool { get }
+
     /// Which of the host's three faces reach this capability.
     ///
     /// Every face in `HostCapabilityFace.allCases` is stated, including the
@@ -264,6 +278,11 @@ public protocol HostProjection {
         _ arguments: HostProjectionArguments,
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome
+}
+
+extension HostProjection {
+    public static var authorityDomain: HostProjectionAuthorityDomain { .guest }
+    public static var acceptsGuestAddressing: Bool { true }
 }
 
 /// The arguments of one call, after the `guest` selector has been lifted.

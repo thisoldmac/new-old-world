@@ -227,8 +227,10 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **49 verbs.** Sixteen of
-them landed on 2026-07-31 and are grouped at the foot of the table; the
+The registry is `x-commands` in the contract: **55 verbs.** The six
+Development verbs landed on 2026-08-09 and the update verb landed on
+2026-08-10; both are grouped at the foot of the table. Sixteen earlier
+verbs landed on 2026-07-31; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
 about the machine's own state, the input plane's three, and the content
@@ -298,6 +300,12 @@ number here has been found wrong by re-deriving it.
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
 | `transitions` | what changed between two event passes, from the transition plane's ring | ✅ | ❌ |
 | `mirror` | one NOW Extension: lifecycle/build and P1-P4 support, format, request, active, freshness, generation, degradation and refusal | ✅ | ❌ |
+| `development` | configured Projects root, selected MPW toolchain and active jobs | ✅ | ❌ — typed unavailable |
+| `development-project` | measure and page one active guest project's source manifest | ✅ | ❌ — typed unavailable |
+| `development-stage` | prepare, inspect, verify, discard or promote an inactive candidate | ✅ | ❌ — typed unavailable |
+| `development-build` | start, inspect or cancel one declarative ToolServer build | ✅ | ❌ — typed unavailable |
+| `development-run` | launch the exact built product and verify the resulting process identity | ✅ | ❌ — typed unavailable |
+| `development-open` | human-only optional handoff of `Project.ckp` to CodeKitten | ✅ | ❌ — typed unavailable |
 
 *(`key` and `net` were listed twice in this table until 2026-08-06 —
 once here and once in the body above — so it carried 44 rows for 42
@@ -981,19 +989,19 @@ without anyone noticing, and how `key` and `net` sat here twice. Run
 these from the repository root:
 
 ```sh
-# the registry — 47
+# the registry — 54
 awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
-     f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
+     f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
     contract/asyncapi.yaml | sort -u
 
-# what the PowerPC guest serves — 44
-grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
+# what the PowerPC guest serves — 51
+grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
     now-guest-ppc/src/commands/commands.c \
-  | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+  | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 
 # what NOW-68K serves — 13
-grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
-  | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+grep -oE '\{ *"[a-z0-9-]+"' now-guest-68k/src/commands/commands68.c \
+  | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 ```
 
 The registry command tracks the block by indentation deliberately: a
@@ -1016,19 +1024,20 @@ between two derivations on one day is not a property of the command.)*
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
 
-## Re-derived for host-owned updates, 2026-08-10 (`codex/host-owned-updater`)
+## Re-derived after integrating Projects, Development and host-owned updates, 2026-08-10
 
 **This supersedes every derivation below.** The updater changes one inbound
-message, one contract verb, and the matching PowerPC dispatch. The five
-declared commands were run against this branch with
+message, one contract verb, and the matching PowerPC dispatch. Projects and
+Development add six PowerPC-only verbs. The five declared commands were run
+against the integrated branch with
 `tools/derived-doc-gate rederive docs/contract-coverage.md`.
 
-| | Derived here | Previous current value | Moved by |
+| | Derived here | Integrated value | Moved by updater |
 |---|---|---|---|
 | PowerPC inbound message types | **50** | 49 | `update.offer` |
 | NOW-68K inbound message types | **23** | 23 | — |
-| `x-commands` registry | **49** | 48 | `update` |
-| PowerPC verbs served | **46** | 45 | `update` |
+| `x-commands` registry | **55** | 54 | `update` |
+| PowerPC verbs served | **52** | 51 | `update` |
 | NOW-68K verbs served | **13** | 13 | — |
 
 `update.request` and `update.result` do not increase the inbound count: the PPC
@@ -1036,7 +1045,9 @@ guest sends them to the host. The existing `file.*` rows carry the artifact.
 The three registry verbs the PowerPC guest does not serve remain `put`,
 `cancel`, and `shotdiag`; the update verb therefore moves the registry and PPC
 counts together. NOW-68K gains neither the message family nor the verb, a
-declared release-scope asymmetry rather than an inferred platform limit.
+declared release-scope asymmetry rather than an inferred platform limit. The
+Development family is likewise PowerPC-only and NOW-68K answers through the
+typed capability-absence path. Served is not emulator- or metal-proven.
 
 ## Re-derived at the 019 integration round 8, 2026-08-07 (`claude/019-integration-8`)
 
@@ -1341,24 +1352,24 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: c1b74238f77b555c4b281f573b332b430576cd9c
+sources-sha1: ab6e91e0fb03afdc2a105b0d2c5eaabdfa5c1903
 derive ppc-inbound-types sha256=29ff3abf372ea8de2e8cd4b487efb7dcb7b9fa03d5e20959f10c127320146842 lines=50 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=fdf997e71e08411643476f9b860b80121a9c5873c2024d90c45d458d010ee1d8 lines=49 published
+derive x-commands-registry sha256=836d732f6c3aa938aad285e0044d73cd1b8e9ee36de318de2a1fd7da74694f81 lines=55 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
-         f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
+         f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=7621de2d2f9def3dc19ce7bce8ef915cc8fdce017dd315b284bd6525b5f1b7a2 lines=46 published
-    grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
+derive ppc-verbs sha256=756542d65c3333ebf965a3c01904298f5e70d930d90b66f543313ea937b8a0bb lines=52 published
+    grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
         now-guest-ppc/src/commands/commands.c \
-      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+      | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 derive 68k-verbs sha256=70a32cc1ffb1933862444e2c0a0d7972fb6f1b68e40d34a2fd6bb5ef729e78d2 lines=13 published
-    grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
-      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+    grep -oE '\{ *"[a-z0-9-]+"' now-guest-68k/src/commands/commands68.c \
+      | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
 rederived: 2026-08-07T03:49:51-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, x-commands-registry 0->42, ppc-verbs 0->39, 68k-verbs 0->13 (first declaration)
 rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
 rederived: 2026-08-07T12:06:15-0400 c76fea99 sources, ppc-inbound-types 48->49, x-commands-registry 42->47, ppc-verbs 39->44
@@ -1392,6 +1403,9 @@ rederived: 2026-08-09T16:17:39-0400 451d757c sources
 rederived: 2026-08-09T17:11:01-0400 5c773d12 unchanged
 rederived: 2026-08-09T17:11:40-0400 5c773d12 unchanged
 rederived: 2026-08-09T17:29:58-0400 b5f126e7 unchanged
+rederived: 2026-08-09T18:18:25-0400 a1883ceb sources, x-commands-registry 48->49, ppc-verbs 45->51
+rederived: 2026-08-09T18:18:50-0400 a1883ceb x-commands-registry 49->54
+rederived: 2026-08-09T19:12:11-0400 a1df31e3 sources
 rederived: 2026-08-09T20:56:35-0400 9864da82 sources
 rederived: 2026-08-09T21:05:26-0400 9864da82 unchanged
 rederived: 2026-08-09T21:43:46-0400 2b3c2c0e unchanged
@@ -1404,4 +1418,6 @@ rederived: 2026-08-10T03:08:46-0400 9cbb4c28 unchanged
 rederived: 2026-08-10T03:11:41-0400 9cbb4c28 sources
 rederived: 2026-08-10T03:46:11-0400 68d74d72 sources
 rederived: 2026-08-10T03:46:36-0400 68d74d72 unchanged
+rederived: 2026-08-10T02:53:58-0400 62603174 sources
+rederived: 2026-08-10T04:18:14-0400 423ef214 sources, x-commands-registry 49->55, ppc-verbs 46->52
 -->

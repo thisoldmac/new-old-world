@@ -195,6 +195,8 @@ struct HostRootView: View {
             ConsoleModuleView(model: state.console, listener: state.listener)
         case "chat":
             ChatModuleView(model: state.chat)
+        case "development":
+            DevelopmentModuleView(model: state.development)
         case "census":
             CensusModuleView(model: state.census)
         case "diagnostics":

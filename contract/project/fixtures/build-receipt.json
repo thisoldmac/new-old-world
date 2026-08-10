@@ -1,0 +1,30 @@
+{
+  "schema": "ckproject.build-receipt/1",
+  "jobID": "job-0123456789abcdef",
+  "projectID": "0123456789abcdef0123456789abcdef",
+  "home": "guest",
+  "revision": 4,
+  "sourceDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "workspaceID": "workspace-0123456789abcdef",
+  "workspaceCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "candidateID": "candidate-0123456789abcdef",
+  "toolchainID": "mpw-golden",
+  "toolchainVersion": "3.6",
+  "target": "application",
+  "configuration": "debug",
+  "state": "succeeded",
+  "startedAt": "2026-08-09T12:00:00Z",
+  "finishedAt": "2026-08-09T12:01:00Z",
+  "transcript": "",
+  "transcriptTruncated": false,
+  "problems": [],
+  "product": {
+    "ref": "product-0123456789abcdef",
+    "path": "Build:Memory Meter",
+    "dataForkBytes": 4096,
+    "resourceForkBytes": 1024,
+    "type": "APPL",
+    "creator": "MMTR",
+    "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }
+}

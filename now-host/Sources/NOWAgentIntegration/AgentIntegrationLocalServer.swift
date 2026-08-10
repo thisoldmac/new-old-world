@@ -306,6 +306,10 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     machineFactsResult: result)
+            case .developmentEnvironment(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    developmentEnvironmentResult: result)
             case .catalogSearch(let result):
                 response = .init(
                     requestID: request.requestID,
@@ -358,6 +362,12 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     observeElementsResult: result)
+            case .projects(let result):
+                response = .init(requestID: request.requestID,
+                                 projectResult: result)
+            case .development(let result):
+                response = .init(requestID: request.requestID,
+                                 developmentResult: result)
             case .notImplemented(let unavailable):
                 response = .init(
                     requestID: request.requestID,

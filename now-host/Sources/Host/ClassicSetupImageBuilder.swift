@@ -84,6 +84,10 @@ struct ClassicSetupImageBuilder: Sendable {
             throw BuildError.missingApplication
         }
         try writeMacBinary(application.fileURL, to: destination)
+        if let codeKitten = assets.codeKitten {
+            try writeMacBinary(codeKitten.fileURL, to: destination,
+                               nameOverride: "CodeKitten")
+        }
         guard let preferences = OnboardingPreferences.macBinary(
             host: host, port: wirePort) else {
             throw BuildError.couldNotEncode
@@ -316,6 +320,7 @@ struct ClassicSetupImageBuilder: Sendable {
         3. Open New Old World. It will connect to \(host):\(port).\r
         \r
         OPTIONAL\r
+        CodeKitten is a standalone IDE; copy it wherever you keep applications.\r
         Put NOW Extension in System Folder:Extensions and restart.\r
         Dependencies downloaded by the host are in the Dependencies folder.\r
         CarbonLib belongs in System Folder:Extensions; restart after adding it.\r

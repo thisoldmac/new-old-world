@@ -14,6 +14,8 @@ final class OnboardingPortalTests: XCTestCase {
         let application = temporary
             .appendingPathComponent("New Old World.bin")
         try Data("macbinary-app".utf8).write(to: application)
+        try Data("macbinary-codekitten".utf8).write(to: temporary
+            .appendingPathComponent("CodeKitten.bin"))
 
         let portal = OnboardingPortal(
             catalog: OnboardingAssetCatalog(
@@ -33,6 +35,7 @@ final class OnboardingPortalTests: XCTestCase {
                       "the page uses the interface that accepted this request")
         XCTAssertTrue(html.contains("127.0.0.1:5412"))
         XCTAssertTrue(html.contains("/now/application.bin"))
+        XCTAssertTrue(html.contains("/now/codekitten.bin"))
         XCTAssertTrue(html.contains("href=\"/now/setup.img\""))
         XCTAssertTrue(html.contains("/now/setup.img.bin"))
         XCTAssertTrue(html.contains("/now/settings.bin"))
@@ -46,6 +49,12 @@ final class OnboardingPortalTests: XCTestCase {
         XCTAssertEqual(app.status, 200)
         XCTAssertEqual(app.data, Data("macbinary-app".utf8))
         XCTAssertEqual(app.contentType, "application/macbinary")
+
+        let codeKitten = try await fetch(endpointURL(
+            endpoint, path: "/now/codekitten.bin"))
+        XCTAssertEqual(codeKitten.status, 200)
+        XCTAssertEqual(codeKitten.data, Data("macbinary-codekitten".utf8))
+        XCTAssertEqual(codeKitten.contentType, "application/macbinary")
 
         let setup = try await fetch(endpointURL(
             endpoint, path: "/now/setup.img"))
@@ -108,6 +117,8 @@ final class OnboardingPortalTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: temporary) }
         try Data("app".utf8).write(to: temporary
             .appendingPathComponent("New Old World.bin"))
+        try Data("codekitten".utf8).write(to: temporary
+            .appendingPathComponent("CodeKitten.bin"))
         try Data("ext".utf8).write(to: temporary
             .appendingPathComponent("NOW Extension.bin"))
         try Data("carbon".utf8).write(to: dependencies
@@ -117,7 +128,8 @@ final class OnboardingPortalTests: XCTestCase {
             catalog: OnboardingAssetCatalog(
                 roots: [temporary], writableRoot: temporary),
             setupImageBuilder: { _, _, assets in
-                Data(("extension=\(assets.extensionComponent != nil);"
+                Data(("codekitten=\(assets.codeKitten != nil);"
+                     + "extension=\(assets.extensionComponent != nil);"
                      + "dependencies=\(assets.dependencies.count)").utf8)
             },
             advertisedAddress: { "127.0.0.1" })
@@ -127,13 +139,15 @@ final class OnboardingPortalTests: XCTestCase {
         let first = try await readyImage(portal)
         XCTAssertEqual(first.includedItems,
                        ["New Old World", "Host settings", "Read Me First",
-                        "NOW Extension", "CarbonLib 1.6.1"])
+                        "CodeKitten", "NOW Extension", "CarbonLib 1.6.1"])
 
+        let codeKitten = try XCTUnwrap(portal.assets.codeKitten)
         let extensionComponent = try XCTUnwrap(
             portal.assets.extensionComponent)
         let carbonLib = try XCTUnwrap(
             OnboardingDependencyCatalog.carbonLib.installedAsset(
                 in: portal.assets))
+        portal.setSelected(false, asset: codeKitten)
         portal.setSelected(false, asset: extensionComponent)
         portal.setSelected(false, asset: carbonLib)
         XCTAssertTrue(portal.hasPendingSetupImageChanges)
@@ -143,7 +157,7 @@ final class OnboardingPortalTests: XCTestCase {
         let download = try await fetch(endpointURL(
             endpoint, path: "/now/setup.img"))
         XCTAssertEqual(String(data: download.data, encoding: .utf8),
-                       "extension=false;dependencies=0")
+                       "codekitten=false;extension=false;dependencies=0")
         guard case .ready(let rebuilt) = portal.setupImageState else {
             return XCTFail("the rebuilt image was not published")
         }

@@ -133,10 +133,14 @@ actor ChatHarness {
         log(.info, "turn begins: \(wireModelID), "
             + "\(transcript.count) turn(s) of history")
         let client = makeClient(selector)
+        let developmentIntent = ChatDevelopmentContext.isRelevant(transcript)
         let system = ChatSystemPrompt.compose(
             health: await client.sessionHealth(), origin: origin,
-            screen: await guestScreen())
-        let tools = ChatToolRendering.descriptors(registry: projections)
+            screen: await guestScreen(), development: developmentIntent)
+        let tools = ChatToolRendering.descriptors(
+            registry: projections,
+            include: ChatDevelopmentContext.capabilityFilter(
+                development: developmentIntent))
         let dispatch = HostProjectionDispatch(
             face: .chat, registry: projections, audit: audit)
 
@@ -269,6 +273,41 @@ actor ChatHarness {
             guest: selector,
             through: client)
         return ChatToolRendering.toolResult(id: call.id, outcome: outcome)
+    }
+}
+
+/// Development is a deliberately optional context lane. The dispatcher still
+/// owns one complete registry, but ordinary machine turns do not pay for three
+/// project/build schemas they have no reason to select.
+enum ChatDevelopmentContext {
+    private static let capabilities: Set<String> = [
+        "now_projects", "now_development_environment", "now_development",
+    ]
+    private static let terms = [
+        "project", "source code", "codekitten", "toolchain", "tool server",
+        "toolserver", "compile", "build", "applet", "program", "develop",
+        ".ckp", "ckproject", "mpw",
+    ]
+
+    static func isRelevant(_ transcript: [ChatTurn]) -> Bool {
+        for turn in transcript.reversed() {
+            for content in turn.content {
+                switch content {
+                case .text(let text):
+                    let lowered = text.lowercased()
+                    if terms.contains(where: lowered.contains) { return true }
+                case .toolCall(let call):
+                    if capabilities.contains(call.name) { return true }
+                case .toolResult:
+                    break
+                }
+            }
+        }
+        return false
+    }
+
+    static func capabilityFilter(development: Bool) -> (String) -> Bool {
+        { capability in development || !capabilities.contains(capability) }
     }
 }
 
