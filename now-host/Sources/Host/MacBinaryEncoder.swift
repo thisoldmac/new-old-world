@@ -4,6 +4,7 @@ import Foundation
 /// carries both forks plus Finder type/creator through a data-only HTTP path.
 enum MacBinaryEncoder {
     static func data(name: String, type: String, creator: String,
+                     finderFlags: UInt16 = 0,
                      dataFork: Data, resourceFork: Data = Data()) -> Data? {
         guard let nameBytes = name.data(using: .macOSRoman),
               !nameBytes.isEmpty, nameBytes.count <= 63,
@@ -17,6 +18,8 @@ enum MacBinaryEncoder {
         header.replaceSubrange(2..<(2 + nameBytes.count), with: nameBytes)
         header.replaceSubrange(65..<69, with: typeBytes)
         header.replaceSubrange(69..<73, with: creatorBytes)
+        header[73] = UInt8(finderFlags >> 8)
+        header[101] = UInt8(finderFlags & 0xff)
         putBigEndian(UInt32(dataFork.count), at: 83, in: &header)
         putBigEndian(UInt32(resourceFork.count), at: 87, in: &header)
         header[122] = 129

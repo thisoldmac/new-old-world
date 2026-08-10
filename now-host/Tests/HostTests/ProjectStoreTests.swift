@@ -23,6 +23,7 @@ final class ProjectStoreTests: XCTestCase {
         type=APPL
         creator=MMTR
         file=Sources/Main.c
+        file-info=TEXT|MPS |0000|Sources/Main.c
         """.utf8)
 
     func testContractFixtureParsesAndTraversalFixtureIsRefused() throws {
@@ -158,6 +159,62 @@ final class ProjectStoreTests: XCTestCase {
         XCTAssertEqual(process.terminationStatus, 0, text)
     }
 
+    func testGitCommitCarriesRecoverableClassicFileArchive() throws {
+        let root = try root()
+        let store = try ProjectStore(root: root)
+        let dataFork = Data("source".utf8)
+        let resourceFork = Data("resource".utf8)
+        let created = try store.create(
+            name: "Archived Forks", home: .host, projectDocument: document,
+            files: [
+                .init(path: "Sources/Main.c", type: "TEXT", creator: "MPS ",
+                      finderFlags: 0x4000, contents: dataFork),
+                .init(path: "Sources/Main.c", fork: .resource,
+                      contents: resourceFork),
+            ])
+        let repository = root.appendingPathComponent("Repositories")
+            .appendingPathComponent(created.projectID.rawValue + ".git")
+        let index = try gitObject(
+            gitDirectory: repository,
+            specification: "\(created.commit):.now-classic/index.json")
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: index) as? [String: Any])
+        let files = try XCTUnwrap(object["files"] as? [[String: Any]])
+        let archived = try XCTUnwrap(files.first {
+            $0["path"] as? String == "Sources/Main.c"
+        })
+        XCTAssertEqual(archived["creator"] as? String, "MPS ")
+        XCTAssertEqual(archived["finderFlags"] as? Int, 16384)
+
+        let packageName = ProjectDigest.sha256(Data("Sources/Main.c".utf8)) + ".bin"
+        let package = try gitObject(
+            gitDirectory: repository,
+            specification: "\(created.commit):.now-classic/files/\(packageName)")
+        let decoded = try MacBinaryFile.decode(package)
+        XCTAssertEqual(decoded.dataFork, dataFork)
+        XCTAssertEqual(decoded.resourceFork, resourceFork)
+        XCTAssertEqual(decoded.type, "TEXT")
+        XCTAssertEqual(decoded.creator, "MPS ")
+        XCTAssertEqual(decoded.finderFlags, 0x4000)
+    }
+
+    private func gitObject(gitDirectory: URL, specification: String) throws -> Data {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["--git-dir", gitDirectory.path, "show", specification]
+        let output = Pipe()
+        let errors = Pipe()
+        process.standardOutput = output
+        process.standardError = errors
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errors.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0,
+                       String(decoding: errorData, as: UTF8.self))
+        return data
+    }
+
     func testStaleRevisionAndPriorDigestLeaveWholeBatchUntouched() throws {
         let store = try ProjectStore(root: try root())
         let created = try store.create(
@@ -243,9 +300,11 @@ final class ProjectStoreTests: XCTestCase {
         XCTAssertEqual(candidate.lifecycle, .hostStaged)
         XCTAssertEqual(candidate.receipt.manifest.map(\.path),
                        ["Project.ckp", "Sources/Main.c"])
-        XCTAssertEqual(try store.candidateFile(
+        let encoded = try store.candidateFile(
             candidateID: candidate.receipt.candidateID,
-            path: "Sources/Main.c"), Data("source".utf8))
+            path: "Sources/Main.c")
+        XCTAssertEqual(try MacBinaryFile.decode(encoded).dataFork,
+                       Data("source".utf8))
         XCTAssertThrowsError(try store.promoteCandidate(
             candidateID: candidate.receipt.candidateID,
             currentGuestDigest: nil)) { error in
@@ -288,7 +347,7 @@ final class ProjectStoreTests: XCTestCase {
             .receipt.manifest.map(\.path), ["Project.ckp", "Sources/Main.c"])
     }
 
-    func testCandidateRefusesAResourceForkItCannotPreserve() throws {
+    func testCandidatePreservesBothForksAndFinderIdentity() throws {
         let store = try ProjectStore(root: try root())
         let created = try store.create(
             name: "Forked Source", home: .host, projectDocument: document,
@@ -299,9 +358,23 @@ final class ProjectStoreTests: XCTestCase {
         let resourceFork = URL(fileURLWithPath: source.path + "/..namedfork/rsrc")
         try Data("resource".utf8).write(to: resourceFork)
 
-        XCTAssertThrowsError(try store.stageCandidate(projectID: created.projectID)) {
-            XCTAssertTrue(String(describing: $0).contains("resource fork"))
-        }
+        let candidate = try store.stageCandidate(projectID: created.projectID)
+        let entry = try XCTUnwrap(candidate.receipt.manifest.first {
+            $0.path == "Sources/Main.c"
+        })
+        XCTAssertEqual(entry.resourceBytes, 8)
+        XCTAssertEqual(entry.type, "TEXT")
+        XCTAssertEqual(entry.creator, "MPS ")
+        XCTAssertEqual(entry.finderFlags, 0)
+        let encoded = try store.candidateFile(
+            candidateID: candidate.receipt.candidateID,
+            path: "Sources/Main.c")
+        let decoded = try MacBinaryFile.decode(encoded)
+        XCTAssertEqual(decoded.dataFork, Data("source".utf8))
+        XCTAssertEqual(decoded.resourceFork, Data("resource".utf8))
+        XCTAssertEqual(decoded.type, "TEXT")
+        XCTAssertEqual(decoded.creator, "MPS ")
+        XCTAssertEqual(decoded.finderFlags, 0)
     }
 
     func testGuestImportCreatesVerifiedMirrorAndPreservesWorkspaceOnRefresh() throws {

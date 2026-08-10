@@ -135,6 +135,31 @@ struct CKProjectDocument: Equatable, Sendable {
         }
         return Data((lines.joined(separator: "\n") + "\n").utf8)
     }
+
+    func replacingFileIdentities(_ replacements: [FileIdentity]) -> Data {
+        let byPath = Dictionary(uniqueKeysWithValues: replacements.map { ($0.path, $0) })
+        var lines = ["CKPROJECT 1"]
+        var emitted = Set<String>()
+        for (key, value) in records {
+            if key == "file-info", let current = try? Self.parseFileIdentity(value),
+               let replacement = byPath[current.path] {
+                if emitted.insert(current.path).inserted {
+                    lines.append(Self.fileIdentityLine(replacement))
+                }
+            } else {
+                lines.append("\(key)=\(value)")
+            }
+        }
+        for replacement in replacements where emitted.insert(replacement.path).inserted {
+            lines.append(Self.fileIdentityLine(replacement))
+        }
+        return Data((lines.joined(separator: "\n") + "\n").utf8)
+    }
+
+    private static func fileIdentityLine(_ identity: FileIdentity) -> String {
+        "file-info=\(identity.type)|\(identity.creator)|"
+            + String(format: "%04x", identity.finderFlags) + "|\(identity.path)"
+    }
 }
 
 enum ProjectPath {
@@ -144,7 +169,8 @@ enum ProjectPath {
             throw ProjectStoreError.invalidPath(path)
         }
         let components = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+        guard components.first != ".now-classic",
+              components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
             throw ProjectStoreError.invalidPath(path)
         }
     }

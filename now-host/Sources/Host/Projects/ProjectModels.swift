@@ -77,7 +77,48 @@ struct ProjectManifestEntry: Codable, Equatable, Sendable {
     let resourceBytes: Int
     let type: String?
     let creator: String?
+    let finderFlags: UInt16?
     let digest: String
+    let resourceDigest: String
+
+    private enum CodingKeys: String, CodingKey {
+        case path, dataBytes, resourceBytes, type, creator, finderFlags
+        case digest, resourceDigest
+    }
+
+    init(path: String, dataBytes: Int, resourceBytes: Int,
+         type: String?, creator: String?, finderFlags: UInt16?,
+         digest: String, resourceDigest: String) {
+        self.path = path
+        self.dataBytes = dataBytes
+        self.resourceBytes = resourceBytes
+        self.type = type
+        self.creator = creator
+        self.finderFlags = finderFlags
+        self.digest = digest
+        self.resourceDigest = resourceDigest
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        path = try values.decode(String.self, forKey: .path)
+        dataBytes = try values.decode(Int.self, forKey: .dataBytes)
+        resourceBytes = try values.decode(Int.self, forKey: .resourceBytes)
+        type = try values.decodeIfPresent(String.self, forKey: .type)
+        creator = try values.decodeIfPresent(String.self, forKey: .creator)
+        finderFlags = try values.decodeIfPresent(UInt16.self, forKey: .finderFlags)
+        digest = try values.decode(String.self, forKey: .digest)
+        resourceDigest = try values.decodeIfPresent(
+            String.self, forKey: .resourceDigest) ?? ProjectDigest.sha256(Data())
+    }
+}
+
+struct ProjectFileInspection: Equatable, Sendable {
+    let dataBytes: Int
+    let resourceBytes: Int
+    let type: String
+    let creator: String
+    let finderFlags: UInt16
 }
 
 struct ProjectCandidateReceipt: Codable, Equatable, Sendable {
@@ -115,16 +156,36 @@ struct ProjectPromotionReceipt: Codable, Equatable, Sendable {
     let promotedAt: Date
 }
 
+enum ProjectFork: String, Codable, Equatable, Sendable {
+    case data
+    case resource
+}
+
 struct ProjectFileChange: Equatable, Sendable {
     let path: String
+    let fork: ProjectFork
     let expectedDigest: String?
+    let type: String?
+    let creator: String?
+    let finderFlags: UInt16?
     /// `nil` deletes the file. A zero-byte `Data` creates an empty file.
     let contents: Data?
 
-    init(path: String, expectedDigest: String? = nil, contents: Data?) {
+    init(path: String, fork: ProjectFork = .data,
+         expectedDigest: String? = nil, type: String? = nil,
+         creator: String? = nil, finderFlags: UInt16? = nil,
+         contents: Data?) {
         self.path = path
+        self.fork = fork
         self.expectedDigest = expectedDigest
+        self.type = type
+        self.creator = creator
+        self.finderFlags = finderFlags
         self.contents = contents
+    }
+
+    var receiptPath: String {
+        fork == .data ? path : "\(path)#resource"
     }
 }
 
@@ -231,13 +292,15 @@ enum ProjectDigest {
     }
 
     static func tree(at root: URL, fileManager: FileManager = .default) throws -> String {
+        let projectURL = root.appendingPathComponent("Project.ckp")
+        let project = try CKProjectDocument.parse(Data(contentsOf: projectURL))
         guard let walk = fileManager.enumerator(
             at: root,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
-            options: [.skipsHiddenFiles]) else {
+            options: []) else {
             throw ProjectStoreError.invalidProject("The working tree cannot be read.")
         }
-        var entries: [(String, String)] = []
+        var entries: [(String, String, String, String, String, UInt16)] = []
         for case let url as URL in walk {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey,
                                                            .isSymbolicLinkKey])
@@ -251,13 +314,35 @@ enum ProjectDigest {
                 throw ProjectStoreError.linkEscape(relative)
             }
             guard values.isRegularFile == true else { continue }
-            entries.append((relative, sha256(try Data(contentsOf: url))))
+            let declared = project.fileIdentities[relative]
+            let actual = ClassicProjectFile.identity(at: url)
+            let identity: ClassicProjectFile.Identity
+            if relative == "Project.ckp" {
+                identity = .init(type: "TEXT", creator: "NOWD", finderFlags: 0)
+            } else if let declared {
+                identity = .init(type: declared.type, creator: declared.creator,
+                                 finderFlags: declared.finderFlags)
+            } else if let actual {
+                identity = actual
+            } else {
+                identity = .init(type: "????", creator: "????", finderFlags: 0)
+            }
+            entries.append((relative, sha256(try Data(contentsOf: url)),
+                            sha256(try ClassicProjectFile.resourceFork(at: url)),
+                            identity.type, identity.creator, identity.finderFlags))
         }
         var aggregate = Data()
-        for (path, digest) in entries.sorted(by: { $0.0 < $1.0 }) {
+        for (path, dataDigest, resourceDigest, type, creator, flags)
+                in entries.sorted(by: { $0.0 < $1.0 }) {
             aggregate.append(Data(path.utf8))
             aggregate.append(0)
-            aggregate.append(Data(digest.utf8))
+            aggregate.append(Data(dataDigest.utf8))
+            aggregate.append(0)
+            aggregate.append(Data(resourceDigest.utf8))
+            aggregate.append(0)
+            aggregate.append(Data(type.utf8))
+            aggregate.append(Data(creator.utf8))
+            aggregate.append(Data(String(format: "%04x", flags).utf8))
             aggregate.append(10)
         }
         return sha256(aggregate)

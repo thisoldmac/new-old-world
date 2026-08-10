@@ -11,7 +11,7 @@ public enum ProjectsProjection: HostProjection {
     public static let acceptsGuestAddressing = false
     public static let acceptedArguments: Set<String> = [
         "operation", "projectID", "workspaceID", "name",
-        "expectedRevision", "expectedCommit", "path", "maximumBytes",
+        "expectedRevision", "expectedCommit", "path", "fork", "maximumBytes",
         "message", "changes",
     ]
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
@@ -76,6 +76,7 @@ public enum ProjectsProjection: HostProjection {
             "expectedRevision": ["type": "integer", "minimum": 0],
             "expectedCommit": ["type": "string", "pattern": "^[0-9a-f]{40}$"],
             "path": relativePath,
+            "fork": ["type": "string", "enum": ["data", "resource"]],
             "maximumBytes": ["type": "integer", "minimum": 1,
                              "maximum": 262_144],
             "message": ["type": "string", "minLength": 1,
@@ -86,11 +87,16 @@ public enum ProjectsProjection: HostProjection {
                     "type": "object",
                     "properties": [
                         "path": relativePath,
+                        "fork": ["type": "string", "enum": ["data", "resource"]],
                         "action": ["type": "string", "enum": ["write", "delete"]],
                         "expectedDigest": ["type": "string",
                                            "pattern": "^[0-9a-f]{64}$"],
                         "contentsBase64": ["type": "string",
                                            "maxLength": 349_528],
+                        "finderType": ["type": "string", "pattern": "^[ -~]{4}$"],
+                        "finderCreator": ["type": "string", "pattern": "^[ -~]{4}$"],
+                        "finderFlags": ["type": "integer", "minimum": 0,
+                                        "maximum": 65_535],
                     ],
                     "required": ["path", "action"],
                     "additionalProperties": false,

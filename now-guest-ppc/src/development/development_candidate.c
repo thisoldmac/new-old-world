@@ -21,6 +21,9 @@ typedef struct CandidateFile {
     FSSpec spec;
     char path[kCandidatePathCap];
     long resource_bytes;
+    OSType type;
+    OSType creator;
+    unsigned short finder_flags;
 } CandidateFile;
 
 static int lower_hex(const char *text, long count)
@@ -306,6 +309,9 @@ static int collect_files(short vref, long dir_id, const char *prefix,
             memcpy(files[*count].spec.name, name, name[0] + 1);
             strcpy(files[*count].path, relative);
             files[*count].resource_bytes = pb.hFileInfo.ioFlRLgLen;
+            files[*count].type = pb.hFileInfo.ioFlFndrInfo.fdType;
+            files[*count].creator = pb.hFileInfo.ioFlFndrInfo.fdCreator;
+            files[*count].finder_flags = pb.hFileInfo.ioFlFndrInfo.fdFlags;
             ++*count;
         }
     }
@@ -340,6 +346,42 @@ static int file_digest(const FSSpec *spec, char hex[65])
     return 1;
 }
 
+static int resource_digest(const CandidateFile *file, char hex[65])
+{
+    DevSHA256 sha;
+    unsigned char digest[32];
+    unsigned char bytes[2048];
+    short ref = -1;
+    OSErr err;
+    dev_sha256_init(&sha);
+    err = FSpOpenRF(&file->spec, fsRdPerm, &ref);
+    if (err != noErr) {
+        if (file->resource_bytes != 0) return 0;
+        dev_sha256_final(&sha, digest);
+        dev_sha256_hex(digest, hex);
+        return 1;
+    }
+    do {
+        long count = sizeof bytes;
+        err = FSRead(ref, &count, bytes);
+        if (count > 0) dev_sha256_update(&sha, bytes, (size_t)count);
+    } while (err == noErr);
+    FSClose(ref);
+    if (err != eofErr) return 0;
+    dev_sha256_final(&sha, digest);
+    dev_sha256_hex(digest, hex);
+    return 1;
+}
+
+static void ostype_text(OSType value, char text[5])
+{
+    text[0] = (char)((value >> 24) & 0xff);
+    text[1] = (char)((value >> 16) & 0xff);
+    text[2] = (char)((value >> 8) & 0xff);
+    text[3] = (char)(value & 0xff);
+    text[4] = '\0';
+}
+
 int dev_project_tree_digest(const FSSpec *folder, long dir_id,
                             char hex[65], int *file_count,
                             char *reason, long reason_cap)
@@ -363,16 +405,28 @@ int dev_project_tree_digest(const FSSpec *folder, long dir_id,
     dev_sha256_init(&tree);
     for (i = 0; i < count; ++i) {
         char file_hex[65];
+        char resource_hex[65];
+        char type[5], creator[5], flags[5];
         static const unsigned char zero = 0;
         static const unsigned char newline = '\n';
-        if (!file_digest(&files[i].spec, file_hex)) {
+        if (!file_digest(&files[i].spec, file_hex)
+            || !resource_digest(&files[i], resource_hex)) {
             snprintf(reason, (size_t)reason_cap,
-                     "A candidate data fork changed or became unreadable.");
+                     "A candidate fork changed or became unreadable.");
             DisposePtr((Ptr)files); return 0;
         }
+        ostype_text(files[i].type, type);
+        ostype_text(files[i].creator, creator);
+        snprintf(flags, sizeof flags, "%04x", files[i].finder_flags);
         dev_sha256_update(&tree, files[i].path, strlen(files[i].path));
         dev_sha256_update(&tree, &zero, 1);
         dev_sha256_update(&tree, file_hex, 64);
+        dev_sha256_update(&tree, &zero, 1);
+        dev_sha256_update(&tree, resource_hex, 64);
+        dev_sha256_update(&tree, &zero, 1);
+        dev_sha256_update(&tree, type, 4);
+        dev_sha256_update(&tree, creator, 4);
+        dev_sha256_update(&tree, flags, 4);
         dev_sha256_update(&tree, &newline, 1);
     }
     dev_sha256_final(&tree, digest);
@@ -795,13 +849,20 @@ void now_development_project_command(const char *request_json, long id,
         "[\"Files\",\"%d\"]", id, project_id, digest, count);
     for (i = (int)cursor; i < count && i < cursor + 2; ++i) {
         char file_hex[65];
-        char escaped[1100];
-        char record[610];
-        if (!file_digest(&files[i].spec, file_hex)) break;
+        char resource_hex[65];
+        char type[5], creator[5];
+        char escaped[1500];
+        char record[768];
+        if (!file_digest(&files[i].spec, file_hex)
+            || !resource_digest(&files[i], resource_hex)) break;
+        ostype_text(files[i].type, type);
+        ostype_text(files[i].creator, creator);
         /* Put the optional field at the end so a path containing `|` remains
            parseable from the right, as it was with the original digest. */
-        snprintf(record, sizeof record, "%s|%s|%ld", files[i].path,
-                 file_hex, files[i].resource_bytes);
+        snprintf(record, sizeof record, "%s|%s|%s|%ld|%s|%s|%04x",
+                 files[i].path, file_hex, resource_hex,
+                 files[i].resource_bytes, type, creator,
+                 files[i].finder_flags);
         now_json_escape(record, escaped, sizeof escaped);
         pos += snprintf(out + pos, (size_t)(cap - pos),
                         ",[\"File\",\"%s\"]", escaped);

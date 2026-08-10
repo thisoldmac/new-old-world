@@ -316,8 +316,12 @@ final class AgentIntegrationDevelopmentControl {
 
     private struct GuestSnapshotFile {
         let path: String
-        let digest: String
+        let dataDigest: String
+        let resourceDigest: String
         let resourceBytes: Int
+        let type: String
+        let creator: String
+        let finderFlags: UInt16
     }
 
     private func importGuest(
@@ -355,28 +359,37 @@ final class AgentIntegrationDevelopmentControl {
             expectedDigest = digest
             expectedCount = count
             for row in rows where row.first == "File" {
-                guard let record = row.last,
-                      let resourceSplit = record.lastIndex(of: "|"),
-                      let resourceBytes = Int(record[record.index(after: resourceSplit)...]),
-                      resourceBytes >= 0,
-                      let digestSplit = record[..<resourceSplit].lastIndex(of: "|") else {
+                guard let record = row.last else {
                     return .refused(.init(code: "now-development-project-invalid",
                                           message: "A guest manifest entry is malformed."))
                 }
-                let path = String(record[..<digestSplit])
-                let fileDigest = String(record[record.index(after: digestSplit)..<resourceSplit])
-                guard !files.contains(where: { $0.path == path }),
-                      fileDigest.count == 64 else {
+                var remainder = record[...]
+                func takeLast() -> String? {
+                    guard let split = remainder.lastIndex(of: "|") else { return nil }
+                    let value = String(remainder[remainder.index(after: split)...])
+                    remainder = remainder[..<split]
+                    return value
+                }
+                guard let flagsText = takeLast(), flagsText.count == 4,
+                      let finderFlags = UInt16(flagsText, radix: 16),
+                      let creator = takeLast(), creator.utf8.count == 4,
+                      let type = takeLast(), type.utf8.count == 4,
+                      let resourceText = takeLast(),
+                      let resourceBytes = Int(resourceText), resourceBytes >= 0,
+                      let resourceDigest = takeLast(), resourceDigest.count == 64,
+                      let dataDigest = takeLast(), dataDigest.count == 64 else {
+                    return .refused(.init(code: "now-development-project-invalid",
+                                          message: "A guest manifest entry is malformed."))
+                }
+                let path = String(remainder)
+                guard !files.contains(where: { $0.path == path }), !path.isEmpty else {
                     return .refused(.init(code: "now-development-project-invalid",
                                           message: "The guest manifest repeats or malforms a file."))
                 }
-                guard resourceBytes == 0 else {
-                    return .refused(.init(
-                        code: "now-development-source-forks-unsupported",
-                        message: "The guest project contains a source resource fork that the host mirror cannot preserve."))
-                }
-                files.append(.init(path: path, digest: fileDigest,
-                                   resourceBytes: resourceBytes))
+                files.append(.init(path: path, dataDigest: dataDigest,
+                                   resourceDigest: resourceDigest,
+                                   resourceBytes: resourceBytes, type: type,
+                                   creator: creator, finderFlags: finderFlags))
             }
             guard let nextText = rows.first(where: { $0.first == "Next" })?.last,
                   let next = Int(nextText), next == -1 || next > cursor else {
@@ -416,12 +429,29 @@ final class AgentIntegrationDevelopmentControl {
             case .success(let value):
                 do {
                     let data = try Data(contentsOf: value.staged.url)
-                    guard ProjectDigest.sha256(data) == file.digest else {
+                    guard value.container == "macbinary",
+                          let package = try? MacBinaryFile.decode(data),
+                          package.type == file.type,
+                          package.creator == file.creator,
+                          package.finderFlags == file.finderFlags,
+                          package.resourceFork.count == file.resourceBytes,
+                          ProjectDigest.sha256(package.dataFork) == file.dataDigest,
+                          ProjectDigest.sha256(package.resourceFork)
+                            == file.resourceDigest else {
                         return .refused(.init(code: "now-development-project-changed",
-                                              message: "A guest source file changed during import."))
+                                              message: "A guest source file or its classic metadata changed during import."))
                     }
-                    if file.path == "Project.ckp" { projectDocument = data }
-                    else { changes.append(.init(path: file.path, contents: data)) }
+                    if file.path == "Project.ckp" {
+                        projectDocument = package.dataFork
+                    } else {
+                        changes.append(.init(
+                            path: file.path, type: package.type,
+                            creator: package.creator,
+                            finderFlags: package.finderFlags,
+                            contents: package.dataFork))
+                        changes.append(.init(path: file.path, fork: .resource,
+                                             contents: package.resourceFork))
+                    }
                     value.staged.discard()
                 } catch {
                     return .refused(.init(code: "now-development-import-failed",

@@ -17,18 +17,34 @@ public enum AgentIntegrationProjectChangeAction: String, Codable, Sendable {
     case delete
 }
 
+public enum AgentIntegrationProjectFork: String, Codable, Sendable {
+    case data
+    case resource
+}
+
 public struct AgentIntegrationProjectChange: Codable, Equatable, Sendable {
     public let path: String
+    public let fork: AgentIntegrationProjectFork?
     public let action: AgentIntegrationProjectChangeAction
     public let expectedDigest: String?
     public let contentsBase64: String?
+    public let finderType: String?
+    public let finderCreator: String?
+    public let finderFlags: Int?
 
     public init(path: String, action: AgentIntegrationProjectChangeAction,
-                expectedDigest: String? = nil, contentsBase64: String? = nil) {
+                fork: AgentIntegrationProjectFork? = nil,
+                expectedDigest: String? = nil, contentsBase64: String? = nil,
+                finderType: String? = nil, finderCreator: String? = nil,
+                finderFlags: Int? = nil) {
         self.path = path
+        self.fork = fork
         self.action = action
         self.expectedDigest = expectedDigest
         self.contentsBase64 = contentsBase64
+        self.finderType = finderType
+        self.finderCreator = finderCreator
+        self.finderFlags = finderFlags
     }
 
     public var isWellFormed: Bool {
@@ -37,7 +53,13 @@ public struct AgentIntegrationProjectChange: Codable, Equatable, Sendable {
               !path.contains("\\"), !path.contains("\0") else { return false }
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
-              expectedDigest.map(Self.isDigest) ?? true else { return false }
+              expectedDigest.map(Self.isDigest) ?? true,
+              finderType.map(Self.isFourCC) ?? true,
+              finderCreator.map(Self.isFourCC) ?? true,
+              finderFlags.map({ $0 >= 0 && $0 <= 0xffff }) ?? true,
+              (finderType == nil && finderCreator == nil && finderFlags == nil)
+                || (finderType != nil && finderCreator != nil && finderFlags != nil)
+        else { return false }
         switch action {
         case .write:
             guard let contentsBase64,
@@ -47,6 +69,11 @@ public struct AgentIntegrationProjectChange: Codable, Equatable, Sendable {
             guard contentsBase64 == nil else { return false }
         }
         return true
+    }
+
+    private static func isFourCC(_ value: String) -> Bool {
+        value.utf8.count == 4
+            && value.utf8.allSatisfy { $0 >= 0x20 && $0 <= 0x7e }
     }
 
     private static func isDigest(_ value: String) -> Bool {
@@ -62,6 +89,7 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
     public var expectedRevision: Int?
     public var expectedCommit: String?
     public var path: String?
+    public var fork: AgentIntegrationProjectFork?
     public var maximumBytes: Int?
     public var message: String?
     public var changes: [AgentIntegrationProjectChange]?
@@ -70,6 +98,7 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
                 projectID: String? = nil, workspaceID: String? = nil,
                 name: String? = nil, expectedRevision: Int? = nil,
                 expectedCommit: String? = nil, path: String? = nil,
+                fork: AgentIntegrationProjectFork? = nil,
                 maximumBytes: Int? = nil, message: String? = nil,
                 changes: [AgentIntegrationProjectChange]? = nil) {
         self.operation = operation
@@ -79,6 +108,7 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
         self.expectedRevision = expectedRevision
         self.expectedCommit = expectedCommit
         self.path = path
+        self.fork = fork
         self.maximumBytes = maximumBytes
         self.message = message
         self.changes = changes
@@ -101,6 +131,7 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
             return projectID == nil && workspaceID == nil && name == nil
                 && expectedRevision == nil && expectedCommit == nil
                 && path == nil && maximumBytes == nil && message == nil
+                && fork == nil
                 && changes == nil
         case .create:
             let initialChangesAreWrites = changes?.allSatisfy {
@@ -109,10 +140,12 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
             return name != nil && projectID == nil && workspaceID == nil
                 && initialChangesAreWrites && expectedRevision == nil
                 && expectedCommit == nil && path == nil
+                && fork == nil
         case .status, .history, .workspaceOpen:
             return projectID != nil && workspaceID == nil && name == nil
                 && expectedRevision == nil && expectedCommit == nil
                 && path == nil && maximumBytes == nil && message == nil
+                && fork == nil
                 && changes == nil
         case .read:
             return projectID != nil && path != nil && workspaceID == nil
@@ -124,10 +157,12 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
                 && projectID == nil && expectedRevision == nil
             return (projectApply || workspaceApply) && changes != nil
                 && message != nil && path == nil && name == nil
+                && fork == nil
         case .workspaceResume, .workspaceDiscard:
             return workspaceID != nil && projectID == nil && name == nil
                 && expectedRevision == nil && expectedCommit == nil
                 && path == nil && maximumBytes == nil && message == nil
+                && fork == nil
                 && changes == nil
         }
     }
@@ -219,6 +254,10 @@ public struct AgentIntegrationProjectResult: Codable, Equatable, Sendable {
     public let workspace: AgentIntegrationProjectWorkspace?
     public let history: [AgentIntegrationProjectRevision]?
     public let contentsBase64: String?
+    public let fork: String?
+    public let finderType: String?
+    public let finderCreator: String?
+    public let finderFlags: Int?
     public let failure: AgentIntegrationUnavailable?
 
     public init(projects: [AgentIntegrationProjectSummary]? = nil,
@@ -227,6 +266,8 @@ public struct AgentIntegrationProjectResult: Codable, Equatable, Sendable {
                 workspace: AgentIntegrationProjectWorkspace? = nil,
                 history: [AgentIntegrationProjectRevision]? = nil,
                 contentsBase64: String? = nil,
+                fork: String? = nil, finderType: String? = nil,
+                finderCreator: String? = nil, finderFlags: Int? = nil,
                 failure: AgentIntegrationUnavailable? = nil) {
         self.ok = failure == nil
         self.projects = projects
@@ -235,6 +276,10 @@ public struct AgentIntegrationProjectResult: Codable, Equatable, Sendable {
         self.workspace = workspace
         self.history = history
         self.contentsBase64 = contentsBase64
+        self.fork = fork
+        self.finderType = finderType
+        self.finderCreator = finderCreator
+        self.finderFlags = finderFlags
         self.failure = failure
     }
 

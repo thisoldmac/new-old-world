@@ -53,6 +53,10 @@ alias or symbolic-link traversal that would leave the project root.
 item beneath it, but a `file` record may not. Source manifests and project tree
 digests exclude `Build/`, so ToolServer transcripts, objects and products do
 not turn a verified source revision into apparent out-of-band source drift.
+`.now-classic/` is also reserved. It is the host Git adapter's internal,
+complete MacBinary archive of each logical file; normal Git paths remain plain
+data-fork blobs while this tree makes resource forks and Finder identity
+recoverable from the same commit.
 
 `build-action` is a pipe-delimited declarative record. Its first component is
 one of `compile`, `rez`, `link`, `copy`, `stage`, or `metadata`; remaining

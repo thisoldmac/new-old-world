@@ -86,8 +86,10 @@ final class ProjectStore {
             to: staging.appendingPathComponent("Project.ckp"), options: .atomic)
         try preflight(files, under: staging, allowMissingExpected: true)
         try apply(files, to: staging)
-        _ = try CKProjectDocument.parse(Data(contentsOf:
+        try updateProjectDocument(for: files, under: staging)
+        let installedProject = try CKProjectDocument.parse(Data(contentsOf:
             staging.appendingPathComponent("Project.ckp")))
+        try applyDeclaredIdentities(installedProject, under: staging)
         let digest = try ProjectDigest.tree(at: staging, fileManager: fileManager)
         let repository = try repository(for: projectID)
         let date = Date()
@@ -112,7 +114,8 @@ final class ProjectStore {
         return ProjectRevisionReceipt(projectID: projectID, home: home,
                                       revision: 1, commit: commit,
                                       contentDigest: digest,
-                                      changedPaths: (["Project.ckp"] + files.map(\.path)).sorted(),
+                                      changedPaths: (["Project.ckp"]
+                                        + files.map(\.receiptPath)).sorted(),
                                       committedAt: date)
     }
 
@@ -144,6 +147,10 @@ final class ProjectStore {
                                   options: .atomic)
         try preflight(files, under: staging, allowMissingExpected: true)
         try apply(files, to: staging)
+        try updateProjectDocument(for: files, under: staging)
+        let installedProject = try CKProjectDocument.parse(Data(contentsOf:
+            staging.appendingPathComponent("Project.ckp")))
+        try applyDeclaredIdentities(installedProject, under: staging)
         let measured = try ProjectDigest.tree(at: staging, fileManager: fileManager)
         guard measured == guestDigest else {
             throw ProjectStoreError.unavailable(
@@ -209,20 +216,44 @@ final class ProjectStore {
         return ProjectRevisionReceipt(
             projectID: projectID, home: .guest, revision: revision,
             commit: commit, contentDigest: measured,
-            changedPaths: (["Project.ckp"] + files.map(\.path)).sorted(),
+            changedPaths: (["Project.ckp"] + files.map(\.receiptPath)).sorted(),
             committedAt: date)
     }
 
-    func read(projectID: ProjectID, path: String, maximumBytes: Int = 262_144) throws -> Data {
+    func read(projectID: ProjectID, path: String, fork: ProjectFork = .data,
+              maximumBytes: Int = 262_144) throws -> Data {
         let record = try load(projectID)
         let url = try ProjectPath.checkedURL(path, under: workingURL(record.projectID),
                                              fileManager: fileManager)
-        let attributes = try fileManager.attributesOfItem(atPath: url.path)
-        guard let size = attributes[.size] as? NSNumber,
-              size.intValue <= maximumBytes else {
+        let data = fork == .data ? try Data(contentsOf: url)
+            : try ClassicProjectFile.resourceFork(at: url)
+        guard data.count <= maximumBytes else {
             throw ProjectStoreError.unavailable("The bounded read exceeds \(maximumBytes) bytes.")
         }
-        return try Data(contentsOf: url)
+        return data
+    }
+
+    func inspect(projectID: ProjectID, path: String) throws
+        -> ProjectFileInspection {
+        let record = try load(projectID)
+        let root = workingURL(record.projectID)
+        let url = try ProjectPath.checkedURL(path, under: root,
+                                             fileManager: fileManager)
+        let document = try CKProjectDocument.parse(Data(contentsOf:
+            root.appendingPathComponent("Project.ckp")))
+        let declared = path == "Project.ckp"
+            ? CKProjectDocument.FileIdentity(path: path, type: "TEXT",
+                                             creator: "NOWD", finderFlags: 0)
+            : document.fileIdentities[path]
+        guard let identity = declared else {
+            throw ProjectStoreError.unavailable(
+                "The project file has no declared classic identity.")
+        }
+        return ProjectFileInspection(
+            dataBytes: try Data(contentsOf: url).count,
+            resourceBytes: try ClassicProjectFile.resourceFork(at: url).count,
+            type: identity.type, creator: identity.creator,
+            finderFlags: identity.finderFlags)
     }
 
     @discardableResult
@@ -249,7 +280,7 @@ final class ProjectStore {
         return ProjectRevisionReceipt(
             projectID: projectID, home: record.home, revision: record.revision,
             commit: result.commit, contentDigest: result.digest,
-            changedPaths: changes.map(\.path).sorted(), committedAt: date)
+            changedPaths: changes.map(\.receiptPath).sorted(), committedAt: date)
     }
 
     func openWorkspace(projectID: ProjectID) throws -> ProjectWorkspace {
@@ -389,11 +420,21 @@ final class ProjectStore {
     }
 
     func candidateFile(candidateID: ProjectCandidateID, path: String) throws -> Data {
-        _ = try loadCandidate(candidateID)
+        let candidate = try loadCandidate(candidateID)
         let url = try ProjectPath.checkedURL(
             path, under: candidateContainer(candidateID).appendingPathComponent("Working"),
             fileManager: fileManager)
-        return try Data(contentsOf: url)
+        guard let entry = candidate.receipt.manifest.first(where: { $0.path == path }),
+              let type = entry.type, let creator = entry.creator,
+              let flags = entry.finderFlags,
+              let encoded = MacBinaryEncoder.data(
+                name: url.lastPathComponent, type: type, creator: creator,
+                finderFlags: flags, dataFork: try Data(contentsOf: url),
+                resourceFork: try ClassicProjectFile.resourceFork(at: url)) else {
+            throw ProjectStoreError.unavailable(
+                "The candidate file has no complete classic file identity.")
+        }
+        return encoded
     }
 
     func recordBuild(candidateID: ProjectCandidateID, buildID: String,
@@ -582,8 +623,10 @@ final class ProjectStore {
             if !installed { try? fileManager.removeItem(at: backup) }
         }
         try apply(changes, to: staging)
-        _ = try CKProjectDocument.parse(Data(contentsOf:
+        try updateProjectDocument(for: changes, under: staging)
+        let installedProject = try CKProjectDocument.parse(Data(contentsOf:
             staging.appendingPathComponent("Project.ckp")))
+        try applyDeclaredIdentities(installedProject, under: staging)
         let digest = try ProjectDigest.tree(at: staging, fileManager: fileManager)
         let date = Date()
         let cleanMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -612,8 +655,9 @@ final class ProjectStore {
         var seen = Set<String>()
         for change in changes {
             try ProjectPath.validate(change.path)
-            guard seen.insert(change.path).inserted else {
-                throw ProjectStoreError.duplicatePath(change.path)
+            let changeKey = "\(change.fork.rawValue):\(change.path)"
+            guard seen.insert(changeKey).inserted else {
+                throw ProjectStoreError.duplicatePath(change.receiptPath)
             }
             let url = try ProjectPath.checkedURL(change.path, under: root,
                                                  fileManager: fileManager)
@@ -621,14 +665,21 @@ final class ProjectStore {
                 guard isSHA256(expected) else {
                     throw ProjectStoreError.invalidProject("An expected digest is malformed.")
                 }
-                let current = fileManager.fileExists(atPath: url.path)
-                    ? ProjectDigest.sha256(try Data(contentsOf: url)) : nil
+                let current: String?
+                if !fileManager.fileExists(atPath: url.path) { current = nil }
+                else if change.fork == .data {
+                    current = ProjectDigest.sha256(try Data(contentsOf: url))
+                } else {
+                    current = ProjectDigest.sha256(
+                        try ClassicProjectFile.resourceFork(at: url))
+                }
                 guard current == expected else {
                     throw ProjectStoreError.digestConflict(path: change.path,
                                                            expected: expected,
                                                            current: current)
                 }
-            } else if !allowMissingExpected && change.contents == nil
+            } else if !allowMissingExpected && change.fork == .data
+                        && change.contents == nil
                         && !fileManager.fileExists(atPath: url.path) {
                 throw ProjectStoreError.invalidProject("Cannot delete a missing file.")
             }
@@ -639,14 +690,62 @@ final class ProjectStore {
         for change in changes {
             let url = try ProjectPath.checkedURL(change.path, under: root,
                                                  fileManager: fileManager)
-            if let contents = change.contents {
+            if change.fork == .resource {
+                guard fileManager.fileExists(atPath: url.path) else {
+                    throw ProjectStoreError.invalidProject(
+                        "Cannot write a resource fork before its data-fork file exists.")
+                }
+                try ClassicProjectFile.writeResourceFork(
+                    change.contents ?? Data(), to: url)
+            } else if let contents = change.contents {
                 try fileManager.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
                 try contents.write(to: url, options: .atomic)
             } else {
                 try fileManager.removeItem(at: url)
             }
+            if let type = change.type, let creator = change.creator,
+               let flags = change.finderFlags {
+                try ClassicProjectFile.setIdentity(
+                    .init(type: type, creator: creator, finderFlags: flags), at: url)
+            } else if change.type != nil || change.creator != nil
+                        || change.finderFlags != nil {
+                throw ProjectStoreError.invalidProject(
+                    "Classic type, creator and Finder flags must change together.")
+            }
         }
+    }
+
+    private func applyDeclaredIdentities(_ project: CKProjectDocument,
+                                         under root: URL) throws {
+        for identity in project.fileIdentities.values {
+            let url = try ProjectPath.checkedURL(identity.path, under: root,
+                                                 fileManager: fileManager)
+            guard fileManager.fileExists(atPath: url.path) else { continue }
+            try ClassicProjectFile.setIdentity(
+                .init(type: identity.type, creator: identity.creator,
+                      finderFlags: identity.finderFlags), at: url)
+        }
+        let document = root.appendingPathComponent("Project.ckp")
+        try ClassicProjectFile.setIdentity(
+            .init(type: "TEXT", creator: "NOWD", finderFlags: 0), at: document)
+    }
+
+    private func updateProjectDocument(for changes: [ProjectFileChange],
+                                       under root: URL) throws {
+        let replacements = changes.compactMap { change -> CKProjectDocument.FileIdentity? in
+            guard change.path != "Project.ckp", let type = change.type,
+                  let creator = change.creator, let flags = change.finderFlags else {
+                return nil
+            }
+            return .init(path: change.path, type: type, creator: creator,
+                         finderFlags: flags)
+        }
+        guard !replacements.isEmpty else { return }
+        let url = root.appendingPathComponent("Project.ckp")
+        let project = try CKProjectDocument.parse(Data(contentsOf: url))
+        try project.replacingFileIdentities(replacements).write(to: url,
+                                                                options: .atomic)
     }
 
     private func status(_ record: CatalogRecord) -> ProjectStatus {
@@ -696,10 +795,12 @@ final class ProjectStore {
     }
 
     private func manifest(at root: URL) throws -> [ProjectManifestEntry] {
+        let project = try CKProjectDocument.parse(Data(contentsOf:
+            root.appendingPathComponent("Project.ckp")))
         guard let walk = fileManager.enumerator(
             at: root,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
-            options: [.skipsHiddenFiles]) else {
+            options: []) else {
             throw ProjectStoreError.unavailable("The candidate tree cannot be read.")
         }
         var result: [ProjectManifestEntry] = []
@@ -714,17 +815,24 @@ final class ProjectStore {
             }
             if values.isSymbolicLink == true { throw ProjectStoreError.linkEscape(path) }
             guard values.isRegularFile == true else { continue }
-            let resourceFork = URL(fileURLWithPath:
-                url.path + "/..namedfork/rsrc")
-            if let resourceData = try? Data(contentsOf: resourceFork),
-               !resourceData.isEmpty {
+            let identity: CKProjectDocument.FileIdentity
+            if path == "Project.ckp" {
+                identity = .init(path: path, type: "TEXT", creator: "NOWD",
+                                 finderFlags: 0)
+            } else if let declared = project.fileIdentities[path] {
+                identity = declared
+            } else {
                 throw ProjectStoreError.unavailable(
-                    "The source file \(path) has a resource fork; candidates cannot preserve it yet.")
+                    "The source file \(path) has no file-info record; Development will not guess classic metadata.")
             }
             let data = try Data(contentsOf: url)
+            let resource = try ClassicProjectFile.resourceFork(at: url)
             result.append(.init(path: path, dataBytes: data.count,
-                                resourceBytes: 0, type: nil, creator: nil,
-                                digest: ProjectDigest.sha256(data)))
+                                resourceBytes: resource.count,
+                                type: identity.type, creator: identity.creator,
+                                finderFlags: identity.finderFlags,
+                                digest: ProjectDigest.sha256(data),
+                                resourceDigest: ProjectDigest.sha256(resource)))
         }
         return result.sorted { $0.path < $1.path }
     }

@@ -753,7 +753,7 @@ final class Session {
         fileSink = nil
         fileStagingDirectory = stagingDirectory
         fileStart = Date()
-        send(.fileGet(FileGet(id: id, path: path, container: "data",
+        send(.fileGet(FileGet(id: id, path: path, container: "macbinary",
                               developmentProject: projectID)))
     }
 

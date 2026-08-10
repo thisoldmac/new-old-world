@@ -214,9 +214,22 @@ final class AgentIntegrationHostAdapter {
             case .create:
                 let name = request.name!
                 let changes = try request.changes!.map(projectChange)
-                let paths = changes.compactMap { $0.contents == nil ? nil : $0.path }
+                let dataChanges = changes.filter {
+                    $0.fork == .data && $0.contents != nil
+                }
+                let paths = dataChanges.map(\.path)
                 let identity = String(repeating: "0", count: 32)
                 let fileLines = paths.map { "file=\($0)" }.joined(separator: "\n")
+                let infoLines = dataChanges.compactMap { change -> String? in
+                    guard let type = change.type, let creator = change.creator,
+                          let flags = change.finderFlags else { return nil }
+                    return "file-info=\(type)|\(creator)|"
+                        + String(format: "%04x", flags) + "|\(change.path)"
+                }.joined(separator: "\n")
+                guard infoLines.split(separator: "\n").count == paths.count else {
+                    throw ProjectStoreError.invalidProject(
+                        "Every created project file requires type, creator and Finder flags.")
+                }
                 let document = Data("""
                     CKPROJECT 1
                     id=\(identity)
@@ -229,6 +242,7 @@ final class AgentIntegrationHostAdapter {
                     creator=????
                     architecture=powerpc
                     \(fileLines)
+                    \(infoLines)
                     """.utf8)
                 let receipt = try projectStore.create(
                     name: name, home: .host, projectDocument: document,
@@ -241,10 +255,16 @@ final class AgentIntegrationHostAdapter {
                 return .init(project: try projectSummary(projectStore.status(
                     projectID: try projectID(request.projectID!))))
             case .read:
+                let id = try projectID(request.projectID!)
+                let fork = ProjectFork(rawValue: request.fork?.rawValue ?? "data")!
                 let data = try projectStore.read(
-                    projectID: try projectID(request.projectID!),
-                    path: request.path!, maximumBytes: request.maximumBytes ?? 65_536)
-                return .init(contentsBase64: data.base64EncodedString())
+                    projectID: id, path: request.path!, fork: fork,
+                    maximumBytes: request.maximumBytes ?? 65_536)
+                let info = try projectStore.inspect(projectID: id, path: request.path!)
+                return .init(contentsBase64: data.base64EncodedString(),
+                             fork: fork.rawValue, finderType: info.type,
+                             finderCreator: info.creator,
+                             finderFlags: Int(info.finderFlags))
             case .apply:
                 let changes = try request.changes!.map(projectChange)
                 if let raw = request.projectID {
@@ -311,7 +331,12 @@ final class AgentIntegrationHostAdapter {
             contents = nil
         }
         return ProjectFileChange(path: change.path,
+                                 fork: ProjectFork(
+                                    rawValue: change.fork?.rawValue ?? "data")!,
                                  expectedDigest: change.expectedDigest,
+                                 type: change.finderType,
+                                 creator: change.finderCreator,
+                                 finderFlags: change.finderFlags.map(UInt16.init),
                                  contents: contents)
     }
 

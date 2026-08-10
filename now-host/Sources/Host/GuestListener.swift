@@ -1680,7 +1680,7 @@ final class GuestListener: ObservableObject {
     ) {
         let checksum = TransferIdentity.crc32(bytes)
         startPut(
-            name: name, into: path, container: "data",
+            name: name, into: path, container: "macbinary",
             byteCount: bytes.count, crc32: checksum,
             fileType: nil, creator: nil, modified: nil,
             createParents: true, overwrite: false,
