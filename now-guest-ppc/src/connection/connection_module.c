@@ -761,7 +761,7 @@ static void conn_idle(void)
         SetControlTitle(g_action, text);
     }
     for (i = 0; i < kNowUpdateComponentCount; ++i) {
-        char version[24], build[48], line[128];
+        char version[24], build[65], line[160];
         Rect dirty = i == 0 ? g_r.app_update_line : g_r.ext_update_line;
 
         now_update_current_identity((NowUpdateComponent)i,
@@ -790,7 +790,7 @@ static void conn_idle(void)
         }
     }
     if (!now_wire_update_pending(NULL)) {
-        char version[24], build[48];
+        char version[24], build[65];
         now_update_current_identity(kNowUpdateApplication, version,
                                     sizeof version, build, sizeof build);
         update_changed = now_update_offer_differs(

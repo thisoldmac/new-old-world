@@ -28,6 +28,7 @@ main = (ROOT / "now-guest-ppc/src/main.c").read_text()
 assert "now_wire_update_request(component, false" in commands
 ordered(connection, "now_confirm(\"Install unsigned update?\"",
         "now_wire_update_request(component, true")
+assert r'\"sha256\":\"%s\"' in wire
 ordered(wire, "if (!offer.signed_artifact && !allow_unsigned)",
         "++g.offer_seq", "g_update.pending = true")
 assert "offer.signed_artifact = 0;" in wire

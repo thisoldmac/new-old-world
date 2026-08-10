@@ -236,7 +236,7 @@ static struct {
     Boolean restart_required;
     long id;
     NowUpdateComponent component;
-    char build[48];
+    char build[65];
 } g_update;
 
 static unsigned long wide_delta_us(const UnsignedWide *then,
@@ -773,10 +773,10 @@ static void send_hello(void)
     /* build carries what version cannot: two builds of one release version
        deliberately share a string, so a stale build on a machine otherwise
        looks current and a host has no way to tell them apart. It cost a misdiagnosis on
-       2026-07-30. now_build_stamp() starts with the source hash CMake
-       regenerates for every build, followed by an ISO timestamp. Not
-       escaped: both are generated ASCII and contain neither a quote nor a
-       backslash. */
+       2026-07-30. now_build_stamp() is the deterministic SHA-256 CMake
+       regenerates from the complete declared build surface and toolchain.
+       It deliberately carries no wall clock. Not escaped: it is generated
+       lowercase hex and contains neither a quote nor a backslash. */
     /* agent is this MACHINE'S answer to whether a companion may drive it,
        stated rather than left to silence: the contract reads an absent
        field as "predates the feature", never as consent, so a machine that
@@ -2558,7 +2558,7 @@ static void file_refuse(long id, const char *code, const char *reason)
    transfer-correlated terminal message to clean it immediately. */
 static void file_start_failed(long id, unsigned short xfer)
 {
-    char json[160];
+    char json[256];
 
     snprintf(json, sizeof json,
              "{\"type\":\"file.end\",\"id\":%ld,\"transfer\":%u,"
@@ -4377,8 +4377,10 @@ int now_wire_update_request(NowUpdateComponent component,
     snprintf(g_update.build, sizeof g_update.build, "%s", offer.build);
     snprintf(json, sizeof json,
              "{\"type\":\"update.request\",\"id\":%ld,"
-             "\"component\":\"%s\",\"build\":\"%s\"}",
-             g_update.id, now_update_component_name(component), offer.build);
+             "\"component\":\"%s\",\"build\":\"%s\","
+             "\"sha256\":\"%s\"}",
+             g_update.id, now_update_component_name(component), offer.build,
+             offer.sha256);
     if (!send_control(json)) {
         g_update.pending = false;
         snprintf(err, (size_t)cap, "Could not send the update request");

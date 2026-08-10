@@ -295,6 +295,19 @@
       "shutdownPath": "finder-menuact-then-applet",
       "sourceManifest": "28ef6c07ee6d0b2978378551367b1393f406ed6f",
       "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-10T13:52:29-0400",
+      "branch": "codex/host-owned-updater",
+      "extDigest": "4c260599419ba56b11bd42abc73d4cf637091b78",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "contract/resident_version.h",
+        "ext/CMakeLists.txt",
+        "ext/cmake/build_identity.cmake"
+      ],
+      "reason": "Two foreign VMs are active; shared bake is deferred until the machine is free before main eligibility."
     }
   ]
 }

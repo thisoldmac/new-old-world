@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Keep NOW's product release identity coherent and monotonic at main.
+"""Keep NOW's product release identity coherent and non-decreasing at main.
 
 Branch builds may deliberately share a release version: the updater uses the
-exact build identity to distinguish those scratch builds.  Crossing into
-refs/heads/main is the release boundary.  If the host or PowerPC product
-surface changed there, the semantic product version must advance.
+exact build identity to distinguish those development builds. Moving main is
+not itself a release: serial branches may land at the same semantic version.
+The version may advance deliberately, but it may never move backwards.
 
 The Extension is a separately deployable component and remains owned by
 contract/resident_version.h plus tools/ext-bake-gate.  The 68K application is
@@ -226,12 +226,13 @@ def fail(title: str, old: Version | None, new: Version | None,
     for problem in problems:
         print(f"  {problem}", file=sys.stderr)
     print("", file=sys.stderr)
-    print(f"  Advance {AUTHORITY}, update its checked copies, and retry.",
+    print(f"  Repair {AUTHORITY}, update its checked copies, and retry.",
           file=sys.stderr)
-    print("  Branch scratch builds may share a version; only a main landing",
+    print("  Development builds may share a release version; their deterministic",
           file=sys.stderr)
-    print("  must advance it, because exact build identity distinguishes "
-          "scratch bytes.", file=sys.stderr)
+    print("  build IDs and artifact digests distinguish them. Main may keep a",
+          file=sys.stderr)
+    print("  version or advance it, but never roll it back.", file=sys.stderr)
     print("", file=sys.stderr)
     return 1
 
@@ -275,10 +276,10 @@ def main_ref_check(repo: str, old: str, new: str) -> int:
 
     product_changes = [path for path in changed_paths(repo, old, new)
                        if product_path(path)]
-    if product_changes and old_version is not None and new_version is not None:
-        if new_version <= old_version:
+    if old_version is not None and new_version is not None:
+        if new_version < old_version:
             problems.append(
-                f"the product release version did not advance: "
+                f"the product release version rolled back: "
                 f"{old_version} -> {new_version}")
     if problems:
         return fail("refs/heads/main update: product identity is stale or "

@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.13)
 project(NowGuest C)
 
+set(NOW_UPDATE_CHANNEL "development" CACHE STRING
+    "Update manifest channel (development or release)")
+
 add_application(now-guest-ppc
     CREATOR "NOWo"
     src/main.c
@@ -324,13 +327,14 @@ else()
 endif()
 
 # Generate the build stamp on every build. The buildstamp.cmake script hashes
-# all sources and produces a header with NOW_SRC_HASH and NOW_BUILT_AT. The
-# header is rewritten only when the hash changes, so an unchanged tree does
+# the full declared application build surface plus the toolchain profile. The
+# header is rewritten only when the identity changes, so an unchanged tree does
 # not force a universal recompile. See cmake/buildstamp.cmake for rationale.
 set(_buildstamp_header ${CMAKE_CURRENT_BINARY_DIR}/build_stamp_gen.h)
 add_custom_target(generate_buildstamp ALL
     COMMAND ${CMAKE_COMMAND}
-            -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src
+            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}/..
+            -DTOOLCHAIN_ID=${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}
             -DOUT=${_buildstamp_header}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/buildstamp.cmake
     BYPRODUCTS ${_buildstamp_header}
@@ -388,7 +392,9 @@ if(PYTHON3_EXECUTABLE)
                 --version-minor NOW_PRODUCT_VERSION_MINOR
                 --version-patch NOW_PRODUCT_VERSION_PATCH
                 --identity-header "${_buildstamp_header}"
-                --identity-define NOW_SRC_HASH
+                --identity-define NOW_BUILD_ID
+                --channel ${NOW_UPDATE_CHANNEL}
+                --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/.."
         DEPENDS "New Old World.bin" ${_buildstamp_header}
                 "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
         COMMENT "Writing canonical update identity"

@@ -21,26 +21,41 @@ final class UpdateProviderTests: XCTestCase {
         let bytes = Data("classic artifact".utf8)
         let asset = try makeAsset(name: "New Old World.bin", bytes: bytes,
                                   component: "application",
-                                  build: "scratch123456")
+                                  build: Self.build)
         let provider = UpdateProvider(snapshot: .init(
             application: asset, codeKitten: nil,
             extensionComponent: nil, dependencies: []))
 
         XCTAssertEqual(provider.offers, [UpdateOffer(
             component: "application", version: "0.1.0",
-            build: "scratch123456", bytes: bytes.count,
+            build: Self.build, bytes: bytes.count,
             sha256: Self.sha256(bytes), channel: "development",
             signed: false, requiresRestart: false)])
         XCTAssertEqual(provider.artifact(for: .init(
             id: 4, component: "application",
-            build: "scratch123456"))?.bytes, bytes)
+            build: Self.build, sha256: Self.sha256(bytes)))?.bytes,
+            bytes)
+    }
+
+    func testRequestDigestMustStillNameThePublishedArtifact() throws {
+        let bytes = Data("classic artifact".utf8)
+        let asset = try makeAsset(name: "New Old World.bin", bytes: bytes,
+                                  component: "application",
+                                  build: Self.build)
+        let provider = UpdateProvider(snapshot: .init(
+            application: asset, codeKitten: nil,
+            extensionComponent: nil, dependencies: []))
+
+        XCTAssertNil(provider.artifact(for: .init(
+            id: 4, component: "application", build: Self.build,
+            sha256: String(repeating: "0", count: 64))))
     }
 
     func testChangedBytesFailClosedInsteadOfAdvertisingStaleIdentity()
         throws {
         let asset = try makeAsset(
             name: "NOW Extension.bin", bytes: Data("first".utf8),
-            component: "extension", build: "abcdef")
+            component: "extension", build: Self.build)
         try Data("tampered".utf8).write(to: asset.fileURL)
 
         let provider = UpdateProvider(snapshot: .init(
@@ -52,7 +67,7 @@ final class UpdateProviderTests: XCTestCase {
     func testBareSignedClaimFailsClosedWithoutSignatureVerification() throws {
         let asset = try makeAsset(
             name: "New Old World.bin", bytes: Data("release".utf8),
-            component: "application", build: "abcdef", signed: true)
+            component: "application", build: Self.build, signed: true)
 
         let provider = UpdateProvider(snapshot: .init(
             application: asset, codeKitten: nil,
@@ -83,4 +98,6 @@ final class UpdateProviderTests: XCTestCase {
     private static func sha256(_ bytes: Data) -> String {
         SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
+
+    private static let build = String(repeating: "b", count: 64)
 }

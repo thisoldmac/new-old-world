@@ -56,14 +56,17 @@ def make_repo(path: Path) -> Path:
         "now-guest-ppc/src/core", "scripts", "tools", ".githooks",
     ):
         (path / directory).mkdir(parents=True, exist_ok=True)
-    shutil.copy(ROOT / "tools/product-version-gate",
-                path / "tools/product-version-gate")
-    shutil.copy(ROOT / ".githooks/reference-transaction",
-                path / ".githooks/reference-transaction")
-    os.chmod(path / "tools/product-version-gate", 0o755)
+    # Model the real adoption boundary: old main has only the resident hook.
+    # The candidate worktree must use its own newer hook to guard the first
+    # product-gate landing; a hook stored only in the candidate cannot make an
+    # older main checkout magically call it.
+    (path / ".githooks/reference-transaction").write_text(
+        "#!/bin/sh\n[ \"${1:-}\" = prepared ] || exit 0\n"
+        "while read old new ref; do\n"
+        "  [ \"$ref\" != refs/heads/main ] || "
+        "tools/ext-bake-gate main-ref-check \"$old\" \"$new\" || exit $?\n"
+        "done\n")
     os.chmod(path / ".githooks/reference-transaction", 0o755)
-    # The production hook composes both main gates. This stub isolates the
-    # product half while still exercising the real hook entrypoint.
     (path / "tools/ext-bake-gate").write_text("#!/bin/sh\nexit 0\n")
     os.chmod(path / "tools/ext-bake-gate", 0o755)
     write_version(path, (0, 1, 0))
@@ -76,6 +79,16 @@ def make_repo(path: Path) -> Path:
     command("git", "add", ".", cwd=path, check=True)
     command("git", "commit", "-qm", "base 0.1.0", cwd=path, check=True)
     command("git", "checkout", "-qb", "lane", cwd=path, check=True)
+    shutil.copy(ROOT / "tools/product-version-gate",
+                path / "tools/product-version-gate")
+    shutil.copy(ROOT / ".githooks/reference-transaction",
+                path / ".githooks/reference-transaction")
+    os.chmod(path / "tools/product-version-gate", 0o755)
+    os.chmod(path / ".githooks/reference-transaction", 0o755)
+    command("git", "add", "tools/product-version-gate",
+            ".githooks/reference-transaction", cwd=path, check=True)
+    command("git", "commit", "-qm", "adopt product main gate", cwd=path,
+            check=True)
     return path
 
 
@@ -97,17 +110,27 @@ def main() -> int:
         require(coherent.returncode == 0, coherent.stdout + coherent.stderr)
         command("git", "commit", "-qm", "scratch build", cwd=repo, check=True)
 
-        # The exact mutation: moving main to product changes with the same
-        # version must fail through Git's real reference-transaction hook.
+        # The candidate worktree owns the first guarded landing even though
+        # old main's committed hook does not know this gate exists yet.
         command("git", "config", "core.hooksPath", ".githooks", cwd=repo,
                 check=True)
-        stale = command("git", "branch", "-f", "main", "lane", cwd=repo)
-        require(stale.returncode != 0, "same-version product landing passed")
-        require("did not advance: 0.1.0 -> 0.1.0" in stale.stderr,
-                stale.stdout + stale.stderr)
-        require(command("git", "rev-parse", "main", cwd=repo,
-                        check=True).stdout.strip() == base,
-                "a refused update moved main")
+        first = command("git", "branch", "-f", "main", "lane", cwd=repo)
+        require(first.returncode == 0, first.stdout + first.stderr)
+
+        # A sibling started from the old base, then integrates the first lane.
+        # It can land serially at the same release version: its build ID, not a
+        # branch-assigned number, is the collision-free development identity.
+        command("git", "checkout", "-qb", "lane-b", base, cwd=repo,
+                check=True)
+        (repo / "now-host/Sources/Host/FeatureB.swift").write_text(
+            "let secondValue = 2\n")
+        command("git", "add", "now-host/Sources/Host/FeatureB.swift", cwd=repo,
+                check=True)
+        command("git", "commit", "-qm", "second scratch build", cwd=repo,
+                check=True)
+        command("git", "merge", "--no-edit", "main", cwd=repo, check=True)
+        second = command("git", "branch", "-f", "main", "lane-b", cwd=repo)
+        require(second.returncode == 0, second.stdout + second.stderr)
 
         # A bump with one stale copy is still not a release identity.
         write_version(repo, (0, 2, 0))
@@ -124,7 +147,7 @@ def main() -> int:
         command("git", "add", ".", cwd=repo, check=True)
         command("git", "commit", "-qm", "release 0.2.0", cwd=repo,
                 check=True)
-        good = command("git", "branch", "-f", "main", "lane", cwd=repo)
+        good = command("git", "branch", "-f", "main", "lane-b", cwd=repo)
         require(good.returncode == 0, good.stdout + good.stderr)
 
         # Version rollback is a product change even without another feature.
@@ -137,13 +160,13 @@ def main() -> int:
         rollback = command("git", "branch", "-f", "main", "rollback",
                            cwd=repo)
         require(rollback.returncode != 0, "version rollback passed")
-        require("did not advance: 0.2.0 -> 0.1.0" in rollback.stderr,
+        require("rolled back: 0.2.0 -> 0.1.0" in rollback.stderr,
                 rollback.stdout + rollback.stderr)
         require(command("git", "rev-parse", "main", cwd=repo,
                         check=True).stdout.strip() == released,
                 "a refused rollback moved main")
 
-    print("product-version gate: 4 mutation cases passed")
+    print("product-version gate: 5 collision/coherence mutations passed")
     return 0
 
 

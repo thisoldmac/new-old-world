@@ -7,7 +7,7 @@ final class ContractMessageTests: XCTestCase {
         throws {
         let offer = UpdateOffer(
             component: "application", version: "0.1.0",
-            build: "scratch123456", bytes: 42,
+            build: String(repeating: "b", count: 64), bytes: 42,
             sha256: String(repeating: "a", count: 64),
             channel: "development", signed: false,
             requiresRestart: false)
@@ -15,7 +15,9 @@ final class ContractMessageTests: XCTestCase {
             ControlMessageCodec.encode(.updateOffer(offer))),
             .updateOffer(offer))
         let request = UpdateRequest(
-            id: 9, component: "application", build: "scratch123456")
+            id: 9, component: "application",
+            build: String(repeating: "b", count: 64),
+            sha256: String(repeating: "a", count: 64))
         XCTAssertEqual(try ControlMessageCodec.decode(
             ControlMessageCodec.encode(.updateRequest(request))),
             .updateRequest(request))

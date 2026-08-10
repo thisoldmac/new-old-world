@@ -3217,13 +3217,14 @@ components:
         requiresRestart: { type: boolean }
     UpdateRequest:
       type: object
-      required: [type, id, component, build]
+      required: [type, id, component, build, sha256]
       additionalProperties: false
       properties:
         type: { const: update.request }
         id: { type: integer }
         component: { enum: [application, extension] }
-        build: { type: string }
+        build: { type: string, pattern: "^[0-9a-f]{64}$" }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
     UpdateResult:
       type: object
       required: [type, id, component, ok]

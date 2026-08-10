@@ -10,5 +10,5 @@
 const char *now_build_stamp(void)
 {
     /* Return "{HASH} {ISO8601Z}" — e.g. "a1b2c3d4e5f6 2026-08-01T12:34:56Z" */
-    return NOW_SRC_HASH " " NOW_BUILT_AT;
+    return NOW_BUILD_ID;
 }

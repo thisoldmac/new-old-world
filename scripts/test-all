@@ -107,6 +107,10 @@ echo "==> [2/7] release and staged-image discipline gates"
 "$script_dir/../tools/image-discipline-tests" || fail "staged-image gates"
 "$script_dir/../tools/product-version-gate-tests" \
     || fail "product-version main-ref gate"
+"$script_dir/../tools/component-build-id-tests" \
+    || fail "component build identity gate"
+"$script_dir/../tools/update-manifest-tests" \
+    || fail "update manifest release gate"
 
 echo
 echo "==> [3/7] native tests"

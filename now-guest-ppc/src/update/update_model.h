@@ -10,7 +10,7 @@ typedef enum {
 typedef struct {
     int present;
     char version[24];
-    char build[48];
+    char build[65];
     char sha256[65];
     char channel[16];
     long bytes;

@@ -61,10 +61,10 @@ enum {
     kNowPeekTableMagic = (long)NOW_PEEK_4CC('N', 'W', 'p', 't'),
 
     /* Major is exact-match compatibility: bump it only when an existing
-       field's meaning changes. Minor is the resident release sequence and
-       advances for every resident source change; new fields still ride on
-       length rather than compatibility guesses. Both values come from the
-       resident's one release identity. */
+       field's meaning changes. Minor is the intentional resident release
+       sequence; development builds sharing it are distinguished by the build
+       fingerprint below. New fields still ride on length rather than
+       compatibility guesses. */
     kNowPeekExtMajor = NOW_RESIDENT_VERSION_MAJOR,
     kNowPeekExtMinor = NOW_RESIDENT_VERSION_MINOR,
 

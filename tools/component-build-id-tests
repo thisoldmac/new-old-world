@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Mutation tests for deterministic application and extension build IDs."""
+
+from __future__ import annotations
+
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def copy_surface(destination: Path) -> None:
+    for relative in ("contract", "now-guest-shared/src", "now-guest-ppc/src",
+                     "now-guest-ppc/resources", "now-guest-ppc/cmake",
+                     "now-guest-ppc/tools", "ext/src", "ext/cmake"):
+        shutil.copytree(ROOT / relative, destination / relative)
+    for relative in ("now-guest-ppc/CMakeLists.txt", "ext/CMakeLists.txt"):
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, target)
+
+
+def generate(root: Path, component: str, out: Path) -> str:
+    script = (root / "now-guest-ppc/cmake/buildstamp.cmake"
+              if component == "application"
+              else root / "ext/cmake/build_identity.cmake")
+    args = ["cmake", f"-DROOT={root}", "-DTOOLCHAIN_ID=test-compiler-1"]
+    if component == "application":
+        args += [f"-DOUT={out}"]
+    else:
+        args += [f"-DHEADER={out}", f"-DREZ_OUT={out}.r"]
+    result = subprocess.run(args + ["-P", str(script)],
+                            capture_output=True, text=True)
+    if result.returncode:
+        raise AssertionError(result.stdout + result.stderr)
+    text = out.read_text()
+    name = "NOW_BUILD_ID" if component == "application" else "NOW_EXT_BUILD_ID"
+    match = re.search(rf'^#define {name} "([0-9a-f]{{64}})"$', text,
+                      re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"{component} did not emit a full SHA-256 ID")
+    return match.group(1)
+
+
+def require_moved(before: str, after: str, mutation: str) -> None:
+    if before == after:
+        raise AssertionError(f"{mutation} did not move the build ID")
+
+
+def main() -> int:
+    with tempfile.TemporaryDirectory(prefix="now-build-id-") as temp:
+        root = Path(temp)
+        copy_surface(root)
+        app_header = root / "app-id.h"
+        ext_header = root / "ext-id.h"
+
+        app = generate(root, "application", app_header)
+        first_header = app_header.read_bytes()
+        if generate(root, "application", app_header) != app:
+            raise AssertionError("unchanged application inputs changed identity")
+        if app_header.read_bytes() != first_header:
+            raise AssertionError("unchanged application header was not idempotent")
+        if b"NOW_BUILT_AT" in first_header:
+            raise AssertionError("wall-clock time remains in application identity")
+
+        shared = root / "now-guest-shared/src/console_history.c"
+        shared.write_text(shared.read_text() + "\n/* identity mutation */\n")
+        require_moved(app, generate(root, "application", app_header),
+                      "a compiled shared application source")
+        shutil.copy2(ROOT / "now-guest-shared/src/console_history.c", shared)
+        resource = root / "now-guest-ppc/resources/app.r"
+        resource.write_text(resource.read_text() + "\n/* identity mutation */\n")
+        require_moved(app, generate(root, "application", app_header),
+                      "an application resource")
+
+        ext = generate(root, "extension", ext_header)
+        resident = root / "contract/resident_version.h"
+        resident.write_text(resident.read_text() + "\n/* identity mutation */\n")
+        require_moved(ext, generate(root, "extension", ext_header),
+                      "the resident version authority")
+        shutil.copy2(ROOT / "contract/resident_version.h", resident)
+        ext_shared = root / "now-guest-shared/src/now_act_guard.c"
+        ext_shared.write_text(ext_shared.read_text()
+                              + "\n/* identity mutation */\n")
+        require_moved(ext, generate(root, "extension", ext_header),
+                      "a compiled shared resident source")
+
+    print("component build identity: 6 mutation/idempotence cases passed")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except AssertionError as exc:
+        print(f"FAILED: {exc}")
+        raise SystemExit(1)

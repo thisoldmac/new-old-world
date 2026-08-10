@@ -114,6 +114,7 @@ struct UpdateRequest: Codable, Equatable, Sendable {
     var id: Int
     var component: String
     var build: String
+    var sha256: String
 }
 
 struct UpdateResult: Codable, Equatable, Sendable {

@@ -81,7 +81,7 @@ int now_update_offer_set(NowUpdateComponent component,
     if (component < 0 || component >= kNowUpdateComponentCount
         || offer == NULL || !offer->present || offer->version[0] == '\0'
         || offer->build[0] == '\0' || offer->bytes <= 0
-        || !hex_digest(offer->sha256)
+        || !hex_digest(offer->build) || !hex_digest(offer->sha256)
         || !release_version(offer->version, version_parts, version)) {
         return 0;
     }
@@ -123,8 +123,19 @@ NowUpdateOfferStatus now_update_offer_status(
     order = release_compare(offered, installed, parts);
     if (order > 0) return kNowUpdateOfferNewer;
     if (order < 0) return kNowUpdateOfferOlder;
-    if (installed_build == NULL || installed_build[0] == '\0'
-        || strcmp(offer->build, installed_build) != 0) {
+    if (installed_build == NULL || installed_build[0] == '\0') {
+        return kNowUpdateOfferScratch;
+    }
+    if (component == kNowUpdateExtension) {
+        /* The resident table's shipped ABI carries five 32-bit words. Its
+           160-bit prefix is deliberately compared with the full 256-bit
+           publication identity; the request and artifact digest still bind
+           all 256 bits and the exact MacBinary respectively. */
+        if (strlen(installed_build) != 40
+            || strncmp(offer->build, installed_build, 40) != 0) {
+            return kNowUpdateOfferScratch;
+        }
+    } else if (strcmp(offer->build, installed_build) != 0) {
         return kNowUpdateOfferScratch;
     }
     return kNowUpdateOfferMatches;

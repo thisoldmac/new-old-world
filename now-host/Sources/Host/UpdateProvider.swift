@@ -70,7 +70,9 @@ struct UpdateProvider {
     func artifact(for request: UpdateRequest) -> Artifact? {
         guard let component = Component(rawValue: request.component),
               let artifact = artifacts[component],
-              artifact.manifest.build == request.build else { return nil }
+              artifact.manifest.build == request.build,
+              artifact.manifest.sha256.lowercased()
+                == request.sha256.lowercased() else { return nil }
         return artifact
     }
 
@@ -84,7 +86,10 @@ struct UpdateProvider {
               manifest.component == expected,
               !manifest.signed,
               Int64(manifest.bytes) == asset.byteCount,
-              manifest.sha256.count == 64,
+              manifest.sha256.range(
+                of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+              manifest.build.range(
+                of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
               let bytes = try? Data(contentsOf: asset.fileURL),
               bytes.count == manifest.bytes,
               hex(SHA256.hash(data: bytes)) == manifest.sha256.lowercased()

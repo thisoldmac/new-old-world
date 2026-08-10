@@ -1,0 +1,42 @@
+#!/bin/sh
+# Advance local main from the candidate worktree after checking candidate code.
+# This is the bootstrap-safe route for a gate introduction: an older main
+# checkout cannot invoke a hook it does not contain, while this worktree can.
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+branch=$(git symbolic-ref --quiet --short HEAD || true)
+if [ -z "$branch" ] || [ "$branch" = main ] || [ "$branch" = master ]; then
+    echo "[land-main] run from the finished feature branch, not main" >&2
+    exit 1
+fi
+if [ -n "$(git status --porcelain)" ]; then
+    echo "[land-main] candidate worktree is not clean" >&2
+    exit 1
+fi
+old=$(git rev-parse --verify refs/heads/main)
+new=$(git rev-parse HEAD)
+if ! git merge-base --is-ancestor "$old" "$new"; then
+    echo "[land-main] candidate has not integrated current main ($old)" >&2
+    exit 1
+fi
+
+"$root/tools/ext-bake-gate" main-ref-check "$old" "$new"
+"$root/tools/product-version-gate" main-ref-check "$old" "$new"
+"$root/tools/ext-bake-gate" merge-check
+"$root/tools/derived-doc-gate" check
+
+if [ "${1:-}" = --check ]; then
+    echo "[land-main] candidate $new is eligible to advance main from $old"
+    exit 0
+fi
+if [ "$#" -ne 0 ]; then
+    echo "usage: tools/land-main [--check]" >&2
+    exit 2
+fi
+
+# Initiating from this worktree is deliberate: core.hooksPath=.githooks then
+# resolves to the candidate hook, including on the first landing that adds a
+# new gate. Moving the ref does not rewrite another worktree's files.
+git fetch . "HEAD:main"
+echo "[land-main] main advanced to $new; resync its checkout separately"

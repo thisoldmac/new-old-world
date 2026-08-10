@@ -293,13 +293,13 @@ a shared bake over. The rules that must not be restated anywhere else:
   touches nothing shared. `--shared` is the deliberate, announced act that
   replaces the oracle everybody clones; it refuses while other guests are
   running on this Mac. Nothing in flight should be baking `--shared`.
-- **A commit that touches `ext/`, `contract/peek_table.h`, or
-  `contract/resident_version.h` must advance the resident version and be
-  baked first**, enforced by `tools/ext-bake-gate` from
-  `.githooks/pre-commit`. `contract/resident_version.h` is the one release
+- **A commit that changes any declared resident build input must be baked
+  first**, enforced by `tools/ext-bake-gate` from `.githooks/pre-commit`.
+  This includes `ext/`, the shared sources the extension compiles, and its
+  contract headers. `contract/resident_version.h` is the intentional release
   identity used by both the shared table and the resident's own liveness
-  connection; the gate refuses resident source whose major/minor tuple did
-  not increase. The newest receipt in `ext/stage-receipts.json` must also
+  connection; development builds may share it, while the gate refuses a
+  rollback. The newest receipt in `ext/stage-receipts.json` must also
   record a bake of
   exactly this source, with the five facts that make a bake believable —
   the fingerprint the **guest itself** reported, the image sha256, a
@@ -310,8 +310,8 @@ a shared bake over. The rules that must not be restated anywhere else:
   allows the *commit* and writes the reason into `ext/stage-receipts.json`,
   so it lands in the same commit as the work it excuses. It does not allow
   the *landing*: `.githooks/reference-transaction` checks the exact old and
-  proposed `main` trees and refuses any resident-source change whose version
-  did not advance or which is not covered by a verified **shared** bake
+  proposed `main` trees and refuses any resident build-input change whose
+  version rolled back or which is not covered by a verified **shared** bake
   receipt. It sees merge commits, fast-forwards,
   `git fetch . branch:main`, and forced ref updates—the paths commit and merge
   hooks cannot see—and a branch deferral cannot override it. Lane-to-lane

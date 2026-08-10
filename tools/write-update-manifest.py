@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -25,6 +26,42 @@ def define(path: Path, name: str) -> str:
     if not match:
         raise SystemExit(f"{path}: no {name} definition")
     return match.group(1).removesuffix("UL")
+
+
+def git(root: Path, *args: str) -> str:
+    result = subprocess.run(("git", "-C", str(root), *args), text=True,
+                            capture_output=True)
+    if result.returncode:
+        raise SystemExit(result.stderr.strip() or "git command failed")
+    return result.stdout.strip()
+
+
+def release_fields(root: Path, component: str, version: str, build: str,
+                   digest: str) -> dict[str, str]:
+    tag = (f"now-product-v{version}" if component == "application"
+           else f"now-extension-v{version}")
+    ref = f"refs/tags/{tag}"
+    try:
+        kind = git(root, "cat-file", "-t", ref)
+    except SystemExit:
+        kind = ""
+    if kind != "tag":
+        raise SystemExit(f"release requires annotated tag {tag}")
+    if git(root, "rev-parse", "HEAD") != git(root, "rev-parse", f"{ref}^{{}}"):
+        raise SystemExit(f"release tag {tag} does not point at HEAD")
+    if git(root, "status", "--porcelain", "--untracked-files=no"):
+        raise SystemExit("release publication requires a clean tracked tree")
+    annotation = git(root, "for-each-ref", "--format=%(contents)", ref)
+    required = (
+        f"NOW-Component: {component}",
+        f"NOW-Build: {build}",
+        f"NOW-SHA256: {digest}",
+    )
+    missing = [line for line in required if line not in annotation.splitlines()]
+    if missing:
+        raise SystemExit(
+            f"release tag {tag} does not pin this artifact: " + ", ".join(missing))
+    return {"releaseTag": tag, "sourceRevision": git(root, "rev-parse", "HEAD")}
 
 
 def main() -> None:
@@ -41,6 +78,7 @@ def main() -> None:
     parser.add_argument("--identity-word-prefix")
     parser.add_argument("--channel", default="development",
                         choices=("development", "release"))
+    parser.add_argument("--repo-root", type=Path)
     args = parser.parse_args()
 
     parts = [define(args.version_header, args.version_major)]
@@ -59,6 +97,8 @@ def main() -> None:
         )
     else:
         raise SystemExit("name --identity-define or --identity-word-prefix")
+    if not re.fullmatch(r"[0-9a-f]{64}", build):
+        raise SystemExit("build identity must be a full lowercase SHA-256")
 
     artifact = args.artifact.resolve()
     digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
@@ -74,6 +114,11 @@ def main() -> None:
         # integrity digest from being presented as an artifact signature.
         "signed": False,
     }
+    if args.channel == "release":
+        if args.repo_root is None:
+            raise SystemExit("release channel requires --repo-root")
+        document.update(release_fields(args.repo_root.resolve(),
+                                       args.component, version, build, digest))
     out = artifact.with_name(artifact.name + ".now-update.json")
     out.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
 

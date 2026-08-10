@@ -1619,7 +1619,7 @@ static void run_update(const char *request_json, long id, char *out, long cap)
         return;
     }
     {
-        char app_version[24], app_build[48], ext_version[24], ext_build[48];
+        char app_version[24], app_build[65], ext_version[24], ext_build[65];
         char app[128], ext[128], app_esc[256], ext_esc[256];
         now_update_current_identity(kNowUpdateApplication,
                                     app_version, sizeof app_version,
