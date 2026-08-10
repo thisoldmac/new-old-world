@@ -48,7 +48,7 @@ pre-Carbon NOW-68K ─ retained in source; excluded from alpha
 | Deeper Mirror observation and interaction | experimental | provides the required classic-process access | unavailable |
 | In-context interaction, transitions, modal-safe liveness, drag, and cursor following | experimental | provides resident vehicles | unavailable |
 | [Guided PowerPC setup portal](docs/user-guide/how-to/set-up-new-mac.md) and fork-preserving HFS install image | included; tested, not metal-verified | bundled optional package selection | unavailable |
-| Host-published in-app updates | implemented; not yet metal-verified | installs separately and requires restart | unavailable |
+| Host-published in-app updates | tested; not metal-verified | installs separately and requires restart | unavailable |
 
 The short table is navigation, not a claim of parity. The [module reference](docs/user-guide/reference/modules/index.md) states availability, safety, data movement, and failures per module. `docs/contract-coverage.md` keeps **served** separate from **proven**.
 

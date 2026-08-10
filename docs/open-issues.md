@@ -24,7 +24,7 @@ under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
 `MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
 retain their original path spelling so the ledger remains an honest receipt.
 
-## BUILT, NOT YET TESTED OR METAL-VERIFIED: host-owned PowerPC application and NOW Extension updater (2026-08-10, `codex/host-owned-updater`)
+## TESTED, NOT EMULATOR-ACCEPTED OR METAL-VERIFIED: host-owned PowerPC application and NOW Extension updater (2026-08-10, `codex/host-owned-updater`)
 
 The host now treats its validated canonical PPC application and NOW Extension
 artifacts as an update catalog. It advertises release version, exact build
@@ -44,10 +44,15 @@ installation therefore requires a local modal confirmation, and the shared
 console/wire command cannot bypass it. Release signing remains open until a
 pinned trust root, key rotation, revocation and recovery policy are chosen.
 
+The native suites cover SHA-256, exact-build comparison, unsigned-consent
+ordering, host catalog validation, contract conformance and version-copy drift;
+the host suites and Debug/Release app builds pass, as do the PowerPC, 68K,
+Extension and rig cross-builds. Mutation runs watched stale artifact acceptance,
+bare signed-flag acceptance and remote unsigned-consent bypass fail by name.
+
 No emulator or PowerBook has yet exercised the actual catalog-to-relaunch or
-catalog-to-restart sequence. Until those runs exist, the source describes a
-buildable path rather than a tested behavior. Emulator acceptance owes: exact
-offer visibility, same-version scratch replacement, checksum refusal, low-disk
+catalog-to-restart sequence. Emulator acceptance still owes: exact offer
+visibility, same-version scratch replacement, checksum refusal, low-disk
 refusal, clean app exchange/relaunch, rollback file identity, Extension
 exchange, restart activation, and resident mismatch warning. Physical-hardware
 acceptance owes the same lifecycle on the PowerBook 1400c.
