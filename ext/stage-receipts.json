@@ -340,6 +340,28 @@
       "shutdownPath": "finder-menuact-then-applet",
       "sourceManifest": "fae73d4d5c7150b7105e0f0350446cf5111ee248",
       "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-10T16:46:07-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/mcp-release-bake",
+      "commit": "0b37a68ff81e8776f3da40603f1fc5cfd4706e95",
+      "extBuildFingerprint": "c725b32b77634fb8d1702b0a54f17fc2ce70e48f",
+      "extDigest": "5f724a7550217154d268a25c7323cb02ce415549",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 647364608,
+      "imageName": "codex-mcp-release-bake",
+      "imageSha256": "9b99e9582b879f03fddbd543311bbe0b4c61a6242b7799dbfcaef5bb4fc824f8",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260810-3",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "fae73d4d5c7150b7105e0f0350446cf5111ee248",
+      "volumeClean": "clean"
     }
   ]
 }
