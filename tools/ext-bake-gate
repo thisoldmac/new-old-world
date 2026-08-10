@@ -7,14 +7,16 @@ the resident may land until the stage image contains it.
     tools/ext-bake-gate record <receipt.json>         # what a bake writes
     tools/ext-bake-gate verify-image [--require]      # image ?= newest receipt
     tools/ext-bake-gate merge-check                   # what post-merge runs
+    tools/ext-bake-gate main-ref-check <old> <new>    # what ref transactions run
     tools/ext-bake-gate note-image --reason "…"       # a hand-install, recorded
 
 WHAT EACH ONE CAN HONESTLY ASSERT, because the difference decides which of
 them may refuse a commit:
 
-  `check`   asserts that a receipt in THIS tree records a bake of exactly
-            this resident source. That is a fact about two files in git and
-            it is fully in the committer's power, so it REFUSES.
+  `check`   asserts that the resident release tuple advanced and that a
+            receipt in THIS tree records a bake of exactly this resident
+            source. Both are facts in git and fully in the committer's power,
+            so it REFUSES.
   `verify-image` asserts that the bytes at the oracle's path right now hash
             to what the newest receipt claims. That is a fact about a
             SHARED MUTABLE FILE and it is not in the committer's power at
@@ -42,8 +44,10 @@ oracle went stale in silence and any Mirror sweep started from an old
 resident with no warning at all. A rule that lives only in prose is a
 rule the tenth session does not know about.
 
-WHAT IT CHECKS. When a commit stages anything under ext/ or
-contract/peek_table.h, the newest receipt in ext/stage-receipts.json must
+WHAT IT CHECKS. When a commit stages anything under ext/,
+contract/peek_table.h, or contract/resident_version.h, the resident's
+major/minor tuple must increase and the newest receipt in
+ext/stage-receipts.json must
 be a bake whose recorded source digest EQUALS the digest of the staged
 tree — i.e. the image on disk contains exactly this resident — and must
 record the five facts that make a bake believable: the ext build
@@ -82,6 +86,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -90,8 +95,9 @@ import time
 # the gate's own output, and a commit that carries one must not gate on
 # itself.
 RECEIPTS = "ext/stage-receipts.json"
+VERSION_FILE = "contract/resident_version.h"
 TRIGGER_DIRS = ("ext/",)
-TRIGGER_FILES = ("contract/peek_table.h",)
+TRIGGER_FILES = ("contract/peek_table.h", VERSION_FILE)
 
 REQUIRED = (
     ("extBuildFingerprint", "the fingerprint the GUEST reported for the resident"),
@@ -137,7 +143,8 @@ def staged_paths(root: str) -> list[str]:
 
 
 def tracked(root: str) -> list[str]:
-    out = run("git", "-C", root, "ls-files", "--", "ext", "contract/peek_table.h")
+    out = run("git", "-C", root, "ls-files", "--", "ext",
+              "contract/peek_table.h", VERSION_FILE)
     return sorted(p for p in out.splitlines() if triggered(p))
 
 
@@ -152,7 +159,8 @@ def digest(root: str, source: str) -> str:
     lines = []
     if source == "index":
         for row in run("git", "-C", root, "ls-files", "-s", "--",
-                       "ext", "contract/peek_table.h").splitlines():
+                       "ext", "contract/peek_table.h",
+                       VERSION_FILE).splitlines():
             meta, _, path = row.partition("\t")
             if triggered(path):
                 lines.append(f"{path} {meta.split()[1]}")
@@ -173,6 +181,85 @@ def load(root: str) -> dict:
         return {"receipts": []}
     with open(path) as fh:
         return json.load(fh)
+
+
+def load_revision(root: str, revision: str) -> dict:
+    """Read receipts from an immutable candidate tree, never the checkout.
+
+    A reference transaction can advance `main` while another branch is
+    checked out. Reading the worktree there would gate the branch issuing the
+    command rather than the commit `main` is about to name — the same wrong-
+    tree hole as deriving a merge document before rather than after a merge.
+    """
+    try:
+        raw = run("git", "-C", root, "show", f"{revision}:{RECEIPTS}")
+    except subprocess.CalledProcessError:
+        return {"receipts": []}
+    return json.loads(raw)
+
+
+def digest_revision(root: str, revision: str) -> str:
+    """The resident digest in one commit tree.
+
+    This is deliberately the same `path blob` digest as `digest(index)`, but
+    `git ls-tree` makes it independent of whichever worktree happened to
+    initiate the ref update.
+    """
+    lines = []
+    out = run("git", "-C", root, "ls-tree", "-r", revision, "--",
+              "ext", "contract/peek_table.h", VERSION_FILE)
+    for row in out.splitlines():
+        meta, _, path = row.partition("\t")
+        fields = meta.split()
+        if triggered(path) and len(fields) >= 3 and fields[1] == "blob":
+            lines.append(f"{path} {fields[2]}")
+    lines.sort()
+    return hashlib.sha1("\n".join(lines).encode()).hexdigest()
+
+
+def parse_version(raw: str, source: str) -> tuple[int, int]:
+    """Read the resident release tuple from its one source of truth."""
+    values = {}
+    for component in ("MAJOR", "MINOR"):
+        match = re.search(
+            rf"^\s*#define\s+NOW_RESIDENT_VERSION_{component}\s+(\d+)\s*$",
+            raw, re.MULTILINE)
+        if match is None:
+            raise ValueError(
+                f"{source} does not define NOW_RESIDENT_VERSION_{component}")
+        values[component] = int(match.group(1))
+    return values["MAJOR"], values["MINOR"]
+
+
+def version_index(root: str) -> tuple[int, int]:
+    try:
+        raw = run("git", "-C", root, "show", f":{VERSION_FILE}")
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(f"the index has no {VERSION_FILE}") from exc
+    return parse_version(raw, f"staged {VERSION_FILE}")
+
+
+def version_revision(root: str, revision: str) -> tuple[int, int] | None:
+    try:
+        raw = run("git", "-C", root, "show", f"{revision}:{VERSION_FILE}")
+    except subprocess.CalledProcessError:
+        return None
+    return parse_version(raw, f"{revision}:{VERSION_FILE}")
+
+
+def version_text(value: tuple[int, int] | None) -> str:
+    return "none" if value is None else f"{value[0]}.{value[1]}"
+
+
+def version_advance_problem(old: tuple[int, int] | None,
+                            new: tuple[int, int] | None) -> str | None:
+    if new is None:
+        return f"the candidate has no parseable {VERSION_FILE}."
+    if old is not None and new <= old:
+        return ("the resident version did not advance: "
+                f"{version_text(old)} -> {version_text(new)}. Every resident "
+                "source change needs a newer release identity.")
+    return None
 
 
 def save(root: str, doc: dict) -> None:
@@ -230,6 +317,22 @@ def fail(lines: list[str]) -> int:
     return 1
 
 
+def fail_version(problem: str) -> int:
+    print("", file=sys.stderr)
+    print("[ext-bake-gate] refusing this commit: resident source changed "
+          "without advancing its version.", file=sys.stderr)
+    print(f"  {problem}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(f"  Advance NOW_RESIDENT_VERSION_MAJOR/MINOR in {VERSION_FILE},",
+          file=sys.stderr)
+    print("  then bake that exact version. A bake proves which bytes ran; the",
+          file=sys.stderr)
+    print("  version is the human release identity those bytes report.",
+          file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
 def defer(root: str, paths: list[str], want: str) -> int:
     reason = (os.environ.get("TBT_DEFER_EXT_BAKE_REASON")
               or os.environ.get("TBT_DEFER_EXT_BAKE_WHY") or "").strip()
@@ -281,6 +384,16 @@ def check(root: str) -> int:
     paths = staged_paths(root)
     if not paths:
         return 0
+
+    try:
+        candidate_version = version_index(root)
+        prior_version = version_revision(root, "HEAD")
+        version_problem = version_advance_problem(prior_version,
+                                                  candidate_version)
+    except ValueError as exc:
+        version_problem = str(exc)
+    if version_problem:
+        return fail_version(version_problem)
 
     want = digest(root, "index")
     if os.environ.get("TBT_DEFER_EXT_BAKE"):
@@ -714,6 +827,100 @@ def merge_check(root: str) -> int:
     return 1
 
 
+def main_ref_check(root: str, old: str, new: str) -> int:
+    """Refuse any `main` update that imports unpromoted resident source.
+
+    `pre-commit` sees commits and `pre-merge-commit` sees merge commits. Git
+    invokes neither for a fast-forward, `git fetch . branch:main`, or
+    `git branch -f main branch`. A `reference-transaction` hook sees all three.
+    It supplies the exact old and proposed object ids, so this check reads both
+    immutable trees rather than whichever branch is checked out.
+
+    Deferrals deliberately do not apply here. They authorize saving work on a
+    lane; they do not authorize making that unbaked source the shared `main`.
+    """
+    if not new or set(new) == {"0"}:
+        return 0
+    try:
+        new_digest = digest_revision(root, new)
+        old_digest = (digest_revision(root, old)
+                      if old and set(old) != {"0"} else None)
+    except subprocess.CalledProcessError as exc:
+        print("[ext-bake-gate] refusing main ref update: cannot inspect the "
+              f"candidate tree ({exc}).", file=sys.stderr)
+        return 1
+    if old_digest == new_digest:
+        return 0
+
+    problems = []
+    old_version = None
+    new_version = None
+    try:
+        old_version = (version_revision(root, old)
+                       if old and set(old) != {"0"} else None)
+        new_version = version_revision(root, new)
+        version_problem = version_advance_problem(old_version, new_version)
+        if version_problem:
+            problems.append(version_problem)
+    except ValueError as exc:
+        problems.append(str(exc))
+
+    try:
+        doc = load_revision(root, new)
+    except (json.JSONDecodeError, subprocess.CalledProcessError) as exc:
+        print("[ext-bake-gate] refusing main ref update: candidate receipts "
+              f"do not parse ({exc}).", file=sys.stderr)
+        return 1
+    entry = latest_bake(doc)
+    if entry is None:
+        problems.append("the candidate tree contains no shared bake receipt.")
+    else:
+        if entry.get("extDigest") != new_digest:
+            problems.append("the newest bake covers a different resident:")
+            problems.append(f"  candidate  {new_digest}")
+            problems.append(f"  baked      {entry.get('extDigest')}")
+        if entry.get("scope") != "shared":
+            problems.append("the newest bake was not promoted to the shared "
+                            f"oracle (scope={entry.get('scope')!r}).")
+        for key, what in REQUIRED:
+            if not entry.get(key):
+                problems.append(f"the receipt records no {what} ({key}).")
+        if entry.get("shutdown") != "guest-clean":
+            problems.append(f"shutdown is {entry.get('shutdown')!r}, not "
+                            "'guest-clean'.")
+        if entry.get("qemuImgCheck") != "clean":
+            problems.append(f"qemuImgCheck is "
+                            f"{entry.get('qemuImgCheck')!r}, not 'clean'.")
+        if entry.get("volumeClean") != "clean":
+            problems.append(f"volumeClean is {entry.get('volumeClean')!r}, "
+                            "not 'clean'.")
+        if entry.get("correctedOn"):
+            problems.append("the newest bake receipt was corrected and no "
+                            "longer certifies an image.")
+    if not problems:
+        return 0
+
+    print("", file=sys.stderr)
+    print("[ext-bake-gate] refusing refs/heads/main update: resident source "
+          "changed without a verified shared bake and promotion, or without "
+          "a resident version advance.",
+          file=sys.stderr)
+    print(f"  old resident  {old_digest or '(no prior main)'}", file=sys.stderr)
+    print(f"  new resident  {new_digest}", file=sys.stderr)
+    print(f"  old version   {version_text(old_version)}", file=sys.stderr)
+    print(f"  new version   {version_text(new_version)}", file=sys.stderr)
+    for problem in problems:
+        print(f"  {problem}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("  Run `scripts/bake-ext-image --shared` on the candidate branch,",
+          file=sys.stderr)
+    print(f"  commit {RECEIPTS}, then retry the main update.", file=sys.stderr)
+    print("  A branch deferral cannot override the main ref gate.",
+          file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
 def note_image(root: str, argv: list[str]) -> int:
     """Account for an image that arrived at the oracle's path WITHOUT a bake.
 
@@ -811,6 +1018,12 @@ def main(argv: list[str]) -> int:
         return verify_image(root, "--require" in argv)
     if cmd == "merge-check":
         return merge_check(root)
+    if cmd == "main-ref-check":
+        if len(argv) != 4:
+            print("usage: tools/ext-bake-gate main-ref-check <old> <new>",
+                  file=sys.stderr)
+            return 64
+        return main_ref_check(root, argv[2], argv[3])
     if cmd == "note-image":
         return note_image(root, argv[2:])
     if cmd == "defer":

@@ -305,6 +305,7 @@ channels:
       previewEnd: { $ref: "#/components/messages/previewEnd" }
       hostShow: { $ref: "#/components/messages/hostShow" }
       hostShown: { $ref: "#/components/messages/hostShown" }
+      mirrorInvalidate: { $ref: "#/components/messages/mirrorInvalidate" }
   bulk:
     address: "1"
     description: >
@@ -1193,6 +1194,27 @@ operations:
       it is. `reason` carries the host's own words for the human-facing
       status line and is MacRoman-expressible, the hostServesCloud rule
       verbatim.
+  peerAnnouncesMirrorInvalidation:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/mirrorInvalidate"
+    description: >
+      Optional and symmetric. A peer that serves scene state may announce
+      that one or more locally served domains advanced. The event is a hint
+      to schedule the smallest sufficient read, never a state replacement;
+      older peers ignore an unknown additive control message and cadence
+      polling remains the compatibility and liveness fallback.
+  peerReceivesMirrorInvalidation:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/mirrorInvalidate"
+    description: >
+      The receiver scopes the hint to the exact connection that delivered it,
+      coalesces by domain generation, and requests a full repair for gap or
+      unknown quality. Receiving the event never grants authority to mutate
+      state directly.
 
 components:
   messages:
@@ -1427,6 +1449,9 @@ components:
     hostShown:
       name: host.shown
       payload: { $ref: "#/components/schemas/HostShown" }
+    mirrorInvalidate:
+      name: mirror.invalidate
+      payload: { $ref: "#/components/schemas/MirrorInvalidate" }
 
   schemas:
     Hello:
@@ -1992,6 +2017,55 @@ components:
           description: >
             The host's own words, converted MacRoman-expressible, for
             the guest's status line. Shown, not swallowed.
+    MirrorInvalidate:
+      type: object
+      required: [type, generation, domains, quality]
+      additionalProperties: false
+      properties:
+        type: { const: mirror.invalidate }
+        session:
+          type: string
+          maxLength: 64
+          description: >
+            The producer's connection epoch when it has one. The receiver
+            still scopes this event to the exact transport session that
+            delivered it; this field is correlation evidence, never
+            authority for joining state across reconnects.
+        generation:
+          type: integer
+          minimum: 1
+          description: >
+            Monotonic within the producer session. It says that at least one
+            locally served domain advanced; it is an invalidation hint, not a
+            replacement snapshot.
+        domains:
+          type: object
+          additionalProperties: false
+          properties:
+            structure: { type: integer, minimum: 0 }
+            front: { type: integer, minimum: 0 }
+            menus: { type: integer, minimum: 0 }
+            finder: { type: integer, minimum: 0 }
+            content: { type: integer, minimum: 0 }
+          description: >
+            Monotonic per-domain generations. An omitted domain did not
+            advance in this event. A generation says reread that domain; it
+            carries no pointer, window roster, Finder items, or scene body.
+        quality:
+          enum: [sampled, gap, unknown]
+          description: >
+            sampled means the optional transition sampler observed the
+            change. gap means cursor loss or a resident drop makes the
+            affected domain incomplete and requires a full repair. unknown
+            means the producer knows something changed but cannot safely
+            narrow it.
+        lost:
+          type: integer
+          minimum: 0
+          description: Records this producer could prove were overwritten.
+        source:
+          enum: [transitions, act, self, scene]
+          description: The evidence family that advanced this generation.
     CloudRefuse:
       type: object
       required: [type, id, code]

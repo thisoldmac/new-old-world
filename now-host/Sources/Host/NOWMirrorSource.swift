@@ -194,11 +194,6 @@ enum MirrorPerformDisposition: Equatable {
     /// In the broker's lane under this id, with a typed postcondition. A
     /// record for it exists in the journal already.
     case brokered(String)
-    /// Arrived while an observation was in flight, so it is held: no
-    /// record yet, and one is coming through this same door when the
-    /// cycle clears. Indistinguishable from `.direct` by journal
-    /// inspection alone, which is exactly the 2026-08-05 defect.
-    case held
     /// Dispatched with no typed postcondition. Seven of the fourteen
     /// plans are like this by construction, and nothing will ever settle
     /// them — a caller that mistook a `.held` act for one of these would
@@ -313,6 +308,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var pendingDragRelease: ((ItemDragAnswer) -> Void)?
     private let cycleIO: NOWMirrorCycleIO
     private let sendCommand: GuestCommandSend
+    private let workScheduler: GuestWorkScheduler
+    private var invalidationSubscription: HostEventSubscription?
+    private var lastInvalidationGeneration = 0
+    private var transitionTarget: String?
+    private var transitionLeaseTask: Task<Void, Never>?
+    private let transitionInvalidationEnabled: Bool
     private let interval: TimeInterval
     private let planePolicy: @MainActor (GuestKey) -> Set<MirrorPlaneID>
     private let finderComplementPolicy: @MainActor (GuestKey) -> Bool
@@ -385,11 +386,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var planRefusalReach = AgentIntegrationProjectionFailure
         .Reach.unknown
     private var mutationBroker: MirrorMutationBroker?
-    /// The lane for the acts the broker never sees — control clicks, moves,
-    /// resizes, keystrokes. They used to dispatch concurrently into a guest
-    /// with one act cell, which refused all but one of them. See
-    /// ``MirrorDirectActLane``.
-    private let directActLane = MirrorDirectActLane()
     /// These timelines describe exactly one session. Durable history lives in
     /// the act log; the in-memory projection resets at every session boundary.
     let actTimeline = MirrorActTimeline()
@@ -415,7 +411,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// truncation (`MirrorCycleClocks.guestTimeouts`).
     private var cycleTimeoutsAtStart = 0
     private var lastCyclePublishedAt: Date?
-    private var mutationWaiting = false
     private var sceneGuestKey: GuestKey?
     private(set) var pinnedGuestKey: GuestKey?
     private(set) var shadowEngine: MirrorStateEngine?
@@ -438,10 +433,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
              MirrorKit.Scene, Int, @escaping () -> Void
          ) -> Void)? = nil,
          cycleIO: NOWMirrorCycleIO? = nil,
+         transitionInvalidation: Bool? = nil,
          sendCommand: GuestCommandSend? = nil,
          hostFinderDefaults: UserDefaults? = nil,
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
+        self.workScheduler = listener.workScheduler
         self.hostFinder = hostFinderDefaults.map {
             HostFinderSession(listener: listener, defaults: $0)
         } ?? HostFinderSession(listener: listener)
@@ -449,6 +446,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         self.act = act
         let content = NOWMirrorContentPlane(listener: listener)
         self.cycleIO = cycleIO ?? .live(listener: listener, content: content)
+        self.transitionInvalidationEnabled = transitionInvalidation
+            ?? (cycleIO == nil)
         self.sendCommand = sendCommand ?? { verb, args, completion in
             listener.runCommand(verb, typed: args, completion: completion)
         }
@@ -462,6 +461,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard let self, self.running,
                   let base = self.lastGuestScene else { return }
             self.scene = self.hostFinder.project(base)
+        }
+        self.invalidationSubscription = listener.events.subscribe {
+            [weak self] event in
+            guard case .mirrorInvalidated(let key, let hint) = event else {
+                return
+            }
+            self?.receivedMirrorInvalidation(hint, from: key)
         }
     }
 
@@ -520,6 +526,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return
         }
         pinnedGuestKey = key
+        lastInvalidationGeneration = 0
+        transitionTarget = nil
+        transitionLeaseTask?.cancel()
+        transitionLeaseTask = nil
         shadowEngine = engineRegistry?.engine(for: key)
         _ = shadowEngine?.setEnabledPlanes(planePolicy(key))
         scene = shadowEngine?.snapshot?.scene ?? scene
@@ -656,10 +666,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         if clearContentImmediately { cycleIO.guestChanged() }
 
         mutationBroker?.sessionChanged()
-        directActLane.reset()
         mutationBroker = nil
         if let endedKey { engineRegistry?.remove(endedKey) }
         pinnedGuestKey = nil
+        lastInvalidationGeneration = 0
+        transitionTarget = nil
+        transitionLeaseTask?.cancel()
+        transitionLeaseTask = nil
         shadowEngine = nil
 
         scene = nil
@@ -678,7 +691,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         planCorrelation = nil
         planSettlement = "unknown"
         planRefusalReach = .unknown
-        mutationWaiting = false
         dragSession = nil
         dragPressInFlight = false
         pendingDragPoint = nil
@@ -707,7 +719,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     private func poll() {
         guard running, cycleGeneration == nil else { return }
-        guard !mutationWaiting else { return rearm() }
+        guard mutationBroker?.hasDispatchWaiting != true else {
+            return rearm()
+        }
         guard let pinnedGuestKey else {
             ambient = "the Mirror has no pinned Mac"
             return
@@ -727,9 +741,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         cycleOutcome = "no-reply"
         cycleReason = nil
         cycleTimeoutsAtStart = listener.commandTimeouts
-        cycleIO.requestScene(
-            pinnedGuestKey, planes.contains(.semantics),
-            planes.contains(.interaction)) { [weak self] result in
+        workScheduler.submitCallback(.scene, as: .ambient,
+                                     coalescingKey: "mirror:scene") {
+            [weak self] _, finish in
+            guard let self, self.isCurrentCycle(generation) else { return }
+            self.cycleIO.requestScene(
+                pinnedGuestKey, planes.contains(.semantics),
+                planes.contains(.interaction)) { [weak self] result in
+            /* The wire reply is the admission release boundary. Decoding,
+               settlement reduction and publication happen after it and have
+               their own clocks; keeping the guest lane occupied through host
+               reduction would put unrelated input behind host CPU work. */
+            finish()
             guard let self else { return }
             self.cycleDelivered = Date()
             guard self.isCurrentCycle(generation) else { return }
@@ -784,6 +807,68 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             }
             self.finishCycle(generation)
         }
+    }
+    }
+
+    private func receivedMirrorInvalidation(_ hint: MirrorInvalidate,
+                                            from key: GuestKey) {
+        guard running, key == pinnedGuestKey,
+              hint.generation > lastInvalidationGeneration else { return }
+        lastInvalidationGeneration = hint.generation
+        if hint.quality != .sampled {
+            /* A gap cannot safely earn a scene.same against the old digest.
+               Clearing the transport baseline makes the next normal read a
+               whole-scene repair without inventing another request family. */
+            listener.invalidateSceneBaseline(for: key)
+        }
+        if cycleGeneration != nil {
+            pollRequestedAfterCycle = true
+        } else {
+            poll()
+        }
+    }
+
+    private func armTransitionSampler(for scene: MirrorKit.Scene) {
+        guard transitionInvalidationEnabled, running,
+              let process = Self.frontProcess(in: scene) else { return }
+        let target = "\(process.high).\(process.low)"
+        guard target != transitionTarget else { return }
+        transitionTarget = target
+        let generation = runGeneration
+        let retryAfter: UInt64 = 30_000_000_000
+        let renewAfter: UInt64 = 8 * 60 * 1_000_000_000
+        workScheduler.submitCallback(
+            .command("transitions start"), as: .structuralRepair,
+            coalescingKey: "mirror:transitions",
+            onCancel: { [weak self] in
+                guard self?.transitionTarget == target else { return }
+                self?.transitionTarget = nil
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.sendCommand("transitions", [
+                    "op": .text("start"),
+                    "serialHi": .number(process.high),
+                    "serialLo": .number(process.low),
+                    "ttlTicks": .number(36_000),
+                ]) { [weak self] result in
+                    finish()
+                    guard let self, self.running,
+                          self.runGeneration == generation,
+                          self.transitionTarget == target else { return }
+                    self.transitionLeaseTask?.cancel()
+                    self.transitionLeaseTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds:
+                            result.ok ? renewAfter : retryAfter)
+                        guard let self, !Task.isCancelled, self.running,
+                              self.runGeneration == generation,
+                              self.transitionTarget == target else { return }
+                        self.transitionTarget = nil
+                        if let latest = self.lastGuestScene {
+                            self.armTransitionSampler(for: latest)
+                        }
+                    }
+                }
+            }
     }
 
     /// **A window that is drawn is not necessarily a window that was
@@ -856,6 +941,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             sceneGuestKey = delivery.guestKey
             decoded = continuity.scene
             decoded = withIcons(decoded)
+            armTransitionSampler(for: decoded)
             _ = shadowEngine?.enrichFinder(decoded)
             scene = projectedScene(fallback: decoded)
             /* Everything above is this host's own CPU on the delivery;
@@ -962,7 +1048,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
               let mutationBroker, mutationBroker.depth > 0 else { return }
         let ended = mutationBroker.depth
         mutationBroker.sessionChanged()
-        directActLane.reset()
         actTimeline.depth = mutationBroker.depth
         ActLog.note(action: "(guest lost)",
                     outcome: "ended \(ended) act"
@@ -1449,6 +1534,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// evidence while the next ordinary poll performs any guest arm/release.
     func planePolicyDidChange() {
         guard let key = pinnedGuestKey, let engine = shadowEngine else { return }
+        if !cycleIO.isGuestConnected(key) {
+            /* A dead session cannot answer the act currently holding the
+               admission lane, and making the health-check scene queue behind
+               that act is a circular wait. End the broker's operations with
+               their typed sessionChanged outcome, then invalidate the old
+               scheduler generation so the cycle that reports the disconnect
+               can be admitted immediately. The real listener performs the
+               same reset when its active session disappears; this covers the
+               interval in which the cycle plane learns first. */
+            noticeDeadGuest()
+            workScheduler.reset(sessionID: key.text)
+        }
         let changed = engine.setEnabledPlanes(planePolicy(key))
         if changed, let projected = engine.snapshot?.scene {
             scene = projectedScene(fallback: projected)
@@ -2105,7 +2202,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 guard self.complementIsCurrent(generation) else { return }
                 let read = await self.readingFinderComplement(
                     Self.visibilityScript(offset: offset),
-                    osaFailureIsAnError: true)
+                    osaFailureIsAnError: true,
+                    workClass: (self.mutationBroker?.depth ?? 0) > 0
+                        ? .humanDependency : .ambient)
                 guard self.complementIsCurrent(generation) else { return }
                 if let error = read.error {
                     self.note("visibility census refused at offset "
@@ -2307,8 +2406,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// at once with the reason beside it. The other three dispositions all
     /// mean the act LEFT, and none of them is evidence that it worked:
     /// `.direct` is dispatched with no typed postcondition and *nothing will
-    /// ever settle it*, `.held` has a record still coming, and `.brokered`
-    /// settles later through the broker's lane. Answering `.confirmed` for
+    /// ever settle it*, while `.brokered` settles later through the broker's
+    /// lane. Answering `.confirmed` for
     /// any of them would be reporting dispatch as success, which is the exact
     /// shape of the AppleScript lie this whole surface replaced.
     ///
@@ -2397,10 +2496,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// - `finderOpen` at a guest whose interaction plane had never armed
     ///   logged `NOT DISPATCHED: Interaction policy is off` and answered
     ///   MCP `dispatched`. Fixed by returning the sentence at all.
-    /// - A `finderOpen` that arrived mid-observation was HELD, so no
-    ///   record existed yet, and the same absence was read as the direct
-    ///   path: MCP was told `id: "direct"` — never settles, stop waiting —
-    ///   for an act that went on to settle `confirmed`. That is this type.
+    /// - A `finderOpen` that arrived mid-observation used to be held outside
+    ///   the journal, so the same absence was read as the direct path: MCP was
+    ///   told `id: "direct"` — never settles, stop waiting — for an act that
+    ///   went on to settle `confirmed`. Brokered operations are now minted
+    ///   synchronously and only their dispatch waits in the scheduler.
     @discardableResult
     func perform(_ interaction: Interaction,
                  source: MirrorOperationSource) -> MirrorPerformDisposition {
@@ -2443,39 +2543,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     for: interaction, plan: plan, engine: engine,
                     source: source),
                let mutationBroker {
-                if pending {
-                    mutationWaiting = true
-                    report(label + " — queued behind the current observation")
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        while self.pending {
-                            try? await Task.sleep(nanoseconds: 25_000_000)
-                        }
-                        self.mutationWaiting = false
-                        /* **Carry the face through the wait.** This called
-                           the one-argument overload, which defaults to
-                           `.human` — so an MCP act that happened to arrive
-                           while an observation was in flight was journalled
-                           as a person's, undoing the 2026-08-05 fix by a
-                           path older than it. Caught live the same day: an
-                           `finderOpen` driven entirely over the agent
-                           socket settled `confirmed` and recorded
-                           `source: human`. The journal is what tells a
-                           hand-driven act from an agent-driven one after
-                           the fact, and this was the only act in it. */
-                        _ = self.perform(interaction, source: source)
-                    }
-                    /* Held, not refused — it re-enters this door when the
-                       observation clears, and the caller has an operation
-                       coming. **Saying so is the whole of the second
-                       2026-08-05 defect.** This returned `nil`, which the
-                       drive service could only read as "no record
-                       appeared, so it took the direct path" — and told MCP
-                       `id: "direct"`, meaning *nothing will ever settle
-                       this, stop waiting*. The act it said that about
-                       settled `confirmed` a few seconds later. */
-                    return .held
-                }
                 report(label + " — queued")
                 let accepted = mutationBroker.enqueue(operation,
                                                       label: label,
@@ -2494,24 +2561,26 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                        can already see, and the guest's refusal would then
                        be one more thing to attribute. Refuse here
                        instead, and say which half moved. */
-                    if let stale = self.staleTargetComplaint(for: plan) {
-                        ActLog.note(action: "attempt \(label)  plan=\(plan)",
-                                    outcome: "NOT DISPATCHED: \(stale)",
-                                    ms: 0)
-                        return .init(complaint: stale,
-                                     effectMayHaveLanded: false)
-                    }
-                    let started = Date()
-                    let complaint = await self.serve(plan)
-                    ActLog.note(action: "attempt \(label)  plan=\(plan)",
-                                outcome: complaint ?? self.planSettlement,
-                                ms: Int(Date().timeIntervalSince(started)
-                                    * 1000))
-                    return .init(
-                        complaint: complaint,
-                        effectMayHaveLanded: Self.effectMayHaveLanded(
+                    return await self.scheduleAttempt(label: label) {
+                        if let stale = self.staleTargetComplaint(for: plan) {
+                            ActLog.note(
+                                action: "attempt \(label)  plan=\(plan)",
+                                outcome: "NOT DISPATCHED: \(stale)", ms: 0)
+                            return .init(complaint: stale,
+                                         effectMayHaveLanded: false)
+                        }
+                        let started = Date()
+                        let complaint = await self.serve(plan)
+                        ActLog.note(
+                            action: "attempt \(label)  plan=\(plan)",
+                            outcome: complaint ?? self.planSettlement,
+                            ms: Int(Date().timeIntervalSince(started) * 1000))
+                        return .init(
                             complaint: complaint,
-                            reach: self.planRefusalReach))
+                            effectMayHaveLanded: Self.effectMayHaveLanded(
+                                complaint: complaint,
+                                reach: self.planRefusalReach))
+                    }
                 }, report: { [weak self] operation, complaint in
                     self?.reportOperation(operation, label: label,
                                           complaint: complaint)
@@ -2555,12 +2624,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                and every one of those clicks was a control click, which is
                precisely the kind that never reaches the broker's lane.
                The guest's own interlock says a caller told "busy" can
-               decide; this is that side deciding. See
-               ``MirrorDirectActLane``. */
+               decide; the session ``GuestWorkScheduler`` is now that one
+               decision point for direct and brokered acts alike. */
             let enqueuedAt = Date()
-            let depthAtEntry = directActLane.depth
+            let depthAtEntry = workScheduler.depth
             report(label + (depthAtEntry > 0 ? " — queued" : "…"))
-            let admitted = directActLane.submit { [weak self] in
+            workScheduler.submit(.interaction(label), as: .humanInteractive) {
+                [weak self] _ in
                 guard let self else { return }
                 let started = Date()
                 let complaint = await self.serve(plan)
@@ -2604,19 +2674,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 }
                 self.poll()                  // show the effect now
             }
-            if !admitted {
-                /* The lane is full, and this is the one case where a direct
-                   act IS refused to dispatch: it was provably never sent,
-                   so the sentence has to say that rather than let a person
-                   read it as the machine declining. */
-                let full = "not sent: \(directActLane.capacity) acts are "
-                    + "already waiting for this Mac, which serves one at a "
-                    + "time; try again when it has caught up"
-                ActLog.note(action: "\(label)  plan=\(plan)",
-                            outcome: "NOT DISPATCHED: \(full)", ms: 0)
-                report("\(label) — \(full)")
-                return .refused(full)
-            }
             /* The direct path's own answer arrives asynchronously and is
                NOT a refusal to dispatch — the act left. A complaint from
                the guest is settlement news, and this return says only
@@ -2625,6 +2682,28 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                is a property of the PLAN and not of how busy the cycle
                was. */
             return .direct
+        }
+    }
+
+    /// Schedule one correlated act at human priority and release product
+    /// admission when the guest answers. The broker may continue waiting for
+    /// later postcondition evidence, but that wait no longer occupies the
+    /// guest request lane and cannot hold an independent gesture behind it.
+    private func scheduleAttempt(
+        label: String,
+        _ attempt: @escaping @MainActor () async -> MirrorMutationAttempt
+    ) async -> MirrorMutationAttempt {
+        await withCheckedContinuation { continuation in
+            workScheduler.submit(
+                .interaction(label), as: .humanInteractive,
+                onCancel: {
+                    continuation.resume(returning: .init(
+                        complaint: "the guest session changed before dispatch",
+                        effectMayHaveLanded: false))
+                }) {
+                _ in
+                continuation.resume(returning: await attempt())
+            }
         }
     }
 
@@ -2691,8 +2770,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            whatever else the person had just clicked into the guest's single
            act cell. Every gesture that reaches the machine goes through one
            lane or it is not serialized at all. */
-        report(label + (directActLane.depth > 0 ? " — queued" : "…"))
-        let admitted = directActLane.submit { [weak self] in
+        report(label + (workScheduler.depth > 0 ? " — queued" : "…"))
+        workScheduler.submit(.interaction(label), as: .humanInteractive) {
+            [weak self] _ in
             guard let self else { return }
             self.planCorrelation = nil
             self.planSettlement = "unknown"
@@ -2712,14 +2792,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         ? label + " ✓"
                         : "\(label) — \(self.planSettlement)")
             self.poll()
-        }
-        if !admitted {
-            let full = "not sent: \(directActLane.capacity) acts are already "
-                + "waiting for this Mac, which serves one at a time; try "
-                + "again when it has caught up"
-            ActLog.note(action: label,
-                        outcome: "NOT DISPATCHED: \(full)", ms: 0)
-            report("\(label) — \(full)")
         }
     }
 
@@ -2741,9 +2813,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return
         }
         let enqueuedAt = Date()
-        let depthAtEntry = directActLane.depth
+        let depthAtEntry = workScheduler.depth
         report(label + (depthAtEntry > 0 ? " — queued" : "…"))
-        let admitted = directActLane.submit { [weak self] in
+        workScheduler.submit(.interaction(label), as: .humanInteractive) {
+            [weak self] _ in
             guard let self else { return }
             self.planCorrelation = nil
             self.planSettlement = "unknown"
@@ -2781,9 +2854,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.report(complaint.map { "\(label) — \($0)" }
                         ?? "\(label) — \(self.planSettlement)")
             self.poll()
-        }
-        if !admitted {
-            report("\(label) — not sent: the act queue is full")
         }
     }
 
@@ -3369,14 +3439,32 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Automatic Finder enrichment has a typed purpose on the wire. The
     /// guest can therefore refuse this class before opening OSA without
     /// disabling a deliberate Script command or a user-requested Finder act.
+    nonisolated static let finderSliceTimeoutMs = 1_800
+
     private func readingFinderComplement(
-        _ source: String, osaFailureIsAnError: Bool = false
+        _ source: String, osaFailureIsAnError: Bool = false,
+        workClass: GuestWorkClass = .ambient
     ) async -> (value: String?, error: String?, truncated: Bool) {
-        await readingOutput(
-            "script",
-            ["source": .text(source),
-             "purpose": .text("mirror-finder-complement")],
-            osaFailureIsAnError: osaFailureIsAnError)
+        await withCheckedContinuation { continuation in
+            workScheduler.submit(
+                .finder("complement page"), as: workClass,
+                onCancel: {
+                    continuation.resume(returning: (
+                        nil, "session-changed: Finder read cancelled", false))
+                }) { [weak self] _ in
+                    guard let self else {
+                        return continuation.resume(returning: (
+                            nil, "mirror-closed: Finder read cancelled", false))
+                    }
+                    continuation.resume(returning: await self.readingOutput(
+                        "script",
+                        ["source": .text(source),
+                         "purpose": .text("mirror-finder-complement"),
+                         "timeout": .number(
+                            Self.finderSliceTimeoutMs)],
+                        osaFailureIsAnError: osaFailureIsAnError))
+                }
+        }
     }
 
     private func readingOutput(_ verb: String,

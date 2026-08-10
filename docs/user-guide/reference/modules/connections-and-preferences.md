@@ -5,9 +5,9 @@ description: Configure the listener, select named guest sessions, and manage hos
 doc_type: reference
 audience: user
 lifecycle: current
-authority: [docs/architecture.md, docs/naming.md]
+authority: [docs/architecture.md, docs/naming.md, docs/onboarding.md]
 module_ids: [settings]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/GuestListener.swift, now-guest-ppc/src/connection, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-guest-ppc/src/connection, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
 media_ids: [settings-host, settings-ppc]
 last_verified: 2026-08-09
 ---
@@ -16,9 +16,10 @@ last_verified: 2026-08-09
 
 ## What it does
 
-Connections owns the host listener and named sessions. Preferences owns local
-application choices. The PowerPC Workshop separates Preferences and Connection;
-the host presents one settings module, and NOW-68K uses its main window.
+Connections owns the host listener, named sessions, and **Set Up a New Mac…**
+portal. Preferences owns local application choices. The PowerPC Workshop
+separates Preferences and Connection; the host presents one settings module,
+and NOW-68K uses its main window.
 
 ![The macOS Connections module](../../../assets/screenshots/modules/settings/host.svg){ .now-placeholder }
 
@@ -31,7 +32,9 @@ PowerPC preference model.
 ## On the modern Mac
 
 The host starts and stops the listener, names simultaneous guests, selects the
-active session, and reports duplicate-name or capacity refusals.
+active session, and reports duplicate-name or capacity refusals. Its setup
+sheet can generate preferences, assemble a fork-preserving setup disk from
+selected packages, and serve it temporarily over old-browser-compatible HTTP.
 
 ## On the classic Mac
 
@@ -43,6 +46,7 @@ port, timeout, health, status, and retained console information in one window.
 ## Common tasks
 
 - [Configure a connection](../../how-to/configure-connection.md).
+- [Set up a new PowerPC Mac](../../how-to/set-up-new-mac.md).
 - [Recover a connection](../../how-to/recover-a-connection.md).
 
 ## Safety, consent, and privacy
@@ -50,10 +54,16 @@ port, timeout, health, status, and retained console information in one window.
 The listener is plaintext and unauthenticated. Bind and advertise it only on a
 trusted LAN; never forward it through a router.
 
+The setup portal is also plaintext. It exposes fixed download routes rather
+than uploads or directory listings; stop it when onboarding is complete.
+
 ## Failure states
 
 Revision mismatch, duplicate machine name, host unreachable, timeout, listener
 busy, capacity reached, and stale selected session retain exact reasons.
+Setup also retains missing-package, checksum-refusal, stale-selection, image
+build, archive-tool, and server-start failures instead of offering a partial
+disk as complete.
 
 ## Current limitations
 

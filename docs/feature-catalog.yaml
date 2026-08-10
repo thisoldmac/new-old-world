@@ -41,6 +41,14 @@ profiles:
         state: excluded
         note: The current NOW-68K build is stale and excluded from the alpha.
 
+product_feature_coverage:
+  - id: guided-setup
+    title: Set up a PowerPC Mac from the host
+    without_extension: Available; the Extension is an optional package selection.
+    extension_required: false
+    status: Tested locally and mounted in Mac OS 9.1 QEMU; classic-browser download and first hardware connection remain unverified.
+    primary_page: user-guide/how-to/set-up-new-mac.md
+
 module_feature_coverage:
   - module_id: screen
     title: Capture or stream the classic Mac screen
@@ -66,7 +74,7 @@ module_feature_coverage:
     title: Open Mirror and inspect its application-level shell
     without_extension: Basic shell only.
     extension_required: false
-    status: Experimental; deeper observation and interaction use the Extension rows below.
+    status: Experimental; interactive requests take priority over queued background refreshes, but the hardware latency target is not yet verified.
   - module_id: console
     title: Run classic-side console commands
     without_extension: Available.
@@ -148,7 +156,7 @@ extension_feature_coverage:
     title: Follow short-lived interface changes
     without_extension: Changes between scene reads may be missed.
     extension_required: true
-    status: Experimental; availability and freshness are reported.
+    status: Experimental; changes prompt a coalesced refresh, while periodic refresh remains the fallback.
     capability_ids: [transitions]
   - id: modal-liveness
     title: Stay reachable while an application is in a modal or tracking loop

@@ -9,6 +9,7 @@ struct ConnectionsModuleView: View {
     @ObservedObject var model: ConnectionsModel
     @ObservedObject var settings: SettingsModel
     @ObservedObject var listener: GuestListener
+    @ObservedObject var onboarding: OnboardingPortal
     var onStart: () -> Void
     var onStop: () -> Void
     @State private var selectedID: String?
@@ -111,6 +112,7 @@ struct ConnectionsModuleView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     ConnectionLinkSection(
                         settings: settings, listener: listener,
+                        onboarding: onboarding,
                         onStart: onStart, onStop: onStop,
                         focusPort: adding,
                         selectedGuest: selectedRow?.key)

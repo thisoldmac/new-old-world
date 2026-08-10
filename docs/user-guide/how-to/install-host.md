@@ -1,7 +1,7 @@
 ---
 page_id: install-host-how-to
 title: Install the macOS host
-description: Place and launch the pre-alpha New Old World host on macOS 13 or later.
+description: Place and launch the alpha New Old World host on macOS 13 or later.
 doc_type: how-to
 audience: user
 lifecycle: current
@@ -20,7 +20,7 @@ Install the host app without mixing it with a source-build staging directory.
 ## Prerequisites
 
 - macOS 13 or later.
-- A pre-alpha `New Old World.app` artifact from the release bundle.
+- A `New Old World.app` artifact from the alpha release bundle.
 
 ## Steps
 

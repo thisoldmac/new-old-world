@@ -275,6 +275,15 @@ final class HostFinderSessionTests: XCTestCase {
                 return request.name == "script"
             }
         }
+        let open = try XCTUnwrap(guest.received.compactMap {
+            message -> CommandRequest? in
+            guard case .commandRequest(let request) = message,
+                  request.name == "script" else { return nil }
+            return request
+        }.last)
+        try guest.send(.commandResult(.init(
+            id: open.id, ok: true,
+            output: ["script": [["osaErr", "0"]]], error: nil)))
         let rootID = try XCTUnwrap(session.windows.first?.id)
         session.windowAct(id: rootID, act: .move(left: 90, top: 100))
         XCTAssertEqual(session.windows.first?.frame.l, 90,

@@ -123,7 +123,9 @@ final class AgentIntegrationDiagnostics {
         await withCheckedContinuation { continuation in
             var settled = false
             var timeoutTask: Task<Void, Never>?
-            listener.runCommand(verb) { [weak self] result in
+            listener.runScheduledCommand(
+                verb, purpose: .command("diagnostics \(verb)"),
+                workClass: .foreground) { [weak self] result in
                 if settled {
                     /* The run that timed out has landed. Releasing here is
                        why the timeout path holds the flag: the machine is

@@ -406,7 +406,7 @@ void _start(void)
         return;                       /* no heap: degrade to absent */
     }
     table->ext_major = kNowPeekExtMajor;
-    table->ext_minor = 0;
+    table->ext_minor = kNowPeekExtMinor;
     /* The anchor region is real, backed memory now (P1), so length
        covers the whole table; the app still trusts an individual slot
        only when the plane is armed and the slot's stamp is fresh. */

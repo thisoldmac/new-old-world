@@ -425,7 +425,8 @@ final class GuestItemGateWiringTests: XCTestCase {
                        "the gate is deciding without this page's own help "
                        + "table, so a card would need a second `help`")
         XCTAssertEqual(
-            model.components(separatedBy: "runCommand(\"help\"").count - 1, 1,
+            model.components(separatedBy: "\"help\", line: \"\"").count - 1,
+            1,
             "a second help per connection")
     }
 

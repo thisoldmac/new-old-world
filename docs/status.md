@@ -81,6 +81,20 @@ parallel availability lists.
 
 ## What works today
 
+- **Mirror human work has a session-wide priority boundary and attributable
+  clocks** (2026-08-09, Tested locally; not emulator- or Metal-verified).
+  Human gestures preserve FIFO order and run before queued ambient Mirror
+  work at the next safe guest boundary. The metrics projection exposes the
+  active blocker plus admission, guest, settlement and publication brackets.
+  Optional guest `mirror.invalidate` generations request a coalesced refresh;
+  cadence polling remains the fallback, and the existing host state engine
+  publishes exact generation sets instead of accepting stale enrichment. The
+  full local `scripts/test-all` gate passed, with the live-guest stage skipped
+  because `NOW_GUEST_LIVE` was unset. The PB1400c 2,000 ms ambient-wait target
+  is not yet verified; see
+  [the implementation plan](plans/2026-08-09-029-fix-mirror-interaction-latency-and-coherent-state-plan.md)
+  and [the open ledger](open-issues.md).
+
 - **A mirrored window has an interior** (2026-08-06, emulator only).
   Until this landed, the Mirror knew a window existed, where it was, and
   what controls it declared — and nothing about what the application had

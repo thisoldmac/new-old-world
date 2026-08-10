@@ -53,11 +53,35 @@ final class MirrorActTimeline: ObservableObject {
 
     /// Everything the Mirror page shows, for the headless client. Newest
     /// last, matching the page's own order.
-    func projected(cycles: MirrorCycleTimeline, running: Bool)
+    func projected(cycles: MirrorCycleTimeline, running: Bool,
+                   scheduler: GuestWorkSnapshot? = nil,
+                   work: [MirrorWorkClocks] = [])
         -> AgentIntegrationMirrorMetrics {
         .init(running: running, laneDepth: depth,
               acts: records.map(\.projected),
-              cycles: cycles.records.map(\.projected))
+              cycles: cycles.records.map(\.projected),
+              scheduler: scheduler.map {
+                .init(activePurpose: $0.activePurpose?.summary,
+                      activeAgeMs: Self.ms($0.activeAge),
+                      queuedHumanCount: $0.queuedHumanCount,
+                      queueDepth: $0.queueDepth,
+                      oldestHumanWaitMs: Self.ms($0.oldestHumanWait))
+              },
+              work: work.map {
+                .init(traceID: $0.traceID, session: $0.sessionID,
+                      purpose: $0.purpose.summary,
+                      admissionWaitMs: Self.ms($0.admissionWait),
+                      guestRoundTripMs: Self.ms($0.guestRoundTrip),
+                      settlementWaitMs: Self.ms($0.settlementWait),
+                      publicationWaitMs: Self.ms($0.publicationWait),
+                      totalMs: Self.ms($0.total),
+                      guestHandlerMs: $0.guestHandlerMs,
+                      outcome: $0.outcome)
+              })
+    }
+
+    private static func ms(_ interval: TimeInterval?) -> Int? {
+        interval.map { Int(($0 * 1_000).rounded()) }
     }
 
     /// Both lines, together: the narrative for a person scrolling the log

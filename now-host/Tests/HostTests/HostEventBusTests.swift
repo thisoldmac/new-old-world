@@ -176,12 +176,38 @@ final class HostEventBusTests: XCTestCase {
                           bytes: 1, guestName: "PowerBook"),
             .fileTreeChanged(mac, side: .guest, path: "Disk:Folder"),
             .processListChanged(mac),
+            .mirrorInvalidated(mac, .init(
+                session: "1", generation: 1,
+                domains: .init(structure: 1), quality: .sampled,
+                lost: 0, source: .transitions)),
             .guestReportedError(mac, ErrorMessage(
                 id: nil, code: "not-implemented", message: "no")),
         ]
         for event in cases {
             XCTAssertEqual(event.guest, mac, "\(event) lost its machine")
         }
+    }
+
+    func testGuestInvalidationIsAttributedToTheDeliveringSession() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { listener.stop() }
+        var received: (GuestKey, MirrorInvalidate)?
+        let watch = listener.events.subscribe { event in
+            if case .mirrorInvalidated(let key, let hint) = event {
+                received = (key, hint)
+            }
+        }
+        defer { watch.unsubscribe() }
+        let hint = MirrorInvalidate(
+            session: "guest-epoch", generation: 4,
+            domains: .init(structure: 3, menus: 1),
+            quality: .sampled, lost: 0, source: .transitions)
+        try guest.send(.mirrorInvalidate(hint))
+        try await waitUntil("invalidation") { received != nil }
+        XCTAssertEqual(received?.0, listener.activeKey,
+                       "the transport session, not the producer string, "
+                           + "owns attribution")
+        XCTAssertEqual(received?.1, hint)
     }
 
     // MARK: - What the listener publishes

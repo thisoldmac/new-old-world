@@ -1,7 +1,7 @@
 ---
 page_id: dev-workflow-release-documentation
 title: Release documentation
-description: Final human and automated checks before publishing the pre-alpha documentation.
+description: Final human and automated checks before publishing the alpha documentation.
 doc_type: how-to
 audience: operator
 lifecycle: current
@@ -44,6 +44,12 @@ The release mode refuses incomplete integration and generates `security.txt` and
 - Install the actual host and PowerPC artifacts by the documented path, then
   test the bundled optional Extension both installed and absent. The alpha
   profile excludes the stale NOW-68K artifact.
+- Exercise the setup portal from its fixed `/now` route through the final
+  mounted image and first named session. Record classic-browser, MacBinary,
+  Disk Copy, and hardware evidence separately; do not collapse a host test or
+  emulator mount into an end-to-end result.
+- If resident source changed, confirm `contract/resident_version.h` advanced
+  and that the exact release source is covered by the required shared bake.
 - Do not close a screenshot gap for a placeholder. List all remaining placeholder IDs in the release notes.
 - Confirm no page describes tested or emulator evidence as metal-verified.
 

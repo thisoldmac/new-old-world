@@ -265,6 +265,10 @@ def check(root: Path, site_dir: Path | None) -> int:
         errors.append(
             "docs/assets/javascripts/mermaid-init.js: Mermaid must subscribe to instant-navigation page updates"
         )
+    if "pymdownx.superfences.fence_div_format" not in (root / "mkdocs.yml").read_text():
+        errors.append(
+            "mkdocs.yml: Mermaid fences must use fence_div_format so the runtime receives diagram text"
+        )
     nav = nav_paths(config.get("nav", []))
     nav_counts = Counter(nav)
     for rel, count in nav_counts.items():
@@ -517,6 +521,36 @@ def check(root: Path, site_dir: Path | None) -> int:
                 f"module feature coverage {row['module_id']}: extension_required must be true or false"
             )
 
+    product_coverage = feature_catalog.get("product_feature_coverage", [])
+    product_coverage_ids = [
+        row.get("id") for row in product_coverage if isinstance(row, dict)
+    ]
+    if not product_coverage or len(product_coverage_ids) != len(set(product_coverage_ids)):
+        errors.append("docs/feature-catalog.yaml: product feature coverage needs unique rows")
+    required_product_coverage_fields = {
+        "id", "title", "without_extension", "extension_required", "status", "primary_page",
+    }
+    for row in product_coverage:
+        if not isinstance(row, dict):
+            errors.append("docs/feature-catalog.yaml: product feature coverage rows must be mappings")
+            continue
+        missing_fields = sorted(required_product_coverage_fields - set(row))
+        if missing_fields:
+            errors.append(
+                f"product feature coverage {row.get('id', '<unknown>')}: missing fields: "
+                f"{', '.join(missing_fields)}"
+            )
+            continue
+        if not isinstance(row["extension_required"], bool):
+            errors.append(
+                f"product feature coverage {row['id']}: extension_required must be true or false"
+            )
+        primary_page = docs / str(row["primary_page"])
+        if not primary_page.exists():
+            errors.append(
+                f"product feature {row['id']}: primary page does not exist: {row['primary_page']}"
+            )
+
     extension_coverage = feature_catalog.get("extension_feature_coverage", [])
     coverage_ids = [row.get("id") for row in extension_coverage if isinstance(row, dict)]
     if not extension_coverage or len(coverage_ids) != len(set(coverage_ids)):
@@ -617,6 +651,7 @@ def check(root: Path, site_dir: Path | None) -> int:
         representative = {
             site_dir / "index.html": {"product": True},
             site_dir / "user-guide/tutorials/first-connection/index.html": {},
+            site_dir / "user-guide/how-to/set-up-new-mac/index.html": {"images": True, "release_banners": 1},
             site_dir / "user-guide/how-to/configure-connection/index.html": {},
             site_dir / "user-guide/how-to/install-ppc/index.html": {"release_banners": 0},
             site_dir / "user-guide/how-to/install-68k/index.html": {"release_banners": 1},
@@ -696,7 +731,10 @@ def check(root: Path, site_dir: Path | None) -> int:
     notices.append(f"module coverage: {len(module_rows)} host modules, {len(ppc_declared)} PPC pages")
     notices.append(f"release profile: {active_profile_id}, {len(feature_defs)} product features")
     notices.append(f"extension capabilities: {len(capabilities)} planes, {len(declared_symbols)} capability bits")
-    notices.append(f"application feature coverage: {len(module_coverage)} module rows")
+    notices.append(
+        f"application feature coverage: {len(product_coverage)} product rows, "
+        f"{len(module_coverage)} module rows"
+    )
     notices.append(f"extension feature coverage: {len(extension_coverage)} user-facing rows")
     notices.append(f"Mermaid diagrams: {sum(len(MERMAID_RE.findall(frontmatter(path)[1])) for path in curated)}")
     print("[docs-gate] passed")

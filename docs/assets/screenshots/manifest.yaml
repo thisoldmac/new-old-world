@@ -24,6 +24,27 @@ images:
     surface: release artifacts
     state: Alpha bundle with host app, PPC guest, and bundled optional extension identified
     machine: modern macOS
+  - id: setup-onboarding-host
+    path: assets/screenshots/getting-started/onboarding-host.svg
+    width: 980
+    height: 650
+    surface: macOS Connections
+    state: Set Up a New Mac sheet with address, packages, and setup image state
+    machine: modern macOS
+  - id: setup-onboarding-browser
+    path: assets/screenshots/getting-started/onboarding-browser.svg
+    width: 744
+    height: 478
+    surface: classic web browser
+    state: Old-browser setup page with the complete setup disk download
+    machine: Mac OS 9
+  - id: setup-onboarding-disk
+    path: assets/screenshots/getting-started/onboarding-disk.svg
+    width: 744
+    height: 478
+    surface: Disk Copy and Finder
+    state: Mounted NOW Setup disk with application, preferences, and optional Extension
+    machine: Mac OS 9
   - id: setup-host-install
     path: assets/screenshots/getting-started/host-install.svg
     width: 980

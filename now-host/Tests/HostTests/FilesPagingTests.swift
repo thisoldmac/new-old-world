@@ -43,7 +43,7 @@ final class FilesPagingTests: XCTestCase {
 
     func testAFolderLongerThanOnePageIsFollowedToItsEnd() async throws {
         let guest = try await connectedGuest()
-        model.refresh()
+        try await beginRefresh(guest)
 
         // Three pages: 16, 16, then 5 — the shape a 37-item folder has.
         try await answerListing(guest, cursor: 1, count: 16, next: 17)
@@ -60,7 +60,7 @@ final class FilesPagingTests: XCTestCase {
 
     func testTheRowsArriveInOrderAcrossPages() async throws {
         let guest = try await connectedGuest()
-        model.refresh()
+        try await beginRefresh(guest)
         try await answerListing(guest, cursor: 1, count: 16, next: 17)
         try await answerListing(guest, cursor: 17, count: 4, next: nil)
 
@@ -75,44 +75,46 @@ final class FilesPagingTests: XCTestCase {
     /// refresh the visible folder. Only the newest refresh owns the rows;
     /// otherwise both replies append the same page and every item appears
     /// twice even though the guest contains only one copy.
-    func testOnlyTheNewestOverlappingRefreshMayPublishRows() async throws {
+    func testOnlyTheNewestQueuedRefreshMayPublishRows() async throws {
         let guest = try await connectedGuest()
-        var before = 0
-        try await waitUntil("connection refresh requests") {
-            before = guest.received.reduce(into: 0) { count, message in
-                if case .fileList(let list) = message, list.path.isEmpty {
-                    count += 1
-                }
-            }
-            return before >= 1
-        }
-        model.refresh()
+        try await beginRefresh(guest)
+        let firstID = try XCTUnwrap(guest.received.reversed().compactMap {
+            message -> Int? in
+            guard case .fileList(let list) = message,
+                  list.path.isEmpty else { return nil }
+            return list.id
+        }.first)
+        let priorIDs = Set(guest.received.compactMap { message -> Int? in
+            guard case .fileList(let list) = message else { return nil }
+            return list.id
+        })
         model.refresh()
 
-        var ids: [Int] = []
-        try await waitUntil("two overlapping file.list requests") {
-            let all: [Int] = guest.received.compactMap { message in
-                guard case .fileList(let list) = message,
-                      list.path.isEmpty else { return nil }
-                return list.id
-            }
-            ids = Array(all.dropFirst(before))
-            return ids.count >= 2
-        }
-
-        let row = entry(1)
+        /* The replacement is queued, not sent around the active page. Its
+           older answer is stale by generation and merely releases the lane. */
         try guest.send(.fileListing(FileListing(
-            id: ids[1], path: "", entries: [row], more: false,
+            id: firstID, path: "", entries: [entry(1)], more: false,
             cursor: nil)))
+        var secondID: Int?
+        try await waitUntil("replacement file.list") {
+            secondID = guest.received.reversed().compactMap { message -> Int? in
+                guard case .fileList(let list) = message,
+                      list.path.isEmpty,
+                      !priorIDs.contains(list.id) else { return nil }
+                return list.id
+            }.first
+            return secondID != nil
+        }
         try guest.send(.fileListing(FileListing(
-            id: ids[0], path: "", entries: [row], more: false,
+            id: try XCTUnwrap(secondID), path: "", entries: [entry(2)],
+            more: false,
             cursor: nil)))
 
         try await waitUntil("newest listing published") {
             self.model.rows.count >= 1
         }
         try await Task.sleep(nanoseconds: 100_000_000)
-        XCTAssertEqual(model.rows.map(\.name), ["item-1"],
+        XCTAssertEqual(model.rows.map(\.name), ["item-2"],
                        "a stale full refresh must not append its page")
     }
 
@@ -122,7 +124,7 @@ final class FilesPagingTests: XCTestCase {
     func testTrashEventAndCompletionCannotDuplicateTheRemainingRows()
         async throws {
         let guest = try await connectedGuest()
-        model.refresh()
+        try await beginRefresh(guest)
         try await answerListing(guest, cursor: 1, count: 2, next: nil)
         try await waitUntil("initial listing") { self.model.rows.count == 2 }
 
@@ -148,21 +150,33 @@ final class FilesPagingTests: XCTestCase {
             id: try XCTUnwrap(trashID), ok: true, path: "item-1",
             trashedAs: "item-1")))
 
-        var refreshIDs: [Int] = []
-        try await waitUntil("delete refresh") {
-            refreshIDs = guest.received.compactMap { message in
+        var firstRefreshID: Int?
+        try await waitUntil("first delete refresh") {
+            let refreshIDs: [Int] = guest.received.compactMap { message in
                 guard case .fileList(let list) = message,
                       list.path.isEmpty else { return nil }
                 return list.id
             }
-            return refreshIDs.count >= before + 2
+            firstRefreshID = refreshIDs.dropFirst(before).first
+            return firstRefreshID != nil
         }
         let remaining = entry(2)
-        for id in refreshIDs.dropFirst(before).reversed() {
-            try guest.send(.fileListing(FileListing(
-                id: id, path: "", entries: [remaining], more: false,
-                cursor: nil)))
+        try guest.send(.fileListing(FileListing(
+            id: try XCTUnwrap(firstRefreshID), path: "", entries: [remaining],
+            more: false, cursor: nil)))
+        var secondRefreshID: Int?
+        try await waitUntil("second delete refresh") {
+            let refreshIDs: [Int] = guest.received.compactMap { message in
+                guard case .fileList(let list) = message,
+                      list.path.isEmpty else { return nil }
+                return list.id
+            }
+            secondRefreshID = refreshIDs.dropFirst(before + 1).first
+            return secondRefreshID != nil
         }
+        try guest.send(.fileListing(FileListing(
+            id: try XCTUnwrap(secondRefreshID), path: "", entries: [remaining],
+            more: false, cursor: nil)))
 
         try await waitUntil("remaining listing") { self.model.rows.count >= 1 }
         try await Task.sleep(nanoseconds: 100_000_000)
@@ -177,7 +191,7 @@ final class FilesPagingTests: XCTestCase {
     /// side is not allowed to hang because of it.
     func testACursorThatDoesNotAdvanceStopsAndSaysSo() async throws {
         let guest = try await connectedGuest()
-        model.refresh()
+        try await beginRefresh(guest)
 
         try await answerListing(guest, cursor: 1, count: 16, next: 17)
         // The guest repeats itself: asked for 17, answers `next` 17 again.
@@ -208,7 +222,7 @@ final class FilesPagingTests: XCTestCase {
     /// follow-on request must stop too.
     func testPagesForAFolderAlreadyLeftAreDropped() async throws {
         let guest = try await connectedGuest()
-        model.refresh()
+        try await beginRefresh(guest)
         try await answerListing(guest, cursor: 1, count: 16, next: 17)
         try await waitUntil("first page in") { self.model.rows.count == 16 }
 
@@ -230,6 +244,31 @@ final class FilesPagingTests: XCTestCase {
     }
 
     // MARK: - helpers
+
+    /// A connection owns one automatic root refresh. Queue the test's
+    /// explicit refresh behind it, then answer the stale connection page so
+    /// the scheduler can admit the page whose generation the test exercises.
+    private func beginRefresh(_ guest: FakeGuest) async throws {
+        var connectionID: Int?
+        try await waitUntil("connection file.list") {
+            connectionID = guest.received.compactMap { message -> Int? in
+                guard case .fileList(let list) = message,
+                      list.path.isEmpty else { return nil }
+                return list.id
+            }.first
+            return connectionID != nil
+        }
+        model.refresh()
+        let staleID = try XCTUnwrap(connectionID)
+        try guest.send(.fileListing(FileListing(
+            id: staleID, path: "", entries: [], more: false, cursor: nil)))
+        try await waitUntil("explicit file.list") {
+            guest.received.contains { message in
+                guard case .fileList(let list) = message else { return false }
+                return list.path.isEmpty && list.id != staleID
+            }
+        }
+    }
 
     private func entry(_ n: Int) -> FileEntry {
         FileEntry(name: "item-\(n)", kind: "file", fileType: "TEXT",

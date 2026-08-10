@@ -65,10 +65,14 @@ def _coverage_table(features) -> str:
 
 
 def _feature_matrices(catalog) -> str:
+    application_features = (
+        catalog.get("product_feature_coverage", [])
+        + catalog["module_feature_coverage"]
+    )
     return "\n\n".join(
         (
             "### Application features",
-            _coverage_table(catalog["module_feature_coverage"]),
+            _coverage_table(application_features),
             "### Extension-backed Mirror features",
             _coverage_table(catalog["extension_feature_coverage"]),
         )

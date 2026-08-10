@@ -27,10 +27,10 @@ console, process, hardware, or software features.
 
 ## Feature coverage
 
-The application table is complete by construction: every module in the
-published [module reference](../reference/modules/index.md) must appear exactly
-once. The second table separates the deeper Mirror outcomes added by the
-bundled Extension.
+The application table is complete by construction: it combines every
+cross-module product feature declared in the catalog with every module in the
+published [module reference](../reference/modules/index.md). The second table
+separates the deeper Mirror outcomes added by the bundled Extension.
 
 <!-- extension-feature-matrix -->
 

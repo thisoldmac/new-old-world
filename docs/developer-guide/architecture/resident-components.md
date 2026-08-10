@@ -5,8 +5,8 @@ description: Optional extension ownership, versioned memory contracts, and bake 
 doc_type: explanation
 audience: developer
 lifecycle: current
-authority: [docs/resident-components.md, contract/peek_table.h]
-source_dependencies: [docs/resident-components.md, contract/peek_table.h, ext/src/now_ext.c, now-guest-ppc/src/peek/peek.c, tools/ext-bake-gate, docs/feature-catalog.yaml]
+authority: [docs/resident-components.md, contract/peek_table.h, contract/resident_version.h]
+source_dependencies: [docs/resident-components.md, contract/peek_table.h, contract/resident_version.h, ext/src/now_ext.c, now-guest-ppc/src/peek/peek.c, tools/ext-bake-gate, docs/feature-catalog.yaml]
 media_ids: []
 last_verified: 2026-08-09
 feature_ids: [resident.extension]
@@ -30,12 +30,21 @@ flowchart LR
 
 Text equivalent: resident callbacks observe or act in the foreign application, write a versioned shared table, and the NOW application validates and reads it before publishing results. Without the extension, the application reports unavailability rather than emulating resident state.
 
-`contract/peek_table.h` is compiled by every reader and writer, with layout assertions. A change to `ext/` or that header requires an exact-source bake receipt before landing on `main`; a written deferral may permit a checkpoint but never the landing.
+`contract/peek_table.h` is compiled by every reader and writer, with layout
+assertions. `contract/resident_version.h` owns the one release identity shared
+by the memory table and the resident liveness connection. The major version is
+an exact compatibility boundary; the minor version is the monotonically
+increasing release sequence within that boundary.
+
+A change to `ext/`, either shared contract header, or resident behavior must
+advance that tuple and have an exact-source bake receipt before landing on
+`main`. The main-reference gate evaluates the proposed tree itself; a written
+deferral may permit a branch checkpoint but never the landing.
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 75cf7d940bf840bb76e2053414d99887aa605b66
-derive resident-contract sha256=e423b6ffb62efdc0b3f336dd334c3df87437691f7d41ddb8e81d8536e9cd15fa lines=11
+sources-sha1: b2df724ee970d09d550d20bc88439433bf403604
+derive resident-contract sha256=c9c8ffa94f6c2db0af0a8b407badbd9af9e80265cae227b57b68270df462ed0a lines=11
     scripts/docs-source-group resident
 rederived: pending
 rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, resident-contract 11->11
@@ -47,4 +56,6 @@ rederived: 2026-08-09T18:53:51-0400 181db7a5 sources
 rederived: 2026-08-09T18:56:22-0400 181db7a5 unchanged
 rederived: 2026-08-09T19:21:55-0400 dc5bfcd2 sources
 rederived: 2026-08-09T19:33:55-0400 c854246d sources
+rederived: 2026-08-09T20:56:35-0400 9864da82 sources, resident-contract 11->11
+rederived: 2026-08-09T21:05:27-0400 9864da82 sources
 -->

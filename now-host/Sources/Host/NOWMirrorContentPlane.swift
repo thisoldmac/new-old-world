@@ -224,7 +224,9 @@ final class NOWMirrorContentPlane {
     init(listener: GuestListener, sendCommand: GuestCommandSend? = nil) {
         self.listener = listener
         self.sendCommand = sendCommand ?? { verb, args, completion in
-            listener.runCommand(verb, typed: args, completion: completion)
+            listener.runScheduledCommand(
+                verb, typed: args, purpose: .content, workClass: .ambient,
+                coalescingKey: nil, completion: completion)
         }
     }
 

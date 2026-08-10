@@ -18,6 +18,7 @@
 #include <Processes.h>
 
 #include "transitions_logic.h"
+#include "transition_coordinator.h"
 
 /* NowTransitionsStartReq moved to transitions_logic.h, because what fills
    it is now Toolbox-free and testable there while what CONSUMES it is
@@ -73,6 +74,12 @@ unsigned long now_transitions_read(NowEventU32 cursor, NowEventRecord *out,
  * forward-only rule is transitions_logic.h's, and it is what keeps
  * `dropped` meaningful. */
 void now_transitions_commit_read(NowEventU32 next);
+
+/* Ordinary application-context service. This is the sole owner of the
+ * resident ring's reader_cursor; command and console drains consume its
+ * application-owned ledger instead. */
+void now_transitions_poll(void);
+int now_transitions_take_invalidation(NowMirrorInvalidation *out);
 
 /* The wire face: writes one whole command.result. */
 void now_transitions_run(const char *request_json, long id,

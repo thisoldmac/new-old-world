@@ -97,6 +97,34 @@ final class MirrorStateEngineTests: XCTestCase {
         XCTAssertEqual(engine.store.entries.count, 1)
     }
 
+    func testProjectionNamesWhyItPublishedAndItsExactGenerations() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        let base = try scene(seq: 1)
+        _ = engine.accept(base)
+        let structural = try XCTUnwrap(engine.snapshot)
+        XCTAssertEqual(structural.publicationReason, .structure)
+        XCTAssertEqual(structural.generations.structure,
+                       structural.sceneGeneration)
+
+        var content = base
+        var text = DisplayOp(op: "text", ticks: 1)
+        text.text = "Disk"
+        text.pen = [10, 20]
+        content.windows[0].display = [text]
+        XCTAssertTrue(engine.enrichContent(content))
+        let enriched = try XCTUnwrap(engine.snapshot)
+        XCTAssertEqual(enriched.publicationReason, .content)
+        XCTAssertGreaterThan(enriched.generations.content,
+                             structural.generations.content)
+        XCTAssertEqual(enriched.generations.structure,
+                       structural.generations.structure,
+                       "progressive content is not a new structural world")
+
+        XCTAssertFalse(engine.enrichContent(try scene(seq: 0)))
+        XCTAssertEqual(engine.snapshot, enriched,
+                       "old-generation enrichment cannot republish")
+    }
+
     func testSnapshotHistoryIsBoundedByCountAndAge() throws {
         let store = MirrorSnapshotStore(limit: 3, maxAge: 10)
         let engine = MirrorStateEngine(guestKey: key, store: store)

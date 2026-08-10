@@ -1,12 +1,12 @@
 ---
 page_id: requirements-reference
 title: Requirements
-description: Operating-system, architecture, network, and artifact requirements for the NOW pre-alpha.
+description: Operating-system, architecture, network, and artifact requirements for the NOW alpha.
 doc_type: reference
 audience: user
 lifecycle: current
-authority: [README.md, docs/naming.md, SECURITY.md]
-source_dependencies: [now-host/Package.swift, now-host/NewOldWorld.xcodeproj/project.pbxproj, now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, SECURITY.md, docs/feature-catalog.yaml]
+authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md]
+source_dependencies: [now-host/Package.swift, now-host/NewOldWorld.xcodeproj/project.pbxproj, now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, SECURITY.md, docs/feature-catalog.yaml, docs/onboarding.md]
 media_ids: []
 last_verified: 2026-08-09
 ---
@@ -24,6 +24,10 @@ Both machines need IP connectivity on a trusted local network. The classic
 wire is plaintext TCP and has no authentication. The host's listener must not
 be exposed to the internet.
 
+The guided [Set Up a New Mac](../how-to/set-up-new-mac.md) path additionally
+needs a classic web browser and Disk Copy 6.3.3. Those are requirements of the
+guided disk-image path, not of a manual fork-preserving installation.
+
 The [alpha feature profile](release-profile.md) is the release-facing
 authority until a concrete bundle is cut. The release bundle then becomes
 authoritative for what ships. Source-build directories,
@@ -32,7 +36,7 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: cf9e758d2b5fd3fac972f3a6aec7ae4e7aee4960
+sources-sha1: 7d976a1e782375924d76855955753c1cd8be9381
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -45,4 +49,6 @@ rederived: 2026-08-09T18:53:52-0400 181db7a5 sources
 rederived: 2026-08-09T18:56:23-0400 181db7a5 unchanged
 rederived: 2026-08-09T19:21:56-0400 dc5bfcd2 sources
 rederived: 2026-08-09T19:33:56-0400 c854246d sources
+rederived: 2026-08-09T20:56:36-0400 9864da82 sources
+rederived: 2026-08-09T21:05:28-0400 9864da82 sources
 -->

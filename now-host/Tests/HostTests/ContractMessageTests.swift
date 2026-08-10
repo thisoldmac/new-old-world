@@ -16,6 +16,31 @@ final class ContractMessageTests: XCTestCase {
                        .sceneRequest(request))
     }
 
+    func testCommandArgumentsPreserveBooleanSelectors() throws {
+        let request = CommandRequest(
+            id: 3, name: "transitions",
+            args: ["op": .text("start"), "front": .flag(true)])
+        let data = try ControlMessageCodec.encode(.commandRequest(request))
+        XCTAssertTrue(String(decoding: data, as: UTF8.self)
+            .contains("\"front\":true"))
+        XCTAssertEqual(try ControlMessageCodec.decode(data),
+                       .commandRequest(request))
+    }
+
+    func testMirrorInvalidationIsAnAdditiveGenerationHint() throws {
+        let hint = MirrorInvalidate(
+            session: "boot-42", generation: 7,
+            domains: .init(structure: 4, menus: 2),
+            quality: .sampled, lost: 0, source: .transitions)
+        let data = try ControlMessageCodec.encode(.mirrorInvalidate(hint))
+        XCTAssertEqual(try ControlMessageCodec.decode(data),
+                       .mirrorInvalidate(hint))
+        let text = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(text.contains("\"type\":\"mirror.invalidate\""))
+        XCTAssertFalse(text.contains("scene"),
+                       "an invalidation must not become a replacement scene")
+    }
+
     func testHelloRoundTrip() throws {
         let hello = Hello(contract: 2, side: "guest", version: "0.1.0",
                           name: "Power Mac G3", os: "9.1", chunk: 8192)

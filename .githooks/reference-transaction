@@ -1,0 +1,42 @@
+#!/bin/sh
+# The main resident landing gate.
+#
+# pre-commit catches a resident commit and pre-merge-commit catches a merge
+# commit. Neither hook runs for a fast-forward, `git fetch . branch:main`, or
+# `git branch -f main branch`. Git's reference-transaction hook sees the exact
+# old and proposed object ids for all of those paths, before the ref moves.
+#
+# Only the prepared phase may refuse. The committed/aborted notifications are
+# observations after Git has already decided the transaction.
+[ "${1:-}" = prepared ] || exit 0
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    echo "[ext-bake-gate] cannot locate the worktree for a main ref update" >&2
+    exit 1
+}
+gate="$root/tools/ext-bake-gate"
+[ -x "$gate" ] || {
+    echo "[ext-bake-gate] refusing main ref update: $gate is unavailable" >&2
+    exit 1
+}
+
+while read -r old new ref; do
+    case "$ref" in
+        refs/heads/main|refs/heads/master)
+            # `git branch -f` reports an all-zero old id in this hook even
+            # when the ref already exists (watched by the version mutation
+            # test). During `prepared` the old ref is still readable, so
+            # recover it; otherwise a 1.0 -> 1.0 update looks like the first
+            # resident release and evades the monotonic version check.
+            case "$old" in
+                0000000000000000000000000000000000000000)
+                    prior=$(git rev-parse --verify "$ref" 2>/dev/null || true)
+                    [ -z "$prior" ] || old=$prior
+                    ;;
+            esac
+            "$gate" main-ref-check "$old" "$new" || exit $?
+            ;;
+    esac
+done
+
+exit 0

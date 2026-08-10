@@ -373,7 +373,10 @@ final class ConsoleModel: ObservableObject {
             return
         }
         completionsRequested = true
-        listener.runCommand("help", line: "") { [weak self] result in
+        listener.runScheduledCommand(
+            "help", line: "", purpose: .command("console completion"),
+            workClass: .foreground, coalescingKey: "console-completion") {
+            [weak self] result in
             self?.absorbCompletions(result)
         }
     }

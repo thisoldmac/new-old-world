@@ -32,6 +32,8 @@ authoritative release-facing statement.
 
 - [Connect your first classic Mac](user-guide/tutorials/first-connection.md)
   for the guided path from artifacts to a named session.
+- [Set up a new PowerPC Mac](user-guide/how-to/set-up-new-mac.md) to have the
+  host build and serve a personalized classic setup disk.
 - [Explore core features and Extension coverage](user-guide/explanation/core-features.md)
   after connecting, including which features work without the optional
   component and which remain experimental.

@@ -124,7 +124,9 @@ final class AgentIntegrationRevealItem {
             var timeoutTask: Task<Void, Never>?
             /* "target", the arg key the contract names for this verb — the
                whole remainder of the line, spaces and all. */
-            listener.runCommand("reveal", args: ["target": target]) {
+            listener.runScheduledCommand(
+                "reveal", args: ["target": target],
+                purpose: .command("reveal item"), workClass: .foreground) {
                 guard !settled else { return }
                 settled = true
                 timeoutTask?.cancel()

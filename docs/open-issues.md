@@ -20,6 +20,24 @@ under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
 `MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
 retain their original path spelling so the ledger remains an honest receipt.
 
+## RESOLVED DOCUMENTATION CURRENCY: onboarding, Mirror scheduling, and resident versioning are in the web guides (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+
+The host gained a guided PowerPC setup portal and classic-media builder, while
+Mirror gained session-wide work admission, symmetric invalidation hints, and
+coherent generation publication. Resident releases also gained one shared
+major/minor identity and a main-reference landing gate. Those changes landed
+in `main` after the first documentation pass and were absent from the curated
+web guide even though engineering records existed.
+
+The setup portal is now a gated cross-product row in Core features, an early
+Getting started path, a user how-to with three screenshot slots, and a human
+developer architecture page. Mirror user and developer pages now explain
+human-over-ambient admission, non-preemption, hint coalescing, gap repair,
+cadence fallback, and generation-safe publication. Resident documentation now
+names `contract/resident_version.h` and its landing rule. The review preserves
+the evidence boundary: setup through a classic browser and the PowerBook
+Mirror latency target remain unverified on hardware.
+
 ## RESOLVED DOCUMENTATION UX: navigation is incremental and Extension coverage is feature-first (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
 The initial site performed a full document load for every internal link, and
@@ -95,7 +113,7 @@ metadata cannot prove that a paragraph serves the right reader.
 
 ## PLANNED RELEASE CONTROL: documentation has a feature profile; runtime flags do not yet exist (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
-`docs/feature-catalog.yaml` now declares the initial-alpha product boundary:
+`docs/feature-catalog.yaml` now declares the alpha product boundary:
 the PowerPC Carbon guest is included, NOW Extension is optional, and the stale
 NOW-68K/pre-Carbon build is excluded. MkDocs renders those states on owning
 pages and generates the public release table and P0–P8 extension inventory from
@@ -108,6 +126,97 @@ system reads the catalog yet. The future implementation must either consume
 the reserved `classic.pre-carbon` key and active-profile default or replace the
 catalog as the single authority. Landing a second runtime-only availability
 matrix would recreate the release drift this gate is intended to prevent.
+## TESTED, NOT METAL-VERIFIED: the PPC LAN onboarding portal has not run in a classic browser (2026-08-09, `codex/onboarding-portal`)
+
+Connections now has **Set Up a New Mac…**. It starts the configured NOW wire
+listener and a separate temporary HTTP listener, displays a detected LAN IPv4
+and actual HTTP port, and serves an HTML 3.2-shaped fixed-route page. The page
+offers the canonical PPC MacBinary when installed, a per-request MacBinary
+`New Old World Prefs` aimed at the accepting interface and configured wire
+port, the optional NOW Extension, and explicitly enumerated files from the
+external dependency store. A missing CarbonLib row can download the known
+1.6.1 archive directly into that store after verifying its published SHA-1;
+NOW wraps the unchanged StuffIt bytes in MacBinary with `SIT5` / `SIT!`
+metadata before serving them. It can now also generate one setup disk: native
+packages and generated preferences on a bare HFS Plus volume, inside an
+uncompressed NDIF image with `rohd` / `ddsk` metadata, inside MacBinary for
+HTTP. The recommended `/now/setup.img` route uses the classic MacBinary MIME
+type without a forced `.bin` attachment; `/now/setup.img.bin` preserves an
+explicit envelope fallback. Unknown routes and mutation methods are refused;
+quit stops the listener. The product and server contract are in
+[onboarding.md](onboarding.md).
+
+**Updated 2026-08-09:** the original image-sizing rule admitted both a native
+`CarbonLib.bin` and its matching StuffIt archive, then reserved twice the
+combined package bytes plus 4 MiB. That produced a 19 MiB uncompressed disk
+for about 5.4 MiB of installed files; none of those extra bytes were Xcode or
+Swift content. Known dependency representations are now deduplicated with the
+native file preferred, and the image is payload plus 1 MiB, rounded up with an
+8 MiB floor. The onboarding sheet now makes each optional installed item a
+selection, explicitly rebuilds one cached image, and shows the live image's
+name, disk size, transfer size, time and contents. Selection changes are
+reported as pending until a successful rebuild replaces the bytes served by
+both setup-image routes.
+
+**Updated again 2026-08-09:** the 8 MiB floor above was still transfer padding,
+not a property of the selected files. It has been removed. The builder now
+restores the selected native files into a staging directory, measures that
+directory, creates HFS against the measured content, and uses the formatted
+volume's own free-block count to tighten the result to at most 64 KiB free.
+The realistic app, extension and CarbonLib fork sizes produce a 5,607,424-byte
+raw disk with 36,864 bytes free. The MacBinary envelope adds only its header
+and block padding to those filesystem sectors.
+
+**Host acceptance 2026-08-09:** the `457823dd` release build's item selection,
+explicit rebuild, image details and content-fitted result were exercised and
+accepted after the earlier 2.6 MiB of free space was removed. This closes the
+host UI and image-sizing acceptance question. It does not close the classic
+browser or physical-Mac boundaries named below.
+
+The focused host tests pass. Two use the real temporary listener over loopback
+to fetch the page, application and preferences, and to exercise unknown-route
+and POST refusal. The preference test separately pins the MacBinary header,
+CRC, Finder type/creator, big-endian V1 magic/format/port, and host field. The
+asset tests pin local-over-bundled precedence and dependency discovery. The
+new dependency tests pin explicit catalog enumeration, refusal before write on
+checksum mismatch, and the acquired archive's MacBinary name, data-fork
+boundary, Finder type and creator. A general encoder test pins both fork
+lengths and their independently padded regions.
+Each new guard was also watched failing against the mutation it names: a
+byte-swapped preference port, POST being admitted, and bundled assets taking
+precedence over the operator's local package store; additionally, a substituted
+Finder type, bypassed checksum comparison, and restored StuffIt archive link
+each produced the named failure. The new setup-image integration test builds
+and mounts the actual filesystem, then verifies both forks and Finder metadata;
+changing the NDIF Finder type from `rohd` to `dImg` produced its named failure.
+The 8 MiB capacity assertion, native-over-archive choice, and selection-to-
+served-image test were separately watched fail against mutations to the image
+floor, representation rank, and selection setter.
+The replacement content-fit guard was then watched fail when the old 8 MiB
+floor and 2.6 MiB free-space allowance were restored together: it named the
+8,388,608-byte carrier as exceeding the sub-6-MiB bound.
+
+`scripts/test-all` exits 0 after the HFS/NDIF checkpoint: staged-image
+discipline 28/28,
+native tests 149/149, MirrorKit, all guest/resident/instrument cross-builds,
+the complete host suites, and the Xcode app target in Debug and Release all
+pass. Stage 6 skips honestly because `NOW_GUEST_LIVE` was not set; nothing in
+that run reached a Macintosh.
+
+Disk Copy 6.3.3 on the Mac OS 9.1 QEMU guest mounted a generated setup image
+and exposed its Read Me, application, preferences, extension and Dependencies
+folder. This is emulator evidence for the image carrier, not a physical-metal
+result. What remains unverified is the browser boundary: no Netscape, Internet
+Explorer or Classilla-era browser has yet downloaded `/now/setup.img` and
+automatically decoded its MacBinary envelope; no physical PPC
+Mac has installed the generated preference file, launched the guest, and sent
+the `hello` that makes it appear under Active. CarbonLib remains external: NOW
+has pinned the mirror bytes and independently published checksum, but has not
+established Apple redistribution permission. The builder can use open-source
+`unar`/XADMaster on the host, and the test kit avoids that runtime dependency
+by carrying a locally prepared native `CarbonLib.bin`; a release-pinned helper
+bundle and its update policy remain unverified. The product intentionally does
+not create StuffIt: the HFS/NDIF disk is the single-package carrier instead.
 
 **There is a third category, and it is not on this page.**
 [known-wrong.md](known-wrong.md) is the register of things NOW knowingly
@@ -349,6 +458,52 @@ never “accepted or returned,” even though the adjacent inventory tool return
 one for every entry. F-013 now states the handoff locally and pins it in the
 registry without changing an argument or guest behavior. The guard was watched
 fail before the descriptor changed, then passed.
+
+## TESTED HOST/GUEST, NOT EMULATOR- OR METAL-VERIFIED: Mirror work now has priority, attribution, and invalidation generations (2026-08-09, `codex/mirror-latency-state-plan`)
+
+Mirror request-shaped work previously entered several independent paths. A
+human gesture could wait behind a queued Finder complement or scene without
+the host naming the blocker, while direct and brokered acts could race the
+same resident request cell. The historical 9–12 second `act_yield` defect
+remains a separate closed cause; the matching number alone does not show that
+it returned.
+
+One session-owned scheduler now admits Mirror gestures, scenes, content
+drains, Finder pages, capture and the principal list/process request families.
+Human gestures remain FIFO with each other and outrank ambient work that has
+not started. Active classic-Mac work is not preempted: it completes at its
+safe boundary, and automatic Finder observation is one page per slice with an
+explicit 1,800 ms timeout. A bounded work ledger reports admission, guest
+round-trip, settlement and publication separately through the existing
+Mirror metrics projection, including the current blocker and oldest human
+wait.
+
+The PowerPC guest drains P5 transition evidence through one normal-context
+coordinator and emits optional `mirror.invalidate` generation hints. The host
+attributes each event to the transport session that delivered it, coalesces
+follow-up observation, and invalidates its delta baseline on gap/unknown
+evidence. P5 observes only the currently armed A5 world: a front switch away
+from that target is sampled evidence, not a complete event stream. The cadence
+poll remains the compatibility and liveness authority.
+
+The host did not move state ownership to the guest or create a second snapshot
+model. Its existing session-pinned engine records exact structure, semantics,
+Finder, visibility and content generations plus the reason for each immutable
+publication, and refuses old enrichment from a changed base.
+
+This work is **Tested locally**, not emulator-verified or Metal-verified. The
+full `scripts/test-all` gate passed: 28 staged-image checks, 150 native tests,
+MirrorKit, both guest families plus the extension and auxiliary cross-builds,
+the host suites, and Debug and Release app builds. Its live-guest stage
+explicitly skipped because `NOW_GUEST_LIVE` was unset. Priority ordering and
+transition-gap guards were also watched failing against their claimed
+mutations before the unmodified tests passed.
+
+The open acceptance item is the exact-revision native Mirror campaign: close,
+front, double-click/open, selection, scroll, menu and drag during deliberately
+slow ambient slices, with paired guest evidence and distributions. In
+particular, the plan's claim that ambient work contributes no more than 2,000
+ms to a PB1400c interaction remains unproven.
 
 ## FIXED HOST-SIDE, NOT METAL-VERIFIED: Stop, disconnect, and guest replacement left a Mirror session alive (2026-08-08, `codex/mirror-session-teardown`)
 

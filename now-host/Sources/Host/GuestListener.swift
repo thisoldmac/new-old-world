@@ -120,6 +120,10 @@ final class GuestListener: ObservableObject {
     /// sites would be one forgotten assignment away from a page that never
     /// repaints — the failure being fixed here, reintroduced in the fix.
     let events: HostEventBus
+    let workTimeline = MirrorWorkTimeline()
+    private(set) lazy var workScheduler = GuestWorkScheduler(
+        sessionID: activeKey?.text ?? "disconnected",
+        clocks: { [weak self] clocks in self?.workTimeline.replace(clocks) })
 
     @Published private(set) var state: State = .idle {
         didSet {
@@ -326,6 +330,7 @@ final class GuestListener: ObservableObject {
     private(set) var activeKey: GuestKey? {
         didSet {
             guard activeKey != oldValue else { return }
+            workScheduler.reset(sessionID: activeKey?.text ?? "disconnected")
             events.publish(.focusChanged(to: activeKey))
         }
     }
@@ -731,6 +736,7 @@ final class GuestListener: ObservableObject {
 
     func runCommand(_ name: String, typed args: [String: CommandArg]?,
                     line: String? = nil,
+                    watchdogSeconds: TimeInterval? = nil,
                     completion: @escaping (CommandResult) -> Void) {
         guard let session, case .connected = state else {
             completion(CommandResult(
@@ -742,7 +748,8 @@ final class GuestListener: ObservableObject {
         let id = nextCommandId
         nextCommandId += 1
         pendingCommands[id] = completion
-        armWatchdog(id: id, seconds: Self.commandWatchdogSeconds) {
+        armWatchdog(id: id,
+                    seconds: watchdogSeconds ?? Self.commandWatchdogSeconds) {
             [weak self] reason in
             guard let self,
                   let waiting = self.pendingCommands
@@ -758,6 +765,51 @@ final class GuestListener: ObservableObject {
         }
         session.sendCommand(CommandRequest(id: id, name: name, args: args,
                                            line: line))
+    }
+
+    /// Scheduled command entry for product work that is not already inside
+    /// an admitted slice. Act dispatch uses the direct method above because
+    /// NOWMirrorSource has already admitted that exact gesture.
+    func runScheduledCommand(
+        _ name: String, typed args: [String: CommandArg]?,
+        line: String? = nil,
+        purpose: GuestWorkPurpose, workClass: GuestWorkClass,
+        coalescingKey: String? = nil,
+        watchdogSeconds: TimeInterval? = nil,
+        completion: @escaping (CommandResult) -> Void
+    ) {
+        workScheduler.submitCallback(
+            purpose, as: workClass, coalescingKey: coalescingKey,
+            onCancel: {
+                completion(.init(
+                    id: 0, ok: false,
+                    error: .init(code: "session-changed",
+                                 message: "The Mac changed before the command was sent")))
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.runCommand(name, typed: args, line: line,
+                                watchdogSeconds: watchdogSeconds) { result in
+                    completion(result)
+                    finish()
+                }
+            }
+    }
+
+    func runScheduledCommand(
+        _ name: String, args: [String: String]? = nil,
+        line: String? = nil, purpose: GuestWorkPurpose,
+        workClass: GuestWorkClass, coalescingKey: String? = nil,
+        watchdogSeconds: TimeInterval? = nil,
+        completion: @escaping (CommandResult) -> Void
+    ) {
+        runScheduledCommand(
+            name, typed: args?.mapValues(CommandArg.text), line: line,
+            purpose: purpose,
+            workClass: workClass, coalescingKey: coalescingKey,
+            watchdogSeconds: watchdogSeconds
+        ) { result in
+            completion(result)
+        }
     }
 
     /// Runs one line on the connected Mac and hands back what it printed.
@@ -791,6 +843,24 @@ final class GuestListener: ObservableObject {
     /// premature "timeout" on a command that was working.
     func exec(_ line: String,
               completion: @escaping (ExecOutcome) -> Void) {
+        workScheduler.submitCallback(
+            .console, as: .humanInteractive,
+            onCancel: {
+                completion(.init(text: "", ok: false,
+                                 code: "session-changed",
+                                 message: "The Mac changed before the command was sent"))
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.execAdmitted(line) { outcome in
+                    completion(outcome)
+                    finish()
+                }
+            }
+    }
+
+    private func execAdmitted(
+        _ line: String, completion: @escaping (ExecOutcome) -> Void
+    ) {
         guard let session, case .connected = state else {
             completion(ExecOutcome(text: "", ok: false, code: "disconnected",
                                    message: "No \(MachineNaming.commonNoun) is connected"))
@@ -871,6 +941,27 @@ final class GuestListener: ObservableObject {
     /// here now so tests and the later view share one path.
     func requestCensus(probe: String, cursor: Int? = nil,
                        completion: @escaping (CensusReport) -> Void) {
+        workScheduler.submitCallback(
+            .command("census \(probe)"), as: .foreground,
+            onCancel: {
+                completion(.init(
+                    id: 0, probe: probe, outcome: "failed", rows: [],
+                    more: false, cursor: nil, total: nil,
+                    note: "The Mac changed before the census page was sent"))
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.requestCensusAdmitted(probe: probe, cursor: cursor) {
+                    report in
+                    completion(report)
+                    finish()
+                }
+            }
+    }
+
+    private func requestCensusAdmitted(
+        probe: String, cursor: Int?,
+        completion: @escaping (CensusReport) -> Void
+    ) {
         guard let session, case .connected = state else {
             completion(CensusReport(
                 id: 0, probe: probe, outcome: "failed", rows: [],
@@ -1182,8 +1273,28 @@ final class GuestListener: ObservableObject {
     /// Lists one page of a folder in the guest's share. Paths are
     /// relative to the guest's share root; "" is the root.
     func listFiles(path: String, cursor: Int? = nil,
+                   workClass: GuestWorkClass = .foreground,
                    completion: @escaping (Result<FileListing,
                                                  FileFailure>) -> Void) {
+        workScheduler.submitCallback(
+            .files, as: workClass,
+            onCancel: {
+                completion(.failure(.init(
+                    code: "session-changed",
+                    message: "The Mac changed before the file page was sent")))
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.listFilesAdmitted(path: path, cursor: cursor) { result in
+                    completion(result)
+                    finish()
+                }
+            }
+    }
+
+    private func listFilesAdmitted(
+        path: String, cursor: Int?,
+        completion: @escaping (Result<FileListing, FileFailure>) -> Void
+    ) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
                                       message: "No \(MachineNaming.commonNoun) is connected")))
@@ -1206,6 +1317,25 @@ final class GuestListener: ObservableObject {
     func listProcesses(cursor: Int? = nil,
                        completion: @escaping (Result<ProcessListing,
                                                      FileFailure>) -> Void) {
+        workScheduler.submitCallback(
+            .processes, as: .foreground,
+            onCancel: {
+                completion(.failure(.init(
+                    code: "session-changed",
+                    message: "The Mac changed before the process page was sent")))
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.listProcessesAdmitted(cursor: cursor) { result in
+                    completion(result)
+                    finish()
+                }
+            }
+    }
+
+    private func listProcessesAdmitted(
+        cursor: Int?,
+        completion: @escaping (Result<ProcessListing, FileFailure>) -> Void
+    ) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
                                       message: "No \(MachineNaming.commonNoun) is connected")))
@@ -1229,6 +1359,26 @@ final class GuestListener: ObservableObject {
     func listSoftware(domain: String, cursor: Int? = nil,
                       completion: @escaping (Result<SoftwareListing,
                                                     FileFailure>) -> Void) {
+        workScheduler.submitCallback(
+            .software, as: .bulk,
+            onCancel: {
+                completion(.failure(.init(
+                    code: "session-changed",
+                    message: "The Mac changed before the software page was sent")))
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.listSoftwareAdmitted(domain: domain, cursor: cursor) {
+                    result in
+                    completion(result)
+                    finish()
+                }
+            }
+    }
+
+    private func listSoftwareAdmitted(
+        domain: String, cursor: Int?,
+        completion: @escaping (Result<SoftwareListing, FileFailure>) -> Void
+    ) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
                                       message: "No \(MachineNaming.commonNoun) is connected")))
@@ -1256,6 +1406,27 @@ final class GuestListener: ObservableObject {
     func driveProcess(psnHigh: Int, psnLow: Int, verb: ProcessVerb,
                       completion: @escaping (Result<ProcessResult,
                                                     FileFailure>) -> Void) {
+        workScheduler.submitCallback(
+            .interaction(verb == .front ? "front process" : "quit process"),
+            as: .humanInteractive,
+            onCancel: {
+                completion(.failure(.init(
+                    code: "session-changed",
+                    message: "The Mac changed before the process action was sent")))
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.driveProcessAdmitted(
+                    psnHigh: psnHigh, psnLow: psnLow, verb: verb) { result in
+                        completion(result)
+                        finish()
+                    }
+            }
+    }
+
+    private func driveProcessAdmitted(
+        psnHigh: Int, psnLow: Int, verb: ProcessVerb,
+        completion: @escaping (Result<ProcessResult, FileFailure>) -> Void
+    ) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
                                       message: "No \(MachineNaming.commonNoun) is connected")))
@@ -1815,6 +1986,25 @@ final class GuestListener: ObservableObject {
     func requestCapture(depth: Int?, tuning: CaptureTuning = .init(),
                         completion: @escaping (Result<CaptureDelivery,
                                                       CaptureFailure>) -> Void) {
+        workScheduler.submitCallback(
+            .capture, as: .foreground,
+            onCancel: {
+                completion(.failure(.init(
+                    message: "The Mac changed before the capture was sent")))
+            }) { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.requestCaptureAdmitted(depth: depth, tuning: tuning) {
+                    result in
+                    completion(result)
+                    finish()
+                }
+            }
+    }
+
+    private func requestCaptureAdmitted(
+        depth: Int?, tuning: CaptureTuning,
+        completion: @escaping (Result<CaptureDelivery, CaptureFailure>) -> Void
+    ) {
         guard let session, case .connected = state else {
             completion(.failure(.init(message: "No \(MachineNaming.commonNoun) is connected")))
             return
@@ -2338,6 +2528,10 @@ final class GuestListener: ObservableObject {
                                        semantics: semantics,
                                        interaction: interaction,
                                        tuning: tuning)
+    }
+
+    func invalidateSceneBaseline(for key: GuestKey) {
+        sessions[key]?.invalidateSceneBaseline()
     }
 
     fileprivate func deliverScene(
@@ -2897,6 +3091,12 @@ final class GuestListener: ObservableObject {
             onProcessResult: { [weak self] result in
                 guard fromActive() else { return }
                 self?.resolveProcessResult(result)
+            },
+            onMirrorInvalidation: { [weak self] hint in
+                guard let self, let key = origin.session?.guestKey else {
+                    return
+                }
+                self.events.publish(.mirrorInvalidated(key, hint))
             },
             onReceived: { [weak self] url in
                 guard let self, let sender = origin.session else { return }

@@ -109,7 +109,7 @@ final class MirrorFaceParityTests: XCTestCase {
                            + "about who asked for it")
     }
 
-    // MARK: - A1: a held act is not the direct path
+    // MARK: - A1: a queued act is not the direct path
 
     /// **The reply MCP got for the act that settled.**
     ///
@@ -123,12 +123,13 @@ final class MirrorFaceParityTests: XCTestCase {
     /// refused by name before the engine is ever consulted, so a nil
     /// engine cannot produce this answer.
     ///
-    /// What produces it is an act arriving mid-observation: it is HELD,
-    /// its record does not exist yet, and the service used to read that
-    /// absence as the direct path. `awaitsObservation: false` is the
-    /// damage — it tells the only face that cannot see the screen to stop
-    /// waiting for a settlement that is on its way.
-    func testAnActHeldMidObservationIsNotReportedToMCPAsTheDirectPath()
+    /// What produced it was an act arriving mid-observation and being held
+    /// outside the journal. The operation is now minted synchronously and
+    /// only dispatch waits behind the observation, so MCP receives the exact
+    /// journal id immediately. `awaitsObservation: false` remains the damage
+    /// this gate prevents — it would tell the only face that cannot see the
+    /// screen to stop waiting for a settlement that is on its way.
+    func testAnActQueuedMidObservationIsNotReportedToMCPAsTheDirectPath()
         async throws {
         let rig = try await Rig.make(joined: false)   // mid-observation
         defer { rig.tearDown() }
@@ -147,7 +148,7 @@ final class MirrorFaceParityTests: XCTestCase {
         let operation = try XCTUnwrap(reply.operation)
 
         XCTAssertNotEqual(operation.id, "direct",
-                          "the act is held and will be brokered; `direct` "
+                          "the act is queued in the broker; `direct` "
                               + "says it can never settle")
         XCTAssertTrue(operation.awaitsObservation,
                       "this is the field that cost the live drive: it told "
@@ -185,64 +186,55 @@ final class MirrorFaceParityTests: XCTestCase {
 
     /// **An agent's act stays an agent's act through the wait.**
     ///
-    /// The deferred branch of `perform` re-enters through
-    /// `self.perform(interaction, source: source)`. Until 2026-08-05 it
-    /// called the one-argument overload, whose `source` defaults to
-    /// `.human` — so an MCP act unlucky enough to arrive while an
-    /// observation was in flight was journalled as a person's. Measured
-    /// live: a `finderOpen` driven entirely over the agent socket settled
-    /// `confirmed` and recorded `source: human`. It was the only record in
-    /// that host's journal, so there was nothing to confuse it with.
+    /// Before unified admission, the deferred branch of `perform` re-entered
+    /// through an overload whose source defaulted to `.human`. An MCP act
+    /// unlucky enough to arrive during observation was therefore journalled
+    /// as a person's. The operation is now journalled before it waits, which
+    /// makes the attribution available synchronously and removes that second
+    /// dispatch door.
     ///
     /// The journal is the only thing that can tell the two faces apart
     /// after the fact. Reverting that one argument makes this fail.
-    func testAnMCPActHeldMidObservationIsStillRecordedAsMCPs() async throws {
+    func testAnMCPActQueuedMidObservationIsStillRecordedAsMCPs() async throws {
         let rig = try await Rig.make(joined: false)   // mid-observation
         defer { rig.tearDown() }
 
         let act = rig.finderOpen("Macintosh HD")
-        XCTAssertEqual(rig.source.perform(act, source: .mcp), .held,
-                       "the case only exists while an observation is in "
-                           + "flight; if this dispatched, the harness is "
-                           + "not reproducing it")
-        XCTAssertTrue(rig.engine.operations.records.isEmpty,
-                      "a held act has no record yet — which is exactly why "
-                          + "the drive service could not tell it from the "
-                          + "direct path")
-
-        rig.harness.completeJoin(0)                   // the cycle clears
-        try await waitUntil("the held act reaches the broker") {
-            !rig.engine.operations.records.isEmpty
+        guard case .brokered(let id) =
+                rig.source.perform(act, source: .mcp) else {
+            return XCTFail("the operation was not journalled synchronously")
         }
 
         XCTAssertEqual(rig.engine.operations.records.count, 1)
+        XCTAssertEqual(rig.engine.operations.records.first?.id, id)
         XCTAssertEqual(rig.engine.operations.records.first?.source, .mcp,
                        "an act driven over the agent socket was recorded "
                            + "as a person's")
+        rig.harness.completeJoin(0)                   // dispatch may proceed
     }
 
     /// And the person's act is still the person's, so the test above is
     /// not passing because everything became `.mcp`.
-    func testAHumanActHeldMidObservationIsStillRecordedAsAPersons()
+    func testAHumanActQueuedMidObservationIsStillRecordedAsAPersons()
         async throws {
         let rig = try await Rig.make(joined: false)
         defer { rig.tearDown() }
 
-        XCTAssertEqual(rig.source.perform(rig.finderOpen("Macintosh HD"),
-                                          source: .human), .held)
-        rig.harness.completeJoin(0)
-        try await waitUntil("the held act reaches the broker") {
-            !rig.engine.operations.records.isEmpty
+        guard case .brokered = rig.source.perform(
+            rig.finderOpen("Macintosh HD"), source: .human) else {
+            return XCTFail("the operation was not journalled synchronously")
         }
 
         XCTAssertEqual(rig.engine.operations.records.first?.source, .human)
+        rig.harness.completeJoin(0)
     }
 
     // MARK: - the rig
 
     /// One connected guest, one engine, one published scene — and the
-    /// choice that matters: whether the content join has completed. An
-    /// act performed before it is HELD; after it, brokered.
+    /// choice that matters: whether the content join has completed. An act
+    /// performed before it is journalled immediately but its dispatch waits
+    /// behind the observation; after it, dispatch can begin immediately.
     @MainActor
     private struct Rig {
         let listener: GuestListener

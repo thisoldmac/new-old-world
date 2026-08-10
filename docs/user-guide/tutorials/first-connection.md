@@ -5,8 +5,8 @@ description: A guided first run from the alpha bundle to a named, verified NOW s
 doc_type: tutorial
 audience: user
 lifecycle: current
-authority: [README.md, docs/naming.md, SECURITY.md]
-source_dependencies: [scripts/build-host-app, now-guest-ppc/CMakeLists.txt, docs/naming.md, docs/feature-catalog.yaml]
+authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md]
+source_dependencies: [scripts/build-host-app, now-guest-ppc/CMakeLists.txt, docs/naming.md, docs/feature-catalog.yaml, docs/onboarding.md, now-host/Sources/Host/OnboardingPortal.swift]
 media_ids: [setup-artifacts, setup-host-listener, setup-guest-connection, setup-connected]
 last_verified: 2026-08-09
 ---
@@ -29,10 +29,16 @@ uses the normal applications and leaves the Extension uninstalled.
 
 ## 1. Put each application on its machine
 
-Install **New Old World.app** on the modern Mac. On a PowerPC Mac, transfer the
-MacBinary artifact **New Old World.bin** and let the transfer tool restore its
-forks. Keep the bundled **NOW Extension** available, but do not install it for
-the first connection.
+Install **New Old World.app** on the modern Mac. The guided alpha path is
+**Connections > Set Up a New Mac…**; follow [Set up a new PowerPC
+Mac](../how-to/set-up-new-mac.md) to build and download a personalized setup
+disk. That flow has host and emulator evidence but is not yet end-to-end
+verified through a classic browser on hardware.
+
+For the manual fallback, transfer **New Old World.bin** and let the transfer
+tool restore its forks, then [configure the connection](../how-to/configure-connection.md).
+In either path the bundled **NOW Extension** is an optional selection, not a
+separate product or a requirement for the first connection.
 
 ## 2. Start the host listener
 

@@ -228,7 +228,10 @@ final class AgentIntegrationSoftwareLaunch {
         await withCheckedContinuation { continuation in
             var settled = false
             var timeoutTask: Task<Void, Never>?
-            listener.runCommand("launch", args: ["target": path]) {
+            listener.runScheduledCommand(
+                "launch", args: ["target": path],
+                purpose: .interaction("launch software"),
+                workClass: .humanInteractive) {
                 if settled {
                     self.actionInFlight = false
                     return

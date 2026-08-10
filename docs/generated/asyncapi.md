@@ -47,6 +47,8 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `hostServesChat` | `receive` | `control` | `chatCatalog`, `chatDelta`, `chatStatus`, `chatResult` |
 | `guestAsksHostSurface` | `send` | `control` | `hostShow` |
 | `hostServesHostSurface` | `receive` | `control` | `hostShown` |
+| `peerAnnouncesMirrorInvalidation` | `send` | `control` | `mirrorInvalidate` |
+| `peerReceivesMirrorInvalidation` | `receive` | `control` | `mirrorInvalidate` |
 
 ## Messages
 
@@ -129,6 +131,7 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `previewEnd` | `preview.end` | `PreviewEnd` |
 | `hostShow` | `host.show` | `HostShow` |
 | `hostShown` | `host.shown` | `HostShown` |
+| `mirrorInvalidate` | `mirror.invalidate` | `MirrorInvalidate` |
 
 ## Commands
 

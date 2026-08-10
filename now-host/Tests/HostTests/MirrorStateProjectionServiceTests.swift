@@ -65,6 +65,18 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
 
         XCTAssertEqual(status.value?.current?.snapshotID, published.id)
         XCTAssertEqual(status.value?.current?.digest, published.digest)
+        XCTAssertEqual(status.value?.current?.publicationReason,
+                       published.publicationReason.rawValue)
+        XCTAssertEqual(status.value?.current?.generations.structure,
+                       published.generations.structure)
+        XCTAssertEqual(status.value?.current?.generations.semantics,
+                       published.generations.semantics)
+        XCTAssertEqual(status.value?.current?.generations.finder,
+                       published.generations.finder)
+        XCTAssertEqual(status.value?.current?.generations.visibility,
+                       published.generations.visibility)
+        XCTAssertEqual(status.value?.current?.generations.content,
+                       published.generations.content)
         XCTAssertEqual(snapshot.value?.snapshot?.metadata,
                        status.value?.current)
         XCTAssertEqual(snapshot.value?.snapshot?.entities.map(\.id), [
@@ -963,11 +975,26 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
             publishedAt: Date(timeIntervalSince1970: 1.25),
             idleBefore: 0.8, semantics: true, interaction: true,
             outcome: "ok", windows: 1, elements: 54))
+        var work = MirrorWorkClocks(
+            traceID: "trace", sessionID: "session", purpose: .scene,
+            enqueuedAt: Date(timeIntervalSince1970: 0))
+        work.admittedAt = Date(timeIntervalSince1970: 2)
+        work.replyAt = Date(timeIntervalSince1970: 5)
+        work.settledAt = Date(timeIntervalSince1970: 5.25)
+        work.publishedAt = Date(timeIntervalSince1970: 5.5)
+        work.guestHandlerMs = 2400
+        work.outcome = "ok"
+        let scheduler = GuestWorkSnapshot(
+            activePurpose: .finder("Desktop Folder"), activeAge: 1.25,
+            queuedHumanCount: 1, queueDepth: 3, oldestHumanWait: 0.75)
 
         let service = MirrorStateProjectionService(
             engines: MirrorStateEngineRegistry(),
             currentGuest: { nil },
-            metrics: { acts.projected(cycles: cycles, running: true) })
+            metrics: {
+                acts.projected(cycles: cycles, running: true,
+                               scheduler: scheduler, work: [work])
+            })
         let result = await service.read(.init(intention: .metrics))
 
         XCTAssertTrue(result.available)
@@ -983,6 +1010,21 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertEqual(act?.totalMs, 21000)
         XCTAssertEqual(result.value?.metrics?.cycles.first?.walk, "full")
         XCTAssertEqual(result.value?.metrics?.cycles.first?.requestMs, 1000)
+        XCTAssertEqual(result.value?.metrics?.scheduler?.activePurpose,
+                       "Finder Desktop Folder")
+        XCTAssertEqual(result.value?.metrics?.scheduler?.queueDepth, 3)
+        XCTAssertEqual(result.value?.metrics?.scheduler?.oldestHumanWaitMs,
+                       750)
+        XCTAssertEqual(result.value?.metrics?.work.first?.admissionWaitMs,
+                       2000)
+        XCTAssertEqual(result.value?.metrics?.work.first?.guestRoundTripMs,
+                       3000)
+        XCTAssertEqual(result.value?.metrics?.work.first?.settlementWaitMs,
+                       250)
+        XCTAssertEqual(result.value?.metrics?.work.first?.publicationWaitMs,
+                       250)
+        XCTAssertEqual(result.value?.metrics?.work.first?.guestHandlerMs,
+                       2400)
     }
 
     func testMetricsAnswerEvenWhenNoSceneHasEverArrived() async {

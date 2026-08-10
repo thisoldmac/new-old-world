@@ -5,6 +5,14 @@ import MirrorKit
 /// legacy projection remains visible until direct preflight parity is proven.
 @MainActor
 final class MirrorStateEngine: ObservableObject {
+    private struct ContributionEnvelope<Value: Equatable>: Equatable {
+        var session: MirrorGuestSession
+        var baseSequence: Int
+        var domainGeneration: Int
+        var window: MirrorWindowIdentity
+        var value: Value
+    }
+
     private struct SemanticContribution: Equatable {
         var controls: [String: Scene.Semantics] = [:]
         var dialogItems: [String: Scene.Semantics] = [:]
@@ -25,8 +33,10 @@ final class MirrorStateEngine: ObservableObject {
     @Published private(set) var lastRejection: MirrorObservationRejection?
     @Published private(set) var enabledPlanes = Set(MirrorPlaneID.allCases)
     private(set) var replica: MirrorReplica?
-    private var semantics: [MirrorWindowIdentity: SemanticContribution] = [:]
-    private var content: [MirrorWindowIdentity: ContentContribution] = [:]
+    private var semantics:
+        [MirrorWindowIdentity: ContributionEnvelope<SemanticContribution>] = [:]
+    private var content:
+        [MirrorWindowIdentity: ContributionEnvelope<ContentContribution>] = [:]
     /// Machine-wide process visibility is observed independently from the
     /// structural walk. Keep the last values even while their coverage is
     /// stale so projection can be continuous without letting stale state
@@ -52,6 +62,7 @@ final class MirrorStateEngine: ObservableObject {
     private var digestScene: Scene?
     private var digestPlanes: Set<MirrorPlaneID> = []
     private var digestValue = ""
+    private var generations = MirrorGenerationSet()
 
     init(guestKey: GuestKey, store: MirrorSnapshotStore? = nil,
          diagnostics: MirrorEngineDiagnostics? = nil) {
@@ -74,8 +85,13 @@ final class MirrorStateEngine: ObservableObject {
         case .accepted(let next):
             replica = next
             let identities = windowIdentities(in: scene)
-            _ = retainSemantics(from: scene, identities: identities, in: next)
-            _ = retainContent(from: scene, identities: identities, in: next)
+            if retainSemantics(from: scene, identities: identities, in: next) {
+                generations.semantics += 1
+            }
+            if retainContent(from: scene, identities: identities, in: next) {
+                generations.content += 1
+            }
+            generations.structure = next.snapshot.sceneGeneration
             pruneContributions(to: next)
             if !visibility.isEmpty {
                 visibilityCoverage = .init(
@@ -84,7 +100,7 @@ final class MirrorStateEngine: ObservableObject {
                         + "\(next.lastSequence)")
             }
             lastRejection = nil
-            publish(from: next.snapshot, at: receivedAt)
+            publish(from: next.snapshot, reason: .structure, at: receivedAt)
         case .rejected(let rejection):
             lastRejection = rejection
         }
@@ -111,6 +127,7 @@ final class MirrorStateEngine: ObservableObject {
         digestScene = nil
         digestPlanes.removeAll()
         digestValue = ""
+        generations = .init()
         store.reset()
     }
 
@@ -147,8 +164,9 @@ final class MirrorStateEngine: ObservableObject {
                    + "arrived; folder windows may be drawn without items"))
         guard claim != finderItemsCoverage else { return }
         finderItemsCoverage = claim
+        generations.finder += 1
         guard let replica else { return }
-        publish(from: replica.snapshot, at: receivedAt)
+        publish(from: replica.snapshot, reason: .coverage, at: receivedAt)
     }
 
     /// Join a complete guest-side Finder visibility census to the exact
@@ -210,7 +228,8 @@ final class MirrorStateEngine: ObservableObject {
         }
         visibility = next
         visibilityCoverage = coverage
-        publish(from: replica.snapshot, at: receivedAt)
+        generations.visibility += 1
+        publish(from: replica.snapshot, reason: .visibility, at: receivedAt)
         return true
     }
 
@@ -235,9 +254,21 @@ final class MirrorStateEngine: ObservableObject {
                                       in: next) || changed
         }
         guard changed else { return false }
+        let reason: MirrorPublicationReason
+        switch plane {
+        case .content:
+            generations.content += 1
+            reason = .content
+        case .semantics:
+            generations.semantics += 1
+            reason = .semantics
+        default:
+            generations.finder += 1
+            reason = .finder
+        }
         replica = next
         pruneContributions(to: next)
-        publish(from: next.snapshot, at: receivedAt)
+        publish(from: next.snapshot, reason: reason, at: receivedAt)
         return true
     }
 
@@ -250,7 +281,9 @@ final class MirrorStateEngine: ObservableObject {
         let normalized = planes.union([.structure])
         guard normalized != enabledPlanes else { return false }
         enabledPlanes = normalized
-        if let replica { publish(from: replica.snapshot, at: date) }
+        if let replica {
+            publish(from: replica.snapshot, reason: .policy, at: date)
+        }
         return true
     }
 
@@ -289,7 +322,8 @@ final class MirrorStateEngine: ObservableObject {
         }
     }
 
-    private func publish(from base: MirrorProjection, at date: Date) {
+    private func publish(from base: MirrorProjection,
+                         reason: MirrorPublicationReason, at date: Date) {
         let scene = compose(base.scene)
         publicationID += 1
         let projection = MirrorProjection(
@@ -299,6 +333,8 @@ final class MirrorStateEngine: ObservableObject {
             baseComplete: base.baseComplete,
             sceneGeneration: base.sceneGeneration,
             contentGeneration: base.contentGeneration,
+            generations: generations,
+            publicationReason: reason,
             scene: scene)
         snapshot = projection
         store.publish(projection, at: date)
@@ -318,7 +354,7 @@ final class MirrorStateEngine: ObservableObject {
         for index in scene.windows.indices {
             if enabledPlanes.contains(.semantics),
                let identity = identities[index],
-               let contribution = semantics[identity] {
+               let contribution = semantics[identity]?.value {
                 for controlIndex in scene.windows[index].controls.indices {
                     let ref = scene.windows[index].controls[controlIndex].ref
                     if let semantic = contribution.controls[ref] {
@@ -349,7 +385,7 @@ final class MirrorStateEngine: ObservableObject {
 
             if enabledPlanes.contains(.content),
                let identity = identities[index],
-               let contribution = content[identity],
+               let contribution = content[identity]?.value,
                contribution.rect == scene.windows[index].rect {
                 scene.windows[index].display = contribution.display
             } else if !enabledPlanes.contains(.content) {
@@ -367,12 +403,14 @@ final class MirrorStateEngine: ObservableObject {
         for index in scene.windows.indices {
             guard let identity = identities[index],
                   replica.windows[identity] != nil else { continue }
-            var next = semantics[identity] ?? SemanticContribution()
+            var next = semantics[identity]?.value ?? SemanticContribution()
+            var entryChanged = false
             for control in scene.windows[index].controls {
                 guard let semantic = control.semantic else { continue }
                 if next.controls[control.ref] != semantic {
                     next.controls[control.ref] = semantic
                     changed = true
+                    entryChanged = true
                 }
             }
             for item in scene.windows[index].dialogItems ?? [] {
@@ -380,10 +418,16 @@ final class MirrorStateEngine: ObservableObject {
                 if next.dialogItems[key] != item.semantic {
                     next.dialogItems[key] = item.semantic
                     changed = true
+                    entryChanged = true
                 }
             }
             if !next.controls.isEmpty || !next.dialogItems.isEmpty {
-                semantics[identity] = next
+                if entryChanged || semantics[identity] == nil {
+                    semantics[identity] = .init(
+                        session: session, baseSequence: scene.seq,
+                        domainGeneration: generations.semantics + 1,
+                        window: identity, value: next)
+                }
             }
         }
         return changed
@@ -404,15 +448,18 @@ final class MirrorStateEngine: ObservableObject {
             var display = window.display
             if let fresh = display,
                !Self.hasRenderableStructuredDrawing(fresh),
-               let retained = content[identity],
+               let retained = content[identity]?.value,
                retained.rect == window.rect,
                let prior = retained.display,
                Self.hasRenderableStructuredDrawing(prior) {
                 display!.append(contentsOf: prior.filter { $0.op != "bits" })
             }
             let next = ContentContribution(rect: window.rect, display: display)
-            if content[identity] != next {
-                content[identity] = next
+            if content[identity]?.value != next {
+                content[identity] = .init(
+                    session: session, baseSequence: scene.seq,
+                    domainGeneration: generations.content + 1,
+                    window: identity, value: next)
                 changed = true
             }
         }
@@ -425,10 +472,10 @@ final class MirrorStateEngine: ObservableObject {
             semantics = semantics.filter { identities.contains($0.key) }
         }
         if content.contains(where: {
-            replica.windows[$0.key]?.window.rect != $0.value.rect
+            replica.windows[$0.key]?.window.rect != $0.value.value.rect
         }) {
             content = content.filter {
-                replica.windows[$0.key]?.window.rect == $0.value.rect
+                replica.windows[$0.key]?.window.rect == $0.value.value.rect
             }
         }
         let processIdentities = Set(replica.applications.keys)

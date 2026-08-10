@@ -7,7 +7,7 @@ audience: user
 lifecycle: experimental
 authority: [docs/mirror-knowledge.md, docs/mirror-drive-loop.md]
 module_ids: [mirror]
-source_dependencies: [docs/mirror-knowledge.md, docs/mirror-drive-loop.md, now-host/Packages/MirrorKit, now-guest-ppc/src/mirror, contract/peek_table.h]
+source_dependencies: [docs/mirror-knowledge.md, docs/mirror-drive-loop.md, now-host/Packages/MirrorKit, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/MirrorStateProjectionService.swift, now-guest-ppc/src/mirror, contract/asyncapi.yaml, contract/peek_table.h]
 media_ids: [mirror-host, mirror-ppc, mirror-detail]
 last_verified: 2026-08-09
 ---
@@ -33,7 +33,10 @@ user outcomes require the Extension. NOW-68K has no Mirror subsystem.
 ## On the modern Mac
 
 The host joins scene identity, content, Finder semantics, references, and act
-settlement. A host-rendered interior never becomes authority for guest state.
+settlement. Human requests take priority over queued ambient reads at the next
+safe boundary. Change notices combine redundant refreshes, and the host avoids
+publishing a view that mixes older and newer state. A host-rendered interior
+never becomes authority for guest state.
 
 ## On the classic Mac
 
@@ -58,13 +61,19 @@ actions remain bounded by the machine's consent ceiling and visible host state.
 ## Failure states
 
 Missing Extension feature, no writer, stale reference, not addressed,
-timed-out settlement, and authoritative refusal are not interchangeable.
+timed-out settlement, invalidation gap, stale generation, and authoritative
+refusal are not interchangeable. Gap or unknown hints trigger a repair read;
+cadence polling remains available when no hint arrives.
 
 ## Current limitations
 
 Finder and application interiors retain known incomplete behaviors. An
 observation feature that was requested but produced no artifact cannot support
 a rendering claim.
+
+Queued human work does not preempt a guest traversal already running. The new
+scheduler and coherent publication path are tested locally, but the PowerBook
+1400c ambient-wait target is not metal-verified.
 
 ## For developers
 

@@ -54,7 +54,7 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+          format: !!python/name:pymdownx.superfences.fence_div_format
 
 extra_css:
   - assets/stylesheets/now-docs.css
@@ -89,6 +89,7 @@ nav:
       - Overview: user-guide/index.md
       - Getting started:
           - Connect your first classic Mac: user-guide/tutorials/first-connection.md
+          - Set up a new PowerPC Mac: user-guide/how-to/set-up-new-mac.md
           - Core features: user-guide/explanation/core-features.md
       - How-to guides:
           - Choose the right guest: user-guide/how-to/choose-a-guest.md
@@ -129,6 +130,7 @@ nav:
       - Orientation: developer-guide/orientation.md
       - Architecture:
           - System context: developer-guide/architecture/system-context.md
+          - Onboarding and setup media: developer-guide/architecture/onboarding.md
           - Wire contract: developer-guide/architecture/wire-contract.md
           - Host: developer-guide/architecture/host.md
           - PowerPC guest: developer-guide/architecture/ppc-guest.md

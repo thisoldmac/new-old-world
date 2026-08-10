@@ -501,7 +501,10 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
         actionInFlight = true
         lastError = nil
         lastAction = nil
-        listener.runCommand("launch", args: ["target": entry.path]) {
+        listener.runScheduledCommand(
+            "launch", args: ["target": entry.path],
+            purpose: .interaction("launch software"),
+            workClass: .humanInteractive) {
             [weak self] result in
             guard let self else { return }
             self.actionInFlight = false
@@ -526,7 +529,10 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
         actionInFlight = true
         lastError = nil
         lastAction = nil
-        listener.runCommand("reveal", args: ["target": entry.path]) {
+        listener.runScheduledCommand(
+            "reveal", args: ["target": entry.path],
+            purpose: .interaction("reveal software"),
+            workClass: .humanInteractive) {
             [weak self] result in
             guard let self else { return }
             self.actionInFlight = false
@@ -560,7 +566,9 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
         lastError = nil
         lastAction = nil
         sweepCost = nil
-        listener.runCommand("catsearch") { [weak self] result in
+        listener.runScheduledCommand(
+            "catsearch", purpose: .bulk("software catalog search"),
+            workClass: .bulk) { [weak self] result in
             guard let self else { return }
             self.actionInFlight = false
             guard result.ok, let rows = result.output?["catsearch"] else {

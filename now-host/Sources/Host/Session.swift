@@ -82,6 +82,7 @@ final class Session {
     private let onProcessListing: (ProcessListing) -> Void
     private let onSoftwareListing: (SoftwareListing) -> Void
     private let onProcessResult: (ProcessResult) -> Void
+    private let onMirrorInvalidation: (MirrorInvalidate) -> Void
     private let onReceived: (URL) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
     private let onOutboundFailed: (String) -> Void
@@ -218,6 +219,7 @@ final class Session {
          onProcessListing: @escaping (ProcessListing) -> Void,
          onSoftwareListing: @escaping (SoftwareListing) -> Void,
          onProcessResult: @escaping (ProcessResult) -> Void,
+         onMirrorInvalidation: @escaping (MirrorInvalidate) -> Void = { _ in },
          onReceived: @escaping (URL) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
          onOutboundFailed: @escaping (String) -> Void,
@@ -263,6 +265,7 @@ final class Session {
         self.onProcessListing = onProcessListing
         self.onSoftwareListing = onSoftwareListing
         self.onProcessResult = onProcessResult
+        self.onMirrorInvalidation = onMirrorInvalidation
         self.onReceived = onReceived
         self.onOutboundProgress = onOutboundProgress
         self.onOutboundFailed = onOutboundFailed
@@ -513,6 +516,8 @@ final class Session {
             onProcessListing(listing)
         case .processResult(let result):
             onProcessResult(result)
+        case .mirrorInvalidate(let hint):
+            onMirrorInvalidation(hint)
         case .softwareListing(let listing):
             onSoftwareListing(listing)
         case .softwareList:
@@ -1613,6 +1618,14 @@ final class Session {
             staleAfterMs: staleAfterMs, semantics: semantics,
             interaction: interaction, since: since,
             full: full ? true : nil)))
+    }
+
+    /// A gap invalidation cannot safely build on the last digest. Removing
+    /// the baseline makes the next ordinary request a whole-scene repair.
+    func invalidateSceneBaseline() {
+        sceneBaseline = nil
+        sceneAskedBaseline = nil
+        sceneDeltaRun = 0
     }
 
     /// The no-change answer. Nothing arrived on the bulk lane and nothing

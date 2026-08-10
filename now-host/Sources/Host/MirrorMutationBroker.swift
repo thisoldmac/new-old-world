@@ -46,6 +46,14 @@ final class MirrorMutationBroker {
     /// was in front of it before they can read the number at all.
     var depth: Int { queue.count + (active == nil ? 0 : 1) }
 
+    /// True only while an operation has not yet crossed the guest dispatch
+    /// boundary. A postcondition wait may need observations; an undispatched
+    /// human act must be admitted before another ambient observation starts.
+    var hasDispatchWaiting: Bool {
+        if let active { return active.operation.outcome == .queued }
+        return !queue.isEmpty
+    }
+
     init(journal: MirrorOperationJournal? = nil,
          timeout: TimeInterval = 15,
          now: @escaping () -> Date = Date.init,

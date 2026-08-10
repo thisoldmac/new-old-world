@@ -2,7 +2,7 @@
 
 Use a classic Macintosh from a modern Mac without turning either interface into a web replica. New Old World is a native macOS host and a PowerPC Carbon guest for Mac OS 8.6–9.2.2. The alpha centers that pair and includes the NOW Extension in the bundle as an optional installation. A pre-Carbon 68K sibling remains in source, but its current build is stale and excluded from the alpha.
 
-> **Pre-alpha:** useful paths exist, but installation is still manual, compatibility is deliberately narrow, and several features are tested or emulator-verified rather than proven on physical hardware. Read [current limitations](docs/user-guide/reference/limitations.md) before relying on it.
+> **Alpha:** useful paths exist, compatibility is deliberately narrow, and several features are tested or emulator-verified rather than proven on physical hardware. The guided setup flow is not yet end-to-end hardware verified. Read [current limitations](docs/user-guide/reference/limitations.md) before relying on it.
 
 ![Placeholder for the macOS host overview](docs/assets/screenshots/overview/host.svg)
 
@@ -11,6 +11,7 @@ Use a classic Macintosh from a modern Mac without turning either interface into 
 ## Start here
 
 - [Connect your first classic Mac](docs/user-guide/tutorials/first-connection.md)
+- [Set up a new PowerPC Mac](docs/user-guide/how-to/set-up-new-mac.md)
 - [Compare core features and NOW Extension coverage](docs/user-guide/explanation/core-features.md)
 - [Review the alpha feature profile](docs/user-guide/reference/release-profile.md)
 - [Browse every module](docs/user-guide/reference/modules/index.md)
@@ -46,6 +47,7 @@ pre-Carbon NOW-68K ─ retained in source; excluded from alpha
 | Screenshots and streaming | included with stated limitations | not required | excluded from release |
 | Deeper Mirror observation and interaction | experimental | provides the required classic-process access | unavailable |
 | In-context interaction, transitions, modal-safe liveness, drag, and cursor following | experimental | provides resident vehicles | unavailable |
+| [Guided PowerPC setup portal](docs/user-guide/how-to/set-up-new-mac.md) and fork-preserving HFS install image | included; tested, not metal-verified | bundled optional package selection | unavailable |
 
 The short table is navigation, not a claim of parity. The [module reference](docs/user-guide/reference/modules/index.md) states availability, safety, data movement, and failures per module. `docs/contract-coverage.md` keeps **served** separate from **proven**.
 

@@ -822,7 +822,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
             return
         }
         let path = FileLocationResolver.join(base, names[index])
-        listener.listFiles(path: path) { [weak self] result in
+        listener.listFiles(path: path, workClass: .ambient) {
+            [weak self] result in
             guard let self,
                   generation == self.locationDiscoveryGeneration else { return }
             switch result {
