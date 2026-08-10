@@ -2558,7 +2558,7 @@ static void file_refuse(long id, const char *code, const char *reason)
    transfer-correlated terminal message to clean it immediately. */
 static void file_start_failed(long id, unsigned short xfer)
 {
-    char json[256];
+    char json[160];
 
     snprintf(json, sizeof json,
              "{\"type\":\"file.end\",\"id\":%ld,\"transfer\":%u,"
@@ -4350,7 +4350,7 @@ int now_wire_update_request(NowUpdateComponent component,
                             char *err, long cap)
 {
     NowUpdateOffer offer;
-    char json[160];
+    char json[256];
 
     if (g.phase != kConnConnected) {
         snprintf(err, (size_t)cap, "Connect to the other Mac first");
