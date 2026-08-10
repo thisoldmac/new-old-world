@@ -47,7 +47,19 @@ entries:
     lifecycle: current
     audience: developer
     search: exclude
+  - path: development.md
+    lifecycle: current
+    audience: developer
+    search: exclude
   - path: plans/README.md
+    lifecycle: historical
+    audience: developer
+    search: exclude
+  - path: plans/2026-08-10-030-handoff.md
+    lifecycle: historical
+    audience: developer
+    search: exclude
+  - path: plans/2026-08-10-031-feat-development-agent-loop-hardening-plan.md
     lifecycle: historical
     audience: developer
     search: exclude

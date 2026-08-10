@@ -1,3 +1,7 @@
+---
+search:
+  exclude: true
+---
 # Projects and Development
 
 NOW has a headless project and build lane for classic Macintosh software. It

@@ -6,7 +6,7 @@ doc_type: reference
 audience: user
 lifecycle: current
 authority: [docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md]
-source_dependencies: [docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md, docs/feature-catalog.yaml, docs/onboarding.md]
+source_dependencies: [docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md, docs/feature-catalog.yaml, docs/onboarding.md, docs/development.md]
 media_ids: []
 last_verified: 2026-08-09
 ---
@@ -39,6 +39,10 @@ last_verified: 2026-08-09
   preempted and the PowerBook latency target remains unverified.
 - **File resume remains narrower than basic transfer.** The repository records
   resume-by-offset hangs even where ordinary transfers are proven.
+- **Development is not yet a fully autonomous loop.** A host-owned project can
+  build and launch through MPW on the PowerBook, but guest-home promotion,
+  typed test receipts, CodeKitten document acceptance, and reliable semantic
+  UI settlement after launch remain incomplete or unverified.
 - **Hardware evidence is specific.** A result on the PowerBook 1400c does not
   prove the PowerBook 180c path, and emulator evidence is not metal evidence.
 - **Classic platform recovery matters.** The optional extension must remain

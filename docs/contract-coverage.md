@@ -1335,7 +1335,7 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 20847ab13c7d948487356ee3415476438e3327e9
+sources-sha1: 951ead3d16ddf35af877d05a78e331e4c3a40fb0
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1394,4 +1394,5 @@ rederived: 2026-08-09T21:05:26-0400 9864da82 unchanged
 rederived: 2026-08-09T21:43:46-0400 2b3c2c0e unchanged
 rederived: 2026-08-09T22:09:30-0400 d54812c2 unchanged
 rederived: 2026-08-09T22:18:48-0400 e637efd3 unchanged
+rederived: 2026-08-10T02:53:58-0400 62603174 sources
 -->
