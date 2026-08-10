@@ -23,9 +23,10 @@ test.
 
 ## Implementation result
 
-Implemented on `codex/development-agent-loop-hardening` and verified on
-2026-08-10. The NOW-owned parts of workstreams A-D and the manifest/input
-portion of F are complete:
+Implemented across `codex/development-agent-loop-hardening` and
+`codex/development-agent-loop-completion`, and verified on 2026-08-10. The
+NOW-owned parts of workstreams A-D and the manifest/input portion of F are
+complete:
 
 - compatibility preflight names the host build, local protocol, projection
   catalog and supported schema revisions;
@@ -37,31 +38,78 @@ portion of F are complete:
   `wait_for_settlement` returns its actual terminal state;
 - `Project.ckp` has a closed test vocabulary and the PPC guest returns
   `ckproject.test-receipt/1` after exact process-identity assertion;
+- the CodeKitten handoff waits for and validates a versioned
+  `ckproject.open-receipt/1` AppleEvent reply instead of treating dispatch as
+  document acceptance;
 - guest projects are discoverable through a bounded catalog, restart recovery
   inventories retained candidates, and guest-home publication remains guarded
   by the imported base digest;
+- the companion has authenticated loopback HTTP and stdio transports over one
+  dispatcher, with exact catalog/resource/prompt/result/error parity and one
+  46-tool conformance recipe run against both spawned processes;
 - onboarding validates a relocatable Development starter-pack manifest with
   platform, version, component, license, provenance, size and qualification
   metadata rather than an HFS directory ID.
 
-The isolated mac99/OS 9.1 acceptance used guest build `b1de53f2bfe9`, resident
+The final isolated mac99/OS 9.1 acceptance used guest build `27e37aeeaa0a`, resident
 manifest `28ef6c07ee6d`, resident fingerprint `085c4ebf8457`, qualified
 `mpw-ffff-00000cf0@structural-1`, and base image SHA-256
-`bf5a6cf67701e8628cca3ffe5311a0bd76d959a549b7cdb320287c2afd8ec22e`.
-It completed simple, failure/repair/cancellation and guest-home promotion loops;
-recovered one lost stage response without duplication; refused a divergent
-promotion while preserving both sides; and cleaned up this run's candidates.
-The exact receipts are summarized in [development.md](../development.md)
-and the dated ledger entry in [open-issues.md](../open-issues.md).
+`be32b70a7fe546b144be76627bf4f20a1777a6fa2fb3e202ef1cd4f059ffe8e2`.
+Every development and guest-file action in these loops used authenticated HTTP
+MCP; stdio was not used as an action fallback. The run completed:
 
-Four acceptance statements were not silently redefined:
+- simple host-home build, exact-product test, semantic dismissal, process-exit
+  read and cleanup;
+- a fork-bearing host-home project whose source resource fork and Finder
+  identity survived build and typed test;
+- a six-file loop with a real MrC failure, repair, cancellation, required
+  restage, successful build, test, semantic dismissal and cleanup;
+- a project created only on the guest through the fork-aware Files surface,
+  imported into NOW-owned host scratch, edited and committed, built and tested
+  inactive, promoted at the imported digest, then edited again and correctly
+  refused as `guest-diverged` after an out-of-band guest change. Exact typed
+  re-upload restored the active tree, and promotion then completed at revision
+  3.
 
-1. This repository has a stdio MCP companion and no HTTP MCP listener. The
-   plan's HTTP-canonical/parity assumption was stale; implementing HTTP would
-   add a new transport and security boundary.
-2. CodeKitten is separately owned. NOW still lacks a returned `odoc` handler
-   receipt, and cross-repository shared-fixture extraction must land with that
-   sibling rather than making it a NOW dependency.
+The same live stack served 31 of 46 advertised HTTP tools, returned typed
+refusals for 14, and left the one human-gated approval tool explicitly gated:
+zero failed and zero uncovered. A no-host run exercised all 46 tools over both
+spawned transports. Exact parity tests compare initialize, initialized
+notification gating, ping, resources, prompts, complete tool descriptors and
+schemas, one real tool result, and invalid method/tool/cursor/resource/prompt
+errors. HTTP-specific tests cover loopback Host validation, bearer
+authentication, Origin rejection, session handshake/deletion/cap/expiry,
+incremental request bodies, ambiguous framing rejection and a spawned listener.
+
+The loop also exposed and fixed one transport-to-domain observability defect:
+the host recognized an idempotency-key collision, but the response carried the
+stored request's ID and the companion flattened it to
+`now-host-invalid-response`. Collision and pending replies now carry the
+current request ID and cross the companion as `attempt-collision` or
+`attempt-pending`. The exact old response mutation fails the new socket test;
+the rebuilt host/HTTP companion returned `attempt-collision` on the VM.
+
+Cleanup exposed a separate rig false-green after the runtime evidence was
+complete. The source MPW image reports HFS **clean**, but the session clone
+reports HFS **dirty** after the shutdown applet went quiet and QEMU exited.
+`shutdown-guest.py` had called disk quiescence "already unmounted" and returned
+success without asking the volume. It now releases QEMU and then makes
+`volclean.py` the final authority; a completed route whose HFS volume is dirty
+or unreadable fails. The exact former `return 0` mutation is named by the
+focused test. The Development receipts above remain valid runtime evidence,
+but that disposable VM is not a volume-clean fixture receipt.
+
+Four acceptance statements remain deliberately narrower than the local
+implementation:
+
+1. HTTP was an unapproved expansion of this slice. It is retained because the
+   user wanted HTTP as a separate future slice and then required the introduced
+   stack to reach full parity before handoff. The security and parity evidence
+   above is the completion gate; it does not retroactively make the original
+   scope decision acceptable.
+2. CodeKitten is separately owned. NOW now requires its positive open receipt,
+   but cross-repository shared-fixture extraction must land with that sibling
+   rather than making it a NOW dependency.
 3. The portable starter-pack contract is present, but no redistributable MPW
    payload can be committed without settled license/provenance. The manually
    populated VM is test infrastructure, not the distributable pack.
@@ -240,6 +288,8 @@ the NOW host/companion, orchestration, and evidence collection.
 ## Landing gates
 
 - Every new guard is mutation-tested against the exact defect it names.
+- A VM cleanup receipt is successful only after the released disk reports a
+  clean HFS volume; disk quiet and `qemu-img check` are not substitutes.
 - Derived documents and generated contract reference are rederived after the
   integrated merge.
 - `docs/status.md`, the Development module page, and `docs/open-issues.md` state

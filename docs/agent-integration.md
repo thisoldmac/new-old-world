@@ -283,9 +283,13 @@ returns one typed refusal instead of cascading generic decode failures.
 Projects and Development describe each operation as its own schema branch, so
 project-revision and workspace-commit guards cannot coexist accidentally.
 
-The implemented MCP process is currently stdio. It reaches the running host
-over the private same-user local socket described below; this repository has no
-HTTP MCP listener and therefore makes no HTTP/stdio parity claim.
+The companion offers two process transports over the same registry and
+dispatcher. With no arguments it speaks newline-delimited JSON-RPC over stdio.
+With `--http` it binds an authenticated HTTP listener to IPv4 loopback only.
+Both reach the running host over the private same-user local socket described
+below. Spawned parity tests compare the complete tool descriptors and schemas,
+resources, prompts, results, errors and MCP lifecycle; the same 46-tool
+conformance recipe runs against both.
 
 The parity-slice addition (W1 #1) is:
 
@@ -341,7 +345,23 @@ only with what it does:
 | --- | --- | --- |
 | `now_stream_screen` | `stream.start` / `stream.stop` / `stream.refresh` over `GuestListener.startStream` — the same host-owned bracket the Screenshots page's **Start Streaming** button opens, and the same one a guest's `stream.request` is answered with | Opens the bracket, hands back one whole frame at a time, and closes it. Three intentions on one row because they are one bracket: stop and refresh take the id start minted and mean nothing without it. A frame request sends `stream.refresh` and answers with the frame that FOLLOWS, so "after you asked" is true; the picture rides the result's image attachment and is paged out inside the projection exactly as a capture's is. The pace is bounded here and is never absent — the contract reads absent as the guest's own ~15 fps floor, which is right for a person watching and wrong for a caller reading one frame per call. **A bracket an agent opens ends without the agent**: the host records the pid the kernel named on the opening socket and ends the stream when that process is gone, and equally when it has not called for a minute, because a live companion that stopped reading costs the Macintosh exactly what a dead one does. Stopping is not restricted to the opener — the person at the host can end any stream from the page they watch it on, and the Screenshots and Agent pages both say when one is an agent's. |
 
-The client-launched `NOWAgentCompanion` executable speaks newline-delimited JSON-RPC over stdio and advertises exactly the registry's rows. It opens one bounded local request to the running host for each call. Session health and upload staging send no guest message; the capability report sends only `help` and the bounded read-only probes named above; commit and the other guest-dependent tools ask the host to use the existing paired connection. Launch accepts exactly one bounded name or generated opaque reference; quit accepts exactly one generated process reference; approved-artifact transfer accepts exactly one host-minted receipt. The V0.5 Files tools accept only canonical paths relative to host-owned `guestRoot`, never an absolute guest path or a modern-host path. No tool accepts a PSN, shell text, an arbitrary host filesystem operation, or a guest Files mutation this host does not implement — and none accepts an overwrite flag, an unlink, a recursive form, or more than one item per call. Every tool exposes typed unavailability and no host or listener lifecycle operation. If the host is absent, the result is `now-host-unavailable`; the companion never launches it. If the host is present without a paired guest, guest-dependent tools return `now-guest-unavailable` and never use cached state.
+The client-launched `NOWAgentCompanion` executable advertises exactly the
+registry's rows over either transport. It opens one bounded local request to
+the running host for each call. Session health and upload staging send no guest
+message; the capability report sends only `help` and the bounded read-only
+probes named above; commit and the other guest-dependent tools ask the host to
+use the existing paired connection. Launch accepts exactly one bounded name or
+generated opaque reference; quit accepts exactly one generated process
+reference; approved-artifact transfer accepts exactly one host-minted receipt.
+The V0.5 Files tools accept only canonical paths relative to host-owned
+`guestRoot`, never an absolute guest path or a modern-host path. No tool accepts
+a PSN, shell text, an arbitrary host filesystem operation, or a guest Files
+mutation this host does not implement — and none accepts an overwrite flag, an
+unlink, a recursive form, or more than one item per call. Every tool exposes
+typed unavailability and no host or guest-listener lifecycle operation. If the
+host is absent, the result is `now-host-unavailable`; the companion never
+launches it. If the host is present without a paired guest, guest-dependent
+tools return `now-guest-unavailable` and never use cached state.
 
 ## Connection posture
 
@@ -355,6 +375,15 @@ Only after that proof should a separate worktree extract the parts that have dem
 
 V0 deliberately trusts processes running as the same macOS user. This protects against other local users and accidental clients; it does not protect against malicious code already running as that user.
 
+HTTP adds a separate local network boundary. It binds only `127.0.0.1`, checks
+the request Host is loopback, requires a 32-512 byte bearer token supplied in
+`NOW_MCP_HTTP_BEARER_TOKEN`, and rejects non-loopback Origins. It allows at most
+eight initialized sessions by default, expires them after 30 minutes, supports
+explicit DELETE, caps headers and MCP bodies, rejects chunked or ambiguous
+framing, and closes each TCP connection after one response. The bearer is still
+same-user protection; another malicious process under that user remains outside
+the model.
+
 - The host creates `dev.newoldworld.now-agent-<uid>/host.sock` beneath the user's private temporary directory. The directory is mode `0700`; the socket is mode `0600`.
 - The host checks every accepted peer with `getpeereid` and serves it only when the effective UID matches.
 - **The host remembers that companions exist, in counts and clock times only.** The surface is one request per connection and a companion is short-lived, so the host tracks the *companion* rather than the socket: when the first one ever spoke, when the last one did, how many requests are in flight this instant, how many distinct peer processes have spoken, and how many peers the UID gate turned away. A companion is identified by `LOCAL_PEERPID` — the kernel's answer about the socket, asked only *after* the gate has passed it, and never anything a peer said about itself. Pid reuse means two short-lived companions can read as one, which undercounts rather than inventing one. The list of distinct companions is bounded at eight, most recently active first; the totals do not age out. **Nothing about the CONTENT of a request is recorded here** — no operation name, no arguments, no payload — because the audit event above is where "what was invoked" is answered and it refuses arguments deliberately; a presence ledger that recorded more would be the back door that puts them back. "Nothing has ever attached" is a distinct, first-class reading, not a zeroed count, and is the resting state on a Mac with no companion installed.
@@ -366,7 +395,10 @@ V0 deliberately trusts processes running as the same macOS user. This protects a
 - Approval staging lives in a per-host-launch mode-`0700` directory. A selected source must be one directly opened, single-link regular file no larger than 4 MiB. The sealed copy is mode `0400`, expires after ten minutes, is bound to the current guest session and approved Files destination, and is consumed on its first redemption attempt. Final open follows no links and rechecks owner, inode, device, link count, size, timestamps, mode, and digest.
 - The MCP cannot mint an approval, list approval staging, choose the approved file's destination, or recover its original path. A user may deliberately select a file from anywhere the native picker can reach, but that grants only the staged copy; it does not expose the selected path. This approval boundary applies to that host-selected-file lane. A full-access caller may separately supply bytes it already possesses through `now_guest_files_upload_*`; whether access to modern-host files should require an additional product-level approval is tracked in [audit-report-2026-08-09.md](audit-report-2026-08-09.md) F-004. Same-user malicious code remains outside V0's stated protection.
 
-The local socket is not the guest wire. It creates no TCP listener, guest connection, protocol message, guest module, daemon, launch agent, or second app.
+The local socket is not the guest wire. It creates no TCP listener, guest
+connection, protocol message, guest module, daemon, launch agent, or second app.
+The optional companion HTTP mode does create one loopback-only TCP listener;
+it does not change the guest wire or start the host.
 
 **It does create one thing on this side, and that changed deliberately: a page in the host app.** The earlier wording promised no dashboard item either, and that promise was about the *guest* — the vintage Mac gains nothing, which still holds — but it was written broadly enough to cover the host, and the host now needs one. Rule 3 asks that what a person cannot initiate they can at least see; the audit line satisfied that into a log file, where a person has to already suspect something to go and read it. The **Agent** page (`AgentActivityModuleView`) is the visible half: companion presence from the ledger above, the audit stream as it happens, the machine's own `hello` consent answer read back, and the endpoint's own path. It **displays and does not decide** — there is no control on it over what an agent may do, and specifically none over the guest's consent, because that answer belongs to the machine being driven and a host-side override would defeat the point of asking for it. What may happen is settled in one place, at the dispatch.
 
@@ -376,7 +408,23 @@ Two build systems compile this code, and `NOWAgentIntegration` means the same th
 
 It was not always so, and the failure is worth keeping. The Xcode target used to pull `Sources/NOWAgentIntegration` in as a second synchronized file group, which put the types in scope but left the module *name* unresolvable, so every import needed a `#if canImport(NOWAgentIntegration)` guard. Two files added in `cbe83e9` omitted it and broke `xcodebuild` for a day while `swift build` and `swift test` stayed green — every gate this project ran was blind to the app not compiling. **`scripts/test-host` now builds the app target as well as running the suites.** Run it, not `swift test` alone, before landing host work.
 
-Build the host app normally and build the companion with `swift build --package-path now-host --product NOWAgentCompanion`. An MCP client may launch that executable over stdio, but this repository intentionally contains no client configuration. NOW must already be running for any tool to reach its host projection, and a guest must already be paired for every tool except host/session health. A cold application catalog sweep on the PowerBook has previously taken about four seconds. The host therefore settles an unacknowledged launch as `now-launch-outcome-unknown` after 32 seconds, while keeping the action gate closed until a late result or disconnect; the local action response window is 35 seconds and read-only calls retain two seconds. Quit references expire after 30 seconds and the existing process-drive watchdog settles after 15 seconds. A quit receipt distinguishes snapshot, revalidation, and acknowledgement times and says only `requestSent`; process exit still requires a later listing.
+Build the host app normally and build the companion with
+`swift build --package-path now-host --product NOWAgentCompanion`. With no
+arguments, an MCP client launches the executable over stdio. HTTP is explicit:
+set `NOW_MCP_HTTP_BEARER_TOKEN` to 32-512 UTF-8 bytes and launch
+`NOWAgentCompanion --http [--port N]`; the default port is 5254 and
+`NOW_MCP_HTTP_PORT` may also provide it. This repository intentionally contains
+no client configuration. NOW must already be running for any tool to reach its
+host projection, and a guest must already be paired for every tool except
+host/session health. A cold application catalog sweep on the PowerBook has
+previously taken about four seconds. The host therefore settles an
+unacknowledged launch as `now-launch-outcome-unknown` after 32 seconds, while
+keeping the action gate closed until a late result or disconnect; the local
+action response window is 35 seconds and read-only calls retain two seconds.
+Quit references expire after 30 seconds and the existing process-drive watchdog
+settles after 15 seconds. A quit receipt distinguishes snapshot, revalidation,
+and acknowledgement times and says only `requestSent`; process exit still
+requires a later listing.
 
 Artifact transfer is deliberately two-step. In NOW's Files page, navigate to the intended guest folder, choose **Add File… > Approve One-Time Agent Transfer…**, select one file, and hand the copied receipt to `now_transfer_approved_artifact` within ten minutes. Approval does not start a transfer. Redemption is one attempt, never overwrites, cannot be retried with the same receipt, and may wait up to one hour locally for the existing size-scaled guest transfer watchdog. A delivery receipt carries the source and handed-to-NOW digests separately and says `guestAcknowledgedWrite: true`, but always says `destinationBytesVerified: false`: current `file.done` proves the guest reported a successful write and stamp, not a read-back hash. The companion does not start, stop, configure, or keep either side alive.
 
@@ -433,7 +481,30 @@ The fake partial guest answers `not-implemented` the way
 and the guest's half not at all. Nothing here has been run against the
 PowerBook 180c; `open-issues.md` lists exactly what that leaves open.
 
-Every registered projection, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 browse coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v4 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery, create-only collision policy, stale/unavailable handling, one-attempt replay and concurrent-commit refusal, file-backed framing, strict guest completion evidence, late-collision preservation, malformed MacBinary refusal, stale-accept invalidation, cleanup-failure recovery, host/guest observation identities, modified-date omission, strict local/MCP decoding, host build, and a clean Retro68 guest build.
+Every registered projection, the local socket, stdio wrapper, and HTTP wrapper
+are **tested** here. The two spawned transports have exact surface/result/error
+parity and both run the complete advertised-tool conformance recipe. HTTP adds
+tests for loopback Host, bearer and Origin checks; initialization and session
+deletion/cap/expiry; bounded incremental bodies and ambiguous framing; and an
+actual spawned-listener liveness path. V0 coverage otherwise remains as
+previously recorded: missing host or guest; bounded process snapshots and
+references; exact launch/refusal/revalidation; cooperative quit; receipt-backed
+artifact approval, staging, replay and delivery; malformed and oversized
+requests; endpoint permissions and peer UID; concurrency; discriminated
+schemas; and unchanged host module inventory/listener state. V0.5 browse
+coverage adds explicit/default/invalid `guestRoot` policy, canonical path and
+root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date
+projection, exact stat/not-found/scan-limit, stale sessions, bounded guest
+refusal and malformed listing rejection, concurrent reads, prior local schema
+v4 rejection, maximum-page response size, host absence without launch, strict
+MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation
+refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery,
+create-only collision policy, stale/unavailable handling, one-attempt replay and
+concurrent-commit refusal, file-backed framing, strict guest completion
+evidence, late-collision preservation, malformed MacBinary refusal,
+stale-accept invalidation, cleanup-failure recovery, host/guest observation
+identities, modified-date omission, strict local/MCP decoding, host build, and a
+clean Retro68 guest build.
 
 As of the 2026-07-25 reconciliation, the combined V0.5 tree containing these
 eleven projections plus the independently verified reverse-streaming

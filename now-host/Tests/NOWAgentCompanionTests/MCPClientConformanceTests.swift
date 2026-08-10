@@ -41,14 +41,26 @@ final class MCPClientConformanceTests: XCTestCase {
 
     // MARK: The gate
 
-    func testEveryAdvertisedToolAnswersARealClient() throws {
+    func testEveryAdvertisedToolAnswersARealStdioClient() throws {
         let client = try MCPClient(executable: Self.companionExecutable(),
                                    environment: Self.environment())
         defer { client.shutDown() }
+        try exerciseEveryAdvertisedTool(client, transport: "stdio")
+    }
 
+    func testEveryAdvertisedToolAnswersARealHTTPClient() throws {
+        let client = try MCPHTTPClient(executable: Self.companionExecutable(),
+                                       environment: Self.environment())
+        defer { client.shutDown() }
+        try exerciseEveryAdvertisedTool(client, transport: "HTTP")
+    }
+
+    private func exerciseEveryAdvertisedTool(
+        _ client: any MCPConformanceClient, transport: String
+    ) throws {
         let initialize = try client.handshake()
         XCTAssertNotNil(initialize["result"],
-                        "initialize did not succeed: \(initialize)")
+                        "\(transport) initialize did not succeed: \(initialize)")
 
         let tools = try client.advertisedTools()
         let advertised = tools.compactMap { $0["name"] as? String }
@@ -60,6 +72,7 @@ final class MCPClientConformanceTests: XCTestCase {
         try requireTheBuildUnderTest(client)
 
         let rows = try run(advertised, through: client)
+        print("=== transport: \(transport) ===")
         print(Self.table(rows, live: Self.live))
 
         let failed = rows.filter { $0.verdict == .failed }
@@ -174,7 +187,9 @@ final class MCPClientConformanceTests: XCTestCase {
     /// Absent, the run says out loud whose machine it reached rather than
     /// silently accepting whichever one did, because a table nobody can
     /// attribute to a build is not a measurement.
-    private func requireTheBuildUnderTest(_ client: MCPClient) throws {
+    private func requireTheBuildUnderTest(
+        _ client: any MCPConformanceClient
+    ) throws {
         guard Self.live else { return }
         let reply = try client.request(
             "tools/call",
@@ -229,7 +244,7 @@ final class MCPClientConformanceTests: XCTestCase {
 
     /// Producers first, then the surface's own order.
     private func run(_ advertised: [String],
-                     through client: MCPClient) throws
+                     through client: any MCPConformanceClient) throws
         -> [MCPConformance.Row] {
         var order = MCPConformanceRecipes.producersFirst
             .filter(advertised.contains)

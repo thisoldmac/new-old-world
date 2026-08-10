@@ -105,14 +105,15 @@ source, CodeKitten, MPW, a toolchain or a build opts that turn into the same
 registry and dispatch used by MCP.
 
 “Open in CodeKitten” is human-only in the initial surface. The PPC guest finds
-CodeKitten by creator in each mounted volume's Desktop database, launches it if
-needed, and returns immediately. The host polls cooperatively until it can send
-one standard `odoc` for the active `Project.ckp`, then brings CodeKitten
-forward. CodeKitten implements that handler, but no build or sync path requires
-the IDE to exist. The PPC onboarding disk can carry a separately supplied
-CodeKitten MacBinary as a selected-by-default optional application, which makes
-initial installation one transfer without turning that distribution seam into
-a runtime dependency.
+CodeKitten by creator in each mounted volume's Desktop database and launches it
+if needed. The host polls cooperatively until it can send one standard `odoc`
+for the active `Project.ckp`, waits for the AppleEvent reply while continuing to
+pump the wire, validates `ckproject.open-receipt/1`, then brings CodeKitten
+forward. Dispatch-only or malformed replies are refusals, not document
+acceptance. No build or sync path requires the IDE to exist. The PPC onboarding
+disk can carry a separately supplied CodeKitten MacBinary as a
+selected-by-default optional application, which makes initial installation one
+transfer without turning that distribution seam into a runtime dependency.
 
 ## Verification and current limits
 
@@ -126,22 +127,26 @@ left no process after dismissal.
 
 The autonomous-loop hardening is **emulator-verified**, not newly
 metal-verified. A session-private mac99/OS 9.1 guest running build
-`b1de53f2bfe9` qualified `mpw-ffff-00000cf0@structural-1`. Its base image was
-`bf5a6cf67701e8628cca3ffe5311a0bd76d959a549b7cdb320287c2afd8ec22e`;
+`27e37aeeaa0a` qualified `mpw-ffff-00000cf0@structural-1`. Its base image was
+`be32b70a7fe546b144be76627bf4f20a1777a6fa2fb3e202ef1cd4f059ffe8e2`;
 the staged resident reported source manifest `28ef6c07ee6d` and fingerprint
-`085c4ebf8457`. Through the real MCP companion, the run exercised:
+`085c4ebf8457`. Every development and guest-file action below used the real
+authenticated HTTP MCP listener; no action fell back to stdio. The run
+exercised:
 
-- a three-action Hello World build and typed `ckproject.test-receipt/1`;
-- a five-file Memory Meter project with a nonempty source resource fork, a
-  real MrC failure, repair, cancelled job, required restage, successful build,
-  exact-product test, semantic dismissal and candidate cleanup;
-- retry of the same caller attempt after a lost stage response, recovering the
-  original terminal receipt without a duplicate revision or candidate;
-- import of a guest-only project, host-scratch edit and commit, inactive build
-  and typed test, successful promotion at the imported base digest, then a
-  second built candidate refused as `guest-diverged` after an active guest
-  edit. A fresh download matched the human-side bytes, and the losing candidate
-  remained inspectable until explicitly discarded.
+- a three-action Hello World build, typed `ckproject.test-receipt/1`, semantic
+  dismissal, fresh process-exit read and candidate cleanup;
+- a fork-bearing host-home project whose nonempty source resource fork and
+  `TEXT/MPS ` identity survived an MPW build and exact-product test;
+- a six-file Memory Meter project with a real MrC failure, repair, cancelled
+  job, required restage, successful build, exact-product test, semantic
+  dismissal and candidate cleanup;
+- creation of a guest-only project through the typed fork-aware Files surface,
+  import into host scratch, host edit and commit, inactive build and typed test,
+  successful promotion at the imported base digest, then a second built
+  candidate refused as `guest-diverged` after an active guest edit. Restoring
+  through Trash did not reproduce the logical-file digest; an exact typed
+  re-upload did, after which promotion completed at project revision 3.
 
 The guest catalog removes the opaque-ID import prerequisite. Projects and
 Development mutation calls now require caller attempt IDs and the host keeps a
@@ -153,6 +158,24 @@ typed incompatibility before domain dispatch. Projects and Development publish
 operation-discriminated schemas, including exclusive project-revision and
 workspace-commit apply branches.
 
+The same dispatcher is reachable over stdio and authenticated loopback HTTP.
+The spawned parity gate compares initialize and notification lifecycle, ping,
+resources, prompts, complete tool descriptors and schemas, real tool results,
+and protocol errors. Both transports run the same 46-tool no-host conformance
+recipe. HTTP additionally validates the loopback Host, bearer token and Origin;
+bounds session count and lifetime; supports explicit session deletion; rejects
+ambiguous framing; and has a spawned incremental-request liveness gate. Against
+the VM, HTTP served 31 tools, returned typed refusals for 14, left the one
+human-approved transfer explicitly gated, and produced zero failed or uncovered
+rows.
+
+The live loop found an idempotency-collision reporting defect: the host rejected
+a reused attempt ID, but its response ID made the companion call it an invalid
+host response. Pending and collision responses now carry the current request
+ID and cross both transports as typed `attempt-pending` or
+`attempt-collision`. The exact old response fails the regression test, and the
+rebuilt host and HTTP companion returned `attempt-collision` on the running VM.
+
 Semantic snapshot, target lookup and planning now resolve through the same
 published `MirrorStateEngine` authority. `now_semantic_ui_wait_for_settlement`
 waits by journal operation ID. A direct semantic action for which no
@@ -160,17 +183,15 @@ postcondition exists terminates as `unconfirmed`, not falsely `confirmed`; the
 VM acceptance proved that receipt and then used a fresh process list to prove
 the application actually exited.
 
-Current limits remain explicit:
+Current limits and friction remain explicit:
 
-- The repository currently ships the MCP companion over its private local
-  **stdio** entry point. There is no HTTP MCP listener here, so the plan's HTTP
-  parity rung could not be run and stdio remains the canonical implemented
-  transport rather than a hidden fallback.
-- CodeKitten remains optional and separately owned. NOW still proves only
-  launch, asynchronous `odoc` dispatch and foregrounding; it has no returned
-  document-acceptance receipt. Cross-repository shared fixtures and neutral
-  receipt vocabulary must be completed with CodeKitten before claiming that
-  acceptance seam.
+- HTTP was introduced during this slice without prior scope approval. It is now
+  retained with the parity, authentication, session and liveness gates above;
+  that completion does not erase the process failure that created the extra
+  workstream.
+- CodeKitten remains optional and separately owned. NOW now requires a positive
+  versioned document-acceptance receipt, but shared fixtures and any neutral
+  pure project/receipt module still need coordinated sibling-repository work.
 - The portable Development starter-pack manifest and relocatable onboarding
   input are implemented and validated, but this repository does not contain a
   redistributable MPW payload. Toolchain licensing/provenance must be settled
@@ -179,6 +200,25 @@ Current limits remain explicit:
   The previous metal evidence still covers fork-aware host-home build/run and
   human-observed dialog behavior, not the new test, retry, guest-home promotion
   or semantic-settlement receipts.
+- `loop-status` can retain candidate receipts from an ended guest session while
+  `stage-status` on the current session says `candidate-unavailable`; those
+  receipts need a session identity or an explicit host-only abandon policy
+  before the recovery guidance can be fully composable.
+- The guest Files stat surface reports fork sizes and type/creator but not
+  Finder flags. Trash/restore therefore could not explain why apparently
+  restored bytes failed the project digest; exact typed upload recovered the
+  project, but the missing identity observation is still a diagnostic gap.
+- The version-1 typed test deliberately leaves the launched app running so a
+  semantic assertion can inspect it. A loop must dismiss or quit it before
+  candidate discard. Cancelling a build is terminal for that candidate and
+  requires discard/restage; neither behavior should be inferred from a generic
+  retry.
+- The final VM session ended with its HFS volume marked dirty even though its
+  source image is clean, the shutdown applet completed, disk writes quiesced,
+  QEMU exited, and `qemu-img check` passed. That is a rig cleanup failure, not
+  a Development-loop result. `shutdown-guest.py` now verifies HFS after QEMU
+  releases the disk and fails rather than calling quiet "already unmounted".
+  The disposable session remains preserved as the negative artifact.
 
 The exact findings and residual gates are tracked in
 [`open-issues.md`](open-issues.md) and the completed

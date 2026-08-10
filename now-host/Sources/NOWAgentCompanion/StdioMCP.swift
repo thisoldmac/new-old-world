@@ -52,6 +52,28 @@ struct MCPStandardOutput {
 @main
 enum NOWAgentCompanionMain {
     static func main() async {
+        switch CompanionInvocation.parse(
+            arguments: Array(CommandLine.arguments.dropFirst()),
+            environment: ProcessInfo.processInfo.environment) {
+        case .stdio:
+            await runStdio()
+        case .http(let configuration):
+            do {
+                let listener = try MCPHTTPListener(configuration: configuration)
+                try await listener.run()
+            } catch {
+                FileHandle.standardError.write(Data(
+                    "NOWAgentCompanion HTTP refused to start: \(error)\n".utf8))
+                Foundation.exit(64)
+            }
+        case .invalid(let reason):
+            FileHandle.standardError.write(Data(
+                "NOWAgentCompanion: \(reason)\n".utf8))
+            Foundation.exit(64)
+        }
+    }
+
+    private static func runStdio() async {
         let server = NOWMCPServer(
             client: SocketAgentIntegrationClient(),
             audit: LocalAuditSink())

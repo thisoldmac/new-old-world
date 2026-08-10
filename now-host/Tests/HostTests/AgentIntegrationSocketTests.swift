@@ -152,6 +152,43 @@ final class AgentIntegrationSocketTests: XCTestCase {
                        "the project mutation receipt must survive restart")
     }
 
+    func testAttemptCollisionKeepsTheCurrentRequestIdentity() async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let attempt = "21234567-89ab-cdef-0123-456789abcdef"
+        let project = AgentIntegrationProjectRequest(
+            operation: .workspaceDiscard,
+            workspaceID: "workspace-0123456789abcdef",
+            attemptID: attempt)
+        let development = AgentIntegrationDevelopmentRequest(
+            operation: .buildCancel, attemptID: attempt)
+        var invocations = 0
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { local in
+                invocations += 1
+                guard local.operation == .projects else {
+                    return Self.filler
+                }
+                return .projects(.init(projects: []))
+            })
+        try server.start()
+        defer { server.stop() }
+        let client = try AgentIntegrationLocalClient(endpoint: endpoint)
+
+        _ = try await client.projects(project)
+        do {
+            _ = try await client.development(development)
+            XCTFail("a reused attempt ID for different bytes was accepted")
+        } catch let error as AgentIntegrationLocalTransportError {
+            XCTAssertEqual(error, .attemptRefused(
+                code: "attempt-collision",
+                message: "This attempt ID is already bound to a different request."))
+        }
+        XCTAssertEqual(invocations, 1,
+                       "a colliding request must never reach the handler")
+    }
+
     func testSocketIsPrivateToTheCurrentUser() throws {
         let (endpoint, root) = try temporaryEndpoint()
         defer { try? FileManager.default.removeItem(at: root) }

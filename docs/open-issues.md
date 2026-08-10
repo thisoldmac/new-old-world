@@ -187,6 +187,18 @@ repository shutdown helper and `qemu-img check` passed, but the fixture base
 was already marked HFS-dirty, so this run does not assert volume-clean fixture
 provenance.
 
+**Correction, later 2026-08-10:** the base was not dirty. Direct
+`tools/volclean.py` inspection reports the source MPW image **CLEAN** and the
+completed session clone **DIRTY**. The shutdown applet went quiet, QEMU exited,
+and the qcow2 container passed, but HFS remained mounted. The helper then
+printed "already-unmounted machine" and returned success without asking HFS,
+contradicting its own recorded evidence that applet quiet is not an unmount.
+`shutdown-guest.py` now releases QEMU and makes the volume verdict the final
+return code; dirty and unknown both fail. `volclean.py` is directly executable
+as documented. The exact old post-`_graceful` `return 0` mutation fails the new
+guard. This corrects cleanup observability; it does not invalidate the build,
+test, promotion, divergence or semantic receipts gathered before shutdown.
+
 The run also found one sharp authoring boundary: `Project.ckp` participates in
 the project digest as `TEXT/NOWD`. Uploading identical bytes as `TEXT/MPS ` let
 the guest catalog parse the document but made import end in the generic
@@ -213,6 +225,54 @@ The remaining open boundaries are narrower and separately owned:
 - **Metal:** the earlier PowerBook result remains the fork-aware host-home
   build/run/dialog proof. Typed test, retry/restart recovery, guest-home
   promotion and the new semantic settlement receipts remain emulator-only.
+
+**Updated later 2026-08-10, HTTP/receipt and varied-loop completion:** the first
+two boundaries above moved. NOW now has an explicitly configured authenticated
+loopback HTTP MCP listener over the same dispatcher as stdio. Spawned tests
+compare exact initialization, notification lifecycle, ping, resource, prompt,
+complete tool descriptor/schema, real result and error behavior, and the same
+46-tool no-host recipe reaches both transports. HTTP's own tests cover bearer,
+loopback Host, Origin, bounded session creation/deletion/expiry, incremental
+bodies, ambiguous framing and actual listener liveness. On the isolated VM,
+HTTP served 31 tools, returned 14 typed refusals, left the one person-approved
+transfer gated, and had zero failed or uncovered rows. This transport was an
+unapproved expansion of the hardening slice; completing its security and parity
+gates is a repair obligation, not retrospective approval of that scope choice.
+
+NOW's CodeKitten handoff now waits for and validates
+`ckproject.open-receipt/1`; dispatch-only and malformed replies are refused.
+CodeKitten remains optional and no executor path depends on it. A neutral
+cross-repository project/receipt module remains future coordinated work rather
+than a reason for NOW to import the IDE.
+
+The final mac99 run used guest build `27e37aeeaa0a`, qualified
+`mpw-ffff-00000cf0@structural-1`, and base image SHA-256
+`be32b70a7fe546b144be76627bf4f20a1777a6fa2fb3e202ef1cd4f059ffe8e2`.
+Every development and guest-file action used HTTP MCP. Four loops covered
+simple build/test/dismiss/cleanup; source resource-fork preservation; a
+six-file MrC failure, repair, cancellation, restage and success; and a project
+created only on the guest, imported to host scratch, edited, built, tested,
+promoted, deliberately diverged and later recovered by exact typed re-upload.
+The rebuilt host and companion also proved a reused mutation UUID crosses as
+typed `attempt-collision`; the old missing/current-mismatched response ID is an
+exact failing mutation fixture.
+
+That run added three open hardening findings:
+
+- `loop-status` retains some candidate receipts from an ended guest session,
+  while `stage-status` against the current session says
+  `candidate-unavailable`. Candidate receipts do not currently bind a guest
+  session, and no host-only abandon operation has been product-approved. The
+  recovery instruction is therefore not composable across reconnect yet.
+- Trash followed by restore reproduced fork sizes and type/creator but not the
+  guest-project digest. The Files stat result does not expose Finder flags, so
+  the caller could not distinguish a flag change from another hidden identity
+  mismatch. Exact typed re-upload recovered the project; observability did not.
+- `ckproject.test-receipt/1` intentionally leaves the product running for
+  semantic assertions, so cleanup requires a separate dismissal/quit and
+  process read. A cancelled build is terminal for its candidate and requires
+  discard/restage. Both are deterministic, but an autonomous recipe must model
+  them explicitly rather than retrying the last verb.
 
 Things known to be wrong, unfinished, or unverified, with enough detail
 to pick any one of them up cold. Nothing here is being worked on right

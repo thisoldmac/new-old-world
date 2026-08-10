@@ -1021,6 +1021,27 @@ chunk from one payload, `now_guest_files_upload_begin`,
 served in that run. This is transport-and-reply coverage on an emulator, not a
 claim that every served mutation was observed semantically or on metal.
 
+### HTTP/stdio parity and varied Development loops, 2026-08-10
+
+The derived driver now sees 46 advertised tools. Its no-host recipe ran against
+both real spawned transports: 45 typed host-unavailable results, the one
+person-approved transfer explicitly human-gated, zero failed and zero
+uncovered on each. A separate spawned parity fixture compared initialize,
+initialized-notification gating, ping, resource and prompt lists/reads, all tool
+names/descriptions/input schemas, one real tool result, and invalid
+method/tool/cursor/resource/prompt errors byte-for-structure across HTTP and
+stdio. Removing the HTTP tool catalog alone made that exact parity test fail.
+
+Against an identity-checked Mac OS 9.1 VM (`Power Mac G4`, guest build
+`27e37aeeaa0a`), authenticated HTTP MCP served 31 rows, returned 14 typed
+refusals, left one human-gated row, and had zero failed or uncovered rows. Four
+Development loops then used HTTP exclusively for project, guest-file,
+toolchain, build, test, semantic-action and cleanup operations: simple; source
+resource-fork preservation; six-file failure/repair/cancel/restage; and
+guest-only import/edit/build/test/promote/diverge/recover. This is emulator
+transport-and-operation evidence, not metal verification of all 31 served
+capabilities.
+
 ## Status
 
 **Tested, not metal-verified.** The tables are a derivation over source and a
@@ -1157,7 +1178,7 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: b056c7f12b120d437cce8a5421eb592db8f42846
+sources-sha1: d9881c8efe06d9bddf24bdb2ff6d725a437701dc
 derive ppc-inbound-types sha256=29ff3abf372ea8de2e8cd4b487efb7dcb7b9fa03d5e20959f10c127320146842 lines=50 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1237,4 +1258,7 @@ rederived: 2026-08-10T05:38:07-0400 a0ede9ec unchanged
 rederived: 2026-08-10T13:37:38-0400 2f62ec11 sources
 rederived: 2026-08-10T13:51:46-0400 f4a92045 sources
 rederived: 2026-08-10T14:07:44-0400 b22898ee sources
+rederived: 2026-08-10T13:10:56-0400 47bf54fb sources
+rederived: 2026-08-10T13:36:45-0400 b15b4827 unchanged
+rederived: 2026-08-10T14:20:13-0400 9e432b8b sources
 -->

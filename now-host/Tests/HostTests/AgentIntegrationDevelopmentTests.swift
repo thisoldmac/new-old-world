@@ -180,13 +180,20 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
                   request.name == "development-open" else { return }
             calls += 1
             XCTAssertEqual(request.args?["projectID"], .text(projectID))
-            let state = calls == 1 ? "launching" : "dispatched"
+            let rows = calls == 1 ? [
+                ["Project", projectID],
+                ["State", "launching"],
+            ] : [
+                ["Schema", "ckproject.open-receipt/1"],
+                ["Project", projectID],
+                ["CodeKitten", "O9ID"],
+                ["Document", "Project.ckp"],
+                ["Acceptance", "appleevent-handler-reply"],
+                ["State", "accepted"],
+            ]
             try? guest.send(.commandResult(.init(
                 id: request.id, ok: true,
-                output: ["development-open": [
-                    ["Project", projectID],
-                    ["State", state],
-                ]], error: nil)))
+                output: ["development-open": rows], error: nil)))
         }
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         guard case .completed(let report) = await adapter.development(.init(
@@ -195,6 +202,29 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
             return XCTFail("expected a settled CodeKitten handoff")
         }
         XCTAssertEqual(calls, 2)
-        XCTAssertEqual(report.groups[0].rows.last?.value, "dispatched")
+        XCTAssertEqual(report.groups[0].rows.last?.value, "accepted")
+    }
+
+    func testHumanCodeKittenHandoffRefusesDispatchOnlyClaim() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        let projectID = String(repeating: "e", count: 32)
+        guest.onMessage = { message in
+            guard case .commandRequest(let request) = message,
+                  request.name == "development-open" else { return }
+            try? guest.send(.commandResult(.init(
+                id: request.id, ok: true,
+                output: ["development-open": [
+                    ["Project", projectID],
+                    ["State", "dispatched"],
+                ]], error: nil)))
+        }
+        let adapter = AgentIntegrationHostAdapter(listener: listener)
+        guard case .refused(let refusal) = await adapter.development(.init(
+            operation: .openInCodeKitten, projectID: projectID,
+            attemptID: "01234567-89ab-cdef-0123-456789abcdef")) else {
+            return XCTFail("dispatch without a handler reply must be refused")
+        }
+        XCTAssertEqual(refusal.code, "codekitten-acceptance-unproven")
     }
 }

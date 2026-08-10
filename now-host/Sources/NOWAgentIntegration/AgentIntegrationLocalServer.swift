@@ -218,14 +218,18 @@ public final class AgentIntegrationLocalServer {
                    operation: request.operation.rawValue)
             return
         case .pending:
-            finish(descriptor, response: .init(error: .init(
-                code: "attempt-pending",
-                message: "This mutation was already dispatched; retry the same attempt after it settles.")))
+            finish(descriptor, response: .init(
+                requestID: request.requestID,
+                error: .init(
+                    code: "attempt-pending",
+                    message: "This mutation was already dispatched; retry the same attempt after it settles.")))
             return
         case .collision:
-            finish(descriptor, response: .init(error: .init(
-                code: "attempt-collision",
-                message: "This attempt ID is already bound to a different request.")))
+            finish(descriptor, response: .init(
+                requestID: request.requestID,
+                error: .init(
+                    code: "attempt-collision",
+                    message: "This attempt ID is already bound to a different request.")))
             return
         case .admitted:
             break

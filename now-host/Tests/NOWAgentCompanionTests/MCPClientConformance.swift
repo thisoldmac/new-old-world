@@ -1,4 +1,5 @@
 import Foundation
+@testable import NOWAgentCompanion
 
 /// **A real MCP client, and the classification of what every tool answers
 /// it.**
@@ -21,6 +22,26 @@ enum MCPConformance {}
 
 // MARK: - The client
 
+protocol MCPConformanceClient: AnyObject {
+    func request(_ method: String, params: [String: Any]?,
+                 timeout: TimeInterval) throws -> [String: Any]
+    func notify(_ method: String, params: [String: Any]?)
+    func handshake() throws -> [String: Any]
+    func advertisedTools() throws -> [[String: Any]]
+    func shutDown()
+}
+
+extension MCPConformanceClient {
+    func request(_ method: String,
+                 params: [String: Any]? = nil) throws -> [String: Any] {
+        try request(method, params: params, timeout: 30)
+    }
+
+    func notify(_ method: String, params: [String: Any]? = nil) {
+        notify(method, params: params)
+    }
+}
+
 /// One MCP session against the real companion binary.
 ///
 /// It behaves the way the transport says a client behaves, and the three
@@ -37,7 +58,7 @@ enum MCPConformance {}
 ///   accumulates whatever the pipe has and splits on newlines, because a
 ///   reply may arrive in pieces and a whole line may already be buffered
 ///   behind the one being waited for.
-final class MCPClient: @unchecked Sendable {
+final class MCPClient: MCPConformanceClient, @unchecked Sendable {
     struct Timeout: Error, CustomStringConvertible {
         let method: String
         let seconds: TimeInterval
@@ -194,6 +215,191 @@ final class MCPClient: @unchecked Sendable {
             throw Closed()
         }
         return tools
+    }
+}
+
+/// The same client contract over the real loopback HTTP listener.
+///
+/// This is intentionally not an in-process adapter around `MCPHTTPService`:
+/// it owns a spawned companion, a TCP port, HTTP authentication, and an MCP
+/// session. The conformance gate can therefore run the same recipe book over
+/// both transports and catch defects in either framing loop.
+final class MCPHTTPClient: MCPConformanceClient, @unchecked Sendable {
+    struct Failure: Error, CustomStringConvertible {
+        let detail: String
+        var description: String { detail }
+    }
+
+    private let process = Process()
+    private let endpoint: URL
+    private let token: String
+    private var sessionID: String?
+    private var protocolVersion: String?
+    private var nextID = 0
+
+    init(executable: URL, environment: [String: String]? = nil) throws {
+        let port = UInt16.random(in: 40_000...60_000)
+        token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        endpoint = URL(string: "http://127.0.0.1:\(port)/mcp")!
+        process.executableURL = executable
+        process.arguments = ["--http", "--port", "\(port)"]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        var configured = environment ?? ProcessInfo.processInfo.environment
+        configured[CompanionInvocation.tokenEnvironmentKey] = token
+        process.environment = configured
+        try process.run()
+    }
+
+    deinit { shutDown() }
+
+    func shutDown() {
+        guard process.isRunning else { return }
+        if let sessionID, let protocolVersion {
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "DELETE"
+            authorize(&request, session: sessionID,
+                      protocolVersion: protocolVersion)
+            _ = try? exchange(request, timeout: 2)
+        }
+        process.terminate()
+        let deadline = Date().addingTimeInterval(2)
+        while process.isRunning, Date() < deadline { usleep(20_000) }
+        if process.isRunning { process.interrupt() }
+    }
+
+    func request(_ method: String, params: [String: Any]? = nil,
+                 timeout: TimeInterval = 30) throws -> [String: Any] {
+        nextID += 1
+        let id = nextID
+        var object: [String: Any] = [
+            "jsonrpc": "2.0", "id": id, "method": method,
+        ]
+        if let params { object["params"] = params }
+        let response = try post(object, timeout: timeout,
+                                retryConnection: method == "initialize")
+        guard response.status == 200,
+              let reply = try JSONSerialization.jsonObject(with: response.data)
+                as? [String: Any] else {
+            throw Failure(detail: "HTTP \(response.status) for \(method)")
+        }
+        if method == "initialize",
+           let result = reply["result"] as? [String: Any],
+           let version = result["protocolVersion"] as? String {
+            guard let session = response.headers["mcp-session-id"] else {
+                throw Failure(detail: "initialize returned no MCP session")
+            }
+            sessionID = session
+            protocolVersion = version
+        }
+        return reply
+    }
+
+    func notify(_ method: String, params: [String: Any]? = nil) {
+        var object: [String: Any] = ["jsonrpc": "2.0", "method": method]
+        if let params { object["params"] = params }
+        _ = try? post(object, timeout: 5, retryConnection: false)
+    }
+
+    @discardableResult
+    func handshake() throws -> [String: Any] {
+        let reply = try request("initialize", params: [
+            "protocolVersion": "2025-06-18",
+            "capabilities": [:],
+            "clientInfo": ["name": "now-conformance", "version": "1"],
+        ])
+        notify("notifications/initialized")
+        return reply
+    }
+
+    func advertisedTools() throws -> [[String: Any]] {
+        let reply = try request("tools/list")
+        guard let result = reply["result"] as? [String: Any],
+              let tools = result["tools"] as? [[String: Any]] else {
+            throw Failure(detail: "tools/list returned no catalog")
+        }
+        return tools
+    }
+
+    private struct Exchange {
+        let data: Data
+        let status: Int
+        let headers: [String: String]
+    }
+
+    private func post(_ object: [String: Any], timeout: TimeInterval,
+                      retryConnection: Bool) throws -> Exchange {
+        let body = try JSONSerialization.data(withJSONObject: object)
+        let attempts = retryConnection ? 25 : 1
+        var last: Error?
+        for attempt in 0..<attempts {
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.httpBody = body
+            request.setValue("application/json",
+                             forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json, text/event-stream",
+                             forHTTPHeaderField: "Accept")
+            authorize(&request, session: sessionID,
+                      protocolVersion: protocolVersion)
+            do { return try exchange(request, timeout: timeout) }
+            catch {
+                last = error
+                if attempt + 1 < attempts { usleep(100_000) }
+            }
+        }
+        throw last ?? Failure(detail: "HTTP connection failed")
+    }
+
+    private func authorize(_ request: inout URLRequest, session: String?,
+                           protocolVersion: String?) {
+        request.setValue("Bearer \(token)",
+                         forHTTPHeaderField: "Authorization")
+        if let session {
+            request.setValue(session, forHTTPHeaderField: "Mcp-Session-Id")
+        }
+        if let protocolVersion {
+            request.setValue(protocolVersion,
+                             forHTTPHeaderField: "Mcp-Protocol-Version")
+        }
+    }
+
+    private func exchange(_ request: URLRequest,
+                          timeout: TimeInterval) throws -> Exchange {
+        let semaphore = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var outcome: Result<Exchange, Error>?
+        let task = URLSession.shared.dataTask(with: request) {
+            data, response, error in
+            lock.lock()
+            defer {
+                lock.unlock()
+                semaphore.signal()
+            }
+            if let error { outcome = .failure(error); return }
+            guard let response = response as? HTTPURLResponse else {
+                outcome = .failure(Failure(detail: "non-HTTP response"))
+                return
+            }
+            var headers: [String: String] = [:]
+            for (key, value) in response.allHeaderFields {
+                headers[String(describing: key).lowercased()]
+                    = String(describing: value)
+            }
+            outcome = .success(.init(data: data ?? Data(),
+                                     status: response.statusCode,
+                                     headers: headers))
+        }
+        task.resume()
+        guard semaphore.wait(timeout: .now() + timeout) == .success else {
+            task.cancel()
+            throw Failure(detail: "HTTP request timed out in \(timeout)s")
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        return try outcome?.get()
+            ?? { throw Failure(detail: "HTTP request produced no outcome") }()
     }
 }
 

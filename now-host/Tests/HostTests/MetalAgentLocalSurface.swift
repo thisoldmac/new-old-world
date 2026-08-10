@@ -453,6 +453,8 @@ private struct MetalLocalProjectionClient: AgentIntegrationClient {
             return refusal
         case .notImplemented(let pending):
             return pending
+        case .attemptRefused(let code, let message):
+            return .init(code: code, message: message)
         case .hostUnavailable:
             return .host
         case .unsafeEndpoint:

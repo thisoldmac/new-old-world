@@ -34,22 +34,38 @@ observable postcondition, the terminal result is `unconfirmed`, not a false
 claim that dispatch proved effect.
 
 This hardening is **emulator-verified** on a session-private mac99/OS 9.1 VM
-with guest build `b1de53f2bfe9` and qualified
+with guest build `27e37aeeaa0a` and qualified
 `mpw-ffff-00000cf0@structural-1`. MCP completed simple and multi-file loops,
 preserved a nonempty resource fork, exposed a real MrC failure, repaired it,
-cancelled and restaged a job, recovered the same receipt after response loss,
-and typed-tested exact products. A guest-only project was catalogued, imported,
-edited in NOW's host scratch, built, tested and promoted. A later promotion
-was refused as `guest-diverged`; a fresh download proved the active guest edit
-survived and the losing candidate remained recoverable until explicit discard.
+cancelled and restaged a job, and typed-tested exact products. A guest-only
+project was created through fork-aware guest Files calls, catalogued, imported,
+edited in NOW's host scratch, built, tested and promoted. A later promotion was
+refused as `guest-diverged`; exact typed re-upload recovered the active project
+and the repaired candidate promoted at revision 3.
 
-This is not a claim that every hardening-plan acceptance rung is closed. The
-repo has stdio MCP only, not the plan's assumed HTTP transport. CodeKitten
-still lacks a returned `odoc` acceptance receipt and its shared-fixture work is
-owned in the sibling repository. The relocatable starter-pack manifest is
-validated, but no redistributable MPW payload is committed, so the one-image
-NOW + CodeKitten + MPW gate remains blocked on licensing/provenance. These new
-hardening receipts have not yet been repeated on the PowerBook.
+All development actions in the final run used the authenticated loopback HTTP
+MCP. The same dispatcher remains available over stdio. Spawned parity tests
+compare initialization, notifications, ping, resources, prompts, every tool
+descriptor/schema, one real tool result and protocol errors; both transports
+run the same 46-tool no-host conformance recipe. HTTP-specific gates cover
+bearer, loopback Host, Origin, bounded sessions, deletion/expiry, framing and a
+spawned incremental client. The live VM HTTP sweep served 31 tools, returned 14
+typed refusals, kept one human-approved transfer gated, and left zero failed or
+uncovered rows. A live idempotency-key collision now crosses the host and
+companion as `attempt-collision`, not `now-host-invalid-response`.
+
+This is not a claim that every hardening-plan acceptance rung is closed. HTTP
+was an unapproved slice expansion and is retained only after completing its
+security, parity and live-VM gates. NOW now requires CodeKitten's positive
+`ckproject.open-receipt/1`, but shared neutral fixtures remain sibling-owned.
+The relocatable starter-pack manifest is validated, but no redistributable MPW
+payload is committed, so the one-image NOW + CodeKitten + MPW gate remains
+blocked on licensing/provenance. Stale candidate receipts from ended guest
+sessions and missing Finder-flag observation are recorded hardening gaps. These
+new receipts have not yet been repeated on the PowerBook. The final VM's
+runtime receipts are valid, but its cleanup is not volume-clean: a clean base
+became a dirty session after the fallback shutdown. The rig now asks HFS after
+QEMU releases the disk and fails that condition explicitly.
 
 ## 2026-08-10 — Host-home MPW Development is metal-verified
 
@@ -582,8 +598,10 @@ parallel availability lists.
   is metal-verified; the host one is built and tested.
 - **Menu-bar capture** — one command grabs the connected machine's
   screen straight to the clipboard, no window needed.
-- **Optional agent integration** — a separate, client-launched stdio MCP
-  companion reaches this Mac's guest through a private same-user socket.
+- **Optional agent integration** — a separate, client-launched MCP companion
+  reaches this Mac's guest through a private same-user socket. Stdio is the
+  default process transport; an explicitly configured authenticated loopback
+  HTTP listener serves the same dispatcher and is parity-gated against it.
   It is a **client, not a third face**: it can ask for nothing the app's
   own UI could not, because both are rendered from one registry of
   capability rows, and a row arrives on every face together. What those
