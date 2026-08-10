@@ -85,6 +85,11 @@ module_feature_coverage:
     without_extension: Available.
     extension_required: false
     status: Experimental; provider credentials remain on the modern Mac.
+  - module_id: web
+    title: Translate modern web pages for classic browsers
+    without_extension: Available from the host Direct listener.
+    extension_required: false
+    status: Experimental; deterministic rendering is tested, while classic-browser metal verification and guest-local relay remain open.
   - module_id: development
     title: Build and run classic software with a guest-owned toolchain
     without_extension: Available on the PowerPC guest.

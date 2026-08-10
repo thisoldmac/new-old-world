@@ -285,6 +285,7 @@ final class HostAppState: ObservableObject {
         performDevelopment: { [agentIntegration] request in
             await agentIntegration.development(request)
         })
+    private(set) lazy var web = WebBridgeModel(defaults: defaults)
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var networking = NetworkingModel(listener: listener)

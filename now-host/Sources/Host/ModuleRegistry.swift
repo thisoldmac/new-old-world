@@ -150,6 +150,13 @@ struct ModuleRegistry: Sendable {
                 + "\(MachineNaming.simpleReference)"
         ),
         ModuleDescriptor(
+            id: "web",
+            title: "Web",
+            symbol: "globe",
+            summary: "Translate modern pages for a browser on "
+                + "\(MachineNaming.simpleReference)"
+        ),
+        ModuleDescriptor(
             id: "development",
             title: "Development",
             symbol: "hammer",

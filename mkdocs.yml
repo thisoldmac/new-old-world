@@ -128,6 +128,7 @@ nav:
               - Mirror: user-guide/reference/modules/mirror.md
               - Console: user-guide/reference/modules/console.md
               - Chat: user-guide/reference/modules/chat.md
+              - Web: user-guide/reference/modules/web.md
               - Development: user-guide/reference/modules/development.md
               - Hardware: user-guide/reference/modules/hardware.md
               - Diagnostics: user-guide/reference/modules/diagnostics.md

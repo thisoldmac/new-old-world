@@ -22,6 +22,7 @@ last_verified: 2026-08-09
 | [Mirror](mirror.md) | Mirror | unavailable |
 | [Console](console.md) | Console | supported |
 | [Chat](chat.md) | Chat | unavailable |
+| [Web](web.md) | unavailable; use the host Direct listener | unavailable |
 | [Hardware](hardware.md) | Hardware | supported subset |
 | [Diagnostics](diagnostics.md) | Diagnostics | console-only diagnostics |
 | [Networking](networking.md) | Networking | main-window summary |
@@ -37,8 +38,8 @@ work; it does not mean NOW-68K ships in the alpha.
 
 <!-- derived-doc v1
 sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
-sources-sha1: 5932f6c1726853093aad46c8a67b0e73518a95f7
-derive module-map sha256=0896e6bbb20891a434ea64242d5f00f529b621b5595b55af77f326a308c502ae lines=15
+sources-sha1: 83375b9c6f8b3bef1f546a828687a6b061b5c7d7
+derive module-map sha256=17eaf5909f55c49a9a6b26738f02a87e492df2b7332ba7513442ce1771511699 lines=16
     scripts/docs-inventory
 rederived: pending
 rederived: 2026-08-09T16:10:26-0400 e74b3ab1 sources, module-map 14->14
@@ -64,4 +65,5 @@ rederived: 2026-08-10T04:38:54-0400 886ee556 unchanged
 rederived: 2026-08-10T05:38:07-0400 a0ede9ec unchanged
 rederived: 2026-08-10T13:10:56-0400 47bf54fb unchanged
 rederived: 2026-08-10T13:36:45-0400 b15b4827 unchanged
+rederived: 2026-08-10T14:32:11-0400 e75a07a0 sources, module-map 15->16
 -->

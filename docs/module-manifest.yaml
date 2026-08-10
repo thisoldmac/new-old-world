@@ -39,6 +39,11 @@ modules:
     page: user-guide/reference/modules/chat.md
     ppc_pages: [kWorkshopChat]
     guest_68k: unavailable
+  - id: web
+    title: Web
+    page: user-guide/reference/modules/web.md
+    ppc_pages: []
+    guest_68k: unavailable
   - id: development
     title: Development
     page: user-guide/reference/modules/development.md

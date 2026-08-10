@@ -63,3 +63,7 @@ entries:
     lifecycle: historical
     audience: developer
     search: exclude
+  - path: plans/2026-08-10-032-feat-web-bridge-plan.md
+    lifecycle: historical
+    audience: developer
+    search: exclude
