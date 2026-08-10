@@ -665,7 +665,8 @@ final class MirrorStateProjectionService {
               outcome: operation.outcome.rawValue,
               reason: operation.reason,
               target: String(describing: operation.target),
-              postcondition: String(describing: operation.postcondition),
+              postcondition: operation.postcondition.map(String.init(describing:))
+                  ?? "none",
               displayedSnapshotID: operation.displayedSnapshotID,
               settledSequence: operation.settledSequence)
     }

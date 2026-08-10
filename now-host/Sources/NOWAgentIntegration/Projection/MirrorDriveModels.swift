@@ -267,28 +267,24 @@ public struct AgentIntegrationMirrorDriveRequest:
 /// Same fields the Mirror window's own journal carries, because it IS that
 /// record. `outcome` is the broker's, not a paraphrase: `queued`,
 /// `dispatched`, `refused`, `timedOut`, `confirmed`,
-/// `confirmedAfterTimeout`, `confirmedAfterRefusal`, `sessionChanged`,
-/// `cancelled`.
+/// `confirmedAfterTimeout`, `confirmedAfterRefusal`, `unconfirmed`,
+/// `sessionChanged`, `cancelled`.
 ///
 /// **A dispatch is not an effect.** `dispatched` means the request reached
 /// the Mac; only an outcome carrying `confirmed` says a later observation
 /// saw the postcondition hold. That rule is older than this surface and
 /// survives it — read `now_semantic_ui_journal`, or watch the snapshot.
 ///
-/// `id` is the journal's id for anything the broker took. Three values are
-/// not ids, and each says which of the host's endings the act reached:
+/// `id` is the journal's id for every accepted guest operation. Refusals
+/// before admission use the one sentinel below:
 ///
 /// - `not-dispatched` — refused here; `reason` says why, `settled` is true
 ///   and nothing is coming.
-/// - `direct` — dispatched with no typed postcondition. Seven of the
-///   fourteen plans are like this by construction; `awaitsObservation` is
-///   false and no settlement can ever arrive.
-/// - `held` — it arrived while an observation was in flight, so it is
-///   waiting for the cycle to clear and has no record YET. One is coming:
-///   `awaitsObservation` is true, and the record appears in the journal
-///   under a real id once it enters the lane. Before 2026-08-05 this case
-///   was reported as `direct`, which told the caller to stop waiting for a
-///   settlement that was on its way.
+/// Direct operations also receive a real id immediately. They have
+/// `awaitsObservation: false`; their guest reply settles them as
+/// `unconfirmed`, which is terminal but is not a claim that an effect was
+/// observed. Brokered operations have `awaitsObservation: true` and settle
+/// against a later scene.
 public struct AgentIntegrationMirrorDriveOperation:
     Codable, Equatable, Sendable {
     public let id: String

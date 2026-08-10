@@ -20,8 +20,8 @@ struct MirrorDriveService {
     let scene: () -> MirrorKit.Scene?
     /// Says which of its four endings the act reached. This used to answer
     /// `String?` and everything but a refusal came back `nil`, so the two
-    /// endings a headless caller most needs to tell apart — *held, a
-    /// record is coming* and *direct, nothing will ever settle* — were
+    /// endings a headless caller most needs to tell apart — *brokered,
+    /// later observation is coming* and *direct, only dispatch settles* — were
     /// the same value here.
     let perform: (Interaction) -> MirrorPerformDisposition
     /// The journal the broker writes into, so the reply can carry the same
@@ -87,10 +87,13 @@ struct MirrorDriveService {
                 id: "not-dispatched", outcome: "refused", reason: refusal,
                 settled: true, awaitsObservation: false))
 
-        case .direct:
-            return .init(operation: .init(
-                id: "direct", outcome: "dispatched", reason: nil,
-                settled: false, awaitsObservation: false))
+        case .direct(let id):
+            guard let record = journal()?.operation(id: id) else {
+                return .init(operation: .init(
+                    id: id, outcome: "queued", reason: nil,
+                    settled: false, awaitsObservation: false))
+            }
+            return .init(operation: Self.projected(record))
 
         case .brokered(let id):
             /* By id, not by diffing the journal for something that looks
@@ -112,7 +115,7 @@ struct MirrorDriveService {
         .init(id: record.id, outcome: record.outcome.rawValue,
               reason: record.reason,
               settled: record.outcome.isTerminal,
-              awaitsObservation: true)
+              awaitsObservation: record.postcondition != nil)
     }
 
     /// Swift's `Result` needs its failure to be an `Error`, and this
