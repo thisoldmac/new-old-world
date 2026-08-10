@@ -5,6 +5,7 @@
 static ModalFilterUPP g_modal_filter;
 static NavEventUPP g_nav_event;
 static ControlActionUPP g_action;
+static AEIdleUPP g_ae_idle;
 
 static pascal Boolean pump_modal_filter(DialogRef dialog, EventRecord *event,
                                         short *item)
@@ -38,6 +39,16 @@ static pascal void pump_action(ControlRef control, ControlPartCode part)
     now_wire_pump();
 }
 
+static pascal Boolean pump_ae_idle(EventRecord *event, long *sleep_time,
+                                   RgnHandle *mouse_region)
+{
+    (void)event;
+    (void)mouse_region;
+    *sleep_time = 1;
+    now_wire_pump();
+    return false;
+}
+
 ModalFilterUPP now_pump_modal_filter(void)
 {
     if (g_modal_filter == NULL) {
@@ -62,6 +73,14 @@ ControlActionUPP now_pump_action(void)
     return g_action;
 }
 
+AEIdleUPP now_pump_ae_idle(void)
+{
+    if (g_ae_idle == NULL) {
+        g_ae_idle = NewAEIdleUPP(pump_ae_idle);
+    }
+    return g_ae_idle;
+}
+
 void now_pump_shutdown(void)
 {
     if (g_modal_filter != NULL) {
@@ -75,5 +94,9 @@ void now_pump_shutdown(void)
     if (g_action != NULL) {
         DisposeControlActionUPP(g_action);
         g_action = NULL;
+    }
+    if (g_ae_idle != NULL) {
+        DisposeAEIdleUPP(g_ae_idle);
+        g_ae_idle = NULL;
     }
 }

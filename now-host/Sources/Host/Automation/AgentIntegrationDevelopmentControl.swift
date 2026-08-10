@@ -143,12 +143,20 @@ final class AgentIntegrationDevelopmentControl {
             return .refused(.init(code: "now-development-invalid",
                                   message: "The paired guest returned no Development rows."))
         }
+        let values = Dictionary(uniqueKeysWithValues: cells.compactMap {
+            row -> (String, String)? in
+            guard row.count >= 2 else { return nil }
+            return (row[0], row[row.count - 1])
+        })
+        if request.operation == .openInCodeKitten,
+           (values["Schema"] != "ckproject.open-receipt/1"
+            || values["State"] != "accepted"
+            || values["Acceptance"] != "appleevent-handler-reply") {
+            return .refused(.init(
+                code: "codekitten-acceptance-unproven",
+                message: "The paired guest did not return a CodeKitten handler acceptance receipt."))
+        }
         if let projectStore {
-            let values = Dictionary(uniqueKeysWithValues: cells.compactMap {
-                row -> (String, String)? in
-                guard row.count >= 2 else { return nil }
-                return (row[0], row[row.count - 1])
-            })
             if request.operation == .buildStart,
                let rawCandidate = request.candidateID,
                let candidateID = ProjectCandidateID(rawValue: rawCandidate),

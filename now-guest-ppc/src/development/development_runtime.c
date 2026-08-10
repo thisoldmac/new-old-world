@@ -7,6 +7,7 @@
 
 #include "development_build.h"
 #include "development_candidate.h"
+#include "development_open.h"
 #include "development_project.h"
 #include "development_sha256.h"
 #include "development_toolchain_mac.h"
@@ -15,6 +16,7 @@
 #include "prefs.h"
 #include "proc_actions.h"
 #include "proc_roster.h"
+#include "pump.h"
 
 enum {
     kRuntimeTextCap = 131072,
@@ -945,6 +947,12 @@ void now_development_open_command(const char *request_json, long id,
     AppleEvent reply = { typeNull, NULL };
     AEDescList list = { typeNull, NULL };
     OSErr err;
+    OSErr reply_err;
+    SInt32 handler_err = noErr;
+    DescType actual_type;
+    Size actual_size;
+    int handler_err_present = 0;
+    DevOpenOutcome outcome;
     long pos;
     char ignored[16];
     if (!now_json_find_string(request_json, "projectID", project_id,
@@ -993,13 +1001,27 @@ void now_development_open_command(const char *request_json, long id,
     if (err == noErr) err = AEPutPtr(&list, 0, typeFSS, &manifest, sizeof manifest);
     if (err == noErr) err = AEPutParamDesc(&event, keyDirectObject, &list);
     if (err == noErr) err = AESend(&event, &reply,
-        kAENoReply | kAENeverInteract, kAENormalPriority, 60 * 5,
-        NULL, NULL);
+        kAEWaitReply | kAENeverInteract, kAENormalPriority, 60 * 5,
+        now_pump_ae_idle(), NULL);
+    if (err == noErr) {
+        reply_err = AEGetParamPtr(&reply, keyErrorNumber, typeSInt32,
+                                  &actual_type, &handler_err,
+                                  sizeof handler_err, &actual_size);
+        if (reply_err == noErr) handler_err_present = 1;
+        else if (reply_err != errAEDescNotFound) err = reply_err;
+    }
+    outcome = dev_open_classify(err, errAETimeout, handler_err_present,
+                                handler_err);
     AEDisposeDesc(&list); AEDisposeDesc(&reply);
     AEDisposeDesc(&event); AEDisposeDesc(&target);
-    if (err != noErr) {
+    if (outcome == kDevOpenOutcomeUnknown) {
+        reply_error(out, cap, id, "codekitten-outcome-unknown",
+                    "CodeKitten did not reply before the bounded deadline; the document may still open later.");
+        return;
+    }
+    if (outcome == kDevOpenRefused) {
         reply_error(out, cap, id, "codekitten-refused",
-                    "CodeKitten did not accept the bounded open-document event.");
+                    "CodeKitten's open-document handler did not accept Project.ckp.");
         return;
     }
     if (now_proc_front_confirm(&psn, kProcFrontWaitSecs * 60)
@@ -1011,9 +1033,12 @@ void now_development_open_command(const char *request_json, long id,
     pos = snprintf(out, (size_t)cap,
         "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
         "\"output\":{\"development-open\":[", id);
-    pos = row(out, cap, pos, "Project", project_id, 0);
-    pos = row(out, cap, pos, "CodeKitten", "open-document dispatched", 1);
-    pos = row(out, cap, pos, "State", "dispatched", 1);
+    pos = row(out, cap, pos, "Schema", "ckproject.open-receipt/1", 0);
+    pos = row(out, cap, pos, "Project", project_id, 1);
+    pos = row(out, cap, pos, "CodeKitten", "O9ID", 1);
+    pos = row(out, cap, pos, "Document", "Project.ckp", 1);
+    pos = row(out, cap, pos, "Acceptance", "appleevent-handler-reply", 1);
+    pos = row(out, cap, pos, "State", "accepted", 1);
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 

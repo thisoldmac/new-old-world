@@ -36,6 +36,10 @@ NavEventUPP now_pump_nav_event(void);
    their own action — and must not be given this one. */
 ControlActionUPP now_pump_action(void);
 
+/* For AESend(kAEWaitReply). Returning false keeps the bounded wait alive;
+   the sender's own timeout remains its cancellation boundary. */
+AEIdleUPP now_pump_ae_idle(void);
+
 /* --- what cannot be pumped ----------------------------------------------
    Three Toolbox loops take no callback at all, so the wire genuinely
    stops for their duration. They are listed rather than fixed because

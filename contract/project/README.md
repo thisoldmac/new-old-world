@@ -101,11 +101,18 @@ Workspace, candidate, build, promotion, and run records are JSON receipts with
 - `ckproject.build-receipt/1`
 - `ckproject.run-receipt/1`
 - `ckproject.test-receipt/1`
+- `ckproject.open-receipt/1`
 
 Every receipt carries opaque identities rather than host paths. A build binds
 the actual guest source digest, project revision, qualified toolchain, product
 fork measurements, and terminal state. A run binds the exact product digest
 and is never implied by build success.
+
+An open receipt binds the project ID, canonical `Project.ckp` document name,
+CodeKitten creator and standard `odoc` event to the synchronous AppleEvent
+handler reply. `accepted` means the handler returned `noErr`; it does not mean
+the event was merely dispatched. A reply timeout remains outcome-unknown,
+because the handler may complete after the sender's deadline.
 
 ## Legacy conversion
 

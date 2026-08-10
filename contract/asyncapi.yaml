@@ -3989,8 +3989,14 @@ components:
         Optionally locates and launches CodeKitten through the classic Desktop
         database, then sends the active Project.ckp for one opaque project ID
         using the standard open-documents Apple Event. A launching response is
-        retried by the host without blocking the guest event loop. CodeKitten
-        absence does not affect headless project or build work.
+        retried by the host without blocking the guest event loop. Once the
+        application is running, NOW waits at most five seconds for the
+        open-document handler reply while pumping the wire. Success is an
+        explicit ckproject.open-receipt/1 row set: it means CodeKitten's handler
+        returned noErr for that Project.ckp, not merely that the event was
+        queued. A timeout has unknown outcome and is never reported as a
+        refusal. CodeKitten absence does not affect headless project or build
+        work.
       args:
         type: object
         required: [projectID]
