@@ -30,6 +30,7 @@ int main(void)
     strcpy(plan.configuration, "debug");
     strcpy(plan.product_type, "APPL");
     strcpy(plan.product_creator, "MMTR");
+    strcpy(plan.project_root, "Macintosh HD:Projects:MemoryMeter:");
     memset(&toolchain, 0, sizeof toolchain);
     memset(&seen, 0, sizeof seen);
     strcpy(toolchain.id, "mpw-1-2");
@@ -49,7 +50,7 @@ int main(void)
     assert(dev_build_service_tick(&service, submit, &seen));
     assert(seen.count == 1 && seen.index == 0);
     assert(strcmp(seen.command,
-        "MrC \"Sources:Main.c\" -o \"Objects:Main.o\" -proto strict -w 2 -sym on -opt off") == 0);
+        "MrC \"Macintosh HD:Projects:MemoryMeter:Sources:Main.c\" -o \"Macintosh HD:Projects:MemoryMeter:Objects:Main.o\" -proto strict -w 2 -sym on -opt off") == 0);
     assert(dev_build_service_complete(&service, "job-one", 0, 0,
                                       "compiled\r"));
     assert(dev_build_service_tick(&service, submit, &seen));

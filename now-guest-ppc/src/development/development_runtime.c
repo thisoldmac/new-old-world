@@ -691,6 +691,9 @@ void now_development_build_command(const char *request_json, long id,
         reply_error(out, cap, id, "project-unavailable",
                     "The project folder cannot be resolved."); return;
     }
+    snprintf(g_runtime.project.build.project_root,
+             sizeof g_runtime.project.build.project_root, "%s",
+             g_runtime.project_root);
     g_runtime.toolchain = measured;
     snprintf(job_id, sizeof job_id, "build-%08lx%08lx",
              TickCount() & 0xffffffffUL, (unsigned long)id & 0xffffffffUL);

@@ -31,6 +31,7 @@ typedef struct DevBuildPlan {
     char configuration[64];
     char product_type[5];
     char product_creator[5];
+    char project_root[512];
 } DevBuildPlan;
 
 typedef int (*DevBuildSubmit)(const char *job_id, int action_index,

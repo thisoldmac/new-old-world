@@ -45,11 +45,19 @@ int dev_build_plan_add(DevBuildPlan *plan, const char *kind,
     return 1;
 }
 
-static int hfs_path(const char *path, char *out, long cap)
+static int hfs_path(const char *root, const char *path, char *out, long cap)
 {
     long pos = 0;
     const unsigned char *p;
     if (!dev_project_path_valid(path) || cap < 2) return 0;
+    if (root != NULL && root[0] != '\0') {
+        size_t root_length = strlen(root);
+        if (root_length >= (size_t)cap || root[root_length - 1] != ':') {
+            return 0;
+        }
+        memcpy(out, root, root_length);
+        pos = (long)root_length;
+    }
     for (p = (const unsigned char *)path; *p != '\0'; ++p) {
         if (*p == '"' || *p == '\r' || *p == '\n' || pos + 1 >= cap) {
             return 0;
@@ -64,14 +72,15 @@ int dev_mpw_render_action(const DevBuildPlan *plan,
                           const DevBuildAction *action,
                           char *out, long cap)
 {
-    char input[kDevBuildPathCap];
-    char output[kDevBuildPathCap];
+    char input[kDevBuildCommandCap];
+    char output[kDevBuildCommandCap];
     const char *symbols;
     const char *optimization;
     int written;
     if (plan == NULL || action == NULL || out == NULL || cap <= 0
-        || !hfs_path(action->input, input, sizeof input)
-        || !hfs_path(action->output, output, sizeof output)) return 0;
+        || !hfs_path(plan->project_root, action->input, input, sizeof input)
+        || !hfs_path(plan->project_root, action->output, output,
+                     sizeof output)) return 0;
     symbols = strcmp(plan->configuration, "debug") == 0 ? "on" : "off";
     optimization = strcmp(plan->configuration, "debug") == 0
         ? "off" : "speed";
