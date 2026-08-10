@@ -17,6 +17,17 @@ emulator acceptance gap. The PowerBook metal rung still owes the exact MPW
 toolchain/version, both product fork sizes/digest, process identity and an
 `odoc` edit imported as a new revision.
 
+The first PowerBook 1400c candidate-publication attempt on 2026-08-09 found a
+reproducible blocker before MPW ran. Guest build `15a1c3087007` qualified
+`mpw-ffff-00007b37@structural-1`; a NOW-owned host-home Hello World project
+was committed at revision 2 and staged twice. On both attempts the guest log
+reported `Project.ckp`, `Hello.r` and `Main.c` received with checksums OK, then
+candidate finalization refused `candidate-unavailable` with "The candidate
+request is malformed or no longer accepting files." A fresh build status was
+`Job none`, `State idle`, `Actions 0 of 0`, so this is a candidate
+acceptance/sealing defect, not an MPW result. Preserve that boundary when
+diagnosing it: transfer completion is proven; candidate re-find/seal is not.
+
 The onboarding server can now place a separately supplied CodeKitten
 MacBinary at the setup-volume root, select it by default, advertise it as a
 standalone optional IDE, and serve it directly at `/now/codekitten.bin`. The
