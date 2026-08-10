@@ -10,6 +10,11 @@ This directory is NOW-owned code graduated from the TimBotTu Web experiments.
 See [PROVENANCE.md](PROVENANCE.md) for the exact source revisions and the
 corpus/model distribution boundary.
 
+The Xcode app target copies this directory into
+`New Old World.app/Contents/Resources/WebBridge`. The host prefers that bundled
+copy in an installed app and falls back to the repository tree for SwiftPM and
+development runs.
+
 ## Development run
 
 The deterministic static engine has no third-party Python dependency:

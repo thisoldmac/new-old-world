@@ -64,6 +64,7 @@
 				A1000070 /* Sources */,
 				A1000030 /* Frameworks */,
 				A1000080 /* Resources */,
+				A1000088 /* Bundle NOW Web Bridge */,
 			);
 			buildRules = (
 			);
@@ -134,6 +135,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A1000088 /* Bundle NOW Web Bridge */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../web-bridge",
+			);
+			name = "Bundle NOW Web Bridge";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/WebBridge/nowweb/__main__.py",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\nsource_dir=\"$SRCROOT/../web-bridge\"\ntarget_dir=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/WebBridge\"\n/bin/rm -rf \"$target_dir\"\n/bin/mkdir -p \"$(/usr/bin/dirname \"$target_dir\")\"\n/usr/bin/ditto --norsrc --noqtn \"$source_dir\" \"$target_dir\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A1000070 /* Sources */ = {

@@ -1,5 +1,28 @@
 # Status: what works and what does not
 
+## 2026-08-10 — NOW Web Direct is tested; classic-browser behavior is unverified
+
+The macOS host now supervises a bundled plain-HTTP Web bridge. The helper owns
+modern TLS and optional JavaScript fetch, emits bounded HTML profiles for
+Classilla, MacWeb and conservative 68K browsers, and offers Compatible Page,
+Reader and structurally constrained AI Layout lenses. Wikipedia and Reddit
+have optional handlers with generic fallback. The preserved 633 MB local MLX
+layout model can be selected by directory; its weights are not distributed.
+
+The PowerPC Workshop has a native Web page and a version-24 preferences
+migration for proxy port, browser profile and lens. Its address is the existing
+Connection host: `10.0.2.2` is correct for this repository's QEMU user network,
+while physical hardware must use the modern Mac's LAN address. The page never
+claims that classic-Mac loopback is available.
+
+This slice is **tested**, not emulator- or metal-verified. Helper integration,
+host model tests, Debug/Release app builds, both guest cross-builds and the docs
+gate pass. No Classilla or MacWeb request has yet crossed a real or emulated
+classic TCP stack. Guest-local Open Transport and MacTCP relay remain
+probe-gated and no relay contract was added. NOW-68K has no Web configuration
+surface in the excluded-from-alpha source sibling; Direct browsing there uses
+MacWeb's own proxy preferences.
+
 ## 2026-08-09 — Onboarding carries optional CodeKitten; its runtime gate remains open
 
 The PPC onboarding package now recognizes a top-level `CodeKitten.bin`, shows

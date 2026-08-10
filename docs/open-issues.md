@@ -4,6 +4,29 @@ search:
 ---
 # Open issues
 
+## UNVERIFIED: NOW Web Direct needs Classilla and MacWeb acceptance (2026-08-10, `codex/web-proxy`)
+
+The Direct implementation, host supervision, PowerPC Workshop page, semantic
+rewriter, Reader, Wikipedia/Reddit handlers and optional local-model adapter
+are built and covered by local gates. None has crossed an actual classic
+browser yet. The first required rows are mac99/Classilla, PB1400c/Classilla,
+q800/MacWeb and PB180c/MacWeb. Each must record the request form the browser
+actually sends, navigation through rewritten links, page byte/chunk behavior,
+and cooperative liveness while NOW's dialogs and controls are active.
+
+The address boundary is intentionally unresolved rather than guessed.
+`10.0.2.2` is the modern host as seen by this repository's QEMU user network;
+physical machines use the host's LAN address. No code calls `127.0.0.1` a
+classic-Mac endpoint. Open Transport and MacTCP listener/connect behavior for
+loopback and the guest's own address still require separate target probes, so
+there is no guest-local relay or relay wire contract.
+
+Other open rows: forms, logins, cookies, uploads, CONNECT tunneling, a complete
+image transcoder, DNS-rebinding-resistant destination pinning, a persistent
+model service rather than per-request cold load, and model distribution. The
+inspected model artifact lacks a complete base-license and training-data
+redistribution record; local use is enabled, copying its weights is not.
+
 ## METAL-VERIFIED: host project, classic identity, MPW build/run/dialog (2026-08-09)
 
 The host Projects store, guest Development module, private import/candidate

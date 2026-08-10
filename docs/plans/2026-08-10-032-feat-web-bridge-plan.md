@@ -2,12 +2,29 @@
 title: Web bridge and classic-browser proxy plan
 type: plan
 date: 2026-08-10
-status: in-progress
+status: implemented-direct-baseline
 search:
   exclude: true
 ---
 
 # Web bridge and classic-browser proxy plan
+
+## Implementation receipt
+
+The Direct baseline is implemented on `codex/web-proxy`: a bundled NOW-owned
+helper, host supervision and Web module, a PowerPC Workshop page with migrated
+preferences, Classilla/MacWeb/Generic profiles, Compatible/Reader/AI lenses,
+Wikipedia and Reddit handlers, and an explicit adapter for the preserved local
+MLX model. The helper and host use the selected modern-Mac listener address;
+the PPC page derives its address from Connection (`10.0.2.2` under this
+repository's QEMU user network, the host Mac's LAN address on hardware).
+
+Workstream D did not pass its prerequisite because no target listener probe was
+run in this source-only implementation session. Consequently no guest-local
+relay contract, Open Transport listener, or MacTCP listener was introduced.
+NOW-68K remains able to use Direct mode through MacWeb's own proxy settings but
+has no Web configuration surface. Those are retained as explicit follow-up
+work rather than inferred from successful compilation.
 
 ## Objective
 
@@ -280,4 +297,3 @@ README/status documentation will separate Built, Tested and Metal-verified.
 `docs/open-issues.md` will retain local-address behavior, forms/sessions/JS
 events, optional model redistribution and any unavailable hardware row as
 unverified rather than silently dropping them.
-
