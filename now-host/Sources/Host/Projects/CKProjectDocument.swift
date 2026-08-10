@@ -1,6 +1,13 @@
 import Foundation
 
 struct CKProjectDocument: Equatable, Sendable {
+    struct FileIdentity: Equatable, Sendable {
+        let path: String
+        let type: String
+        let creator: String
+        let finderFlags: UInt16
+    }
+
     let version: Int
     let id: ProjectID
     let name: String
@@ -70,10 +77,55 @@ struct CKProjectDocument: Equatable, Sendable {
                     "Build is reserved for generated artifacts, not source files.")
             }
         }
+        var identities = Set<String>()
+        let declaredFiles = Set(records.filter { $0.0 == "file" }.map(\.1))
+        for value in records.filter({ $0.0 == "file-info" }).map(\.1) {
+            let identity = try parseFileIdentity(value)
+            guard declaredFiles.contains(identity.path) else {
+                throw ProjectStoreError.invalidProject(
+                    "file-info names a path that is not a declared file.")
+            }
+            guard identities.insert(identity.path).inserted else {
+                throw ProjectStoreError.invalidProject(
+                    "A file has more than one file-info record.")
+            }
+        }
         for (_, value) in records where value.count > 4096 {
             throw ProjectStoreError.invalidProject("A record exceeds 4096 characters.")
         }
         return CKProjectDocument(version: 1, id: id, name: name, records: records)
+    }
+
+    var fileIdentities: [String: FileIdentity] {
+        Dictionary(uniqueKeysWithValues: records.compactMap { key, value in
+            guard key == "file-info", let identity = try? Self.parseFileIdentity(value)
+            else { return nil }
+            return (identity.path, identity)
+        })
+    }
+
+    private static func parseFileIdentity(_ value: String) throws -> FileIdentity {
+        var remainder = value[...]
+        func field() -> String? {
+            guard let separator = remainder.firstIndex(of: "|") else { return nil }
+            let result = String(remainder[..<separator])
+            remainder = remainder[remainder.index(after: separator)...]
+            return result
+        }
+        guard let type = field(), let creator = field(), let flags = field(),
+              type.utf8.count == 4, creator.utf8.count == 4,
+              type.utf8.allSatisfy({ $0 >= 0x20 && $0 <= 0x7e }),
+              creator.utf8.allSatisfy({ $0 >= 0x20 && $0 <= 0x7e }),
+              flags.count == 4,
+              flags.allSatisfy({ $0.isNumber || ($0 >= "a" && $0 <= "f") }),
+              let finderFlags = UInt16(flags, radix: 16) else {
+            throw ProjectStoreError.invalidProject(
+                "file-info must be TYPE|CREATOR|four-lower-hex-flags|path.")
+        }
+        let path = String(remainder)
+        try ProjectPath.validate(path)
+        return FileIdentity(path: path, type: type, creator: creator,
+                            finderFlags: finderFlags)
     }
 
     func replacingID(_ newID: ProjectID) -> Data {

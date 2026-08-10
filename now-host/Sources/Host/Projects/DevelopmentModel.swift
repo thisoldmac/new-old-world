@@ -88,6 +88,7 @@ final class DevelopmentModel: ObservableObject {
             creator=????
             architecture=powerpc
             file=Sources/Main.c
+            file-info=TEXT|MPS |0000|Sources/Main.c
             build-action=compile|Sources/Main.c|Build/Main.c.o
             build-action=link|Build/Main.c.o|Build/\(name)
             """.utf8)

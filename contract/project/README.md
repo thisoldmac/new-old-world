@@ -22,9 +22,27 @@ unsupported major versions are refused.
 | `file` | 1+ | Project-relative source or resource path. |
 
 Optional records are `type`, `creator`, `architecture`, `entry`, `include`,
-`define`, `compiler-option`, `linker-option`, `package`, and `build-action`.
+`define`, `compiler-option`, `linker-option`, `package`, `file-info`, and
+`build-action`.
 Repeated records retain their file order. Four-character `type` and `creator`
 values are MacRoman byte identities represented as four ASCII characters.
+
+`file-info` makes classic file identity part of the portable project instead
+of asking a build backend to infer it from a suffix. Its value is
+`TYPE|CREATOR|FLAGS|path`: type and creator are four printable MacRoman bytes,
+flags are four lower-case hexadecimal digits containing the Finder flags, and
+the remainder is one declared `file` path. Splitting from the left preserves a
+literal `|` in a valid path. A path may have at most one `file-info` record.
+Legacy projects without these records remain readable, but a publisher that
+cannot otherwise preserve the real file metadata must refuse rather than
+invent it.
+
+Resource-fork bytes remain a fork of the named `file`; they are not encoded in
+`Project.ckp` and do not become a second source path. Project stores and agent
+surfaces expose data and resource forks as two bounded views of the same file.
+History digests and candidate receipts bind both forks, type, creator and
+Finder flags. Transfer through a data-only lane therefore uses MacBinary; a
+plain data-fork transfer is not a complete Development file.
 
 Paths always use `/` separators and are relative to the directory containing
 `Project.ckp`. Empty segments, `.`, `..`, a leading `/`, `\`, NUL, and a

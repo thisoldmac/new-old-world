@@ -49,6 +49,51 @@ final class ProjectStoreTests: XCTestCase {
             """.utf8)))
     }
 
+    func testProjectFileIdentityIsExplicitAndPathMayContainPipe() throws {
+        let parsed = try CKProjectDocument.parse(Data("""
+            CKPROJECT 1
+            id=0123456789abcdef0123456789abcdef
+            name=Classic Files
+            target=application
+            configuration=debug
+            toolchain=mpw@3.6
+            product=Build/Product
+            type=APPL
+            creator=TEST
+            file=Sources/Main|Debug.c
+            file-info=TEXT|MPS |4000|Sources/Main|Debug.c
+            """.utf8))
+        XCTAssertEqual(parsed.fileIdentities["Sources/Main|Debug.c"],
+                       .init(path: "Sources/Main|Debug.c", type: "TEXT",
+                             creator: "MPS ", finderFlags: 0x4000))
+    }
+
+    func testProjectFileIdentityRefusesUnknownDuplicateAndMalformedRows() throws {
+        func document(_ rows: String) -> Data {
+            Data("""
+                CKPROJECT 1
+                id=0123456789abcdef0123456789abcdef
+                name=Classic Files
+                target=application
+                configuration=debug
+                toolchain=mpw@3.6
+                product=Build/Product
+                type=APPL
+                creator=TEST
+                file=Sources/Main.c
+                \(rows)
+                """.utf8)
+        }
+        XCTAssertThrowsError(try CKProjectDocument.parse(document(
+            "file-info=TEXT|MPS |0000|Sources/Other.c")))
+        XCTAssertThrowsError(try CKProjectDocument.parse(document("""
+            file-info=TEXT|MPS |0000|Sources/Main.c
+            file-info=TEXT|MPS |0000|Sources/Main.c
+            """)))
+        XCTAssertThrowsError(try CKProjectDocument.parse(document(
+            "file-info=TEXT|MPS |ZZZZ|Sources/Main.c")))
+    }
+
     func testCreateAndApplyProduceRecoverableGitHistory() throws {
         let root = try root()
         let store = try ProjectStore(root: root)
