@@ -27,6 +27,10 @@ request is malformed or no longer accepting files." A fresh build status was
 `Job none`, `State idle`, `Actions 0 of 0`, so this is a candidate
 acceptance/sealing defect, not an MPW result. Preserve that boundary when
 diagnosing it: transfer completion is proven; candidate re-find/seal is not.
+The refused `stage` result also omits the minted candidate ID, so MCP cannot
+address `stage-status` or `stage-discard`; the host's finalize-refusal path
+does not automatically discard the guest candidate. The two attempts may
+therefore have left inactive residue with no agent-visible recovery handle.
 
 The onboarding server can now place a separately supplied CodeKitten
 MacBinary at the setup-volume root, select it by default, advertise it as a
