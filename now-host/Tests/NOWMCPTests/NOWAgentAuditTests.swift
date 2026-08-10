@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import NOWAgentCompanion
+@testable import Host
 @testable import NOWAgentIntegration
 
 /// The MCP face's own coverage of rule 3: a tool call made over this
@@ -8,7 +8,7 @@ import XCTest
 /// call uses.
 ///
 /// `HostProjectionAuditTests` proves the dispatch emits; this proves the
-/// emission actually leaves the companion process, which is the half a spy
+/// emission actually crosses NOW's stdio bridge process, which is the half a spy
 /// in the same process cannot see. It is deliberately driven through
 /// `handle` — the real MCP entry point — rather than through the dispatch,
 /// because "the face is wired up" is the claim under test.
@@ -52,7 +52,7 @@ final class NOWAgentAuditTests: XCTestCase {
 
         let server = NOWMCPServer(
             client: SocketAgentIntegrationClient(endpoint: endpoint),
-            audit: LocalAuditSink(endpoint: endpoint))
+            audit: LocalMCPAuditSink(endpoint: endpoint))
         _ = await server.handle(try request(id: 1, method: "initialize",
                                            params: [
             "protocolVersion": "2025-11-25",
@@ -113,7 +113,7 @@ final class NOWAgentAuditTests: XCTestCase {
 
         let server = NOWMCPServer(
             client: SocketAgentIntegrationClient(endpoint: endpoint),
-            audit: LocalAuditSink(endpoint: endpoint))
+            audit: LocalMCPAuditSink(endpoint: endpoint))
         _ = await server.handle(try request(id: 1, method: "initialize",
                                            params: [
             "protocolVersion": "2025-11-25",
@@ -146,7 +146,7 @@ final class NOWAgentAuditTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let server = NOWMCPServer(
             client: SocketAgentIntegrationClient(endpoint: endpoint),
-            audit: LocalAuditSink(endpoint: endpoint))
+            audit: LocalMCPAuditSink(endpoint: endpoint))
         _ = await server.handle(try request(id: 1, method: "initialize",
                                            params: [
             "protocolVersion": "2025-11-25",

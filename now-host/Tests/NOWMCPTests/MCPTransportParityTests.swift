@@ -1,8 +1,9 @@
 import Foundation
 import XCTest
-@testable import NOWAgentCompanion
+@testable import Host
+@testable import NOWAgentIntegration
 
-/// Exact semantic parity through both real companion transports.
+/// Exact semantic parity through both NOW-owned transports.
 ///
 /// The total recipe gate below calls every advertised tool through each
 /// transport. This companion gate compares the replies themselves for the
@@ -10,14 +11,14 @@ import XCTest
 /// so sharing `NOWMCPServer` is an implementation fact rather than the only
 /// evidence offered for parity.
 final class MCPTransportParityTests: XCTestCase {
-    func testSpawnedHTTPAndStdioHaveExactSurfaceAndResultParity() throws {
-        let executable = try Self.companionExecutable()
+    func testHTTPAndStdioHaveExactSurfaceAndResultParity() throws {
+        let executable = try Self.hostExecutable()
         var environment = ProcessInfo.processInfo.environment
-        environment["NOW_AGENT_SOCKET_SUFFIX"] = "transport-parity"
+        environment["TMPDIR"] = "/tmp"
+        environment["NOW_AGENT_SOCKET_SUFFIX"] = Self.freshSocketSuffix()
         let stdio = try MCPClient(executable: executable,
                                   environment: environment)
-        let http = try MCPHTTPClient(executable: executable,
-                                     environment: environment)
+        let http = try MCPHTTPClient(environment: environment)
         defer {
             stdio.shutDown()
             http.shutDown()
@@ -64,13 +65,13 @@ final class MCPTransportParityTests: XCTestCase {
 
     func testBothTransportsRequireInitializedNotificationBeforeCatalog()
         throws {
-        let executable = try Self.companionExecutable()
+        let executable = try Self.hostExecutable()
         var environment = ProcessInfo.processInfo.environment
-        environment["NOW_AGENT_SOCKET_SUFFIX"] = "transport-lifecycle"
+        environment["TMPDIR"] = "/tmp"
+        environment["NOW_AGENT_SOCKET_SUFFIX"] = Self.freshSocketSuffix()
         let stdio = try MCPClient(executable: executable,
                                   environment: environment)
-        let http = try MCPHTTPClient(executable: executable,
-                                     environment: environment)
+        let http = try MCPHTTPClient(environment: environment)
         defer {
             stdio.shutDown()
             http.shutDown()
@@ -104,15 +105,20 @@ final class MCPTransportParityTests: XCTestCase {
         XCTAssertEqual(lhs as NSDictionary, rhs as NSDictionary, operation)
     }
 
-    private static func companionExecutable() throws -> URL {
+    private static func hostExecutable() throws -> URL {
         let candidate = Bundle(for: MCPTransportParityTests.self)
             .bundleURL.deletingLastPathComponent()
-            .appendingPathComponent("NOWAgentCompanion")
+            .appendingPathComponent("Host")
         guard FileManager.default.isExecutableFile(atPath: candidate.path)
         else {
-            XCTFail("No NOWAgentCompanion executable at \(candidate.path)")
+            XCTFail("No New Old World Host executable at \(candidate.path)")
             throw CocoaError(.fileNoSuchFile)
         }
         return candidate
     }
+
+    private static func freshSocketSuffix() -> String {
+        "parity-" + UUID().uuidString.prefix(8).lowercased()
+    }
+
 }

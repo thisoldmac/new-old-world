@@ -72,10 +72,10 @@ struct AgentActivityEvent: Identifiable, Equatable {
 /// nothing has reached it — and a pane that then printed a socket path would
 /// be naming a file that is not there to someone trying to configure a
 /// client against it.
-enum AgentEndpointState: Equatable {
+enum MCPTransportState: Equatable {
     /// Before the app has tried. Only ever seen by a test or a preview.
     case unopened
-    case open(path: String)
+    case open(endpoint: String)
     /// The server did not stand up, with the reason as it was logged.
     case unavailable(String)
     /// Stopped from the MCP pane. A fourth case rather than a return to
@@ -112,7 +112,15 @@ final class AgentActivityModel: ObservableObject {
 
     /// Newest first, which is the order the question is asked in.
     @Published private(set) var events: [AgentActivityEvent] = []
-    @Published private(set) var endpoint: AgentEndpointState = .unopened
+    @Published private(set) var stdio: MCPTransportState = .unopened
+    @Published private(set) var http: MCPTransportState = .unopened
+    /// Available only while HTTP is running. The view offers an explicit
+    /// Copy action and never prints the secret into its normal hierarchy.
+    @Published private(set) var httpBearerToken: String?
+    @Published private(set) var httpRequests = 0
+    @Published private(set) var httpInFlight = 0
+    @Published private(set) var httpFirstSeen: Date?
+    @Published private(set) var httpLastSeen: Date?
     private var nextID = 0
 
     func record(_ event: HostProjectionAuditEvent,
@@ -137,12 +145,12 @@ final class AgentActivityModel: ObservableObject {
         }
     }
 
-    func endpointOpened(at path: String) {
-        endpoint = .open(path: path)
+    func stdioOpened(at endpoint: String) {
+        stdio = .open(endpoint: endpoint)
     }
 
-    func endpointUnavailable(_ reason: String) {
-        endpoint = .unavailable(reason)
+    func stdioUnavailable(_ reason: String) {
+        stdio = .unavailable(reason)
     }
 
     /// The person switched the server off from the MCP pane.
@@ -150,8 +158,52 @@ final class AgentActivityModel: ObservableObject {
     /// The events stay: what an agent did to this Mac is not undone by
     /// closing the door it came through, and a record that vanished when the
     /// server stopped would be the one that mattered most.
-    func endpointStopped() {
-        endpoint = .stopped
+    func stdioStopped() {
+        stdio = .stopped
+    }
+
+    func httpOpened(at endpoint: String, bearerToken: String) {
+        http = .open(endpoint: endpoint)
+        httpBearerToken = bearerToken
+    }
+
+    func httpUnavailable(_ reason: String) {
+        http = .unavailable(reason)
+        httpBearerToken = nil
+    }
+
+    func httpStopped() {
+        http = .stopped
+        httpBearerToken = nil
+    }
+
+    func httpRequestBegan(at moment: Date = Date()) {
+        httpRequests += 1
+        httpInFlight += 1
+        if httpFirstSeen == nil { httpFirstSeen = moment }
+        httpLastSeen = moment
+    }
+
+    func httpRequestEnded(at moment: Date = Date()) {
+        httpInFlight = max(0, httpInFlight - 1)
+        httpLastSeen = moment
+    }
+
+    /// The presence card is about agents, not transport implementation.
+    /// Preserve the kernel-backed stdio companion rows while folding HTTP's
+    /// bounded request clocks into the totals the person reads.
+    func combinedActivity(_ stdio: AgentCompanionActivity)
+        -> AgentCompanionActivity {
+        .init(
+            companions: stdio.companions,
+            totalRequests: stdio.totalRequests + httpRequests,
+            inFlight: stdio.inFlight + httpInFlight,
+            refusedPeers: stdio.refusedPeers,
+            lastRefusal: stdio.lastRefusal,
+            firstSeen: [stdio.firstSeen, httpFirstSeen]
+                .compactMap { $0 }.min(),
+            lastSeen: [stdio.lastSeen, httpLastSeen]
+                .compactMap { $0 }.max())
     }
 }
 
@@ -220,10 +272,9 @@ struct AgentPresenceReading: Equatable {
             showsCounters = true
         case .active(let since):
             headline = "An agent is attached"
-            detail = "Last call \(Self.elapsed(since, to: now)). A "
-                + "companion connects once per call and is otherwise gone, "
-                + "so it counts as attached for two minutes after its last "
-                + "one."
+            detail = "Last call \(Self.elapsed(since, to: now)). New Old "
+                + "World counts an agent as attached for two minutes after "
+                + "its last call, whichever MCP transport it used."
             symbol = "person.wave.2"
             tone = .attached
             showsCounters = true

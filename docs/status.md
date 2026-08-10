@@ -67,15 +67,24 @@ refused as `guest-diverged`; exact typed re-upload recovered the active project
 and the repaired candidate promoted at revision 3.
 
 All development actions in the final run used the authenticated loopback HTTP
-MCP. The same dispatcher remains available over stdio. Spawned parity tests
+MCP. The same dispatcher remains available over stdio. Cross-transport parity
+tests
 compare initialization, notifications, ping, resources, prompts, every tool
 descriptor/schema, one real tool result and protocol errors; both transports
 run the same 46-tool no-host conformance recipe. HTTP-specific gates cover
-bearer, loopback Host, Origin, bounded sessions, deletion/expiry, framing and a
-spawned incremental client. The live VM HTTP sweep served 31 tools, returned 14
+bearer, loopback Host, Origin, bounded sessions, deletion/expiry, framing and
+incremental client liveness. The live VM HTTP sweep served 31 tools, returned 14
 typed refusals, kept one human-approved transfer gated, and left zero failed or
 uncovered rows. A live idempotency-key collision now crosses the host and
-companion as `attempt-collision`, not `now-host-invalid-response`.
+MCP surface as `attempt-collision`, not `now-host-invalid-response`.
+
+Those varied-loop receipts predate the ownership correction that removed the
+separate companion product. The corrected normal app repeats the complete
+stdio/HTTP parity, catalog, liveness and no-host conformance gates and has made
+an authenticated app-owned HTTP call through the in-process adapter to an
+identity-checked private VM. It has not repeated all four Development loops;
+the attached-toolchain cold-boot fixture did not auto-launch its worker, and
+the run stopped rather than substituting out-of-band QMP input.
 
 This is not a claim that every hardening-plan acceptance rung is closed. HTTP
 was an unapproved slice expansion and is retained only after completing its
@@ -621,10 +630,12 @@ parallel availability lists.
   is metal-verified; the host one is built and tested.
 - **Menu-bar capture** — one command grabs the connected machine's
   screen straight to the clipboard, no window needed.
-- **Optional agent integration** — a separate, client-launched MCP companion
-  reaches this Mac's guest through a private same-user socket. Stdio is the
-  default process transport; an explicitly configured authenticated loopback
-  HTTP listener serves the same dispatcher and is parity-gated against it.
+- **Optional agent integration** — one NOW-owned MCP surface has two
+  independently controlled transports. The normal app serves authenticated
+  loopback HTTP in process. A client that requires stdio launches the same New
+  Old World executable with `--mcp-stdio`; that narrow mode reaches the running
+  app through its private same-user socket. There is no separate companion
+  product. Both transports use one dispatcher and are exact-parity gated.
   It is a **client, not a third face**: it can ask for nothing the app's
   own UI could not, because both are rendered from one registry of
   capability rows, and a row arrives on every face together. What those
@@ -644,7 +655,7 @@ parallel availability lists.
   and does not mean "no". Guest paths never cross the adapter for the
   approval-receipt path, uploads are create-only and never overwrite, and
   every invocation goes through one dispatch, which is what makes an
-  audit event unskippable. Everything the companion did is on the host's
+  audit event unskippable. Everything the MCP surface did is on the host's
   MCP page and in the host log.
 
   **Tested here. Two things have been driven against a real Macintosh**:

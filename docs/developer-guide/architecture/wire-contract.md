@@ -91,8 +91,8 @@ state, and publishes only when the generation set is coherent and current.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
-sources-sha1: 7a17c2720e2b1256aece9e3e9ef2fe19bfa59157
-derive contract-summary sha256=873e2a3b99ca0e5b0e581bc0eab0345854cd266f4cc725dc50f229a0aa766bf6 lines=6
+sources-sha1: e5d042b40f1d8cea3ba8e06bfe678cc94bc0a944
+derive contract-summary sha256=486fe4c5366ae4f3d1cd27b7a9381fcf7b275da681aebcf34ef3130de84fb0cd lines=6
     scripts/docs-source-group contract
 rederived: pending
 rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, contract-summary 6->6
@@ -109,11 +109,25 @@ rederived: 2026-08-09T21:05:27-0400 9864da82 sources
 rederived: 2026-08-09T21:43:46-0400 2b3c2c0e sources
 rederived: 2026-08-09T22:09:30-0400 d54812c2 sources
 rederived: 2026-08-09T22:18:48-0400 e637efd3 sources
+rederived: 2026-08-10T03:07:04-0400 9cbb4c28 sources, contract-summary 6->6
+rederived: 2026-08-10T03:08:46-0400 9cbb4c28 unchanged
+rederived: 2026-08-10T03:11:42-0400 9cbb4c28 sources
+rederived: 2026-08-10T03:46:36-0400 68d74d72 sources
 rederived: 2026-08-10T02:53:59-0400 62603174 sources, contract-summary 6->6
+rederived: 2026-08-10T04:18:14-0400 423ef214 sources, contract-summary 6->6
+rederived: 2026-08-10T04:49:22-0400 cd585106 sources
 rederived: 2026-08-10T04:27:16-0400 886ee556 sources, contract-summary 6->6
 rederived: 2026-08-10T04:38:54-0400 886ee556 unchanged
 rederived: 2026-08-10T05:38:07-0400 a0ede9ec unchanged
+rederived: 2026-08-10T13:37:38-0400 2f62ec11 sources, contract-summary 6->6
+rederived: 2026-08-10T13:51:46-0400 f4a92045 sources
+rederived: 2026-08-10T14:07:44-0400 b22898ee sources
 rederived: 2026-08-10T13:10:56-0400 47bf54fb sources
 rederived: 2026-08-10T13:36:45-0400 b15b4827 unchanged
 rederived: 2026-08-10T14:49:44-0400 4ea2d97d unchanged
+rederived: 2026-08-10T14:20:13-0400 9e432b8b sources
+rederived: 2026-08-10T15:11:51-0400 eb9d991c unchanged
+rederived: 2026-08-10T15:34:28-0400 72868e9e unchanged
+rederived: 2026-08-10T15:52:47-0400 77329146 unchanged
+rederived: 2026-08-10T16:52:02-0400 d77cc444 unchanged
 -->

@@ -1,8 +1,8 @@
 import XCTest
-@testable import NOWAgentCompanion
+@testable import Host
 @testable import NOWAgentIntegration
 
-final class NOWAgentCompanionTests: XCTestCase {
+final class NOWMCPServerTests: XCTestCase {
     private func temporaryEndpoint() -> (AgentIntegrationEndpoint, URL) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(

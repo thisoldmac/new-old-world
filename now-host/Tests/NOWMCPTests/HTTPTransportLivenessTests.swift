@@ -1,35 +1,29 @@
 import Foundation
 import XCTest
-@testable import NOWAgentCompanion
+@testable import Host
+@testable import NOWAgentIntegration
 
 final class HTTPTransportLivenessTests: XCTestCase {
-    func testSpawnedCompanionAnswersIncrementalHTTPClient() async throws {
+    func testNOWOwnedListenerAnswersIncrementalHTTPClient() async throws {
         let port = try Self.unusedPort()
         let token = String(repeating: "l", count: 32)
-        let process = Process()
-        process.executableURL = try Self.companionExecutable()
-        process.arguments = ["--http", "--port", "\(port)"]
-        var environment = ProcessInfo.processInfo.environment
-        environment[CompanionInvocation.tokenEnvironmentKey] = token
-        environment["NOW_AGENT_SOCKET_SUFFIX"] = "http-liveness"
-        process.environment = environment
-        let output = Pipe(), errors = Pipe()
-        process.standardOutput = output
-        process.standardError = errors
-        try process.run()
-        defer {
-            if process.isRunning { process.terminate() }
-            process.waitUntilExit()
-        }
+        let listener = try MCPHTTPListener(
+            configuration: .init(port: port, bearerToken: token),
+            serverFactory: {
+                NOWMCPServer(client: SocketAgentIntegrationClient(),
+                             audit: LocalMCPAuditSink())
+            })
+        try await listener.start()
+        defer { listener.stop() }
 
         let endpoint = try XCTUnwrap(
             URL(string: "http://127.0.0.1:\(port)/mcp"))
         let initialize = try Self.body(id: 1, method: "initialize", params: [
             "protocolVersion": "2025-11-25",
             "capabilities": [:],
-            "clientInfo": ["name": "spawned-http-test", "version": "1"],
+            "clientInfo": ["name": "now-owned-http-test", "version": "1"],
         ])
-        let initialized = try await Self.eventuallyPost(
+        let initialized = try await Self.post(
             initialize, to: endpoint, token: token)
         XCTAssertEqual(initialized.response.statusCode, 200)
         let session = try XCTUnwrap(
@@ -54,20 +48,6 @@ final class HTTPTransportLivenessTests: XCTestCase {
         let result = try XCTUnwrap(object["result"] as? [String: Any])
         let tools = try XCTUnwrap(result["tools"] as? [[String: Any]])
         XCTAssertGreaterThanOrEqual(tools.count, 42)
-    }
-
-    private static func eventuallyPost(
-        _ body: Data, to endpoint: URL, token: String
-    ) async throws -> (data: Data, response: HTTPURLResponse) {
-        var last: Error?
-        for _ in 0..<25 {
-            do { return try await post(body, to: endpoint, token: token) }
-            catch {
-                last = error
-                try await Task.sleep(nanoseconds: 100_000_000)
-            }
-        }
-        throw last ?? URLError(.cannotConnectToHost)
     }
 
     private static func post(
@@ -108,7 +88,7 @@ final class HTTPTransportLivenessTests: XCTestCase {
     }
 
     private static func unusedPort() throws -> UInt16 {
-        /* The spawned product is the owner that proves the bind. Using a
+        /* The NOW-owned listener is the owner that proves the bind. Using a
            second NWListener as a preflight is not useful: it creates a race
            by releasing the port before the product starts, and current
            Network.framework rejects `.any` as a required local endpoint.
@@ -117,15 +97,4 @@ final class HTTPTransportLivenessTests: XCTestCase {
         UInt16.random(in: 40_000...60_000)
     }
 
-    private static func companionExecutable() throws -> URL {
-        let candidate = Bundle(for: HTTPTransportLivenessTests.self)
-            .bundleURL.deletingLastPathComponent()
-            .appendingPathComponent("NOWAgentCompanion")
-        guard FileManager.default.isExecutableFile(atPath: candidate.path)
-        else {
-            XCTFail("No NOWAgentCompanion executable at \(candidate.path)")
-            throw CocoaError(.fileNoSuchFile)
-        }
-        return candidate
-    }
 }

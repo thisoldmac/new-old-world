@@ -33,10 +33,28 @@ public struct AgentIntegrationEndpoint: Equatable, Sendable {
     /// directory. Unset — the product's case — nothing changes.
     public static func currentUser(uid: uid_t = geteuid()) throws
         -> AgentIntegrationEndpoint {
-        let suffix = sanitisedSuffix(
-            ProcessInfo.processInfo
+        try forUser(
+            uid: uid,
+            rawSuffix: ProcessInfo.processInfo
                 .environment["NOW_AGENT_SOCKET_SUFFIX"])
-        let directory = FileManager.default.temporaryDirectory
+    }
+
+    /// The single spelling of a per-user endpoint, with an injectable raw
+    /// suffix for tests that launch both sides under different environments.
+    ///
+    /// A suffixed lane uses `/tmp` deliberately. The normal per-user Darwin
+    /// temp root is already long enough that adding a legal 24-character
+    /// suffix can exceed `sockaddr_un.sun_path`; that made the isolation
+    /// feature produce only `unsafeEndpoint` on this Mac. The leaf remains
+    /// uid-specific, mode 0700, and ownership-validated before either side
+    /// trusts it. The unsuffixed shipping endpoint does not move.
+    static func forUser(uid: uid_t = geteuid(), rawSuffix: String?) throws
+        -> AgentIntegrationEndpoint {
+        let suffix = sanitisedSuffix(rawSuffix)
+        let root = suffix.isEmpty
+            ? FileManager.default.temporaryDirectory
+            : URL(fileURLWithPath: "/tmp", isDirectory: true)
+        let directory = root
             .appendingPathComponent(
                 "dev.newoldworld.now-agent-\(uid)\(suffix)",
                 isDirectory: true)

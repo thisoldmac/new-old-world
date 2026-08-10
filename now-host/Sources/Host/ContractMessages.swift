@@ -92,6 +92,38 @@ enum ControlMessage: Equatable, Sendable {
     case hostShow(HostShow)
     case hostShown(HostShown)
     case mirrorInvalidate(MirrorInvalidate)
+    case updateOffer(UpdateOffer)
+    case updateRequest(UpdateRequest)
+    case updateResult(UpdateResult)
+}
+
+// MARK: - Host-owned updates
+
+struct UpdateOffer: Codable, Equatable, Sendable {
+    var component: String
+    var version: String
+    var build: String
+    var bytes: Int
+    var sha256: String
+    var channel: String
+    var signed: Bool
+    var requiresRestart: Bool
+}
+
+struct UpdateRequest: Codable, Equatable, Sendable {
+    var id: Int
+    var component: String
+    var build: String
+    var sha256: String
+}
+
+struct UpdateResult: Codable, Equatable, Sendable {
+    var id: Int
+    var component: String
+    var ok: Bool
+    var action: String?
+    var code: String?
+    var reason: String?
 }
 
 // MARK: - The host-surface family
@@ -1054,6 +1086,12 @@ struct FileOffer: Codable, Equatable, Sendable {
     /// so resuming can never land the tail of one file onto the head of
     /// another. Must change whenever the bytes would.
     var resumeToken: String?
+    /// Closed receiver-owned routing hint. Ordinary files omit it; update
+    /// artifacts name the component so the guest stages outside its share.
+    var purpose: String? = nil
+    /// SHA-256 of the exact bytes on the bulk lane. Updates require it;
+    /// ordinary transfers retain their existing CRC-32 settlement.
+    var sha256: String? = nil
     /// Private Development coordinator destination. No agent-facing file
     /// request can set this field.
     var developmentCandidate: String? = nil
@@ -1445,6 +1483,15 @@ enum ControlMessageCodec {
             return .fileGet(try decoder.decode(FileGet.self, from: data))
         case "file.offer":
             return .fileOffer(try decoder.decode(FileOffer.self, from: data))
+        case "update.offer":
+            return .updateOffer(
+                try decoder.decode(UpdateOffer.self, from: data))
+        case "update.request":
+            return .updateRequest(
+                try decoder.decode(UpdateRequest.self, from: data))
+        case "update.result":
+            return .updateResult(
+                try decoder.decode(UpdateResult.self, from: data))
         case "file.accept":
             return .fileAccept(
                 try decoder.decode(FileAccept.self, from: data))
@@ -1643,6 +1690,9 @@ enum ControlMessageCodec {
         case .fileListing(let m): return try tagged("file.listing", m)
         case .fileGet(let m): return try tagged("file.get", m)
         case .fileOffer(let m): return try tagged("file.offer", m)
+        case .updateOffer(let m): return try tagged("update.offer", m)
+        case .updateRequest(let m): return try tagged("update.request", m)
+        case .updateResult(let m): return try tagged("update.result", m)
         case .fileAccept(let m): return try tagged("file.accept", m)
         case .fileDone(let m): return try tagged("file.done", m)
         case .fileProgress(let m): return try tagged("file.progress", m)

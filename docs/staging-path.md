@@ -28,8 +28,8 @@ wrong trap ABI does not crash, it lies*, could not be run at all.
 | --- | --- |
 | `tools/stage-ext.py` | Pushes `NowExt.bin` into `System Folder:Extensions` and the app beside it, through the lab's baked anchor worker. Verifies **by fork size and Finder type**, read back off the guest. |
 | `scripts/spin-up-ppc` | Fresh session-private clone → stage → **guest-clean shutdown and relaunch** → re-verify → launch NOW → interrogate. |
-| `tools/guest-shutdown` | A 68K applet whose whole body is `ShutDwnPower()`. Staged like the extension; it is how the Macintosh is asked to shut ITSELF down. |
-| `tools/shutdown-guest.py` | Quits the front application, launches that applet through the worker, waits for QEMU to exit. Never `quit`. |
+| `tools/guest-shutdown` | A 68K fallback applet that calls `ShutDwnPower()`. It can start shutdown before NOW's wire exists, but disk quiet on this route does not prove a clean HFS unmount. |
+| `tools/shutdown-guest.py` | Uses NOW's wire to drive Finder Special > Shut Down, the measured clean route; otherwise launches the fallback applet. It verifies the HFS unmounted bit before returning success. |
 | `tools/askguest.py` | Listens as a NOW host, takes the dialling guest, asks verbs, prints answers verbatim. `fakeguest.py`'s mirror image. |
 
 Ported from `archive/mirror-standalone-2026-08-09/tools/` (upstream `5c822b0`, `f42cb09`, `a82cc8f`),
@@ -47,10 +47,11 @@ unclean bit, so every cycle began with a Disk First Aid pass on the disk
 it was about to measure. Asking the guest instead needs a route into a
 machine whose human interface nothing outside can reach — no QMP key
 event arrives, there is no absolute pointer, a posted click cannot select
-from a menu, and the canonical anchor worker has no `script` verb. So NOW
-stages an applet that calls the Shutdown Manager. Measured 2026-08-05:
-launch to QEMU exit, 6 s; the next boot reached the anchor in 42 s with no
-Disk First Aid, against 161 s for a boot after a power cut.
+from a menu, and the canonical anchor worker has no `script` verb. NOW stages
+the fallback applet, but the pre-INIT restart first launches NOW against the
+resident already active in the base and drives the Finder's actual Special >
+Shut Down menu over the wire. The bake reads the HFS unmounted bit before
+accepting either path; direct `ShutDwnPower` plus disk quiet is not sufficient.
 [open-issues.md](open-issues.md) carries what else that ruled out.
 
 **One thing could not be ported.** NOW's wire runs *guest → host*: the guest

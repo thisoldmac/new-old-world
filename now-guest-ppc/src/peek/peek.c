@@ -4,6 +4,7 @@
 /* The Mirror's own account of itself. Every call below is edge-triggered
    and task time; see mirror_log.h for why that boundary is the design. */
 #include "mirror_log.h"
+#include "resident_version.h"
 
 #include <Files.h>
 #include <Folders.h>
@@ -526,9 +527,22 @@ void now_peek_status_line(char *out, long cap)
     unsigned long ignored;
 
     switch (now_peek_status(&ignored)) {
-    case kNowPeekActive:
-        snprintf(out, (size_t)cap, "NOW Extension active");
+    case kNowPeekActive: {
+        const NowPeekTable *table = now_peek_table();
+        if (table != NULL
+            && (table->ext_major != NOW_RESIDENT_VERSION_MAJOR
+                || table->ext_minor != NOW_RESIDENT_VERSION_MINOR)) {
+            snprintf(out, (size_t)cap,
+                     "NOW Extension %u.%u active; app expects %d.%d",
+                     (unsigned)table->ext_major,
+                     (unsigned)table->ext_minor,
+                     NOW_RESIDENT_VERSION_MAJOR,
+                     NOW_RESIDENT_VERSION_MINOR);
+        } else {
+            snprintf(out, (size_t)cap, "NOW Extension active");
+        }
         break;
+    }
     case kNowPeekWrongVersion:
         snprintf(out, (size_t)cap, "NOW Extension needs updating");
         break;

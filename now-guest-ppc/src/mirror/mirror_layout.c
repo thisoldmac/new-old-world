@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "resident_version.h"
+
 static Rect row(Rect body, short top)
 {
     Rect value;
@@ -69,7 +71,16 @@ void now_mirror_lifecycle_text(const MirrorFacts *facts, char *out, long cap)
                  facts->resident_major);
         break;
     case kMirrorLifecycleActive:
-        snprintf(out, (size_t)cap, "NOW Extension is active.");
+        if (facts->resident_major != NOW_RESIDENT_VERSION_MAJOR
+            || facts->resident_minor != NOW_RESIDENT_VERSION_MINOR) {
+            snprintf(out, (size_t)cap,
+                     "Warning: extension %lu.%lu is active; this app "
+                     "expects %d.%d.", facts->resident_major,
+                     facts->resident_minor, NOW_RESIDENT_VERSION_MAJOR,
+                     NOW_RESIDENT_VERSION_MINOR);
+        } else {
+            snprintf(out, (size_t)cap, "NOW Extension is active.");
+        }
         break;
     case kMirrorLifecycleDegraded:
         snprintf(out, (size_t)cap,

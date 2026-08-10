@@ -420,7 +420,7 @@ final class AgentIntegrationCapabilityTests: XCTestCase {
     /// 22 in `NOWAgentIntegration` outside `Projection/` — `if guestName ==
     /// "now-68k"` in any of the other forty-three was invisible. That hole
     /// was larger than the one the comments were making noise about.
-    func testNoCompanionCodeBranchesOnGuestIdentity() throws {
+    func testNoMCPAdapterCodeBranchesOnGuestIdentity() throws {
         let root = GateSource.repoRoot
         // Every file of the companion surface, health included: naming
         // either guest is out everywhere, because there is no legitimate
@@ -435,7 +435,7 @@ final class AgentIntegrationCapabilityTests: XCTestCase {
         var surface: [String] = []
         for tree in ["now-host/Sources/Host/Automation",
                      "now-host/Sources/NOWAgentIntegration",
-                     "now-host/Sources/NOWAgentCompanion"] {
+                     "now-host/Sources/Host/MCP"] {
             let base = root.appendingPathComponent(tree)
             let walk = FileManager.default.enumerator(
                 at: base, includingPropertiesForKeys: nil)

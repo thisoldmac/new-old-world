@@ -1,6 +1,12 @@
 # Host agent-integration boundary
 
-The optional NOW agent-integration companion is host-side only. It projects a narrow typed view of capabilities already owned by a running NOW host, but it does not own the host app, guest connection, transport, transfer lane, or any human-facing operation.
+The optional MCP surface is owned by NOW. It projects a narrow typed view of
+capabilities already owned by the running host; it does not own a second host
+app, guest connection, transfer lane, or human-facing operation. The normal
+New Old World app owns HTTP in process. For clients that require stdio, the
+same New Old World executable runs with `--mcp-stdio` as a narrow bridge to
+the already-running app's private same-user socket. There is no separately
+installed MCP companion product.
 
 It is also **not a third face**. It is a client of the wire, reaching a guest through the same commands and message families a human does; the rule and the reason it needs writing down are in [command-parity.md](command-parity.md#the-mcp-is-a-client-not-a-face). A tool projects a capability, it never implements one.
 
@@ -8,11 +14,11 @@ It is also **not a third face**. It is a client of the wire, reaching a guest th
 
 NOW has two guests of very different completeness. The PowerPC Carbon guest implements most of the contract; NOW-68K implements a small part of it and answers `unknown-command` or a `not-implemented` error to the rest — which is the contract's own additive answer, not a failure. Every tool here must therefore work against whichever guest is connected, and its availability must follow from what that guest can actually do.
 
-Nothing in the companion reads the guest's identity to decide anything. A `guest` selector says WHICH machine a call is about and is resolved by the host before any operation runs; it never becomes an input to what that operation may do. The hello carries a name, a version and an OS string, and the session-health projection reports all three to its caller — but no file that decides what a tool may do is allowed to read them. `AgentIntegrationCapabilityTests.testNoCompanionCodeBranchesOnGuestIdentity` fails the build otherwise. That guard is not hypothetical caution: `MetalQuitTests` derived a guest's abilities from its hello name and went stale the same afternoon that guest grew `process.list`, quietly understating its own evidence. Nothing failed, because a test that expects less always passes.
+Nothing in the MCP projection reads the guest's identity to decide anything. A `guest` selector says WHICH machine a call is about and is resolved by the host before any operation runs; it never becomes an input to what that operation may do. The hello carries a name, a version and an OS string, and the session-health projection reports all three to its caller — but no file that decides what a tool may do is allowed to read them. `AgentIntegrationCapabilityTests.testNoCompanionCodeBranchesOnGuestIdentity` retains its historical name and fails the build otherwise. That guard is not hypothetical caution: `MetalQuitTests` derived a guest's abilities from its hello name and went stale the same afternoon that guest grew `process.list`, quietly understating its own evidence. Nothing failed, because a test that expects less always passes.
 
 Two sources, matching the two kinds of capability a guest has.
 
-**Commands** come from `help`, a wire command on both guests that returns that machine's own table. It is fetched once per connection and is the same live source the host console's Tab completion uses, which means a guest that grows a verb becomes usable here with no companion release.
+**Commands** come from `help`, a wire command on both guests that returns that machine's own table. It is fetched once per connection and is the same live source the host console's Tab completion uses, which means a guest that grows a verb becomes usable here with no host MCP release.
 
 **Message families** (`process.list`, `file.list`, `process.quit`, `process.front`, `software.list`, `file.put`, and the four catalog mutations `file.move` / `file.trash` / `file.restore` / `file.mkdir`) are not in any command table. `help` cannot see them, and that gap is exactly how `ps` shipped wire-only on NOW-68K and went unnoticed for a day. A family's availability is therefore established by asking, under a stated probing policy:
 
@@ -36,12 +42,12 @@ Because ordinary use feeds the same ledger, tools switch on as capabilities appe
 - `now_guest_files_mutate` needs **all four** catalog-mutation families, not the three it happens to be using on a given call. A guest serving `file.trash` without `file.restore` would offer a deletion the tool could not undo, and that pairing is the safety property rather than a convenience, so it is a requirement — the tool is unavailable where the lane is incomplete rather than shipping the half that destroys.
 - `now_bring_to_front` needs the `process.front` **family** for the same reason as quit, and needs `process.list` twice over: once to revalidate the reference, once to tell a confirmed switch from an accepted one. Both guests serve the family, so this one is available where quit is not.
 
-And a refusal must arrive as a refusal. `GuestListener.recordGuestError` routes a guest `error` to every waiter kind — command, file listing, process listing, software listing, process result, file change and census — because the ids come from one sequence. It previously routed three of those six, so exactly the requests a partial guest refuses reached their caller as a 15- or 30-second timeout carrying no reason. Against a guest that implements part of the contract, refusal is ordinary traffic rather than an edge case, and routing it is what makes the companion usable at all.
+And a refusal must arrive as a refusal. `GuestListener.recordGuestError` routes a guest `error` to every waiter kind — command, file listing, process listing, software listing, process result, file change and census — because the ids come from one sequence. It previously routed three of those six, so exactly the requests a partial guest refuses reached their caller as a 15- or 30-second timeout carrying no reason. Against a guest that implements part of the contract, refusal is ordinary traffic rather than an edge case, and routing it is what makes the MCP projection usable at all.
 
 The completed V0 surface remains intact and the parity slice is widening it a row at a time. **The tool count is not stated here on purpose**: it moved four times in two days, every capability that changed it had to edit a sentence it was otherwise unrelated to, and the number is derived in [mcp-coverage.md](mcp-coverage.md)'s projection table from the registry itself. Read it there. The approved follow-on is the
 [NOW MCP V0.5 guest-files command roadmap](plans/2026-07-24-003-feat-now-mcp-v0-5-files-command-roadmap-plan.md).
 V0.5 widens guest filesystem authority only through typed, logged NOW commands
-under a persisted root-relative `guestRoot`; it does not turn this companion
+under a persisted root-relative `guestRoot`; it does not turn this MCP surface
 into a direct file transport, grant modern-host filesystem access, or add
 CodeKitten project semantics.
 
@@ -68,7 +74,7 @@ prune, and overwrite in any form.
 The projections are a module, not a shape the MCP server happens to have:
 `now-host/Sources/NOWAgentIntegration/Projection/`. It sits in the package
 product both build systems already share, so every host face can read one
-registry — the companion renders it as MCP tools, the capability ledger
+registry — the transport-neutral server renders it as MCP tools, the capability ledger
 renders it as per-tool availability, and a later face renders it its own
 way without a second list to keep in step.
 
@@ -139,7 +145,7 @@ to; the next capability's author gets the behaviour by adding a row.
 
 **A refused invocation emits.** An attempt that was denied is the more
 interesting event of the two, and it is the one class of outcome the host
-would otherwise never see: an argument refusal is decided inside the companion
+would otherwise never see: an argument refusal is decided inside the MCP server
 and sends no local request, so an unemitted refusal is recorded nowhere.
 `answered` is deliberately coarse — reading a typed result back apart would
 mean this seam learning the shape of a dozen result types and going stale
@@ -181,7 +187,7 @@ entry point and reads what arrived at the host end of the socket.
 ## The machine's own ceiling
 
 **Consent is the guest's; enforcement is the host's.** A guest states how far
-a companion may drive it in one optional `hello.agent` field, and the host
+an agent may drive it in one optional `hello.agent` field, and the host
 refuses above that line — so the guest never has to tell agent traffic from
 app traffic, and a person clicking a button in the app is untouched by any of
 this.
@@ -276,20 +282,24 @@ Full. Chat receives the same rows only when its transcript has Development
 intent, so ordinary machine questions do not pay their schema cost. See
 [development.md](development.md) for project-home truth and current limits.
 
-Before these domain rows dispatch, the companion asks the local host for a
+Before these domain rows dispatch, the stdio bridge asks the local host for a
 compatibility description: host build, local protocol revision, projection
 catalog version/digest and supported schema revisions. An incompatible peer
 returns one typed refusal instead of cascading generic decode failures.
 Projects and Development describe each operation as its own schema branch, so
 project-revision and workspace-commit guards cannot coexist accidentally.
 
-The companion offers two process transports over the same registry and
-dispatcher. With no arguments it speaks newline-delimited JSON-RPC over stdio.
-With `--http` it binds an authenticated HTTP listener to IPv4 loopback only.
-Both reach the running host over the private same-user local socket described
-below. Spawned parity tests compare the complete tool descriptors and schemas,
-resources, prompts, results, errors and MCP lifecycle; the same 46-tool
-conformance recipe runs against both.
+NOW offers two independently controlled transports over one `NOWMCPServer`
+registry and dispatcher. An MCP client launches the New Old World executable
+with `--mcp-stdio` for newline-delimited JSON-RPC; that narrow mode reaches the
+running app over the private same-user local socket described below. The normal
+app owns authenticated HTTP directly in process and binds it to IPv4 loopback.
+The MCP module starts and stops each transport independently, shows its current
+endpoint, copies the stdio command or HTTP URL, and exposes the bearer only by
+an explicit Copy action. Transport preferences live in NOW preferences.
+Parity tests compare the complete tool descriptors and schemas, resources,
+prompts, results, errors and MCP lifecycle; the same 46-tool conformance recipe
+runs against both.
 
 The parity-slice addition (W1 #1) is:
 
@@ -343,11 +353,12 @@ only with what it does:
 
 | Tool contract | Existing NOW owner | Implemented projection |
 | --- | --- | --- |
-| `now_stream_screen` | `stream.start` / `stream.stop` / `stream.refresh` over `GuestListener.startStream` — the same host-owned bracket the Screenshots page's **Start Streaming** button opens, and the same one a guest's `stream.request` is answered with | Opens the bracket, hands back one whole frame at a time, and closes it. Three intentions on one row because they are one bracket: stop and refresh take the id start minted and mean nothing without it. A frame request sends `stream.refresh` and answers with the frame that FOLLOWS, so "after you asked" is true; the picture rides the result's image attachment and is paged out inside the projection exactly as a capture's is. The pace is bounded here and is never absent — the contract reads absent as the guest's own ~15 fps floor, which is right for a person watching and wrong for a caller reading one frame per call. **A bracket an agent opens ends without the agent**: the host records the pid the kernel named on the opening socket and ends the stream when that process is gone, and equally when it has not called for a minute, because a live companion that stopped reading costs the Macintosh exactly what a dead one does. Stopping is not restricted to the opener — the person at the host can end any stream from the page they watch it on, and the Screenshots and Agent pages both say when one is an agent's. |
+| `now_stream_screen` | `stream.start` / `stream.stop` / `stream.refresh` over `GuestListener.startStream` — the same host-owned bracket the Screenshots page's **Start Streaming** button opens, and the same one a guest's `stream.request` is answered with | Opens the bracket, hands back one whole frame at a time, and closes it. Three intentions on one row because they are one bracket: stop and refresh take the id start minted and mean nothing without it. A frame request sends `stream.refresh` and answers with the frame that FOLLOWS, so "after you asked" is true; the picture rides the result's image attachment and is paged out inside the projection exactly as a capture's is. The pace is bounded here and is never absent — the contract reads absent as the guest's own ~15 fps floor, which is right for a person watching and wrong for a caller reading one frame per call. **A bracket an agent opens ends without the agent**: the host records the pid the kernel named on the opening socket and ends the stream when that process is gone, and equally when it has not called for a minute, because a live stdio bridge that stopped reading costs the Macintosh exactly what a dead one does. Stopping is not restricted to the opener — the person at the host can end any stream from the page they watch it on, and the Screenshots and MCP pages both say when one is an agent's. |
 
-The client-launched `NOWAgentCompanion` executable advertises exactly the
-registry's rows over either transport. It opens one bounded local request to
-the running host for each call. Session health and upload staging send no guest
+The New Old World executable's `--mcp-stdio` mode and the app's in-process HTTP
+listener advertise exactly the registry's rows. Stdio opens one bounded local
+request to the running host for each call; HTTP dispatches in process. Session
+health and upload staging send no guest
 message; the capability report sends only `help` and the bounded read-only
 probes named above; commit and the other guest-dependent tools ask the host to
 use the existing paired connection. Launch accepts exactly one bounded name or
@@ -359,13 +370,18 @@ a PSN, shell text, an arbitrary host filesystem operation, or a guest Files
 mutation this host does not implement — and none accepts an overwrite flag, an
 unlink, a recursive form, or more than one item per call. Every tool exposes
 typed unavailability and no host or guest-listener lifecycle operation. If the
-host is absent, the result is `now-host-unavailable`; the companion never
-launches it. If the host is present without a paired guest, guest-dependent
+host is absent, stdio returns `now-host-unavailable`; its bridge never launches
+the app. HTTP exists only while the host app is running. If the host is present
+without a paired guest, guest-dependent
 tools return `now-guest-unavailable` and never use cached state.
 
 ## Connection posture
 
-NOW keeps its existing guest-dials-host paired connection throughout V0. The companion projects host-owned operations over that already-running session; it does not add a listener to the NOW guest, introduce a second guest protocol implementation, or wait for a replacement transport before the remaining tools proceed.
+NOW keeps its existing guest-dials-host paired connection throughout V0. The
+MCP surface projects host-owned operations over that already-running session;
+it does not add a listener to the NOW guest, introduce a second guest protocol
+implementation, or wait for a replacement transport before the remaining
+tools proceed.
 
 CodeKitten is the proving ground for the opposite connection posture. Its listener must first establish the design under adversarial stress, including framing, pairing and security, health and latency semantics, lifecycle, stale-state recovery, and classic cooperative-loop behavior. The CodeKitten roadmap (a sibling project, not public) describes that intended proof work; it is a prerequisite, not evidence that the listener or a shared service already exists.
 
@@ -377,44 +393,48 @@ V0 deliberately trusts processes running as the same macOS user. This protects a
 
 HTTP adds a separate local network boundary. It binds only `127.0.0.1`, checks
 the request Host is loopback, requires a 32-512 byte bearer token supplied in
-`NOW_MCP_HTTP_BEARER_TOKEN`, and rejects non-loopback Origins. It allows at most
+NOW's private Application Support storage, and rejects non-loopback Origins.
+The token is generated by NOW on first use, stored mode `0600`, never rendered
+or logged, and copied only on explicit request from the MCP module. HTTP allows at most
 eight initialized sessions by default, expires them after 30 minutes, supports
 explicit DELETE, caps headers and MCP bodies, rejects chunked or ambiguous
 framing, and closes each TCP connection after one response. The bearer is still
 same-user protection; another malicious process under that user remains outside
 the model.
 
-- The host creates `dev.newoldworld.now-agent-<uid>/host.sock` beneath the user's private temporary directory. The directory is mode `0700`; the socket is mode `0600`.
+- The host creates `dev.newoldworld.now-agent-<uid>/host.sock` beneath the user's private temporary directory. The directory is mode `0700`; the socket is mode `0600`. Suffixed development lanes use the same uid-specific mode-`0700` leaf beneath `/tmp`, because the Darwin user-temp root plus a legal suffix can exceed `sockaddr_un`; the unsuffixed product path is unchanged.
 - The host checks every accepted peer with `getpeereid` and serves it only when the effective UID matches.
-- **The host remembers that companions exist, in counts and clock times only.** The surface is one request per connection and a companion is short-lived, so the host tracks the *companion* rather than the socket: when the first one ever spoke, when the last one did, how many requests are in flight this instant, how many distinct peer processes have spoken, and how many peers the UID gate turned away. A companion is identified by `LOCAL_PEERPID` — the kernel's answer about the socket, asked only *after* the gate has passed it, and never anything a peer said about itself. Pid reuse means two short-lived companions can read as one, which undercounts rather than inventing one. The list of distinct companions is bounded at eight, most recently active first; the totals do not age out. **Nothing about the CONTENT of a request is recorded here** — no operation name, no arguments, no payload — because the audit event above is where "what was invoked" is answered and it refuses arguments deliberately; a presence ledger that recorded more would be the back door that puts them back. "Nothing has ever attached" is a distinct, first-class reading, not a zeroed count, and is the resting state on a Mac with no companion installed.
-- The companion checks that the directory and socket are owned by its effective UID, have no group/other permission bits, and are a directory and socket rather than links or other file types.
-- Local schema v8 makes an agent call VISIBLE. It adds one operation that asks the host for nothing: a face reports a capability it has just invoked — capability name, face, the guest selector as given, and `answered` or `refused` with a bounded sentence — and the host writes that line into its own log under the `agent` area. It carries no selection of any kind and reaches no guest, so it is exempt from the addressing check and shares the read-only response window. The version moved because the shape of the surface changed: a v7 host answers `invalid-request` to it, which is honest — that host has no audit line to write — and a v7 companion never sends one, which is the opacity rule 3 exists to stop being acceptable. See *Every agent call leaves a trace* above.
-- Local schema v7 makes the surface guest-ADDRESSABLE. Every tool takes an optional `guest`: a machine id (`pb1400c` — "whatever is connected to that Mac now", which follows a reconnection) or a session id (`pb1400c-<uuid>` — one connection, refused `now-guest-session-ended` once it is over rather than answered by its successor, the same staleness contract the process and quit references keep). Omitting it means the machine the host is currently driving, which is what every v6 caller meant. Naming a machine that is connected but not being driven is refused `now-guest-not-addressed`, naming the driven machine and the whole roster — never answered by the other machine. `now_list_machines` reports the driven machine's reference and every connected machine, so a caller can discover the ids it needs. **The guest's ADDRESS is not on this surface.** The host observes it and anchors the machine id on it; the companion is told the id, the session id and the display name, and nothing about where anything lives — the same reticence the endpoint keeps about its own path. The version moved because a v6 companion cannot say which machine it means and would read whichever one happened to be active as the answer to a question it asked about another. Addressability does not touch availability: what a guest can do is still asked of the guest and never inferred from which guest it is.
-- Local schema v6 adds the read-only session capability report to v5's staged-upload and browse operations, permits one request per connection, and caps each request and response at 16 KiB. The version changes when authority or action shape changes so an older companion cannot silently misread it. Browse selection is one bounded root-relative path and optional positive cursor; upload selection is one bounded root-relative destination plus declared metadata, followed only by an opaque upload ID, exact offset, and bounded bytes. The NOW command layer performs canonical MacRoman/HFS validation and policy composition. Launch selection is exactly one bounded name or opaque reference; quit selection is exactly one current opaque process reference; artifact selection is exactly one syntactically valid receipt; the capability report's only input is a required boolean `probeCostly`, required rather than defaulted because it decides whether the call spends a guest's whole-volume sweep. The version moved because the shape of the surface changed: a v5 companion cannot ask what the connected guest implements and would present every tool as unconditionally available. MCP stdio input is separately capped at 64 KiB per line.
+- **The host remembers that local MCP peers exist, in counts and clock times only.** The private socket surface is one request per connection and a stdio bridge is short-lived, so the host tracks the *peer process* rather than the socket: when the first one ever spoke, when the last one did, how many requests are in flight this instant, how many distinct peer processes have spoken, and how many peers the UID gate turned away. A peer is identified by `LOCAL_PEERPID` — the kernel's answer about the socket, asked only *after* the gate has passed it, and never anything a peer said about itself. Pid reuse means two short-lived bridge processes can read as one, which undercounts rather than inventing one. The list is bounded at eight, most recently active first; the totals do not age out. **Nothing about the CONTENT of a request is recorded here** — no operation name, no arguments, no payload — because the audit event above is where "what was invoked" is answered and it refuses arguments deliberately; a presence ledger that recorded more would be the back door that puts them back. "Nothing has ever attached" is a distinct, first-class reading, not a zeroed count, and is the resting state before a stdio client has attached. In-process HTTP requests use the same operation audit without inventing a peer process.
+- The stdio bridge checks that the directory and socket are owned by its effective UID, have no group/other permission bits, and are a directory and socket rather than links or other file types. HTTP bypasses this process boundary and dispatches inside the owner app.
+- Local schema v8 makes an agent call VISIBLE. It adds one operation that asks the host for nothing: a face reports a capability it has just invoked — capability name, face, the guest selector as given, and `answered` or `refused` with a bounded sentence — and the host writes that line into its own log under the `agent` area. It carries no selection of any kind and reaches no guest, so it is exempt from the addressing check and shares the read-only response window. The version moved because the shape of the surface changed: a v7 host answers `invalid-request` to it, which is honest — that host has no audit line to write — and a v7 stdio bridge never sends one, which is the opacity rule 3 exists to stop being acceptable. See *Every agent call leaves a trace* above.
+- Local schema v7 makes the surface guest-ADDRESSABLE. Every tool takes an optional `guest`: a machine id (`pb1400c` — "whatever is connected to that Mac now", which follows a reconnection) or a session id (`pb1400c-<uuid>` — one connection, refused `now-guest-session-ended` once it is over rather than answered by its successor, the same staleness contract the process and quit references keep). Omitting it means the machine the host is currently driving, which is what every v6 caller meant. Naming a machine that is connected but not being driven is refused `now-guest-not-addressed`, naming the driven machine and the whole roster — never answered by the other machine. `now_list_machines` reports the driven machine's reference and every connected machine, so a caller can discover the ids it needs. **The guest's ADDRESS is not on this surface.** The host owns the id, session id and display name internally and returns them without exposing where anything lives — the same reticence the endpoint keeps about its own path. The version moved because a v6 client cannot say which machine it means and would read whichever one happened to be active as the answer to a question it asked about another. Addressability does not touch availability: what a guest can do is still asked of the guest and never inferred from which guest it is.
+- Local schema v6 adds the read-only session capability report to v5's staged-upload and browse operations, permits one request per connection, and caps each request and response at 16 KiB. The version changes when authority or action shape changes so an older stdio bridge cannot silently misread it. Browse selection is one bounded root-relative path and optional positive cursor; upload selection is one bounded root-relative destination plus declared metadata, followed only by an opaque upload ID, exact offset, and bounded bytes. The NOW command layer performs canonical MacRoman/HFS validation and policy composition. Launch selection is exactly one bounded name or opaque reference; quit selection is exactly one current opaque process reference; artifact selection is exactly one syntactically valid receipt; the capability report's only input is a required boolean `probeCostly`, required rather than defaulted because it decides whether the call spends a guest's whole-volume sweep. The version moved because the shape of the surface changed: a v5 bridge cannot ask what the connected guest implements and would present every tool as unconditionally available. MCP stdio input is separately capped at 64 KiB per line.
 - V0.5 upload staging lives in a private mode-`0700` per-process directory; each stage is preallocated mode `0600`, becomes mode `0400` only after size and SHA-256 match, expires after ten minutes, and is consumed after one transfer attempt. Capacity is derived from current host disk availability and outstanding reservations, not an arbitrary whole-file cap. On startup NOW removes only well-formed private stages owned by a demonstrably dead process and emits an audit event. Live-process or structurally unfamiliar directories are retained.
 - Approval staging lives in a per-host-launch mode-`0700` directory. A selected source must be one directly opened, single-link regular file no larger than 4 MiB. The sealed copy is mode `0400`, expires after ten minutes, is bound to the current guest session and approved Files destination, and is consumed on its first redemption attempt. Final open follows no links and rechecks owner, inode, device, link count, size, timestamps, mode, and digest.
 - The MCP cannot mint an approval, list approval staging, choose the approved file's destination, or recover its original path. A user may deliberately select a file from anywhere the native picker can reach, but that grants only the staged copy; it does not expose the selected path. This approval boundary applies to that host-selected-file lane. A full-access caller may separately supply bytes it already possesses through `now_guest_files_upload_*`; whether access to modern-host files should require an additional product-level approval is tracked in [audit-report-2026-08-09.md](audit-report-2026-08-09.md) F-004. Same-user malicious code remains outside V0's stated protection.
 
-The local socket is not the guest wire. It creates no TCP listener, guest
+The stdio local socket is not the guest wire. It creates no TCP listener, guest
 connection, protocol message, guest module, daemon, launch agent, or second app.
-The optional companion HTTP mode does create one loopback-only TCP listener;
-it does not change the guest wire or start the host.
+The NOW-owned HTTP transport creates one loopback-only TCP listener inside the
+normal host app; it does not change the guest wire or create another product.
 
-**It does create one thing on this side, and that changed deliberately: a page in the host app.** The earlier wording promised no dashboard item either, and that promise was about the *guest* — the vintage Mac gains nothing, which still holds — but it was written broadly enough to cover the host, and the host now needs one. Rule 3 asks that what a person cannot initiate they can at least see; the audit line satisfied that into a log file, where a person has to already suspect something to go and read it. The **Agent** page (`AgentActivityModuleView`) is the visible half: companion presence from the ledger above, the audit stream as it happens, the machine's own `hello` consent answer read back, and the endpoint's own path. It **displays and does not decide** — there is no control on it over what an agent may do, and specifically none over the guest's consent, because that answer belongs to the machine being driven and a host-side override would defeat the point of asking for it. What may happen is settled in one place, at the dispatch.
+**It creates one page on this side: MCP.** Rule 3 asks that what a person
+cannot initiate they can at least see. The page owns both transport controls,
+their endpoints and connection details, the audit stream as it happens, and
+the machine's own `hello` consent answer read back. It does not override guest
+consent; what may happen remains settled in one place, at the dispatch.
 
 ## Operational prerequisites
 
-Two build systems compile this code, and `NOWAgentIntegration` means the same thing to both: a package product. SwiftPM declares it as a library beside the two executables, and the Xcode project consumes that same local package — an `XCLocalSwiftPackageReference` at `.`, linked into the app target — so `import NOWAgentIntegration` is a plain import everywhere.
+Two build systems compile this code, and `NOWAgentIntegration` means the same thing to both: a package product. SwiftPM declares it as a library beside the Host executable, and the Xcode project consumes that same local package — an `XCLocalSwiftPackageReference` at `.`, linked into the app target — so `import NOWAgentIntegration` is a plain import everywhere.
 
 It was not always so, and the failure is worth keeping. The Xcode target used to pull `Sources/NOWAgentIntegration` in as a second synchronized file group, which put the types in scope but left the module *name* unresolvable, so every import needed a `#if canImport(NOWAgentIntegration)` guard. Two files added in `cbe83e9` omitted it and broke `xcodebuild` for a day while `swift build` and `swift test` stayed green — every gate this project ran was blind to the app not compiling. **`scripts/test-host` now builds the app target as well as running the suites.** Run it, not `swift test` alone, before landing host work.
 
-Build the host app normally and build the companion with
-`swift build --package-path now-host --product NOWAgentCompanion`. With no
-arguments, an MCP client launches the executable over stdio. HTTP is explicit:
-set `NOW_MCP_HTTP_BEARER_TOKEN` to 32-512 UTF-8 bytes and launch
-`NOWAgentCompanion --http [--port N]`; the default port is 5254 and
-`NOW_MCP_HTTP_PORT` may also provide it. This repository intentionally contains
-no client configuration. NOW must already be running for any tool to reach its
+Build and install the host app normally. A stdio MCP client launches that
+app bundle's New Old World executable with `--mcp-stdio`; the command can be
+copied from NOW's MCP module. Start HTTP from the same module and copy its URL
+and bearer token there; its default port is 5254. There is no companion product
+to build, install, version or keep running. NOW must already be running for stdio to reach its
 host projection, and a guest must already be paired for every tool except
 host/session health. A cold application catalog sweep on the PowerBook has
 previously taken about four seconds. The host therefore settles an
@@ -426,7 +446,7 @@ settles after 15 seconds. A quit receipt distinguishes snapshot, revalidation,
 and acknowledgement times and says only `requestSent`; process exit still
 requires a later listing.
 
-Artifact transfer is deliberately two-step. In NOW's Files page, navigate to the intended guest folder, choose **Add File… > Approve One-Time Agent Transfer…**, select one file, and hand the copied receipt to `now_transfer_approved_artifact` within ten minutes. Approval does not start a transfer. Redemption is one attempt, never overwrites, cannot be retried with the same receipt, and may wait up to one hour locally for the existing size-scaled guest transfer watchdog. A delivery receipt carries the source and handed-to-NOW digests separately and says `guestAcknowledgedWrite: true`, but always says `destinationBytesVerified: false`: current `file.done` proves the guest reported a successful write and stamp, not a read-back hash. The companion does not start, stop, configure, or keep either side alive.
+Artifact transfer is deliberately two-step. In NOW's Files page, navigate to the intended guest folder, choose **Add File… > Approve One-Time Agent Transfer…**, select one file, and hand the copied receipt to `now_transfer_approved_artifact` within ten minutes. Approval does not start a transfer. Redemption is one attempt, never overwrites, cannot be retried with the same receipt, and may wait up to one hour locally for the existing size-scaled guest transfer watchdog. A delivery receipt carries the source and handed-to-NOW digests separately and says `guestAcknowledgedWrite: true`, but always says `destinationBytesVerified: false`: current `file.done` proves the guest reported a successful write and stamp, not a read-back hash. The MCP transport does not start, stop, configure, or keep the guest alive.
 
 Generic V0.5 upload is a separate three-call command lifecycle. Begin declares
 one root-relative destination, byte count, SHA-256, container, and optional
@@ -464,7 +484,7 @@ probed, asserted by counting `process.quit` requests during a report; a
 refusal observed in ordinary use settles a family the report will not probe;
 a non-refusal failure leaves the family `unproven` while still carrying the
 guest's own code; every family waiter receives a guest `error` promptly
-rather than on its watchdog; and no deciding file in the companion surface
+rather than on its watchdog; and no deciding file in the MCP projection
 mentions a guest name or hello field.
 
 Two of those guards were proven by mutation. Removing three of the six
@@ -482,11 +502,12 @@ and the guest's half not at all. Nothing here has been run against the
 PowerBook 180c; `open-issues.md` lists exactly what that leaves open.
 
 Every registered projection, the local socket, stdio wrapper, and HTTP wrapper
-are **tested** here. The two spawned transports have exact surface/result/error
-parity and both run the complete advertised-tool conformance recipe. HTTP adds
+are **tested** here. The client-launched stdio mode and the app-owned HTTP
+listener have exact surface/result/error parity and both run the complete
+advertised-tool conformance recipe. HTTP adds
 tests for loopback Host, bearer and Origin checks; initialization and session
 deletion/cap/expiry; bounded incremental bodies and ambiguous framing; and an
-actual spawned-listener liveness path. V0 coverage otherwise remains as
+actual incremental-listener liveness path. V0 coverage otherwise remains as
 previously recorded: missing host or guest; bounded process snapshots and
 references; exact launch/refusal/revalidation; cooperative quit; receipt-backed
 artifact approval, staging, replay and delivery; malformed and oversized

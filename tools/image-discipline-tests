@@ -102,9 +102,19 @@ class Repo:
             shutil.copy(os.path.join(ROOT, "tools", tool),
                         os.path.join(self.path, "tools", tool))
             os.chmod(os.path.join(self.path, "tools", tool), 0o755)
+        # The production reference hook composes the resident and product
+        # release gates. This suite's miniature repo intentionally contains
+        # no host/PPC product, so a passing stub keeps each mutation aimed at
+        # resident evidence. tools/product-version-gate-tests exercises the
+        # other half through this same production hook.
+        self.write("tools/product-version-gate", "#!/bin/sh\nexit 0\n")
+        os.chmod(os.path.join(self.path, "tools", "product-version-gate"),
+                 0o755)
         shutil.copy(os.path.join(ROOT, ".gitattributes"),
                     os.path.join(self.path, ".gitattributes"))
         self.write("ext/src/now_ext.c", "int resident(void) { return 1; }\n")
+        self.write("now-guest-shared/src/now_act_guard.c",
+                   "int shared_guard(void) { return 1; }\n")
         self.write("contract/peek_table.h", "enum { kNowPeekTableCapA = 1u << 0 };\n")
         self.version(1, 0)
         self.receipts([])
@@ -251,19 +261,35 @@ def _(tmp):
          f"the warning must be unmissable:\n{out.stdout}")
 
 
-@case("commit gate refuses resident source with a stale version")
+@case("commit gate refuses an exact bake whose resident version rolls back")
 def _(tmp):
     r = Repo(tmp, "version-commit")
     img = os.path.join(tmp, "stage.qcow2")
     fake_image(img, b"EXACT BAKE")
     r.write("ext/src/now_ext.c", "int resident(void) { return 8; }\n")
-    r.git("add", "--", "ext/src/now_ext.c")
+    r.version(0, 9)
+    r.git("add", "--", "ext/src/now_ext.c", "contract/resident_version.h")
     r.receipts([receipt(r.digest(), img, sha_of(img))])
     r.git("add", "--", "ext/stage-receipts.json")
 
     out = r.gate("check", env={"NOW_STAGE_IMAGE": img})
-    must(out.returncode == 1, "a matching bake must not excuse stale version")
-    must("version did not advance: 1.0 -> 1.0" in out.stderr, out.stderr)
+    must(out.returncode == 1, "a matching bake must not excuse rollback")
+    must("version rolled back: 1.0 -> 0.9" in out.stderr, out.stderr)
+
+
+@case("shared resident source is part of the exact bake surface")
+def _(tmp):
+    r = Repo(tmp, "shared-resident")
+    before = r.digest()
+    r.write("now-guest-shared/src/now_act_guard.c",
+            "int shared_guard(void) { return 2; }\n")
+    r.git("add", "--", "now-guest-shared/src/now_act_guard.c")
+    after = r.digest()
+    must(before != after, "a compiled shared resident source did not move digest")
+    out = r.gate("check")
+    must(out.returncode == 1, "shared resident source bypassed bake gate")
+    must("stage image does not contain this resident" in out.stderr,
+         out.stderr)
 
 
 @case("commit gate REFUSES a receipt that could never have been true")
@@ -457,7 +483,7 @@ def _(tmp):
          "the verified shared-bake candidate must advance main")
 
 
-@case("main ref gate blocks a promoted resident with a stale version")
+@case("main ref gate blocks a promoted resident version rollback")
 def _(tmp):
     r = Repo(tmp, "mainref-version")
     base = r.git("rev-parse", "main").stdout.strip()
@@ -466,9 +492,11 @@ def _(tmp):
 
     r.git("checkout", "-qb", "lane")
     r.write("ext/src/now_ext.c", "int resident(void) { return 88; }\n")
+    r.version(0, 9)
     r.receipts([receipt(r.digest(), img, sha_of(img), scope="shared")])
-    r.git("add", "--", "ext/src/now_ext.c", "ext/stage-receipts.json")
-    r.git("commit", "-qm", "promoted resident without version bump")
+    r.git("add", "--", "ext/src/now_ext.c", "contract/resident_version.h",
+          "ext/stage-receipts.json")
+    r.git("commit", "-qm", "promoted resident rollback")
 
     os.makedirs(os.path.join(r.path, ".githooks"))
     hook = os.path.join(r.path, ".githooks", "reference-transaction")
@@ -480,18 +508,18 @@ def _(tmp):
     lane = r.git("rev-parse", "lane").stdout.strip()
     direct = r.gate("main-ref-check", base, lane)
     must(direct.returncode != 0,
-         "the immutable-tree check must reject the stale version:\n"
+         "the immutable-tree check must reject the rollback:\n"
          + direct.stdout + direct.stderr)
-    must("version did not advance: 1.0 -> 1.0" in direct.stderr,
+    must("version rolled back: 1.0 -> 0.9" in direct.stderr,
          direct.stderr)
 
     out = r.git("branch", "-f", "main", "lane")
     must(out.returncode != 0,
-         "promotion alone must not excuse a stale release identity:\n"
+         "promotion alone must not excuse a release rollback:\n"
          + out.stdout + out.stderr)
-    must("version did not advance: 1.0 -> 1.0" in out.stderr, out.stderr)
+    must("version rolled back: 1.0 -> 0.9" in out.stderr, out.stderr)
     must(r.git("rev-parse", "main").stdout.strip() == base,
-         "the stale-version candidate must leave main untouched")
+         "the rollback candidate must leave main untouched")
 
 
 # --------------------------------------------------------------------------

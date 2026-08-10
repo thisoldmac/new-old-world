@@ -22,6 +22,11 @@
 #   3. derived-doc-gate — NOT ARMED. See the block at the foot of this
 #      file and .githooks/pre-merge-commit.
 #
+#   3. product-version-gate — checked copies agree on every commit. Branch
+#      scratch builds may retain the release version; the reference-
+#      transaction hook requires a strict advance when product code lands on
+#      main.
+#
 # Merges are NOT exempt from pre-commit, and the previous version of this
 # comment said they were. Git runs pre-merge-commit for a merge that
 # auto-resolves; a CONFLICTED merge, resolved by hand, is committed by
@@ -45,6 +50,9 @@ fi
 root=$(git rev-parse --show-toplevel)
 if [ -x "$root/tools/ext-bake-gate" ]; then
     "$root/tools/ext-bake-gate" check || exit 1
+fi
+if [ -x "$root/tools/product-version-gate" ]; then
+    "$root/tools/product-version-gate" check || exit 1
 fi
 
 # Public documentation is a product surface. Run its complete gate when a

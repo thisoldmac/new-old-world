@@ -2494,7 +2494,7 @@ public enum AgentIntegrationLocalCodec {
 }
 
 public enum AgentIntegrationLocalTransportError: Error, Equatable {
-    /// The socket answered, but the host and companion do not share the same
+    /// The socket answered, but the host and MCP adapter do not share the same
     /// local contract. This is not an invalid response and retrying a
     /// mutation cannot repair it.
     case incompatibleProtocol(expected: Int, actual: Int)

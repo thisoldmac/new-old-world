@@ -14,6 +14,9 @@ cmake_minimum_required(VERSION 3.13)
 
 project(NowExtension C ASM)
 
+set(NOW_UPDATE_CHANNEL "development" CACHE STRING
+    "Update manifest channel (development or release)")
+
 # The shared table contract, compiled here exactly as the app and the
 # host test compile it - the whole point of one header.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../contract)
@@ -28,8 +31,8 @@ set(_identity_header ${CMAKE_CURRENT_BINARY_DIR}/now_ext_build_identity.h)
 set(_identity_rez ${CMAKE_CURRENT_BINARY_DIR}/now_ext_identity.r)
 add_custom_target(generate_now_ext_identity ALL
     COMMAND ${CMAKE_COMMAND}
-            -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src
-            -DCONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/../contract/peek_table.h
+            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}/..
+            -DTOOLCHAIN_ID=${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}
             -DHEADER=${_identity_header}
             -DREZ_OUT=${_identity_rez}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_identity.cmake
@@ -116,3 +119,27 @@ add_custom_command(
     DEPENDS NowExt src/now_ext.r ${_identity_rez})
 
 add_custom_target(NowExt_INIT ALL DEPENDS NowExt.dsk)
+
+find_program(PYTHON3_EXECUTABLE NAMES python3 python)
+if(PYTHON3_EXECUTABLE)
+    add_custom_command(
+        OUTPUT NowExt.bin.now-update.json
+        COMMAND ${PYTHON3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
+                --artifact NowExt.bin
+                --component extension
+                --version-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/resident_version.h"
+                --version-major NOW_RESIDENT_VERSION_MAJOR
+                --version-minor NOW_RESIDENT_VERSION_MINOR
+                --identity-header "${_identity_header}"
+                --identity-define NOW_EXT_BUILD_ID
+                --channel ${NOW_UPDATE_CHANNEL}
+                --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        DEPENDS NowExt.bin ${_identity_header}
+                "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
+        COMMENT "Writing extension update identity"
+        VERBATIM)
+    add_custom_target(NowExt_update_manifest ALL
+        DEPENDS NowExt.bin.now-update.json)
+endif()

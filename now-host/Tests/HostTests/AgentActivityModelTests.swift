@@ -54,13 +54,13 @@ final class AgentActivityModelTests: XCTestCase {
     /// not exist.
     func testAFailedEndpointIsItsOwnStateRatherThanAnEmptyPage() {
         let model = AgentActivityModel()
-        XCTAssertEqual(model.endpoint, .unopened)
-        model.endpointUnavailable("Refusing to replace an unsafe endpoint")
+        XCTAssertEqual(model.stdio, .unopened)
+        model.stdioUnavailable("Refusing to replace an unsafe endpoint")
         XCTAssertEqual(
-            model.endpoint,
+            model.stdio,
             .unavailable("Refusing to replace an unsafe endpoint"))
-        model.endpointOpened(at: "/tmp/x/host.sock")
-        XCTAssertEqual(model.endpoint, .open(path: "/tmp/x/host.sock"))
+        model.stdioOpened(at: "/tmp/x/host.sock")
+        XCTAssertEqual(model.stdio, .open(endpoint: "/tmp/x/host.sock"))
     }
 
     // MARK: - The server's lifecycle, which the MCP pane owns
@@ -73,16 +73,16 @@ final class AgentActivityModelTests: XCTestCase {
     /// switched it off, whether it failed, or whether it has yet to run.
     func testAServerStoppedByHandIsItsOwnStateAndNotAFailure() {
         let model = AgentActivityModel()
-        model.endpointOpened(at: "/tmp/x/host.sock")
-        XCTAssertTrue(model.endpoint.isRunning)
+        model.stdioOpened(at: "/tmp/x/host.sock")
+        XCTAssertTrue(model.stdio.isRunning)
 
-        model.endpointStopped()
+        model.stdioStopped()
 
-        XCTAssertEqual(model.endpoint, .stopped)
-        XCTAssertFalse(model.endpoint.isRunning,
+        XCTAssertEqual(model.stdio, .stopped)
+        XCTAssertFalse(model.stdio.isRunning,
                        "A stopped server offers Start, never Stop.")
-        XCTAssertNotEqual(model.endpoint, .unopened)
-        for state in [AgentEndpointState.unopened, .stopped,
+        XCTAssertNotEqual(model.stdio, .unopened)
+        for state in [MCPTransportState.unopened, .stopped,
                       .unavailable("no")] {
             XCTAssertFalse(state.isRunning,
                            "\(state) is not a server anyone can reach.")
@@ -95,18 +95,61 @@ final class AgentActivityModelTests: XCTestCase {
     /// to go and read.
     func testStoppingTheServerKeepsWhatAnAgentAlreadyDid() {
         let model = AgentActivityModel()
-        model.endpointOpened(at: "/tmp/x/host.sock")
+        model.stdioOpened(at: "/tmp/x/host.sock")
         model.record(
             HostProjectionAuditEvent(
                 capability: ListProcessesProjection.capability, face: .mcp,
                 guest: "PB 180c", outcome: .answered, reason: nil),
             drivenGuest: nil)
 
-        model.endpointStopped()
+        model.stdioStopped()
 
         XCTAssertEqual(model.events.count, 1)
         XCTAssertEqual(model.events.first?.capability,
                        ListProcessesProjection.capability.rawValue)
+    }
+
+    /// The two transports are independently operable. Stopping the
+    /// client-launched stdio bridge must not take down NOW's HTTP listener.
+    func testTransportLifecycleStatesAreIndependent() {
+        let model = AgentActivityModel()
+        model.stdioOpened(at: "/tmp/new-old-world.sock")
+        model.httpOpened(at: "http://127.0.0.1:5254/mcp",
+                         bearerToken: "secret")
+
+        model.stdioStopped()
+
+        XCTAssertEqual(model.stdio, .stopped)
+        XCTAssertEqual(model.http,
+                       .open(endpoint: "http://127.0.0.1:5254/mcp"))
+        XCTAssertEqual(model.httpBearerToken, "secret")
+
+        model.httpStopped()
+        XCTAssertEqual(model.http, .stopped)
+        XCTAssertNil(model.httpBearerToken)
+    }
+
+    func testPresenceCombinesStdioAndHTTPWithoutDoubleCountingEither() {
+        let model = AgentActivityModel()
+        let stdioFirst = Date(timeIntervalSince1970: 100)
+        let httpFirst = Date(timeIntervalSince1970: 200)
+        let httpLast = Date(timeIntervalSince1970: 300)
+        model.httpRequestBegan(at: httpFirst)
+        model.httpRequestEnded(at: httpLast)
+        let companion = AgentCompanionActivity.Companion(
+            processID: 42, firstSeen: stdioFirst,
+            lastSeen: Date(timeIntervalSince1970: 250), requests: 3)
+
+        let combined = model.combinedActivity(
+            .init(companions: [companion], totalRequests: 3, inFlight: 1,
+                  firstSeen: stdioFirst,
+                  lastSeen: Date(timeIntervalSince1970: 250)))
+
+        XCTAssertEqual(combined.companions.count, 1)
+        XCTAssertEqual(combined.totalRequests, 4)
+        XCTAssertEqual(combined.inFlight, 1)
+        XCTAssertEqual(combined.firstSeen, stdioFirst)
+        XCTAssertEqual(combined.lastSeen, httpLast)
     }
 
     // MARK: - Presence that changes with nothing happening

@@ -1,5 +1,5 @@
 #!/bin/sh
-# The main resident landing gate.
+# The main release landing gates.
 #
 # pre-commit catches a resident commit and pre-merge-commit catches a merge
 # commit. Neither hook runs for a fast-forward, `git fetch . branch:main`, or
@@ -14,9 +14,14 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || {
     echo "[ext-bake-gate] cannot locate the worktree for a main ref update" >&2
     exit 1
 }
-gate="$root/tools/ext-bake-gate"
-[ -x "$gate" ] || {
-    echo "[ext-bake-gate] refusing main ref update: $gate is unavailable" >&2
+resident_gate="$root/tools/ext-bake-gate"
+product_gate="$root/tools/product-version-gate"
+[ -x "$resident_gate" ] || {
+    echo "[main-ref-gate] refusing main ref update: $resident_gate is unavailable" >&2
+    exit 1
+}
+[ -x "$product_gate" ] || {
+    echo "[main-ref-gate] refusing main ref update: $product_gate is unavailable" >&2
     exit 1
 }
 
@@ -34,7 +39,8 @@ while read -r old new ref; do
                     [ -z "$prior" ] || old=$prior
                     ;;
             esac
-            "$gate" main-ref-check "$old" "$new" || exit $?
+            "$resident_gate" main-ref-check "$old" "$new" || exit $?
+            "$product_gate" main-ref-check "$old" "$new" || exit $?
             ;;
     esac
 done

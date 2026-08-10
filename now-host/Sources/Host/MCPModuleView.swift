@@ -48,8 +48,10 @@ struct MCPModuleView: View {
     /// Nil in a preview or a test that has no server to run. The buttons are
     /// then absent rather than dead — a control that does nothing is the
     /// thing every page in this app is written to avoid.
-    var start: (() -> Void)?
-    var stop: (() -> Void)?
+    var startStdio: (() -> Void)?
+    var stopStdio: (() -> Void)?
+    var startHTTP: (() -> Void)?
+    var stopHTTP: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -57,7 +59,7 @@ struct MCPModuleView: View {
             Divider()
             ScrollView {
                 VStack(spacing: 12) {
-                    server
+                    transports
                     presence
                     heldLane
                     consent
@@ -100,7 +102,8 @@ struct MCPModuleView: View {
     /// which is a timer nobody has to remember to invalidate.
     private var presence: some View {
         TimelineView(.periodic(from: Date(), by: 5)) { context in
-            let reading = AgentPresenceReading(companions.activity,
+            let reading = AgentPresenceReading(
+                model.combinedActivity(companions.activity),
                                                asOf: context.date)
             card {
                 HStack(alignment: .top, spacing: 10) {
@@ -133,9 +136,11 @@ struct MCPModuleView: View {
         let activity = companions.activity
         return VStack(alignment: .leading, spacing: 2) {
             Divider().padding(.vertical, 2)
-            counterRow("Calls served",
+            counterRow("Standard Input calls",
                        "\(activity.totalRequests) since launch")
-            counterRow("Companion processes",
+            counterRow("HTTP calls",
+                       "\(model.httpRequests) since launch")
+            counterRow("Standard Input processes",
                        activity.companions.count == 1
                            ? "1" : "\(activity.companions.count)")
             if activity.refusedPeers > 0 {
@@ -315,8 +320,8 @@ struct MCPModuleView: View {
     /// surprising fact — something connected and asked for nothing this
     /// side records — and says so.
     private var emptyStreamSentence: String {
-        companions.activity.hasEverAttached
-            ? "A companion has connected but no call has been reported "
+        model.combinedActivity(companions.activity).hasEverAttached
+            ? "An agent has connected but no call has been reported "
                 + "yet. Every capability an agent invokes is reported here "
                 + "as it happens."
             : "Nothing yet — no agent has invoked anything."
@@ -406,31 +411,80 @@ struct MCPModuleView: View {
     /// in one click and its consequence — no agent can reach this Mac — is
     /// the safe direction. Starting after a failure is worth retrying too,
     /// since the usual cause is another copy of NOW that has since quit.
-    private var server: some View {
+    private var transports: some View {
+        VStack(spacing: 12) {
+            transportCard(
+                title: "Standard Input",
+                summary: "For MCP clients that launch a command. The same "
+                    + "New Old World executable runs in a narrow stdio mode "
+                    + "and reaches this app through its same-user socket.",
+                state: model.stdio,
+                start: startStdio,
+                stop: stopStdio,
+                openDetails: stdioDetails)
+            transportCard(
+                title: "HTTP",
+                summary: "For clients that connect to a URL. HTTP runs "
+                    + "inside New Old World, binds only to loopback, and "
+                    + "requires the private bearer token saved by this app.",
+                state: model.http,
+                start: startHTTP,
+                stop: stopHTTP,
+                openDetails: httpDetails)
+        }
+    }
+
+    private func transportCard<Details: View>(
+        title: String,
+        summary: String,
+        state: MCPTransportState,
+        start: (() -> Void)?,
+        stop: (() -> Void)?,
+        @ViewBuilder openDetails: (String) -> Details
+    ) -> some View {
         card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("The MCP server")
-                        .font(.headline)
+                    Text(title).font(.headline)
                     Spacer(minLength: 12)
-                    lifecycleButton
+                    lifecycleButton(state: state, start: start, stop: stop)
                 }
                 HStack(spacing: 6) {
-                    Image(systemName: model.endpoint.isRunning
+                    Image(systemName: state.isRunning
                             ? "circle.fill" : "circle")
                         .font(.caption2)
-                        .foregroundStyle(model.endpoint.isRunning
+                        .foregroundStyle(state.isRunning
                             ? Color.green : .secondary)
-                    Text(runningLine)
+                    Text(runningLine(state))
                         .font(.callout.weight(.medium))
                 }
-                endpoint
+                Text(summary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                switch state {
+                case .open(let endpoint):
+                    openDetails(endpoint)
+                case .unavailable(let reason):
+                    Text(reason)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.orange)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .unopened:
+                    Text("This transport has not been started.")
+                        .font(.callout).foregroundStyle(.secondary)
+                case .stopped:
+                    Text("This transport is stopped. Existing audit history "
+                            + "is unchanged.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
             }
         }
     }
 
-    private var runningLine: String {
-        switch model.endpoint {
+    private func runningLine(_ state: MCPTransportState) -> String {
+        switch state {
         case .open: return "Running"
         case .unopened: return "Not started"
         case .stopped: return "Stopped"
@@ -438,88 +492,64 @@ struct MCPModuleView: View {
         }
     }
 
-    /// One button, not a pair: the server is either serving or it is not, and
-    /// offering the action it is already in would be a control that does
-    /// nothing.
     @ViewBuilder
-    private var lifecycleButton: some View {
-        if model.endpoint.isRunning {
-            if let stop {
-                Button("Stop", role: .destructive) { stop() }
-                    .controlSize(.small)
-                    .help("Closes the socket. No agent can reach this Mac "
-                          + "until it is started again; nothing else about "
-                          + "New Old World changes.")
-            }
-        } else if let start {
+    private func lifecycleButton(
+        state: MCPTransportState,
+        start: (() -> Void)?,
+        stop: (() -> Void)?
+    ) -> some View {
+        if state.isRunning, let stop {
+            Button("Stop", role: .destructive) { stop() }
+                .controlSize(.small)
+        } else if !state.isRunning, let start {
             Button("Start") { start() }
                 .controlSize(.small)
-                .help("Opens the local socket an MCP companion connects to.")
         }
     }
 
-    // MARK: endpoint
-
-    /// Where the socket is, because somebody configuring a client needs it —
-    /// and, when there is none, why. A path printed for an endpoint that
-    /// failed to open would send that person looking for a file that is not
-    /// there.
-    private var endpoint: some View {
+    private func stdioDetails(_ socket: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-                switch model.endpoint {
-                case .open(let path):
-                    Text("A companion reaches this Mac over a local socket "
-                            + "here. Only processes running as you may use "
-                            + "it; the check is the kernel's, not "
-                            + "something a caller says about itself.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 8) {
-                        Text(path)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                            .lineLimit(2)
-                            .truncationMode(.middle)
-                        Button("Copy") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(
-                                path, forType: .string)
-                        }
-                        .controlSize(.small)
-                    }
-                case .unavailable(let reason):
-                    Text("The local endpoint did not open, so no agent can "
-                            + "reach this Mac at all. The rest of New Old "
-                            + "World is unaffected — this surface is "
-                            + "optional and its failure is never allowed "
-                            + "to stop the app.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(reason)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.orange)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                case .unopened:
-                    Text("The local endpoint has not been started.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                case .stopped:
-                    /* Said as a consequence rather than as a state, because
-                       the person who reads this line is usually the one
-                       whose client just failed to connect — and half the
-                       time it is not the person who stopped it. */
-                    Text("The local endpoint is stopped, so no agent can "
-                            + "reach this Mac. Nothing an agent already did "
-                            + "is undone; the record of it is below. Start "
-                            + "reopens the socket at the same path.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            copyRow(label: "Command", value: stdioCommand)
+            copyRow(label: "Private socket", value: socket)
+            Text("The socket accepts only processes running as your macOS "
+                    + "user. The client launches no separately installed "
+                    + "companion application.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func httpDetails(_ endpoint: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            copyRow(label: "URL", value: endpoint)
+            if let token = model.httpBearerToken {
+                Button("Copy Bearer Token") { copy(token) }
+                    .controlSize(.small)
+                    .help("Copies the private token. New Old World does not "
+                          + "show it or write it to the log.")
             }
+        }
+    }
+
+    private func copyRow(label: String, value: String) -> some View {
+        HStack(spacing: 8) {
+            Text(label + ":").font(.caption).foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .lineLimit(2)
+                .truncationMode(.middle)
+            Button("Copy") { copy(value) }.controlSize(.small)
+        }
+    }
+
+    private func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private var stdioCommand: String {
+        let path = Bundle.main.executableURL?.path ?? "New Old World"
+        return "\(path) --mcp-stdio"
     }
 
     // MARK: chrome

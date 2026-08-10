@@ -711,6 +711,29 @@ static void console_show_loopstat(const char *what, const LoopStat *s)
     }
 }
 
+static void run_shared_verb(const char *name, const char *raw_args)
+{
+    char result[kNowCommandResultCap];
+    char request[kMaxCols + 24];
+
+    if (raw_args != NULL && *raw_args != '\0'
+        && now_console_line_request(raw_args, request,
+                                    (long)sizeof request)) {
+        now_command_run(name, request, 0, result, sizeof result);
+    } else {
+        now_command_run(name, NULL, 0, result, sizeof result);
+    }
+    {
+        char code[32];
+
+        if (now_json_find_string(result, "code", code, sizeof code)
+            && strcmp(code, "unknown-command") == 0) {
+            g_last_unknown = 1;
+        }
+    }
+    console_reply_render(result, append_thunk, NULL);
+}
+
 static void console_model_dispatch(const char *input)
 {
     char line[kMaxCols];
@@ -718,8 +741,6 @@ static void console_model_dispatch(const char *input)
     char tok[48];
     char target[48];
     char target2[48];
-    char result[kNowCommandResultCap];
-    char request[kMaxCols + 24];
     const char *p;
     const char *raw_args;
     const char *group = NULL;
@@ -799,6 +820,10 @@ static void console_model_dispatch(const char *input)
     }
     if (strcmp(name, "help") == 0) {
         help_list();
+        return;
+    }
+    if (strcmp(name, "update") == 0) {
+        run_shared_verb(name, raw_args);
         return;
     }
     if (strcmp(name, "gestalt") == 0) {
@@ -1580,30 +1605,10 @@ static void console_model_dispatch(const char *input)
      * different requests - that distinction is the whole of gestalt's
      * console behaviour - and a bare verb typed here has always meant
      * the absent one. */
-    if (raw_args != NULL && *raw_args != '\0'
-        && now_console_line_request(raw_args, request,
-                                    (long)sizeof request)) {
-        now_command_run(name, request, 0, result, sizeof result);
-    } else {
-        now_command_run(name, NULL, 0, result, sizeof result);
-    }
-    {
-        /* The one place this Mac can say "no such verb", so it is the one
-           place the exec plane can learn it. Read from the reply's own
-           code rather than re-deciding: a second opinion about what
-           unknown means is a second implementation. */
-        char code[32];
-
-        if (now_json_find_string(result, "code", code, sizeof code)
-            && strcmp(code, "unknown-command") == 0) {
-            g_last_unknown = 1;
-        }
-    }
-    /* Rows, not one field. This used to read a top-level "message" and say
-       "command failed" when it was absent — and no verb on this guest has
-       ever carried one on success, so the branch that ran was the failure
-       branch for every command that WORKED. See console_reply.h. */
-    console_reply_render(result, append_thunk, NULL);
+    /* Rows, not one field. run_shared_verb is also the one place this Mac
+       recognises unknown-command for the exec plane; keeping this fallback
+       and explicit argument-taking verbs on it prevents a third renderer. */
+    run_shared_verb(name, raw_args);
 }
 
 void console_model_run(const char *input)

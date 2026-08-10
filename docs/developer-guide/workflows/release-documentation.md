@@ -58,8 +58,10 @@ The release mode refuses incomplete integration and generates `security.txt` and
   mounted image and first named session. Record classic-browser, MacBinary,
   Disk Copy, and hardware evidence separately; do not collapse a host test or
   emulator mount into an end-to-end result.
-- If resident source changed, confirm `contract/resident_version.h` advanced
-  and that the exact release source is covered by the required shared bake.
+- If this release intentionally advances the resident release, confirm
+  `contract/resident_version.h` and its checked consumers agree. In every
+  case, confirm the exact resident build inputs are covered by the required
+  shared bake.
 - Do not close a screenshot gap for a placeholder. List all remaining placeholder IDs in the release notes.
 - Confirm no page describes tested or emulator evidence as metal-verified.
 

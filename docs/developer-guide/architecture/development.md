@@ -93,15 +93,16 @@ operation ID, and `wait_for_settlement` returns its terminal state or an honest
 still-pending receipt. A direct action without a declared postcondition ends
 as `unconfirmed`; acceptance or dispatch is not relabeled as observed effect.
 
-The companion has two process transports over the same dispatcher: its
-client-launched stdio default and an explicitly configured authenticated
-loopback HTTP listener. Both reach the host through the same private same-user
-socket. Spawned parity tests compare initialization and notification lifecycle,
+NOW has two transports over the same in-process dispatcher. A client launches
+the normal `New Old World` executable in `--mcp-stdio` mode; the normal app owns
+the explicitly enabled authenticated loopback HTTP listener directly. Only the
+narrow stdio process reaches the running app through the private same-user
+socket. Cross-transport parity tests compare initialization and notification lifecycle,
 ping, resources, prompts, full tool descriptors and schemas, real tool results,
 and protocol errors. The same 46-tool conformance recipe runs against each.
 HTTP separately validates bearer, loopback Host and Origin; bounds and expires
 sessions; supports explicit deletion; rejects ambiguous framing; and has a
-spawned incremental-request liveness gate. HTTP was introduced without prior
+incremental-request liveness gate. HTTP was introduced without prior
 slice approval; these gates close that introduced transport debt rather than
 setting a precedent for silent scope expansion.
 

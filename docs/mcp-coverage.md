@@ -88,7 +88,7 @@ derives what a projection **declares** — its `capability`, its `requires`,
 its `exposes` — and all seven declarations were correct. What was missing was
 four lines one layer below the projection, in a file this document does not
 read. So the gate is
-[`SocketClientForwardingTests`](../now-host/Tests/NOWAgentCompanionTests/SocketClientForwardingTests.swift),
+[`MCPClientForwardingTests`](../now-host/Tests/NOWMCPTests/MCPClientForwardingTests.swift),
 which derives two sets from source — every `client.<method>(` the projections
 call, and every requirement the client protocol declares — and fails when
 either contains a name `SocketAgentIntegrationClient` does not declare a
@@ -104,7 +104,7 @@ client holding stdio open and sending one small line at a time was answered
 by **nothing at all**, on every one of the tools in this file. It survived
 because every driver this surface has ever had wrote its whole script and
 closed stdin, which is a batch rather than a client.
-[`StdioTransportLivenessTests`](../now-host/Tests/NOWAgentCompanionTests/StdioTransportLivenessTests.swift)
+[`StdioTransportLivenessTests`](../now-host/Tests/NOWMCPTests/StdioTransportLivenessTests.swift)
 spawns the real executable, writes one small line and holds stdin open — the
 one condition every previous driver removed.
 
@@ -672,6 +672,7 @@ to exist:
 | `mouseloc` | command | ppc | deliberate | Where the pointer IS — an instrument, not a capability. It exists because an emulator's relative mouse is acceleration-distorted, so the host's own drag plane positions by reading this and correcting; every hop calibration closes its loop against it. A caller that is not driving a pointer has nothing to do with the answer, and a caller that IS driving one is the host, which calls it directly rather than through a tool. Projecting it would put a calibration read on a surface whose other rows are capabilities. The closed loop it is the far end of is described in [emu-readiness.md](emu-readiness.md), which is also where the probes that depend on it are listed. |
 | `net` | command | ppc | unnoticed | What a Mac says about its own networking: the link it holds to this host, its TCP/IP configuration, its network ports, and — last — why a list of that machine's connections is not among them. **Landed 2026-08-01 as a spike, guest page and host pane, with no projection deliberately.** Nobody has decided whether an agent should get it. What a row would have to settle first: nearly all of it is *read-only and harmless*, which argues for a plain row — but the fourth group is a statement about an API rather than about a machine, and a capability report that says "this Mac cannot list its connections" would be the wrong shape of true. A tool would have to carry that distinction into typed unavailability, or drop the group and answer three. There is also a real question of whether `now_hardware_census` already covers the hardware half, which would make a `net` row a second route to a capability already projected — the thing this column exists to refuse. PowerPC only: it is built on Open Transport, and the 68K guest speaks MacTCP ([ot-networking-surface.md](ot-networking-surface.md)). |
 | `wirestat` | command | ppc | deliberate | How long the guest takes to NOTICE a request — the interval between its own wire service passes, and the delay from Open Transport announcing data to its event loop reading it — and the two knobs that change them. **An instrument, not a capability, and the same disposition as `mouseloc` for the same reason.** It answers a question about the wire this host is holding, so the only caller that can use the answer is the one already on the other end of it; a tool would put a measurement of the instrument on a surface whose other rows are things a Mac can DO. The half that decides it is the setting half: `sleep N` changes the guest's event-loop sleep and `wake off` its Open Transport wake, which makes a row a **configuration** surface rather than a capability one — and the setting it would expose is the one that starves every other application on a cooperatively scheduled Macintosh if a caller sets it wrong. Landed 2026-08-06 with the wire-latency arc; the numbers it produced are in [open-issues.md](open-issues.md). Revisit if an agent ever needs to defend its own latency budget to a caller, which is the one case that would argue for the reading half alone. |
+| `update` | command | ppc | deliberate | Withheld from agent projection because today's artifacts are explicitly unsigned. The guest's Connections page requires a local modal confirmation before it may pass `allow_unsigned`; the shared console/wire command cannot spend that confirmation, and an MCP row would be a second remote route around the same boundary. Status remains visible to the person on the classic Mac. Revisit only after the release-signing design has a pinned trust root, rotation, revocation and recovery policy ([command-parity.md](command-parity.md), “`update` is the mutating example”; [host-owned updates](developer-guide/architecture/updating.md#trust-boundary)). |
 | `qdtrace` | command | ppc | deliberate | What is drawing on the machine, read from the content plane's ring. **No row until the plane has run once.** The verb is reachable and its reader is tested natively, but the WRITER — the resident half that fills the ring at draw time — has never run on a Macintosh, so on every machine that exists today this verb correctly answers `content-plane-absent`. A tool row would be a tool that always refuses, and the capability report would say the machine cannot do it, which is true and is not what a row is for. This disposition is a schedule, not a judgement about the capability: revisit it the day a drain returns a record. What has and has not run is in [emu-readiness.md](emu-readiness.md). |
 | `transitions` | command | ppc | deliberate | What CHANGED between two of the machine's own event passes, read from the transition plane's ring. **Guest-only on purpose for now, and it is a schedule rather than a judgement** — the same disposition and the same reasoning as `qdtrace` below. The verb landed 2026-08-05 as slice 5b's delivery half, guest side only, and the split is argued rather than incidental: [docs/plans/2026-08-05-010-feat-closing-the-headless-mirror-plan.md](plans/2026-08-05-010-feat-closing-the-headless-mirror-plan.md) records that workstream F "stops at the guest's wire and console faces" because the host consumer would have collided with two other workstreams editing host files the same day, and is a later slice. The case for a row is the strongest on this surface: the whole argument for the plane is that a ~2.2 s poll cannot see anything shorter than 2.2 s, so an agent that drives the machine and then reads back what happened is exactly the caller it was built for — "arm the tail, perform the action, capture the moment, read the tail" turns a corpus capture from a moment into a transaction. **What a row must settle first is not whether, but shape:** `start` takes a ProcessSerialNumber and a deadline, so a tool has to decide whether an agent arms a process by name (the console's route) or by the serial `now_observe_elements` already hands it, and whether a drain is a tool call per poll or a subscription the host keeps warm. Unlike `qdtrace` below, this plane's writer IS installed and running — the fifth plane was confirmed reporting live at generation 0 on 2026-08-05 — so the "no row until it has run once" bar it would inherit is nearly met: what has never happened is a record crossing the wire, because until this verb existed nothing armed the ring. Revisit the day a drain returns one. |
 | `script` | command | ppc | unnoticed | One AppleScript through the guest's own OSA component, and the largest undecided question on this surface. Nobody has decided. What a row would have to settle first, and they are three separate questions: whether arbitrary guest-side code execution belongs behind a tool at all, given that every other row on this surface is a bounded capability with a stated effect; what consent tier it sits above, since the tiers today are read-only and full and this is plainly not the former; and whether the guest-side refusal of a whole-disk Finder search — a script that wedged a real machine for twelve minutes and is refused rather than warned about — is a sufficient guardrail or merely the one hazard that has already been paid for. |
@@ -1010,7 +1011,7 @@ None was chased here.
 ### Exercised again, 2026-08-09
 
 After the discovery cleanup and F-003 capacity fix, the same derived driver
-called all 42 advertised tools through a real spawned stdio companion against
+called all 42 advertised tools through the real client-launched stdio mode against
 an identity-checked Mac OS 9.1 VM (`Power Mac G4`, build
 `0aa097ba0c1b`). It reported 29 served, 12 explained refusals, one explicitly
 human-gated row, zero failed, and zero uncovered. The upload recipe itself had
@@ -1023,9 +1024,9 @@ claim that every served mutation was observed semantically or on metal.
 ### HTTP/stdio parity and varied Development loops, 2026-08-10
 
 The derived driver now sees 46 advertised tools. Its no-host recipe ran against
-both real spawned transports: 45 typed host-unavailable results, the one
+both real transports: 45 typed host-unavailable results, the one
 person-approved transfer explicitly human-gated, zero failed and zero
-uncovered on each. A separate spawned parity fixture compared initialize,
+uncovered on each. A separate cross-transport parity fixture compared initialize,
 initialized-notification gating, ping, resource and prompt lists/reads, all tool
 names/descriptions/input schemas, one real tool result, and invalid
 method/tool/cursor/resource/prompt errors byte-for-structure across HTTP and
@@ -1041,6 +1042,14 @@ guest-only import/edit/build/test/promote/diverge/recover. This is emulator
 transport-and-operation evidence, not metal verification of all 31 served
 capabilities.
 
+The varied-loop receipts above were collected before HTTP ownership was moved
+out of the separately shipped companion. The corrected normal NOW app retains
+the same dispatcher and protocol implementation; its focused parity,
+conformance, security and liveness gates pass, and its in-process HTTP adapter
+completed an authenticated request against a private VM. That smoke reached
+the exact guest session and Development report, but did not repeat the four
+loops: the qualified-dev-disk cold-boot topology did not auto-launch its worker.
+
 ## Status
 
 **Tested, not metal-verified.** The tables are a derivation over source and a
@@ -1053,7 +1062,7 @@ duplicated here.
 Mac OS 9 under QEMU, each of `now_guest_log_tail`,
 `now_observe_elements`, `now_semantic_ui_act`, `now_window_act`,
 `now_control_act`, `now_text_get` and `now_text_set` was called through the
-MCP transport — the companion executable over JSON-RPC, not a test seam —
+MCP transport — the New Old World executable's stdio mode over JSON-RPC, not a test seam —
 and four of them were watched taking effect on the machine: the walk minted
 `now-element-…` references for a Finder window's scrollbars, `now_window_act`
 moved that window to exactly the coordinates it was given, `now_control_act`
@@ -1068,7 +1077,7 @@ answered and the three-stage upload completed; it does not retroactively add
 direct-effect evidence to the other rows.
 
 **The completed text reading was taken later the same day**, on
-`claude/019-conformance`, through the companion binary over JSON-RPC. A
+`claude/019-conformance`, through New Old World's stdio mode over JSON-RPC. A
 window with a discoverable `TEHandle` is a *dialog's*, not a document's —
 the contract says so — so SimpleText's Find dialog was opened, and
 `now_observe_elements` minted the text reference the walk carries under
@@ -1177,14 +1186,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 755150803e0799caff824429cafe2a86c3e6e10d
-derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
+sources-sha1: d9881c8efe06d9bddf24bdb2ff6d725a437701dc
+derive ppc-inbound-types sha256=29ff3abf372ea8de2e8cd4b487efb7dcb7b9fa03d5e20959f10c127320146842 lines=50 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=8765a37512265678bb0d00509485d1ca748d5644ae40e9910b5bc4ff5e79c4f7 lines=3
+derive disposition-census sha256=765d546e05fadf2fd914b56f63b94c91e776e246e18062bccf8cdeafa3c608cb lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c
@@ -1249,4 +1258,11 @@ rederived: 2026-08-10T05:38:07-0400 a0ede9ec unchanged
 rederived: 2026-08-10T13:10:56-0400 47bf54fb sources
 rederived: 2026-08-10T13:36:45-0400 b15b4827 unchanged
 rederived: 2026-08-10T14:49:44-0400 4ea2d97d unchanged
+rederived: 2026-08-10T14:45:43-0400 26b75393 unchanged
+rederived: 2026-08-10T14:48:15-0400 26b75393 unchanged
+rederived: 2026-08-10T15:30:54-0400 32bdd096 unchanged
+rederived: 2026-08-10T15:34:28-0400 72868e9e sources, ppc-inbound-types 49->50
+rederived: 2026-08-10T15:46:03-0400 72868e9e disposition-census 3->3
+rederived: 2026-08-10T15:52:47-0400 77329146 unchanged
+rederived: 2026-08-10T16:52:02-0400 d77cc444 unchanged
 -->

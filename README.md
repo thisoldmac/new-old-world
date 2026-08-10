@@ -50,13 +50,16 @@ pre-Carbon NOW-68K ─ retained in source; excluded from alpha
 | Deeper Mirror observation and interaction | experimental | provides the required classic-process access | unavailable |
 | In-context interaction, transitions, modal-safe liveness, drag, and cursor following | experimental | provides resident vehicles | unavailable |
 | [Guided PowerPC setup portal](docs/user-guide/how-to/set-up-new-mac.md) and fork-preserving HFS install image | included; tested, not metal-verified | bundled optional package selection | unavailable |
+| Host-published in-app updates | tested; not metal-verified | installs separately and requires restart | unavailable |
 
 The short table is navigation, not a claim of parity. The [module reference](docs/user-guide/reference/modules/index.md) states availability, safety, data movement, and failures per module. `docs/contract-coverage.md` keeps **served** separate from **proven**.
 
 ## Important limitations
 
 - The listener is for a trusted local network; secure transport is not available yet.
-- Distribution is not a signed installer flow. Classic artifacts require fork-preserving transfer.
+- Distribution is not a signed installer flow. In-app updates verify SHA-256
+  but are explicitly unsigned and require local confirmation; classic artifacts
+  still require fork-preserving transfer.
 - Resume-by-offset and some large-transfer behavior remain unreliable.
 - Web Direct has not yet been exercised by Classilla or MacWeb on an emulator
   or physical Mac; guest-local relay is not implemented, and the optional

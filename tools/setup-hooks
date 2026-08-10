@@ -3,10 +3,9 @@
 #
 #     tools/setup-hooks
 #
-# core.hooksPath is repo-local config stored in the common .git directory,
-# so every worktree cut off this checkout inherits it — which is the point:
-# agents work in worktrees, and a guard a worktree does not have is a guard
-# that fires for the human and nobody else.
+# core.hooksPath is commonly stored in the shared repository config. Existing
+# worktrees can carry a worktree-local override; tools/hooks-doctor reports that
+# census, so never infer another lane is armed from this command's success.
 set -eu
 root=$(git rev-parse --show-toplevel)
 git -C "$root" config core.hooksPath .githooks
@@ -24,8 +23,10 @@ git -C "$root" config merge.nowreceipts.driver \
 echo "core.hooksPath = .githooks"
 echo "  pre-commit:       main-guardrail (TBT_ALLOW_MAIN=1 overrides)"
 echo "                    ext-bake-gate  (TBT_DEFER_EXT_BAKE=1 + reason defers)"
+echo "                    product-version copies must agree"
 echo "  pre-merge-commit: ext-bake-gate merge-check (aborts an incoherent merge)"
 echo "  reference-transaction: refuses main resident changes without a shared bake"
+echo "                         or product changes without a release-version advance"
 echo "  post-merge:       says what the stage image is now (cannot refuse)"
 echo "merge.nowreceipts = tools/receipts-merge-driver"
 echo "  ext/stage-receipts.json conflicts BY DESIGN on every real merge."
