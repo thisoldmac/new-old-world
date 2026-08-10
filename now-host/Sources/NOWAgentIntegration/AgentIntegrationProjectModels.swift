@@ -1,6 +1,6 @@
 import Foundation
 
-public enum AgentIntegrationProjectOperation: String, Codable, Sendable {
+public enum AgentIntegrationProjectOperation: String, Codable, CaseIterable, Sendable {
     case list
     case create
     case status
@@ -93,6 +93,7 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
     public var maximumBytes: Int?
     public var message: String?
     public var changes: [AgentIntegrationProjectChange]?
+    public var attemptID: String?
 
     public init(operation: AgentIntegrationProjectOperation,
                 projectID: String? = nil, workspaceID: String? = nil,
@@ -100,7 +101,8 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
                 expectedCommit: String? = nil, path: String? = nil,
                 fork: AgentIntegrationProjectFork? = nil,
                 maximumBytes: Int? = nil, message: String? = nil,
-                changes: [AgentIntegrationProjectChange]? = nil) {
+                changes: [AgentIntegrationProjectChange]? = nil,
+                attemptID: String? = nil) {
         self.operation = operation
         self.projectID = projectID
         self.workspaceID = workspaceID
@@ -112,6 +114,7 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
         self.maximumBytes = maximumBytes
         self.message = message
         self.changes = changes
+        self.attemptID = attemptID
     }
 
     public var isWellFormed: Bool {
@@ -124,6 +127,7 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
               expectedCommit.map(Self.isCommit) ?? true,
               maximumBytes.map({ $0 >= 1 && $0 <= 256 * 1024 }) ?? true,
               message.map({ !$0.isEmpty && $0.count <= 256 }) ?? true,
+              attemptID.map({ UUID(uuidString: $0) != nil }) ?? true,
               changes.map({ !$0.isEmpty && $0.count <= 128
                   && $0.allSatisfy(\.isWellFormed) }) ?? true else { return false }
         switch operation {
@@ -132,7 +136,7 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
                 && expectedRevision == nil && expectedCommit == nil
                 && path == nil && maximumBytes == nil && message == nil
                 && fork == nil
-                && changes == nil
+                && changes == nil && attemptID == nil
         case .create:
             let initialChangesAreWrites = changes?.allSatisfy {
                 $0.action == .write && $0.path != "Project.ckp"
@@ -140,16 +144,21 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
             return name != nil && projectID == nil && workspaceID == nil
                 && initialChangesAreWrites && expectedRevision == nil
                 && expectedCommit == nil && path == nil
-                && fork == nil
-        case .status, .history, .workspaceOpen:
+                && fork == nil && attemptID != nil
+        case .status, .history:
             return projectID != nil && workspaceID == nil && name == nil
                 && expectedRevision == nil && expectedCommit == nil
                 && path == nil && maximumBytes == nil && message == nil
                 && fork == nil
-                && changes == nil
+                && changes == nil && attemptID == nil
+        case .workspaceOpen:
+            return projectID != nil && workspaceID == nil && name == nil
+                && expectedRevision == nil && expectedCommit == nil
+                && path == nil && maximumBytes == nil && message == nil
+                && fork == nil && changes == nil && attemptID != nil
         case .read:
             return projectID != nil && path != nil && workspaceID == nil
-                && changes == nil && message == nil
+                && changes == nil && message == nil && attemptID == nil
         case .apply:
             let projectApply = projectID != nil && expectedRevision != nil
                 && workspaceID == nil && expectedCommit == nil
@@ -157,13 +166,18 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
                 && projectID == nil && expectedRevision == nil
             return (projectApply || workspaceApply) && changes != nil
                 && message != nil && path == nil && name == nil
-                && fork == nil
-        case .workspaceResume, .workspaceDiscard:
+                && fork == nil && attemptID != nil
+        case .workspaceResume:
             return workspaceID != nil && projectID == nil && name == nil
                 && expectedRevision == nil && expectedCommit == nil
                 && path == nil && maximumBytes == nil && message == nil
                 && fork == nil
-                && changes == nil
+                && changes == nil && attemptID == nil
+        case .workspaceDiscard:
+            return workspaceID != nil && projectID == nil && name == nil
+                && expectedRevision == nil && expectedCommit == nil
+                && path == nil && maximumBytes == nil && message == nil
+                && fork == nil && changes == nil && attemptID != nil
         }
     }
 

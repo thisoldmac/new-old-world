@@ -446,6 +446,9 @@ private struct MetalLocalProjectionClient: AgentIntegrationClient {
                          message: "New Old World host communication failed")
         }
         switch local {
+        case .incompatibleProtocol(let expected, let actual):
+            return .init(code: "now-host-companion-incompatible",
+                         message: "Host protocol \(actual) does not match companion protocol \(expected)")
         case .notAddressed(let refusal):
             return refusal
         case .notImplemented(let pending):

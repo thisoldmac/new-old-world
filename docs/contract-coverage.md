@@ -1352,18 +1352,18 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 69b64290d3e0ea0ef502d2badacc8033362f58c8
+sources-sha1: fa2718d09bd461b2904bcbaaa5ad48aa582b3edd
 derive ppc-inbound-types sha256=29ff3abf372ea8de2e8cd4b487efb7dcb7b9fa03d5e20959f10c127320146842 lines=50 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=836d732f6c3aa938aad285e0044d73cd1b8e9ee36de318de2a1fd7da74694f81 lines=55 published
+derive x-commands-registry sha256=84fd10914e2ab1a2301c3273ca1a3654ff7440e908d2c2e15753ded767a0d153 lines=56 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
          f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=756542d65c3333ebf965a3c01904298f5e70d930d90b66f543313ea937b8a0bb lines=52 published
+derive ppc-verbs sha256=181d550d9238c47914955fa346934ae215b6a1f09e871cb5d6dea803d7510e71 lines=53 published
     grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
         now-guest-ppc/src/commands/commands.c \
       | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
@@ -1421,4 +1421,8 @@ rederived: 2026-08-10T03:46:36-0400 68d74d72 unchanged
 rederived: 2026-08-10T02:53:58-0400 62603174 sources
 rederived: 2026-08-10T04:18:14-0400 423ef214 sources, x-commands-registry 49->55, ppc-verbs 46->52
 rederived: 2026-08-10T04:49:21-0400 cd585106 sources
+rederived: 2026-08-10T04:27:16-0400 886ee556 sources, x-commands-registry 54->55, ppc-verbs 51->52
+rederived: 2026-08-10T04:38:54-0400 886ee556 unchanged
+rederived: 2026-08-10T05:38:07-0400 a0ede9ec unchanged
+rederived: 2026-08-10T13:37:38-0400 2f62ec11 sources, x-commands-registry 55->56, ppc-verbs 52->53
 -->

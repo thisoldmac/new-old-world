@@ -67,6 +67,91 @@ final class AgentIntegrationSocketTests: XCTestCase {
         XCTAssertEqual(listener.state, .idle)
     }
 
+    func testDevelopmentAttemptReplaysAfterResponseAndHostRestart() async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let attempt = "01234567-89ab-cdef-0123-456789abcdef"
+        let request = AgentIntegrationDevelopmentRequest(
+            operation: .buildCancel, attemptID: attempt)
+        let receipt = AgentIntegrationGuestRowReportResult.completed(.init(
+            verb: "development-build",
+            groups: [.init(name: "development-build", rows: [
+                .init(label: "State", value: "cancelled"),
+            ])], observedAt: Date(timeIntervalSince1970: 1_800_000_000)))
+        var firstInvocations = 0
+        let first = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { local in
+                guard local.operation == .development else { return Self.filler }
+                firstInvocations += 1
+                return .development(receipt)
+            })
+        try first.start()
+        let client = try AgentIntegrationLocalClient(endpoint: endpoint)
+        let firstResult = try await client.development(request)
+        let replayResult = try await client.development(request)
+        XCTAssertEqual(firstResult, receipt)
+        XCTAssertEqual(replayResult, receipt)
+        XCTAssertEqual(firstInvocations, 1)
+        first.stop()
+
+        var restartedInvocations = 0
+        let restarted = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in
+                restartedInvocations += 1
+                return .development(.unavailable(.host))
+            })
+        try restarted.start()
+        defer { restarted.stop() }
+        let restartResult = try await client.development(request)
+        XCTAssertEqual(restartResult, receipt)
+        XCTAssertEqual(restartedInvocations, 0,
+                       "the durable terminal receipt must settle the retry")
+    }
+
+    func testProjectMutationAttemptReplaysAfterHostRestart() async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let attempt = "11234567-89ab-cdef-0123-456789abcdef"
+        let request = AgentIntegrationProjectRequest(
+            operation: .workspaceDiscard,
+            workspaceID: "workspace-0123456789abcdef",
+            attemptID: attempt)
+        let receipt = AgentIntegrationProjectResult(projects: [])
+        var firstInvocations = 0
+        let first = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { local in
+                guard local.operation == .projects else { return Self.filler }
+                firstInvocations += 1
+                return .projects(receipt)
+            })
+        try first.start()
+        let client = try AgentIntegrationLocalClient(endpoint: endpoint)
+        let firstResult = try await client.projects(request)
+        let replayResult = try await client.projects(request)
+        XCTAssertEqual(firstResult, receipt)
+        XCTAssertEqual(replayResult, receipt)
+        XCTAssertEqual(firstInvocations, 1)
+        first.stop()
+
+        var restartedInvocations = 0
+        let restarted = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in
+                restartedInvocations += 1
+                return .projects(.init(failure: .init(
+                    code: "unexpected-dispatch", message: "unexpected")))
+            })
+        try restarted.start()
+        defer { restarted.stop() }
+        let restartResult = try await client.projects(request)
+        XCTAssertEqual(restartResult, receipt)
+        XCTAssertEqual(restartedInvocations, 0,
+                       "the project mutation receipt must survive restart")
+    }
+
     func testSocketIsPrivateToTheCurrentUser() throws {
         let (endpoint, root) = try temporaryEndpoint()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -781,6 +866,26 @@ final class AgentIntegrationSocketTests: XCTestCase {
             XCTAssertEqual(
                 error as? AgentIntegrationLocalTransportError,
                 .invalidMessage("Unsupported local protocol version"))
+        }
+    }
+
+    func testOlderHostResponseIsTypedAsCompatibilityNotInvalidData() throws {
+        let older = AgentIntegrationLocalProtocol.version - 1
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "version": older,
+            "requestID": UUID().uuidString,
+            "error": ["code": "invalid-request",
+                      "message": "Unsupported local protocol version"],
+        ])
+
+        XCTAssertThrowsError(
+            try AgentIntegrationLocalCodec.decodeResponse(raw)
+        ) { error in
+            XCTAssertEqual(
+                error as? AgentIntegrationLocalTransportError,
+                .incompatibleProtocol(
+                    expected: AgentIntegrationLocalProtocol.version,
+                    actual: older))
         }
     }
 

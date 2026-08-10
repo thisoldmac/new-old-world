@@ -179,6 +179,10 @@ enum MCPConformanceRecipes {
         "now_semantic_ui_metrics": .fixed("Needs nothing."),
         "now_semantic_ui_lifecycle": .fixed("Needs nothing."),
         "now_semantic_ui_journal": .fixed("Needs nothing."),
+        "now_semantic_ui_wait_for_settlement": .fixed(
+            "A never-issued operation ID is a complete bounded query; a live "
+                + "run may honestly answer not found without dispatching.",
+            ["operationID": "conformance-never-issued", "timeoutMs": 1]),
         "now_semantic_ui_act": .fixed(
             "cancel: the one gesture that acts on the HOST's lane rather than "
                 + "the machine, so it needs no entity and no published "

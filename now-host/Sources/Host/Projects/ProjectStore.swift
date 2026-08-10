@@ -875,6 +875,21 @@ final class ProjectStore {
         return try decoder.decode(ProjectCandidate.self, from: Data(contentsOf: url))
     }
 
+    /// Bounded restart recovery inventory. Terminal promoted/discarded
+    /// candidates are intentionally absent; everything returned still owns
+    /// artifacts and therefore needs an explicit next action.
+    func recoverableCandidates(limit: Int = 8) throws -> [ProjectCandidate] {
+        guard fileManager.fileExists(atPath: candidatesURL.path) else { return [] }
+        return try fileManager.contentsOfDirectory(
+            at: candidatesURL, includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])
+            .compactMap { ProjectCandidateID(rawValue: $0.lastPathComponent) }
+            .compactMap { try? loadCandidate($0) }
+            .filter { $0.lifecycle != .promoted && $0.lifecycle != .discarded }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(max(0, limit)).map { $0 }
+    }
+
     private func saveCandidate(_ candidate: ProjectCandidate) throws {
         let url = candidateContainer(candidate.receipt.candidateID)
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)

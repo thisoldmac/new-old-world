@@ -1,6 +1,10 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
+    /// Version 12 adds a typed settlement read by semantic operation ID and
+    /// makes a version mismatch observable as compatibility, not malformed
+    /// data. A v12 companion can therefore name an older host once, before a
+    /// caller retries a mutation against an unknowable transport outcome.
     /// Version 11 separates the host-owned machine title from the name the
     /// guest reported at hello. `AgentIntegrationGuestReference.name` now
     /// carries the title shown in NOW and `reportedName` carries the guest's
@@ -36,7 +40,7 @@ public enum AgentIntegrationLocalProtocol {
     /// asked about another.
     ///
     /// Version 6 added the read-only session capability report.
-    public static let version = 11
+    public static let version = 12
     public static let maximumMessageBytes = 64 * 1024
 }
 
@@ -2397,10 +2401,14 @@ public enum AgentIntegrationLocalCodec {
                 // companion reads a real answer as a broken message.
                 "notAddressed",
             ] as Set<String>).union(projectedResultKeys))
-        guard object["version"] as? Int ==
-                AgentIntegrationLocalProtocol.version else {
+        guard let actual = object["version"] as? Int else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
-                "Unsupported local protocol version")
+                "Local response has no protocol version")
+        }
+        guard actual == AgentIntegrationLocalProtocol.version else {
+            throw AgentIntegrationLocalTransportError.incompatibleProtocol(
+                expected: AgentIntegrationLocalProtocol.version,
+                actual: actual)
         }
         let hasResult = object["result"] != nil
         let hasSessionCapabilities =
@@ -2486,6 +2494,10 @@ public enum AgentIntegrationLocalCodec {
 }
 
 public enum AgentIntegrationLocalTransportError: Error, Equatable {
+    /// The socket answered, but the host and companion do not share the same
+    /// local contract. This is not an invalid response and retrying a
+    /// mutation cannot repair it.
+    case incompatibleProtocol(expected: Int, actual: Int)
     /// The host would not answer for the machine this request named.
     /// Carried out of the transport as itself, so the caller can report
     /// which machine and which one is being driven rather than "invalid

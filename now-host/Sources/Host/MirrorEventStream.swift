@@ -147,7 +147,7 @@ extension MirrorOperationOutcome {
     /// operation.
     var isTrouble: Bool {
         switch self {
-        case .queued, .dispatched, .confirmed:
+        case .queued, .dispatched, .confirmed, .unconfirmed:
             return false
         /* `confirmedAfterTimeout` and `confirmedAfterRefusal` count as
            trouble even though the effect landed. The act still held the

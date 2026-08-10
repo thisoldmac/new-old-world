@@ -149,6 +149,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 | `development-project` | `projectID` (required), `cursor` | `development-project` | Measures and pages one active source tree beneath the human-selected Projects root. |
 | `development-stage` | `action` (required), `candidateID` (required), `projectID`, `expectedDigest`, `expectedFiles`, `baseGuestDigest` | `development-stage` | Prepares, observes or discards one inactive guest project candidate. |
 | `development-run` | `productRef` (required) | `development-run` | Launches only the unchanged opaque product measured by the last successful Development build. |
+| `development-test` | `productRef` (required) | `development-test` | Executes the closed test plan declared by the Project.ckp that produced the unchanged opaque product. |
 | `development-open` | `projectID` (required) | `development-open` | Optionally locates and launches CodeKitten through the classic Desktop database, then sends the active Project.ckp for one opaque project ID using the standard open-documents Apple Event. |
 | `help` | `topic` | `help` | What commands THIS machine serves, asked of the machine that serves them. |
 | `update` | `component` | `update` | Reads the exact application and extension builds the connected host has published. |

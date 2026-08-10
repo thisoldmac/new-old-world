@@ -12,12 +12,14 @@ public enum DevelopmentProjection: HostProjection {
         AgentIntegrationCapabilityNames.developmentStageCommand,
         AgentIntegrationCapabilityNames.developmentBuildCommand,
         AgentIntegrationCapabilityNames.developmentRunCommand,
+        AgentIntegrationCapabilityNames.developmentTestCommand,
     ]
     public static let exposes = requires
     public static let authorityDomain =
         HostProjectionAuthorityDomain.hostProjectsAndGuest
     public static let acceptedArguments: Set<String> = [
         "operation", "projectID", "workspaceID", "candidateID", "productRef",
+        "attemptID",
     ]
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "Projects/DevelopmentModuleView.swift",
@@ -33,27 +35,7 @@ public enum DevelopmentProjection: HostProjection {
             "title": "Build and Run a New Old World Project",
             "description":
                 "Imports one verified active guest project, stages and promotes an inactive candidate, starts or observes a declarative MPW ToolServer build, or launches only its unchanged product. It accepts no path, MPW text, shell text, Git operation, generic launch target or IDE-control operation. Build and run are separate outcomes.",
-            "inputSchema": [
-                "type": "object",
-                "properties": [
-                    "operation": [
-                        "type": "string",
-                    "enum": ["import", "stage", "stage-status", "stage-discard", "promote",
-                                 "build-start", "build-status", "build-cancel",
-                                 "run"],
-                    ],
-                    "projectID": ["type": "string",
-                                  "pattern": "^[0-9a-f]{32}$"],
-                    "workspaceID": ["type": "string",
-                                    "pattern": "^workspace-[0-9a-f]{16}$"],
-                    "candidateID": ["type": "string",
-                                    "pattern": "^candidate-[0-9a-f]{16}$"],
-                    "productRef": ["type": "string",
-                                   "pattern": "^product-[0-9a-f]{16}$"],
-                ],
-                "required": ["operation"],
-                "additionalProperties": false,
-            ],
+            "inputSchema": inputSchema,
             "outputSchema": [
                 "type": "object",
                 "description": "Bounded guest-owned build, run or handoff rows, or a typed refusal.",
@@ -65,6 +47,87 @@ public enum DevelopmentProjection: HostProjection {
                 "openWorldHint": false,
             ],
         ]
+    }
+
+    private static let projectID: [String: Any] = [
+        "type": "string", "pattern": "^[0-9a-f]{32}$",
+    ]
+    private static let workspaceID: [String: Any] = [
+        "type": "string", "pattern": "^workspace-[0-9a-f]{16}$",
+    ]
+    private static let candidateID: [String: Any] = [
+        "type": "string", "pattern": "^candidate-[0-9a-f]{16}$",
+    ]
+    private static let productRef: [String: Any] = [
+        "type": "string", "pattern": "^product-[0-9a-f]{16}$",
+    ]
+    private static let attemptID: [String: Any] = [
+        "type": "string", "format": "uuid",
+        "description": "Caller-retained idempotency identity for this mutation.",
+    ]
+
+    private static let inputSchema: [String: Any] = [
+        "type": "object",
+        "properties": [
+            "operation": [
+                "type": "string",
+                "enum": AgentIntegrationDevelopmentOperation.allCases
+                    .filter { $0 != .openInCodeKitten }
+                    .map(\.rawValue),
+            ],
+            "projectID": projectID,
+            "workspaceID": workspaceID,
+            "candidateID": candidateID,
+            "productRef": productRef,
+            "attemptID": attemptID,
+        ],
+        "required": ["operation"],
+        "additionalProperties": false,
+        "oneOf": [
+            branch(.catalog),
+            branch(.loopStatus),
+            branch(.importGuest, ["projectID": projectID,
+                                  "attemptID": attemptID],
+                   ["projectID", "attemptID"]),
+            branch(.stage, ["projectID": projectID,
+                            "workspaceID": workspaceID,
+                            "attemptID": attemptID], ["projectID", "attemptID"]),
+            branch(.stageStatus, ["candidateID": candidateID],
+                   ["candidateID"]),
+            branch(.stageDiscard, ["candidateID": candidateID,
+                                   "attemptID": attemptID],
+                   ["candidateID", "attemptID"]),
+            branch(.promote, ["candidateID": candidateID,
+                              "attemptID": attemptID], ["candidateID", "attemptID"]),
+            branch(.buildStart, ["projectID": projectID,
+                                 "attemptID": attemptID], ["projectID", "attemptID"]),
+            branch(.buildStart, ["candidateID": candidateID,
+                                 "attemptID": attemptID],
+                   ["candidateID", "attemptID"], title: "Build candidate"),
+            branch(.buildStatus),
+            branch(.buildCancel, ["attemptID": attemptID], ["attemptID"]),
+            branch(.run, ["productRef": productRef, "attemptID": attemptID],
+                   ["productRef", "attemptID"]),
+            branch(.test, ["productRef": productRef, "attemptID": attemptID],
+                   ["productRef", "attemptID"]),
+        ],
+    ]
+
+    private static func branch(
+        _ operation: AgentIntegrationDevelopmentOperation,
+        _ properties: [String: Any] = [:],
+        _ required: [String] = [],
+        title: String? = nil
+    ) -> [String: Any] {
+        var all = properties
+        all["operation"] = ["const": operation.rawValue]
+        var result: [String: Any] = [
+            "type": "object", "properties": all,
+            "required": ["operation"] + required,
+            "additionalProperties": false,
+        ]
+        if let title { result["title"] = title }
+        return result
     }
 
     public static func invoke(

@@ -275,6 +275,7 @@ public enum AgentIntegrationCapabilityNames {
     public static let developmentStageCommand = "development-stage"
     public static let developmentBuildCommand = "development-build"
     public static let developmentRunCommand = "development-run"
+    public static let developmentTestCommand = "development-test"
     /// The guest's own log for this launch. A COMMAND, like `reveal` and for
     /// the same mechanical reason: the ledger resolves it against the
     /// guest's `help` table, which is what makes the row PowerPC-only
@@ -414,7 +415,8 @@ public enum AgentIntegrationCapabilityNames {
         streamRefresh, launchCommand, revealCommand, catsearchCommand,
         gestaltCommand, developmentCommand, developmentProjectCommand,
         developmentStageCommand, developmentBuildCommand,
-        developmentRunCommand, tailCommand, vprobeCommand, shotdiagCommand,
+        developmentRunCommand, developmentTestCommand, tailCommand,
+        vprobeCommand, shotdiagCommand,
         putstatCommand, windowActCommand, textGetCommand, textSetCommand,
         controlActCommand, menuActCommand, elementsCommand, mirrorCommand,
     ]

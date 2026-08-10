@@ -43,10 +43,20 @@ final class AgentIntegrationDevelopmentControl {
             return .refused(.init(code: "now-development-invalid-request",
                                   message: "The Development operation has invalid opaque references."))
         }
+        if let attempt = request.attemptID {
+            audit(.info, "attempt \(attempt) admitted for \(request.operation.rawValue)")
+        }
+        if request.operation == .loopStatus {
+            return await loopStatus()
+        }
         guard let sessionID = currentSessionID() else {
             return .unavailable(.guest)
         }
         switch request.operation {
+        case .catalog:
+            break
+        case .loopStatus:
+            preconditionFailure("Loop status settles before guest addressing")
         case .importGuest:
             return await importGuest(request, sessionID: sessionID)
         case .stage:
@@ -60,6 +70,11 @@ final class AgentIntegrationDevelopmentControl {
         }
         let route: (verb: String, group: String, args: [String: String])
         switch request.operation {
+        case .catalog:
+            route = ("development-project", "development-project",
+                     ["action": "catalog"])
+        case .loopStatus:
+            preconditionFailure("Loop status settles before guest routing")
         case .importGuest, .stage, .stageStatus, .stageDiscard, .promote:
             preconditionFailure("Candidate operations settle above")
         case .buildStart:
@@ -77,6 +92,9 @@ final class AgentIntegrationDevelopmentControl {
                      ["action": "cancel"])
         case .run:
             route = ("development-run", "development-run",
+                     ["productRef": request.productRef!])
+        case .test:
+            route = ("development-test", "development-test",
                      ["productRef": request.productRef!])
         case .openInCodeKitten:
             route = ("development-open", "development-open",
@@ -169,6 +187,54 @@ final class AgentIntegrationDevelopmentControl {
             groups: [.init(name: route.group, rows: rows)],
             note: cells.count > 16 ? "The host bounded the Development receipt." : nil,
             observedAt: Date()))
+    }
+
+    private func loopStatus() async -> AgentIntegrationGuestRowReportResult {
+        var rows: [AgentIntegrationGuestRow] = [
+            .init(label: "Authority", value: "NOW Projects root"),
+            .init(label: "Guest session",
+                  value: currentSessionID()?.uuidString.lowercased()
+                      ?? "disconnected"),
+        ]
+        if let projectStore {
+            do {
+                let candidates = try projectStore.recoverableCandidates()
+                if candidates.isEmpty {
+                    rows.append(.init(label: "Retained candidate", value: "none"))
+                    rows.append(.init(label: "Recovery", value: "no action"))
+                } else {
+                    for candidate in candidates {
+                        rows.append(.init(
+                            label: "Retained candidate",
+                            value: candidate.receipt.candidateID.rawValue
+                                + " | " + candidate.lifecycle.rawValue))
+                    }
+                    rows.append(.init(
+                        label: "Recovery",
+                        value: "inspect with stage-status; resume, promote, or discard explicitly"))
+                }
+            } catch {
+                rows.append(.init(label: "Recovery", value: "catalog unreadable"))
+            }
+        } else {
+            rows.append(.init(label: "Recovery", value: "Projects store unavailable"))
+        }
+        var groups = [AgentIntegrationGuestRowGroup(
+            name: "development-loop", rows: rows)]
+        if currentSessionID() != nil {
+            let status = await command(
+                "development-build", args: ["action": "status"])
+            if status.ok, let cells = status.output?["development-build"] {
+                groups.append(.init(name: "active-build", rows: cells.prefix(16).map {
+                    .init(label: AgentIntegrationBoundedText.prefix(
+                        $0.first ?? "", scalars: 64),
+                          value: AgentIntegrationBoundedText.prefix(
+                            $0.count > 1 ? $0.last ?? "" : "", scalars: 2_048))
+                }))
+            }
+        }
+        return .completed(.init(verb: "development-loop-status",
+                                groups: groups, observedAt: Date()))
     }
 
     private func stage(
@@ -324,6 +390,21 @@ final class AgentIntegrationDevelopmentControl {
         let finderFlags: UInt16
     }
 
+    /// Project.ckp's identity is part of the coherent guest digest even
+    /// though the document does not repeat itself in a file-info record.
+    /// Name the mismatch before normalizing the host copy to TEXT/NOWD and
+    /// reporting only a generic digest failure.
+    static func projectDocumentIdentityProblem(
+        type: String, creator: String, finderFlags: UInt16,
+        resourceBytes: Int
+    ) -> String? {
+        guard type == "TEXT", creator == "NOWD", finderFlags == 0,
+              resourceBytes == 0 else {
+            return "Project.ckp must be TEXT/NOWD with zero Finder flags and an empty resource fork."
+        }
+        return nil
+    }
+
     private func importGuest(
         _ request: AgentIntegrationDevelopmentRequest, sessionID: UUID
     ) async -> AgentIntegrationGuestRowReportResult {
@@ -401,6 +482,17 @@ final class AgentIntegrationDevelopmentControl {
         guard files.count == expectedCount else {
             return .refused(.init(code: "now-development-project-invalid",
                                   message: "The guest manifest file count is inconsistent."))
+        }
+        guard let projectFile = files.first(where: { $0.path == "Project.ckp" }) else {
+            return .refused(.init(code: "now-development-project-invalid",
+                                  message: "The guest snapshot has no Project.ckp."))
+        }
+        if let problem = Self.projectDocumentIdentityProblem(
+            type: projectFile.type, creator: projectFile.creator,
+            finderFlags: projectFile.finderFlags,
+            resourceBytes: projectFile.resourceBytes) {
+            return .refused(.init(code: "now-development-project-invalid",
+                                  message: problem))
         }
         let staging = FileManager.default.temporaryDirectory
             .appendingPathComponent("now-project-import-\(UUID().uuidString)")

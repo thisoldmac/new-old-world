@@ -117,6 +117,10 @@ public enum SessionHealthProjection: HostProjection {
                                 "type": "array",
                                 "items": guestReferenceSchema,
                             ],
+                            "compatibility": [
+                                "type": ["object", "null"],
+                                "description": "Host/companion preflight identity: host build, local protocol, projection catalog and schema revisions.",
+                            ],
                         ],
                         "required": ["state", "observedAt", "roster"],
                     ],

@@ -27,6 +27,10 @@ public enum MirrorOperationOutcome: String, Codable, Equatable, Sendable {
     case confirmed
     case confirmedAfterTimeout
     case confirmedAfterRefusal
+    /// The guest accepted an operation for which the host has no observable
+    /// postcondition. This is terminal knowledge about the attempt, not a
+    /// claim that the requested effect was observed.
+    case unconfirmed
     case sessionChanged
     /// A person or an agent abandoned the wait. Terminal, and never
     /// rewritten into a refusal: for an act that had already dispatched,
@@ -37,7 +41,8 @@ public enum MirrorOperationOutcome: String, Codable, Equatable, Sendable {
     public var isTerminal: Bool {
         switch self {
         case .refused, .confirmed, .confirmedAfterTimeout,
-             .confirmedAfterRefusal, .sessionChanged, .cancelled:
+             .confirmedAfterRefusal, .unconfirmed, .sessionChanged,
+             .cancelled:
             return true
         case .queued, .dispatched, .awaitingEvidenceAfterRefusal, .timedOut:
             return false
@@ -51,7 +56,9 @@ public struct MirrorOperation: Equatable, Sendable {
     public var displayedSnapshotID: Int
     public var displayedSequence: Int
     public var target: MirrorEntityIdentity
-    public var postcondition: MirrorOperationPostcondition
+    /// Nil for an operation whose dispatch can be recorded but whose effect
+    /// cannot be established from a later scene.
+    public var postcondition: MirrorOperationPostcondition?
     public var enqueuedAt: Date
     public var dispatchedAt: Date?
     public var settledAt: Date?
@@ -62,7 +69,7 @@ public struct MirrorOperation: Equatable, Sendable {
     public init(id: String, source: MirrorOperationSource,
                 displayedSnapshotID: Int, displayedSequence: Int,
                 target: MirrorEntityIdentity,
-                postcondition: MirrorOperationPostcondition,
+                postcondition: MirrorOperationPostcondition?,
                 enqueuedAt: Date) {
         self.id = id
         self.source = source
@@ -121,6 +128,8 @@ public struct MirrorSettlementEvidence: Equatable, Sendable {
 
 public enum MirrorOperationEvent: Equatable, Sendable {
     case dispatched(at: Date)
+    /// The guest accepted an act that has no observable postcondition.
+    case unconfirmed(at: Date)
     /// A refusal before any part of the operation could mutate the guest is
     /// terminal. A refusal after dispatch (including a later stage of a
     /// composite operation) is contradictory attempt evidence and remains

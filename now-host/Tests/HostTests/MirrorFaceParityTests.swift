@@ -158,9 +158,9 @@ final class MirrorFaceParityTests: XCTestCase {
     }
 
     /// The other half, so the gate above cannot be satisfied by calling
-    /// everything held: the plans that genuinely carry no postcondition
-    /// must still say so. `finderSelect` is one of the seven.
-    func testAnActWithNoPostconditionStillReportsTheDirectPath()
+    /// everything observation-backed: a plan with no postcondition receives
+    /// a real journal id and settles as honestly unconfirmed.
+    func testAnActWithNoPostconditionHasATerminalJournalReceipt()
         async throws {
         let rig = try await Rig.make()
         defer { rig.tearDown() }
@@ -176,10 +176,14 @@ final class MirrorFaceParityTests: XCTestCase {
                                         container: "desktop"))
         let operation = try XCTUnwrap(reply.operation)
 
-        XCTAssertEqual(operation.id, "direct")
+        XCTAssertNotEqual(operation.id, "direct")
         XCTAssertFalse(operation.awaitsObservation,
-                       "nothing will ever settle a select, and a caller "
-                           + "that waited for one would wait forever")
+                       "a select has no observable postcondition even "
+                           + "though its guest reply remains waitable")
+        XCTAssertEqual(rig.engine.operations.operation(id: operation.id)?.id,
+                       operation.id,
+                       "the wait endpoint must be able to find the direct "
+                           + "act before its guest reply arrives")
     }
 
     // MARK: - A3: the owed attribution regression

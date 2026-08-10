@@ -39,6 +39,9 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         -> AgentIntegrationProjectResult {
         guard let client else { return .hostUnavailable }
         do {
+            if let refusal = await compatibilityRefusal(client) {
+                return .init(failure: refusal)
+            }
             return try await client.projects(request)
         } catch {
             return .init(failure: unavailable(for: error))
@@ -51,6 +54,9 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
             return .unavailable(unavailable(for: startupError))
         }
         do {
+            if let refusal = await compatibilityRefusal(client) {
+                return .unavailable(refusal)
+            }
             return try await client.development(request)
         } catch {
             return .unavailable(unavailable(for: error))
@@ -627,6 +633,10 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
                 message: "New Old World host communication failed")
         }
         switch local {
+        case .incompatibleProtocol(let expected, let actual):
+            return .init(
+                code: "now-host-companion-incompatible",
+                message: "New Old World host protocol \(actual) is incompatible with companion protocol \(expected). Install and launch the matching host and companion build.")
         // Passed through as itself. "This host is driving another
         // machine" is a fact about ADDRESSING, and flattening it into a
         // communication failure would tell a caller to retry the one
@@ -653,6 +663,32 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
             return .init(
                 code: "now-host-communication-failed",
                 message: "New Old World host communication failed")
+        }
+    }
+
+    private func compatibilityRefusal(
+        _ client: AgentIntegrationLocalClient
+    ) async -> AgentIntegrationUnavailable? {
+        do {
+            guard case .available(let health) = try await client.sessionHealth(),
+                  let compatibility = health.compatibility else {
+                return .init(
+                    code: "now-host-companion-incompatible",
+                    message: "The running New Old World host does not publish the required compatibility preflight. Install and launch the matching host and companion build.")
+            }
+            guard compatibility.companionProtocol
+                    == AgentIntegrationLocalProtocol.version,
+                  compatibility.projectionCatalogVersion
+                    == HostProjectionRegistry.catalogVersion,
+                  compatibility.projectionCatalogDigest
+                    == HostProjectionRegistry.hostFaces.catalogDigest else {
+                return .init(
+                    code: "now-host-companion-incompatible",
+                    message: "The running host and companion publish different protocol or projection catalogs. Install and launch the matching build.")
+            }
+            return nil
+        } catch {
+            return unavailable(for: error)
         }
     }
 }

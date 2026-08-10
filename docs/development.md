@@ -116,59 +116,70 @@ a runtime dependency.
 
 ## Verification and current limits
 
-The project/history, parser, job, projection, Chat-filter and parity behavior
-is tested locally, and both guests cross-compile. The complete host-home lane is
-also emulator-verified on a private mac99/OS 9.1 guest with MPW. Guest build
-`44a214ae1141` qualified `mpw-ffff-00000cf0@structural-1`; MCP created and
-revised project `95ceb07504374a568705336a5728d19a`, including a nonempty source
-resource fork and `TEXT/MPS ` Finder identities. NOW transported each logical
-file as MacBinary, sealed candidate `candidate-1c3ca2817afe4c24` at exact source
-digest `2d692e6239cb90862bb1a15c7d6f42ce63ea9026ac35663e9c41913725e417d0`,
-completed MrC, PPCLink and Rez, and measured `APPL/H14E` product
-`product-5c96932bd4b1cd44` at 1,832 data-fork and 578 resource-fork bytes.
-`now_development run` matched its process identity, and retained semantic UI
-then observed the frontmost `HelloForks` alert and its enabled `OK` dialog item.
-After a semantic dismissal the process disappeared and the built candidate was
-discarded cleanly.
+The project/history, parser, operation journal, projection, Chat-filter and
+parity behavior is tested locally, and both guests cross-compile. The earlier
+complete host-home build/run/dialog lane remains **metal-verified** on the
+PowerBook 1400c: guest build `33bfe4e3e211` qualified
+`mpw-ffff-00007b37@structural-1`, built both forks of an `APPL/H14E` product,
+matched the launched process, exposed its alert through retained semantics and
+left no process after dismissal.
 
-The same preservation path is now metal-verified on the PowerBook 1400c. Guest
-build `33bfe4e3e211` qualified the machine's own
-`mpw-ffff-00007b37@structural-1`; MCP revised only the toolchain pin in that
-fork-bearing host project, sealed candidate `candidate-d4752f9e46d84f9c` at
-source digest `6c3e96f8e4e368fc5004e2817ab9bcc087bd1eacba5bdd5cb0437c3b77a13669`,
-and completed all three MrC/PPCLink/Rez actions. Product
-`product-cf2b162d6ea8648a` measured `APPL/H14E`, 1,832 data bytes and 578
-resource bytes, at digest
-`cf2b162d6ea8648a7108b10b3732994ebc647f39c40ba74a1986ada1f6e564a8`.
-Exact-product run matched process identity; retained semantic UI and the person
-at the PowerBook observed the live Hello World alert; after dismissal a fresh
-process list showed the application absent, and candidate discard succeeded.
+The autonomous-loop hardening is **emulator-verified**, not newly
+metal-verified. A session-private mac99/OS 9.1 guest running build
+`b1de53f2bfe9` qualified `mpw-ffff-00000cf0@structural-1`. Its base image was
+`bf5a6cf67701e8628cca3ffe5311a0bd76d959a549b7cdb320287c2afd8ec22e`;
+the staged resident reported source manifest `28ef6c07ee6d` and fingerprint
+`085c4ebf8457`. Through the real MCP companion, the run exercised:
 
-That is full host-home build/run/dialog evidence on metal. It is not evidence
-for guest-home promotion. Guest import/workspace refresh, divergent and
-successful promotion, and CodeKitten handoff have not run in the emulator or
-on the PowerBook. A separate onboarding smoke transferred the exact
-CodeKitten payload and `LaunchApplication` accepted it, but the process exited
-before the five-second observation; that is a failed runtime gate, not handoff
-evidence. The earlier PowerBook refusal of the first source as “not a TEXT
-file” is retained as the evidence that led to first-class fork and Finder
-identity transport; the successful rung above closes that specific metal gap.
+- a three-action Hello World build and typed `ckproject.test-receipt/1`;
+- a five-file Memory Meter project with a nonempty source resource fork, a
+  real MrC failure, repair, cancelled job, required restage, successful build,
+  exact-product test, semantic dismissal and candidate cleanup;
+- retry of the same caller attempt after a lost stage response, recovering the
+  original terminal receipt without a duplicate revision or candidate;
+- import of a guest-only project, host-scratch edit and commit, inactive build
+  and typed test, successful promotion at the imported base digest, then a
+  second built candidate refused as `guest-diverged` after an active guest
+  edit. A fresh download matched the human-side bytes, and the losing candidate
+  remained inspectable until explicitly discarded.
 
-Two preservation/settlement limits are still open and are intentionally not
-hidden behind a successful receipt:
+The guest catalog removes the opaque-ID import prerequisite. Projects and
+Development mutation calls now require caller attempt IDs and the host keeps a
+bounded durable response journal, so reconnect/restart retries recover the
+same response. `loop-status` inventories active work and retained candidates.
+The local compatibility preflight names host build, companion protocol,
+projection catalog digest/version and schema revisions; stale peers receive a
+typed incompatibility before domain dispatch. Projects and Development publish
+operation-discriminated schemas, including exclusive project-revision and
+workspace-commit apply branches.
 
-- The first agent and host surface has distinct build and run receipts, but no
-  typed test operation or test receipt yet. Treating Build or Run as Test would
-  erase the result boundary required by the project contract; the next slice
-  must define a closed declarative test plan and its expected product identity
-  before adding that operation.
+Semantic snapshot, target lookup and planning now resolve through the same
+published `MirrorStateEngine` authority. `now_semantic_ui_wait_for_settlement`
+waits by journal operation ID. A direct semantic action for which no
+postcondition exists terminates as `unconfirmed`, not falsely `confirmed`; the
+VM acceptance proved that receipt and then used a fresh process list to prove
+the application actually exited.
 
-- The CodeKitten `odoc` send is asynchronous. NOW proves launch, event
-  dispatch and foregrounding, but does not yet receive the handler's returned
-  acceptance result. Metal acceptance must retire that distinction rather than
-  relabel dispatch as acceptance.
+Current limits remain explicit:
 
-The manual host import sheet also asks for the opaque guest project ID; a
-bounded guest-project catalog is not yet a human discovery surface. These
-limits and the remaining emulator/metal rungs are tracked in
-[`open-issues.md`](open-issues.md).
+- The repository currently ships the MCP companion over its private local
+  **stdio** entry point. There is no HTTP MCP listener here, so the plan's HTTP
+  parity rung could not be run and stdio remains the canonical implemented
+  transport rather than a hidden fallback.
+- CodeKitten remains optional and separately owned. NOW still proves only
+  launch, asynchronous `odoc` dispatch and foregrounding; it has no returned
+  document-acceptance receipt. Cross-repository shared fixtures and neutral
+  receipt vocabulary must be completed with CodeKitten before claiming that
+  acceptance seam.
+- The portable Development starter-pack manifest and relocatable onboarding
+  input are implemented and validated, but this repository does not contain a
+  redistributable MPW payload. Toolchain licensing/provenance must be settled
+  before a one-image NOW + CodeKitten + MPW pack can pass its acceptance rung.
+- The hardening changes have not yet repeated the full loop on the PowerBook.
+  The previous metal evidence still covers fork-aware host-home build/run and
+  human-observed dialog behavior, not the new test, retry, guest-home promotion
+  or semantic-settlement receipts.
+
+The exact findings and residual gates are tracked in
+[`open-issues.md`](open-issues.md) and the completed
+[hardening plan](plans/2026-08-10-031-feat-development-agent-loop-hardening-plan.md).

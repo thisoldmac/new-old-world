@@ -65,6 +65,20 @@ public final class AgentIntegrationLocalServer {
         label: "dev.newoldworld.agent-integration.companions")
     private let lock = NSLock()
     private var listeningDescriptor: Int32 = -1
+    private let attemptLock = NSLock()
+    private var inFlightAttempts: Set<UUID> = []
+
+    private struct StoredAttempt: Codable {
+        let request: Data
+        let response: Data
+    }
+
+    private enum AttemptAdmission {
+        case admitted
+        case replay(AgentIntegrationLocalResponse)
+        case pending
+        case collision
+    }
 
     public convenience init(
         endpoint: AgentIntegrationEndpoint? = nil,
@@ -196,6 +210,25 @@ public final class AgentIntegrationLocalServer {
                     code: "invalid-request",
                     message: localMessage(for: error))))
             return
+        }
+
+        switch admitAttempt(request) {
+        case .replay(let response):
+            finish(descriptor, response: response,
+                   operation: request.operation.rawValue)
+            return
+        case .pending:
+            finish(descriptor, response: .init(error: .init(
+                code: "attempt-pending",
+                message: "This mutation was already dispatched; retry the same attempt after it settles.")))
+            return
+        case .collision:
+            finish(descriptor, response: .init(error: .init(
+                code: "attempt-collision",
+                message: "This attempt ID is already bound to a different request.")))
+            return
+        case .admitted:
+            break
         }
 
         Task { [weak self, companions] in
@@ -373,8 +406,99 @@ public final class AgentIntegrationLocalServer {
                     requestID: request.requestID,
                     notImplemented: unavailable)
             }
+            self.completeAttempt(request, response: response)
             finish(descriptor, response: response,
                    operation: request.operation.rawValue)
+        }
+    }
+
+    private func isReplayable(_ request: AgentIntegrationLocalRequest) -> Bool {
+        (request.operation == .development
+            && request.developmentRequest?.attemptID != nil)
+            || (request.operation == .projects
+                && request.projectRequest?.attemptID != nil)
+    }
+
+    private var attemptDirectory: URL {
+        endpoint.socketURL.deletingLastPathComponent()
+            .appendingPathComponent("attempt-receipts", isDirectory: true)
+    }
+
+    private func attemptURL(_ id: UUID) -> URL {
+        attemptDirectory.appendingPathComponent(
+            id.uuidString.lowercased() + ".json")
+    }
+
+    private func admitAttempt(
+        _ request: AgentIntegrationLocalRequest
+    ) -> AttemptAdmission {
+        guard isReplayable(request) else { return .admitted }
+        guard let encoded = try? AgentIntegrationLocalCodec.encode(request)
+        else { return .collision }
+        let id = request.requestID
+        attemptLock.lock()
+        defer { attemptLock.unlock() }
+        let url = attemptURL(id)
+        if let data = try? Data(contentsOf: url),
+           let stored = try? JSONDecoder().decode(StoredAttempt.self, from: data) {
+            guard stored.request == encoded else { return .collision }
+            guard let response = try? AgentIntegrationLocalCodec.decodeResponse(
+                stored.response) else { return .collision }
+            return .replay(response)
+        }
+        guard !inFlightAttempts.contains(id) else { return .pending }
+        inFlightAttempts.insert(id)
+        return .admitted
+    }
+
+    private func completeAttempt(
+        _ request: AgentIntegrationLocalRequest,
+        response: AgentIntegrationLocalResponse
+    ) {
+        guard isReplayable(request) else { return }
+        let id = request.requestID
+        guard let encodedRequest = try? AgentIntegrationLocalCodec.encode(request)
+        else {
+            attemptLock.lock()
+            inFlightAttempts.remove(id)
+            attemptLock.unlock()
+            return
+        }
+        let stored = StoredAttempt(
+            request: encodedRequest,
+            response: AgentIntegrationLocalCodec.encodeOrRefusal(
+                response, operation: request.operation.rawValue))
+        attemptLock.lock()
+        defer {
+            inFlightAttempts.remove(id)
+            attemptLock.unlock()
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: attemptDirectory, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+            let bytes = try JSONEncoder().encode(stored)
+            try bytes.write(to: attemptURL(id), options: .atomic)
+            let files = try FileManager.default.contentsOfDirectory(
+                at: attemptDirectory,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles])
+            if files.count > 256 {
+                let ordered = files.sorted {
+                    let left = try? $0.resourceValues(
+                        forKeys: [.contentModificationDateKey]).contentModificationDate
+                    let right = try? $1.resourceValues(
+                        forKeys: [.contentModificationDateKey]).contentModificationDate
+                    return (left ?? .distantPast) < (right ?? .distantPast)
+                }
+                for stale in ordered.prefix(files.count - 256) {
+                    try? FileManager.default.removeItem(at: stale)
+                }
+            }
+        } catch {
+            /* The domain response remains authoritative. Persistence failure
+               may prevent replay, but must not turn completed guest work into
+               a second domain failure after the fact. */
         }
     }
 

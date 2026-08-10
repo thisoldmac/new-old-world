@@ -194,11 +194,11 @@ enum MirrorPerformDisposition: Equatable {
     /// In the broker's lane under this id, with a typed postcondition. A
     /// record for it exists in the journal already.
     case brokered(String)
-    /// Dispatched with no typed postcondition. Seven of the fourteen
-    /// plans are like this by construction, and nothing will ever settle
-    /// them — a caller that mistook a `.held` act for one of these would
-    /// stop waiting for a settlement that was on its way.
-    case direct
+    /// Dispatched with no typed postcondition. The associated id names its
+    /// journal receipt; the guest reply settles it as `unconfirmed`, which
+    /// records what happened without pretending a later scene proved the
+    /// effect.
+    case direct(String)
 
     /// The sentence, for the callers that only ever wanted that.
     var refusal: String? {
@@ -2405,8 +2405,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// the sentence is already the whole truth, so the button comes back up
     /// at once with the reason beside it. The other three dispositions all
     /// mean the act LEFT, and none of them is evidence that it worked:
-    /// `.direct` is dispatched with no typed postcondition and *nothing will
-    /// ever settle it*, while `.brokered` settles later through the broker's
+    /// `.direct` is dispatched with no typed postcondition and settles only
+    /// as `unconfirmed`, while `.brokered` settles later through the broker's
     /// lane. Answering `.confirmed` for
     /// any of them would be reporting dispatch as success, which is the exact
     /// shape of the AppleScript lie this whole surface replaced.
@@ -2504,7 +2504,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     @discardableResult
     func perform(_ interaction: Interaction,
                  source: MirrorOperationSource) -> MirrorPerformDisposition {
-        if performHostFinder(interaction) { return .direct }
+        if performHostFinder(interaction) {
+            guard let engine = shadowEngine,
+                  var operation = MirrorActionExecutor.unconfirmedOperation(
+                    for: interaction, engine: engine, source: source) else {
+                return .refused(
+                    "the host Finder act completed, but its displayed "
+                        + "entity had no journal identity")
+            }
+            operation = MirrorOperationReducer.reduce(
+                operation, event: .unconfirmed(at: Date()))
+            guard engine.operations.append(operation) else {
+                return .refused(
+                    "the host Finder act completed, but the operation "
+                        + "journal was full")
+            }
+            return .direct(operation.id)
+        }
         if let refusal = pinnedActionRefusal() {
             let label = InteractionBridge.label(for: interaction)
             ActLog.note(action: label,
@@ -2626,14 +2642,61 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                The guest's own interlock says a caller told "busy" can
                decide; the session ``GuestWorkScheduler`` is now that one
                decision point for direct and brokered acts alike. */
-            let enqueuedAt = Date()
+            guard let engine = shadowEngine,
+                  let operation = MirrorActionExecutor.unconfirmedOperation(
+                    for: interaction, engine: engine, source: source) else {
+                let reason = "the displayed guest state has no stable identity "
+                    + "for this operation; it was not sent"
+                report(label + " — " + reason)
+                return .refused(reason)
+            }
+            guard engine.operations.append(operation) else {
+                let reason = "not dispatched: operation journal full"
+                report(label + " — " + reason)
+                return .refused(reason)
+            }
+            let operationID = operation.id
+            let enqueuedAt = operation.enqueuedAt
             let depthAtEntry = workScheduler.depth
             report(label + (depthAtEntry > 0 ? " — queued" : "…"))
-            workScheduler.submit(.interaction(label), as: .humanInteractive) {
+            workScheduler.submit(
+                .interaction(label), as: .humanInteractive,
+                onCancel: { [weak engine] in
+                    guard let engine,
+                          var cancelled = engine.operations.operation(
+                            id: operationID) else { return }
+                    cancelled = MirrorOperationReducer.reduce(
+                        cancelled, event: .sessionChanged(at: Date()))
+                    engine.operations.replace(cancelled)
+                }) {
                 [weak self] _ in
                 guard let self else { return }
                 let started = Date()
                 let complaint = await self.serve(plan)
+                var outcome: MirrorOperationOutcome = .sessionChanged
+                if let current = engine.operations.operation(id: operationID) {
+                    let event: MirrorOperationEvent
+                    if let complaint {
+                        if Self.effectMayHaveLanded(
+                            complaint: complaint,
+                            reach: self.planRefusalReach) {
+                            event = .unconfirmed(at: Date())
+                        } else {
+                            event = .refused(reason: complaint, at: Date(),
+                                             effectMayHaveLanded: false)
+                        }
+                    } else {
+                        event = .unconfirmed(at: Date())
+                    }
+                    let completed = MirrorOperationReducer.reduce(
+                        current, event: event)
+                    var completedWithReason = completed
+                    if complaint != nil, completed.outcome == .unconfirmed {
+                        completedWithReason.reason = complaint
+                    }
+                    engine.operations.replace(completedWithReason)
+                    outcome = completedWithReason.outcome
+                }
                 if let correlation = self.planCorrelation {
                     self.track(correlation, label: label)
                 }
@@ -2655,9 +2718,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                    The gap between them is the wait this path used to spend
                    as an `act-busy` refusal instead. */
                 self.actTimeline.record(.init(
-                    kind: .released, operationID: "direct",
+                    kind: .released, operationID: operationID,
                     label: label,
-                    outcome: complaint == nil ? .dispatched : .refused,
+                    outcome: outcome,
                     queueDepthAtEntry: depthAtEntry,
                     enqueuedAt: enqueuedAt, dispatchStartedAt: started,
                     dispatchReturnedAt: Date(), settledAt: nil,
@@ -2674,14 +2737,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 }
                 self.poll()                  // show the effect now
             }
-            /* The direct path's own answer arrives asynchronously and is
-               NOT a refusal to dispatch — the act left. A complaint from
-               the guest is settlement news, and this return says only
-               whether the act got out of the door. Nothing will ever
-               settle it: these plans carry no typed postcondition, which
-               is a property of the PLAN and not of how busy the cycle
-               was. */
-            return .direct
+            /* The direct path's own answer arrives asynchronously. Its real
+               id lets a headless caller wait for that answer: refusal is
+               terminal, and acceptance becomes `unconfirmed` because these
+               plans carry no typed postcondition. That distinction is a
+               property of the PLAN and not of how busy the cycle was. */
+            return .direct(operationID)
         }
     }
 
@@ -2729,6 +2790,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         case .confirmedAfterRefusal:
             outcome = "confirmed by a later guest scene; attempt had reported: "
                 + (operation.reason ?? "refused")
+        case .unconfirmed:
+            outcome = "guest accepted; no observable postcondition"
         case .sessionChanged:
             outcome = "cancelled because the guest session changed"
         case .cancelled:

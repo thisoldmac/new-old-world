@@ -92,6 +92,27 @@ struct CKProjectDocument: Equatable, Sendable {
                     "A debug link output must leave room for MPW's .xcoff sidecar in a 31-byte HFS name.")
             }
         }
+        let testActions = records.filter { $0.0 == "test-action" }.map(\.1)
+        let testAssertions = records.filter { $0.0 == "test-assertion" }.map(\.1)
+        let testTimeouts = records.filter { $0.0 == "test-timeout" }.map(\.1)
+        let testArtifacts = records.filter { $0.0 == "test-artifacts" }.map(\.1)
+        let testCounts = [testActions.count, testAssertions.count,
+                          testTimeouts.count, testArtifacts.count]
+        guard testCounts.allSatisfy({ $0 == 0 })
+                || testCounts.allSatisfy({ $0 == 1 }) else {
+            throw ProjectStoreError.invalidProject(
+                "The test plan must provide action, assertion, timeout and artifact policy together.")
+        }
+        if testActions.count == 1 {
+            guard testActions[0] == "launch",
+                  testAssertions[0] == "process-identity",
+                  Int(testTimeouts[0]).map({ (1...60).contains($0) }) == true,
+                  ["never", "on-failure", "always"].contains(testArtifacts[0])
+            else {
+                throw ProjectStoreError.invalidProject(
+                    "The version-1 test plan is outside its closed vocabulary.")
+            }
+        }
         var identities = Set<String>()
         let declaredFiles = Set(records.filter { $0.0 == "file" }.map(\.1))
         for value in records.filter({ $0.0 == "file-info" }).map(\.1) {

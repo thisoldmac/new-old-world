@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import Host
 
@@ -59,6 +60,49 @@ final class OnboardingAssetCatalogTests: XCTestCase {
             atPath: temporary.appendingPathComponent("Dependencies").path,
             isDirectory: &isDirectory))
         XCTAssertTrue(isDirectory.boolValue)
+    }
+
+    func testStarterPackManifestBindsRelocatableArtifact() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let dependencies = temporary.appendingPathComponent(
+            "Dependencies", isDirectory: true)
+        try makeDirectory(dependencies)
+        let payload = Data("portable-hfs-image".utf8)
+        let artifact = dependencies.appendingPathComponent(
+            "Development Starter Pack.img.bin")
+        try payload.write(to: artifact)
+        let digest = SHA256.hash(data: payload).map {
+            String(format: "%02x", $0)
+        }.joined()
+        let manifest = DevelopmentStarterPackManifest(
+            schema: "now.development-starter-pack/1",
+            id: "classic-mac-development-starter", version: "1.0.0",
+            artifact: artifact.lastPathComponent,
+            artifactBytes: payload.count, artifactSHA256: digest,
+            platforms: [.init(
+                operatingSystem: "classic-mac-os", minimumVersion: "7.1",
+                maximumVersion: "9.2.2", architectures: ["m68k", "powerpc"])],
+            components: [.init(
+                id: "apple-mpw-gm", version: "3.5-gm", purpose: "build",
+                installBytes: 1,
+                license: .init(name: "operator supplied",
+                               redistribution: "unknown",
+                               provenanceURL: "https://example.invalid/license"),
+                qualification: .init(requiredItems: ["ToolServer"],
+                                     probe: "mpw-v1"))])
+        try JSONEncoder().encode(manifest).write(to: dependencies
+            .appendingPathComponent("Development Starter Pack.manifest.json"))
+        let snapshot = OnboardingAssetCatalog(
+            roots: [temporary], writableRoot: temporary).snapshot()
+        XCTAssertNoThrow(try DevelopmentStarterPackManifest.validate(in: snapshot))
+
+        try Data("changed".utf8).write(to: artifact)
+        let changed = OnboardingAssetCatalog(
+            roots: [temporary], writableRoot: temporary).snapshot()
+        XCTAssertThrowsError(try DevelopmentStarterPackManifest.validate(
+            in: changed))
     }
 
     private func makeDirectory(_ url: URL) throws {

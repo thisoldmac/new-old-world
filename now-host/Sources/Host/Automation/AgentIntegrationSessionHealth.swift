@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NOWAgentIntegration
 
@@ -8,6 +9,23 @@ import NOWAgentIntegration
 /// second owner of the guest connection.
 @MainActor
 final class AgentIntegrationHostAdapter {
+    private static let compatibility: AgentIntegrationSessionHealth.Compatibility = {
+        let executable = Bundle.main.executableURL.flatMap {
+            try? Data(contentsOf: $0, options: [.mappedIfSafe])
+        }
+        let digest = executable.map {
+            SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined()
+        } ?? "unavailable"
+        return .init(
+            hostBuild: digest,
+            companionProtocol: AgentIntegrationLocalProtocol.version,
+            projectionCatalogVersion: HostProjectionRegistry.catalogVersion,
+            projectionCatalogDigest: HostProjectionRegistry.hostFaces.catalogDigest,
+            schemaRevisions: [
+                "ckproject/1", "ckproject.test-receipt/1",
+                "mirror-operation/1",
+            ])
+    }()
     private let listener: GuestListener
     private let launchCommandTimeout: TimeInterval
     /// Injected for the same reason as the launch timeout beside it: the real
@@ -404,7 +422,7 @@ final class AgentIntegrationHostAdapter {
                 listeningPort: nil,
                 sessionID: nil,
                 guest: nil,
-                failure: nil))
+                failure: nil, compatibility: Self.compatibility))
 
         case .listening(let port):
             clearSession()
@@ -414,7 +432,7 @@ final class AgentIntegrationHostAdapter {
                 listeningPort: port,
                 sessionID: nil,
                 guest: nil,
-                failure: nil))
+                failure: nil, compatibility: Self.compatibility))
 
         case .failed(let reason):
             clearSession()
@@ -424,7 +442,7 @@ final class AgentIntegrationHostAdapter {
                 listeningPort: nil,
                 sessionID: nil,
                 guest: nil,
-                failure: reason))
+                failure: reason, compatibility: Self.compatibility))
 
         case .connected(let guestName):
             let health = listener.health
@@ -450,7 +468,7 @@ final class AgentIntegrationHostAdapter {
                 sessionID: sessionID,
                 guest: guest,
                 roster: roster(),
-                failure: nil))
+                failure: nil, compatibility: Self.compatibility))
         }
     }
 

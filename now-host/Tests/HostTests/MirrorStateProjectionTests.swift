@@ -7,12 +7,13 @@ final class MirrorStateProjectionTests: XCTestCase {
             as? [String: Any]) ?? [:]
     }
 
-    func testFourRowsAreRegisteredTogetherAndReadOnly() {
+    func testFiveReadRowsAreRegisteredTogetherAndReadOnly() {
         let names = HostProjectionCatalog.projections.map {
             $0.capability.rawValue
         }
         for name in ["now_semantic_ui_status", "now_semantic_ui_snapshot",
-                     "now_semantic_ui_find", "now_semantic_ui_wait"] {
+                     "now_semantic_ui_find", "now_semantic_ui_wait",
+                     "now_semantic_ui_wait_for_settlement"] {
             XCTAssertEqual(names.filter { $0 == name }.count, 1)
         }
         for row in [
@@ -20,6 +21,7 @@ final class MirrorStateProjectionTests: XCTestCase {
             MirrorSnapshotProjection.self,
             MirrorFindProjection.self,
             MirrorWaitProjection.self,
+            MirrorSettlementProjection.self,
         ] {
             let annotations = row.mcpDescriptor["annotations"]
                 as? [String: Any]
@@ -29,7 +31,7 @@ final class MirrorStateProjectionTests: XCTestCase {
         }
     }
 
-    func testAllFourRowsUseTheSingleTypedReadLane() async throws {
+    func testAllFiveRowsUseTheSingleTypedReadLane() async throws {
         let client = MirrorReadRecordingClient()
         let cases: [(any HostProjection.Type, Any?)] = [
             (MirrorStatusProjection.self, nil),
@@ -37,6 +39,8 @@ final class MirrorStateProjectionTests: XCTestCase {
             (MirrorFindProjection.self, ["query": "Finder"]),
             (MirrorWaitProjection.self,
              ["afterSnapshotID": 3, "timeoutMs": 25]),
+            (MirrorSettlementProjection.self,
+             ["operationID": "operation-1", "timeoutMs": 25]),
         ]
         for (row, raw) in cases {
             guard case .value = await row.invoke(.init(raw: raw),
@@ -46,10 +50,11 @@ final class MirrorStateProjectionTests: XCTestCase {
         }
         let requests = await client.requests
         XCTAssertEqual(requests.map(\.intention),
-                       [.status, .snapshot, .find, .wait])
+                       [.status, .snapshot, .find, .wait, .settlement])
         XCTAssertEqual(requests[2].query, "Finder")
         XCTAssertEqual(requests[3].afterSnapshotID, 3)
         XCTAssertEqual(requests[3].timeoutMs, 25)
+        XCTAssertEqual(requests[4].operationID, "operation-1")
     }
 
     func testLocalProtocolRoundTripsOneMirrorReadLane() throws {

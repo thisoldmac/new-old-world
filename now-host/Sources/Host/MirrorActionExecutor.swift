@@ -285,4 +285,55 @@ enum MirrorActionExecutor {
             return nil
         }
     }
+
+    /// Mint a journal identity for an act whose effect has no stable scene
+    /// postcondition. The operation still names the exact displayed entity
+    /// and session; only its postcondition is absent.
+    @MainActor
+    static func unconfirmedOperation(
+        for interaction: Interaction,
+        engine: MirrorStateEngine,
+        source: MirrorOperationSource,
+        id: String = UUID().uuidString.lowercased(),
+        at date: Date = Date()
+    ) -> MirrorOperation? {
+        guard let snapshot = engine.snapshot, let replica = engine.replica
+        else { return nil }
+
+        func process(_ psn: String) -> MirrorProcessIdentity? {
+            replica.applications.values.first { $0.app.psn == psn }?.identity
+        }
+        func window(_ ref: String?) -> MirrorWindowIdentity? {
+            guard let ref else { return nil }
+            return replica.windows.values.first { $0.window.ref == ref }?.identity
+        }
+        func front() -> MirrorProcessIdentity? {
+            replica.applications.values.first { $0.app.front }?.identity
+        }
+        func finder() -> MirrorProcessIdentity? {
+            replica.applications.values.first { $0.app.name == "Finder" }?.identity
+        }
+
+        let target: MirrorEntityIdentity?
+        switch interaction.object {
+        case .window(let object):
+            target = window(object.ref).map(MirrorEntityIdentity.window)
+                ?? process(object.psn).map(MirrorEntityIdentity.process)
+        case .control(let object):
+            target = window(object.window.ref).map(MirrorEntityIdentity.window)
+        case .dialogItem(let object):
+            target = window(object.window.ref).map(MirrorEntityIdentity.window)
+        case .app(let object):
+            target = process(object.psn).map(MirrorEntityIdentity.process)
+        case .desktop, .finderItem:
+            target = finder().map(MirrorEntityIdentity.process)
+        case .menu, .menuItem, .applicationMenuAction:
+            target = front().map(MirrorEntityIdentity.process)
+        }
+        guard let target else { return nil }
+        return .init(id: id, source: source,
+                     displayedSnapshotID: snapshot.id,
+                     displayedSequence: snapshot.sequence,
+                     target: target, postcondition: nil, enqueuedAt: date)
+    }
 }

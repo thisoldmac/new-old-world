@@ -71,6 +71,50 @@ final class MirrorStateProjectionService {
                 lifecycle: facts))
         }
 
+        if request.intention == .settlement {
+            guard let key = currentGuest(),
+                  let engine = engines.existing(for: key) else {
+                return unavailable(
+                    "now-mirror-operation-session-unavailable",
+                    "The selected guest session has no semantic operation journal")
+            }
+            let operationID = request.operationID!
+            guard engine.operations.operation(id: operationID) != nil else {
+                return unavailable(
+                    "now-mirror-operation-not-found",
+                    "This guest session has no retained semantic operation with that ID")
+            }
+            let deadline = Date().addingTimeInterval(
+                Double(request.timeoutMs ?? 5_000) / 1_000)
+            while Date() < deadline {
+                guard currentGuest() == key,
+                      let live = engines.existing(for: key) else {
+                    return unavailable(
+                        "now-mirror-session-changed",
+                        "The selected guest session changed while waiting for settlement")
+                }
+                if let operation = live.operations.operation(id: operationID),
+                   operation.outcome.isTerminal {
+                    return .init(value: .init(
+                        intention: .settlement,
+                        current: live.snapshot.map(metadata),
+                        journal: [Self.record(operation)]))
+                }
+                try? await Task.sleep(nanoseconds: 25_000_000)
+            }
+            guard let live = engines.existing(for: key),
+                  let operation = live.operations.operation(id: operationID)
+            else {
+                return unavailable(
+                    "now-mirror-operation-abandoned",
+                    "The semantic operation disappeared before it settled")
+            }
+            return .init(value: .init(
+                intention: .settlement,
+                current: live.snapshot.map(metadata),
+                journal: [Self.record(operation)], timedOut: true))
+        }
+
         guard let key = currentGuest(),
               let engine = engines.existing(for: key),
               let current = engine.snapshot else {
@@ -80,7 +124,7 @@ final class MirrorStateProjectionService {
         }
 
         switch request.intention {
-        case .metrics, .lifecycle:
+        case .metrics, .lifecycle, .settlement:
             preconditionFailure("answered before this switch")
         case .journal:
             return .init(value: .init(
@@ -621,7 +665,8 @@ final class MirrorStateProjectionService {
               outcome: operation.outcome.rawValue,
               reason: operation.reason,
               target: String(describing: operation.target),
-              postcondition: String(describing: operation.postcondition),
+              postcondition: operation.postcondition.map(String.init(describing:))
+                  ?? "none",
               displayedSnapshotID: operation.displayedSnapshotID,
               settledSequence: operation.settledSequence)
     }

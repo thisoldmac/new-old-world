@@ -1,0 +1,17 @@
+{
+  "schema": "ckproject.test-receipt/1",
+  "testID": "test-0123456789abcdef",
+  "projectID": "0123456789abcdef0123456789abcdef",
+  "productRef": "product-0123456789abcdef",
+  "productDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "toolchainID": "mpw-golden",
+  "toolchainVersion": "3.6",
+  "action": "launch",
+  "assertion": "process-identity",
+  "timeoutSeconds": 15,
+  "artifactPolicy": "on-failure",
+  "state": "succeeded",
+  "startedAt": "2026-08-10T04:00:00Z",
+  "finishedAt": "2026-08-10T04:00:01Z",
+  "artifacts": []
+}

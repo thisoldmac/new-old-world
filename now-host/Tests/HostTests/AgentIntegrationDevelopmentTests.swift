@@ -4,41 +4,130 @@ import XCTest
 
 @MainActor
 final class AgentIntegrationDevelopmentTests: XCTestCase {
+    func testGuestImportNamesNoncanonicalProjectDocumentIdentity() {
+        XCTAssertNil(AgentIntegrationDevelopmentControl
+            .projectDocumentIdentityProblem(
+                type: "TEXT", creator: "NOWD", finderFlags: 0,
+                resourceBytes: 0))
+        XCTAssertEqual(AgentIntegrationDevelopmentControl
+            .projectDocumentIdentityProblem(
+                type: "TEXT", creator: "MPS ", finderFlags: 0,
+                resourceBytes: 0),
+            "Project.ckp must be TEXT/NOWD with zero Finder flags and an empty resource fork.")
+        XCTAssertNotNil(AgentIntegrationDevelopmentControl
+            .projectDocumentIdentityProblem(
+                type: "TEXT", creator: "NOWD", finderFlags: 0x4000,
+                resourceBytes: 0))
+        XCTAssertNotNil(AgentIntegrationDevelopmentControl
+            .projectDocumentIdentityProblem(
+                type: "TEXT", creator: "NOWD", finderFlags: 0,
+                resourceBytes: 1))
+    }
+
     func testRequestVocabularyHasNoPathOrCommandEscape() {
         let project = String(repeating: "a", count: 32)
+        let attempt = "01234567-89ab-cdef-0123-456789abcdef"
         XCTAssertTrue(AgentIntegrationDevelopmentRequest(
-            operation: .buildStart, projectID: project).isWellFormed)
+            operation: .buildStart, projectID: project,
+            attemptID: attempt).isWellFormed)
         XCTAssertFalse(AgentIntegrationDevelopmentRequest(
             operation: .buildStart, projectID: "Macintosh HD:Lab").isWellFormed)
         XCTAssertTrue(AgentIntegrationDevelopmentRequest(
             operation: .run,
-            productRef: "product-0123456789abcdef").isWellFormed)
+            productRef: "product-0123456789abcdef",
+            attemptID: attempt).isWellFormed)
+        XCTAssertTrue(AgentIntegrationDevelopmentRequest(
+            operation: .test,
+            productRef: "product-0123456789abcdef",
+            attemptID: attempt).isWellFormed)
         XCTAssertFalse(AgentIntegrationDevelopmentRequest(
             operation: .run, projectID: project,
             productRef: "product-0123456789abcdef").isWellFormed)
         XCTAssertTrue(AgentIntegrationDevelopmentRequest(
-            operation: .importGuest, projectID: project).isWellFormed)
+            operation: .importGuest, projectID: project,
+            attemptID: attempt).isWellFormed)
+        XCTAssertTrue(AgentIntegrationDevelopmentRequest(
+            operation: .catalog).isWellFormed)
         XCTAssertTrue(AgentIntegrationDevelopmentRequest(
             operation: .promote,
-            candidateID: "candidate-0123456789abcdef").isWellFormed)
+            candidateID: "candidate-0123456789abcdef",
+            attemptID: attempt).isWellFormed)
         XCTAssertEqual(DevelopmentProjection.acceptedArguments,
                        ["operation", "projectID", "workspaceID",
-                        "candidateID", "productRef"])
+                        "candidateID", "productRef", "attemptID"])
         XCTAssertEqual(DevelopmentProjection.authorityDomain,
                        .hostProjectsAndGuest)
         let descriptor = DevelopmentProjection.mcpDescriptor
         let schema = descriptor["inputSchema"] as? [String: Any]
-        let properties = schema?["properties"] as? [String: Any]
-        let operation = properties?["operation"] as? [String: Any]
-        let operations = operation?["enum"] as? [String]
-        XCTAssertFalse(operations?.contains("open-in-codekitten") ?? true,
+        let branches = schema?["oneOf"] as? [[String: Any]] ?? []
+        let operations = branches.compactMap { branch in
+            let properties = branch["properties"] as? [String: Any]
+            let operation = properties?["operation"] as? [String: Any]
+            return operation?["const"] as? String
+        }
+        XCTAssertFalse(operations.contains("open-in-codekitten"),
                        "IDE handoff is an explicit human action, not agent authority")
+        XCTAssertEqual(operations.filter { $0 == "build-start" }.count, 2,
+                       "project and candidate builds are exclusive schema branches")
+        XCTAssertTrue(branches.allSatisfy {
+            ($0["additionalProperties"] as? Bool) == false
+        }, "every Development operation must reject sibling fields")
+    }
+
+    func testAdapterMapsTypedTestToClosedGuestCommand() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        let product = "product-0123456789abcdef"
+        guest.onMessage = { message in
+            guard case .commandRequest(let request) = message,
+                  request.name == "development-test" else { return }
+            XCTAssertEqual(request.args?["productRef"], .text(product))
+            try? guest.send(.commandResult(.init(
+                id: request.id, ok: true,
+                output: ["development-test": [
+                    ["Schema", "ckproject.test-receipt/1"],
+                    ["State", "succeeded"],
+                ]], error: nil)))
+        }
+        let adapter = AgentIntegrationHostAdapter(listener: listener)
+        guard case .completed(let report) = await adapter.development(.init(
+            operation: .test, productRef: product,
+            attemptID: "01234567-89ab-cdef-0123-456789abcdef")) else {
+            return XCTFail("expected a typed test receipt")
+        }
+        XCTAssertEqual(report.verb, "development-test")
+        XCTAssertEqual(report.groups[0].rows.first?.value,
+                       "ckproject.test-receipt/1")
+    }
+
+    func testCatalogUsesBoundedGuestProjectVocabulary() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        guest.onMessage = { message in
+            guard case .commandRequest(let request) = message,
+                  request.name == "development-project" else { return }
+            XCTAssertEqual(request.args?["action"], .text("catalog"))
+            try? guest.send(.commandResult(.init(
+                id: request.id, ok: true,
+                output: ["development-project": [
+                    ["Project", String(repeating: "a", count: 32)
+                        + "|Memory Meter"],
+                    ["Next", "-1"],
+                ]], error: nil)))
+        }
+        let adapter = AgentIntegrationHostAdapter(listener: listener)
+        guard case .completed(let report) = await adapter.development(.init(
+            operation: .catalog)) else {
+            return XCTFail("expected guest project catalog")
+        }
+        XCTAssertEqual(report.groups[0].rows.first?.label, "Project")
     }
 
     func testDevelopmentRequestAndResultSurviveLocalCodec() throws {
         let operation = AgentIntegrationDevelopmentRequest(
             operation: .buildStart,
-            projectID: String(repeating: "b", count: 32))
+            projectID: String(repeating: "b", count: 32),
+            attemptID: "01234567-89ab-cdef-0123-456789abcdef")
         let request = AgentIntegrationLocalRequest.development(operation)
         XCTAssertEqual(try AgentIntegrationLocalCodec.decodeRequest(
             AgentIntegrationLocalCodec.encode(request)), request)
@@ -73,7 +162,8 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         guard case .completed(let report) = await adapter.development(.init(
             operation: .buildStart,
-            projectID: String(repeating: "c", count: 32))) else {
+            projectID: String(repeating: "c", count: 32),
+            attemptID: "01234567-89ab-cdef-0123-456789abcdef")) else {
             return XCTFail("expected guest Development rows")
         }
         XCTAssertEqual(report.verb, "development-build")
@@ -100,7 +190,8 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
         }
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         guard case .completed(let report) = await adapter.development(.init(
-            operation: .openInCodeKitten, projectID: projectID)) else {
+            operation: .openInCodeKitten, projectID: projectID,
+            attemptID: "01234567-89ab-cdef-0123-456789abcdef")) else {
             return XCTFail("expected a settled CodeKitten handoff")
         }
         XCTAssertEqual(calls, 2)

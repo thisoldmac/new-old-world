@@ -166,6 +166,55 @@ public enum MirrorJournalProjection: HostProjection {
     }
 }
 
+/// Wait for one operation the semantic act lane already admitted. This call
+/// cannot dispatch or retry anything; its only authority is the retained
+/// journal record minted by `now_semantic_ui_act`.
+public enum MirrorSettlementProjection: HostProjection {
+    public static let capability = HostCapabilityID(
+        "now_semantic_ui_wait_for_settlement")
+    public static let requires: [String] = []
+    public static let exposes: [String] = []
+    public static let acceptedArguments: Set<String> = [
+        "operationID", "timeoutMs",
+    ]
+    public static let faces = MirrorStateProjectionReach.faces
+    public static let availabilityNote = MirrorStateProjectionReach.availability
+    public static var mcpDescriptor: [String: Any] {
+        MirrorStateProjectionSchema.descriptor(
+            title: "Wait for Semantic UI Operation Settlement",
+            description: "Waits by the exact operation ID returned by now_semantic_ui_act. It never retries or dispatches an action. A bounded timeout returns the still-pending journal record; a later call can observe confirmation after timeout or refusal.",
+            properties: [
+                "operationID": ["type": "string", "minLength": 1,
+                                "maxLength": 128],
+                "timeoutMs": ["type": "integer", "minimum": 1,
+                              "maximum": 15_000],
+            ], required: ["operationID"])
+    }
+    public static func invoke(_ arguments: HostProjectionArguments,
+                              through client: AgentIntegrationClient) async
+        -> HostProjectionOutcome {
+        if let refusal = arguments.refusalForUnknownMembers(
+            tool: capability, accepting: acceptedArguments) {
+            return .invalidArguments(refusal)
+        }
+        let values = arguments.object ?? [:]
+        guard let operationID = values["operationID"] as? String,
+              !operationID.isEmpty, operationID.count <= 128,
+              values["timeoutMs"] == nil || values["timeoutMs"] is Int else {
+            return .invalidArguments(
+                "now_semantic_ui_wait_for_settlement requires an operationID and an optional integer timeoutMs")
+        }
+        let timeout = values["timeoutMs"] as? Int ?? 5_000
+        guard (1...15_000).contains(timeout) else {
+            return .invalidArguments(
+                "now_semantic_ui_wait_for_settlement timeoutMs must be between 1 and 15000")
+        }
+        return .value(.init(await client.mirrorRead(.init(
+            intention: .settlement, timeoutMs: timeout,
+            operationID: operationID))))
+    }
+}
+
 /// **Driving the Mirror by the same path a hand takes.**
 ///
 /// The one mutation row that goes through `MirrorActionExecutor` and the

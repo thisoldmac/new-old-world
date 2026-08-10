@@ -56,6 +56,33 @@ final class MirrorOperationReducerTests: XCTestCase {
             refused, event: .sessionChanged(at: Date())), refused)
     }
 
+    func testUnconfirmedIsTerminalOnlyWithoutAPostcondition() {
+        let session = MirrorGuestSession(guest: "maxbook",
+                                         incarnation: "session-a")
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "process-finder")
+        let at = Date(timeIntervalSince1970: 2)
+        let direct = MirrorOperation(
+            id: "op-direct", source: .mcp, displayedSnapshotID: 1,
+            displayedSequence: 1, target: .process(process),
+            postcondition: nil, enqueuedAt: Date(timeIntervalSince1970: 1))
+        let settled = MirrorOperationReducer.reduce(
+            direct, event: .unconfirmed(at: at))
+
+        XCTAssertEqual(settled.outcome, .unconfirmed)
+        XCTAssertEqual(settled.dispatchedAt, at)
+        XCTAssertEqual(settled.settledAt, at)
+        XCTAssertTrue(settled.outcome.isTerminal)
+
+        let observable = MirrorOperation(
+            id: "op-observable", source: .mcp, displayedSnapshotID: 1,
+            displayedSequence: 1, target: .process(process),
+            postcondition: .processFront(process), enqueuedAt: Date())
+        XCTAssertEqual(MirrorOperationReducer.reduce(
+            observable, event: .unconfirmed(at: at)), observable,
+            "an observable effect must not bypass later evidence")
+    }
+
     func testPostDispatchRefusalCanBeCorrectedByLaterAuthoritativeEvidence() {
         let session = MirrorGuestSession(guest: "maxbook",
                                          incarnation: "session-a")

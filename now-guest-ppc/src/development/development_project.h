@@ -20,6 +20,10 @@ typedef struct DevProject {
     char product[kDevBuildPathCap];
     char product_type[5];
     char product_creator[5];
+    char test_action[16];
+    char test_assertion[32];
+    char test_artifacts[16];
+    int test_timeout_seconds;
     char files[kDevProjectMaxFiles][kDevBuildPathCap];
     int file_count;
     DevBuildPlan build;

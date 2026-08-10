@@ -44,23 +44,29 @@ final class MirrorDriveServiceTests: XCTestCase {
                            + "not from a second opinion about it")
     }
 
-    /// The other half, and the reason the absence of a record cannot carry
-    /// this meaning alone: an act that DID leave by the direct path has no
-    /// typed postcondition and no journal record either, and it is not a
-    /// refusal.
-    func testAnActThatLeftByTheDirectPathStillReadsAsDispatched() throws {
+    /// An act without an observable postcondition still has an identity and
+    /// a terminal receipt. `unconfirmed` says exactly what the host knows:
+    /// the guest accepted it, but no later scene can establish the effect.
+    func testAnActThatLeftByTheDirectPathHasAWaitableReceipt() throws {
+        let journal = MirrorOperationJournal()
+        var direct = try makeOperation(id: "direct-operation")
+        direct.postcondition = nil
+        direct = MirrorOperationReducer.reduce(
+            direct, event: .unconfirmed(at: Date()))
+        XCTAssertTrue(journal.append(direct))
         let service = MirrorDriveService(
             scene: { try? self.makeScene() },
-            perform: { _ in .direct },
-            journal: { nil }, cancel: { 0 })
+            perform: { _ in .direct(direct.id) },
+            journal: { journal }, cancel: { 0 })
 
         let reply = service.drive(.init(gesture: .finderSelect,
                                         itemName: "Macintosh HD",
                                         container: "desktop"))
         let operation = try XCTUnwrap(reply.operation)
 
-        XCTAssertEqual(operation.outcome, "dispatched")
-        XCTAssertEqual(operation.id, "direct")
+        XCTAssertEqual(operation.outcome, "unconfirmed")
+        XCTAssertEqual(operation.id, direct.id)
+        XCTAssertTrue(operation.settled)
         XCTAssertNil(operation.reason)
         XCTAssertFalse(operation.awaitsObservation,
                        "the direct path can never be confirmed by observation")
@@ -95,7 +101,7 @@ final class MirrorDriveServiceTests: XCTestCase {
         var performed = false
         let service = MirrorDriveService(
             scene: { try? self.makeScene() },
-            perform: { _ in performed = true; return .direct },
+            perform: { _ in performed = true; return .direct("unused") },
             journal: { nil }, cancel: { 0 })
 
         let reply = service.drive(.init(gesture: .select,
@@ -118,7 +124,7 @@ final class MirrorDriveServiceTests: XCTestCase {
         var cancelled = false
         let service = MirrorDriveService(
             scene: { nil },                    // the wedged case: no scene
-            perform: { _ in performed = true; return .direct },
+            perform: { _ in performed = true; return .direct("unused") },
             journal: { nil },
             cancel: { cancelled = true; return 3 })
 
@@ -138,7 +144,7 @@ final class MirrorDriveServiceTests: XCTestCase {
     func testACancelWithNothingWaitingSaysSo() throws {
         let service = MirrorDriveService(
             scene: { nil },
-            perform: { _ in .direct },
+            perform: { _ in .direct("unused") },
             journal: { nil },
             cancel: { 0 })
 

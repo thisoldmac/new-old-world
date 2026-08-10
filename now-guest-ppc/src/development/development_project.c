@@ -1,6 +1,7 @@
 #include "development_project.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int token_valid(const char *value)
@@ -191,6 +192,36 @@ int dev_project_parse(const char *text, DevProject *project,
         } else if (strcmp(key, "build-action") == 0) {
             if (!parse_action(&project->build, value)) return fail(
                 reason, reason_cap, "invalid build action");
+        } else if (strcmp(key, "test-action") == 0) {
+            if (project->test_action[0] != '\0'
+                || strcmp(value, "launch") != 0
+                || !copy_value(project->test_action,
+                               sizeof project->test_action, value)) return fail(
+                    reason, reason_cap, "invalid test action");
+        } else if (strcmp(key, "test-assertion") == 0) {
+            if (project->test_assertion[0] != '\0'
+                || strcmp(value, "process-identity") != 0
+                || !copy_value(project->test_assertion,
+                               sizeof project->test_assertion, value)) return fail(
+                    reason, reason_cap, "invalid test assertion");
+        } else if (strcmp(key, "test-timeout") == 0) {
+            char *end = NULL;
+            long seconds;
+            if (project->test_timeout_seconds != 0) return fail(
+                reason, reason_cap, "invalid test timeout");
+            seconds = strtol(value, &end, 10);
+            if (end == value || *end != '\0' || seconds < 1 || seconds > 60) {
+                return fail(reason, reason_cap, "invalid test timeout");
+            }
+            project->test_timeout_seconds = (int)seconds;
+        } else if (strcmp(key, "test-artifacts") == 0) {
+            if (project->test_artifacts[0] != '\0'
+                || (strcmp(value, "never") != 0
+                    && strcmp(value, "on-failure") != 0
+                    && strcmp(value, "always") != 0)
+                || !copy_value(project->test_artifacts,
+                               sizeof project->test_artifacts, value)) return fail(
+                    reason, reason_cap, "invalid test artifact policy");
         }
         /* Unknown optional records are deliberately ignored. */
     }
@@ -206,6 +237,16 @@ int dev_project_parse(const char *text, DevProject *project,
     if (!debug_link_names_valid(project)) {
         return fail(reason, reason_cap,
             "debug link output leaves no HFS name for .xcoff");
+    }
+    if ((project->test_action[0] != '\0'
+         || project->test_assertion[0] != '\0'
+         || project->test_timeout_seconds != 0
+         || project->test_artifacts[0] != '\0')
+        && (project->test_action[0] == '\0'
+            || project->test_assertion[0] == '\0'
+            || project->test_timeout_seconds == 0
+            || project->test_artifacts[0] == '\0')) {
+        return fail(reason, reason_cap, "test plan is incomplete");
     }
     snprintf(project->build.configuration,
              sizeof project->build.configuration, "%s",

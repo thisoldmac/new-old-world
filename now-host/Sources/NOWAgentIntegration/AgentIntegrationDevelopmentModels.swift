@@ -1,6 +1,8 @@
 import Foundation
 
-public enum AgentIntegrationDevelopmentOperation: String, Codable, Sendable {
+public enum AgentIntegrationDevelopmentOperation: String, Codable, CaseIterable, Sendable {
+    case catalog
+    case loopStatus = "loop-status"
     case importGuest = "import"
     case stage
     case stageStatus = "stage-status"
@@ -10,6 +12,7 @@ public enum AgentIntegrationDevelopmentOperation: String, Codable, Sendable {
     case buildStatus = "build-status"
     case buildCancel = "build-cancel"
     case run
+    case test
     case openInCodeKitten = "open-in-codekitten"
 }
 
@@ -22,15 +25,18 @@ public struct AgentIntegrationDevelopmentRequest: Codable, Equatable, Sendable {
     public let workspaceID: String?
     public let candidateID: String?
     public let productRef: String?
+    public let attemptID: String?
 
     public init(operation: AgentIntegrationDevelopmentOperation,
                 projectID: String? = nil, workspaceID: String? = nil,
-                candidateID: String? = nil, productRef: String? = nil) {
+                candidateID: String? = nil, productRef: String? = nil,
+                attemptID: String? = nil) {
         self.operation = operation
         self.projectID = projectID
         self.workspaceID = workspaceID
         self.candidateID = candidateID
         self.productRef = productRef
+        self.attemptID = attemptID
     }
 
     public var isWellFormed: Bool {
@@ -51,7 +57,22 @@ public struct AgentIntegrationDevelopmentRequest: Codable, Equatable, Sendable {
         } ?? true
         guard projectIsValid, productIsValid, workspaceIsValid,
               candidateIsValid else { return false }
+        let attemptIsValid = attemptID.map {
+            UUID(uuidString: $0) != nil && $0 == $0.lowercased()
+        } ?? true
+        guard attemptIsValid else { return false }
+        let mutationNeedsAttempt: Bool
         switch operation {
+        case .catalog, .loopStatus, .stageStatus, .buildStatus:
+            mutationNeedsAttempt = false
+        default:
+            mutationNeedsAttempt = true
+        }
+        guard !mutationNeedsAttempt || attemptID != nil else { return false }
+        switch operation {
+        case .catalog, .loopStatus:
+            return projectID == nil && workspaceID == nil
+                && candidateID == nil && productRef == nil
         case .importGuest:
             return projectID != nil && workspaceID == nil
                 && candidateID == nil && productRef == nil
@@ -69,7 +90,7 @@ public struct AgentIntegrationDevelopmentRequest: Codable, Equatable, Sendable {
         case .buildStatus, .buildCancel:
             return projectID == nil && workspaceID == nil
                 && candidateID == nil && productRef == nil
-        case .run:
+        case .run, .test:
             return productRef != nil && projectID == nil
                 && workspaceID == nil && candidateID == nil
         }

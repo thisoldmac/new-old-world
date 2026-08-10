@@ -4054,6 +4054,27 @@ components:
         properties:
           development-run:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
+    development-test:
+      description: >
+        Executes the closed test plan declared by the Project.ckp that
+        produced the unchanged opaque product. Version 1 admits only launch
+        followed by exact process-identity assertion; timeout and artifact
+        retention are project data, never caller-supplied command text. A
+        successful build is not a successful test.
+      args:
+        type: object
+        required: [productRef]
+        additionalProperties: false
+        properties:
+          productRef:
+            type: string
+            pattern: "^product-[0-9a-f]{16}$"
+      x-line: "One opaque product reference from development-build status."
+      output:
+        type: object
+        properties:
+          development-test:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
     development-open:
       description: >
         Optionally locates and launches CodeKitten through the classic Desktop
