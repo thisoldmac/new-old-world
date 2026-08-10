@@ -42,7 +42,7 @@ modules:
   - id: web
     title: Web
     page: user-guide/reference/modules/web.md
-    ppc_pages: []
+    ppc_pages: [kWorkshopWeb]
     guest_68k: unavailable
   - id: development
     title: Development

@@ -94,12 +94,13 @@ struct WebModuleView: View {
                     }
                 }
                 Toggle("Use known-site handlers", isOn: $model.handlersEnabled)
-                TextField("AI planner executable (optional)",
+                TextField("AI model folder or planner executable (optional)",
                           text: $model.aiPlannerExecutable)
                 Toggle("Allow private and local web destinations (unsafe)",
                        isOn: $model.allowPrivateDestinations)
-                Text("Compatible Page is always the fallback. The AI planner "
-                     + "may reorder original blocks, but cannot write links or text.")
+                Text("A model folder uses the optional MLX adapter. Compatible "
+                     + "Page is always the fallback; AI may reorder original "
+                     + "blocks, but cannot write links or text.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -159,4 +160,3 @@ struct WebModuleView: View {
         }
     }
 }
-

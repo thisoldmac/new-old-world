@@ -65,7 +65,8 @@ enum {
     kChatIconID = 141,
     kPreferencesIconID = 142,
     kMirrorIconID = 143,
-    kDevelopmentIconID = 144
+    kDevelopmentIconID = 144,
+    kWebIconID = 145
 };
 
 /* The nav rows plus the three pinned ones ARE the module list. A count
@@ -157,6 +158,7 @@ static const struct {
     { "Chat", "Ask the other Mac's model", kChatIconID },
     { "Mirror", "Its extensions and agent", kMirrorIconID },
     { "Development", "Projects and toolchains", kDevelopmentIconID },
+    { "Web", "Classic browser gateway", kWebIconID },
     { "Preferences", "How this window behaves", kPreferencesIconID },
     { "Logs", "This launch's events", kLogsIconID },
     { "Connection", NULL, kConnectionIconID }

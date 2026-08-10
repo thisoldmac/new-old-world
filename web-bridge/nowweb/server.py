@@ -26,6 +26,9 @@ class Config:
     allowed_clients: list[str] = field(default_factory=list)
     allow_private_destinations: bool = False
     ai_plan_command: list[str] = field(default_factory=list)
+    default_profile: str = "classilla"
+    default_lens: str = "compatible"
+    handlers_enabled: bool = True
 
 
 def load_config(path: Path | None) -> Config:
@@ -44,6 +47,11 @@ def load_config(path: Path | None) -> Config:
         raise ValueError("port must be between 1 and 65535")
     if config.engine not in {"static", "playwright"}:
         raise ValueError("engine must be static or playwright")
+    choose(config.default_profile)
+    if config.default_lens not in {"compatible", "reader", "ai"}:
+        raise ValueError("default_lens must be compatible, reader, or ai")
+    if not isinstance(config.handlers_enabled, bool):
+        raise ValueError("handlers_enabled must be a boolean")
     return config
 
 
@@ -116,24 +124,50 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, b"" if head_only else rendered.body)
                     return
                 if parsed.path == "/":
+                    selected_profile = query.get(
+                        "profile", [self.server.config.default_profile])[0]
+                    selected_lens = query.get(
+                        "lens", [self.server.config.default_lens])[0]
+                    choose(selected_profile)
+                    if selected_lens not in {"compatible", "reader", "ai"}:
+                        raise ValueError("unknown rendering lens: %s" % selected_lens)
+                    profile_options = []
+                    for value, title in (("classilla", "Classilla"),
+                                         ("macweb", "MacWeb"),
+                                         ("generic68k", "Generic 68K")):
+                        selected = " selected" if value == selected_profile else ""
+                        profile_options.append(
+                            '<option value="%s"%s>%s</option>' %
+                            (value, selected, title))
+                    lens_options = []
+                    for value, title in (("compatible", "Compatible Page"),
+                                         ("reader", "Reader"),
+                                         ("ai", "AI Layout")):
+                        selected = " selected" if value == selected_lens else ""
+                        lens_options.append(
+                            '<option value="%s"%s>%s</option>' %
+                            (value, selected, title))
                     body = ("<html><head><title>NOW Web</title></head><body>"
                             "<h1>NOW Web</h1><form action=\"/go\" method=\"get\">"
                             "<p>Address: <input name=\"u\" size=\"60\"></p>"
                             "<p>Browser: <select name=\"profile\">"
-                            "<option value=\"classilla\">Classilla</option>"
-                            "<option value=\"macweb\">MacWeb</option>"
-                            "<option value=\"generic68k\">Generic 68K</option>"
-                            "</select></p><p><input type=\"submit\" value=\"Open\"></p>"
-                            "</form></body></html>").encode("ascii")
+                            "%s</select></p>"
+                            "<p>View: <select name=\"lens\">%s</select></p>"
+                            "<p><input type=\"submit\" value=\"Open\"></p>"
+                            "</form></body></html>" %
+                            ("".join(profile_options), "".join(lens_options))).encode("ascii")
                     self._send(200, b"" if head_only else body)
                     return
                 if parsed.path != "/go":
                     self._error(404, "Unknown NOW Web route.")
                     return
                 url = query.get("u", [""])[0]
-            requested = query.get("profile", [""])[0]
-            lens = query.get("lens", ["compatible"])[0]
-            handlers = query.get("handlers", ["on"])[0] != "off"
+            requested = query.get(
+                "profile", [self.server.config.default_profile])[0]
+            lens = query.get("lens", [self.server.config.default_lens])[0]
+            handlers = query.get(
+                "handlers", ["on" if self.server.config.handlers_enabled else "off"]
+            )[0] != "off"
             profile = choose(requested, self.headers.get("User-Agent", ""))
             rendered = self.bridge.render(url, profile, lens, handlers)
             self.rendered_profile = rendered.profile
@@ -154,10 +188,11 @@ class Handler(BaseHTTPRequestHandler):
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, handler, bridge, peer_policy):
+    def __init__(self, address, handler, bridge, peer_policy, config=None):
         super().__init__(address, handler)
         self.bridge = bridge
         self.peer_policy = peer_policy
+        self.config = config or Config()
 
 
 def build(config: Config) -> Server:
@@ -167,7 +202,7 @@ def build(config: Config) -> Server:
         engine, policy=OutboundPolicy(config.allow_private_destinations),
         planner_command=config.ai_plan_command or None)
     return Server((config.host, config.port), Handler, bridge,
-                  PeerPolicy(frozenset(config.allowed_clients)))
+                  PeerPolicy(frozenset(config.allowed_clients)), config)
 
 
 def main(argv=None) -> int:

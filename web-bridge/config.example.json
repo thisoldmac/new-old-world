@@ -5,6 +5,8 @@
   "settle_ms": 3000,
   "allowed_clients": [],
   "allow_private_destinations": false,
-  "ai_plan_command": []
+  "ai_plan_command": [],
+  "default_profile": "classilla",
+  "default_lens": "compatible",
+  "handlers_enabled": true
 }
-

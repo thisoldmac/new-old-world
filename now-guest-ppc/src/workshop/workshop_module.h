@@ -25,6 +25,7 @@ typedef enum {
     kWorkshopChat,
     kWorkshopMirror,         /* the last nav row, above the pinned group */
     kWorkshopDevelopment,
+    kWorkshopWeb,
 
     /* The pinned group, in the order it sits at the foot of the rail.
        These three are NOT in the person's rearrangeable order: the rail
@@ -35,12 +36,13 @@ typedef enum {
     kWorkshopConnection      /* pinned; every nav insertion pushes this
                                 and Logs down — iCloud moved the prefs
                                 format to 17, Chat to 18, the Preferences
-                                page to 19, and Mirror to 21 (20 was the
+                                page to 19, Mirror to 21 (20 was the
                                 rail's collapsed state, which renumbered
-                                nothing); see now_prefs_load */
+                                nothing), Development to 23 and Web to 24;
+                                see now_prefs_load */
 } WorkshopModuleID;
 
-enum { kWorkshopModuleCount = 16 };
+enum { kWorkshopModuleCount = 17 };
 
 /* The nav range is a CONTIGUOUS prefix, 1..kWorkshopNavRows, and the
    pinned group is everything after it. The sidebar's saved order stores

@@ -20,6 +20,7 @@
 #include "processes_module.h"
 #include "screenshots_module.h"
 #include "software_module.h"
+#include "web_module.h"
 #include "prefs.h"
 #include "screen_bounds.h"
 #include "proc_actions.h"
@@ -91,6 +92,9 @@ static const struct {
     { "Development",
       "Project roots, registered toolchains and headless build jobs on this Mac.",
       "Development has not moved in yet." },
+    { "Web",
+      "Modern pages translated on the other Mac for a classic browser here.",
+      "Web has not moved in yet." },
     { "Preferences",
       "How this window behaves. Rearrange the rail by Option-dragging a "
       "row; everything here is remembered between launches.",
@@ -233,6 +237,7 @@ Boolean workshop_open(void)
     g_ops[kWorkshopChat] = chat_module_ops();
     g_ops[kWorkshopMirror] = mirror_module_ops();
     g_ops[kWorkshopDevelopment] = development_module_ops();
+    g_ops[kWorkshopWeb] = web_module_ops();
     g_ops[kWorkshopPreferences] = preferences_module_ops();
     g_ops[kWorkshopLogs] = logs_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();

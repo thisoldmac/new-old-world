@@ -673,6 +673,7 @@ run_c now-guest-ppc development_open_test.c "" \
 run_py now-guest-ppc development_open_wiring_source_test.py
 run_c now-guest-ppc development_layout_test.c "" \
       src/development/development_layout.c
+run_c now-guest-ppc web_model_test.c "" src/web/web_model.c
 run_c now-guest-ppc cmd_help_test.c         ""  src/commands/cmd_help.c
 run_c now-guest-ppc cmd_line_test.c         ""  src/commands/cmd_line.c src/core/json.c
 run_c now-guest-ppc console_reply_test.c  ""  src/console/console_reply.c \

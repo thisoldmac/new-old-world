@@ -82,7 +82,7 @@ enum {
        exactly what happened when Networking went in on 2026-08-01, and
        the assert in workshop_sidebar.c is why it cannot happen quietly
        again. */
-    kWorkshopNavRows = 13
+    kWorkshopNavRows = 14
 };
 
 /* What the rail looks like right now: the person's density choice and

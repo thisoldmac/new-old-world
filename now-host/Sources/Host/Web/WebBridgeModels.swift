@@ -71,6 +71,9 @@ struct WebBridgeConfiguration: Encodable, Equatable {
     let allowedClients: [String]
     let allowPrivateDestinations: Bool
     let aiPlanCommand: [String]
+    let defaultProfile: String
+    let defaultLens: String
+    let handlersEnabled: Bool
 
     enum CodingKeys: String, CodingKey {
         case host, port, engine
@@ -78,6 +81,9 @@ struct WebBridgeConfiguration: Encodable, Equatable {
         case allowedClients = "allowed_clients"
         case allowPrivateDestinations = "allow_private_destinations"
         case aiPlanCommand = "ai_plan_command"
+        case defaultProfile = "default_profile"
+        case defaultLens = "default_lens"
+        case handlersEnabled = "handlers_enabled"
     }
 }
 
@@ -186,10 +192,23 @@ final class WebBridgeModel: ObservableObject {
                 in: .whitespacesAndNewlines).isEmpty
                 ? [] : [allowedClient.trimmingCharacters(in: .whitespacesAndNewlines)],
             allowPrivateDestinations: allowPrivateDestinations,
-            aiPlanCommand: aiPlannerExecutable.trimmingCharacters(
-                in: .whitespacesAndNewlines).isEmpty
-                ? [] : [aiPlannerExecutable.trimmingCharacters(
-                    in: .whitespacesAndNewlines)])
+            aiPlanCommand: plannerCommand,
+            defaultProfile: profile.rawValue,
+            defaultLens: lens.rawValue,
+            handlersEnabled: handlersEnabled)
+    }
+
+    private var plannerCommand: [String] {
+        let path = aiPlannerExecutable.trimmingCharacters(
+            in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return [] }
+        var directory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: path, isDirectory: &directory),
+           directory.boolValue {
+            return ["/usr/bin/env", "python3", "-m", "nowweb.model_planner",
+                    "--model", path]
+        }
+        return [path]
     }
 
     var canStart: Bool {

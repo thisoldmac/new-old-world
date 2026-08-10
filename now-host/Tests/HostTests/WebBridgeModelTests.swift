@@ -17,6 +17,9 @@ final class WebBridgeModelTests: XCTestCase {
         model.port = 5188
         model.allowedClient = "192.168.1.44"
         model.engine = .playwright
+        model.profile = .macweb
+        model.lens = .reader
+        model.handlersEnabled = false
         model.allowPrivateDestinations = true
         model.aiPlannerExecutable = "/tmp/layout-plan"
 
@@ -32,6 +35,9 @@ final class WebBridgeModelTests: XCTestCase {
         XCTAssertEqual(object["ai_plan_command"] as? [String],
                        ["/tmp/layout-plan"])
         XCTAssertEqual(object["allow_private_destinations"] as? Bool, true)
+        XCTAssertEqual(object["default_profile"] as? String, "macweb")
+        XCTAssertEqual(object["default_lens"] as? String, "reader")
+        XCTAssertEqual(object["handlers_enabled"] as? Bool, false)
     }
 
     func testLoopbackIsNotPresentedAsClassicMacReachable() {
@@ -79,4 +85,3 @@ final class WebBridgeModelTests: XCTestCase {
                        .ready(address: "192.168.1.20", port: 5180))
     }
 }
-

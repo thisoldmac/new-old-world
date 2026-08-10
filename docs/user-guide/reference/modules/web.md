@@ -7,7 +7,7 @@ audience: user
 lifecycle: experimental
 authority: [web-bridge/README.md, docs/status.md, SECURITY.md]
 module_ids: [web]
-source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/ModuleRegistry.swift, SECURITY.md]
+source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/web/web_model.c, now-guest-ppc/src/web/web_module.c, SECURITY.md]
 media_ids: [web-host, web-ppc]
 last_verified: 2026-08-10
 ---
@@ -25,15 +25,22 @@ HTML selected for Classilla, MacWeb, or a conservative 68K profile.
 
 ## Availability
 
-The tested implementation in this branch is the macOS **Direct** listener. The
-classic browser connects to the modern Mac's selected LAN address and port.
+The implemented baseline is the macOS **Direct** listener. The classic browser
+connects to the modern Mac's selected LAN address and port.
 The listener defaults to host loopback for safety, but host loopback is not
 reachable from the classic Mac.
 
-The PowerPC Workshop and NOW-68K do not yet ship a Web page. A guest-local
-relay is probe-required: Open Transport and MacTCP support for connections to
-the guest's own address, including `127.0.0.1`, must be established separately
-on the exact browser and system row.
+The PowerPC Workshop ships a Web page that saves the proxy port, browser
+profile, and default lens. It deliberately reuses the host address from the
+Connection page: under this repository's QEMU user network that address is
+`10.0.2.2`; on real hardware it must be the modern Mac's LAN address. The page
+shows a start URL whose query carries the selected profile and lens.
+
+NOW-68K does not yet ship a Web page. Direct browsing does not require one: set
+MacWeb's HTTP proxy to the same host listener. A guest-local relay remains
+probe-required; Open Transport and MacTCP support for connections to the
+guest's own address, including `127.0.0.1`, must be established separately on
+the exact browser and system row.
 
 ## On the modern Mac
 
@@ -54,12 +61,14 @@ Use the displayed host address, not `127.0.0.1`, as the HTTP proxy. HTTPS
 destinations are fetched by the host and rewritten through plain HTTP gateway
 links; NOW Web does not expose a general CONNECT tunnel.
 
-![The planned PowerPC Web page](../../../assets/screenshots/modules/web/ppc.svg){ .now-placeholder }
+![The PowerPC Web page](../../../assets/screenshots/modules/web/ppc.svg){ .now-placeholder }
 
 ## Common tasks
 
 - Start the Direct listener and copy its displayed address into the browser's
   HTTP proxy settings.
+- On the PowerPC guest, make the Web page's port match the host module and use
+  its displayed start URL when you want the selected profile and lens.
 - Choose MacWeb when the browser needs conservative HTML 2, flattened tables,
   ASCII entities, smaller pages, and 4 KB delivery chunks.
 - Choose Reader for an article-oriented page without changing the browser
@@ -93,11 +102,12 @@ profile, expired page token, and unavailable AI planner remain distinct.
   explicit optional dependencies and are never downloaded on a page request.
 - Forms, logins, uploads, session replay, synthetic JavaScript event links,
   video, and a complete image-transcoding pipeline are not yet served.
-- Direct browsing has not yet been metal-verified from Classilla or MacWeb in
-  this branch.
+- Direct browsing and the PowerPC page have built, but have not yet been
+  metal-verified from Classilla or MacWeb in this branch.
 - The optional local layout model is not distributed until its model card,
   base-model and training-data provenance, license, version, and checksum are
-  settled.
+  settled. An already-installed local model folder can be selected in the host
+  module; the first adapter cold-loads it per AI request.
 
 ## For developers
 

@@ -50,7 +50,7 @@ def validate(profile: BrowserProfile) -> None:
 PROFILES = {
     "classilla": BrowserProfile(
         name="classilla", dialect="html32", page_bytes=49152,
-        page_budget=49152, paginate=False, images="thumb",
+        page_budget=49152, paginate=False, images="off",
         image_max_px=160, tables="keep", table_max_cells=4096,
         link_cap=256, chunk_bytes=8192, entities="numeric"),
     "macweb": BrowserProfile(

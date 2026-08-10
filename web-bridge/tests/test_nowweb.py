@@ -12,6 +12,8 @@ sys.path.insert(0, str(ROOT))
 from nowweb.document import (PlanError, apply_plan, assemble_pages,
                              gateway_url, parse_document, reader)
 from nowweb.engine import FetchedPage
+from nowweb.handlers import RedditHandler
+from nowweb.model_planner import order_from_output
 from nowweb.policy import OutboundPolicy, PeerPolicy, PolicyError
 from nowweb.profile import PROFILES, ProfileError, choose
 from nowweb.server import Config, Handler, Server
@@ -96,6 +98,27 @@ class ServiceTests(unittest.TestCase):
         cached = service.cached(result.token, 1)
         self.assertIsNotNone(cached)
         self.assertEqual(cached.body, result.body)
+
+
+class HandlerTests(unittest.TestCase):
+    def test_reddit_atom_becomes_the_shared_document_model(self):
+        atom = b'''<feed xmlns="http://www.w3.org/2005/Atom">
+          <title>r/classicmac</title><entry><title>SE/30 day</title>
+          <author><name>alice</name></author>
+          <link href="https://www.reddit.com/r/classicmac/comments/1/x"/>
+          </entry></feed>'''
+        document = RedditHandler().from_atom(
+            atom, "https://www.reddit.com/r/classicmac/")
+        self.assertEqual(document.title, "r/classicmac")
+        self.assertIn("SE/30 day", " ".join(item.text()
+                                             for item in document.blocks))
+
+
+class ModelPlannerTests(unittest.TestCase):
+    def test_model_plan_cannot_drop_or_invent_blocks(self):
+        self.assertEqual(order_from_output(
+            "NAV: B3 B99 B3\nB1", ["b1", "b2", "b3"]),
+            ["b3", "b1", "b2"])
 
 
 class ServerTests(unittest.TestCase):

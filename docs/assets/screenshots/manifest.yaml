@@ -308,8 +308,8 @@ images:
     path: assets/screenshots/modules/web/ppc.svg
     width: 744
     height: 478
-    surface: planned PowerPC Web page
-    state: Exact proxy address, profile and local-relay capability
+    surface: PowerPC Web page
+    state: Exact host proxy address, profile, lens and relay availability
     machine: Mac OS 9
   - id: software-host
     path: assets/screenshots/modules/software/host.svg

@@ -58,7 +58,7 @@ class RenderCache:
 class WebService:
     def __init__(self, engine, policy: OutboundPolicy | None = None,
                  planner_command: list[str] | None = None,
-                 planner_timeout: float = 8.0):
+                 planner_timeout: float = 45.0):
         self.engine = engine
         self.policy = policy or OutboundPolicy()
         self.planner_command = planner_command

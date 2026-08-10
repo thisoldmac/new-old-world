@@ -78,6 +78,9 @@ add_application(now-guest-ppc
     src/development/development_toolchain_mac.c
     src/development/development_layout.c
     src/development/development_module.c
+    src/web/web_model.c
+    src/web/web_port_dialog.c
+    src/web/web_module.c
     src/mirror/mirror_show.c
     src/census/census_decode.c
     src/census/census_report.c

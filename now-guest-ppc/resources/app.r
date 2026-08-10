@@ -57,7 +57,7 @@ resource 'vers' (1) {
    135 lined page (Logs), 136 boxed app tiles (Software), 137 key (MCP),
    138 gauge (Diagnostics), 139 linked nodes (Networking),
    140 cloud (iCloud), 141 speech bubble (Chat),
-   142 sliders (Preferences). */
+   142 sliders (Preferences), 143 mirror, 144 development, 145 web. */
 resource 'ics#' (129) {
     {
         $"0000 0000 0780 7FFE 4002 43C2 4422 4812"
@@ -229,6 +229,17 @@ resource 'ics#' (144) {
     }
 };
 
+/* 145: Web. A small document with a globe meridian; deliberately distinct
+   from Connection's globe, because this row names pages rather than a link. */
+resource 'ics#' (145) {
+    {
+        $"0000 1FF8 1008 13C8 1428 1818 1428 13C8"
+        $"1008 1FF8 0070 01FC 03FE 01FC 0070 0000",
+        $"0000 1FF8 1FF8 1FF8 1FF8 1FF8 1FF8 1FF8"
+        $"1FF8 1FF8 0070 01FC 03FE 01FC 0070 0000"
+    }
+};
+
 resource 'SIZE' (-1) {
     reserved,
     acceptSuspendResumeEvents,
@@ -296,6 +307,23 @@ resource 'DITL' (301) {
         /* 5 status  */ {82, 20, 130, 344}, StaticText { disabled, "" };
         /* 6 */ {22, 20, 38, 90}, StaticText { disabled, "Address:" };
         /* 7 */ {50, 20, 66, 90}, StaticText { disabled, "Port:" };
+    }
+};
+
+/* The Web page's numeric port editor. Like Connection's editor above, this
+   is a real Dialog Manager edit item and its modal loop pumps the wire. */
+resource 'DLOG' (302) {
+    {140, 170, 280, 470}, movableDBoxProc, invisible, noGoAway,
+    0, 302, "Web Proxy Port", centerMainScreen
+};
+
+resource 'DITL' (302) {
+    {
+        /* 1 Save   */ {104, 214, 124, 284}, Button { enabled, "Save" };
+        /* 2 Cancel */ {104, 130, 124, 200}, Button { enabled, "Cancel" };
+        /* 3 Port   */ {26, 76, 42, 180}, EditText { enabled, "" };
+        /* 4 status */ {58, 16, 92, 284}, StaticText { disabled, "" };
+        /* 5 label  */ {26, 16, 42, 70}, StaticText { disabled, "Port:" };
     }
 };
 
@@ -395,6 +423,24 @@ resource 'MENU' (138) {
     138, textMenuProc, allEnabled, enabled, "Providers",
     {
         "(none)", noIcon, noKey, noMark, plain
+    }
+};
+
+resource 'MENU' (139) {
+    139, textMenuProc, allEnabled, enabled, "Browser",
+    {
+        "Classilla", noIcon, noKey, noMark, plain;
+        "MacWeb", noIcon, noKey, noMark, plain;
+        "Generic 68K", noIcon, noKey, noMark, plain
+    }
+};
+
+resource 'MENU' (140) {
+    140, textMenuProc, allEnabled, enabled, "View",
+    {
+        "Compatible Page", noIcon, noKey, noMark, plain;
+        "Reader", noIcon, noKey, noMark, plain;
+        "AI Layout", noIcon, noKey, noMark, plain
     }
 };
 

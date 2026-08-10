@@ -132,6 +132,13 @@ typedef struct {
     short toolchain_qualified;
 } PrefsRecordV23;
 
+typedef struct {
+    PrefsRecordV23 v23;               /* format = 24 */
+    unsigned short web_proxy_port;
+    short web_profile;
+    short web_lens;
+} PrefsRecordV24;
+
 /* Format 16 reuses the V15 layout, bumping only the number to mark that
    Networking joined as nav id 9 (Logs and Connection shifted down
    again). It adds no persisted field, like formats 10, 11 and 14 before
@@ -238,6 +245,9 @@ static void set_defaults(NowPrefs *prefs)
     prefs->mirror_finder_complements = false;
     prefs->mirror_content = false;
     prefs->mirror_foreground_cycle = false;
+    prefs->web_proxy_port = 5180;
+    prefs->web_profile = 1;            /* Classilla */
+    prefs->web_lens = 1;               /* Compatible Page */
 }
 
 static Boolean valid_depth(short depth)
@@ -250,7 +260,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV23);
+    long count = sizeof(PrefsRecordV24);
+    PrefsRecordV24 v24;
     PrefsRecordV23 v23;
     PrefsRecordV22 v22;
     PrefsRecordV20 v20;
@@ -270,9 +281,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v23, 0, sizeof v23);
-    err = FSRead(ref, &count, &v23);
+    memset(&v24, 0, sizeof v24);
+    err = FSRead(ref, &count, &v24);
     FSClose(ref);
+    v23 = v24.v23;
     v22 = v23.v22;
     v20 = v22.v20;
     v19 = v20.v19;
@@ -437,12 +449,25 @@ void now_prefs_load(NowPrefs *prefs)
                 module = 14;          /* Preferences */
             }
         }
-        /* 15 rather than kWorkshopModuleCount: prefs is core and the
+        if (record.format <= 23) {
+            /* Web is appended to the nav range, so only the pinned group
+               moves: Preferences 14 -> 15, Logs 15 -> 16 and Connection
+               16 -> 17. Deepest first prevents a remap from being remapped
+               again by the next comparison. */
+            if (module == 16) {
+                module = 17;          /* Connection */
+            } else if (module == 15) {
+                module = 16;          /* Logs */
+            } else if (module == 14) {
+                module = 15;          /* Preferences */
+            }
+        }
+        /* 17 rather than kWorkshopModuleCount: prefs is core and the
            module id list is UI, so this file does not include the
            Workshop's header. The number is a literal here for the same
            reason it always was, and the remaps above are what keep it
            meaningful. */
-        if (module >= 1 && module <= 16) {
+        if (module >= 1 && module <= 17) {
             prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
@@ -488,6 +513,13 @@ void now_prefs_load(NowPrefs *prefs)
                     sizeof prefs->toolchain_root - 1);
             prefs->toolchain_qualified = v23.toolchain_qualified != 0;
         }
+        if (record.format >= 24 && count >= (long)sizeof(PrefsRecordV24)) {
+            if (v24.web_proxy_port != 0) {
+                prefs->web_proxy_port = v24.web_proxy_port;
+            }
+            prefs->web_profile = v24.web_profile;
+            prefs->web_lens = v24.web_lens;
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -500,7 +532,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV23);
+    long count = sizeof(PrefsRecordV24);
+    PrefsRecordV24 v24;
     PrefsRecordV23 v23;
     PrefsRecordV22 v22;
     PrefsRecordV20 v20;
@@ -514,7 +547,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 23;               /* Development roots and module id */
+    record.format = 24;               /* Web settings and module id */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -587,7 +620,12 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     strncpy(v23.toolchain_root, prefs->toolchain_root,
             sizeof v23.toolchain_root - 1);
     v23.toolchain_qualified = prefs->toolchain_qualified ? 1 : 0;
-    err = FSWrite(ref, &count, &v23);
+    memset(&v24, 0, sizeof v24);
+    v24.v23 = v23;
+    v24.web_proxy_port = prefs->web_proxy_port;
+    v24.web_profile = prefs->web_profile;
+    v24.web_lens = prefs->web_lens;
+    err = FSWrite(ref, &count, &v24);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }
