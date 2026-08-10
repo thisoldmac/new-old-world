@@ -427,6 +427,11 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     private let queue: DispatchQueue
     private var parser: BoundedMCPHTTPRequestParser
     private var finished = false
+    /// `NWListener` does not retain the object that installed the receive
+    /// callback. Keep this exchange alive until its one response is sent;
+    /// without this ownership the accepted TCP connection remains open but
+    /// nobody parses it, which looks exactly like a wedged MCP server.
+    private var keepAlive: MCPHTTPConnection?
 
     init(connection: NWConnection, service: MCPHTTPService,
          maximumHeaderBytes: Int, queue: DispatchQueue) {
@@ -437,6 +442,7 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     }
 
     func start() {
+        keepAlive = self
         connection.start(queue: queue)
         queue.asyncAfter(deadline: .now() + 15) { [weak self] in
             self?.finish(.init(status: 400))
@@ -451,6 +457,7 @@ private final class MCPHTTPConnection: @unchecked Sendable {
             if let error {
                 self.connection.cancel()
                 self.finished = true
+                self.keepAlive = nil
                 FileHandle.standardError.write(Data(
                     "NOW MCP HTTP connection failed: \(error)\n".utf8))
                 return
@@ -485,8 +492,9 @@ private final class MCPHTTPConnection: @unchecked Sendable {
         guard !finished else { return }
         finished = true
         connection.send(content: response.wireData,
-                        completion: .contentProcessed { [connection] _ in
+                        completion: .contentProcessed { [self, connection] _ in
                             connection.cancel()
+                            keepAlive = nil
                         })
     }
 }
