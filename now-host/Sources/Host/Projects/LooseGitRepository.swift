@@ -81,6 +81,7 @@ struct LooseGitRepository {
                 $1.lastPathComponent.utf8) }
         var entries: [TreeEntry] = []
         for child in children {
+            if child.lastPathComponent.hasPrefix(".") { continue }
             let values = try child.resourceValues(forKeys: [.isDirectoryKey,
                                                              .isRegularFileKey,
                                                              .isSymbolicLinkKey])
@@ -130,6 +131,12 @@ struct LooseGitRepository {
             let values = try file.resourceValues(forKeys: [.isRegularFileKey,
                                                             .isSymbolicLinkKey])
             let path = file.pathComponents.suffix(walk.level).joined(separator: "/")
+            if path.split(separator: "/").contains(where: {
+                $0.hasPrefix(".")
+            }) {
+                if values.isRegularFile != true { walk.skipDescendants() }
+                continue
+            }
             if path == "Build" || path.hasPrefix("Build/") {
                 if values.isRegularFile != true { walk.skipDescendants() }
                 continue

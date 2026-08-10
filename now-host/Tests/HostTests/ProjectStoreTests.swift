@@ -377,6 +377,35 @@ final class ProjectStoreTests: XCTestCase {
         XCTAssertEqual(decoded.finderFlags, 0)
     }
 
+    func testTreeDigestBindsResourceForkAndFinderIdentity() throws {
+        let store = try ProjectStore(root: try root())
+        let dataFork = Data("source".utf8)
+        let created = try store.create(
+            name: "Digest Identity", home: .host, projectDocument: document,
+            files: [.init(path: "Sources/Main.c", contents: dataFork)])
+        let withResource = try store.apply(
+            projectID: created.projectID, expectedRevision: 1,
+            changes: [.init(
+                path: "Sources/Main.c", fork: .resource,
+                expectedDigest: ProjectDigest.sha256(Data()),
+                contents: Data("resource".utf8))],
+            message: "Add resource fork")
+        XCTAssertNotEqual(withResource.contentDigest, created.contentDigest)
+
+        let withFlags = try store.apply(
+            projectID: created.projectID, expectedRevision: 2,
+            changes: [.init(
+                path: "Sources/Main.c",
+                expectedDigest: ProjectDigest.sha256(dataFork),
+                type: "TEXT", creator: "MPS ", finderFlags: 0x4000,
+                contents: dataFork)],
+            message: "Change Finder identity")
+        XCTAssertNotEqual(withFlags.contentDigest, withResource.contentDigest)
+        XCTAssertEqual(try store.read(projectID: created.projectID,
+                                      path: "Sources/Main.c", fork: .resource),
+                       Data("resource".utf8))
+    }
+
     func testGuestImportCreatesVerifiedMirrorAndPreservesWorkspaceOnRefresh() throws {
         let store = try ProjectStore(root: try root())
         let first = Data("guest one".utf8)

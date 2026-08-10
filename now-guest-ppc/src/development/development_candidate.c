@@ -204,27 +204,42 @@ int dev_candidate_prepare(const char *candidate_id, const char *project_id,
 
 /* Files are removed before folders, deepest recursion first. The candidate is
    never active, so failure preserves residue rather than risking another tree. */
-static OSErr remove_tree(short vref, long dir_id)
+static OSErr remove_tree(short vref, long dir_id,
+                         char *reason, long reason_cap)
 {
     for (;;) {
         CInfoPBRec pb;
         Str255 name;
         FSSpec item;
+        OSErr err;
         memset(&pb, 0, sizeof pb);
         name[0] = 0;
         pb.hFileInfo.ioNamePtr = name;
         pb.hFileInfo.ioVRefNum = vref;
         pb.hFileInfo.ioDirID = dir_id;
         pb.hFileInfo.ioFDirIndex = 1;
-        if (PBGetCatInfoSync(&pb) != noErr) return noErr;
+        err = PBGetCatInfoSync(&pb);
+        if (err == fnfErr) return noErr;
+        if (err != noErr) {
+            snprintf(reason, (size_t)reason_cap,
+                     "Candidate enumeration failed (OS error %d).", err);
+            return err;
+        }
         item.vRefNum = vref;
         item.parID = dir_id;
         memcpy(item.name, name, name[0] + 1);
         if ((pb.hFileInfo.ioFlAttrib & ioDirMask) != 0) {
-            OSErr err = remove_tree(vref, pb.dirInfo.ioDrDirID);
+            err = remove_tree(vref, pb.dirInfo.ioDrDirID,
+                              reason, reason_cap);
             if (err != noErr) return err;
         }
-        if (FSpDelete(&item) != noErr) return ioErr;
+        err = FSpDelete(&item);
+        if (err != noErr) {
+            snprintf(reason, (size_t)reason_cap,
+                     "Could not remove %.*s (OS error %d).",
+                     (int)name[0], (const char *)&name[1], err);
+            return err;
+        }
     }
 }
 
@@ -238,11 +253,16 @@ int dev_candidate_discard(const char *candidate_id,
         snprintf(reason, (size_t)reason_cap, "The candidate was not found.");
         return 0;
     }
-    err = remove_tree(folder.vRefNum, dir_id);
-    if (err == noErr) err = FSpDelete(&folder);
+    err = remove_tree(folder.vRefNum, dir_id, reason, reason_cap);
+    if (err == noErr) {
+        err = FSpDelete(&folder);
+        if (err != noErr) {
+            snprintf(reason, (size_t)reason_cap,
+                     "Could not remove the candidate folder (OS error %d).",
+                     err);
+        }
+    }
     if (err != noErr) {
-        snprintf(reason, (size_t)reason_cap,
-                 "The inactive candidate could not be completely discarded.");
         return 0;
     }
     return 1;

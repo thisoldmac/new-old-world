@@ -169,8 +169,7 @@ enum ProjectPath {
             throw ProjectStoreError.invalidPath(path)
         }
         let components = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard components.first != ".now-classic",
-              components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+        guard components.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") }) else {
             throw ProjectStoreError.invalidPath(path)
         }
     }

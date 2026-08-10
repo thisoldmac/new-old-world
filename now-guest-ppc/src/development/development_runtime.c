@@ -355,6 +355,7 @@ static int submit_action(const char *job_id, int action_index,
     char script_text[1800];
     char script_path[620];
     char transcript_path[620];
+    char parent_path[512];
     char execute[700];
     int n;
     OSErr err = ensure_folder(runtime->project_folder.vRefNum,
@@ -373,12 +374,15 @@ static int submit_action(const char *job_id, int action_index,
                             transcript_path, sizeof transcript_path)) return 0;
     strncat(transcript_path, "NOW Build.log",
             sizeof transcript_path - strlen(transcript_path) - 1);
+    if (!dev_hfs_parent_path(runtime->project_root,
+                             parent_path, sizeof parent_path)) return 0;
     n = snprintf(script_text, sizeof script_text,
         "Set Exit 0\rDirectory '%s'\r%s \267\267 '%s'\r"
         "Set NOWStatus {Status}\r"
+        "Directory '%s'\r"
         "Echo '[[NOW:%s:STAGE:%d:'{NOWStatus}']]' \267\267 '%s'",
         runtime->project_root, command, transcript_path,
-        job_id, action_index, transcript_path);
+        parent_path, job_id, action_index, transcript_path);
     if (n <= 0 || n >= (int)sizeof script_text) return 0;
     err = FSMakeFSSpec(runtime->project_folder.vRefNum, build_dir,
         (ConstStr255Param)"\pNOW Build Stage", &script);

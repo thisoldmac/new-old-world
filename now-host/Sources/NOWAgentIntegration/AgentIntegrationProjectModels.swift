@@ -52,7 +52,7 @@ public struct AgentIntegrationProjectChange: Codable, Equatable, Sendable {
               !path.isEmpty, !path.hasPrefix("/"), !path.hasSuffix("/"),
               !path.contains("\\"), !path.contains("\0") else { return false }
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
+        guard parts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") }),
               expectedDigest.map(Self.isDigest) ?? true,
               finderType.map(Self.isFourCC) ?? true,
               finderCreator.map(Self.isFourCC) ?? true,

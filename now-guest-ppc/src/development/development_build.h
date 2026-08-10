@@ -51,6 +51,7 @@ int dev_build_plan_add(DevBuildPlan *plan, const char *kind,
 int dev_mpw_render_action(const DevBuildPlan *plan,
                           const DevBuildAction *action,
                           char *out, long cap);
+int dev_hfs_parent_path(const char *path, char *out, long cap);
 int dev_build_service_begin(DevBuildService *service, const char *job_id,
                             const DevBuildPlan *plan,
                             const DevToolchain *toolchain);

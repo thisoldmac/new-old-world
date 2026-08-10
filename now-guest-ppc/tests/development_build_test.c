@@ -26,6 +26,7 @@ int main(void)
     DevBuildService service;
     DevToolchain toolchain;
     Submitted seen;
+    char parent[128];
     memset(&plan, 0, sizeof plan);
     strcpy(plan.configuration, "debug");
     strcpy(plan.product_type, "APPL");
@@ -36,6 +37,12 @@ int main(void)
     strcpy(toolchain.id, "mpw-1-2");
     strcpy(toolchain.version, "structural-1");
     toolchain.state = kDevToolchainQualified;
+
+    assert(dev_hfs_parent_path(
+        "Macintosh HD:Lab:.NOW Candidates:candidate-0123456789abcdef:",
+        parent, sizeof parent));
+    assert(strcmp(parent, "Macintosh HD:Lab:.NOW Candidates:") == 0);
+    assert(!dev_hfs_parent_path("Macintosh HD:", parent, sizeof parent));
 
     assert(dev_build_plan_add(&plan, "compile", "Sources/Main.c",
                               "Objects/Main.o"));

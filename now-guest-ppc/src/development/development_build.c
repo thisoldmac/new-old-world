@@ -68,6 +68,23 @@ static int hfs_path(const char *root, const char *path, char *out, long cap)
     return 1;
 }
 
+int dev_hfs_parent_path(const char *path, char *out, long cap)
+{
+    const char *separator;
+    size_t length;
+    if (path == NULL || out == NULL || cap <= 0) return 0;
+    length = strlen(path);
+    if (length < 3 || path[length - 1] != ':') return 0;
+    separator = path + length - 2;
+    while (separator > path && *separator != ':') --separator;
+    if (*separator != ':' || separator == path
+        || (long)(separator - path + 2) > cap) return 0;
+    length = (size_t)(separator - path + 1);
+    memcpy(out, path, length);
+    out[length] = '\0';
+    return 1;
+}
+
 int dev_mpw_render_action(const DevBuildPlan *plan,
                           const DevBuildAction *action,
                           char *out, long cap)

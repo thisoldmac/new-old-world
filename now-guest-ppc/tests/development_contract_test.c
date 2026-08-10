@@ -11,6 +11,7 @@ int main(void)
     assert(dev_project_path_valid("Sources/Main.c"));
     assert(dev_project_path_valid("Build/Memory Meter"));
     assert(!dev_project_path_valid("../Outside.c"));
+    assert(!dev_project_path_valid("Sources/.private/Main.c"));
     assert(!dev_project_path_valid("Sources//Main.c"));
     assert(!dev_project_path_valid("/System Folder/Finder"));
     assert(!dev_project_path_valid("Sources:Main.c"));

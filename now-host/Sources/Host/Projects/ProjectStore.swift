@@ -700,7 +700,10 @@ final class ProjectStore {
             } else if let contents = change.contents {
                 try fileManager.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-                try contents.write(to: url, options: .atomic)
+                /* The whole working tree is already a private transactional
+                   staging copy. Replacing this one inode atomically would
+                   discard its resource fork and FinderInfo on APFS. */
+                try contents.write(to: url)
             } else {
                 try fileManager.removeItem(at: url)
             }
@@ -809,6 +812,12 @@ final class ProjectStore {
                                                            .isSymbolicLinkKey])
             let path = url.pathComponents.suffix(walk.level)
                 .joined(separator: "/")
+            if path.split(separator: "/").contains(where: {
+                $0.hasPrefix(".")
+            }) {
+                if values.isRegularFile != true { walk.skipDescendants() }
+                continue
+            }
             if path == "Build" || path.hasPrefix("Build/") {
                 if values.isRegularFile != true { walk.skipDescendants() }
                 continue

@@ -17,7 +17,8 @@ final class AgentIntegrationProjectsTests: XCTestCase {
     private func write(_ path: String, _ contents: String)
         -> AgentIntegrationProjectChange {
         .init(path: path, action: .write,
-              contentsBase64: Data(contents.utf8).base64EncodedString())
+              contentsBase64: Data(contents.utf8).base64EncodedString(),
+              finderType: "TEXT", finderCreator: "MPS ", finderFlags: 0)
     }
 
     func testRequestShapesRefusePathsInjectionAndDestructiveCreate() {
@@ -27,6 +28,11 @@ final class AgentIntegrationProjectsTests: XCTestCase {
         XCTAssertFalse(AgentIntegrationProjectRequest(
             operation: .create, name: "Bad",
             changes: [.init(path: "../outside", action: .write,
+                            contentsBase64: Data().base64EncodedString())])
+            .isWellFormed)
+        XCTAssertFalse(AgentIntegrationProjectRequest(
+            operation: .create, name: "Bad",
+            changes: [.init(path: "Sources/.private/Main.c", action: .write,
                             contentsBase64: Data().base64EncodedString())])
             .isWellFormed)
         XCTAssertFalse(AgentIntegrationProjectRequest(
@@ -49,7 +55,12 @@ final class AgentIntegrationProjectsTests: XCTestCase {
 
         let created = adapter.projects(.init(
             operation: .create, name: "Memory Meter",
-            changes: [write("Sources/Main.c", "int value = 1;")]))
+            changes: [
+                write("Sources/Main.c", "int value = 1;"),
+                .init(path: "Sources/Main.c", action: .write,
+                      fork: .resource,
+                      contentsBase64: Data("resource".utf8).base64EncodedString()),
+            ]))
         let project = try XCTUnwrap(created.project)
         XCTAssertEqual(project.home, "host")
         XCTAssertEqual(created.revision?.message, "Create project")
@@ -60,6 +71,17 @@ final class AgentIntegrationProjectsTests: XCTestCase {
             path: "Sources/Main.c", maximumBytes: 1024))
         XCTAssertEqual(read.contentsBase64.flatMap { Data(base64Encoded: $0) },
                        Data("int value = 1;".utf8))
+        XCTAssertEqual(read.fork, "data")
+        XCTAssertEqual(read.finderType, "TEXT")
+        XCTAssertEqual(read.finderCreator, "MPS ")
+        XCTAssertEqual(read.finderFlags, 0)
+
+        let resource = adapter.projects(.init(
+            operation: .read, projectID: project.projectID,
+            path: "Sources/Main.c", fork: .resource, maximumBytes: 1024))
+        XCTAssertEqual(resource.contentsBase64.flatMap { Data(base64Encoded: $0) },
+                       Data("resource".utf8))
+        XCTAssertEqual(resource.fork, "resource")
 
         let changed = adapter.projects(.init(
             operation: .apply, projectID: project.projectID,

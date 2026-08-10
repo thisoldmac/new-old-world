@@ -45,15 +45,16 @@ Finder flags. Transfer through a data-only lane therefore uses MacBinary; a
 plain data-fork transfer is not a complete Development file.
 
 Paths always use `/` separators and are relative to the directory containing
-`Project.ckp`. Empty segments, `.`, `..`, a leading `/`, `\`, NUL, and a
-trailing `/` are invalid. A consumer must additionally refuse any filesystem
+`Project.ckp`. Empty segments, dot-prefixed components, a leading `/`, `\`,
+NUL, and a trailing `/` are invalid. Dot files are reserved for private project
+state and are never source. A consumer must additionally refuse any filesystem
 alias or symbolic-link traversal that would leave the project root.
 
 `Build/` is the reserved top-level artifact directory. A `product` may name an
 item beneath it, but a `file` record may not. Source manifests and project tree
 digests exclude `Build/`, so ToolServer transcripts, objects and products do
 not turn a verified source revision into apparent out-of-band source drift.
-`.now-classic/` is also reserved. It is the host Git adapter's internal,
+`.now-classic/` is the host Git adapter's internal,
 complete MacBinary archive of each logical file; normal Git paths remain plain
 data-fork blobs while this tree makes resource forks and Finder identity
 recoverable from the same commit.

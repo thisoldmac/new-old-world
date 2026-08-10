@@ -19,8 +19,7 @@ int dev_project_path_valid(const char *path)
         }
         if (ch == '/' || ch == '\0') {
             long part = p - component;
-            if (part == 0 || (part == 1 && component[0] == '.')
-                || (part == 2 && component[0] == '.' && component[1] == '.')) {
+            if (part == 0 || component[0] == '.') {
                 return 0;
             }
             if (ch == '\0') {
