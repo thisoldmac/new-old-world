@@ -1,5 +1,5 @@
 import XCTest
-@testable import NOWAgentCompanion
+@testable import Host
 @testable import NOWAgentIntegration
 
 final class NOWAgentGuestFilesTests: XCTestCase {

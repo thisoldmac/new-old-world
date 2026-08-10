@@ -158,7 +158,7 @@ final class ChatModuleModel: ObservableObject {
         harness = ChatHarness(
             registry: registry,
             makeClient: { selector in
-                ChatAgentClient(
+                HostAgentIntegrationClient(
                     adapter: agentIntegration, guestFiles: guestFiles
                 ).addressing(selector)
             },

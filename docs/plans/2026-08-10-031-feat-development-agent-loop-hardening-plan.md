@@ -44,9 +44,9 @@ complete:
 - guest projects are discoverable through a bounded catalog, restart recovery
   inventories retained candidates, and guest-home publication remains guarded
   by the imported base digest;
-- the companion has authenticated loopback HTTP and stdio transports over one
-  dispatcher, with exact catalog/resource/prompt/result/error parity and one
-  46-tool conformance recipe run against both spawned processes;
+- NOW has authenticated loopback HTTP and stdio transports over one dispatcher,
+  with exact catalog/resource/prompt/result/error parity and one 46-tool
+  conformance recipe run against both transports;
 - onboarding validates a relocatable Development starter-pack manifest with
   platform, version, component, license, provenance, size and qualification
   metadata rather than an HFS directory ID.
@@ -74,20 +74,20 @@ MCP; stdio was not used as an action fallback. The run completed:
 The same live stack served 31 of 46 advertised HTTP tools, returned typed
 refusals for 14, and left the one human-gated approval tool explicitly gated:
 zero failed and zero uncovered. A no-host run exercised all 46 tools over both
-spawned transports. Exact parity tests compare initialize, initialized
+transports. Exact parity tests compare initialize, initialized
 notification gating, ping, resources, prompts, complete tool descriptors and
 schemas, one real tool result, and invalid method/tool/cursor/resource/prompt
 errors. HTTP-specific tests cover loopback Host validation, bearer
 authentication, Origin rejection, session handshake/deletion/cap/expiry,
-incremental request bodies, ambiguous framing rejection and a spawned listener.
+incremental request bodies, ambiguous framing rejection and listener liveness.
 
 The loop also exposed and fixed one transport-to-domain observability defect:
 the host recognized an idempotency-key collision, but the response carried the
-stored request's ID and the companion flattened it to
+stored request's ID and the MCP adapter flattened it to
 `now-host-invalid-response`. Collision and pending replies now carry the
-current request ID and cross the companion as `attempt-collision` or
+current request ID and cross the MCP surface as `attempt-collision` or
 `attempt-pending`. The exact old response mutation fails the new socket test;
-the rebuilt host/HTTP companion returned `attempt-collision` on the VM.
+the rebuilt host with its HTTP listener returned `attempt-collision` on the VM.
 
 Cleanup exposed a separate rig false-green after the runtime evidence was
 complete. The source MPW image reports HFS **clean**, but the session clone
@@ -102,11 +102,16 @@ but that disposable VM is not a volume-clean fixture receipt.
 Four acceptance statements remain deliberately narrower than the local
 implementation:
 
-1. HTTP was an unapproved expansion of this slice. It is retained because the
-   user wanted HTTP as a separate future slice and then required the introduced
-   stack to reach full parity before handoff. The security and parity evidence
-   above is the completion gate; it does not retroactively make the original
-   scope decision acceptable.
+1. HTTP was an unapproved expansion of this slice. The initial implementation
+   also made it a mode of a separately shipped companion, which was the wrong
+   ownership boundary. The correction removes that product: the normal NOW app
+   now owns HTTP in process, the same New Old World executable supplies a
+   narrow `--mcp-stdio` mode, and the MCP module independently controls both.
+   Source guards refuse a companion target, and both transports retain the
+   security, liveness, full-conformance and exact-parity gates above. The UI
+   ownership guard was watched fail when the HTTP card was wired to stdio
+   state, and the endpoint guard was watched fail when a full lane suffix was
+   moved back under Darwin's overlong per-user temporary path.
 2. CodeKitten is separately owned. NOW now requires its positive open receipt,
    but cross-repository shared-fixture extraction must land with that sibling
    rather than making it a NOW dependency.

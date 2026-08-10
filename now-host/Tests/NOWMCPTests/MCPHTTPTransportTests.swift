@@ -1,23 +1,45 @@
 import XCTest
-@testable import NOWAgentCompanion
+@testable import Host
+@testable import NOWAgentIntegration
 
 final class MCPHTTPTransportTests: XCTestCase {
     private static let token = String(repeating: "t", count: 32)
     private static let port: UInt16 = 5254
 
-    func testInvocationKeepsStdioDefaultAndRequiresBoundedHTTPToken() {
-        XCTAssertEqual(CompanionInvocation.parse(arguments: [], environment: [:]),
-                       .stdio)
-        guard case .invalid(let missing) = CompanionInvocation.parse(
-            arguments: ["--http"], environment: [:]) else {
-            return XCTFail("HTTP without a bearer token was accepted")
-        }
-        XCTAssertTrue(missing.contains("NOW_MCP_HTTP_BEARER_TOKEN"))
+    func testNOWOwnsTransportDefaultsAndPersistsEachControl() throws {
+        let name = "mcp-transport-tests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let preferences = MCPTransportPreferences(defaults: defaults)
 
-        XCTAssertEqual(CompanionInvocation.parse(
-            arguments: ["--http", "--port", "6254"],
-            environment: [CompanionInvocation.tokenEnvironmentKey: Self.token]),
-            .http(.init(port: 6254, bearerToken: Self.token)))
+        XCTAssertTrue(preferences.stdioEnabled)
+        XCTAssertFalse(preferences.httpEnabled)
+        XCTAssertEqual(preferences.httpPort, 5254)
+        preferences.stdioEnabled = false
+        preferences.httpEnabled = true
+        preferences.httpPort = 6254
+
+        let restored = MCPTransportPreferences(defaults: defaults)
+        XCTAssertFalse(restored.stdioEnabled)
+        XCTAssertTrue(restored.httpEnabled)
+        XCTAssertEqual(restored.httpPort, 6254)
+    }
+
+    func testNOWCreatesOnePrivatePersistentHTTPToken() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-mcp-token-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("token")
+        let store = try MCPHTTPTokenStore(url: url)
+
+        let first = try store.loadOrCreate()
+        let second = try store.loadOrCreate()
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(first.utf8.count, 64)
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: url.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue,
+                       0o600)
     }
 
     func testParserAcceptsIncrementalBodyAndRejectsAmbiguousFraming() throws {
@@ -121,7 +143,7 @@ final class MCPHTTPTransportTests: XCTestCase {
 
     func testHTTPAndStdioUseTheSameMCPDispatcher() async throws {
         let direct = NOWMCPServer(client: SocketAgentIntegrationClient(),
-                                  audit: LocalAuditSink())
+                                  audit: LocalMCPAuditSink())
         let service = service()
         let initialize = try Self.initializeBody(id: 1)
 
@@ -153,7 +175,9 @@ final class MCPHTTPTransportTests: XCTestCase {
         let configuration = MCPHTTPConfiguration(
             port: Self.port, bearerToken: Self.token,
             maximumSessions: 1, sessionLifetime: 10)
-        let service = MCPHTTPService(configuration: configuration)
+        let service = MCPHTTPService(
+            configuration: configuration,
+            serverFactory: Self.serverFactory)
         let start = Date(timeIntervalSince1970: 1_000)
         let first = await service.respond(
             to: Self.post(try Self.initializeBody(id: 1)), now: start)
@@ -168,8 +192,15 @@ final class MCPHTTPTransportTests: XCTestCase {
     }
 
     private func service() -> MCPHTTPService {
-        MCPHTTPService(configuration: .init(
-            port: Self.port, bearerToken: Self.token))
+        MCPHTTPService(
+            configuration: .init(
+                port: Self.port, bearerToken: Self.token),
+            serverFactory: Self.serverFactory)
+    }
+
+    private static let serverFactory: MCPHTTPService.ServerFactory = {
+        NOWMCPServer(client: SocketAgentIntegrationClient(),
+                     audit: LocalMCPAuditSink())
     }
 
     private static var baseHeaders: [String: String] {[

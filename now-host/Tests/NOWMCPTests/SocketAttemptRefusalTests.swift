@@ -1,6 +1,6 @@
 import XCTest
-@testable import NOWAgentCompanion
-import NOWAgentIntegration
+@testable import Host
+@testable import NOWAgentIntegration
 
 @MainActor
 final class SocketAttemptRefusalTests: XCTestCase {

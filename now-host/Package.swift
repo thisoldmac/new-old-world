@@ -6,8 +6,6 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "Host", targets: ["Host"]),
-        .executable(name: "NOWAgentCompanion",
-                    targets: ["NOWAgentCompanion"]),
         // The Xcode app target consumes this as a real package product, so
         // that `import NOWAgentIntegration` means the same thing to both
         // build systems. It used to compile these sources into the app
@@ -34,9 +32,6 @@ let package = Package(
                                          .product(name: "MirrorKitUI",
                                                   package: "MirrorKit")],
                           path: "Sources/Host"),
-        .executableTarget(name: "NOWAgentCompanion",
-                          dependencies: ["NOWAgentIntegration"],
-                          path: "Sources/NOWAgentCompanion"),
         .testTarget(name: "HostTests",
                     dependencies: ["Host", "NOWAgentIntegration",
                                    .product(name: "MirrorKit",
@@ -45,9 +40,8 @@ let package = Package(
                                             package: "MirrorKit")],
                     path: "Tests/HostTests",
                     resources: [.copy("Fixtures")]),
-        .testTarget(name: "NOWAgentCompanionTests",
-                    dependencies: ["NOWAgentCompanion",
-                                   "NOWAgentIntegration"],
-                    path: "Tests/NOWAgentCompanionTests"),
+        .testTarget(name: "NOWMCPTests",
+                    dependencies: ["Host", "NOWAgentIntegration"],
+                    path: "Tests/NOWMCPTests"),
     ]
 )

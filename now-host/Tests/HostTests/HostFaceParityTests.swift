@@ -33,7 +33,7 @@ final class HostFaceParityTests: XCTestCase {
 
     private static let appUIRoot = "now-host/Sources/Host"
     private static let mcpRenderer =
-        "now-host/Sources/NOWAgentCompanion/NOWMCPServer.swift"
+        "now-host/Sources/NOWAgentIntegration/MCP/NOWMCPServer.swift"
 
     /// The app's own source **with its comment lines removed** — see
     /// `GateSource`.

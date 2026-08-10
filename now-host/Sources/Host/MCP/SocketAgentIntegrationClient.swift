@@ -1,7 +1,7 @@
 import Foundation
 import NOWAgentIntegration
 
-/// The companion's one way to reach the running host: a bounded local
+/// The stdio mode's one way to reach the running host: a bounded local
 /// request per call over the per-uid private socket. It launches nothing and
 /// keeps no state about the guest between calls.
 struct SocketAgentIntegrationClient: AgentIntegrationClient {
@@ -178,7 +178,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
-    /// The row this companion exists for, more than most: an agent on
+    /// The row this stdio process exists for, more than most: an agent on
     /// this socket is the caller with no other way to open the window.
     func mirrorOpen() async -> AgentIntegrationMirrorOpenResult {
         guard let client else {
@@ -198,7 +198,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
        served the operation the whole time. A sentence about a missing lane,
        standing in for a missing forwarder, is the worst shape a refusal can
        take: it sends the reader one layer down to look for something that
-       is there. `SocketClientForwardingTests` is now what would have said
+       is there. `MCPClientForwardingTests` is now what would have said
        so. */
     func mirrorDrive(_ request: AgentIntegrationMirrorDriveRequest) async
         -> AgentIntegrationMirrorDriveResult {
@@ -636,7 +636,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         case .incompatibleProtocol(let expected, let actual):
             return .init(
                 code: "now-host-companion-incompatible",
-                message: "New Old World host protocol \(actual) is incompatible with companion protocol \(expected). Install and launch the matching host and companion build.")
+                message: "New Old World host protocol \(actual) is incompatible with stdio bridge protocol \(expected). Launch stdio from the matching New Old World build.")
         // Passed through as itself. "This host is driving another
         // machine" is a fact about ADDRESSING, and flattening it into a
         // communication failure would tell a caller to retry the one
@@ -676,7 +676,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
                   let compatibility = health.compatibility else {
                 return .init(
                     code: "now-host-companion-incompatible",
-                    message: "The running New Old World host does not publish the required compatibility preflight. Install and launch the matching host and companion build.")
+                    message: "The running New Old World host does not publish the required compatibility preflight. Launch stdio from the matching New Old World build.")
             }
             guard compatibility.companionProtocol
                     == AgentIntegrationLocalProtocol.version,
@@ -686,7 +686,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
                     == HostProjectionRegistry.hostFaces.catalogDigest else {
                 return .init(
                     code: "now-host-companion-incompatible",
-                    message: "The running host and companion publish different protocol or projection catalogs. Install and launch the matching build.")
+                    message: "The running app and stdio bridge publish different protocol or projection catalogs. Launch stdio from the matching New Old World build.")
             }
             return nil
         } catch {

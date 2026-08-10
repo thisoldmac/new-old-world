@@ -1,5 +1,6 @@
 import Foundation
-@testable import NOWAgentCompanion
+@testable import Host
+@testable import NOWAgentIntegration
 
 /// **A real MCP client, and the classification of what every tool answers
 /// it.**
@@ -42,7 +43,7 @@ extension MCPConformanceClient {
     }
 }
 
-/// One MCP session against the real companion binary.
+/// One MCP session against the real New Old World binary in stdio mode.
 ///
 /// It behaves the way the transport says a client behaves, and the three
 /// properties that matter are all things a test driver would otherwise get
@@ -71,7 +72,7 @@ final class MCPClient: MCPConformanceClient, @unchecked Sendable {
 
     struct Closed: Error, CustomStringConvertible {
         var description: String {
-            "The MCP companion closed its output before replying"
+            "New Old World's MCP stdio mode closed before replying"
         }
     }
 
@@ -86,6 +87,7 @@ final class MCPClient: MCPConformanceClient, @unchecked Sendable {
 
     init(executable: URL, environment: [String: String]? = nil) throws {
         process.executableURL = executable
+        process.arguments = ["--mcp-stdio"]
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
@@ -220,42 +222,69 @@ final class MCPClient: MCPConformanceClient, @unchecked Sendable {
 
 /// The same client contract over the real loopback HTTP listener.
 ///
-/// This is intentionally not an in-process adapter around `MCPHTTPService`:
-/// it owns a spawned companion, a TCP port, HTTP authentication, and an MCP
-/// session. The conformance gate can therefore run the same recipe book over
-/// both transports and catch defects in either framing loop.
+/// It owns NOW's real loopback listener, a TCP port, HTTP authentication, and
+/// an MCP session. The listener is in process because that is the shipping
+/// ownership boundary; spawning a second HTTP product here would preserve the
+/// component split this gate now exists to prevent.
 final class MCPHTTPClient: MCPConformanceClient, @unchecked Sendable {
     struct Failure: Error, CustomStringConvertible {
         let detail: String
         var description: String { detail }
     }
 
-    private let process = Process()
+    private let listener: MCPHTTPListener
     private let endpoint: URL
     private let token: String
     private var sessionID: String?
     private var protocolVersion: String?
     private var nextID = 0
 
-    init(executable: URL, environment: [String: String]? = nil) throws {
+    private final class StartErrorBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var error: Error?
+
+        func store(_ error: Error) {
+            lock.lock()
+            self.error = error
+            lock.unlock()
+        }
+
+        func load() -> Error? {
+            lock.lock()
+            defer { lock.unlock() }
+            return error
+        }
+    }
+
+    init(environment: [String: String]? = nil) throws {
         let port = UInt16.random(in: 40_000...60_000)
         token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         endpoint = URL(string: "http://127.0.0.1:\(port)/mcp")!
-        process.executableURL = executable
-        process.arguments = ["--http", "--port", "\(port)"]
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        var configured = environment ?? ProcessInfo.processInfo.environment
-        configured[CompanionInvocation.tokenEnvironmentKey] = token
-        process.environment = configured
-        try process.run()
+        let configured = environment ?? ProcessInfo.processInfo.environment
+        let socket = try Self.agentEndpoint(environment: configured)
+        listener = try MCPHTTPListener(
+            configuration: .init(port: port, bearerToken: token),
+            serverFactory: {
+                NOWMCPServer(
+                    client: SocketAgentIntegrationClient(endpoint: socket),
+                    audit: LocalMCPAuditSink(endpoint: socket))
+            })
+        let ready = DispatchSemaphore(value: 0)
+        let startError = StartErrorBox()
+        Task {
+            do { try await listener.start() }
+            catch { startError.store(error) }
+            ready.signal()
+        }
+        guard ready.wait(timeout: .now() + 5) == .success else {
+            throw Failure(detail: "NOW's HTTP listener did not bind in 5s")
+        }
+        if let error = startError.load() { throw error }
     }
 
     deinit { shutDown() }
 
     func shutDown() {
-        guard process.isRunning else { return }
         if let sessionID, let protocolVersion {
             var request = URLRequest(url: endpoint)
             request.httpMethod = "DELETE"
@@ -263,10 +292,7 @@ final class MCPHTTPClient: MCPConformanceClient, @unchecked Sendable {
                       protocolVersion: protocolVersion)
             _ = try? exchange(request, timeout: 2)
         }
-        process.terminate()
-        let deadline = Date().addingTimeInterval(2)
-        while process.isRunning, Date() < deadline { usleep(20_000) }
-        if process.isRunning { process.interrupt() }
+        listener.stop()
     }
 
     func request(_ method: String, params: [String: Any]? = nil,
@@ -400,6 +426,12 @@ final class MCPHTTPClient: MCPConformanceClient, @unchecked Sendable {
         defer { lock.unlock() }
         return try outcome?.get()
             ?? { throw Failure(detail: "HTTP request produced no outcome") }()
+    }
+
+    static func agentEndpoint(environment: [String: String]) throws
+        -> AgentIntegrationEndpoint {
+        try AgentIntegrationEndpoint.forUser(
+            rawSuffix: environment["NOW_AGENT_SOCKET_SUFFIX"])
     }
 }
 

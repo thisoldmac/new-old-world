@@ -158,13 +158,14 @@ typed incompatibility before domain dispatch. Projects and Development publish
 operation-discriminated schemas, including exclusive project-revision and
 workspace-commit apply branches.
 
-The same dispatcher is reachable over stdio and authenticated loopback HTTP.
-The spawned parity gate compares initialize and notification lifecycle, ping,
+The same NOW-owned dispatcher is reachable through client-launched stdio mode
+and an authenticated loopback HTTP listener in the normal app. The
+cross-transport parity gate compares initialize and notification lifecycle, ping,
 resources, prompts, complete tool descriptors and schemas, real tool results,
 and protocol errors. Both transports run the same 46-tool no-host conformance
 recipe. HTTP additionally validates the loopback Host, bearer token and Origin;
 bounds session count and lifetime; supports explicit session deletion; rejects
-ambiguous framing; and has a spawned incremental-request liveness gate. Against
+ambiguous framing; and has an incremental-request liveness gate. Against
 the VM, HTTP served 31 tools, returned typed refusals for 14, left the one
 human-approved transfer explicitly gated, and produced zero failed or uncovered
 rows.
@@ -174,7 +175,7 @@ a reused attempt ID, but its response ID made the companion call it an invalid
 host response. Pending and collision responses now carry the current request
 ID and cross both transports as typed `attempt-pending` or
 `attempt-collision`. The exact old response fails the regression test, and the
-rebuilt host and HTTP companion returned `attempt-collision` on the running VM.
+rebuilt host and its HTTP listener returned `attempt-collision` on the running VM.
 
 Semantic snapshot, target lookup and planning now resolve through the same
 published `MirrorStateEngine` authority. `now_semantic_ui_wait_for_settlement`

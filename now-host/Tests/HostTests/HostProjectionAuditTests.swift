@@ -299,7 +299,7 @@ final class HostProjectionAuditTests: XCTestCase {
     ///
     /// **Comments stripped**, and this one had the quiet direction. Mutation
     /// on 2026-07-31: pass a sink whose `record` does nothing, and leave
-    /// `audit: LocalAuditSink()` in the comment above it. It builds, all 916
+    /// `audit: LocalMCPAuditSink()` in the comment above it. It builds, all 916
     /// tests pass, and every agent-driven action on the machine reaches no
     /// log a person reads — which is the entire property this test names.
     ///
@@ -308,14 +308,26 @@ final class HostProjectionAuditTests: XCTestCase {
     /// `.invoke(`, so a comment can only ADD an offender — a loud false
     /// failure, never a silent pass — and its failure message reports line
     /// NUMBERS, which stripping would shift off the real source.
-    func testTheCompanionEntryPointPassesTheLocalSink() throws {
+    func testTheStdioEntryPointPassesTheLocalSink() throws {
         let text = try GateSource.hostSwift(
-            "now-host/Sources/NOWAgentCompanion/StdioMCP.swift")
+            "now-host/Sources/Host/MCP/StdioMCPTransport.swift")
         XCTAssertTrue(
-            text.contains("audit: LocalAuditSink()"), """
-            The companion's entry point does not hand the MCP face the sink \
+            text.contains("audit: LocalMCPAuditSink()"), """
+            NOW's stdio entry point does not hand the MCP face the sink \
             that reports to the running host, so its invocations would \
             reach no log a person reads.
+            """)
+    }
+
+    func testTheHTTPEntryPointPassesTheHostSink() throws {
+        let text = try GateSource.hostSwift("now-host/Sources/Host/App.swift")
+        XCTAssertTrue(text.contains("let audit = HostMCPAuditSink("), """
+            NOW's in-process HTTP entry point does not construct the sink \
+            that reports into NOW's log and MCP activity stream.
+            """)
+        XCTAssertTrue(text.contains("NOWMCPServer(client: client, audit: audit)"), """
+            NOW's in-process HTTP entry point does not hand the MCP face the \
+            sink that reports into NOW's log and MCP activity stream.
             """)
     }
 

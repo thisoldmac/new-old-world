@@ -1,41 +1,6 @@
 import Foundation
 import Network
-
-enum CompanionInvocation: Equatable {
-    static let tokenEnvironmentKey = "NOW_MCP_HTTP_BEARER_TOKEN"
-    static let portEnvironmentKey = "NOW_MCP_HTTP_PORT"
-    static let defaultHTTPPort: UInt16 = 5254
-
-    case stdio
-    case http(MCPHTTPConfiguration)
-    case invalid(String)
-
-    static func parse(arguments: [String], environment: [String: String])
-        -> CompanionInvocation {
-        guard !arguments.isEmpty else { return .stdio }
-        guard arguments.first == "--http" else {
-            return .invalid("usage: NOWAgentCompanion [--http [--port N]]")
-        }
-        var port = environment[portEnvironmentKey]
-            .flatMap(UInt16.init) ?? defaultHTTPPort
-        var index = 1
-        while index < arguments.count {
-            guard arguments[index] == "--port", index + 1 < arguments.count,
-                  let parsed = UInt16(arguments[index + 1]), parsed != 0 else {
-                return .invalid(
-                    "usage: NOWAgentCompanion [--http [--port N]]")
-            }
-            port = parsed
-            index += 2
-        }
-        guard let token = environment[tokenEnvironmentKey],
-              (32...512).contains(token.utf8.count) else {
-            return .invalid(
-                "--http requires \(tokenEnvironmentKey) with 32-512 UTF-8 bytes")
-        }
-        return .http(.init(port: port, bearerToken: token))
-    }
-}
+import NOWAgentIntegration
 
 struct MCPHTTPConfiguration: Equatable {
     let port: UInt16
@@ -197,6 +162,7 @@ struct MCPHTTPResponse: Equatable {
 
 actor MCPHTTPService {
     typealias ServerFactory = @Sendable () -> NOWMCPServer
+    typealias ActivityObserver = @Sendable (_ began: Bool, _ at: Date) -> Void
 
     private struct Session {
         let server: NOWMCPServer
@@ -206,15 +172,15 @@ actor MCPHTTPService {
 
     private let configuration: MCPHTTPConfiguration
     private let serverFactory: ServerFactory
+    private let activityObserver: ActivityObserver?
     private var sessions: [String: Session] = [:]
 
     init(configuration: MCPHTTPConfiguration,
-         serverFactory: @escaping ServerFactory = {
-             NOWMCPServer(client: SocketAgentIntegrationClient(),
-                          audit: LocalAuditSink())
-         }) {
+         serverFactory: @escaping ServerFactory,
+         activityObserver: ActivityObserver? = nil) {
         self.configuration = configuration
         self.serverFactory = serverFactory
+        self.activityObserver = activityObserver
     }
 
     func respond(to request: MCPHTTPRequest, now: Date = Date()) async
@@ -267,6 +233,11 @@ actor MCPHTTPService {
                 as? [String: Any],
               let method = object["method"] as? String else {
             return jsonResponse(await serverFactory().handle(request.body))
+        }
+        let observesAgentCall = method == "tools/call"
+        if observesAgentCall { activityObserver?(true, now) }
+        defer {
+            if observesAgentCall { activityObserver?(false, Date()) }
         }
 
         if method == "initialize" {
@@ -369,19 +340,35 @@ actor MCPHTTPService {
     }
 }
 
+private final class MCPHTTPStartSettlement: @unchecked Sendable {
+    /// Accessed only by one NWListener's serial callback queue. The wrapper
+    /// makes that ownership explicit to Swift's Sendable checker.
+    var isSettled = false
+}
+
 final class MCPHTTPListener: @unchecked Sendable {
+    typealias FailureObserver = @Sendable (Error) -> Void
+
     private let configuration: MCPHTTPConfiguration
     private let service: MCPHTTPService
+    private let failureObserver: FailureObserver?
     private let queue = DispatchQueue(label: "dev.newoldworld.mcp-http")
     private var listener: NWListener?
-    private var didStart = false
 
-    init(configuration: MCPHTTPConfiguration) throws {
+    init(configuration: MCPHTTPConfiguration,
+         serverFactory: @escaping MCPHTTPService.ServerFactory,
+         activityObserver: MCPHTTPService.ActivityObserver? = nil,
+         failureObserver: FailureObserver? = nil) throws {
         self.configuration = configuration
-        service = MCPHTTPService(configuration: configuration)
+        self.failureObserver = failureObserver
+        service = MCPHTTPService(configuration: configuration,
+                                 serverFactory: serverFactory,
+                                 activityObserver: activityObserver)
     }
 
-    func run() async throws {
+    /// Start the in-process listener and return when the port is bound.
+    /// The listener remains owned by this object until `stop()`.
+    func start() async throws {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(
             host: "127.0.0.1",
@@ -393,23 +380,41 @@ final class MCPHTTPListener: @unchecked Sendable {
         }
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Error>) in
+            /* All state callbacks arrive on `queue`, so this flag owns the
+               continuation without a lock. A Stop pressed while bind is in
+               flight settles start as cancellation instead of leaving its
+               task suspended forever. */
+            let settlement = MCPHTTPStartSettlement()
             listener.stateUpdateHandler = { [self] state in
                 switch state {
-                case .ready where !didStart:
-                    didStart = true
-                    FileHandle.standardError.write(Data(
-                        "NOW MCP HTTP listening at http://127.0.0.1:\(self.configuration.port)/mcp\n".utf8))
+                case .ready where !settlement.isSettled:
+                    settlement.isSettled = true
+                    continuation.resume()
                 case .failed(let error):
-                    if !didStart { continuation.resume(throwing: error) }
+                    if !settlement.isSettled {
+                        settlement.isSettled = true
+                        continuation.resume(throwing: error)
+                    } else {
+                        /* A port can fail after it was ready. The owner must
+                           stop presenting a green Running state. */
+                        failureObserver?(error)
+                    }
                     listener.cancel()
-                case .cancelled:
-                    if didStart { continuation.resume() }
+                case .cancelled where !settlement.isSettled:
+                    settlement.isSettled = true
+                    continuation.resume(throwing: CancellationError())
                 default:
                     break
                 }
             }
             listener.start(queue: queue)
         }
+    }
+
+    func stop() {
+        let active = listener
+        listener = nil
+        queue.async { active?.cancel() }
     }
 
     private func accept(_ connection: NWConnection) {
@@ -458,8 +463,10 @@ private final class MCPHTTPConnection: @unchecked Sendable {
                 self.connection.cancel()
                 self.finished = true
                 self.keepAlive = nil
-                FileHandle.standardError.write(Data(
-                    "NOW MCP HTTP connection failed: \(error)\n".utf8))
+                let detail = "HTTP connection failed: \(error)"
+                Task { @MainActor in
+                    HostLog.shared.write(.warn, "mcp", detail)
+                }
                 return
             }
             do {

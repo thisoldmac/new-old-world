@@ -1,7 +1,7 @@
 ---
 page_id: mcp-module-reference
 title: MCP module
-description: Show the local companion, machine grant ceiling, exposed projections, and recent agent activity without treating connection as consent.
+description: Control NOW's stdio and HTTP MCP transports, inspect the machine grant ceiling, and review recent agent activity without treating connection as consent.
 doc_type: reference
 audience: operator
 lifecycle: experimental
@@ -9,50 +9,67 @@ authority: [docs/agent-integration.md, docs/mcp-coverage.md]
 module_ids: [mcp]
 source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
 media_ids: [mcp-host, mcp-ppc]
-last_verified: 2026-08-09
+last_verified: 2026-08-10
 ---
 
 # MCP module
 
 ## What it does
 
-MCP presents the host's same-user companion readiness and the selected classic
-Mac's explicit ceiling on what an agent may observe or change.
+MCP presents NOW's two local client transports and the selected classic Mac's
+explicit ceiling on what an agent may observe or change. Both transports use
+one catalog and dispatcher inside NOW; there is no separately installed MCP
+service.
 
-![The macOS MCP module showing companion and grant state](../../../assets/screenshots/modules/mcp/host.svg){ .now-placeholder }
+![The macOS MCP module showing transport and grant state](../../../assets/screenshots/modules/mcp/host.svg){ .now-placeholder }
 
 ## Availability
 
-The host owns the companion and projections. PowerPC provides the machine
-consent page. NOW-68K does not expose this MCP consent surface.
+The host app owns both transports and all projections. PowerPC provides the
+machine consent page. NOW-68K does not expose this MCP consent surface.
 
 ## On the modern Mac
 
-The host shows companion transport, catalog, selected machine, available
-capabilities, grant state, and auditable calls. A live socket is not a grant.
+The host exposes independent controls for:
+
+- **Standard Input**, a narrow `New Old World --mcp-stdio` process launched by
+  an MCP client. Its card copies the executable command and shows the private
+  same-user socket it uses to reach the already-running app.
+- **HTTP**, an authenticated loopback listener running directly inside the
+  normal NOW app. Its card shows the URL and copies the bearer token without
+  rendering the secret in the module or logs.
+
+The module also shows the shared catalog, selected machine, available
+capabilities, grant state, and auditable calls. A running transport is not a
+machine grant.
 
 ## On the classic Mac
 
 The PowerPC MCP page sets the machine's ceiling. It cannot supply host-local
-credentials or prove that a companion can reach the host.
+credentials or prove that an MCP client can reach the host.
 
 ![The PowerPC MCP consent page](../../../assets/screenshots/modules/mcp/ppc.svg){ .now-placeholder }
 
 ## Common tasks
 
 - Confirm the selected machine and requested capability before granting.
+- Start only the transport required by the client. HTTP is off by default;
+  stdio remains available by default for client-launched sessions.
+- Copy connection details from the relevant transport card rather than
+  locating a helper executable.
 - Read the recent call record after an agent action.
 
 ## Safety, consent, and privacy
 
-Global companion connection, host authentication, and per-machine grants are
-separate controls. Do not weaken same-user socket or local endpoint limits to
-connect a client.
+Global transport availability, HTTP authentication, and per-machine grants
+are separate controls. Do not weaken the same-user socket, loopback bind,
+bearer, Host, Origin, session, or framing limits to connect a client.
 
 ## Failure states
 
-Companion unavailable, not addressed, not granted, capability unavailable,
-stale reference, local authentication failure, and machine refusal are typed.
+Transport stopped, local socket unavailable, HTTP authentication failure, not
+addressed, not granted, capability unavailable, stale reference, and machine
+refusal are typed.
 
 ## Current limitations
 
@@ -66,7 +83,7 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: da3c6d3b6a6675226c3a99f1f90e821beff1f701
+sources-sha1: cb4a0a3c52ee0e0d8df244c8d52a541502705bf0
 derive mcp-catalog sha256=dadedb438a578e94422eb5eec7337288e94e19899e6592ebaaf6d86c080258dc lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -90,4 +107,6 @@ rederived: 2026-08-10T04:38:55-0400 886ee556 sources
 rederived: 2026-08-10T05:38:07-0400 a0ede9ec sources
 rederived: 2026-08-10T13:10:56-0400 47bf54fb sources
 rederived: 2026-08-10T13:36:45-0400 b15b4827 sources
+rederived: 2026-08-10T14:45:43-0400 26b75393 sources
+rederived: 2026-08-10T14:48:16-0400 26b75393 sources
 -->

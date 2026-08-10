@@ -1,6 +1,5 @@
 import CoreFoundation
 import Foundation
-import NOWAgentIntegration
 
 /// The MCP face. JSON-RPC framing, one MCP-shaped rendering of the host
 /// projection registry, and nothing else.
@@ -10,10 +9,10 @@ import NOWAgentIntegration
 /// no dispatch here has to learn its name. What used to be a tool enum, a
 /// dozen schema builders and a switch over all of them is now the loop in
 /// `Self.tools` and the lookup in `callTool`.
-actor NOWMCPServer {
-    static let maximumMessageBytes = 64 * 1024
-    static let firstContactResourceURI = "now://agent/first-contact"
-    static let firstContactPromptName = "start-with-now"
+public actor NOWMCPServer {
+    public static let maximumMessageBytes = 64 * 1024
+    public static let firstContactResourceURI = "now://agent/first-contact"
+    public static let firstContactPromptName = "start-with-now"
     private static let supportedVersions = [
         "2025-11-25",
         "2025-06-18",
@@ -31,16 +30,16 @@ actor NOWMCPServer {
     private var initializeResponded = false
     private var initialized = false
 
-    init(client: AgentIntegrationClient,
-         registry: HostProjectionRegistry = .hostFaces,
-         audit: any HostProjectionAuditSink) {
+    public init(client: AgentIntegrationClient,
+                registry: HostProjectionRegistry = .hostFaces,
+                audit: any HostProjectionAuditSink) {
         self.client = client
         self.registry = registry
         dispatch = HostProjectionDispatch(
             face: .mcp, registry: registry, audit: audit)
     }
 
-    func handle(_ data: Data) async -> Data? {
+    public func handle(_ data: Data) async -> Data? {
         guard data.count <= Self.maximumMessageBytes else {
             return errorResponse(id: NSNull(), code: -32700,
                                  message: "MCP message exceeds size limit")
@@ -116,7 +115,7 @@ actor NOWMCPServer {
         }
     }
 
-    func oversizedMessageResponse() -> Data {
+    public func oversizedMessageResponse() -> Data {
         errorResponse(id: NSNull(), code: -32700,
                       message: "MCP message exceeds size limit")
     }
@@ -141,7 +140,7 @@ actor NOWMCPServer {
                 "prompts": ["listChanged": false],
             ],
             "serverInfo": [
-                "name": "now-agent-companion",
+                "name": "new-old-world",
                 "title": "New Old World Agent Integration",
                 "version": "0.1.0",
             ],

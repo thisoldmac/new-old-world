@@ -4,8 +4,10 @@ import XCTest
 /// **The gate for a capability that is advertised and cannot reach the
 /// machine.**
 ///
-/// `SocketAgentIntegrationClient` is the one client every MCP call travels
-/// through. `AgentIntegrationClient` gives most of its requirements a
+/// Both production adapters must override every lane the MCP catalog can call:
+/// `SocketAgentIntegrationClient` for stdio and
+/// `HostAgentIntegrationClient` for in-process HTTP. `AgentIntegrationClient`
+/// gives most of its requirements a
 /// default — deliberately, and the rule at the head of that file argues for
 /// it: seven stub conformers across the test tree implement only their own
 /// lanes, and a requirement without a default is seven compile errors in
@@ -43,10 +45,10 @@ import XCTest
 /// - what the protocol requires — every `func` in the `AgentIntegrationClient`
 ///   protocol body.
 ///
-/// Both are checked against the `func` names `SocketAgentIntegrationClient`
-/// declares. Nothing here is maintained; a projection that starts asking for
-/// a new lane, or a requirement that lands with only its default, fails this
-/// on the same commit that introduces it.
+/// Both are checked against the `func` names each production adapter declares.
+/// Nothing here is maintained; a projection that starts asking for a new lane,
+/// or a requirement that lands with only its default, fails this on the same
+/// commit that introduces it.
 ///
 /// ## Why it reads source rather than calling the methods
 ///
@@ -63,10 +65,14 @@ import XCTest
 /// What it therefore does NOT prove: that a forwarder forwards to the right
 /// operation, or that the lane works. Both are the drive's job, not a
 /// suite's.
-final class SocketClientForwardingTests: XCTestCase {
+final class MCPClientForwardingTests: XCTestCase {
 
-    private static let socketClientPath =
-        "now-host/Sources/NOWAgentCompanion/SocketAgentIntegrationClient.swift"
+    private static let clientPaths = [
+        "stdio socket":
+            "now-host/Sources/Host/MCP/SocketAgentIntegrationClient.swift",
+        "in-process HTTP":
+            "now-host/Sources/Host/MCP/HostAgentIntegrationClient.swift",
+    ]
     private static let protocolPath =
         "now-host/Sources/NOWAgentIntegration/Projection/"
         + "AgentIntegrationClient.swift"
@@ -78,13 +84,7 @@ final class SocketClientForwardingTests: XCTestCase {
     /// This is the half that names the defect directly. A projection is a
     /// published MCP row; if the method it calls is not forwarded, that row
     /// is advertised and dead.
-    func testEveryLaneAProjectionAsksForIsForwardedBySocketClient() throws {
-        let forwarded = try Self.declaredMethods(in: Self.socketClientPath)
-        XCTAssertFalse(
-            forwarded.isEmpty,
-            "Read no methods out of \(Self.socketClientPath). The regex, "
-                + "not the client, is what broke.")
-
+    func testEveryLaneAProjectionAsksForIsForwardedByBothTransports() throws {
         var asked: [String: Set<String>] = [:]
         for file in try Self.projectionSources() {
             let source = try Self.read(file)
@@ -98,20 +98,22 @@ final class SocketClientForwardingTests: XCTestCase {
             asked.isEmpty,
             "Read no client calls out of \(Self.projectionDirectory).")
 
-        let dead = asked.filter { !forwarded.contains($0.key) }
-        XCTAssertTrue(dead.isEmpty, """
-            These lanes are ASKED FOR by a registered projection and NOT \
-            forwarded by SocketAgentIntegrationClient, so every MCP tool \
-            that reaches them answers the protocol default — a "no lane" \
-            refusal from a host that is up:
+        for (transport, path) in Self.clientPaths {
+            let forwarded = try Self.declaredMethods(in: path)
+            XCTAssertFalse(forwarded.isEmpty,
+                           "Read no methods out of \(path).")
+            let dead = asked.filter { !forwarded.contains($0.key) }
+            XCTAssertTrue(dead.isEmpty, """
+                These lanes are ASKED FOR by a registered projection and NOT \
+                forwarded by the \(transport) adapter, so that MCP transport \
+                answers the protocol default from a host that is up:
 
-            \(Self.describe(dead))
+                \(Self.describe(dead))
 
-            A four-line forwarder in \(Self.socketClientPath) is the whole \
-            fix; the lane below it already exists. Do NOT silence this by \
-            deleting the call — a projection that asks for nothing serves \
-            nothing.
-            """)
+                Add the forwarding method in \(path). Do not silence this by \
+                deleting the projection call.
+                """)
+        }
     }
 
     /// Half two: **the whole protocol, not only what is projected today.**
@@ -122,8 +124,7 @@ final class SocketClientForwardingTests: XCTestCase {
     /// and the projection's author has no way to see that from the call
     /// site. Caught here, it is one commit earlier and in the file that
     /// caused it.
-    func testEveryClientRequirementIsForwardedBySocketClient() throws {
-        let forwarded = try Self.declaredMethods(in: Self.socketClientPath)
+    func testEveryClientRequirementIsForwardedByBothTransports() throws {
         let source = try Self.read(Self.protocolPath)
         guard
             let start = source.range(
@@ -147,20 +148,20 @@ final class SocketClientForwardingTests: XCTestCase {
             "Read no requirements out of the AgentIntegrationClient "
                 + "protocol body.")
 
-        let missing = required.subtracting(forwarded).sorted()
-        XCTAssertTrue(missing.isEmpty, """
-            AgentIntegrationClient requires these and \
-            SocketAgentIntegrationClient does not forward them, so they \
-            answer their protocol default over the MCP face — which reads \
-            like a missing host lane and is a missing forwarder:
+        for (transport, path) in Self.clientPaths {
+            let forwarded = try Self.declaredMethods(in: path)
+            let missing = required.subtracting(forwarded).sorted()
+            XCTAssertTrue(missing.isEmpty, """
+                AgentIntegrationClient requires these and the \(transport) \
+                adapter does not forward them, so they answer their protocol \
+                default over that MCP transport:
 
-            \(missing.joined(separator: ", "))
+                \(missing.joined(separator: ", "))
 
-            If a lane genuinely has no socket operation yet, the honest fix \
-            is still a forwarder: add the operation, or say so here in a \
-            way a reader can check. An unforwarded requirement is a \
-            capability this product would advertise and not have.
-            """)
+                An unforwarded requirement is a capability this product \
+                advertises and does not have. Add it in \(path).
+                """)
+        }
     }
 
     // MARK: - Derivation

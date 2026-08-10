@@ -35,15 +35,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         registry: registry)
 
     init(defaults: UserDefaults = UserDefaults(
-        suiteName: ProductIdentity.preferencesSuite) ?? .standard) {
+        suiteName: ProductIdentity.preferencesSuite) ?? .standard,
+         mcpTokenStore: MCPHTTPTokenStore? = try? MCPHTTPTokenStore()) {
         self.defaults = defaults
+        self.mcpTokenStore = mcpTokenStore
         super.init()
     }
     private var statusItem: NSStatusItem?
     private var window: NSWindow?
     private var flash: StatusItemFlash?
     private var statusWatch: AnyCancellable?
-    private var agentIntegrationServer: AgentIntegrationLocalServer?
+    private var mcpStdioBridgeServer: AgentIntegrationLocalServer?
+    private var mcpHTTPListener: MCPHTTPListener?
+    private var mcpHTTPRunID: UUID?
+    private let mcpTokenStore: MCPHTTPTokenStore?
     private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -53,23 +58,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
            who lands on that page cannot press a control that has not been
            connected yet. The delegate owns the server object, so the pane
            reaches it through the app state rather than holding it. */
-        state.startMCPServer = { [weak self] in
-            self?.startAgentIntegrationServer()
+        state.startMCPStdio = { [weak self] in
+            self?.startMCPStdio()
         }
-        state.stopMCPServer = { [weak self] in
-            self?.stopAgentIntegrationServer()
+        state.stopMCPStdio = { [weak self] in
+            self?.stopMCPStdio()
+        }
+        state.startMCPHTTP = { [weak self] in
+            self?.startMCPHTTP()
+        }
+        state.stopMCPHTTP = { [weak self] in
+            self?.stopMCPHTTP()
         }
         /* Not the activating variant. A launch the person performed is
            activated by macOS itself, and a launch they did NOT perform — a
            background `open`, a script restarting the app while they work
            elsewhere — should stay where it was put. */
         openMainWindow()
-        startAgentIntegrationServer()
+        let preferences = MCPTransportPreferences(defaults: defaults)
+        if preferences.stdioEnabled { startMCPStdio() }
+        if preferences.httpEnabled { startMCPHTTP() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         state.onboarding.stop()
-        agentIntegrationServer?.stop()
+        mcpStdioBridgeServer?.stop()
+        mcpHTTPListener?.stop()
     }
 
     /// ⌘Q, and every other route to quitting.
@@ -463,12 +477,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     /// Failure keeps the human product intact; this optional surface must
     /// never become a prerequisite for launching or pairing NOW.
-    private func startAgentIntegrationServer() {
+    private func startMCPStdio() {
         /* Idempotent since the MCP pane can ask: standing a second server on
            the same path would take the socket away from the one already
            serving, which is a worse outcome than a button that does nothing
            because there is nothing to do. */
-        guard agentIntegrationServer == nil else { return }
+        guard mcpStdioBridgeServer == nil else { return }
+        MCPTransportPreferences(defaults: defaults).stdioEnabled = true
         do {
             let server = try AgentIntegrationLocalServer(
                 /* The ledger is written on the accept thread; the pane that
@@ -970,8 +985,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 }
             }
             try server.start()
-            agentIntegrationServer = server
-            state.agentActivity.endpointOpened(
+            mcpStdioBridgeServer = server
+            state.agentActivity.stdioOpened(
                 at: server.endpoint.socketURL.path)
         } catch {
             let reason = "\(error)"
@@ -982,7 +997,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                the honest "nothing has ever attached" beside a socket path
                naming a file that is not there — and send somebody
                configuring a client to look for it. */
-            state.agentActivity.endpointUnavailable(reason)
+            state.agentActivity.stdioUnavailable(reason)
         }
     }
 
@@ -991,19 +1006,123 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// The socket goes and the record stays: what an agent already did to
     /// this Mac is not undone by closing the door it came through, so the
     /// activity stream and the presence ledger are left exactly as they are.
-    private func stopAgentIntegrationServer() {
-        guard let server = agentIntegrationServer else { return }
+    private func stopMCPStdio() {
+        MCPTransportPreferences(defaults: defaults).stdioEnabled = false
+        guard let server = mcpStdioBridgeServer else {
+            state.agentActivity.stdioStopped()
+            return
+        }
         server.stop()
-        agentIntegrationServer = nil
+        mcpStdioBridgeServer = nil
         HostLog.shared.write(.info, "agent",
-                             "local agent endpoint stopped from the MCP pane")
-        state.agentActivity.endpointStopped()
+                             "stdio MCP endpoint stopped from the MCP pane")
+        state.agentActivity.stdioStopped()
+    }
+
+    /// HTTP is a transport of the server already owned by this app. It uses
+    /// the in-process host adapter directly; no companion process, private
+    /// socket or second tool registry sits between the listener and NOW.
+    private func startMCPHTTP() {
+        guard mcpHTTPListener == nil else { return }
+        let preferences = MCPTransportPreferences(defaults: defaults)
+        preferences.httpEnabled = true
+        guard let mcpTokenStore else {
+            state.agentActivity.httpUnavailable(
+                "Application Support is unavailable for the MCP token.")
+            return
+        }
+        do {
+            let token = try mcpTokenStore.loadOrCreate()
+            let port = preferences.httpPort
+            let runID = UUID()
+            mcpHTTPRunID = runID
+            let client = HostAgentIntegrationClient(
+                adapter: state.agentIntegration, guestFiles: state.guestFiles)
+            let audit = HostMCPAuditSink(
+                adapter: state.agentIntegration,
+                activity: state.agentActivity)
+            let listener = try MCPHTTPListener(
+                configuration: .init(port: port, bearerToken: token),
+                serverFactory: {
+                    NOWMCPServer(client: client, audit: audit)
+                },
+                activityObserver: { [activity = state.agentActivity]
+                    began, moment in
+                    Task { @MainActor in
+                        if began {
+                            activity.httpRequestBegan(at: moment)
+                        } else {
+                            activity.httpRequestEnded(at: moment)
+                        }
+                    }
+                },
+                failureObserver: { [weak self] error in
+                    Task { @MainActor in
+                        guard let self, self.mcpHTTPRunID == runID else {
+                            return
+                        }
+                        self.mcpHTTPListener = nil
+                        self.mcpHTTPRunID = nil
+                        self.state.agentActivity.httpUnavailable("\(error)")
+                        HostLog.shared.write(
+                            .warn, "mcp", "HTTP MCP failed: \(error)")
+                    }
+                })
+            mcpHTTPListener = listener
+            Task { [weak self, weak listener] in
+                guard let self, let listener else { return }
+                do {
+                    try await listener.start()
+                    await MainActor.run {
+                        guard self.mcpHTTPListener === listener,
+                              self.mcpHTTPRunID == runID else { return }
+                        let endpoint = "http://127.0.0.1:\(port)/mcp"
+                        self.state.agentActivity.httpOpened(
+                            at: endpoint, bearerToken: token)
+                        HostLog.shared.write(
+                            .info, "mcp", "HTTP MCP listening at \(endpoint)")
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard self.mcpHTTPListener === listener,
+                              self.mcpHTTPRunID == runID else { return }
+                        self.mcpHTTPListener = nil
+                        self.mcpHTTPRunID = nil
+                        self.state.agentActivity.httpUnavailable("\(error)")
+                        HostLog.shared.write(
+                            .warn, "mcp", "HTTP MCP unavailable: \(error)")
+                    }
+                }
+            }
+        } catch {
+            mcpHTTPRunID = nil
+            state.agentActivity.httpUnavailable("\(error)")
+            HostLog.shared.write(.warn, "mcp",
+                                 "HTTP MCP unavailable: \(error)")
+        }
+    }
+
+    private func stopMCPHTTP() {
+        MCPTransportPreferences(defaults: defaults).httpEnabled = false
+        mcpHTTPRunID = nil
+        mcpHTTPListener?.stop()
+        mcpHTTPListener = nil
+        HostLog.shared.write(.info, "mcp",
+                             "HTTP MCP stopped from the MCP pane")
+        state.agentActivity.httpStopped()
     }
 }
 
 @main
 enum HostMain {
     static func main() {
+        if Array(CommandLine.arguments.dropFirst()) == ["--mcp-stdio"] {
+            Task {
+                await MCPStdioTransport.run()
+                Foundation.exit(0)
+            }
+            dispatchMain()
+        }
         let application = NSApplication.shared
         application.setActivationPolicy(.regular)
         let delegate = AppDelegate()

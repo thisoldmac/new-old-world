@@ -1,4 +1,5 @@
 import Foundation
+import NOWAgentIntegration
 
 enum MCPInputEvent {
     case message(Data)
@@ -49,34 +50,17 @@ struct MCPStandardOutput {
     }
 }
 
-@main
-enum NOWAgentCompanionMain {
-    static func main() async {
-        switch CompanionInvocation.parse(
-            arguments: Array(CommandLine.arguments.dropFirst()),
-            environment: ProcessInfo.processInfo.environment) {
-        case .stdio:
-            await runStdio()
-        case .http(let configuration):
-            do {
-                let listener = try MCPHTTPListener(configuration: configuration)
-                try await listener.run()
-            } catch {
-                FileHandle.standardError.write(Data(
-                    "NOWAgentCompanion HTTP refused to start: \(error)\n".utf8))
-                Foundation.exit(64)
-            }
-        case .invalid(let reason):
-            FileHandle.standardError.write(Data(
-                "NOWAgentCompanion: \(reason)\n".utf8))
-            Foundation.exit(64)
-        }
-    }
-
-    private static func runStdio() async {
+/// The client-launched MCP mode of the New Old World executable.
+///
+/// This is deliberately not another product or server. An MCP client starts
+/// the same binary with `--mcp-stdio`; this narrow process frames standard
+/// input and reaches the already-running NOW app through its same-UID local
+/// endpoint. Tool ownership, consent, audit and guest state remain in NOW.
+enum MCPStdioTransport {
+    static func run() async {
         let server = NOWMCPServer(
             client: SocketAgentIntegrationClient(),
-            audit: LocalAuditSink())
+            audit: LocalMCPAuditSink())
         let output = MCPStandardOutput()
         var framer = BoundedMCPLineFramer()
 

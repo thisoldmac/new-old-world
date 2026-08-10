@@ -2,14 +2,14 @@ import Foundation
 
 /// How a projection reaches the running host.
 ///
-/// It lives beside the projections rather than in the companion executable
+/// It lives beside the projections rather than in either transport adapter
 /// because a projection is defined by what it may ask the host for, and the
 /// same definition has to be readable by every face that renders it.
 ///
 /// Nothing here reads guest identity, and nothing that decides what a call
 /// may do is allowed to: availability follows from what the connected guest
 /// answers, never from which guest it is
-/// (`AgentIntegrationCapabilityTests.testNoCompanionCodeBranchesOnGuestIdentity`).
+/// (`AgentIntegrationCapabilityTests.testNoMCPAdapterCodeBranchesOnGuestIdentity`).
 ///
 /// **A NEW METHOD HERE ARRIVES WITH ITS DEFAULT, IN THE SAME EDIT.** Add the
 /// requirement below and a default in the extension underneath, returning

@@ -26,6 +26,16 @@ final class AgentEndpointIsolationTests: XCTestCase {
             "-lane_A-2")
     }
 
+    func testAFullLengthLaneSuffixStillFitsDarwinsSocketPath() throws {
+        let endpoint = try AgentIntegrationEndpoint.forUser(
+            uid: 501, rawSuffix: String(repeating: "x", count: 24))
+
+        XCTAssertEqual(endpoint.directoryURL.deletingLastPathComponent().path,
+                       "/tmp")
+        XCTAssertLessThan(endpoint.socketURL.path.utf8.count, 104,
+                          "A legal lane suffix must remain usable.")
+    }
+
     /// A suffix that would name a path outside the temporary directory,
     /// or one long enough to push the socket past the platform's own
     /// limit, is REFUSED rather than escaped.

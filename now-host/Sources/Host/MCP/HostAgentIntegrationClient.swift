@@ -1,7 +1,7 @@
 import Foundation
 import NOWAgentIntegration
 
-/* The chat face's way to reach this host: the same adapter calls the
+/* Every in-process agent face's way to reach this host: the same adapter calls the
    local server makes on behalf of the companion, minus the socket and
    the codec — a third CALLER of the one implementation, never a third
    implementation. Each method is the App.swift switch's branch for the
@@ -16,7 +16,7 @@ import NOWAgentIntegration
    client anywhere carries that lane yet, and the protocol default's
    "no observation lane" is the honest answer here too. */
 
-struct ChatAgentClient: AgentIntegrationClient {
+struct HostAgentIntegrationClient: AgentIntegrationClient {
     let adapter: AgentIntegrationHostAdapter
     let guestFiles: GuestFilesCommandService
     private(set) var selector: String?
@@ -259,5 +259,34 @@ struct ChatAgentClient: AgentIntegrationClient {
         -> AgentIntegrationTextSetResult {
         if let refusal = await refusal() { return .unavailable(refusal) }
         return await adapter.setElementText(element: element, text: text)
+    }
+
+    func observeElements(process: AgentIntegrationProcessSerial?) async
+        -> AgentIntegrationElementObservationResult {
+        if let refusal = await refusal() { return .unavailable(refusal) }
+        return await adapter.observeElements(process: process)
+    }
+
+    func mirrorRead(_ request: AgentIntegrationMirrorReadRequest) async
+        -> AgentIntegrationMirrorReadResult {
+        if let refusal = await refusal() {
+            return .init(unavailable: refusal)
+        }
+        return await adapter.mirrorRead(request)
+    }
+
+    func mirrorDrive(_ request: AgentIntegrationMirrorDriveRequest) async
+        -> AgentIntegrationMirrorDriveResult {
+        if let refusal = await refusal() {
+            return .init(unavailable: refusal)
+        }
+        return await adapter.driveMirror(request)
+    }
+
+    func mirrorOpen() async -> AgentIntegrationMirrorOpenResult {
+        if let refusal = await refusal() {
+            return .init(unavailable: refusal)
+        }
+        return await adapter.openMirror()
     }
 }

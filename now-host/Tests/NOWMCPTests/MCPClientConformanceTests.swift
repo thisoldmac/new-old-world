@@ -42,15 +42,14 @@ final class MCPClientConformanceTests: XCTestCase {
     // MARK: The gate
 
     func testEveryAdvertisedToolAnswersARealStdioClient() throws {
-        let client = try MCPClient(executable: Self.companionExecutable(),
+        let client = try MCPClient(executable: Self.hostExecutable(),
                                    environment: Self.environment())
         defer { client.shutDown() }
         try exerciseEveryAdvertisedTool(client, transport: "stdio")
     }
 
     func testEveryAdvertisedToolAnswersARealHTTPClient() throws {
-        let client = try MCPHTTPClient(executable: Self.companionExecutable(),
-                                       environment: Self.environment())
+        let client = try MCPHTTPClient(environment: Self.environment())
         defer { client.shutDown() }
         try exerciseEveryAdvertisedTool(client, transport: "HTTP")
     }
@@ -128,7 +127,7 @@ final class MCPClientConformanceTests: XCTestCase {
     /// The resource URI still owns routing; protocol metadata must not turn an
     /// advertised first-contact resource into an "Unknown NOW resource".
     func testAdvertisedFirstContactResourceAcceptsClientMetadata() throws {
-        let client = try MCPClient(executable: Self.companionExecutable(),
+        let client = try MCPClient(executable: Self.hostExecutable(),
                                    environment: Self.environment())
         defer { client.shutDown() }
 
@@ -448,17 +447,18 @@ final class MCPClientConformanceTests: XCTestCase {
     /// The built companion, beside the test bundle. Fails rather than
     /// skips, for the reason `StdioTransportLivenessTests` states: it is a
     /// product of this same package, so its absence is a broken build.
-    private static func companionExecutable() throws -> URL {
+    private static func hostExecutable() throws -> URL {
         let candidate = Bundle(for: MCPClientConformanceTests.self)
             .bundleURL
             .deletingLastPathComponent()
-            .appendingPathComponent("NOWAgentCompanion")
+            .appendingPathComponent("Host")
         guard FileManager.default.isExecutableFile(atPath: candidate.path)
         else {
             XCTFail("""
-                No NOWAgentCompanion executable beside the test bundle at \
+                No New Old World Host executable beside the test bundle at \
                 \(candidate.path). It is a product of this same package, so \
-                this is a build that did not produce it rather than a \
+                this is a build that did not produce the one-bundle stdio \
+                entry point rather than a \
                 missing tool — and this gate does not skip.
                 """)
             throw CocoaError(.fileNoSuchFile)

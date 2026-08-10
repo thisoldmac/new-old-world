@@ -35,9 +35,10 @@ final class StdioTransportLivenessTests: XCTestCase {
     private static let deadline: TimeInterval = 15
 
     func testAnswersOneSmallMessageWithStandardInputStillOpen() throws {
-        let executable = try Self.companionExecutable()
+        let executable = try Self.hostExecutable()
         let process = Process()
         process.executableURL = executable
+        process.arguments = ["--mcp-stdio"]
         let input = Pipe()
         let output = Pipe()
         process.standardInput = input
@@ -70,7 +71,7 @@ final class StdioTransportLivenessTests: XCTestCase {
 
         guard outcome == .completed else {
             return XCTFail("""
-                The MCP companion answered nothing in \
+                New Old World's MCP stdio mode answered nothing in \
                 \(Int(Self.deadline))s to one small `initialize` written \
                 with standard input STILL OPEN — which is how every real \
                 MCP client speaks to it.
@@ -118,15 +119,15 @@ final class StdioTransportLivenessTests: XCTestCase {
     /// AGENTS.md says so about `test-mirrorkit`, in almost these words — and
     /// the executable is a product of the same package as this test, so its
     /// absence is a broken build rather than a missing toolchain.
-    private static func companionExecutable() throws -> URL {
+    private static func hostExecutable() throws -> URL {
         let candidate = Bundle(for: StdioTransportLivenessTests.self)
             .bundleURL
             .deletingLastPathComponent()
-            .appendingPathComponent("NOWAgentCompanion")
+            .appendingPathComponent("Host")
         guard FileManager.default.isExecutableFile(atPath: candidate.path)
         else {
             XCTFail("""
-                No NOWAgentCompanion executable beside the test bundle at \
+                No New Old World Host executable beside the test bundle at \
                 \(candidate.path). It is a product of this same package, so \
                 this is a build that did not produce it rather than a \
                 missing tool — and this gate does not skip, because the \

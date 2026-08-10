@@ -55,15 +55,17 @@ final class HostAppState: ObservableObject {
     /// HostAppState stays free of AppKit chrome and tests stay silent.
     var quickCaptureFeedback: ((QuickCaptureOutcome) -> Void)?
 
-    /// Starting and stopping the MCP server, set by the app delegate.
+    /// Starting and stopping NOW's two MCP transports, set by the app delegate.
     ///
     /// Hooks rather than methods for the same reason as the flash above: the
     /// server object belongs to the delegate, which is the only thing whose
     /// lifetime matches a listening socket's, and a test or a preview that
     /// leaves these nil gets a pane with buttons that do nothing to any real
     /// socket instead of a host process with an endpoint it never wanted.
-    var startMCPServer: (() -> Void)?
-    var stopMCPServer: (() -> Void)?
+    var startMCPStdio: (() -> Void)?
+    var stopMCPStdio: (() -> Void)?
+    var startMCPHTTP: (() -> Void)?
+    var stopMCPHTTP: (() -> Void)?
 
     /// Drives the menu bar's connection glyph and status line.
     private(set) lazy var guestStatus = GuestStatusMonitor(listener: listener)

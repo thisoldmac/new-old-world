@@ -199,7 +199,7 @@ to need telling is exactly the one that will not read.
 ## Faces, and the one door they share
 
 A **face** is something that can ask this host to act on the guest: the
-app's own UI, and the MCP companion. A **projection** is one capability
+app's own UI, and its MCP surface. A **projection** is one capability
 rendered for every face at once — its schema, its bounds, its
 availability rule and its answer, written once.
 `HostProjectionCatalog` is the registry, in presentation order;

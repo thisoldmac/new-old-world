@@ -88,7 +88,7 @@ derives what a projection **declares** — its `capability`, its `requires`,
 its `exposes` — and all seven declarations were correct. What was missing was
 four lines one layer below the projection, in a file this document does not
 read. So the gate is
-[`SocketClientForwardingTests`](../now-host/Tests/NOWAgentCompanionTests/SocketClientForwardingTests.swift),
+[`MCPClientForwardingTests`](../now-host/Tests/NOWMCPTests/MCPClientForwardingTests.swift),
 which derives two sets from source — every `client.<method>(` the projections
 call, and every requirement the client protocol declares — and fails when
 either contains a name `SocketAgentIntegrationClient` does not declare a
@@ -104,7 +104,7 @@ client holding stdio open and sending one small line at a time was answered
 by **nothing at all**, on every one of the tools in this file. It survived
 because every driver this surface has ever had wrote its whole script and
 closed stdin, which is a batch rather than a client.
-[`StdioTransportLivenessTests`](../now-host/Tests/NOWAgentCompanionTests/StdioTransportLivenessTests.swift)
+[`StdioTransportLivenessTests`](../now-host/Tests/NOWMCPTests/StdioTransportLivenessTests.swift)
 spawns the real executable, writes one small line and holds stdin open — the
 one condition every previous driver removed.
 
@@ -1010,7 +1010,7 @@ None was chased here.
 ### Exercised again, 2026-08-09
 
 After the discovery cleanup and F-003 capacity fix, the same derived driver
-called all 42 advertised tools through a real spawned stdio companion against
+called all 42 advertised tools through the real client-launched stdio mode against
 an identity-checked Mac OS 9.1 VM (`Power Mac G4`, build
 `0aa097ba0c1b`). It reported 29 served, 12 explained refusals, one explicitly
 human-gated row, zero failed, and zero uncovered. The upload recipe itself had
@@ -1023,9 +1023,9 @@ claim that every served mutation was observed semantically or on metal.
 ### HTTP/stdio parity and varied Development loops, 2026-08-10
 
 The derived driver now sees 46 advertised tools. Its no-host recipe ran against
-both real spawned transports: 45 typed host-unavailable results, the one
+both real transports: 45 typed host-unavailable results, the one
 person-approved transfer explicitly human-gated, zero failed and zero
-uncovered on each. A separate spawned parity fixture compared initialize,
+uncovered on each. A separate cross-transport parity fixture compared initialize,
 initialized-notification gating, ping, resource and prompt lists/reads, all tool
 names/descriptions/input schemas, one real tool result, and invalid
 method/tool/cursor/resource/prompt errors byte-for-structure across HTTP and
@@ -1053,7 +1053,7 @@ duplicated here.
 Mac OS 9 under QEMU, each of `now_guest_log_tail`,
 `now_observe_elements`, `now_semantic_ui_act`, `now_window_act`,
 `now_control_act`, `now_text_get` and `now_text_set` was called through the
-MCP transport — the companion executable over JSON-RPC, not a test seam —
+MCP transport — the New Old World executable's stdio mode over JSON-RPC, not a test seam —
 and four of them were watched taking effect on the machine: the walk minted
 `now-element-…` references for a Finder window's scrollbars, `now_window_act`
 moved that window to exactly the coordinates it was given, `now_control_act`
@@ -1068,7 +1068,7 @@ answered and the three-stage upload completed; it does not retroactively add
 direct-effect evidence to the other rows.
 
 **The completed text reading was taken later the same day**, on
-`claude/019-conformance`, through the companion binary over JSON-RPC. A
+`claude/019-conformance`, through New Old World's stdio mode over JSON-RPC. A
 window with a discoverable `TEHandle` is a *dialog's*, not a document's —
 the contract says so — so SimpleText's Find dialog was opened, and
 `now_observe_elements` minted the text reference the walk carries under
@@ -1248,4 +1248,6 @@ rederived: 2026-08-10T04:38:54-0400 886ee556 unchanged
 rederived: 2026-08-10T05:38:07-0400 a0ede9ec unchanged
 rederived: 2026-08-10T13:10:56-0400 47bf54fb sources
 rederived: 2026-08-10T13:36:45-0400 b15b4827 unchanged
+rederived: 2026-08-10T14:45:43-0400 26b75393 unchanged
+rederived: 2026-08-10T14:48:15-0400 26b75393 unchanged
 -->

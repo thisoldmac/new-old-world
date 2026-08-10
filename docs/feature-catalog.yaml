@@ -111,10 +111,10 @@ module_feature_coverage:
     extension_required: false
     status: Current; availability depends on what the connected guest serves.
   - module_id: mcp
-    title: Set agent access and inspect the MCP companion
+    title: Control MCP transports and inspect agent activity
     without_extension: Available.
     extension_required: false
-    status: Experimental; a live companion is not itself an access grant.
+    status: Experimental; running a transport is not itself a guest access grant.
   - module_id: logs
     title: Review bounded host and guest logs
     without_extension: Available.
