@@ -51,6 +51,31 @@ def require_moved(before: str, after: str, mutation: str) -> None:
         raise AssertionError(f"{mutation} did not move the build ID")
 
 
+def require_extension_resource(header: Path, build_id: str) -> None:
+    """The fixed NWid ABI must carry the same prefixes as the C table.
+
+    The update identity is 256 bits, but the resident table and NWid resource
+    are deliberately fixed at 160 bits per field. Writing both full hashes
+    made the existing 40+40 reader take the tail of the source hash as the
+    build fingerprint, so one build disagreed with itself at the bake gate.
+    """
+    header_text = header.read_text()
+    source_words = re.findall(
+        r'^#define NOW_EXT_SOURCE_MANIFEST_[0-4] 0x([0-9a-f]{8})UL$',
+        header_text, re.MULTILINE)
+    resource_text = Path(f"{header}.r").read_text()
+    resource = re.search(r'\$"([0-9a-f]+)"', resource_text)
+    if len(source_words) != 5 or resource is None:
+        raise AssertionError("extension ABI identity fields were not emitted")
+    payload = resource.group(1)
+    if len(payload) != 80:
+        raise AssertionError("NWid is not exactly two 160-bit identity fields")
+    if payload[:40] != "".join(source_words):
+        raise AssertionError("NWid source identity differs from the C table")
+    if payload[40:] != build_id[:40]:
+        raise AssertionError("NWid build identity differs from the C table")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="now-build-id-") as temp:
         root = Path(temp)
@@ -78,6 +103,7 @@ def main() -> int:
                       "an application resource")
 
         ext = generate(root, "extension", ext_header)
+        require_extension_resource(ext_header, ext)
         resident = root / "contract/resident_version.h"
         resident.write_text(resident.read_text() + "\n/* identity mutation */\n")
         require_moved(ext, generate(root, "extension", ext_header),
@@ -89,7 +115,7 @@ def main() -> int:
         require_moved(ext, generate(root, "extension", ext_header),
                       "a compiled shared resident source")
 
-    print("component build identity: 6 mutation/idempotence cases passed")
+    print("component build identity: 7 mutation/idempotence cases passed")
     return 0
 
 

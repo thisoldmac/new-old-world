@@ -308,6 +308,16 @@
         "ext/cmake/build_identity.cmake"
       ],
       "reason": "Two foreign VMs are active; shared bake is deferred until the machine is free before main eligibility."
+    },
+    {
+      "at": "2026-08-10T14:50:00-0400",
+      "branch": "codex/host-owned-updater",
+      "extDigest": "5f724a7550217154d268a25c7323cb02ce415549",
+      "kind": "deferral",
+      "paths": [
+        "ext/cmake/build_identity.cmake"
+      ],
+      "reason": "Checkpoint the NWid identity encoding fix before the required shared bake."
     }
   ]
 }

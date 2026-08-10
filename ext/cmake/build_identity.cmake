@@ -60,9 +60,11 @@ file(WRITE "${HEADER}"
 #define NOW_EXT_BUILD_IDENTITY_H
 ${_defines}#endif
 ")
+string(SUBSTRING "${_source_hash}" 0 40 _source_abi)
+string(SUBSTRING "${_build_hash}" 0 40 _build_abi)
 file(WRITE "${REZ_OUT}"
 "/* Generated; first 160 bits of source and resident build identities. */
 data 'NWid' (128, \"NOW Extension Build\") {
-    $\"${_source_hash}${_build_hash}\"
+    $\"${_source_abi}${_build_abi}\"
 };
 ")
