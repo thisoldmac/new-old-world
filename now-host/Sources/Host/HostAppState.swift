@@ -434,7 +434,11 @@ final class HostAppState: ObservableObject {
                window yet would be refusing the thing that was asked for. */
             let source = self.mirrorSource
             return MirrorDriveService(
-                scene: { source.scene },
+                /* Resolve the entity against the same immutable publication
+                   the MCP snapshot projected. `source.scene` is the rendered
+                   view and can still be independently enriched by host UI;
+                   using it here recreated two semantic authorities. */
+                scene: { source.shadowEngine?.snapshot?.scene },
                 perform: { source.perform($0, source: .mcp) },
                 journal: { source.shadowEngine?.operations },
                 cancel: { source.cancelPendingActs() })

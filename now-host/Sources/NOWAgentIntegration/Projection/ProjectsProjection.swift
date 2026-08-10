@@ -63,25 +63,13 @@ public enum ProjectsProjection: HostProjection {
         "description": "Canonical /-separated project-relative path; never a host path.",
     ]
 
-    private static let inputSchema: [String: Any] = [
-        "type": "object",
-        "properties": [
-            "operation": [
-                "type": "string",
-                "enum": AgentIntegrationProjectOperation.allWireValues,
-            ],
-            "projectID": ["type": "string", "pattern": "^[0-9a-f]{32}$"],
-            "workspaceID": ["type": "string", "pattern": "^workspace-[0-9a-f]{16}$"],
-            "name": ["type": "string", "minLength": 1, "maxLength": 64],
-            "expectedRevision": ["type": "integer", "minimum": 0],
-            "expectedCommit": ["type": "string", "pattern": "^[0-9a-f]{40}$"],
-            "path": relativePath,
-            "fork": ["type": "string", "enum": ["data", "resource"]],
-            "maximumBytes": ["type": "integer", "minimum": 1,
-                             "maximum": 262_144],
-            "message": ["type": "string", "minLength": 1,
-                        "maxLength": 256],
-            "changes": [
+    private static let projectID: [String: Any] = [
+        "type": "string", "pattern": "^[0-9a-f]{32}$",
+    ]
+    private static let workspaceID: [String: Any] = [
+        "type": "string", "pattern": "^workspace-[0-9a-f]{16}$",
+    ]
+    private static let changes: [String: Any] = [
                 "type": "array", "minItems": 1, "maxItems": 128,
                 "items": [
                     "type": "object",
@@ -101,16 +89,73 @@ public enum ProjectsProjection: HostProjection {
                     "required": ["path", "action"],
                     "additionalProperties": false,
                 ],
-            ],
-        ],
-        "required": ["operation"],
-        "additionalProperties": false,
-    ]
-}
+            ]
 
-private extension AgentIntegrationProjectOperation {
-    static var allWireValues: [String] {
-        [list, create, status, read, apply, history, workspaceOpen,
-         workspaceResume, workspaceDiscard].map(\.rawValue)
+    /// Each operation is a complete object schema, rather than an enum beside
+    /// a bag of optional fields. Generated clients can therefore reject an
+    /// impossible request before it crosses MCP, and the project-revision and
+    /// workspace-commit guards cannot be supplied together.
+    private static let inputSchema: [String: Any] = [
+        "oneOf": [
+            branch(.list),
+            branch(.create, properties: [
+                "name": ["type": "string", "minLength": 1,
+                         "maxLength": 64],
+                "changes": changes,
+            ], required: ["name", "changes"]),
+            branch(.status, properties: ["projectID": projectID],
+                   required: ["projectID"]),
+            branch(.read, properties: [
+                "projectID": projectID, "path": relativePath,
+                "fork": ["type": "string", "enum": ["data", "resource"]],
+                "maximumBytes": ["type": "integer", "minimum": 1,
+                                 "maximum": 262_144],
+            ], required: ["projectID", "path"]),
+            branch(.apply, properties: [
+                "projectID": projectID,
+                "expectedRevision": ["type": "integer", "minimum": 0],
+                "message": ["type": "string", "minLength": 1,
+                            "maxLength": 256],
+                "changes": changes,
+            ], required: ["projectID", "expectedRevision", "message",
+                          "changes"]),
+            branch(.apply, title: "Apply to workspace", properties: [
+                "workspaceID": workspaceID,
+                "expectedCommit": ["type": "string",
+                                   "pattern": "^[0-9a-f]{40}$"],
+                "message": ["type": "string", "minLength": 1,
+                            "maxLength": 256],
+                "changes": changes,
+            ], required: ["workspaceID", "expectedCommit", "message",
+                          "changes"]),
+            branch(.history, properties: ["projectID": projectID],
+                   required: ["projectID"]),
+            branch(.workspaceOpen, properties: ["projectID": projectID],
+                   required: ["projectID"]),
+            branch(.workspaceResume,
+                   properties: ["workspaceID": workspaceID],
+                   required: ["workspaceID"]),
+            branch(.workspaceDiscard,
+                   properties: ["workspaceID": workspaceID],
+                   required: ["workspaceID"]),
+        ],
+    ]
+
+    private static func branch(
+        _ operation: AgentIntegrationProjectOperation,
+        title: String? = nil,
+        properties: [String: Any] = [:],
+        required: [String] = []
+    ) -> [String: Any] {
+        var all = properties
+        all["operation"] = ["const": operation.rawValue]
+        var result: [String: Any] = [
+            "type": "object",
+            "properties": all,
+            "required": ["operation"] + required,
+            "additionalProperties": false,
+        ]
+        if let title { result["title"] = title }
+        return result
     }
 }

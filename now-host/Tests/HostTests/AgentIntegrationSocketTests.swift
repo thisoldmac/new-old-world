@@ -784,6 +784,26 @@ final class AgentIntegrationSocketTests: XCTestCase {
         }
     }
 
+    func testOlderHostResponseIsTypedAsCompatibilityNotInvalidData() throws {
+        let older = AgentIntegrationLocalProtocol.version - 1
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "version": older,
+            "requestID": UUID().uuidString,
+            "error": ["code": "invalid-request",
+                      "message": "Unsupported local protocol version"],
+        ])
+
+        XCTAssertThrowsError(
+            try AgentIntegrationLocalCodec.decodeResponse(raw)
+        ) { error in
+            XCTAssertEqual(
+                error as? AgentIntegrationLocalTransportError,
+                .incompatibleProtocol(
+                    expected: AgentIntegrationLocalProtocol.version,
+                    actual: older))
+        }
+    }
+
     func testSocketRoundTripsOnlyAnArtifactApprovalReceipt()
         async throws {
         let (endpoint, root) = try temporaryEndpoint()

@@ -46,6 +46,36 @@ final class AgentIntegrationProjectsTests: XCTestCase {
             .isWellFormed)
     }
 
+    func testMCPContractDiscriminatesEveryProjectOperationAndApplyGuard() {
+        let descriptor = ProjectsProjection.mcpDescriptor
+        let schema = descriptor["inputSchema"] as? [String: Any]
+        let branches = schema?["oneOf"] as? [[String: Any]] ?? []
+        let operations = branches.compactMap { branch -> String? in
+            let properties = branch["properties"] as? [String: Any]
+            let operation = properties?["operation"] as? [String: Any]
+            return operation?["const"] as? String
+        }
+        XCTAssertEqual(Set(operations), [
+            "list", "create", "status", "read", "apply", "history",
+            "workspace-open", "workspace-resume", "workspace-discard",
+        ])
+        XCTAssertEqual(operations.filter { $0 == "apply" }.count, 2)
+        let apply = zip(branches, operations).filter { $0.1 == "apply" }
+        XCTAssertEqual(apply.count, 2)
+        let keySets = apply.map { pair in
+            Set((pair.0["properties"] as? [String: Any] ?? [:]).keys)
+        }
+        XCTAssertTrue(keySets.contains {
+            $0.contains("expectedRevision") && !$0.contains("expectedCommit")
+        })
+        XCTAssertTrue(keySets.contains {
+            $0.contains("expectedCommit") && !$0.contains("expectedRevision")
+        })
+        XCTAssertTrue(branches.allSatisfy {
+            ($0["additionalProperties"] as? Bool) == false
+        })
+    }
+
     func testHostAdapterCreatesReadsAndAtomicallyRevisesAProject() throws {
         let projectStore = try store()
         let adapter = AgentIntegrationHostAdapter(

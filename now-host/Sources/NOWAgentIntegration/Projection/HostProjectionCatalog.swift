@@ -57,6 +57,7 @@ public enum HostProjectionCatalog {
            a confident, meaningless number: this row is the premise. */
         MirrorLifecycleProjection.self,
         MirrorJournalProjection.self,
+        MirrorSettlementProjection.self,
         /* And the one mutation row that shares the window's executor. It
            sits with the reads rather than with the act lane's five because
            it is the same engine seen the other way round, and because a

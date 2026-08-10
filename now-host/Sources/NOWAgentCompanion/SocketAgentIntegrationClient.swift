@@ -627,6 +627,10 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
                 message: "New Old World host communication failed")
         }
         switch local {
+        case .incompatibleProtocol(let expected, let actual):
+            return .init(
+                code: "now-host-companion-incompatible",
+                message: "New Old World host protocol \(actual) is incompatible with companion protocol \(expected). Install and launch the matching host and companion build.")
         // Passed through as itself. "This host is driving another
         // machine" is a fact about ADDRESSING, and flattening it into a
         // communication failure would tell a caller to retry the one

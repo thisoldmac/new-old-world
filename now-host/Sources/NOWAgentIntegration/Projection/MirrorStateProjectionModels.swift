@@ -25,6 +25,10 @@ public enum AgentIntegrationMirrorReadIntention: String, Codable, Sendable {
     /// drove it. The clocks in `metrics` say how long; this says what was
     /// asked, of what, by whom, and how it ended.
     case journal
+    /// Wait for one already-admitted semantic operation. This never mints or
+    /// retries an act; it only returns the journal's current or terminal
+    /// record by its stable operation identity.
+    case settlement
 }
 
 public struct AgentIntegrationMirrorReadRequest:
@@ -33,28 +37,39 @@ public struct AgentIntegrationMirrorReadRequest:
     public let query: String?
     public let afterSnapshotID: Int?
     public let timeoutMs: Int?
+    public let operationID: String?
 
     public init(intention: AgentIntegrationMirrorReadIntention,
                 query: String? = nil, afterSnapshotID: Int? = nil,
-                timeoutMs: Int? = nil) {
+                timeoutMs: Int? = nil, operationID: String? = nil) {
         self.intention = intention
         self.query = query
         self.afterSnapshotID = afterSnapshotID
         self.timeoutMs = timeoutMs
+        self.operationID = operationID
     }
 
     public var isWellFormed: Bool {
         switch intention {
         case .status, .snapshot:
             return query == nil && afterSnapshotID == nil && timeoutMs == nil
+                && operationID == nil
         case .find:
             return query?.isEmpty == false && query!.count <= 128
                 && afterSnapshotID == nil && timeoutMs == nil
+                && operationID == nil
         case .wait:
-            return query == nil && (afterSnapshotID ?? 0) > 0
+            return query == nil && operationID == nil
+                && (afterSnapshotID ?? 0) > 0
                 && (1...15_000).contains(timeoutMs ?? 5_000)
         case .metrics, .lifecycle, .journal:
             return query == nil && afterSnapshotID == nil && timeoutMs == nil
+                && operationID == nil
+        case .settlement:
+            return query == nil && afterSnapshotID == nil
+                && operationID?.isEmpty == false
+                && operationID!.count <= 128
+                && (1...15_000).contains(timeoutMs ?? 5_000)
         }
     }
 }

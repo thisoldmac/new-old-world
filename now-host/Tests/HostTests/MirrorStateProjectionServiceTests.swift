@@ -955,6 +955,57 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
                        "reading the journal publishes no snapshot")
     }
 
+    func testSettlementReturnsTheExactTerminalOperationWithoutDispatching()
+        async throws {
+        let registry = MirrorStateEngineRegistry()
+        let engine = registry.engine(for: key)
+        _ = engine.accept(try scene(seq: 1))
+        let process = MirrorProcessIdentity(
+            session: engine.session, incarnation: "process-finder")
+        var operation = MirrorOperation(
+            id: "operation-terminal", source: .mcp,
+            displayedSnapshotID: engine.snapshot!.id,
+            displayedSequence: 1, target: .process(process),
+            postcondition: .processFront(process), enqueuedAt: Date())
+        operation = MirrorOperationReducer.reduce(
+            operation, event: .refused(
+                reason: "policy changed", at: Date(),
+                effectMayHaveLanded: false))
+        XCTAssertTrue(engine.operations.append(operation))
+
+        let result = await service(registry).read(.init(
+            intention: .settlement, timeoutMs: 50,
+            operationID: operation.id))
+
+        XCTAssertEqual(result.value?.journal?.map(\.id), [operation.id])
+        XCTAssertEqual(result.value?.journal?.first?.outcome, "refused")
+        XCTAssertEqual(result.value?.journal?.first?.reason, "policy changed")
+        XCTAssertFalse(result.value?.timedOut ?? true)
+        XCTAssertEqual(engine.operations.records.count, 1,
+                       "waiting must not mint or retry an operation")
+    }
+
+    func testSettlementTimeoutReturnsTheStillPendingReceipt() async throws {
+        let registry = MirrorStateEngineRegistry()
+        let engine = registry.engine(for: key)
+        _ = engine.accept(try scene(seq: 1))
+        let process = MirrorProcessIdentity(
+            session: engine.session, incarnation: "process-finder")
+        let operation = MirrorOperation(
+            id: "operation-pending", source: .mcp,
+            displayedSnapshotID: engine.snapshot!.id,
+            displayedSequence: 1, target: .process(process),
+            postcondition: .processFront(process), enqueuedAt: Date())
+        XCTAssertTrue(engine.operations.append(operation))
+
+        let result = await service(registry).read(.init(
+            intention: .settlement, timeoutMs: 1,
+            operationID: operation.id))
+
+        XCTAssertTrue(result.value?.timedOut ?? false)
+        XCTAssertEqual(result.value?.journal?.first?.outcome, "queued")
+    }
+
     // MARK: - metrics: the Mirror page's numbers, headless
 
     func testMetricsCarryTheSameClocksTheMirrorPageShows() async {

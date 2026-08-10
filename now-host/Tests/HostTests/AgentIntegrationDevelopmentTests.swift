@@ -28,11 +28,19 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
                        .hostProjectsAndGuest)
         let descriptor = DevelopmentProjection.mcpDescriptor
         let schema = descriptor["inputSchema"] as? [String: Any]
-        let properties = schema?["properties"] as? [String: Any]
-        let operation = properties?["operation"] as? [String: Any]
-        let operations = operation?["enum"] as? [String]
-        XCTAssertFalse(operations?.contains("open-in-codekitten") ?? true,
+        let branches = schema?["oneOf"] as? [[String: Any]] ?? []
+        let operations = branches.compactMap { branch in
+            let properties = branch["properties"] as? [String: Any]
+            let operation = properties?["operation"] as? [String: Any]
+            return operation?["const"] as? String
+        }
+        XCTAssertFalse(operations.contains("open-in-codekitten"),
                        "IDE handoff is an explicit human action, not agent authority")
+        XCTAssertEqual(operations.filter { $0 == "build-start" }.count, 2,
+                       "project and candidate builds are exclusive schema branches")
+        XCTAssertTrue(branches.allSatisfy {
+            ($0["additionalProperties"] as? Bool) == false
+        }, "every Development operation must reject sibling fields")
     }
 
     func testDevelopmentRequestAndResultSurviveLocalCodec() throws {
