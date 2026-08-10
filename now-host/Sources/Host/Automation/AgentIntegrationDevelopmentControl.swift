@@ -1,20 +1,40 @@
 import Foundation
 import NOWAgentIntegration
 
+enum DevelopmentWireArguments {
+    static func finalize(candidateID: String, digest: String, fileCount: Int)
+        -> [String: CommandArg] {
+        ["action": .text("finalize"),
+         "candidateID": .text(candidateID),
+         "expectedDigest": .text(digest),
+         "expectedFiles": .number(fileCount)]
+    }
+
+    static func projectPage(projectID: String, cursor: Int)
+        -> [String: CommandArg] {
+        ["projectID": .text(projectID), "cursor": .number(cursor)]
+    }
+}
+
 /// Drives only the guest's closed Development commands. Project and product
 /// references cross; HFS paths and rendered MPW scripts do not.
 @MainActor
 final class AgentIntegrationDevelopmentControl {
+    typealias Audit = (HostLog.LogLevel, String) -> Void
+
     private let listener: GuestListener
     private let currentSessionID: @MainActor () -> UUID?
     private let projectStore: ProjectStore?
+    private let audit: Audit
 
     init(listener: GuestListener,
          currentSessionID: @escaping @MainActor () -> UUID?,
-         projectStore: ProjectStore?) {
+         projectStore: ProjectStore?,
+         audit: Audit? = nil) {
         self.listener = listener
         self.currentSessionID = currentSessionID
         self.projectStore = projectStore
+        self.audit = audit ?? { HostLog.shared.write($0, "dev", $1) }
     }
 
     func perform(_ request: AgentIntegrationDevelopmentRequest) async
@@ -180,6 +200,8 @@ final class AgentIntegrationDevelopmentControl {
                                   message: error.localizedDescription))
         }
         let candidateID = candidate.receipt.candidateID.rawValue
+        audit(.info, "stage \(candidateID) prepared host receipt "
+              + "(\(candidate.receipt.manifest.count) files)")
         let prepared = await command(
             "development-stage",
             args: ["action": "prepare", "candidateID": candidateID,
@@ -192,12 +214,15 @@ final class AgentIntegrationDevelopmentControl {
         guard prepared.ok else {
             try? projectStore.discardCandidate(
                 candidateID: candidate.receipt.candidateID)
+            audit(.warn, "stage \(candidateID) guest prepare refused: "
+                  + "\(prepared.error?.code ?? "unknown")")
             return refusal(prepared, fallback: "The guest refused the candidate.")
         }
+        audit(.info, "stage \(candidateID) guest destination prepared")
 
         for entry in candidate.receipt.manifest {
             guard let destination = hfsDestination(entry.path) else {
-                await discardGuestCandidate(candidateID)
+                _ = await discardGuestCandidate(candidateID)
                 try? projectStore.discardCandidate(
                     candidateID: candidate.receipt.candidateID)
                 return .refused(.init(
@@ -217,14 +242,14 @@ final class AgentIntegrationDevelopmentControl {
                     if case .failure(let failure) = transfer {
                         reason = failure.message
                     } else { reason = "The candidate transfer failed." }
-                    await discardGuestCandidate(candidateID)
+                    _ = await discardGuestCandidate(candidateID)
                     try? projectStore.discardCandidate(
                         candidateID: candidate.receipt.candidateID)
                     return .refused(.init(code: "now-development-transfer-failed",
                                           message: reason))
                 }
             } catch {
-                await discardGuestCandidate(candidateID)
+                _ = await discardGuestCandidate(candidateID)
                 try? projectStore.discardCandidate(
                     candidateID: candidate.receipt.candidateID)
                 return .refused(.init(code: "now-development-transfer-failed",
@@ -240,22 +265,26 @@ final class AgentIntegrationDevelopmentControl {
             _ = try projectStore.recordGuestTransfer(
                 candidateID: candidate.receipt.candidateID)
         } catch {
+            audit(.warn, "stage \(candidateID) host receipt did not record transfer")
             return .refused(.init(code: "now-development-stage-unsettled",
                                   message: error.localizedDescription))
         }
+        audit(.info, "stage \(candidateID) transferred "
+              + "\(candidate.receipt.manifest.count) files; verifying")
         let finalized = await command(
             "development-stage",
-            args: ["action": "finalize", "candidateID": candidateID,
-                   "expectedDigest": candidate.receipt.contentDigest,
-                   "expectedFiles": String(candidate.receipt.manifest.count)])
+            typed: DevelopmentWireArguments.finalize(
+                candidateID: candidateID,
+                digest: candidate.receipt.contentDigest,
+                fileCount: candidate.receipt.manifest.count))
         guard currentSessionID() == sessionID else {
             return .refused(.init(
                 code: "now-development-outcome-unknown",
                 message: "The paired guest changed while candidate verification was settling."))
         }
         guard finalized.ok else {
-            return refusal(finalized,
-                           fallback: "The inactive candidate did not verify on the guest.")
+            return await settleFailedFinalization(
+                finalized, candidate: candidate, sessionID: sessionID)
         }
         guard let digest = value("Digest", in: finalized,
                                  group: "development-stage"),
@@ -271,6 +300,7 @@ final class AgentIntegrationDevelopmentControl {
             return .refused(.init(code: "now-development-stage-unsettled",
                                   message: error.localizedDescription))
         }
+        audit(.info, "stage \(candidateID) verified \(digest.prefix(12))")
         let rows = [
             AgentIntegrationGuestRow(label: "Candidate", value: candidateID),
             .init(label: "State", value: "verified and inactive"),
@@ -304,7 +334,8 @@ final class AgentIntegrationDevelopmentControl {
         repeat {
             let page = await command(
                 "development-project",
-                args: ["projectID": projectID, "cursor": String(cursor)])
+                typed: DevelopmentWireArguments.projectPage(
+                    projectID: projectID, cursor: cursor))
             guard currentSessionID() == sessionID else {
                 return .refused(.init(code: "now-development-outcome-unknown",
                                       message: "The paired guest changed during project import."))
@@ -522,6 +553,19 @@ final class AgentIntegrationDevelopmentControl {
         }
     }
 
+    private func command(_ verb: String, typed args: [String: CommandArg],
+                         workClass: GuestWorkClass = .foreground) async
+        -> CommandResult {
+        await withCheckedContinuation { continuation in
+            listener.runScheduledCommand(
+                verb, typed: args, purpose: .command(verb),
+                workClass: workClass
+            ) {
+                continuation.resume(returning: $0)
+            }
+        }
+    }
+
     private func put(candidateID: String, name: String, path: String,
                      bytes: Data) async -> Result<GuestListener.PutReceipt,
                                                   GuestListener.FileFailure> {
@@ -532,10 +576,57 @@ final class AgentIntegrationDevelopmentControl {
         }
     }
 
-    private func discardGuestCandidate(_ candidateID: String) async {
-        _ = await command("development-stage",
-                          args: ["action": "discard",
-                                 "candidateID": candidateID])
+    private func discardGuestCandidate(_ candidateID: String) async
+        -> CommandResult {
+        await command("development-stage",
+                      args: ["action": "discard",
+                             "candidateID": candidateID])
+    }
+
+    private func settleFailedFinalization(
+        _ failure: CommandResult, candidate: ProjectCandidate, sessionID: UUID
+    ) async -> AgentIntegrationGuestRowReportResult {
+        let candidateID = candidate.receipt.candidateID
+        audit(.warn, "stage \(candidateID.rawValue) verification refused: "
+              + "\(failure.error?.code ?? "unknown")")
+        let discarded = await discardGuestCandidate(candidateID.rawValue)
+        guard currentSessionID() == sessionID else {
+            return .refused(.init(
+                code: "now-development-outcome-unknown",
+                message: "The paired guest changed while failed candidate cleanup was settling. "
+                    + "Host candidate \(candidateID.rawValue) was retained."))
+        }
+        guard discarded.ok else {
+            audit(.warn, "stage \(candidateID.rawValue) cleanup refused: "
+                  + "\(discarded.error?.code ?? "unknown")")
+            return .refused(.init(
+                code: "now-development-stage-unsettled",
+                message: AgentIntegrationBoundedText.prefix(
+                    "Guest verification failed and cleanup did not settle. "
+                        + "Candidate \(candidateID.rawValue) was retained; "
+                        + "use stage-status or stage-discard.",
+                    scalars: 256)))
+        }
+        do {
+            try projectStore?.discardCandidate(candidateID: candidateID)
+        } catch {
+            audit(.warn, "stage \(candidateID.rawValue) host cleanup failed")
+            return .refused(.init(
+                code: "now-development-stage-unsettled",
+                message: AgentIntegrationBoundedText.prefix(
+                    "The guest discarded the failed candidate, but host cleanup failed for "
+                        + "\(candidateID.rawValue): \(error.localizedDescription)",
+                    scalars: 256)))
+        }
+        audit(.info, "stage \(candidateID.rawValue) failed candidate discarded")
+        let code = AgentIntegrationBoundedText.prefix(
+            failure.error?.code ?? "development-failed", scalars: 64)
+        let message = AgentIntegrationBoundedText.prefix(
+            (failure.error?.message
+                ?? "The inactive candidate did not verify on the guest.")
+                + " The failed candidate was discarded on both machines.",
+            scalars: 256)
+        return .refused(.init(code: code, message: message))
     }
 
     private func hfsDestination(_ path: String)

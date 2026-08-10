@@ -7,6 +7,7 @@
 #include "development_sha256.h"
 #include "development_project.h"
 #include "json.h"
+#include "nowlog.h"
 #include "prefs.h"
 
 enum {
@@ -109,6 +110,58 @@ int dev_candidate_accepting_folder(const char *candidate_id,
     FSSpec marker;
     return dev_candidate_folder(candidate_id, folder, dir_id)
         && !marker_spec(folder, *dir_id, &marker);
+}
+
+static int candidate_accepting_folder_reason(const char *candidate_id,
+                                             FSSpec *folder, long *dir_id,
+                                             char *reason, long reason_cap,
+                                             OSErr *probe_err)
+{
+    FSSpec parent;
+    FSSpec marker;
+    long parent_id;
+    Str255 name;
+    OSErr err;
+    *probe_err = noErr;
+    if (!candidate_id_valid(candidate_id)) {
+        snprintf(reason, (size_t)reason_cap,
+                 "The candidate identity is malformed.");
+        return 0;
+    }
+    if (!candidate_parent(0, &parent, &parent_id)) {
+        snprintf(reason, (size_t)reason_cap,
+                 "The configured Projects candidate root is unavailable.");
+        return 0;
+    }
+    CopyCStringToPascal(candidate_id, name);
+    err = FSMakeFSSpec(parent.vRefNum, parent_id, name, folder);
+    if (err != noErr) {
+        *probe_err = err;
+        snprintf(reason, (size_t)reason_cap,
+                 "The prepared candidate folder is unavailable (%d).", err);
+        return 0;
+    }
+    err = folder_id(folder, dir_id);
+    if (err != noErr) {
+        *probe_err = err;
+        snprintf(reason, (size_t)reason_cap,
+                 "The prepared candidate is not a readable folder (%d).", err);
+        return 0;
+    }
+    err = FSMakeFSSpec(folder->vRefNum, *dir_id,
+        (ConstStr255Param)"\p.NOW Verified", &marker);
+    if (err == noErr) {
+        snprintf(reason, (size_t)reason_cap,
+                 "The candidate is already sealed and no longer accepts files.");
+        return 0;
+    }
+    if (err != fnfErr) {
+        *probe_err = err;
+        snprintf(reason, (size_t)reason_cap,
+                 "The candidate seal could not be inspected (%d).", err);
+        return 0;
+    }
+    return 1;
 }
 
 int dev_candidate_prepare(const char *candidate_id, const char *project_id,
@@ -549,6 +602,7 @@ void now_development_stage_command(const char *request_json, long id,
     int ok = 0;
     int measured_files = 0;
     long expected_files;
+    OSErr probe_err = noErr;
     action[0] = '\0';
     candidate_id[0] = '\0';
     project_id[0] = '\0';
@@ -590,11 +644,21 @@ void now_development_stage_command(const char *request_json, long id,
         ok = dev_candidate_prepare(candidate_id, project_id, &folder, &dir_id,
                                    reason, sizeof reason);
     } else if (strcmp(action, "finalize") == 0) {
-        ok = lower_hex(expected_digest, 64)
-            && expected_files >= 1 && expected_files <= kCandidateMaxFiles
-            && dev_candidate_accepting_folder(candidate_id, &folder, &dir_id)
-            && dev_project_tree_digest(&folder, dir_id, measured_digest,
-                                       &measured_files, reason, sizeof reason);
+        if (!lower_hex(expected_digest, 64)) {
+            strcpy(reason, "The expected candidate digest is malformed.");
+        } else if (expected_files < 1
+                   || expected_files > kCandidateMaxFiles) {
+            strcpy(reason,
+                   "Expected files must be a JSON integer from 1 through 128.");
+        } else if (!candidate_accepting_folder_reason(
+                       candidate_id, &folder, &dir_id,
+                       reason, sizeof reason, &probe_err)) {
+            ok = 0;
+        } else {
+            ok = dev_project_tree_digest(&folder, dir_id, measured_digest,
+                                         &measured_files,
+                                         reason, sizeof reason);
+        }
         if (ok && (measured_files != expected_files
                    || strcmp(measured_digest, expected_digest) != 0)) {
             snprintf(reason, sizeof reason,
@@ -622,6 +686,13 @@ void now_development_stage_command(const char *request_json, long id,
         return;
     }
     if (!ok) {
+        now_log(kLogWarn, "dev", "#%ld stage %.9s %.26s refused: %.60s",
+                id, action[0] != '\0' ? action : "?",
+                candidate_id[0] != '\0' ? candidate_id : "?", reason);
+        if (probe_err != noErr) {
+            now_log(kLogWarn, "dev", "#%ld candidate probe OS error %d",
+                    id, probe_err);
+        }
         if (strcmp(action, "promote") == 0
             && lower_hex(current_digest, 64)) {
             char escaped[220];
@@ -637,6 +708,8 @@ void now_development_stage_command(const char *request_json, long id,
         return;
     }
     if (strcmp(action, "finalize") == 0) {
+        now_log(kLogInfo, "dev", "#%ld stage finalize %.26s: %d files %.12s",
+                id, candidate_id, measured_files, measured_digest);
         snprintf(out, (size_t)cap,
             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
             "\"output\":{\"development-stage\":[[\"Candidate\",\"%s\"],"
@@ -646,6 +719,8 @@ void now_development_stage_command(const char *request_json, long id,
         return;
     }
     if (strcmp(action, "promote") == 0) {
+        now_log(kLogInfo, "dev", "#%ld stage promote %.26s: %.12s",
+                id, candidate_id, measured_digest);
         snprintf(out, (size_t)cap,
             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
             "\"output\":{\"development-stage\":[[\"Candidate\",\"%s\"],"
@@ -654,6 +729,8 @@ void now_development_stage_command(const char *request_json, long id,
             current_digest, measured_digest);
         return;
     }
+    now_log(kLogInfo, "dev", "#%ld stage %.9s %.26s",
+            id, action, candidate_id);
     snprintf(out, (size_t)cap,
         "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
         "\"output\":{\"development-stage\":[[\"Candidate\",\"%s\"],"

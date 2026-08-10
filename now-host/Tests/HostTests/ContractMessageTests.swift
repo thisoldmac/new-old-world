@@ -27,6 +27,29 @@ final class ContractMessageTests: XCTestCase {
                        .commandRequest(request))
     }
 
+    func testDevelopmentCountsAndCursorsCrossAsJSONIntegers() throws {
+        let finalize = CommandRequest(
+            id: 4, name: "development-stage",
+            args: DevelopmentWireArguments.finalize(
+                candidateID: "candidate-0123456789abcdef",
+                digest: String(repeating: "a", count: 64),
+                fileCount: 3))
+        let finalizeData = try ControlMessageCodec.encode(
+            .commandRequest(finalize))
+        let finalizeText = String(decoding: finalizeData, as: UTF8.self)
+        XCTAssertTrue(finalizeText.contains("\"expectedFiles\":3"))
+        XCTAssertFalse(finalizeText.contains("\"expectedFiles\":\"3\""))
+
+        let page = CommandRequest(
+            id: 5, name: "development-project",
+            args: DevelopmentWireArguments.projectPage(
+                projectID: String(repeating: "b", count: 32), cursor: 17))
+        let pageData = try ControlMessageCodec.encode(.commandRequest(page))
+        let pageText = String(decoding: pageData, as: UTF8.self)
+        XCTAssertTrue(pageText.contains("\"cursor\":17"))
+        XCTAssertFalse(pageText.contains("\"cursor\":\"17\""))
+    }
+
     func testMirrorInvalidationIsAnAdditiveGenerationHint() throws {
         let hint = MirrorInvalidate(
             session: "boot-42", generation: 7,
