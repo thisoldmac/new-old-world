@@ -75,10 +75,14 @@ the handles for status, cancellation, recovery, and cleanup.
 ## Current limitations
 
 The host-home MPW build/run/dialog lane is metal-verified on a PowerBook
-1400c. Guest-home import and promotion, typed test actions and receipts, and
-CodeKitten document acceptance are not yet verified end to end. The semantic
-UI read and act paths can also disagree about whether a published scene is
-ready, so unattended post-launch interaction is not yet reliable.
+1400c. Guest-home import and promotion, typed test actions and receipts,
+CodeKitten's positive open receipt, coherent semantic settlement, and the
+authenticated HTTP MCP loop are tested or emulator-verified but have not been
+repeated together on metal. A redistributable starter pack cannot include MPW
+until its payload license and provenance are settled. Recovery also needs a
+clearer policy for candidate receipts retained from an ended guest session, and
+the guest Files surface does not yet expose Finder flags when a logical-file
+digest must be diagnosed.
 
 ## For developers
 

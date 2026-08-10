@@ -72,8 +72,9 @@ Build, test, run, and human IDE handoff are different outcomes. The version-1
 test plan is all-or-none and closed: launch the unchanged measured product,
 then assert its exact Process Manager identity within a bounded timeout. It
 returns `ckproject.test-receipt/1`; richer UI behavior belongs to the semantic
-scene journal. CodeKitten launch and `odoc` dispatch still do not prove
-document acceptance.
+scene journal. CodeKitten is a separate human handoff: NOW waits for and
+validates `ckproject.open-receipt/1`, so AppleEvent dispatch alone is not
+document acceptance and CodeKitten remains outside the executor path.
 
 ## Agent integration and settlement
 
@@ -92,9 +93,17 @@ operation ID, and `wait_for_settlement` returns its terminal state or an honest
 still-pending receipt. A direct action without a declared postcondition ends
 as `unconfirmed`; acceptance or dispatch is not relabeled as observed effect.
 
-The companion currently has one implemented MCP transport: stdio over the
-host's private same-user socket. There is no HTTP listener in this repository,
-so transport parity is a future boundary rather than a property of this build.
+The companion has two process transports over the same dispatcher: its
+client-launched stdio default and an explicitly configured authenticated
+loopback HTTP listener. Both reach the host through the same private same-user
+socket. Spawned parity tests compare initialization and notification lifecycle,
+ping, resources, prompts, full tool descriptors and schemas, real tool results,
+and protocol errors. The same 46-tool conformance recipe runs against each.
+HTTP separately validates bearer, loopback Host and Origin; bounds and expires
+sessions; supports explicit deletion; rejects ambiguous framing; and has a
+spawned incremental-request liveness gate. HTTP was introduced without prior
+slice approval; these gates close that introduced transport debt rather than
+setting a precedent for silent scope expansion.
 
 CodeKitten contains useful pure-C lifecycle, journal, arbitration, and corpse
 recovery concepts. NOW already has a richer Mirror operation journal. There is
