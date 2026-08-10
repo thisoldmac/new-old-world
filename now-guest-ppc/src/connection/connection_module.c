@@ -769,6 +769,11 @@ static void conn_idle(void)
                                     build, sizeof build);
         now_update_offer_line((NowUpdateComponent)i, version, build,
                               line, sizeof line);
+        if (i == kNowUpdateExtension
+            && now_wire_update_restart_required()) {
+            snprintf(line, sizeof line,
+                     "Extension installed - restart this Mac");
+        }
         if (strcmp(line, g_update_lines[i]) != 0) {
             strcpy(g_update_lines[i], line);
             InvalWindowRect(g_owner, &dirty);
@@ -798,8 +803,9 @@ static void conn_idle(void)
         update_changed = now_update_offer_differs(
             kNowUpdateExtension, version, build);
         HiliteControl(g_update_ext,
-                      update_changed ? kControlNoPart
-                                     : kControlInactivePart);
+                      update_changed
+                          && !now_wire_update_restart_required()
+                      ? kControlNoPart : kControlInactivePart);
     } else {
         HiliteControl(g_update_app, kControlInactivePart);
         HiliteControl(g_update_ext, kControlInactivePart);
@@ -808,7 +814,10 @@ static void conn_idle(void)
 
 static void conn_status_text(char *out, long cap)
 {
-    if (g_status[0] != '\0') {
+    if (now_wire_update_restart_required()) {
+        snprintf(out, (size_t)cap,
+                 "Extension installed. Restart this Mac to activate it.");
+    } else if (g_status[0] != '\0') {
         snprintf(out, (size_t)cap, "%s", g_status);
     } else {
         conn_status(out, cap);

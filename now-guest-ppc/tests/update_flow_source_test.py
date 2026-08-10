@@ -53,3 +53,12 @@ ordered(install, "finder_identity(staged, 'INIT', 'NOWx')",
 # Relaunch happens after the application's normal teardown and log close, not
 # from inside the nested receive callback.
 ordered(main, "now_log_close();", "now_update_relaunch();")
+
+# A successful extension exchange ends in a stable restart-required state,
+# not the stale "Downloading..." sentence or another enabled install button.
+ordered(wire, "now_update_install(g_put.update_component",
+        "g_update.restart_required = true;",
+        "g_update.pending = false;")
+assert "now_wire_update_restart_required()" in connection
+assert "Extension installed - restart this Mac" in connection
+assert "Extension installed. Restart this Mac to activate it." in connection

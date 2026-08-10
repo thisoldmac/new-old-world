@@ -228,6 +228,12 @@ static long g_idle_sleep_ticks = 6;
 
 static struct {
     Boolean pending;
+    /* The new INIT is on disk, while the old table necessarily remains
+       active until a cold boot. Keep this distinct from `pending`: the
+       transfer is over, and offering the button again would install the
+       same bytes twice while telling the person nothing about the one
+       remaining action. Reset only by conn_init, which runs after restart. */
+    Boolean restart_required;
     long id;
     NowUpdateComponent component;
     char build[48];
@@ -4387,6 +4393,11 @@ Boolean now_wire_update_pending(NowUpdateComponent *component)
     return g_update.pending;
 }
 
+Boolean now_wire_update_restart_required(void)
+{
+    return g_update.restart_required;
+}
+
 /* The inbound receive, read-only, for whoever wants to draw it moving
    — now_wire_get_active's shape, one lane over: that one watches a
    pull (file.get), this one watches an offered receive (file.offer),
@@ -5055,6 +5066,9 @@ static void finish_put(const char *reply)
                  "\"component\":\"%s\",\"ok\":true,"
                  "\"action\":\"%s\"}", g_put.id, component, action);
         send_control(update_reply);
+        if (g_put.update_component == kNowUpdateExtension) {
+            g_update.restart_required = true;
+        }
         g_update.pending = false;
         note_shot(g_put.update_component == kNowUpdateApplication
                   ? "Update installed - relaunching"

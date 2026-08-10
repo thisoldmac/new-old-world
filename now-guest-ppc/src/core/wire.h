@@ -57,6 +57,7 @@ int now_wire_update_request(NowUpdateComponent component,
                             Boolean allow_unsigned,
                             char *err, long cap);
 Boolean now_wire_update_pending(NowUpdateComponent *component);
+Boolean now_wire_update_restart_required(void);
 
 /* True while a transfer, stream, offer, or queued control frame needs the
    event loop to spin fast. The main loop drops its WaitNextEvent sleep to
