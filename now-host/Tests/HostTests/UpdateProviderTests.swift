@@ -23,7 +23,8 @@ final class UpdateProviderTests: XCTestCase {
                                   component: "application",
                                   build: "scratch123456")
         let provider = UpdateProvider(snapshot: .init(
-            application: asset, extensionComponent: nil, dependencies: []))
+            application: asset, codeKitten: nil,
+            extensionComponent: nil, dependencies: []))
 
         XCTAssertEqual(provider.offers, [UpdateOffer(
             component: "application", version: "0.1.0",
@@ -43,7 +44,8 @@ final class UpdateProviderTests: XCTestCase {
         try Data("tampered".utf8).write(to: asset.fileURL)
 
         let provider = UpdateProvider(snapshot: .init(
-            application: nil, extensionComponent: asset, dependencies: []))
+            application: nil, codeKitten: nil,
+            extensionComponent: asset, dependencies: []))
         XCTAssertTrue(provider.offers.isEmpty)
     }
 
@@ -53,7 +55,8 @@ final class UpdateProviderTests: XCTestCase {
             component: "application", build: "abcdef", signed: true)
 
         let provider = UpdateProvider(snapshot: .init(
-            application: asset, extensionComponent: nil, dependencies: []))
+            application: asset, codeKitten: nil,
+            extensionComponent: nil, dependencies: []))
         XCTAssertTrue(provider.offers.isEmpty)
     }
 
