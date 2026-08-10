@@ -161,6 +161,24 @@ extension AgentIntegrationSessionHealthResult: Codable {
 }
 
 public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
+    public struct Compatibility: Codable, Equatable, Sendable {
+        public let hostBuild: String
+        public let companionProtocol: Int
+        public let projectionCatalogVersion: Int
+        public let projectionCatalogDigest: String
+        public let schemaRevisions: [String]
+
+        public init(hostBuild: String, companionProtocol: Int,
+                    projectionCatalogVersion: Int,
+                    projectionCatalogDigest: String,
+                    schemaRevisions: [String]) {
+            self.hostBuild = hostBuild
+            self.companionProtocol = companionProtocol
+            self.projectionCatalogVersion = projectionCatalogVersion
+            self.projectionCatalogDigest = projectionCatalogDigest
+            self.schemaRevisions = schemaRevisions
+        }
+    }
     public enum State: String, Codable, Equatable, Sendable {
         case notListening
         case listening
@@ -231,11 +249,12 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
     /// another — and no way to know the others were there at all.
     public let roster: [AgentIntegrationGuestReference]
     public let failure: String?
+    public let compatibility: Compatibility?
 
     public init(state: State, observedAt: Date, listeningPort: UInt16?,
                 sessionID: UUID?, guest: Guest?,
                 roster: [AgentIntegrationGuestReference] = [],
-                failure: String?) {
+                failure: String?, compatibility: Compatibility? = nil) {
         self.roster = roster
         self.state = state
         self.observedAt = observedAt
@@ -243,6 +262,7 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
         self.sessionID = sessionID
         self.guest = guest
         self.failure = failure
+        self.compatibility = compatibility
     }
 }
 

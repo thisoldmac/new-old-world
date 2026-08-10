@@ -6,27 +6,35 @@ import XCTest
 final class AgentIntegrationDevelopmentTests: XCTestCase {
     func testRequestVocabularyHasNoPathOrCommandEscape() {
         let project = String(repeating: "a", count: 32)
+        let attempt = "01234567-89ab-cdef-0123-456789abcdef"
         XCTAssertTrue(AgentIntegrationDevelopmentRequest(
-            operation: .buildStart, projectID: project).isWellFormed)
+            operation: .buildStart, projectID: project,
+            attemptID: attempt).isWellFormed)
         XCTAssertFalse(AgentIntegrationDevelopmentRequest(
             operation: .buildStart, projectID: "Macintosh HD:Lab").isWellFormed)
         XCTAssertTrue(AgentIntegrationDevelopmentRequest(
             operation: .run,
-            productRef: "product-0123456789abcdef").isWellFormed)
+            productRef: "product-0123456789abcdef",
+            attemptID: attempt).isWellFormed)
         XCTAssertTrue(AgentIntegrationDevelopmentRequest(
             operation: .test,
-            productRef: "product-0123456789abcdef").isWellFormed)
+            productRef: "product-0123456789abcdef",
+            attemptID: attempt).isWellFormed)
         XCTAssertFalse(AgentIntegrationDevelopmentRequest(
             operation: .run, projectID: project,
             productRef: "product-0123456789abcdef").isWellFormed)
         XCTAssertTrue(AgentIntegrationDevelopmentRequest(
-            operation: .importGuest, projectID: project).isWellFormed)
+            operation: .importGuest, projectID: project,
+            attemptID: attempt).isWellFormed)
+        XCTAssertTrue(AgentIntegrationDevelopmentRequest(
+            operation: .catalog).isWellFormed)
         XCTAssertTrue(AgentIntegrationDevelopmentRequest(
             operation: .promote,
-            candidateID: "candidate-0123456789abcdef").isWellFormed)
+            candidateID: "candidate-0123456789abcdef",
+            attemptID: attempt).isWellFormed)
         XCTAssertEqual(DevelopmentProjection.acceptedArguments,
                        ["operation", "projectID", "workspaceID",
-                        "candidateID", "productRef"])
+                        "candidateID", "productRef", "attemptID"])
         XCTAssertEqual(DevelopmentProjection.authorityDomain,
                        .hostProjectsAndGuest)
         let descriptor = DevelopmentProjection.mcpDescriptor
@@ -63,7 +71,8 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
         }
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         guard case .completed(let report) = await adapter.development(.init(
-            operation: .test, productRef: product)) else {
+            operation: .test, productRef: product,
+            attemptID: "01234567-89ab-cdef-0123-456789abcdef")) else {
             return XCTFail("expected a typed test receipt")
         }
         XCTAssertEqual(report.verb, "development-test")
@@ -71,10 +80,34 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
                        "ckproject.test-receipt/1")
     }
 
+    func testCatalogUsesBoundedGuestProjectVocabulary() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        guest.onMessage = { message in
+            guard case .commandRequest(let request) = message,
+                  request.name == "development-project" else { return }
+            XCTAssertEqual(request.args?["action"], .text("catalog"))
+            try? guest.send(.commandResult(.init(
+                id: request.id, ok: true,
+                output: ["development-project": [
+                    ["Project", String(repeating: "a", count: 32)
+                        + "|Memory Meter"],
+                    ["Next", "-1"],
+                ]], error: nil)))
+        }
+        let adapter = AgentIntegrationHostAdapter(listener: listener)
+        guard case .completed(let report) = await adapter.development(.init(
+            operation: .catalog)) else {
+            return XCTFail("expected guest project catalog")
+        }
+        XCTAssertEqual(report.groups[0].rows.first?.label, "Project")
+    }
+
     func testDevelopmentRequestAndResultSurviveLocalCodec() throws {
         let operation = AgentIntegrationDevelopmentRequest(
             operation: .buildStart,
-            projectID: String(repeating: "b", count: 32))
+            projectID: String(repeating: "b", count: 32),
+            attemptID: "01234567-89ab-cdef-0123-456789abcdef")
         let request = AgentIntegrationLocalRequest.development(operation)
         XCTAssertEqual(try AgentIntegrationLocalCodec.decodeRequest(
             AgentIntegrationLocalCodec.encode(request)), request)
@@ -109,7 +142,8 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         guard case .completed(let report) = await adapter.development(.init(
             operation: .buildStart,
-            projectID: String(repeating: "c", count: 32))) else {
+            projectID: String(repeating: "c", count: 32),
+            attemptID: "01234567-89ab-cdef-0123-456789abcdef")) else {
             return XCTFail("expected guest Development rows")
         }
         XCTAssertEqual(report.verb, "development-build")
@@ -136,7 +170,8 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
         }
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         guard case .completed(let report) = await adapter.development(.init(
-            operation: .openInCodeKitten, projectID: projectID)) else {
+            operation: .openInCodeKitten, projectID: projectID,
+            attemptID: "01234567-89ab-cdef-0123-456789abcdef")) else {
             return XCTFail("expected a settled CodeKitten handoff")
         }
         XCTAssertEqual(calls, 2)

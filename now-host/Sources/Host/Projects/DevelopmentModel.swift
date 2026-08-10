@@ -107,14 +107,16 @@ final class DevelopmentModel: ObservableObject {
     }
 
     func importGuestProject(projectID: String) {
-        perform(.init(operation: .importGuest, projectID: projectID))
+        perform(.init(operation: .importGuest, projectID: projectID,
+                      attemptID: attemptID()))
     }
 
     func stage() {
         guard let project = selectedProject else { return }
         perform(.init(operation: .stage,
                       projectID: project.projectID.rawValue,
-                      workspaceID: workspace?.workspaceID.rawValue))
+                      workspaceID: workspace?.workspaceID.rawValue,
+                      attemptID: attemptID()))
     }
 
     func openWorkspace() {
@@ -154,7 +156,8 @@ final class DevelopmentModel: ObservableObject {
     func build() {
         if let candidateReference {
             perform(.init(operation: .buildStart,
-                          candidateID: candidateReference))
+                          candidateID: candidateReference,
+                          attemptID: attemptID()))
             return
         }
         guard let project = selectedProject, project.home == .guest else {
@@ -162,17 +165,19 @@ final class DevelopmentModel: ObservableObject {
             return
         }
         perform(.init(operation: .buildStart,
-                      projectID: project.projectID.rawValue))
+                      projectID: project.projectID.rawValue,
+                      attemptID: attemptID()))
     }
 
     func promote() {
         guard let candidateReference else { return }
         perform(.init(operation: .promote,
-                      candidateID: candidateReference))
+                      candidateID: candidateReference,
+                      attemptID: attemptID()))
     }
 
     func cancelBuild() {
-        perform(.init(operation: .buildCancel))
+        perform(.init(operation: .buildCancel, attemptID: attemptID()))
     }
 
     func run() {
@@ -180,7 +185,8 @@ final class DevelopmentModel: ObservableObject {
             problem = "A successful build has not minted an exact product reference."
             return
         }
-        perform(.init(operation: .run, productRef: productReference))
+        perform(.init(operation: .run, productRef: productReference,
+                      attemptID: attemptID()))
     }
 
     func openInCodeKitten() {
@@ -189,7 +195,8 @@ final class DevelopmentModel: ObservableObject {
             return
         }
         perform(.init(operation: .openInCodeKitten,
-                      projectID: project.projectID.rawValue))
+                      projectID: project.projectID.rawValue,
+                      attemptID: attemptID()))
     }
 
     private func perform(_ request: AgentIntegrationDevelopmentRequest) {
@@ -202,6 +209,10 @@ final class DevelopmentModel: ObservableObject {
             refresh()
             developmentBusy = false
         }
+    }
+
+    private func attemptID() -> String {
+        UUID().uuidString.lowercased()
     }
 
     private func rows(

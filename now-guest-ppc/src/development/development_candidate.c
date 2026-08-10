@@ -499,8 +499,8 @@ static OSErr cat_move(const FSSpec *spec, long to_dir)
     return PBCatMoveSync(&pb);
 }
 
-static int project_id_in_folder(const FSSpec *folder, long dir_id,
-                                char project_id[33])
+static int project_info_in_folder(const FSSpec *folder, long dir_id,
+                                  char project_id[33], char project_name[96])
 {
     FSSpec manifest;
     short ref = -1;
@@ -530,6 +530,7 @@ static int project_id_in_folder(const FSSpec *folder, long dir_id,
     }
     DisposePtr((Ptr)text);
     strcpy(project_id, project->id);
+    if (project_name != NULL) strcpy(project_name, project->name);
     DisposePtr((Ptr)project);
     return 1;
 }
@@ -556,7 +557,7 @@ static int find_active_project(const char *project_id, FSSpec *folder,
         folder->parID = prefs.projects_dir;
         memcpy(folder->name, name, name[0] + 1);
         if (folder_id(folder, dir_id) == noErr
-            && project_id_in_folder(folder, *dir_id, found)
+            && project_info_in_folder(folder, *dir_id, found, NULL)
             && strcmp(found, project_id) == 0) return 1;
     }
     return 0;
@@ -592,7 +593,7 @@ int dev_candidate_promote(const char *candidate_id, const char *base_digest,
         || !marker_spec(&candidate, candidate_dir, &verified)
         || FSMakeFSSpec(candidate.vRefNum, candidate_dir,
             (ConstStr255Param)"\p.NOW Built", &built) != noErr
-        || !project_id_in_folder(&candidate, candidate_dir, project_id)
+        || !project_info_in_folder(&candidate, candidate_dir, project_id, NULL)
         || !find_active_project(project_id, &active, &active_dir)) {
         snprintf(reason, (size_t)reason_cap,
                  "Promotion requires one built candidate and its active project.");
@@ -816,6 +817,7 @@ void now_development_stage_command(const char *request_json, long id,
 void now_development_project_command(const char *request_json, long id,
                                      char *out, long cap)
 {
+    char action[24];
     char project_id[40];
     char digest[65];
     char reason[180];
@@ -827,6 +829,56 @@ void now_development_project_command(const char *request_json, long id,
     long cursor = now_json_find_int(request_json, "cursor", 0);
     long pos;
     int i;
+    action[0] = '\0';
+    now_json_find_string(request_json, "action", action, sizeof action);
+    if (strcmp(action, "catalog") == 0) {
+        NowPrefs prefs;
+        short index;
+        int emitted = 0;
+        now_prefs_load(&prefs);
+        if (cursor < 0 || cursor > 256 || prefs.projects_vref == 0
+            || prefs.projects_dir == 0) {
+            error_reply(out, cap, id, "projects-root-unavailable",
+                        "The registered Projects root is unavailable.");
+            return;
+        }
+        pos = snprintf(out, (size_t)cap,
+            "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+            "\"output\":{\"development-project\":[", id);
+        for (index = (short)(cursor + 1); index <= 256 && emitted < 8; ++index) {
+            CInfoPBRec pb;
+            Str255 name;
+            FSSpec folder;
+            long dir_id;
+            char found[33];
+            char project_name[96];
+            char escaped_name[192];
+            char record[240];
+            memset(&pb, 0, sizeof pb);
+            name[0] = 0;
+            pb.dirInfo.ioNamePtr = name;
+            pb.dirInfo.ioVRefNum = prefs.projects_vref;
+            pb.dirInfo.ioDrDirID = prefs.projects_dir;
+            pb.dirInfo.ioFDirIndex = index;
+            if (PBGetCatInfoSync(&pb) != noErr) { index = 257; break; }
+            if ((pb.dirInfo.ioFlAttrib & ioDirMask) == 0 || name[1] == '.') continue;
+            folder.vRefNum = prefs.projects_vref;
+            folder.parID = prefs.projects_dir;
+            memcpy(folder.name, name, name[0] + 1);
+            if (folder_id(&folder, &dir_id) != noErr
+                || !project_info_in_folder(&folder, dir_id, found, project_name)) continue;
+            now_json_escape(project_name, escaped_name, sizeof escaped_name);
+            snprintf(record, sizeof record, "%s|%s", found, escaped_name);
+            pos += snprintf(out + pos, (size_t)(cap - pos),
+                            "%s[\"Project\",\"%s\"]",
+                            emitted ? "," : "", record);
+            emitted++;
+        }
+        pos += snprintf(out + pos, (size_t)(cap - pos),
+                        "%s[\"Next\",\"%d\"]]}}",
+                        emitted ? "," : "", index <= 256 ? index - 1 : -1);
+        return;
+    }
     project_id[0] = '\0';
     now_json_find_string(request_json, "projectID", project_id,
                          sizeof project_id);

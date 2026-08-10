@@ -614,7 +614,10 @@ public struct AgentIntegrationLocalClient: Sendable {
     public func development(
         _ development: AgentIntegrationDevelopmentRequest
     ) async throws -> AgentIntegrationGuestRowReportResult {
-        let response = try await send(.development(development))
+        let requestID = development.attemptID.flatMap(UUID.init(uuidString:))
+            ?? UUID()
+        let response = try await send(.development(
+            development, requestID: requestID))
         guard let result = response.developmentResult else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Local response had no Development result")

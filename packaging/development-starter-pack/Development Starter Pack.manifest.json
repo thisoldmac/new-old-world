@@ -1,0 +1,41 @@
+{
+  "artifact": "Development Starter Pack.img.bin",
+  "artifactBytes": 0,
+  "artifactSHA256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "components": [
+    {
+      "id": "apple-mpw-gm",
+      "installBytes": 1,
+      "license": {
+        "name": "Apple MPW distribution terms",
+        "provenanceURL": "https://web.archive.org/web/*/developer.apple.com/tools/mpw-tools/",
+        "redistribution": "unknown"
+      },
+      "purpose": "Guest-native PowerPC and 68K Toolbox builds using separately supplied Apple tools",
+      "qualification": {
+        "probe": "mpw-toolserver-compile-link-launch-v1",
+        "requiredItems": [
+          "MPW Shell",
+          "ToolServer",
+          "Interfaces&Libraries",
+          "Tools"
+        ]
+      },
+      "version": "3.5-gm"
+    }
+  ],
+  "id": "classic-mac-development-starter",
+  "platforms": [
+    {
+      "architectures": [
+        "powerpc",
+        "m68k"
+      ],
+      "maximumVersion": "9.2.2",
+      "minimumVersion": "7.1",
+      "operatingSystem": "classic-mac-os"
+    }
+  ],
+  "schema": "now.development-starter-pack/1",
+  "version": "1.0.0"
+}

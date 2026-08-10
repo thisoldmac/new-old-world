@@ -43,10 +43,20 @@ final class AgentIntegrationDevelopmentControl {
             return .refused(.init(code: "now-development-invalid-request",
                                   message: "The Development operation has invalid opaque references."))
         }
+        if let attempt = request.attemptID {
+            audit(.info, "attempt \(attempt) admitted for \(request.operation.rawValue)")
+        }
+        if request.operation == .loopStatus {
+            return await loopStatus()
+        }
         guard let sessionID = currentSessionID() else {
             return .unavailable(.guest)
         }
         switch request.operation {
+        case .catalog:
+            break
+        case .loopStatus:
+            preconditionFailure("Loop status settles before guest addressing")
         case .importGuest:
             return await importGuest(request, sessionID: sessionID)
         case .stage:
@@ -60,6 +70,11 @@ final class AgentIntegrationDevelopmentControl {
         }
         let route: (verb: String, group: String, args: [String: String])
         switch request.operation {
+        case .catalog:
+            route = ("development-project", "development-project",
+                     ["action": "catalog"])
+        case .loopStatus:
+            preconditionFailure("Loop status settles before guest routing")
         case .importGuest, .stage, .stageStatus, .stageDiscard, .promote:
             preconditionFailure("Candidate operations settle above")
         case .buildStart:
@@ -172,6 +187,54 @@ final class AgentIntegrationDevelopmentControl {
             groups: [.init(name: route.group, rows: rows)],
             note: cells.count > 16 ? "The host bounded the Development receipt." : nil,
             observedAt: Date()))
+    }
+
+    private func loopStatus() async -> AgentIntegrationGuestRowReportResult {
+        var rows: [AgentIntegrationGuestRow] = [
+            .init(label: "Authority", value: "NOW Projects root"),
+            .init(label: "Guest session",
+                  value: currentSessionID()?.uuidString.lowercased()
+                      ?? "disconnected"),
+        ]
+        if let projectStore {
+            do {
+                let candidates = try projectStore.recoverableCandidates()
+                if candidates.isEmpty {
+                    rows.append(.init(label: "Retained candidate", value: "none"))
+                    rows.append(.init(label: "Recovery", value: "no action"))
+                } else {
+                    for candidate in candidates {
+                        rows.append(.init(
+                            label: "Retained candidate",
+                            value: candidate.receipt.candidateID.rawValue
+                                + " | " + candidate.lifecycle.rawValue))
+                    }
+                    rows.append(.init(
+                        label: "Recovery",
+                        value: "inspect with stage-status; resume, promote, or discard explicitly"))
+                }
+            } catch {
+                rows.append(.init(label: "Recovery", value: "catalog unreadable"))
+            }
+        } else {
+            rows.append(.init(label: "Recovery", value: "Projects store unavailable"))
+        }
+        var groups = [AgentIntegrationGuestRowGroup(
+            name: "development-loop", rows: rows)]
+        if currentSessionID() != nil {
+            let status = await command(
+                "development-build", args: ["action": "status"])
+            if status.ok, let cells = status.output?["development-build"] {
+                groups.append(.init(name: "active-build", rows: cells.prefix(16).map {
+                    .init(label: AgentIntegrationBoundedText.prefix(
+                        $0.first ?? "", scalars: 64),
+                          value: AgentIntegrationBoundedText.prefix(
+                            $0.count > 1 ? $0.last ?? "" : "", scalars: 2_048))
+                }))
+            }
+        }
+        return .completed(.init(verb: "development-loop-status",
+                                groups: groups, observedAt: Date()))
     }
 
     private func stage(

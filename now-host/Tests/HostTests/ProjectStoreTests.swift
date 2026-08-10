@@ -50,6 +50,35 @@ final class ProjectStoreTests: XCTestCase {
             """.utf8)))
     }
 
+    func testClosedTestPlanIsAllOrNone() throws {
+        let fixture = Data("""
+            CKPROJECT 1
+            id=0123456789abcdef0123456789abcdef
+            name=Tested
+            target=application
+            configuration=release
+            toolchain=mpw@3.6
+            product=Build/Product
+            type=APPL
+            creator=TEST
+            file=Sources/Main.c
+            test-action=launch
+            test-assertion=process-identity
+            test-timeout=15
+            test-artifacts=on-failure
+            """.utf8)
+        XCTAssertNoThrow(try CKProjectDocument.parse(fixture))
+        XCTAssertThrowsError(try CKProjectDocument.parse(Data(
+            String(decoding: fixture, as: UTF8.self)
+                .replacingOccurrences(of: "test-timeout=15\n", with: "")
+                .utf8)))
+        XCTAssertThrowsError(try CKProjectDocument.parse(Data(
+            String(decoding: fixture, as: UTF8.self)
+                .replacingOccurrences(of: "test-action=launch",
+                                      with: "test-action=script")
+                .utf8)))
+    }
+
     func testProjectFileIdentityIsExplicitAndPathMayContainPipe() throws {
         let parsed = try CKProjectDocument.parse(Data("""
             CKPROJECT 1
@@ -375,6 +404,23 @@ final class ProjectStoreTests: XCTestCase {
         XCTAssertEqual(promoted.home, .host)
         XCTAssertEqual(try store.candidate(
             candidateID: candidate.receipt.candidateID).lifecycle, .promoted)
+    }
+
+    func testRecoverableCandidatesSurviveRestartAndExcludeSettledOnes() throws {
+        let root = try root()
+        let store = try ProjectStore(root: root)
+        let created = try store.create(
+            name: "Recovery", home: .host, projectDocument: document,
+            files: [ProjectFileChange(path: "Sources/Main.c",
+                                      contents: Data("source".utf8))])
+        let retained = try store.stageCandidate(projectID: created.projectID)
+        let discarded = try store.stageCandidate(projectID: created.projectID)
+        try store.discardCandidate(candidateID: discarded.receipt.candidateID)
+
+        let reopened = try ProjectStore(root: root)
+        XCTAssertEqual(try reopened.recoverableCandidates().map {
+            $0.receipt.candidateID
+        }, [retained.receipt.candidateID])
     }
 
     func testBuildArtifactsDoNotChangeSourceDigestOrCandidateManifest() throws {

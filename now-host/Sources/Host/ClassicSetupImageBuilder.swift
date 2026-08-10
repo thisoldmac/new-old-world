@@ -7,6 +7,7 @@ struct ClassicSetupImageBuilder: Sendable {
         case commandFailed(String)
         case missingDevice
         case couldNotEncode
+        case invalidStarterPack(String)
 
         var errorDescription: String? {
             switch self {
@@ -20,6 +21,8 @@ struct ClassicSetupImageBuilder: Sendable {
                 return "macOS did not return the setup image device."
             case .couldNotEncode:
                 return "The setup image could not be wrapped for the classic Mac."
+            case .invalidStarterPack(let reason):
+                return "The Development starter pack was refused: \(reason)"
             }
         }
     }
@@ -45,6 +48,7 @@ struct ClassicSetupImageBuilder: Sendable {
         guard assets.application != nil else {
             throw BuildError.missingApplication
         }
+        try DevelopmentStarterPackManifest.validate(in: assets)
         let selectedDependencies = OnboardingDependencyCatalog.setupAssets(
             in: assets)
 

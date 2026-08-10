@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct OnboardingAsset: Identifiable, Equatable {
@@ -151,5 +152,91 @@ struct OnboardingAssetCatalog {
               values.isRegularFile == true else { return nil }
         return OnboardingAsset(kind: kind, fileURL: url,
                                byteCount: Int64(values.fileSize ?? 0))
+    }
+}
+
+struct DevelopmentStarterPackManifest: Codable, Equatable {
+    struct Platform: Codable, Equatable {
+        let operatingSystem: String
+        let minimumVersion: String
+        let maximumVersion: String
+        let architectures: [String]
+    }
+
+    struct Component: Codable, Equatable {
+        struct License: Codable, Equatable {
+            let name: String
+            let redistribution: String
+            let provenanceURL: String
+        }
+        struct Qualification: Codable, Equatable {
+            let requiredItems: [String]
+            let probe: String
+        }
+        let id: String
+        let version: String
+        let purpose: String
+        let installBytes: Int
+        let license: License
+        let qualification: Qualification
+    }
+
+    let schema: String
+    let id: String
+    let version: String
+    let artifact: String
+    let artifactBytes: Int
+    let artifactSHA256: String
+    let platforms: [Platform]
+    let components: [Component]
+
+    static func validate(in snapshot: OnboardingAssetSnapshot) throws {
+        let manifests = snapshot.dependencies.filter {
+            let name = $0.fileName.lowercased()
+            return name.hasSuffix("starter-pack.manifest.json")
+                || name.hasSuffix("starter pack.manifest.json")
+        }
+        guard manifests.count <= 1 else {
+            throw ClassicSetupImageBuilder.BuildError.invalidStarterPack(
+                "More than one starter-pack manifest is installed.")
+        }
+        guard let asset = manifests.first else { return }
+        let manifest = try JSONDecoder().decode(
+            Self.self, from: Data(contentsOf: asset.fileURL))
+        guard manifest.schema == "now.development-starter-pack/1",
+              !manifest.id.isEmpty, !manifest.version.isEmpty,
+              !manifest.platforms.isEmpty, !manifest.components.isEmpty,
+              URL(fileURLWithPath: manifest.artifact).lastPathComponent
+                == manifest.artifact,
+              manifest.artifactSHA256.count == 64,
+              manifest.artifactSHA256.allSatisfy({
+                  $0.isHexDigit && !$0.isUppercase
+              }),
+              manifest.components.allSatisfy({
+                  !$0.id.isEmpty && !$0.version.isEmpty
+                    && $0.installBytes > 0
+                    && !$0.license.name.isEmpty
+                    && ["allowed", "forbidden", "unknown"]
+                        .contains($0.license.redistribution)
+                    && URL(string: $0.license.provenanceURL)?.scheme != nil
+                    && !$0.qualification.requiredItems.isEmpty
+                    && !$0.qualification.probe.isEmpty
+              }),
+              let payload = snapshot.dependencies.first(where: {
+                  $0.fileName == manifest.artifact
+              }) else {
+            throw ClassicSetupImageBuilder.BuildError.invalidStarterPack(
+                "The starter-pack manifest is malformed or its artifact is absent.")
+        }
+        let bytes = try Data(contentsOf: payload.fileURL,
+                             options: [.mappedIfSafe])
+        let digest = SHA256.hash(data: bytes).map {
+            String(format: "%02x", $0)
+        }.joined()
+        guard bytes.count == manifest.artifactBytes,
+              digest == manifest.artifactSHA256 else {
+            throw ClassicSetupImageBuilder.BuildError.invalidStarterPack(
+                "The starter-pack artifact does not match its manifest.")
+        }
     }
 }

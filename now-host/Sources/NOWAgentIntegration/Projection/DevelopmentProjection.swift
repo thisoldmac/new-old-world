@@ -19,6 +19,7 @@ public enum DevelopmentProjection: HostProjection {
         HostProjectionAuthorityDomain.hostProjectsAndGuest
     public static let acceptedArguments: Set<String> = [
         "operation", "projectID", "workspaceID", "candidateID", "productRef",
+        "attemptID",
     ]
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "Projects/DevelopmentModuleView.swift",
@@ -60,24 +61,39 @@ public enum DevelopmentProjection: HostProjection {
     private static let productRef: [String: Any] = [
         "type": "string", "pattern": "^product-[0-9a-f]{16}$",
     ]
+    private static let attemptID: [String: Any] = [
+        "type": "string", "format": "uuid",
+        "description": "Caller-retained idempotency identity for this mutation.",
+    ]
 
     private static let inputSchema: [String: Any] = [
         "oneOf": [
-            branch(.importGuest, ["projectID": projectID], ["projectID"]),
+            branch(.catalog),
+            branch(.loopStatus),
+            branch(.importGuest, ["projectID": projectID,
+                                  "attemptID": attemptID],
+                   ["projectID", "attemptID"]),
             branch(.stage, ["projectID": projectID,
-                            "workspaceID": workspaceID], ["projectID"]),
+                            "workspaceID": workspaceID,
+                            "attemptID": attemptID], ["projectID", "attemptID"]),
             branch(.stageStatus, ["candidateID": candidateID],
                    ["candidateID"]),
-            branch(.stageDiscard, ["candidateID": candidateID],
-                   ["candidateID"]),
-            branch(.promote, ["candidateID": candidateID], ["candidateID"]),
-            branch(.buildStart, ["projectID": projectID], ["projectID"]),
-            branch(.buildStart, ["candidateID": candidateID],
-                   ["candidateID"], title: "Build candidate"),
+            branch(.stageDiscard, ["candidateID": candidateID,
+                                   "attemptID": attemptID],
+                   ["candidateID", "attemptID"]),
+            branch(.promote, ["candidateID": candidateID,
+                              "attemptID": attemptID], ["candidateID", "attemptID"]),
+            branch(.buildStart, ["projectID": projectID,
+                                 "attemptID": attemptID], ["projectID", "attemptID"]),
+            branch(.buildStart, ["candidateID": candidateID,
+                                 "attemptID": attemptID],
+                   ["candidateID", "attemptID"], title: "Build candidate"),
             branch(.buildStatus),
-            branch(.buildCancel),
-            branch(.run, ["productRef": productRef], ["productRef"]),
-            branch(.test, ["productRef": productRef], ["productRef"]),
+            branch(.buildCancel, ["attemptID": attemptID], ["attemptID"]),
+            branch(.run, ["productRef": productRef, "attemptID": attemptID],
+                   ["productRef", "attemptID"]),
+            branch(.test, ["productRef": productRef, "attemptID": attemptID],
+                   ["productRef", "attemptID"]),
         ],
     ]
 

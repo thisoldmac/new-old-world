@@ -42,6 +42,26 @@ public struct HostProjectionRegistry {
         projections.map { $0.capability }
     }
 
+    public static let catalogVersion = 1
+
+    /// Stable FNV-1a over the sorted JSON descriptors. This is a compatibility
+    /// identity, not a security primitive: equal values mean both processes
+    /// compiled the same callable surface.
+    public var catalogDigest: String {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for projection in projections {
+            var descriptor = projection.mcpDescriptor
+            descriptor["name"] = projection.capability.rawValue
+            guard let data = try? JSONSerialization.data(
+                withJSONObject: descriptor, options: [.sortedKeys]) else { continue }
+            for byte in data {
+                hash ^= UInt64(byte)
+                hash &*= 1_099_511_628_211
+            }
+        }
+        return String(format: "%016llx", hash)
+    }
+
     public subscript(capability: HostCapabilityID)
         -> (any HostProjection.Type)? {
         byCapability[capability]
