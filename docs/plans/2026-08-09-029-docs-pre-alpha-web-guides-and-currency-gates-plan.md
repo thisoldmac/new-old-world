@@ -203,7 +203,8 @@ not appear beside first-run instructions as peers.
 ## User-guide page contracts
 
 Module pages are Diátaxis reference pages. Every module page uses the same
-sections so readers learn where facts live:
+core sections so readers learn where facts live; the safety, consent, and
+privacy section is required only when the criteria in item 6 apply:
 
 1. **What it does** — one paragraph and a hero screenshot.
 2. **Availability** — host, PPC, and 68K support plus the exact verification
@@ -285,8 +286,9 @@ only, or unavailable and cite the source.
   file-transfer sequence, Mirror observation/act flow, resident memory
   boundary, MCP trust boundary, and verification ladder.
 
-This creates roughly 35-50 useful visual slots. The first implementation may
-fill every slot with a stub, but the pre-alpha release checklist must print the
+This creates at least 53 useful visual slots, or 54 when extension enabled and
+disabled require separate captures. The first implementation may fill every
+slot with a stub, but the pre-alpha release checklist must print the
 real-versus-placeholder count and list the remaining IDs.
 
 ### Placeholder format
@@ -523,9 +525,10 @@ opening the issue ledger first.
 - Freeze the pre-alpha artifact manifest from the actual packaging output.
 - Write one guided first-connection tutorial; separate how-to pages for guest
   choice, host/PPC/68K installation, connection configuration, extension
-  installation, recovery, and upgrade/rollback/remove; and concise reference
-  and explanation pages for requirements, compatibility, and the optional
-  resident.
+  installation, file transfer, recovery, and upgrade/rollback/remove; and
+  concise reference and explanation pages for requirements, compatibility,
+  the two-Mac contract model, verification and safety, current limitations,
+  and the optional resident.
 - Test every command/path against a clean staging location and the exact build
   artifacts. Record what was only built, emulator-tested, or metal-verified.
 - Add setup visual slots and placeholder stubs.
@@ -643,8 +646,9 @@ guide into one catch-all change.
   instructions.
 - Every host module and every PPC Workshop page is mapped to exactly one guide
   page or an explicit paired asymmetry; NOW-68K support is explicit.
-- Every module page follows the shared section contract and has at least two
-  visual slots.
+- Every module page follows the shared core section contract, includes the
+  safety, consent, and privacy section when item 6's criteria apply, and has at
+  least two visual slots.
 - Visual slots are real captures or exact-size labeled placeholders; all have
   alt text, manifest entries, dimensions, and privacy status.
 - The developer guide contains the eight named diagrams and traces contract,
