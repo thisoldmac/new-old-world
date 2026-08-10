@@ -1335,18 +1335,18 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 951ead3d16ddf35af877d05a78e331e4c3a40fb0
+sources-sha1: 88d9f785e6cfc80b8ccb59427e984cb68dc8453f
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=86f38d261a980a5b99c365193997ef8ee0a8f61aed0498f62e564d810a8a66a3 lines=54 published
+derive x-commands-registry sha256=37d5e7c139da91b47caf23e65a0d35a8dc86a0cedd3dd5caa717dd65d61c9b58 lines=55 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
          f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=317e5d8bc728c6c77ec5758c860086d53b9740a8ec255156e2f6803c6307dc47 lines=51 published
+derive ppc-verbs sha256=b5439853611d47fbc8f90fbc8f44411a8692c590797ddef1079c24f9e3c09530 lines=52 published
     grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
         now-guest-ppc/src/commands/commands.c \
       | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
@@ -1395,4 +1395,6 @@ rederived: 2026-08-09T21:43:46-0400 2b3c2c0e unchanged
 rederived: 2026-08-09T22:09:30-0400 d54812c2 unchanged
 rederived: 2026-08-09T22:18:48-0400 e637efd3 unchanged
 rederived: 2026-08-10T02:53:58-0400 62603174 sources
+rederived: 2026-08-10T04:27:16-0400 886ee556 sources, x-commands-registry 54->55, ppc-verbs 51->52
+rederived: 2026-08-10T04:38:54-0400 886ee556 unchanged
 -->

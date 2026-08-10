@@ -603,7 +603,9 @@ public struct AgentIntegrationLocalClient: Sendable {
 
     public func projects(_ project: AgentIntegrationProjectRequest) async throws
         -> AgentIntegrationProjectResult {
-        let response = try await send(.projects(project))
+        let requestID = project.attemptID.flatMap(UUID.init(uuidString:))
+            ?? UUID()
+        let response = try await send(.projects(project, requestID: requestID))
         guard let result = response.projectResult else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Local response had no Projects result")

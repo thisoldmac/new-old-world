@@ -67,6 +67,22 @@ public enum DevelopmentProjection: HostProjection {
     ]
 
     private static let inputSchema: [String: Any] = [
+        "type": "object",
+        "properties": [
+            "operation": [
+                "type": "string",
+                "enum": AgentIntegrationDevelopmentOperation.allCases
+                    .filter { $0 != .openInCodeKitten }
+                    .map(\.rawValue),
+            ],
+            "projectID": projectID,
+            "workspaceID": workspaceID,
+            "candidateID": candidateID,
+            "productRef": productRef,
+            "attemptID": attemptID,
+        ],
+        "required": ["operation"],
+        "additionalProperties": false,
         "oneOf": [
             branch(.catalog),
             branch(.loopStatus),

@@ -141,7 +141,7 @@ The test compares both against the code literally.
 |---|---|---|---|
 | `now_projects` | — | — | none; bounded host-owned project storage and recoverable history, independent of guest consent |
 | `now_development_environment` | `development` | `development` | command; path-free PPC guest qualification facts |
-| `now_development` | `development-project`, `development-stage`, `development-build`, `development-run` | `development-project`, `development-stage`, `development-build`, `development-run` | command; one closed semantic family for verified guest snapshots, inactive candidates, declarative ToolServer jobs and exact-product launch; optional CodeKitten handoff remains a human-only app action |
+| `now_development` | `development-project`, `development-stage`, `development-build`, `development-run`, `development-test` | `development-project`, `development-stage`, `development-build`, `development-run`, `development-test` | command; one closed semantic family for verified guest snapshots, inactive candidates, declarative ToolServer jobs, exact-product test receipts and exact-product launch; optional CodeKitten handoff remains a human-only app action |
 | `now_list_machines` | — | — | none; host listener state |
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
 | `now_hardware_census` | `census.request` | `census.request` | message family |
@@ -156,6 +156,7 @@ The test compares both against the code literally.
 | `now_semantic_ui_metrics` | — | — | none; reads the host's own act and scene-cycle clocks, and asks the Mac nothing |
 | `now_semantic_ui_lifecycle` | — | — | none; reports the resident facts the host already read, and asks the Mac nothing |
 | `now_semantic_ui_journal` | — | — | none; reads the host's own operation journal, and asks the Mac nothing |
+| `now_semantic_ui_wait_for_settlement` | — | — | none; waits on the native Mirror operation journal by attempt identity, including terminal late success or refusal, without another guest request |
 | `now_semantic_ui_act` | — | — | command; the verb depends on the gesture the plan resolves to (`winact`, `menuact`, `key`, or a Finder script), so the row declares no requirement: demanding all four would make a keystroke unavailable on a guest that serves `key` and not `script`. The executor's own refusal names the missing half. |
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
@@ -1155,7 +1156,7 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: fa92dede9413a998975d88b7a0782efe86aae59e
+sources-sha1: 6d92807988d47de71c1a86147139c2ba95d78284
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1221,4 +1222,6 @@ rederived: 2026-08-09T21:43:47-0400 2b3c2c0e unchanged
 rederived: 2026-08-09T22:09:30-0400 d54812c2 unchanged
 rederived: 2026-08-09T22:18:49-0400 e637efd3 unchanged
 rederived: 2026-08-10T02:53:59-0400 62603174 sources
+rederived: 2026-08-10T04:27:16-0400 886ee556 sources
+rederived: 2026-08-10T04:38:54-0400 886ee556 unchanged
 -->

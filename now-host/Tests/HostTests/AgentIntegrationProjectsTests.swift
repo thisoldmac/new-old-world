@@ -5,6 +5,8 @@ import XCTest
 
 @MainActor
 final class AgentIntegrationProjectsTests: XCTestCase {
+    private let attempt = "01234567-89ab-cdef-0123-456789abcdef"
+
     private func store() throws -> ProjectStore {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("now-agent-projects-\(UUID().uuidString)")
@@ -24,26 +26,33 @@ final class AgentIntegrationProjectsTests: XCTestCase {
     func testRequestShapesRefusePathsInjectionAndDestructiveCreate() {
         XCTAssertFalse(AgentIntegrationProjectRequest(
             operation: .create, name: "Bad\nfile=Injected.c",
-            changes: [write("Main.c", "")]).isWellFormed)
+            changes: [write("Main.c", "")], attemptID: attempt).isWellFormed)
         XCTAssertFalse(AgentIntegrationProjectRequest(
             operation: .create, name: "Bad",
             changes: [.init(path: "../outside", action: .write,
-                            contentsBase64: Data().base64EncodedString())])
+                            contentsBase64: Data().base64EncodedString())],
+            attemptID: attempt)
             .isWellFormed)
         XCTAssertFalse(AgentIntegrationProjectRequest(
             operation: .create, name: "Bad",
             changes: [.init(path: "Sources/.private/Main.c", action: .write,
-                            contentsBase64: Data().base64EncodedString())])
+                            contentsBase64: Data().base64EncodedString())],
+            attemptID: attempt)
             .isWellFormed)
         XCTAssertFalse(AgentIntegrationProjectRequest(
             operation: .create, name: "Bad",
             changes: [.init(path: "Project.ckp", action: .write,
-                            contentsBase64: Data().base64EncodedString())])
+                            contentsBase64: Data().base64EncodedString())],
+            attemptID: attempt)
             .isWellFormed)
         XCTAssertFalse(AgentIntegrationProjectRequest(
             operation: .create, name: "Bad",
-            changes: [.init(path: "Main.c", action: .delete)])
+            changes: [.init(path: "Main.c", action: .delete)],
+            attemptID: attempt)
             .isWellFormed)
+        XCTAssertFalse(AgentIntegrationProjectRequest(
+            operation: .create, name: "Missing Attempt",
+            changes: [write("Main.c", "")]).isWellFormed)
     }
 
     func testMCPContractDiscriminatesEveryProjectOperationAndApplyGuard() {
@@ -90,7 +99,7 @@ final class AgentIntegrationProjectsTests: XCTestCase {
                 .init(path: "Sources/Main.c", action: .write,
                       fork: .resource,
                       contentsBase64: Data("resource".utf8).base64EncodedString()),
-            ]))
+            ], attemptID: attempt))
         let project = try XCTUnwrap(created.project)
         XCTAssertEqual(project.home, "host")
         XCTAssertEqual(created.revision?.message, "Create project")
@@ -118,7 +127,7 @@ final class AgentIntegrationProjectsTests: XCTestCase {
             expectedRevision: project.revision,
             message: "Raise the sample", changes: [
                 write("Sources/Main.c", "int value = 2;"),
-            ]))
+            ], attemptID: "11234567-89ab-cdef-0123-456789abcdef"))
         XCTAssertEqual(changed.project?.revision, 2)
         XCTAssertEqual(changed.revision?.parent, project.commit)
         XCTAssertEqual(changed.revision?.message, "Raise the sample")
@@ -126,7 +135,8 @@ final class AgentIntegrationProjectsTests: XCTestCase {
         let stale = adapter.projects(.init(
             operation: .apply, projectID: project.projectID,
             expectedRevision: project.revision,
-            message: "Stale write", changes: [write("Other", "no")]))
+            message: "Stale write", changes: [write("Other", "no")],
+            attemptID: "21234567-89ab-cdef-0123-456789abcdef"))
         XCTAssertEqual(stale.failure?.code,
                        "now-projects-revision-conflict")
         XCTAssertEqual(adapter.projects(.init(
@@ -137,7 +147,8 @@ final class AgentIntegrationProjectsTests: XCTestCase {
     func testProjectRequestAndResultSurviveTheLocalCodec() throws {
         let request = AgentIntegrationLocalRequest.projects(.init(
             operation: .create, name: "Codec",
-            changes: [write("Main.c", "int main(void) { return 0; }")]))
+            changes: [write("Main.c", "int main(void) { return 0; }")],
+            attemptID: attempt), requestID: UUID(uuidString: attempt)!)
         XCTAssertEqual(try AgentIntegrationLocalCodec.decodeRequest(
             AgentIntegrationLocalCodec.encode(request)), request)
 

@@ -13,6 +13,7 @@ public enum ProjectsProjection: HostProjection {
         "operation", "projectID", "workspaceID", "name",
         "expectedRevision", "expectedCommit", "path", "fork", "maximumBytes",
         "message", "changes",
+        "attemptID",
     ]
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "Projects/DevelopmentModuleView.swift",
@@ -69,6 +70,10 @@ public enum ProjectsProjection: HostProjection {
     private static let workspaceID: [String: Any] = [
         "type": "string", "pattern": "^workspace-[0-9a-f]{16}$",
     ]
+    private static let attemptID: [String: Any] = [
+        "type": "string", "format": "uuid",
+        "description": "Caller-retained idempotency identity for this mutation.",
+    ]
     private static let changes: [String: Any] = [
                 "type": "array", "minItems": 1, "maxItems": 128,
                 "items": [
@@ -96,13 +101,35 @@ public enum ProjectsProjection: HostProjection {
     /// impossible request before it crosses MCP, and the project-revision and
     /// workspace-commit guards cannot be supplied together.
     private static let inputSchema: [String: Any] = [
+        "type": "object",
+        "properties": [
+            "operation": [
+                "type": "string",
+                "enum": AgentIntegrationProjectOperation.allCases.map(\.rawValue),
+            ],
+            "projectID": projectID,
+            "workspaceID": workspaceID,
+            "name": ["type": "string", "minLength": 1, "maxLength": 64],
+            "expectedRevision": ["type": "integer", "minimum": 0],
+            "expectedCommit": ["type": "string", "pattern": "^[0-9a-f]{40}$"],
+            "path": relativePath,
+            "fork": ["type": "string", "enum": ["data", "resource"]],
+            "maximumBytes": ["type": "integer", "minimum": 1,
+                             "maximum": 262_144],
+            "message": ["type": "string", "minLength": 1, "maxLength": 256],
+            "changes": changes,
+            "attemptID": attemptID,
+        ],
+        "required": ["operation"],
+        "additionalProperties": false,
         "oneOf": [
             branch(.list),
             branch(.create, properties: [
                 "name": ["type": "string", "minLength": 1,
                          "maxLength": 64],
                 "changes": changes,
-            ], required: ["name", "changes"]),
+                "attemptID": attemptID,
+            ], required: ["name", "changes", "attemptID"]),
             branch(.status, properties: ["projectID": projectID],
                    required: ["projectID"]),
             branch(.read, properties: [
@@ -117,8 +144,9 @@ public enum ProjectsProjection: HostProjection {
                 "message": ["type": "string", "minLength": 1,
                             "maxLength": 256],
                 "changes": changes,
+                "attemptID": attemptID,
             ], required: ["projectID", "expectedRevision", "message",
-                          "changes"]),
+                          "changes", "attemptID"]),
             branch(.apply, title: "Apply to workspace", properties: [
                 "workspaceID": workspaceID,
                 "expectedCommit": ["type": "string",
@@ -126,18 +154,21 @@ public enum ProjectsProjection: HostProjection {
                 "message": ["type": "string", "minLength": 1,
                             "maxLength": 256],
                 "changes": changes,
+                "attemptID": attemptID,
             ], required: ["workspaceID", "expectedCommit", "message",
-                          "changes"]),
+                          "changes", "attemptID"]),
             branch(.history, properties: ["projectID": projectID],
                    required: ["projectID"]),
-            branch(.workspaceOpen, properties: ["projectID": projectID],
-                   required: ["projectID"]),
+            branch(.workspaceOpen, properties: [
+                "projectID": projectID, "attemptID": attemptID,
+            ], required: ["projectID", "attemptID"]),
             branch(.workspaceResume,
                    properties: ["workspaceID": workspaceID],
                    required: ["workspaceID"]),
             branch(.workspaceDiscard,
-                   properties: ["workspaceID": workspaceID],
-                   required: ["workspaceID"]),
+                   properties: ["workspaceID": workspaceID,
+                                "attemptID": attemptID],
+                   required: ["workspaceID", "attemptID"]),
         ],
     ]
 

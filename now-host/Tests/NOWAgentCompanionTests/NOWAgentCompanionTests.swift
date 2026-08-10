@@ -217,7 +217,7 @@ final class NOWAgentCompanionTests: XCTestCase {
             ($0["name"] as? String)?.hasPrefix(
                 "now_semantic_ui_") == true
         }
-        XCTAssertEqual(semanticUI.count, 9)
+        XCTAssertEqual(semanticUI.count, 10)
         XCTAssertTrue(semanticUI.allSatisfy {
             $0["x-now-stability"] as? String == "experimental"
         })

@@ -110,6 +110,48 @@ final class AgentIntegrationSocketTests: XCTestCase {
                        "the durable terminal receipt must settle the retry")
     }
 
+    func testProjectMutationAttemptReplaysAfterHostRestart() async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let attempt = "11234567-89ab-cdef-0123-456789abcdef"
+        let request = AgentIntegrationProjectRequest(
+            operation: .workspaceDiscard,
+            workspaceID: "workspace-0123456789abcdef",
+            attemptID: attempt)
+        let receipt = AgentIntegrationProjectResult(projects: [])
+        var firstInvocations = 0
+        let first = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { local in
+                guard local.operation == .projects else { return Self.filler }
+                firstInvocations += 1
+                return .projects(receipt)
+            })
+        try first.start()
+        let client = try AgentIntegrationLocalClient(endpoint: endpoint)
+        let firstResult = try await client.projects(request)
+        let replayResult = try await client.projects(request)
+        XCTAssertEqual(firstResult, receipt)
+        XCTAssertEqual(replayResult, receipt)
+        XCTAssertEqual(firstInvocations, 1)
+        first.stop()
+
+        var restartedInvocations = 0
+        let restarted = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in
+                restartedInvocations += 1
+                return .projects(.init(failure: .init(
+                    code: "unexpected-dispatch", message: "unexpected")))
+            })
+        try restarted.start()
+        defer { restarted.stop() }
+        let restartResult = try await client.projects(request)
+        XCTAssertEqual(restartResult, receipt)
+        XCTAssertEqual(restartedInvocations, 0,
+                       "the project mutation receipt must survive restart")
+    }
+
     func testSocketIsPrivateToTheCurrentUser() throws {
         let (endpoint, root) = try temporaryEndpoint()
         defer { try? FileManager.default.removeItem(at: root) }

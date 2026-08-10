@@ -413,8 +413,10 @@ public final class AgentIntegrationLocalServer {
     }
 
     private func isReplayable(_ request: AgentIntegrationLocalRequest) -> Bool {
-        request.operation == .development
-            && request.developmentRequest?.attemptID != nil
+        (request.operation == .development
+            && request.developmentRequest?.attemptID != nil)
+            || (request.operation == .projects
+                && request.projectRequest?.attemptID != nil)
     }
 
     private var attemptDirectory: URL {

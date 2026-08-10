@@ -1,6 +1,6 @@
 import Foundation
 
-public enum AgentIntegrationDevelopmentOperation: String, Codable, Sendable {
+public enum AgentIntegrationDevelopmentOperation: String, Codable, CaseIterable, Sendable {
     case catalog
     case loopStatus = "loop-status"
     case importGuest = "import"
