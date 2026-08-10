@@ -23,8 +23,9 @@ until a separately built candidate is promoted.
 fixtures live in [`contract/project/`](../contract/project/); NOW's Swift and C
 parsers and CodeKitten's pure core use the same fixtures. The format declares
 source membership, a target and configuration, an exact toolchain pin,
-declarative build actions and a product. `Build/` is reserved for generated
-artifacts and excluded from source digests.
+declarative build actions and a product path with required four-character type
+and creator codes. `Build/` is reserved for generated artifacts and excluded
+from source digests.
 
 The host Projects store accepts only opaque project/workspace references and
 canonical relative paths. It rejects absolute paths, `..`, links, stale
@@ -103,9 +104,20 @@ the IDE to exist.
 ## Verification and current limits
 
 The project/history, parser, job, projection, Chat-filter and parity behavior
-is tested locally, and both guests cross-compile. No Development workflow has
-yet run in the PPC emulator or on a PowerBook, so it is not emulator-verified
-or metal-verified.
+is tested locally, and both guests cross-compile. The active-project build lane
+is also emulator-verified on a private mac99/OS 9.1 guest with MPW: build
+`15a1c3087007` qualified `mpw-ffff-00000cf0@structural-1`, measured a three-file
+source tree, completed MrC, PPCLink and Rez, produced an `APPL/MMTR` application
+with 1,700 data-fork bytes and 568 resource-fork bytes, launched that exact
+measured product with matching process identity, reached a terminal cancelled
+state, and completed a later build. The initial emulator pass found and fixed
+a command-stack overflow and relative-path ToolServer failure before this claim
+was made.
+
+That is a partial emulator rung, not a full end-to-end one and not metal
+verification. Guest import/workspace refresh, candidate staging, divergent and
+successful promotion, and CodeKitten handoff have not run in the emulator. No
+Development workflow has run on a PowerBook.
 
 Two preservation/settlement limits are still open and are intentionally not
 hidden behind a successful receipt:
@@ -129,5 +141,5 @@ hidden behind a successful receipt:
 
 The manual host import sheet also asks for the opaque guest project ID; a
 bounded guest-project catalog is not yet a human discovery surface. These
-limits and the missing emulator/metal rungs are tracked in
+limits and the remaining emulator/metal rungs are tracked in
 [`open-issues.md`](open-issues.md).

@@ -1,6 +1,6 @@
 # Status: what works and what does not
 
-## 2026-08-09 — Projects and headless PPC Development are tested, not run
+## 2026-08-09 — Active-project MPW Development is emulator-verified, not metal-verified
 
 NOW now owns a bounded host Projects root with pure Git history, recoverable
 agent workspaces and explicit host/guest project homes. A guest-only project
@@ -12,14 +12,22 @@ run rechecks both product forks and metadata and observes the launched process
 identity. The Development module exposes the same services, while CodeKitten
 is an optional human-only `odoc` handoff. NOW-68K reports typed absence.
 
-This is **tested and builds**, not emulator- or metal-verified. Source resource
-forks are refused at host staging and guest import instead of being silently
-lost; Finder metadata is not yet preserved by the Git mirror/candidate round
-trip. A distinct test operation/receipt is not implemented; build and run must
-not be relabeled as test. CodeKitten event dispatch has no returned acceptance
-receipt, and the host import sheet requires a project ID rather than listing
-guest projects. Details and the operational model are in
-[development.md](development.md).
+The active-project build/run slice is **emulator-verified, not metal-verified**.
+On mac99/OS 9.1, build `15a1c3087007` qualified MPW, compiled, linked and
+Rez-appended a three-file project, measured an `APPL/MMTR` product at 1,700
+data-fork and 568 resource-fork bytes, launched the exact measured product,
+cancelled another job and successfully built again. The run exposed and fixed
+two defects first: a ~33 KiB project object on the command stack terminated the
+guest, and relative MPW paths ignored the intended project directory.
+
+The larger import/stage/promote workflow and CodeKitten handoff remain unrun in
+the emulator, and nothing here has run on the PowerBook. Source resource forks
+are refused at host staging and guest import instead of being silently lost;
+Finder metadata is not yet preserved by the Git mirror/candidate round trip. A
+distinct test operation/receipt is not implemented; build and run must not be
+relabeled as test. CodeKitten event dispatch has no returned acceptance receipt,
+and the host import sheet requires a project ID rather than listing guest
+projects. Details and the operational model are in [development.md](development.md).
 
 This is the long form of the README's status table — every capability
 with its evidence, and every gap with what is actually unknown about it.

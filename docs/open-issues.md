@@ -1,14 +1,20 @@
 # Open issues
 
-## UNVERIFIED: Projects and Development have not completed a guest workflow (2026-08-09)
+## PARTLY VERIFIED: active-project MPW build/run passed in the emulator; publication and metal remain (2026-08-09)
 
 The host Projects store, guest Development module, private import/candidate
 lanes, declarative ToolServer runtime, promotion guard, exact-product run and
-optional CodeKitten handoff are locally tested and both guests build. None has
-run end to end in the PPC emulator or on a PowerBook. The first emulator run
-must cover import, workspace restart, stage, build, cancel, divergent promote,
-successful promote and exact run with CodeKitten absent. Metal then owes exact
-MPW toolchain/version, both product fork sizes/digest, process identity and an
+optional CodeKitten handoff are locally tested and both guests build. One
+bounded PPC emulator rung now passes: on mac99/OS 9.1, guest build
+`15a1c3087007` qualified `mpw-ffff-00000cf0@structural-1`, measured the active
+three-file project, completed MrC/PPCLink/Rez, reported an `APPL/MMTR` product
+at 1,700 data and 568 resource bytes, launched the exact product with matching
+process identity, cancelled another job and completed a later build.
+
+That run did not exercise import, workspace restart, inactive candidate stage,
+divergent promote, successful promote or CodeKitten handoff. Those remain the
+emulator acceptance gap. The PowerBook metal rung still owes the exact MPW
+toolchain/version, both product fork sizes/digest, process identity and an
 `odoc` edit imported as a new revision.
 
 Three implementation gaps block a full development/preservation/acceptance
