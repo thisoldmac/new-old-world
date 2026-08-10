@@ -102,6 +102,14 @@ class Repo:
             shutil.copy(os.path.join(ROOT, "tools", tool),
                         os.path.join(self.path, "tools", tool))
             os.chmod(os.path.join(self.path, "tools", tool), 0o755)
+        # The production reference hook composes the resident and product
+        # release gates. This suite's miniature repo intentionally contains
+        # no host/PPC product, so a passing stub keeps each mutation aimed at
+        # resident evidence. tools/product-version-gate-tests exercises the
+        # other half through this same production hook.
+        self.write("tools/product-version-gate", "#!/bin/sh\nexit 0\n")
+        os.chmod(os.path.join(self.path, "tools", "product-version-gate"),
+                 0o755)
         shutil.copy(os.path.join(ROOT, ".gitattributes"),
                     os.path.join(self.path, ".gitattributes"))
         self.write("ext/src/now_ext.c", "int resident(void) { return 1; }\n")
