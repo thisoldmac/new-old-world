@@ -111,6 +111,21 @@ repair and complete host-home build/run/dialog lane are therefore
 metal-verified on the PowerBook 1400c. The test-receipt, guest-home promotion
 and CodeKitten handoff gaps below remain open and are not covered by this claim.
 
+The run also exposed one agent-loop settlement defect that does not invalidate
+the build/run receipt. The first retained MCP snapshot contained the correct
+frontmost `HelloForks` process, dialog surface and enabled OK item, but carried
+`baseComplete=false`; the immediately following `dialogItem` act refused
+`now-mirror-snapshot-unavailable` before sending. Source inspection names two
+authorities at that seam: `MirrorStateProjectionService` reads
+`MirrorStateEngineRegistry.snapshot`, while `MirrorDriveService` resolves the
+act against `NOWMirrorSource.scene`. The former had the scene and the latter was
+nil. A separate process-list request transiently returned
+`now-host-communication-failed`, then succeeded on retry. An attended human can
+reconcile both cases, as this run did; an unattended agent cannot yet treat a
+published snapshot as proof that its named entities are actable. Reconcile the
+read and drive authorities and mutation-test that exact split before calling
+semantic runtime settlement autonomous-loop reliable.
+
 Two implementation gaps block a full development/preservation/acceptance
 claim today:
 
