@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from datetime import date
 import hashlib
 from html.parser import HTMLParser
 import json
@@ -323,6 +324,19 @@ def check(root: Path, site_dir: Path | None) -> int:
                     errors.append(f"{rel}: source dependency does not exist: {source}")
         if not isinstance(meta["media_ids"], list):
             errors.append(f"{rel}: media_ids must be a list")
+        verified_raw = meta["last_verified"]
+        try:
+            if isinstance(verified_raw, date):
+                verified = verified_raw
+            elif isinstance(verified_raw, str):
+                verified = date.fromisoformat(verified_raw)
+            else:
+                raise ValueError
+        except ValueError:
+            errors.append(f"{rel}: last_verified must be an ISO date in YYYY-MM-DD form")
+        else:
+            if verified > date.today():
+                errors.append(f"{rel}: last_verified cannot be in the future")
         h1 = [text for marks, text in HEADING_RE.findall(body) if len(marks) == 1]
         if len(h1) != 1:
             errors.append(f"{rel}: expected exactly one H1, found {len(h1)}")
