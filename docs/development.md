@@ -170,8 +170,17 @@ the VM, HTTP served 31 tools, returned typed refusals for 14, left the one
 human-approved transfer explicitly gated, and produced zero failed or uncovered
 rows.
 
+The varied loop was recorded before the HTTP listener moved from a separately
+shipped companion into the normal NOW app. The corrected ownership path keeps
+the dispatcher and transport implementation, passes the exact stdio/HTTP
+parity, security, liveness and full-catalog gates, and completed an
+authenticated app-owned HTTP call to the exact private VM session. The full
+four-loop recipe was not repeated after that move: the attached-toolchain
+cold-boot fixture did not auto-launch its worker, so the acceptance stopped
+instead of using out-of-band QMP input.
+
 The live loop found an idempotency-collision reporting defect: the host rejected
-a reused attempt ID, but its response ID made the companion call it an invalid
+a reused attempt ID, but its response ID made the MCP adapter call it an invalid
 host response. Pending and collision responses now carry the current request
 ID and cross both transports as typed `attempt-pending` or
 `attempt-collision`. The exact old response fails the regression test, and the

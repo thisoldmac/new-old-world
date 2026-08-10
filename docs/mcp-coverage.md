@@ -1041,6 +1041,14 @@ guest-only import/edit/build/test/promote/diverge/recover. This is emulator
 transport-and-operation evidence, not metal verification of all 31 served
 capabilities.
 
+The varied-loop receipts above were collected before HTTP ownership was moved
+out of the separately shipped companion. The corrected normal NOW app retains
+the same dispatcher and protocol implementation; its focused parity,
+conformance, security and liveness gates pass, and its in-process HTTP adapter
+completed an authenticated request against a private VM. That smoke reached
+the exact guest session and Development report, but did not repeat the four
+loops: the qualified-dev-disk cold-boot topology did not auto-launch its worker.
+
 ## Status
 
 **Tested, not metal-verified.** The tables are a derivation over source and a
@@ -1250,4 +1258,5 @@ rederived: 2026-08-10T13:10:56-0400 47bf54fb sources
 rederived: 2026-08-10T13:36:45-0400 b15b4827 unchanged
 rederived: 2026-08-10T14:45:43-0400 26b75393 unchanged
 rederived: 2026-08-10T14:48:15-0400 26b75393 unchanged
+rederived: 2026-08-10T15:30:54-0400 32bdd096 unchanged
 -->

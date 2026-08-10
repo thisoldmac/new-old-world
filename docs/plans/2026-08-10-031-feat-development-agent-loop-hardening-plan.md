@@ -112,6 +112,18 @@ implementation:
    ownership guard was watched fail when the HTTP card was wired to stdio
    state, and the endpoint guard was watched fail when a full lane suffix was
    moved back under Darwin's overlong per-user temporary path.
+   The corrected normal app then completed an authenticated HTTP handshake
+   against a session-private mac99/OS 9.1 VM, identified guest session
+   `guest-1-29910047-16fd-4686-88c6-6a35905b2e29` and guest build
+   `5600ca373fafd0`, and reached the guest Development report through the
+   in-process adapter. That stage image honestly reported no registered
+   Projects root or toolchain. A second cold boot with the qualified MPW
+   development disk attached exposed a fixture limitation: the worker is not
+   auto-launched in that topology, so the run stopped rather than using QMP
+   input as an unrecorded substitute. The varied Development receipts above
+   qualify the shared dispatcher and HTTP protocol; the corrected ownership
+   path adds app-owned transport parity, liveness, catalog and VM-dispatch
+   evidence, not a second claim that the full varied loop was repeated.
 2. CodeKitten is separately owned. NOW now requires its positive open receipt,
    but cross-repository shared-fixture extraction must land with that sibling
    rather than making it a NOW dependency.
@@ -127,7 +139,7 @@ hidden behind the status word.
 ## Required invariants
 
 1. **One identity chain.** Every request and receipt carries host build,
-   companion protocol, machine, guest build, session epoch, project revision or
+   local MCP protocol, machine, guest build, session epoch, project revision or
    candidate digest, qualified toolchain, operation ID, and product identity as
    applicable.
 2. **One published semantic authority.** Snapshot, find, wait, act planning,
@@ -143,16 +155,16 @@ hidden behind the status word.
 5. **Authority never expands implicitly.** Host writes remain below NOW's
    Projects root. Guest-home publication remains candidate-based and guarded by
    the imported base digest. Toolchains remain human-registered.
-6. **Transport facts are not domain facts.** A broken or stale companion, a
+6. **Transport facts are not domain facts.** A broken or stale MCP client path, a
    dropped response, an operation refusal, and a successful operation whose
    response was lost are distinct outcomes.
 
 ## Workstream A — compatibility and transport settlement
 
-- Add a small compatibility preflight returning host build identity, companion
+- Add a small compatibility preflight returning host build identity, local MCP
   protocol version, projection catalog version/digest, and supported schema
   revisions before a domain tool dispatches.
-- Reject a stale host/companion pair with a typed incompatibility result that
+- Reject a stale stdio bridge/host pair with a typed incompatibility result that
   names both sides. Do not discover it through repeated
   `now-host-invalid-response` failures.
 - Assign an attempt ID before transport. Retrying a query may mint a new
@@ -162,7 +174,7 @@ hidden behind the status word.
   a connection loss. Add late-success settlement rather than rounding a client
   timeout to product failure.
 
-Acceptance: start an older host against a newer companion and receive one typed
+Acceptance: start an older host against a newer stdio bridge and receive one typed
 compatibility refusal before any project mutation; interrupt a response after
 dispatch and recover the original terminal receipt without duplicating work.
 
@@ -288,7 +300,7 @@ create/build/run/observe/act/discard loop.
 
 No rung may use host Retro68 builds or host-side classic execution as evidence
 for the guest-native workflow. Host use is limited to NOW-owned project scratch,
-the NOW host/companion, orchestration, and evidence collection.
+the NOW host and its MCP transports, orchestration, and evidence collection.
 
 ## Landing gates
 

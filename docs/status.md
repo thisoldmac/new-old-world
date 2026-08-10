@@ -55,6 +55,14 @@ typed refusals, kept one human-approved transfer gated, and left zero failed or
 uncovered rows. A live idempotency-key collision now crosses the host and
 MCP surface as `attempt-collision`, not `now-host-invalid-response`.
 
+Those varied-loop receipts predate the ownership correction that removed the
+separate companion product. The corrected normal app repeats the complete
+stdio/HTTP parity, catalog, liveness and no-host conformance gates and has made
+an authenticated app-owned HTTP call through the in-process adapter to an
+identity-checked private VM. It has not repeated all four Development loops;
+the attached-toolchain cold-boot fixture did not auto-launch its worker, and
+the run stopped rather than substituting out-of-band QMP input.
+
 This is not a claim that every hardening-plan acceptance rung is closed. HTTP
 was an unapproved slice expansion and is retained only after completing its
 security, parity and live-VM gates. NOW now requires CodeKitten's positive

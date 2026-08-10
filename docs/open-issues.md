@@ -209,10 +209,10 @@ before normalizing a host copy. The exact creator mutation was watched to fail.
 
 The remaining open boundaries are narrower and separately owned:
 
-- **MCP transport:** only the stdio companion exists in this repository. The
-  hardening plan assumed canonical HTTP plus stdio parity; there is no HTTP
-  listener to test. Adding one would create a new transport/security boundary,
-  not complete an overlooked test.
+- **MCP transport, historical state:** at this checkpoint only the stdio bridge
+  existed. The later update below records the HTTP addition and its subsequent
+  ownership correction; this paragraph is retained to make the sequence and
+  original scope error explicit rather than presenting HTTP as planned work.
 - **CodeKitten acceptance:** NOW still observes launch, asynchronous `odoc`
   dispatch and foregrounding rather than a returned handler receipt. Shared
   fixtures and any neutral receipt vocabulary must be completed in the sibling
@@ -253,7 +253,7 @@ simple build/test/dismiss/cleanup; source resource-fork preservation; a
 six-file MrC failure, repair, cancellation, restage and success; and a project
 created only on the guest, imported to host scratch, edited, built, tested,
 promoted, deliberately diverged and later recovered by exact typed re-upload.
-The rebuilt host and companion also proved a reused mutation UUID crosses as
+The rebuilt host and HTTP MCP transport also proved a reused mutation UUID crosses as
 typed `attempt-collision`; the old missing/current-mismatched response ID is an
 exact failing mutation fixture.
 
