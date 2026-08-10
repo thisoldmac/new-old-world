@@ -21,6 +21,18 @@ class SpinUpPPCShutdownTests(unittest.TestCase):
         self.assertIn("tools/shutdown-guest.py", reboot)
         self.assertNotIn('tools/qmp" "$QMP" quit', reboot)
 
+    def test_shutdown_applet_asks_the_finder_instead_of_powering_directly(self):
+        """The pre-INIT reboot has no NOW wire, but still needs clean HFS.
+
+        MUTATION: restoring ShutDwnPower makes this fail before the metal
+        bake can silently turn a quiet but mounted volume into its base.
+        """
+        source = (ROOT / "tools" / "guest-shutdown" / "src" /
+                  "now_shutdown.c").read_text()
+        self.assertIn("kAEShutDown", source)
+        self.assertIn("typeApplSignature", source)
+        self.assertNotIn("ShutDwnPower();", source)
+
     def test_the_default_base_is_the_stage_oracle_not_the_plain_runner(self):
         """The stale-oracle failure, one layer below where it is gated.
 

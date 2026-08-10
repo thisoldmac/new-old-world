@@ -28,8 +28,8 @@ wrong trap ABI does not crash, it lies*, could not be run at all.
 | --- | --- |
 | `tools/stage-ext.py` | Pushes `NowExt.bin` into `System Folder:Extensions` and the app beside it, through the lab's baked anchor worker. Verifies **by fork size and Finder type**, read back off the guest. |
 | `scripts/spin-up-ppc` | Fresh session-private clone → stage → **guest-clean shutdown and relaunch** → re-verify → launch NOW → interrogate. |
-| `tools/guest-shutdown` | A 68K applet whose whole body is `ShutDwnPower()`. Staged like the extension; it is how the Macintosh is asked to shut ITSELF down. |
-| `tools/shutdown-guest.py` | Quits the front application, launches that applet through the worker, waits for QEMU to exit. Never `quit`. |
+| `tools/guest-shutdown` | A 68K rig applet that sends the Finder its standard `kAEShutDown` Apple event. Staged like the extension; it gives the pre-INIT reboot a clean Finder-owned route before NOW's wire exists. |
+| `tools/shutdown-guest.py` | Uses NOW's wire to drive Finder Special > Shut Down when the app is running; otherwise launches the applet through the worker. It releases QEMU only after guest disk quiescence, then verifies the HFS unmounted bit. |
 | `tools/askguest.py` | Listens as a NOW host, takes the dialling guest, asks verbs, prints answers verbatim. `fakeguest.py`'s mirror image. |
 
 Ported from `archive/mirror-standalone-2026-08-09/tools/` (upstream `5c822b0`, `f42cb09`, `a82cc8f`),
@@ -48,9 +48,10 @@ it was about to measure. Asking the guest instead needs a route into a
 machine whose human interface nothing outside can reach — no QMP key
 event arrives, there is no absolute pointer, a posted click cannot select
 from a menu, and the canonical anchor worker has no `script` verb. So NOW
-stages an applet that calls the Shutdown Manager. Measured 2026-08-05:
-launch to QEMU exit, 6 s; the next boot reached the anchor in 42 s with no
-Disk First Aid, against 161 s for a boot after a power cut.
+stages an applet that asks the Finder to shut down through its standard Apple
+event. The direct `ShutDwnPower` version was retired after preserved clones
+proved that disk quiet did not imply the HFS volume was unmounted; the bake
+now reads that bit before accepting either shutdown path.
 [open-issues.md](open-issues.md) carries what else that ruled out.
 
 **One thing could not be ported.** NOW's wire runs *guest → host*: the guest

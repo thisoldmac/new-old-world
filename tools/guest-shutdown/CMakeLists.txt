@@ -12,19 +12,17 @@ cmake_minimum_required(VERSION 3.13)
 # the anchor worker by tools/shutdown-guest.py, and it ships to nobody.
 # The reasoning, and the three routes it replaces, are in src/now_shutdown.c.
 #
-# 68K, like ext/ and for the same kind of reason: the Shutdown Manager is
-# CALL_NOT_IN_CARBON, so the Carbon toolchain the application uses cannot
-# compile ShutDwnPower at all. A 68K application runs perfectly well on the
-# PowerPC guest under the 68K emulator, and the 68K toolchain is already a
-# prerequisite here because the extension needs it.
+# 68K, like ext/, so the same rig helper runs on every guest that can stage
+# the resident. The helper now addresses the Finder with kAEShutDown rather
+# than calling the Shutdown Manager directly, but changing its architecture
+# would add another artifact and toolchain path without adding a capability.
 
 project(NowShutDown C)
 
 if(NOT CMAKE_C_COMPILER MATCHES "m68k")
     message(FATAL_ERROR
         "tools/guest-shutdown needs the m68k Retro68 toolchain: the "
-        "Shutdown Manager is CALL_NOT_IN_CARBON and does not exist in the "
-        "retrocarbon headers the application builds against.")
+        "rig carries one 68K shutdown helper across its guest targets.")
 endif()
 
 add_application(NowShutDown
