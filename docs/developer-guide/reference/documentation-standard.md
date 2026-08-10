@@ -26,4 +26,8 @@ last_verified: 2026-08-09
 | Audience ownership | One owning explanation per audience purpose | User pages explain product use; the developer guide explains code; the coding-agent guide contains only operational agent protocol and links back for technical detail |
 | Publication | Standalone `/docs/` preview now; deferred website target `/app/docs/` | The app repository owns docs source and gates; cross-repository assembly is recorded but not implemented in `docs/site-integration.yaml` |
 
-The gate checks the properties that can be derived locally. Human review still owns clarity, task success, visual accuracy, meaningful alternative text, and whether a captured screenshot discloses private information.
+The gate checks the properties that can be derived locally. A captured image is
+refused unless its manifest entry records `privacy_reviewed: true`; human
+review still owns clarity, task success, visual accuracy, meaningful
+alternative text, and whether that declaration is actually justified by the
+pixels.

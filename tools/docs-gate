@@ -376,6 +376,12 @@ def check(root: Path, site_dir: Path | None) -> int:
         real_count += status == "captured"
         if status not in {"placeholder", "captured"}:
             errors.append(f"media {item['id']}: invalid status {status!r}")
+        if status == "captured" and item.get(
+            "privacy_reviewed", media.get("defaults", {}).get("privacy_reviewed")
+        ) is not True:
+            errors.append(
+                f"media {item['id']}: captured image requires privacy_reviewed: true"
+            )
         if not target.exists():
             errors.append(f"media {item['id']}: missing file {item['path']}")
             continue

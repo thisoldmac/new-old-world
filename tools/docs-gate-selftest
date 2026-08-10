@@ -115,6 +115,12 @@ def main() -> int:
             'width="980"', 'width="981"', "SVG is 981x650",
         )
         expect_mutation(
+            test_root, "captured image privacy review",
+            test_root / "docs/assets/screenshots/manifest.yaml",
+            "  - id: overview-host\n", "  - id: overview-host\n    status: captured\n",
+            "captured image requires privacy_reviewed: true",
+        )
+        expect_mutation(
             test_root, "placeholder freshness", test_root / "docs/assets/screenshots/overview/host.svg",
             "SCREENSHOT NEEDED", "SCREENSHOT STALE", "stale or missing placeholders",
         )
