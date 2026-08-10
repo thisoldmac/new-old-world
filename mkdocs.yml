@@ -138,6 +138,7 @@ nav:
       - Architecture:
           - System context: developer-guide/architecture/system-context.md
           - Onboarding and setup media: developer-guide/architecture/onboarding.md
+          - Host-owned updates: developer-guide/architecture/updating.md
           - Wire contract: developer-guide/architecture/wire-contract.md
           - Host: developer-guide/architecture/host.md
           - PowerPC guest: developer-guide/architecture/ppc-guest.md

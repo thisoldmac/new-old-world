@@ -9,6 +9,9 @@
 #include "pump.h"
 #include "wire.h"
 #include "control_kind.h"
+#include "confirm.h"
+#include "update_model.h"
+#include "update_status.h"
 
 /* The page has two halves: an "Other Mac" group that SHOWS the saved
    target (address and port drawn read-only, changed through the Edit
@@ -37,6 +40,11 @@ typedef struct {
     Rect retry_popup;
     Rect auto_box;
     Rect glance_group;
+    Rect update_group;
+    Rect app_update_line;
+    Rect ext_update_line;
+    Rect app_update_btn;
+    Rect ext_update_btn;
     Rect action_btn;
     Rect revert_btn;
     Rect save_btn;
@@ -52,6 +60,9 @@ static ControlRef g_edit;
 static ControlRef g_retry;
 static ControlRef g_auto;
 static ControlRef g_group_glance;
+static ControlRef g_group_update;
+static ControlRef g_update_app;
+static ControlRef g_update_ext;
 static ControlRef g_action;
 static ControlRef g_revert;
 static ControlRef g_save;
@@ -70,6 +81,7 @@ static char g_status[120];
 static char g_vals[kGlanceRowCount][64];
 static char g_fail_line[120];
 static Boolean g_shown_connected;
+static char g_update_lines[3][128];
 
 static const char *k_glance_labels[kGlanceRowCount] = {
     "Other Mac", "Connected", "Last traffic", "Wire", "This Mac"
@@ -130,11 +142,27 @@ static void compute_rects(const Rect *body, ConnRects *r)
 
     if (stacked) {
         SetRect(&r->glance_group, left, (short)(r->other_group.bottom + 8),
-                right, (short)(body->bottom - 8 - kButtonHeight - 12));
+                right, (short)(r->other_group.bottom + 132));
     } else {
         SetRect(&r->glance_group, (short)(r->other_group.right + 12), top,
                 right, (short)(top + 178));
     }
+
+    SetRect(&r->update_group, left,
+            (short)(r->glance_group.bottom + 8), right,
+            (short)(body->bottom - 8 - kButtonHeight - 12));
+    SetRect(&r->app_update_line, (short)(left + 12),
+            (short)(r->update_group.top + 22), (short)(right - 126),
+            (short)(r->update_group.top + 40));
+    SetRect(&r->ext_update_line, (short)(left + 12),
+            (short)(r->update_group.top + 46), (short)(right - 126),
+            (short)(r->update_group.top + 64));
+    SetRect(&r->app_update_btn, (short)(right - 116),
+            (short)(r->update_group.top + 16), (short)(right - 10),
+            (short)(r->update_group.top + 16 + kButtonHeight));
+    SetRect(&r->ext_update_btn, (short)(right - 116),
+            (short)(r->update_group.top + 42), (short)(right - 10),
+            (short)(r->update_group.top + 42 + kButtonHeight));
 
     SetRect(&r->action_btn, left, (short)(body->bottom - 10 - kButtonHeight),
             (short)(left + 110), (short)(body->bottom - 10));
@@ -348,6 +376,7 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
     compute_this_mac();
     g_status[0] = '\0';
     memset(g_vals, 0, sizeof g_vals);
+    memset(g_update_lines, 0, sizeof g_update_lines);
     g_fail_line[0] = '\0';
 
     CopyCStringToPascal("Other Mac", text);
@@ -355,6 +384,9 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
                                0, kControlGroupBoxTextTitleProc, 0);
     CopyCStringToPascal("At a glance", text);
     g_group_glance = now_control_new(owner, &g_r.glance_group, text, false, 0,
+                                0, 0, kControlGroupBoxTextTitleProc, 0);
+    CopyCStringToPascal("Updates from the other Mac", text);
+    g_group_update = now_control_new(owner, &g_r.update_group, text, false, 0,
                                 0, 0, kControlGroupBoxTextTitleProc, 0);
     g_edit = make_button(&g_r.edit_btn, "Edit\xC9");   /* MacRoman ellipsis */
     CopyCStringToPascal("Retry:", text);
@@ -369,10 +401,14 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
     g_action = make_button(&g_r.action_btn, "Connect");
     g_revert = make_button(&g_r.revert_btn, "Revert");
     g_save = make_button(&g_r.save_btn, "Save");
+    g_update_app = make_button(&g_r.app_update_btn, "Install App");
+    g_update_ext = make_button(&g_r.ext_update_btn, "Install Extension");
 
     if (g_group_other == NULL || g_group_glance == NULL || g_edit == NULL
         || g_retry == NULL || g_auto == NULL
-        || g_action == NULL || g_revert == NULL || g_save == NULL) {
+        || g_group_update == NULL || g_update_app == NULL
+        || g_update_ext == NULL || g_action == NULL || g_revert == NULL
+        || g_save == NULL) {
         return memFullErr;
     }
     {
@@ -394,6 +430,9 @@ static void conn_dispose(void)
     g_retry = NULL;
     g_auto = NULL;
     g_group_glance = NULL;
+    g_group_update = NULL;
+    g_update_app = NULL;
+    g_update_ext = NULL;
     g_action = NULL;
     g_revert = NULL;
     g_save = NULL;
@@ -416,6 +455,9 @@ static void conn_show(Boolean visible)
     g_visible = visible;
     show_control(g_group_other, visible);
     show_control(g_group_glance, visible);
+    show_control(g_group_update, visible);
+    show_control(g_update_app, visible);
+    show_control(g_update_ext, visible);
     show_control(g_edit, visible);
     show_control(g_retry, visible);
     show_control(g_auto, visible);
@@ -443,6 +485,9 @@ static void conn_layout(const Rect *body)
     compute_rects(body, &g_r);
     move_control(g_group_other, &g_r.other_group);
     move_control(g_group_glance, &g_r.glance_group);
+    move_control(g_group_update, &g_r.update_group);
+    move_control(g_update_app, &g_r.app_update_btn);
+    move_control(g_update_ext, &g_r.ext_update_btn);
     move_control(g_edit, &g_r.edit_btn);
     move_control(g_retry, &g_r.retry_popup);
     move_control(g_auto, &g_r.auto_box);
@@ -505,6 +550,55 @@ static void conn_draw(void)
         TruncString((short)(fail.right - fail.left), text, truncMiddle);
         DrawString(text);
     }
+    MoveTo(g_r.app_update_line.left,
+           (short)(g_r.app_update_line.top + 12));
+    CopyCStringToPascal(g_update_lines[0], text);
+    TruncString((short)(g_r.app_update_line.right
+                       - g_r.app_update_line.left), text, truncMiddle);
+    DrawString(text);
+    MoveTo(g_r.ext_update_line.left,
+           (short)(g_r.ext_update_line.top + 12));
+    CopyCStringToPascal(g_update_lines[1], text);
+    TruncString((short)(g_r.ext_update_line.right
+                       - g_r.ext_update_line.left), text, truncMiddle);
+    DrawString(text);
+    if (g_update_lines[2][0] != '\0') {
+        MoveTo((short)(g_r.update_group.left + 12),
+               (short)(g_r.update_group.bottom - 10));
+        CopyCStringToPascal(g_update_lines[2], text);
+        TruncString((short)(g_r.update_group.right
+                           - g_r.update_group.left - 24), text, truncMiddle);
+        DrawString(text);
+    }
+}
+
+static void install_update(NowUpdateComponent component)
+{
+    NowUpdateOffer offer;
+    char detail[180];
+    char err[120];
+
+    if (!now_update_offer_get(component, &offer)) return;
+    if (!offer.signed_artifact) {
+        snprintf(detail, sizeof detail,
+                 "%s %s build %.12s has a verified SHA-256, but no release "
+                 "signature. Install this %s build?",
+                 component == kNowUpdateApplication ? "Application"
+                                                    : "Extension",
+                 offer.version, offer.build,
+                 offer.channel[0] != '\0' ? offer.channel : "development");
+        if (!now_confirm("Install unsigned update?", detail, "Install")) {
+            set_status("Update not installed.");
+            return;
+        }
+    }
+    if (now_wire_update_request(component, true, err, sizeof err) != 0) {
+        set_status(err);
+        return;
+    }
+    set_status(component == kNowUpdateApplication
+               ? "Downloading application update..."
+               : "Downloading extension update; restart afterward.");
 }
 
 static Boolean conn_click(const EventRecord *event, Point local)
@@ -572,6 +666,13 @@ static Boolean conn_click(const EventRecord *event, Point local)
         }
         return true;
     }
+    if (control == g_update_app || control == g_update_ext) {
+        if (TrackControl(control, local, now_pump_action()) != 0) {
+            install_update(control == g_update_app
+                           ? kNowUpdateApplication : kNowUpdateExtension);
+        }
+        return true;
+    }
     return false;
 }
 
@@ -594,7 +695,7 @@ static Boolean conn_key(const EventRecord *event)
 
 static void conn_activate(Boolean active)
 {
-    ControlRef controls[8];
+    ControlRef controls[11];
     int i;
 
     controls[0] = g_group_other;
@@ -605,7 +706,10 @@ static void conn_activate(Boolean active)
     controls[5] = g_action;
     controls[6] = g_revert;
     controls[7] = g_save;
-    for (i = 0; i < 8; ++i) {
+    controls[8] = g_group_update;
+    controls[9] = g_update_app;
+    controls[10] = g_update_ext;
+    for (i = 0; i < 11; ++i) {
         if (controls[i] == NULL) {
             continue;
         }
@@ -624,6 +728,7 @@ static void conn_idle(void)
     char fail_line[120];
     Boolean connected;
     int i;
+    int update_changed = 0;
 
     if (g_owner == NULL || !g_visible) {
         return;
@@ -654,6 +759,50 @@ static void conn_idle(void)
         g_shown_connected = connected;
         CopyCStringToPascal(connected ? "Disconnect" : "Connect", text);
         SetControlTitle(g_action, text);
+    }
+    for (i = 0; i < kNowUpdateComponentCount; ++i) {
+        char version[24], build[48], line[128];
+        Rect dirty = i == 0 ? g_r.app_update_line : g_r.ext_update_line;
+
+        now_update_current_identity((NowUpdateComponent)i,
+                                    version, sizeof version,
+                                    build, sizeof build);
+        now_update_offer_line((NowUpdateComponent)i, version, build,
+                              line, sizeof line);
+        if (strcmp(line, g_update_lines[i]) != 0) {
+            strcpy(g_update_lines[i], line);
+            InvalWindowRect(g_owner, &dirty);
+        }
+    }
+    {
+        char warning[128];
+        Rect dirty = g_r.update_group;
+        warning[0] = '\0';
+        now_update_extension_differs_from_app(warning, sizeof warning);
+        if (strcmp(warning, g_update_lines[2]) != 0) {
+            strcpy(g_update_lines[2], warning);
+            InvalWindowRect(g_owner, &dirty);
+        }
+    }
+    if (!now_wire_update_pending(NULL)) {
+        char version[24], build[48];
+        now_update_current_identity(kNowUpdateApplication, version,
+                                    sizeof version, build, sizeof build);
+        update_changed = now_update_offer_differs(
+            kNowUpdateApplication, version, build);
+        HiliteControl(g_update_app,
+                      update_changed ? kControlNoPart
+                                     : kControlInactivePart);
+        now_update_current_identity(kNowUpdateExtension, version,
+                                    sizeof version, build, sizeof build);
+        update_changed = now_update_offer_differs(
+            kNowUpdateExtension, version, build);
+        HiliteControl(g_update_ext,
+                      update_changed ? kControlNoPart
+                                     : kControlInactivePart);
+    } else {
+        HiliteControl(g_update_app, kControlInactivePart);
+        HiliteControl(g_update_ext, kControlInactivePart);
     }
 }
 

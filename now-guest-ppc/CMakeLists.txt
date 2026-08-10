@@ -88,6 +88,10 @@ add_application(now-guest-ppc
     src/connection/conn_fields.c
     src/connection/conn_edit_dialog.c
     src/connection/connection_module.c
+    src/update/sha256.c
+    src/update/update_model.c
+    src/update/update_install.c
+    src/update/update_status.c
     src/peek/peek.c
     src/peek/peek_lease.c
     src/peek/peek_validate.c
@@ -362,6 +366,25 @@ if(PYTHON3_EXECUTABLE)
         COMMENT "Stamping canonical MacBinary: New Old World.bin"
         VERBATIM)
     add_custom_target(now-guest-ppc-canonical ALL DEPENDS "New Old World.bin")
+    add_custom_command(
+        OUTPUT "New Old World.bin.now-update.json"
+        COMMAND ${PYTHON3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
+                --artifact "New Old World.bin"
+                --component application
+                --version-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/product_version.h"
+                --version-major NOW_PRODUCT_VERSION_MAJOR
+                --version-minor NOW_PRODUCT_VERSION_MINOR
+                --version-patch NOW_PRODUCT_VERSION_PATCH
+                --identity-header "${_buildstamp_header}"
+                --identity-define NOW_SRC_HASH
+        DEPENDS "New Old World.bin" ${_buildstamp_header}
+                "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
+        COMMENT "Writing canonical update identity"
+        VERBATIM)
+    add_custom_target(now-guest-ppc-update-manifest ALL
+        DEPENDS "New Old World.bin.now-update.json")
 else()
     message(WARNING
         "python3 not found: skipping the canonical 'New Old World.bin' "

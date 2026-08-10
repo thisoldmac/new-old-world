@@ -79,6 +79,8 @@ final class Session {
     private let onServeCloud: (GuestListener.CloudAsk) -> Void
     private let onServeChat: (GuestListener.ChatAsk) -> Void
     private let onServeHostShow: (HostShow) -> Void
+    private let onServeUpdate: (UpdateRequest) -> Void
+    private let onUpdateResult: (UpdateResult) -> Void
     private let onProcessListing: (ProcessListing) -> Void
     private let onSoftwareListing: (SoftwareListing) -> Void
     private let onProcessResult: (ProcessResult) -> Void
@@ -216,6 +218,8 @@ final class Session {
              = { _ in },
          onServeHostShow: @escaping (HostShow) -> Void
              = { _ in },
+         onServeUpdate: @escaping (UpdateRequest) -> Void = { _ in },
+         onUpdateResult: @escaping (UpdateResult) -> Void = { _ in },
          onProcessListing: @escaping (ProcessListing) -> Void,
          onSoftwareListing: @escaping (SoftwareListing) -> Void,
          onProcessResult: @escaping (ProcessResult) -> Void,
@@ -262,6 +266,8 @@ final class Session {
         self.onServeCloud = onServeCloud
         self.onServeChat = onServeChat
         self.onServeHostShow = onServeHostShow
+        self.onServeUpdate = onServeUpdate
+        self.onUpdateResult = onUpdateResult
         self.onProcessListing = onProcessListing
         self.onSoftwareListing = onSoftwareListing
         self.onProcessResult = onProcessResult
@@ -570,6 +576,13 @@ final class Session {
            inbound this side does not serve. */
         case .hostShow(let request):
             onServeHostShow(request)
+        case .updateRequest(let request):
+            onServeUpdate(request)
+        case .updateResult(let result):
+            onUpdateResult(result)
+        case .updateOffer:
+            /* Host-owned family: a guest never publishes artifacts. */
+            break
         case .previewBegin, .previewEnd:
             /* Declared asymmetry: previews answer cloud.preview, and
                this host never asks one — its screen can decode the
@@ -773,6 +786,35 @@ final class Session {
     func sendFileOffer(_ offer: FileOffer, source: OutboundFileSource) {
         pendingOffer = (offer, .staged(source))
         send(.fileOffer(offer))
+    }
+
+    func sendUpdateOffer(_ offer: UpdateOffer) {
+        send(.updateOffer(offer))
+    }
+
+    func refuseUpdate(id: Int, reason: String) {
+        send(.fileRefuse(FileRefuse(id: id, code: "not-available",
+                                    reason: reason)))
+    }
+
+    func sendUpdateArtifact(_ artifact: UpdateProvider.Artifact,
+                            request: UpdateRequest) {
+        let name = artifact.manifest.component == .application
+            ? "New Old World Update" : "NOW Extension Update"
+        let fileType = artifact.manifest.component == .application
+            ? "APPL" : "INIT"
+        let creator = artifact.manifest.component == .application
+            ? "NOWo" : "NOWx"
+        let offer = FileOffer(
+            id: request.id, name: name, path: "", container: "macbinary",
+            bytes: artifact.manifest.bytes, fileType: fileType,
+            creator: creator, modified: nil, createParents: false,
+            overwrite: true,
+            resumeToken: TransferIdentity.token(
+                bytes: artifact.manifest.bytes, crc32: artifact.crc32),
+            purpose: "update.\(artifact.manifest.component.rawValue)",
+            sha256: artifact.manifest.sha256)
+        sendFileOffer(offer, bytes: artifact.bytes, crc32: artifact.crc32)
     }
 
     private func nextTransfer() -> UInt16 {

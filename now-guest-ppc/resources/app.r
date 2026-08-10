@@ -24,8 +24,8 @@ resource 'FREF' (128) {
    deploy script reads. It was absent, so the Finder showed this app with
    no version at all - and "is the machine running the build I just sent?"
    had only the in-app build stamp to answer it. Kept in step with
-   PRODUCT_VERSION in src/product_identity.h (0.1.0); BCD 0x00,0x10 is
-   major 0, minor 1, bugfix 0. */
+   NOW_PRODUCT_VERSION in contract/product_version.h (0.1.0); BCD
+   0x00,0x10 is major 0, minor 1, bugfix 0. */
 resource 'vers' (1) {
     0x00, 0x10,
     release, 0x00,

@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Write the sidecar the host requires before it advertises an update.
+
+The artifact and its metadata are one publication unit.  A copied .bin with
+no sidecar remains available to the onboarding portal, but is never offered
+to an already-running guest as an update.  The SHA-256 is recomputed by the
+host before every offer, so a stale sidecar fails closed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+from pathlib import Path
+
+
+def define(path: Path, name: str) -> str:
+    match = re.search(
+        rf"^\s*#define\s+{re.escape(name)}\s+[\"]?([^\"\s]+)",
+        path.read_text(),
+        re.MULTILINE,
+    )
+    if not match:
+        raise SystemExit(f"{path}: no {name} definition")
+    return match.group(1).removesuffix("UL")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--artifact", required=True, type=Path)
+    parser.add_argument("--component", required=True,
+                        choices=("application", "extension"))
+    parser.add_argument("--version-header", required=True, type=Path)
+    parser.add_argument("--version-major", required=True)
+    parser.add_argument("--version-minor")
+    parser.add_argument("--version-patch")
+    parser.add_argument("--identity-header", required=True, type=Path)
+    parser.add_argument("--identity-define")
+    parser.add_argument("--identity-word-prefix")
+    parser.add_argument("--channel", default="development",
+                        choices=("development", "release"))
+    args = parser.parse_args()
+
+    parts = [define(args.version_header, args.version_major)]
+    if args.version_minor:
+        parts.append(define(args.version_header, args.version_minor))
+    if args.version_patch:
+        parts.append(define(args.version_header, args.version_patch))
+    version = ".".join(str(int(part, 0)) for part in parts)
+
+    if args.identity_define:
+        build = define(args.identity_header, args.identity_define)
+    elif args.identity_word_prefix:
+        build = "".join(
+            f"{int(define(args.identity_header, args.identity_word_prefix + str(i)), 0):08x}"
+            for i in range(5)
+        )
+    else:
+        raise SystemExit("name --identity-define or --identity-word-prefix")
+
+    artifact = args.artifact.resolve()
+    digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    document = {
+        "schema": 1,
+        "component": args.component,
+        "version": version,
+        "build": build,
+        "sha256": digest,
+        "bytes": artifact.stat().st_size,
+        "channel": args.channel,
+        # There is no release key yet.  This explicit false prevents an
+        # integrity digest from being presented as an artifact signature.
+        "signed": False,
+    }
+    out = artifact.with_name(artifact.name + ".now-update.json")
+    out.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+
+
+if __name__ == "__main__":
+    main()

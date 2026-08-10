@@ -116,3 +116,25 @@ add_custom_command(
     DEPENDS NowExt src/now_ext.r ${_identity_rez})
 
 add_custom_target(NowExt_INIT ALL DEPENDS NowExt.dsk)
+
+find_program(PYTHON3_EXECUTABLE NAMES python3 python)
+if(PYTHON3_EXECUTABLE)
+    add_custom_command(
+        OUTPUT NowExt.bin.now-update.json
+        COMMAND ${PYTHON3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
+                --artifact NowExt.bin
+                --component extension
+                --version-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/resident_version.h"
+                --version-major NOW_RESIDENT_VERSION_MAJOR
+                --version-minor NOW_RESIDENT_VERSION_MINOR
+                --identity-header "${_identity_header}"
+                --identity-word-prefix NOW_EXT_BUILD_FINGERPRINT_
+        DEPENDS NowExt.bin ${_identity_header}
+                "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
+        COMMENT "Writing extension update identity"
+        VERBATIM)
+    add_custom_target(NowExt_update_manifest ALL
+        DEPENDS NowExt.bin.now-update.json)
+endif()

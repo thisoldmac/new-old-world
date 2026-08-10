@@ -3,6 +3,29 @@ import XCTest
 import NOWAgentIntegration
 
 final class ContractMessageTests: XCTestCase {
+    func testUpdateFamilyRoundTripsWithoutCallingIntegrityASignature()
+        throws {
+        let offer = UpdateOffer(
+            component: "application", version: "0.1.0",
+            build: "scratch123456", bytes: 42,
+            sha256: String(repeating: "a", count: 64),
+            channel: "development", signed: false,
+            requiresRestart: false)
+        XCTAssertEqual(try ControlMessageCodec.decode(
+            ControlMessageCodec.encode(.updateOffer(offer))),
+            .updateOffer(offer))
+        let request = UpdateRequest(
+            id: 9, component: "application", build: "scratch123456")
+        XCTAssertEqual(try ControlMessageCodec.decode(
+            ControlMessageCodec.encode(.updateRequest(request))),
+            .updateRequest(request))
+        let result = UpdateResult(
+            id: 9, component: "application", ok: true,
+            action: "relaunch", code: nil, reason: nil)
+        XCTAssertEqual(try ControlMessageCodec.decode(
+            ControlMessageCodec.encode(.updateResult(result))),
+            .updateResult(result))
+    }
     func testSceneRequestCarriesNamedPlanePolicy() throws {
         let request = SceneRequest(id: 9, chunkKb: 8, paceMs: 0,
                                    staleAfterMs: 500, semantics: false,

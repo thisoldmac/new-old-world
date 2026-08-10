@@ -13,6 +13,15 @@ static const char *const d_help[] = {
     NULL
 };
 
+static const char *const d_update[] = {
+    "  With no argument, shows the exact app and extension",
+    "  builds the connected Mac has published. application",
+    "  installs then relaunches; extension installs separately",
+    "  and requires a cold restart. Unsigned development builds",
+    "  are named as such before anything is requested.",
+    NULL
+};
+
 static const char *const d_gestalt[] = {
     "  With no group, prints a short snapshot. Groups:",
     "    --cpu --memory --os --network --hardware",
@@ -564,6 +573,8 @@ static const char *const d_chat[] = {
 
 /* Order is display order on both consoles. */
 const NowCommandDoc kNowCommandDocs[] = {
+    { "update", 1, "updates published by the connected Mac",
+      "update [application | extension]", d_update },
     { "gestalt", 1, "report this Mac: system, model, RAM, CarbonLib",
       "gestalt [group] [--full]", d_gestalt },
     { "screenshot", 1, "capture this Mac's screen to its desktop",

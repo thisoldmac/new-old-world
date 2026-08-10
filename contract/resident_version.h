@@ -9,7 +9,7 @@
    enforces that at commit time and again when refs/heads/main moves, so a
    newly baked resident cannot keep presenting an older release identity. */
 #define NOW_RESIDENT_VERSION_MAJOR 1
-#define NOW_RESIDENT_VERSION_MINOR 1
+#define NOW_RESIDENT_VERSION_MINOR 2
 
 #define NOW_RESIDENT_STRINGIFY_INNER(value) #value
 #define NOW_RESIDENT_STRINGIFY(value) NOW_RESIDENT_STRINGIFY_INNER(value)

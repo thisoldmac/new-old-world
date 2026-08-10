@@ -5,11 +5,11 @@ description: Configure the listener, select named guest sessions, and manage hos
 doc_type: reference
 audience: user
 lifecycle: current
-authority: [docs/architecture.md, docs/naming.md, docs/onboarding.md]
+authority: [docs/architecture.md, docs/naming.md, docs/onboarding.md, contract/asyncapi.yaml]
 module_ids: [settings]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-guest-ppc/src/connection, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-guest-ppc/src/connection, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
 media_ids: [settings-host, settings-ppc]
-last_verified: 2026-08-09
+last_verified: 2026-08-10
 ---
 
 # Connections and preferences
@@ -38,8 +38,12 @@ selected packages, and serve it temporarily over old-browser-compatible HTTP.
 
 ## On the classic Mac
 
-PowerPC carries separate Connection and Preferences pages. NOW-68K shows host,
-port, timeout, health, status, and retained console information in one window.
+PowerPC carries separate Connection and Preferences pages. Its Connection page
+also compares the running application and active Extension with the exact
+artifacts published by the connected host. A different development build of
+the same release version is visible rather than collapsed into “current.”
+NOW-68K shows host, port, timeout, health, status, and retained console
+information in one window; it does not implement the update family.
 
 ![The PowerPC Preferences and Connection surfaces](../../../assets/screenshots/modules/settings/ppc.svg){ .now-placeholder }
 
@@ -48,6 +52,7 @@ port, timeout, health, status, and retained console information in one window.
 - [Configure a connection](../../how-to/configure-connection.md).
 - [Set up a new PowerPC Mac](../../how-to/set-up-new-mac.md).
 - [Recover a connection](../../how-to/recover-a-connection.md).
+- [Upgrade, roll back, or remove NOW](../../how-to/upgrade-rollback-remove.md).
 
 ## Safety, consent, and privacy
 
@@ -57,6 +62,12 @@ trusted LAN; never forward it through a router.
 The setup portal is also plaintext. It exposes fixed download routes rather
 than uploads or directory listings; stop it when onboarding is complete.
 
+Update artifacts are currently **unsigned**. The host recomputes their SHA-256
+before advertising them and the guest verifies the transferred bytes, but that
+proves integrity against the host's manifest, not publisher authenticity. The
+local Connection page requires an explicit confirmation; console and remote
+command paths cannot bypass it.
+
 ## Failure states
 
 Revision mismatch, duplicate machine name, host unreachable, timeout, listener
@@ -65,10 +76,17 @@ Setup also retains missing-package, checksum-refusal, stale-selection, image
 build, archive-tool, and server-start failures instead of offering a partial
 disk as complete.
 
+Updates retain no-offer, busy-transfer, identity mismatch, checksum mismatch,
+disk-space, Finder-identity, exchange, and relaunch/restart states rather than
+presenting a downloaded file as installed.
+
 ## Current limitations
 
 Guest display name is the current connection identity. Two live machines with
 the same name collide intentionally rather than being guessed apart.
+
+Update signing and automatic update discovery are not implemented. The
+connected host is the only provider, and the flow is not yet metal-verified.
 
 ## For developers
 

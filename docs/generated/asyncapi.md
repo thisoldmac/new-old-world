@@ -20,6 +20,8 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 
 | Operation | Direction | Channel | Messages |
 |---|---|---|---|
+| `hostPublishesUpdates` | `send` | `control` | `updateOffer` |
+| `guestRequestsUpdate` | `send` | `control` | `updateRequest`, `updateResult` |
 | `hostExecutesLine` | `receive` | `control` | `execRequest`, `execCancel`, `execInput` |
 | `guestAnswersExec` | `send` | `control` | `execOutput`, `execResult` |
 | `guestOffersCapture` | `send` | `control` | `captureOffer`, `captureBegin`, `captureEnd` |
@@ -79,6 +81,9 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `fileListing` | `file.listing` | `FileListing` |
 | `fileGet` | `file.get` | `FileGet` |
 | `fileOffer` | `file.offer` | `FileOffer` |
+| `updateOffer` | `update.offer` | `UpdateOffer` |
+| `updateRequest` | `update.request` | `UpdateRequest` |
+| `updateResult` | `update.result` | `UpdateResult` |
 | `fileAccept` | `file.accept` | `FileAccept` |
 | `fileDone` | `file.done` | `FileDone` |
 | `fileProgress` | `file.progress` | `FileProgress` |
@@ -140,6 +145,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 | Command | Arguments | Output keys | Summary |
 |---|---|---|---|
 | `help` | `topic` | `help` | What commands THIS machine serves, asked of the machine that serves them. |
+| `update` | `component` | `update` | Reads the exact application and extension builds the connected host has published. |
 | `gestalt` | — | `snapshot`, `cpu`, `memory`, `os`, `network`, `hw`, `notice` | The guest's own account of itself, via the Gestalt Manager. |
 | `ls` | `path` | `ls` | List a folder in the guest's share. |
 | `put` | `name` | `put` | Send a file from the guest to the host. |

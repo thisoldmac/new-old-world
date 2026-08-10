@@ -193,10 +193,11 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `chat.catalog` / `chat.delta` / `chat.status` / `chat.result` | ✅ | ❌ | the ASKER's half of the chat family (contract `guestAsksChat`): the PPC guest SENDS `chat.models` / `chat.send` / `chat.cancel` / `chat.reset` — from its Chat page and its console-only `chat` verb — and consumes these as answers; the host serves the family from its harness (`ChatWireService`). `chat.models` is TWO asks in one message and `chat.catalog` two answer shapes: without a provider it lists providers; with one it pages that provider's models (cursor/more, asked lazily on selection), each row carrying a HOST-MINTED `ref` that `chat.send` returns — a provider's model name never crosses the wire. Like cloud, its subject is the host's own model harness, so this row can never grow guest-SERVING ticks. 68K never asks, deliberately: the page is PPC-only and the family is a luxury a 384 KB partition does not buy |
 | `host.shown` | ✅ | ❌ | the ASKER's half of the host-surface family (contract `guestAsksHostSurface`): the PPC guest SENDS `host.show` — from the Mirror page's button and its console-only `showmirror` verb — and consumes this as the answer; the host serves it (`HostSurfaceService.swift`), opening its own Mirror window. Like cloud and chat, the subject is a surface on the HOST, so this row can never grow guest-SERVING ticks. **NOW-68K neither asks nor serves, and that is out of scope rather than decided** — nothing about a 68030 makes the ask impossible, and a NOW-68K that grew a Mirror page would want it |
 | `preview.begin` / `preview.end` | ✅ | ❌ | the photo preview's transfer bracket, answering the PPC guest's own `cloud.preview`: raw indexed rows the HOST already dithered, landed in the iCloud page's pane by one CopyBits. Asker's half again — no guest will ever serve it |
+| `update.offer` | ✅ | ❌ | the host-owned updater's publication half. PPC consumes the offer, compares release version and exact build, and may SEND `update.request`; it later SENDS `update.result` after the existing `file.*` transfer and local install. NOW-68K implements none of the family |
 
-PPC handles **49** inbound types; NOW-68K handles **23**. **That count
+PPC handles **50** inbound types; NOW-68K handles **23**. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 47 command verbs and 14 hardware probes.
+these rows open into 49 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -226,7 +227,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **48 verbs.** Sixteen of
+The registry is `x-commands` in the contract: **49 verbs.** Sixteen of
 them landed on 2026-07-31 and are grouped at the foot of the table; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
@@ -272,6 +273,7 @@ number here has been found wrong by re-deriving it.
 | `putstat` | transfer diagnostics | ✅ | ❌ |
 | `desktop` | what the desktop is actually drawn from — the Appearance Manager's theme collection, not the `ppat` resource nobody updates | ✅ | ❌ — declared asymmetry, see below |
 | `wirestat` | how long this Mac takes to NOTICE a request — **and the only verb in the registry that CHANGES the machine's scheduling**; a subsystem, expanded below | ✅ | ❌ |
+| `update` | compare or request the exact application or Extension build published by the connected host. Unsigned builds are visible but require the local Connection page's confirmation rather than command automation | ✅ | ❌ |
 | `observe` | walk the elements on screen, minting a reference for each | ✅ | ❌ |
 | `axtree` | the same walk, to look at rather than to act on | ✅ | ❌ |
 | `axsnap` | who is front, and how many references are live | ✅ | ❌ |
@@ -434,22 +436,22 @@ produced the first live sighting of the sampler's own stated limit — a
 backgrounded and its event passes never saw the change. See
 [open-issues.md](open-issues.md).
 
-**PPC serves 45 of 48.** `put` is console-only there and `cancel` is
+**PPC serves 46 of 49.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 48** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 49** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The **thirty-five** it does not, derived with `comm -23` over
+`front`. The **thirty-six** it does not, derived with `comm -23` over
 the sorted registry and its own table rather than listed from memory:
 `activate`, `actselftest`, `aesend`, `axsnap`, `axtree`, `catsearch`, `cursoract`,
 `ctlact`, `cycle`, `desktop`, `ditemact`, `dragmove`, `dragpress`,
 `dragrelease`, `elements`, `gestalt`, `handle`, `hide`, `key`,
 `menuact`, `mirror`, `mouseloc`, `net`, `observe`, `putstat`, `qdtrace`,
 `reveal`, `script`, `tail`, `textget`, `textset`, `transitions`, `vers`,
-`winact`, `wirestat`.
+`update`, `winact`, `wirestat`.
 
 (That sentence read "13 of 42 … the twenty-nine it does not" until
 2026-08-07 and named a list four verbs short — `cycle` and the drag
@@ -1014,6 +1016,28 @@ between two derivations on one day is not a property of the command.)*
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
 
+## Re-derived for host-owned updates, 2026-08-10 (`codex/host-owned-updater`)
+
+**This supersedes every derivation below.** The updater changes one inbound
+message, one contract verb, and the matching PowerPC dispatch. The five
+declared commands were run against this branch with
+`tools/derived-doc-gate rederive docs/contract-coverage.md`.
+
+| | Derived here | Previous current value | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **50** | 49 | `update.offer` |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **49** | 48 | `update` |
+| PowerPC verbs served | **46** | 45 | `update` |
+| NOW-68K verbs served | **13** | 13 | — |
+
+`update.request` and `update.result` do not increase the inbound count: the PPC
+guest sends them to the host. The existing `file.*` rows carry the artifact.
+The three registry verbs the PowerPC guest does not serve remain `put`,
+`cancel`, and `shotdiag`; the update verb therefore moves the registry and PPC
+counts together. NOW-68K gains neither the message family nor the verb, a
+declared release-scope asymmetry rather than an inferred platform limit.
+
 ## Re-derived at the 019 integration round 8, 2026-08-07 (`claude/019-integration-8`)
 
 **This supersedes every derivation below.** Twelve lanes —
@@ -1317,18 +1341,18 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 20847ab13c7d948487356ee3415476438e3327e9
-derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
+sources-sha1: 6d5cfea9d4f69527723ae1bf78c767645efc6a2c
+derive ppc-inbound-types sha256=29ff3abf372ea8de2e8cd4b487efb7dcb7b9fa03d5e20959f10c127320146842 lines=50 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=dcbff7909f3d815b2153a13307d6e0a539e2b9f8867fa50ea1f56ce7dd56ddfc lines=48 published
+derive x-commands-registry sha256=fdf997e71e08411643476f9b860b80121a9c5873c2024d90c45d458d010ee1d8 lines=49 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
          f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=2bf9d842cd04b191e3e7aac83b5c68a221bb95f9605b10ccf60a0d6e79f957f5 lines=45 published
+derive ppc-verbs sha256=7621de2d2f9def3dc19ce7bce8ef915cc8fdce017dd315b284bd6525b5f1b7a2 lines=46 published
     grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
         now-guest-ppc/src/commands/commands.c \
       | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
@@ -1373,4 +1397,9 @@ rederived: 2026-08-09T21:05:26-0400 9864da82 unchanged
 rederived: 2026-08-09T21:43:46-0400 2b3c2c0e unchanged
 rederived: 2026-08-09T22:09:30-0400 d54812c2 unchanged
 rederived: 2026-08-09T22:18:48-0400 e637efd3 unchanged
+rederived: 2026-08-10T03:00:02-0400 9cbb4c28 sources, ppc-inbound-types 49->50, x-commands-registry 48->49, ppc-verbs 45->46
+rederived: 2026-08-10T03:06:30-0400 9cbb4c28 sources
+rederived: 2026-08-10T03:07:04-0400 9cbb4c28 unchanged
+rederived: 2026-08-10T03:08:46-0400 9cbb4c28 unchanged
+rederived: 2026-08-10T03:11:41-0400 9cbb4c28 sources
 -->

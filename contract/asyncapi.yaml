@@ -254,6 +254,9 @@ channels:
       fileListing: { $ref: "#/components/messages/fileListing" }
       fileGet: { $ref: "#/components/messages/fileGet" }
       fileOffer: { $ref: "#/components/messages/fileOffer" }
+      updateOffer: { $ref: "#/components/messages/updateOffer" }
+      updateRequest: { $ref: "#/components/messages/updateRequest" }
+      updateResult: { $ref: "#/components/messages/updateResult" }
       fileAccept: { $ref: "#/components/messages/fileAccept" }
       fileRefuse: { $ref: "#/components/messages/fileRefuse" }
       fileDone: { $ref: "#/components/messages/fileDone" }
@@ -324,6 +327,30 @@ channels:
       message that began the transfer says which.
 
 operations:
+  hostPublishesUpdates:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/updateOffer"
+    description: >
+      The host is the only update provider. After hello it may announce one
+      application artifact and one optional resident-extension artifact.
+      Offers are facts about exact published bytes, not an instruction to
+      install; the guest compares version AND build and keeps the decision
+      human-owned. An absent offer means the host has no validated artifact.
+  guestRequestsUpdate:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/updateRequest"
+      - $ref: "#/channels/control/messages/updateResult"
+    description: >
+      A guest requests exactly the build it was offered. The host answers by
+      the ordinary file.offer/file.accept/bulk/file.end lane, with purpose
+      update.application or update.extension and SHA-256 over the exact
+      MacBinary stream. The guest sends update.result after installation,
+      not merely after download. Applications relaunch; extensions require
+      a cold restart. NOW-68K does not implement this additive family.
   hostExecutesLine:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -1293,6 +1320,15 @@ components:
     fileOffer:
       name: file.offer
       payload: { $ref: "#/components/schemas/FileOffer" }
+    updateOffer:
+      name: update.offer
+      payload: { $ref: "#/components/schemas/UpdateOffer" }
+    updateRequest:
+      name: update.request
+      payload: { $ref: "#/components/schemas/UpdateRequest" }
+    updateResult:
+      name: update.result
+      payload: { $ref: "#/components/schemas/UpdateResult" }
     fileAccept:
       name: file.accept
       payload: { $ref: "#/components/schemas/FileAccept" }
@@ -3130,6 +3166,61 @@ components:
             file.accept with `have` > 0 only when it holds a partial
             recorded under this exact token, so an offer with no token,
             or with a token it has not seen, always starts at zero.
+        purpose:
+          enum: [update.application, update.extension]
+          description: >
+            Absent for ordinary file delivery. An update value is accepted
+            only after a matching update.request and routes the complete file
+            to guest-owned staging outside the share.
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: >
+            SHA-256 of the exact bulk stream. Required by both update
+            purposes and verified in addition to the file lane's CRC-32.
+            This is artifact integrity, not a release signature.
+    UpdateOffer:
+      type: object
+      required: [type, component, version, build, bytes, sha256, channel,
+                 signed, requiresRestart]
+      additionalProperties: false
+      properties:
+        type: { const: update.offer }
+        component: { enum: [application, extension] }
+        version: { type: string }
+        build: { type: string }
+        bytes: { type: integer, minimum: 1 }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        channel: { enum: [development, release] }
+        signed:
+          type: boolean
+          enum: [false]
+          description: >
+            Always false in this contract shape. A boolean is not proof of a
+            signature; a future signed offer needs signature bytes, algorithm
+            identity and a guest-pinned trust root before this can change.
+        requiresRestart: { type: boolean }
+    UpdateRequest:
+      type: object
+      required: [type, id, component, build]
+      additionalProperties: false
+      properties:
+        type: { const: update.request }
+        id: { type: integer }
+        component: { enum: [application, extension] }
+        build: { type: string }
+    UpdateResult:
+      type: object
+      required: [type, id, component, ok]
+      additionalProperties: false
+      properties:
+        type: { const: update.result }
+        id: { type: integer }
+        component: { enum: [application, extension] }
+        ok: { type: boolean }
+        action: { enum: [relaunch, restart-required] }
+        code: { type: string }
+        reason: { type: string }
     FileAccept:
       type: object
       required: [type, id]
@@ -3861,6 +3952,23 @@ components:
           structural promise here.
         properties:
           help: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    update:
+      description: >
+        Reads the exact application and extension builds the connected host
+        has published. With `application` or `extension`, asks for that
+        offered build; download, verification, installation and the terminal
+        update.result remain one guest-owned operation. The application
+        relaunches only after its replacement is complete. An extension
+        install reports restart-required and never restarts the Mac itself.
+      args:
+        type: object
+        properties:
+          component: { enum: [application, extension] }
+      x-line: Empty shows status; application or extension installs it.
+      output:
+        type: object
+        properties:
+          update: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     gestalt:
       description: >
         The guest's own account of itself, via the Gestalt Manager. A

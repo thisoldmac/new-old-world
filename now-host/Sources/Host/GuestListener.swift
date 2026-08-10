@@ -325,6 +325,7 @@ final class GuestListener: ObservableObject {
     /// The host's own book of machine handles. See GuestRegistry for
     /// where an id comes from and why it is assigned here.
     let registry: GuestRegistry
+    private let updateProvider: UpdateProvider
     /// Which of them the request-shaped API drives. Nil when none are
     /// connected.
     private(set) var activeKey: GuestKey? {
@@ -354,12 +355,14 @@ final class GuestListener: ObservableObject {
     init(identity: HostIdentity, timing: Timing = Timing(),
          pacing: Pacing = .classicMac, maxGuests: Int = 4,
          registry: GuestRegistry? = nil,
+         updateProvider: UpdateProvider? = nil,
          /* Optional rather than defaulted to a fresh bus, because a default
             argument is evaluated where the CALLER stands and this type is
             main-actor-isolated. */
          events: HostEventBus? = nil) {
         self.events = events ?? HostEventBus()
         self.registry = registry ?? GuestRegistry()
+        self.updateProvider = updateProvider ?? .live()
         self.identity = identity
         self.timing = timing
         self.pacing = pacing
@@ -2824,6 +2827,9 @@ final class GuestListener: ObservableObject {
                 }
                 guard let key = activated.guestKey else { return }
                 self.sessions[key] = activated
+                for offer in self.updateProvider.offers {
+                    activated.sendUpdateOffer(offer)
+                }
                 /* First in is the one being driven; a later arrival is
                    served but does not steal the console out from under
                    whoever is using it. */
@@ -3079,6 +3085,30 @@ final class GuestListener: ObservableObject {
             onServeHostShow: { [weak self] request in
                 guard let self, let asker = origin.session else { return }
                 self.serveHostShow(request, on: asker)
+            },
+            onServeUpdate: { [weak self] request in
+                guard let self, let asker = origin.session else { return }
+                guard let artifact = self.updateProvider.artifact(
+                    for: request) else {
+                    asker.refuseUpdate(
+                        id: request.id,
+                        reason: "that published build is no longer available")
+                    return
+                }
+                self.note("#\(request.id) serving \(request.component) "
+                          + "update \(request.build)", area: "update",
+                          session: asker.guestKey)
+                asker.sendUpdateArtifact(artifact, request: request)
+            },
+            onUpdateResult: { [weak self] result in
+                guard let self, let guest = origin.session else { return }
+                let detail = result.ok
+                    ? (result.action ?? "installed")
+                    : (result.reason ?? result.code ?? "failed")
+                self.note("#\(result.id) \(result.component) update: \(detail)",
+                          area: "update",
+                          level: result.ok ? .info : .warn,
+                          session: guest.guestKey)
             },
             onProcessListing: { [weak self] listing in
                 guard fromActive() else { return }

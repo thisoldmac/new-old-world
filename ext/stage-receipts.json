@@ -262,6 +262,17 @@
       "shutdownPath": "finder-menuact-then-applet",
       "sourceManifest": "28ef6c07ee6d0b2978378551367b1393f406ed6f",
       "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-10T03:20:20-0400",
+      "branch": "codex/host-owned-updater",
+      "extDigest": "c727a4562b75bc4532f6b9c05dacd168f5afff49",
+      "kind": "deferral",
+      "paths": [
+        "contract/resident_version.h",
+        "ext/CMakeLists.txt"
+      ],
+      "reason": "Shared oracle bake blocked on 2026-08-10 by active QEMU guests PIDs 75829 and 77338; do not force while other sessions may be measuring. Bake resident 1.2 when the machine is free before landing on main."
     }
   ]
 }

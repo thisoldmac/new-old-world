@@ -94,6 +94,14 @@ is deliberately not a third guest face: it changes named claims through the
 native Mirror source, and the guest surfaces report what the resident actually
 requested and activated rather than echoing that policy.
 
+`update` is the mutating example with a local-consent boundary. Both command
+faces call the same status/request implementation and can automate a future
+signed artifact. Today's development artifacts are explicitly unsigned, so the
+shared console/wire path refuses to install them and directs the person to the
+Connection page. That page may pass `allow_unsigned` only after its modal
+confirmation. This does not give the remote face a quiet way around a local
+decision merely to make the verb appear symmetric.
+
 ## Deliberate asymmetries
 
 Kept in the test as data, not prose, so they cannot rot:

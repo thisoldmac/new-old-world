@@ -37,6 +37,8 @@
 #include "software.h"
 #include "proc_actions.h"
 #include "proc_roster.h"
+#include "update_model.h"
+#include "update_status.h"
 
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
@@ -1579,11 +1581,71 @@ static void run_help(const char *request_json, long id, char *out, long cap)
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 
+static void run_update(const char *request_json, long id, char *out, long cap)
+{
+    char component_word[24];
+    NowUpdateComponent component;
+
+    now_cmd_arg_word(request_json, "component", component_word,
+                     sizeof component_word);
+    if (component_word[0] != '\0') {
+        char err[120], esc[240];
+        if (!now_update_component_parse(component_word, &component)) {
+            snprintf(out, (size_t)cap,
+                     "{\"type\":\"command.result\",\"id\":%ld,"
+                     "\"ok\":false,\"error\":{\"code\":\"bad-argument\","
+                     "\"message\":\"use application or extension\"}}", id);
+            return;
+        }
+        /* The command is shared by the local console and remote wire, so it
+           cannot stand in for the modal consent the Connections page owns.
+           Signed release artifacts may become automatable; today's unsigned
+           development artifacts deliberately stop here. */
+        if (now_wire_update_request(component, false, err, sizeof err) != 0) {
+            now_json_escape(err, esc, sizeof esc);
+            snprintf(out, (size_t)cap,
+                     "{\"type\":\"command.result\",\"id\":%ld,"
+                     "\"ok\":false,\"error\":{\"code\":\"update-refused\","
+                     "\"message\":\"%s\"}}", id, esc);
+            return;
+        }
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"update\":[[\"%s\",\"Downloading\"]]}}",
+                 id, now_update_component_name(component));
+        return;
+    }
+    {
+        char app_version[24], app_build[48], ext_version[24], ext_build[48];
+        char app[128], ext[128], app_esc[256], ext_esc[256];
+        now_update_current_identity(kNowUpdateApplication,
+                                    app_version, sizeof app_version,
+                                    app_build, sizeof app_build);
+        now_update_current_identity(kNowUpdateExtension,
+                                    ext_version, sizeof ext_version,
+                                    ext_build, sizeof ext_build);
+        now_update_offer_line(kNowUpdateApplication, app_version, app_build,
+                              app, sizeof app);
+        now_update_offer_line(kNowUpdateExtension, ext_version, ext_build,
+                              ext, sizeof ext);
+        now_json_escape(app, app_esc, sizeof app_esc);
+        now_json_escape(ext, ext_esc, sizeof ext_esc);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"update\":[[\"Application\",\"%s\"],"
+                 "[\"Extension\",\"%s\"]]}}", id, app_esc, ext_esc);
+    }
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
     if (strcmp(name, "help") == 0) {
         run_help(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "update") == 0) {
+        run_update(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "gestalt") == 0) {
