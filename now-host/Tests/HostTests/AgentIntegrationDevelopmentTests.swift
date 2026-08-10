@@ -4,6 +4,26 @@ import XCTest
 
 @MainActor
 final class AgentIntegrationDevelopmentTests: XCTestCase {
+    func testGuestImportNamesNoncanonicalProjectDocumentIdentity() {
+        XCTAssertNil(AgentIntegrationDevelopmentControl
+            .projectDocumentIdentityProblem(
+                type: "TEXT", creator: "NOWD", finderFlags: 0,
+                resourceBytes: 0))
+        XCTAssertEqual(AgentIntegrationDevelopmentControl
+            .projectDocumentIdentityProblem(
+                type: "TEXT", creator: "MPS ", finderFlags: 0,
+                resourceBytes: 0),
+            "Project.ckp must be TEXT/NOWD with zero Finder flags and an empty resource fork.")
+        XCTAssertNotNil(AgentIntegrationDevelopmentControl
+            .projectDocumentIdentityProblem(
+                type: "TEXT", creator: "NOWD", finderFlags: 0x4000,
+                resourceBytes: 0))
+        XCTAssertNotNil(AgentIntegrationDevelopmentControl
+            .projectDocumentIdentityProblem(
+                type: "TEXT", creator: "NOWD", finderFlags: 0,
+                resourceBytes: 1))
+    }
+
     func testRequestVocabularyHasNoPathOrCommandEscape() {
         let project = String(repeating: "a", count: 32)
         let attempt = "01234567-89ab-cdef-0123-456789abcdef"

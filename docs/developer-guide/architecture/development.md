@@ -26,14 +26,16 @@ flowchart LR
   T["Human-qualified MPW"] --> B["Declarative ToolServer job"]
   C --> B
   B --> R["Fork-aware build receipt"]
-  R --> L["Exact-product launch"]
+  R --> X["Closed guest-native test receipt"]
+  X --> L["Exact-product launch"]
   P -->|"optional odoc handoff"| K["CodeKitten"]
 ```
 
 Text equivalent: the host page and agent projection share a NOW-owned project
 store. A guest project enters only through verified import. Publication creates
 an inactive MacBinary candidate, which a human-qualified MPW toolchain builds
-through declarative actions. A fork-aware receipt gates exact-product launch.
+through declarative actions. A fork-aware receipt gates a closed guest-native
+test and exact-product launch.
 CodeKitten may open the project separately for a human.
 
 ## Two project homes
@@ -66,33 +68,39 @@ build receipt binds the project or candidate, source digest, qualified
 toolchain, action results, transcript, and exact product identity. Run
 re-measures that identity and separately matches the launched process.
 
-Build, test, run, and human IDE handoff are different outcomes. Test has no
-typed operation or receipt yet. CodeKitten launch and `odoc` dispatch do not
-yet prove document acceptance.
+Build, test, run, and human IDE handoff are different outcomes. The version-1
+test plan is all-or-none and closed: launch the unchanged measured product,
+then assert its exact Process Manager identity within a bounded timeout. It
+returns `ckproject.test-receipt/1`; richer UI behavior belongs to the semantic
+scene journal. CodeKitten launch and `odoc` dispatch still do not prove
+document acceptance.
 
 ## Agent integration and settlement
 
 `now_projects`, `now_development_environment`, and `now_development` project
-the same services used by the host UI. The PowerBook acceptance proved that
-this path can carry classic identity through a complete MPW build and launch.
-It also exposed the remaining autonomous-loop boundary: a semantic snapshot
-was published from `MirrorStateEngineRegistry`, while act resolution read
-`NOWMirrorSource.scene` and found no scene. A human could dismiss the verified
-dialog; the agent could not rely on the object it had just observed.
+the same services used by the host UI. Their mutations require caller-retained
+attempt IDs. The local server journals bounded terminal responses before
+replying, so retry after response loss or host restart returns the original
+receipt rather than running the mutation twice. A compatibility preflight
+names the host build, companion protocol, projection catalog and schema
+revisions before domain dispatch, and operation-discriminated schemas reject
+impossible sibling fields at the client boundary.
 
-The next hardening slice therefore treats state settlement as a cross-surface
-contract, not a retry convention. Read, wait, act, and terminal receipts must
-share one machine/session epoch and one published scene authority. Transport
-health and host/companion compatibility must be diagnosed before domain
-operations, and operation-specific schemas must reject impossible argument
-combinations before dispatch.
+Snapshot, target resolution and action planning now read the same atomically
+published `MirrorStateEngine`. Every accepted semantic action has a journal
+operation ID, and `wait_for_settlement` returns its terminal state or an honest
+still-pending receipt. A direct action without a declared postcondition ends
+as `unconfirmed`; acceptance or dispatch is not relabeled as observed effect.
+
+The companion currently has one implemented MCP transport: stdio over the
+host's private same-user socket. There is no HTTP listener in this repository,
+so transport parity is a future boundary rather than a property of this build.
 
 CodeKitten contains useful pure-C lifecycle, journal, arbitration, and corpse
 recovery concepts. NOW already has a richer Mirror operation journal. There is
-no shared neutral module today, and the two repositories' project fixtures have
-drifted. Reuse should begin with cross-repository conformance fixtures and a
-small neutral operation vocabulary; copying an IDE command lifecycle into
-desktop observation would not fix the scene-authority split.
+no shared neutral module today. Reuse should begin with cross-repository
+conformance fixtures and a small neutral operation vocabulary; neither app
+should import the other's UI, transport, storage or executor.
 
 See the [detailed engineering record](../../development.md), the
 [metal handoff](../../plans/2026-08-10-030-handoff.md), and the

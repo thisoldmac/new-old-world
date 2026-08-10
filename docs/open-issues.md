@@ -159,6 +159,61 @@ The host Development import sheet also requires an opaque project ID. A
 bounded guest project catalog is still needed before that is a discoverable
 human workflow.
 
+**Updated 2026-08-10, autonomous-loop hardening:** the three gaps above are
+closed in NOW and emulator-verified. Snapshot and act planning now resolve
+through one published Mirror state engine; every admitted direct action enters
+the operation journal, and `wait_for_settlement` waits by its UUID. A direct
+act with no declared postcondition ends `unconfirmed`, never `confirmed` from
+dispatch alone. Projects and Development publish discriminated operation
+schemas, mutation attempt IDs are mandatory, terminal local responses survive
+host restart, and compatibility names the host build, protocol, catalog digest
+and supported schema revisions before a domain request is decoded. The guest
+catalog makes import discoverable. `Project.ckp` now carries an all-or-none
+closed test plan and the PPC guest returns `ckproject.test-receipt/1` only
+after the unchanged product's process identity matches.
+
+A session-private mac99/OS 9.1 acceptance with guest build `b1de53f2bfe9` and
+qualified `mpw-ffff-00000cf0@structural-1` exercised three levels of loop:
+simple Hello World; a five-file, resource-fork-bearing Memory Meter with real
+MrC failure, repair, cancellation, restage and success; and a guest-only
+project imported into host scratch, edited, built, tested and promoted. A
+second built guest-home candidate was refused as `guest-diverged` after an
+out-of-band guest edit. Download matched the active edit byte-for-byte and the
+losing candidate remained inspectable until explicit discard. A deliberately
+lost stage response was retried with the same attempt ID and returned the one
+original candidate. The VM's staged resident reported source manifest
+`28ef6c07ee6d` and fingerprint `085c4ebf8457`; QEMU eventually exited after the
+repository shutdown helper and `qemu-img check` passed, but the fixture base
+was already marked HFS-dirty, so this run does not assert volume-clean fixture
+provenance.
+
+The run also found one sharp authoring boundary: `Project.ckp` participates in
+the project digest as `TEXT/NOWD`. Uploading identical bytes as `TEXT/MPS ` let
+the guest catalog parse the document but made import end in the generic
+coherent-snapshot mismatch. Re-uploading it with the canonical identity made
+the same snapshot import. The contract now documents the identity and import
+refuses the noncanonical type, creator, flags or resource fork explicitly
+before normalizing a host copy. The exact creator mutation was watched to fail.
+
+The remaining open boundaries are narrower and separately owned:
+
+- **MCP transport:** only the stdio companion exists in this repository. The
+  hardening plan assumed canonical HTTP plus stdio parity; there is no HTTP
+  listener to test. Adding one would create a new transport/security boundary,
+  not complete an overlooked test.
+- **CodeKitten acceptance:** NOW still observes launch, asynchronous `odoc`
+  dispatch and foregrounding rather than a returned handler receipt. Shared
+  fixtures and any neutral receipt vocabulary must be completed in the sibling
+  CodeKitten repository; NOW must not absorb the IDE or executor.
+- **Starter payload:** the relocatable, versioned Development starter-pack
+  manifest and onboarding input are implemented and tested, including license
+  and provenance fields. No redistributable MPW bytes are committed. A combined
+  NOW + CodeKitten + MPW image cannot be accepted until payload licensing and
+  provenance are settled.
+- **Metal:** the earlier PowerBook result remains the fork-aware host-home
+  build/run/dialog proof. Typed test, retry/restart recovery, guest-home
+  promotion and the new semantic settlement receipts remain emulator-only.
+
 Things known to be wrong, unfinished, or unverified, with enough detail
 to pick any one of them up cold. Nothing here is being worked on right
 now; each is parked deliberately.

@@ -2,7 +2,7 @@
 title: Development agent-loop hardening plan
 type: plan
 date: 2026-08-10
-status: ready
+status: implemented
 search:
   exclude: true
 ---
@@ -20,6 +20,56 @@ recover or explain every incomplete operation without consulting hidden state.
 The plan hardens the existing architecture. It does not add a shell, expose an
 arbitrary host directory, make CodeKitten a dependency, or treat a build as a
 test.
+
+## Implementation result
+
+Implemented on `codex/development-agent-loop-hardening` and verified on
+2026-08-10. The NOW-owned parts of workstreams A-D and the manifest/input
+portion of F are complete:
+
+- compatibility preflight names the host build, local protocol, projection
+  catalog and supported schema revisions;
+- Projects and Development mutation attempts are caller-addressable and replay
+  bounded terminal responses across host restart;
+- Projects and Development publish operation-discriminated input schemas;
+- snapshot, target resolution and act planning use one published Mirror state
+  engine, every accepted direct act is journalled, and
+  `wait_for_settlement` returns its actual terminal state;
+- `Project.ckp` has a closed test vocabulary and the PPC guest returns
+  `ckproject.test-receipt/1` after exact process-identity assertion;
+- guest projects are discoverable through a bounded catalog, restart recovery
+  inventories retained candidates, and guest-home publication remains guarded
+  by the imported base digest;
+- onboarding validates a relocatable Development starter-pack manifest with
+  platform, version, component, license, provenance, size and qualification
+  metadata rather than an HFS directory ID.
+
+The isolated mac99/OS 9.1 acceptance used guest build `b1de53f2bfe9`, resident
+manifest `28ef6c07ee6d`, resident fingerprint `085c4ebf8457`, qualified
+`mpw-ffff-00000cf0@structural-1`, and base image SHA-256
+`bf5a6cf67701e8628cca3ffe5311a0bd76d959a549b7cdb320287c2afd8ec22e`.
+It completed simple, failure/repair/cancellation and guest-home promotion loops;
+recovered one lost stage response without duplication; refused a divergent
+promotion while preserving both sides; and cleaned up this run's candidates.
+The exact receipts are summarized in [development.md](../development.md)
+and the dated ledger entry in [open-issues.md](../open-issues.md).
+
+Four acceptance statements were not silently redefined:
+
+1. This repository has a stdio MCP companion and no HTTP MCP listener. The
+   plan's HTTP-canonical/parity assumption was stale; implementing HTTP would
+   add a new transport and security boundary.
+2. CodeKitten is separately owned. NOW still lacks a returned `odoc` handler
+   receipt, and cross-repository shared-fixture extraction must land with that
+   sibling rather than making it a NOW dependency.
+3. The portable starter-pack contract is present, but no redistributable MPW
+   payload can be committed without settled license/provenance. The manually
+   populated VM is test infrastructure, not the distributable pack.
+4. The new receipts are emulator-verified. The earlier PowerBook proof covers
+   the fork-aware host-home build/run/dialog loop, not this hardening delta.
+
+These are residual product/integration gates, not missing local implementation
+hidden behind the status word.
 
 ## Required invariants
 

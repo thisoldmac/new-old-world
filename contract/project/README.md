@@ -45,6 +45,10 @@ History digests and candidate receipts bind both forks, type, creator and
 Finder flags. Transfer through a data-only lane therefore uses MacBinary; a
 plain data-fork transfer is not a complete Development file.
 
+`Project.ckp` itself has canonical classic identity `TEXT/NOWD`, Finder flags
+zero, and an empty resource fork. That identity participates in the coherent
+tree digest even though it is not repeated as its own `file-info` record.
+
 Paths always use `/` separators and are relative to the directory containing
 `Project.ckp`. Empty segments, dot-prefixed components, a leading `/`, `\`,
 NUL, and a trailing `/` are invalid. Dot files are reserved for private project

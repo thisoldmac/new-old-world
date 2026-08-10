@@ -18,6 +18,39 @@ at Apple's first-run Disk Copy license, which the automation did not accept.
 The package is therefore ready for continued diagnosis, not evidence that
 CodeKitten persists or that the one-disk flow works on physical hardware.
 
+## 2026-08-10 — Development agent-loop hardening is emulator-verified
+
+Projects and Development now publish operation-discriminated MCP schemas,
+require caller attempt IDs for mutations, journal terminal replies across host
+restarts, expose compatibility before domain dispatch, inventory recoverable
+work, and provide a bounded guest-project catalog. `Project.ckp` has a closed
+test plan and the guest returns `ckproject.test-receipt/1` only after launching
+the unchanged product and matching its Process Manager identity.
+
+Semantic snapshots and act planning now resolve through one published Mirror
+state authority. Every accepted direct action enters the operation journal,
+and `wait_for_settlement` waits by operation ID. Where the action has no
+observable postcondition, the terminal result is `unconfirmed`, not a false
+claim that dispatch proved effect.
+
+This hardening is **emulator-verified** on a session-private mac99/OS 9.1 VM
+with guest build `b1de53f2bfe9` and qualified
+`mpw-ffff-00000cf0@structural-1`. MCP completed simple and multi-file loops,
+preserved a nonempty resource fork, exposed a real MrC failure, repaired it,
+cancelled and restaged a job, recovered the same receipt after response loss,
+and typed-tested exact products. A guest-only project was catalogued, imported,
+edited in NOW's host scratch, built, tested and promoted. A later promotion
+was refused as `guest-diverged`; a fresh download proved the active guest edit
+survived and the losing candidate remained recoverable until explicit discard.
+
+This is not a claim that every hardening-plan acceptance rung is closed. The
+repo has stdio MCP only, not the plan's assumed HTTP transport. CodeKitten
+still lacks a returned `odoc` acceptance receipt and its shared-fixture work is
+owned in the sibling repository. The relocatable starter-pack manifest is
+validated, but no redistributable MPW payload is committed, so the one-image
+NOW + CodeKitten + MPW gate remains blocked on licensing/provenance. These new
+hardening receipts have not yet been repeated on the PowerBook.
+
 ## 2026-08-10 — Host-home MPW Development is metal-verified
 
 NOW now owns a bounded host Projects root with pure Git history, recoverable
@@ -39,13 +72,10 @@ Retained semantic state and the person at the PowerBook observed the Hello
 World alert; after dismissal a fresh process census showed the application
 absent, and candidate discard completed.
 
-That proof is narrower than a reliable autonomous agent loop. Guest-home
-import/promotion and CodeKitten handoff remain unverified, typed test actions
-and receipts are absent, and the metal run exposed a split between the
-semantic snapshot read authority and the scene used to resolve an act. The
-MCP also lacks an early host/companion compatibility verdict and publishes a
-broad Projects schema where some operations require mutually exclusive guard
-fields. The current state, exact receipt, and next hardening work are in
+That metal proof remains narrower than the emulator hardening result above.
+Guest-home promotion, typed test receipts, response-replay and coherent
+semantic settlement are now emulator-verified, but have not been repeated on
+the PowerBook. The current state and exact residuals are in
 [development.md](development.md) and the [dated hardening
 plan](plans/2026-08-10-031-feat-development-agent-loop-hardening-plan.md).
 

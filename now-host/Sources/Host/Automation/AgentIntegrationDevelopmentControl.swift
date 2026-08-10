@@ -390,6 +390,21 @@ final class AgentIntegrationDevelopmentControl {
         let finderFlags: UInt16
     }
 
+    /// Project.ckp's identity is part of the coherent guest digest even
+    /// though the document does not repeat itself in a file-info record.
+    /// Name the mismatch before normalizing the host copy to TEXT/NOWD and
+    /// reporting only a generic digest failure.
+    static func projectDocumentIdentityProblem(
+        type: String, creator: String, finderFlags: UInt16,
+        resourceBytes: Int
+    ) -> String? {
+        guard type == "TEXT", creator == "NOWD", finderFlags == 0,
+              resourceBytes == 0 else {
+            return "Project.ckp must be TEXT/NOWD with zero Finder flags and an empty resource fork."
+        }
+        return nil
+    }
+
     private func importGuest(
         _ request: AgentIntegrationDevelopmentRequest, sessionID: UUID
     ) async -> AgentIntegrationGuestRowReportResult {
@@ -467,6 +482,17 @@ final class AgentIntegrationDevelopmentControl {
         guard files.count == expectedCount else {
             return .refused(.init(code: "now-development-project-invalid",
                                   message: "The guest manifest file count is inconsistent."))
+        }
+        guard let projectFile = files.first(where: { $0.path == "Project.ckp" }) else {
+            return .refused(.init(code: "now-development-project-invalid",
+                                  message: "The guest snapshot has no Project.ckp."))
+        }
+        if let problem = Self.projectDocumentIdentityProblem(
+            type: projectFile.type, creator: projectFile.creator,
+            finderFlags: projectFile.finderFlags,
+            resourceBytes: projectFile.resourceBytes) {
+            return .refused(.init(code: "now-development-project-invalid",
+                                  message: problem))
         }
         let staging = FileManager.default.temporaryDirectory
             .appendingPathComponent("now-project-import-\(UUID().uuidString)")

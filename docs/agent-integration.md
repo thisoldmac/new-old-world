@@ -265,9 +265,9 @@ filesystem, Git or shell surface:
 
 | Tool contract | Existing NOW owner | Implemented projection |
 | --- | --- | --- |
-| `now_projects` | Host `ProjectStore` beneath the app-owned Application Support Projects root | Lists/creates named projects, opens persistent workspaces, performs bounded reads and expected-revision atomic applies, and returns Git-backed history without accepting a host path or Git command. |
+| `now_projects` | Host `ProjectStore` beneath the app-owned Application Support Projects root | Lists/creates named projects, opens persistent workspaces, performs bounded reads and guarded atomic applies, and returns Git-backed history without accepting a host path or Git command. Mutation attempts are caller-addressable and replay their durable terminal response after host restart. |
 | `now_development_environment` | PPC guest `development` qualification report | Returns path-free Projects/toolchain/backend/version/capability facts. NOW-68K is unavailable by the command ledger, not by identity inference. |
-| `now_development` | PPC `development-project`, `development-stage`, `development-build` and `development-run` over `AgentIntegrationDevelopmentControl` | Imports a verified guest snapshot, stages and verifies an inactive candidate, promotes with a base/current digest guard, drives one declarative ToolServer job, cancels it, and launches only its unchanged measured product. It accepts opaque IDs only. CodeKitten handoff remains an explicit app action. |
+| `now_development` | PPC `development-project`, `development-stage`, `development-build`, `development-test` and `development-run` over `AgentIntegrationDevelopmentControl` | Catalogues and imports a verified guest snapshot, stages and verifies an inactive candidate, promotes with a base/current digest guard, drives one declarative ToolServer job, cancels it, tests or launches only its unchanged measured product, and inventories retained recovery work. It accepts opaque IDs and caller mutation-attempt IDs only. CodeKitten handoff remains an explicit app action. |
 
 These rows cross two authority domains. Host-home project work is confined by
 product contract to NOW's same-user Projects root and needs no guest grant.
@@ -275,6 +275,17 @@ Guest import needs Read Only; candidate transfer, build, promotion and run need
 Full. Chat receives the same rows only when its transcript has Development
 intent, so ordinary machine questions do not pay their schema cost. See
 [development.md](development.md) for project-home truth and current limits.
+
+Before these domain rows dispatch, the companion asks the local host for a
+compatibility description: host build, local protocol revision, projection
+catalog version/digest and supported schema revisions. An incompatible peer
+returns one typed refusal instead of cascading generic decode failures.
+Projects and Development describe each operation as its own schema branch, so
+project-revision and workspace-commit guards cannot coexist accidentally.
+
+The implemented MCP process is currently stdio. It reaches the running host
+over the private same-user local socket described below; this repository has no
+HTTP MCP listener and therefore makes no HTTP/stdio parity claim.
 
 The parity-slice addition (W1 #1) is:
 
