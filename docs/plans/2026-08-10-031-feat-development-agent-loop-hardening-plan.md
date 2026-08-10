@@ -89,6 +89,16 @@ current request ID and cross the companion as `attempt-collision` or
 `attempt-pending`. The exact old response mutation fails the new socket test;
 the rebuilt host/HTTP companion returned `attempt-collision` on the VM.
 
+Cleanup exposed a separate rig false-green after the runtime evidence was
+complete. The source MPW image reports HFS **clean**, but the session clone
+reports HFS **dirty** after the shutdown applet went quiet and QEMU exited.
+`shutdown-guest.py` had called disk quiescence "already unmounted" and returned
+success without asking the volume. It now releases QEMU and then makes
+`volclean.py` the final authority; a completed route whose HFS volume is dirty
+or unreadable fails. The exact former `return 0` mutation is named by the
+focused test. The Development receipts above remain valid runtime evidence,
+but that disposable VM is not a volume-clean fixture receipt.
+
 Four acceptance statements remain deliberately narrower than the local
 implementation:
 
@@ -278,6 +288,8 @@ the NOW host/companion, orchestration, and evidence collection.
 ## Landing gates
 
 - Every new guard is mutation-tested against the exact defect it names.
+- A VM cleanup receipt is successful only after the released disk reports a
+  clean HFS volume; disk quiet and `qemu-img check` are not substitutes.
 - Derived documents and generated contract reference are rederived after the
   integrated merge.
 - `docs/status.md`, the Development module page, and `docs/open-issues.md` state

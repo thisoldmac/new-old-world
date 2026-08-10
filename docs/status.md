@@ -62,7 +62,10 @@ The relocatable starter-pack manifest is validated, but no redistributable MPW
 payload is committed, so the one-image NOW + CodeKitten + MPW gate remains
 blocked on licensing/provenance. Stale candidate receipts from ended guest
 sessions and missing Finder-flag observation are recorded hardening gaps. These
-new receipts have not yet been repeated on the PowerBook.
+new receipts have not yet been repeated on the PowerBook. The final VM's
+runtime receipts are valid, but its cleanup is not volume-clean: a clean base
+became a dirty session after the fallback shutdown. The rig now asks HFS after
+QEMU releases the disk and fails that condition explicitly.
 
 ## 2026-08-10 — Host-home MPW Development is metal-verified
 

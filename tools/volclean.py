@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Is the Macintosh volume inside this disk image CLEANLY UNMOUNTED?
 
 `qemu-img check` answers a different question — it validates the qcow2

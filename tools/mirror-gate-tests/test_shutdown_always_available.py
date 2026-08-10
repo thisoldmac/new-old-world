@@ -347,6 +347,22 @@ class TheRefusalIsActionable(unittest.TestCase):
         self.assertIn("`launch` IS in", doc)
         self.assertIn("the baked scope", doc)
 
+    def test_a_completed_route_is_not_success_until_hfs_says_clean(self):
+        """MUTATION: return zero directly after `_graceful` and this fails.
+
+        Disk quiet was previously printed as "already unmounted" even though
+        the same file documents three quiet, dirty applet exits. The result is
+        a volume fact, so the volume must be the final authority.
+        """
+        main = self.text[self.text.index("def main():"):]
+        main = main[:main.index("def _graceful")]
+        self.assertIn("return verify_clean_volume(a.sock, a.disk)", main)
+        self.assertNotIn("quitting the already-unmounted machine", self.text)
+
+    def test_volclean_is_directly_executable_as_documented(self):
+        first = (TOOLS / "volclean.py").read_text().splitlines()[0]
+        self.assertEqual(first, "#!/usr/bin/env python3")
+
 
 class RoutesReadTheMachineRatherThanAssumeIt(unittest.TestCase):
     """The route list is derived from the anchor's own hello, so an unusual

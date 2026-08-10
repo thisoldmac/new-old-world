@@ -213,6 +213,12 @@ Current limits and friction remain explicit:
   candidate discard. Cancelling a build is terminal for that candidate and
   requires discard/restage; neither behavior should be inferred from a generic
   retry.
+- The final VM session ended with its HFS volume marked dirty even though its
+  source image is clean, the shutdown applet completed, disk writes quiesced,
+  QEMU exited, and `qemu-img check` passed. That is a rig cleanup failure, not
+  a Development-loop result. `shutdown-guest.py` now verifies HFS after QEMU
+  releases the disk and fails rather than calling quiet "already unmounted".
+  The disposable session remains preserved as the negative artifact.
 
 The exact findings and residual gates are tracked in
 [`open-issues.md`](open-issues.md) and the completed

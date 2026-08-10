@@ -187,6 +187,18 @@ repository shutdown helper and `qemu-img check` passed, but the fixture base
 was already marked HFS-dirty, so this run does not assert volume-clean fixture
 provenance.
 
+**Correction, later 2026-08-10:** the base was not dirty. Direct
+`tools/volclean.py` inspection reports the source MPW image **CLEAN** and the
+completed session clone **DIRTY**. The shutdown applet went quiet, QEMU exited,
+and the qcow2 container passed, but HFS remained mounted. The helper then
+printed "already-unmounted machine" and returned success without asking HFS,
+contradicting its own recorded evidence that applet quiet is not an unmount.
+`shutdown-guest.py` now releases QEMU and makes the volume verdict the final
+return code; dirty and unknown both fail. `volclean.py` is directly executable
+as documented. The exact old post-`_graceful` `return 0` mutation fails the new
+guard. This corrects cleanup observability; it does not invalidate the build,
+test, promotion, divergence or semantic receipts gathered before shutdown.
+
 The run also found one sharp authoring boundary: `Project.ckp` participates in
 the project digest as `TEXT/NOWD`. Uploading identical bytes as `TEXT/MPS ` let
 the guest catalog parse the document but made import end in the generic

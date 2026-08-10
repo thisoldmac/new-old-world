@@ -195,6 +195,39 @@ def wait_for_disk_quiet(sock_path, disk, settle=8.0, cap=120.0):
             f"quiet - quitting anyway, and this image should be checked")
 
 
+def verify_clean_volume(sock_path, disk=None):
+    """Prove the shutdown result from HFS after QEMU releases the disk.
+
+    Disk quiet is only a timing observation. It cannot establish the HFS
+    unmounted bit, and the applet path has repeatedly gone quiet while leaving
+    that bit clear. Returning success before asking the volume turned an
+    explicitly documented dirty fallback into a green cleanup receipt.
+    """
+    if disk is None:
+        disk = os.path.join(os.path.dirname(os.path.abspath(sock_path)),
+                            "session.qcow2")
+    if not os.path.exists(disk):
+        print(f"shutdown completed but volume cleanliness cannot be verified: "
+              f"no disk at {disk}", file=sys.stderr)
+        return 1
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "now_volclean", os.path.join(HERE, "volclean.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    result = module.verdict(disk)
+    if result["state"] == "clean":
+        print(f"volume cleanly unmounted: {disk}")
+        return 0
+    detail = result.get("error") or ", ".join(
+        f"{row['name'] or 'untitled'}="
+        f"{('clean' if row['clean'] else 'dirty')}"
+        for row in result.get("volumes", []))
+    print(f"shutdown route completed but the Macintosh volume is "
+          f"{result['state'].upper()}: {detail}", file=sys.stderr)
+    return 1
+
+
 # ---------------------------------------------------------------------
 # The Finder's own Special > Shut Down, over NOW's wire.
 #
@@ -611,7 +644,7 @@ def main():
     print_scope_preflight(anchor_scope(a.port), a.wire, a.applet)
 
     if _graceful(a) == 0:
-        return 0
+        return verify_clean_volume(a.sock, a.disk)
 
     # ONE ENDING, and it is never "you are on your own". Every graceful
     # route failing used to fall out of the bottom of this function with a
@@ -726,7 +759,8 @@ def _graceful(a):
             quiesced = wait_for_disk_quiet(a.sock, a.disk)
             print(f"guest shut itself down ({elapsed}s); {quiesced}; QEMU "
                   f"is still resident because mac99 does not power off, so "
-                  f"quitting the already-unmounted machine")
+                  f"quitting the quiescent machine; HFS cleanliness will be "
+                  f"verified after QEMU releases the disk")
             quit_a_shut_down_machine(a.sock)
             deadline = time.time() + 30
             while time.time() < deadline and qmp_alive(a.sock):
