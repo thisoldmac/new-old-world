@@ -95,6 +95,24 @@ final class ProjectStoreTests: XCTestCase {
             "file-info=TEXT|MPS |ZZZZ|Sources/Main.c")))
     }
 
+    func testDebugLinkOutputReservesTheMPWXCOFFSidecarName() throws {
+        XCTAssertThrowsError(try CKProjectDocument.parse(Data("""
+            CKPROJECT 1
+            id=0123456789abcdef0123456789abcdef
+            name=Long Debug Product
+            target=application
+            configuration=debug
+            toolchain=mpw@3.6
+            product=Build/Hello World Emulator Forks
+            type=APPL
+            creator=TEST
+            file=Sources/Main.c
+            build-action=link|Build/Main.o|Build/Hello World Emulator Forks
+            """.utf8))) { error in
+                XCTAssertTrue(String(describing: error).contains(".xcoff"))
+            }
+    }
+
     func testLegacyProjectFileCanBeReadWithoutDeclaredIdentity() throws {
         let store = try ProjectStore(root: root())
         let legacyDocument = Data("""

@@ -76,6 +76,21 @@ static int parse_action(DevBuildPlan *plan, char *value)
     return dev_build_plan_add(plan, value, first, second);
 }
 
+static int debug_link_names_valid(const DevProject *project)
+{
+    int i;
+    if (strcmp(project->configuration, "debug") != 0) return 1;
+    for (i = 0; i < project->build.count; ++i) {
+        const DevBuildAction *action = &project->build.actions[i];
+        const char *name;
+        if (action->kind != kDevActionLink) continue;
+        name = strrchr(action->output, '/');
+        name = name == NULL ? action->output : name + 1;
+        if (strlen(name) + strlen(".xcoff") > 31) return 0;
+    }
+    return 1;
+}
+
 int dev_project_parse(const char *text, DevProject *project,
                       char *reason, long reason_cap)
 {
@@ -187,6 +202,10 @@ int dev_project_parse(const char *text, DevProject *project,
         || project->product_creator[0] == '\0'
         || project->file_count == 0) {
         return fail(reason, reason_cap, "project is missing required records");
+    }
+    if (!debug_link_names_valid(project)) {
+        return fail(reason, reason_cap,
+            "debug link output leaves no HFS name for .xcoff");
     }
     snprintf(project->build.configuration,
              sizeof project->build.configuration, "%s",

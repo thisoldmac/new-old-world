@@ -1,6 +1,6 @@
 # Open issues
 
-## PARTLY VERIFIED: active-project MPW build/run passed in the emulator; publication and metal remain (2026-08-09)
+## EMULATOR-VERIFIED, NOT METAL-VERIFIED: host project, classic identity, MPW build/run/dialog (2026-08-09)
 
 The host Projects store, guest Development module, private import/candidate
 lanes, declarative ToolServer runtime, promotion guard, exact-product run and
@@ -63,7 +63,36 @@ mount was separately blocked by the pristine snapshot's unaccepted Apple
 license; the earlier image-carrier mount result below remains valid for the
 carrier, not for this new payload set.
 
-Three implementation gaps block a full development/preservation/acceptance
+**Updated 2026-08-10, classic file preservation and complete host-home rung:**
+The PowerBook rerun with the numeric candidate fix sealed the project, then MPW
+refused `Sources:Main.c` as “not a TEXT file.” Generic upload had reconstructed
+the bytes as `BINA/ttxt`; the development contract had treated a classic file
+as one data blob. The current branch makes data/resource forks and Finder
+type, creator and flags first-class through `now_projects`, project digests,
+candidate receipts, MacBinary guest transport/import and the host Git recovery
+archive. Legacy projects remain readable with identity reported as unknown,
+but staging refuses to invent metadata.
+
+A fresh mac99/OS 9.1 acceptance used only the MCP Development/Projects surface
+after fixture-only registration of the emulator's existing MPW. Guest build
+`44a214ae1141` qualified `mpw-ffff-00000cf0@structural-1`; project
+`95ceb07504374a568705336a5728d19a` carried a nonempty source resource fork and
+`TEXT/MPS ` identity, candidate `candidate-1c3ca2817afe4c24` sealed at digest
+`2d692e6239cb90862bb1a15c7d6f42ce63ea9026ac35663e9c41913725e417d0`, and
+MrC/PPCLink/Rez produced `APPL/H14E` product `product-5c96932bd4b1cd44`
+with 1,832 data and 578 resource bytes. Exact-product run matched the process;
+retained semantic UI observed the live frontmost alert and enabled `OK` item.
+After semantic dismissal the process disappeared and candidate discard passed.
+
+That acceptance also found two authoring constraints rather than transport
+defects: the first sample omitted its application-owned `QDGlobals qd`, and a
+26-byte debug product name left no room for PPCLink's `.xcoff` sidecar inside
+HFS's 31-byte component limit. The project was revised through MCP. Host and
+guest parsers now refuse the derived `.xcoff` overflow before staging; both
+guards were mutation-tested. The current fork/identity stack has not run on the
+PowerBook, so it remains emulator-verified rather than metal-verified.
+
+Two implementation gaps block a full development/preservation/acceptance
 claim today:
 
 - `now_development` has separate build and exact-product run outcomes, but no
@@ -72,10 +101,6 @@ claim today:
   vocabulary, expected product identity and terminal receipt still need to be
   added to `Project.ckp`, the ToolServer service and both human/agent faces.
 
-- Guest source manifests and the host Git mirror bind data-fork SHA-256 only.
-  Resource forks and Finder type/creator are not represented or reconstructed
-  in candidates. Nonempty resource forks are now refused at host staging and
-  guest import; Finder metadata still needs first-class preservation semantics.
 - `development-open` proves CodeKitten launch, `odoc` dispatch and foregrounding
   without blocking the guest loop, but `kAENoReply` cannot prove the handler
   accepted the document. CodeKitten now has the handler; the remaining seam is

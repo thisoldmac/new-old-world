@@ -64,6 +64,11 @@ one of `compile`, `rez`, `link`, `copy`, `stage`, or `metadata`; remaining
 components are typed project- or toolchain-relative operands defined by the
 selected backend. No component is executable text.
 
+An MPW debug `link` output's final component must be at most 25 bytes. PPCLink
+places a `.xcoff` symbol sidecar beside it, and both names must fit the classic
+HFS 31-byte component limit; publishers refuse the project before staging when
+that derived name cannot exist.
+
 ## Project home and working state
 
 Project home is catalog state, not portable project data. `host` means the

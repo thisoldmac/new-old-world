@@ -24,14 +24,20 @@ fixtures live in [`contract/project/`](../contract/project/); NOW's Swift and C
 parsers and CodeKitten's pure core use the same fixtures. The format declares
 source membership, a target and configuration, an exact toolchain pin,
 declarative build actions and a product path with required four-character type
-and creator codes. `Build/` is reserved for generated artifacts and excluded
-from source digests.
+and creator codes. Every declared file may also carry a `file-info` record for
+its Finder type, creator and flags. Data and resource forks are two views of
+that one logical file; source digests bind both forks and the Finder identity.
+`Build/` is reserved for generated artifacts and excluded from source digests.
 
 The host Projects store accepts only opaque project/workspace references and
 canonical relative paths. It rejects absolute paths, `..`, links, stale
 revisions and stale per-file digests. An accepted atomic batch produces a
 revision receipt and a commit written by NOW's small Git object writer; no
 system `git`, user configuration or agent-visible Git command is involved.
+Normal paths remain ordinary data-fork Git blobs, while each commit's private
+`.now-classic` tree carries a complete MacBinary recovery package and index for
+every logical file. This keeps the repository useful to normal Git tools
+without making resource forks or Finder metadata unrecoverable.
 Workspaces and receipts persist across host restarts. A workspace holding the
 only copy of unpromoted commits cannot be silently discarded.
 
@@ -107,32 +113,31 @@ a runtime dependency.
 ## Verification and current limits
 
 The project/history, parser, job, projection, Chat-filter and parity behavior
-is tested locally, and both guests cross-compile. The active-project build lane
-is also emulator-verified on a private mac99/OS 9.1 guest with MPW: build
-`15a1c3087007` qualified `mpw-ffff-00000cf0@structural-1`, measured a three-file
-source tree, completed MrC, PPCLink and Rez, produced an `APPL/MMTR` application
-with 1,700 data-fork bytes and 568 resource-fork bytes, launched that exact
-measured product with matching process identity, reached a terminal cancelled
-state, and completed a later build. The initial emulator pass found and fixed
-a command-stack overflow and relative-path ToolServer failure before this claim
-was made.
+is tested locally, and both guests cross-compile. The complete host-home lane is
+also emulator-verified on a private mac99/OS 9.1 guest with MPW. Guest build
+`44a214ae1141` qualified `mpw-ffff-00000cf0@structural-1`; MCP created and
+revised project `95ceb07504374a568705336a5728d19a`, including a nonempty source
+resource fork and `TEXT/MPS ` Finder identities. NOW transported each logical
+file as MacBinary, sealed candidate `candidate-1c3ca2817afe4c24` at exact source
+digest `2d692e6239cb90862bb1a15c7d6f42ce63ea9026ac35663e9c41913725e417d0`,
+completed MrC, PPCLink and Rez, and measured `APPL/H14E` product
+`product-5c96932bd4b1cd44` at 1,832 data-fork and 578 resource-fork bytes.
+`now_development run` matched its process identity, and retained semantic UI
+then observed the frontmost `HelloForks` alert and its enabled `OK` dialog item.
+After a semantic dismissal the process disappeared and the built candidate was
+discarded cleanly.
 
-That is a partial emulator rung, not a full end-to-end one and not metal
-verification. Candidate staging has now also passed through the MCP surface on
-a private mac99/OS 9.1 guest: the same three-file host project that failed on
-the first PowerBook attempt was transferred, sealed at its exact source digest,
-observed with `stage-status`, and discarded. That run found the PowerBook
-failure's cause in the shared host code: `expectedFiles` crossed as a JSON
-string instead of the contract's integer, so the guest parsed zero. The cursor
-used by project import had the same latent type error; both are covered by a
-mutation-checked wire test. Guest import/workspace refresh, divergent and
-successful promotion, and CodeKitten handoff have not run in the emulator. A
-separate onboarding smoke transferred the exact CodeKitten payload and
-`LaunchApplication` accepted it, but the process exited before the five-second
-observation; that is a failed runtime gate, not handoff evidence. The
-PowerBook workflow reached project history, toolchain qualification and two
-complete candidate transfers, but the patched finalize/build/run path has not
-yet been rerun there.
+That is full host-home build/run/dialog evidence in the emulator, not metal
+verification and not evidence for guest-home promotion. Guest import/workspace
+refresh, divergent and successful promotion, and CodeKitten handoff have not
+run in the emulator. A separate onboarding smoke transferred the exact
+CodeKitten payload and `LaunchApplication` accepted it, but the process exited
+before the five-second observation; that is a failed runtime gate, not handoff
+evidence. On the PowerBook, the numeric candidate-finalize fix did allow an
+inactive candidate to seal, but MPW then refused the first source as “not a
+TEXT file.” That metal result is the evidence that led to first-class fork and
+Finder identity transport; the current preservation patch still needs its own
+PowerBook rerun.
 
 Two preservation/settlement limits are still open and are intentionally not
 hidden behind a successful receipt:
@@ -143,12 +148,6 @@ hidden behind a successful receipt:
   must define a closed declarative test plan and its expected product identity
   before adding that operation.
 
-- Source-tree manifests currently bind data-fork SHA-256 only. A nonempty
-  source resource fork is refused both when the host stages a candidate and
-  when the guest manifests or serves an import, so the lane fails instead of
-  silently losing it. Finder type/creator are not yet represented in the host
-  Git mirror or candidate receipt. Product measurement covers both forks and
-  metadata.
 - The CodeKitten `odoc` send is asynchronous. NOW proves launch, event
   dispatch and foregrounding, but does not yet receive the handler's returned
   acceptance result. Metal acceptance must retire that distinction rather than

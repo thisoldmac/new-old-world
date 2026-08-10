@@ -52,5 +52,12 @@ int main(void)
         "CKPROJECT 2\nid=0123456789abcdef0123456789abcdef\nname=X\ntarget=app\nconfiguration=debug\n"
         "toolchain=mpw@1\nproduct=Build/X\nfile=Sources/Main.c\n",
         &project, reason, sizeof reason));
+    assert(!dev_project_parse(
+        "CKPROJECT 1\nid=0123456789abcdef0123456789abcdef\nname=X\ntarget=app\nconfiguration=debug\n"
+        "toolchain=mpw@1\nproduct=Build/Hello World Emulator Forks\n"
+        "type=APPL\ncreator=TEST\nfile=Sources/Main.c\n"
+        "build-action=link|Build/Main.o|Build/Hello World Emulator Forks\n",
+        &project, reason, sizeof reason));
+    assert(strstr(reason, ".xcoff") != NULL);
     return 0;
 }

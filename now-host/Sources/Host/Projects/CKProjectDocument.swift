@@ -77,6 +77,21 @@ struct CKProjectDocument: Equatable, Sendable {
                     "Build is reserved for generated artifacts, not source files.")
             }
         }
+        let configuration = try one("configuration")
+        for value in records.filter({ $0.0 == "build-action" }).map(\.1) {
+            let fields = value.split(separator: "|", omittingEmptySubsequences: false)
+            guard fields.count == 3 else {
+                throw ProjectStoreError.invalidProject(
+                    "A build-action must be kind|input|output.")
+            }
+            guard configuration != "debug" || fields[0] != "link"
+                    || fields[2].split(separator: "/").last.map({
+                        $0.utf8.count + ".xcoff".utf8.count <= 31
+                    }) == true else {
+                throw ProjectStoreError.invalidProject(
+                    "A debug link output must leave room for MPW's .xcoff sidecar in a 31-byte HFS name.")
+            }
+        }
         var identities = Set<String>()
         let declaredFiles = Set(records.filter { $0.0 == "file" }.map(\.1))
         for value in records.filter({ $0.0 == "file-info" }).map(\.1) {
