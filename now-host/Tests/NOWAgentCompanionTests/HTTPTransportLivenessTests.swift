@@ -76,6 +76,7 @@ final class HTTPTransportLivenessTests: XCTestCase {
     ) async throws -> (data: Data, response: HTTPURLResponse) {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
+        request.timeoutInterval = 0.5
         request.httpBody = body
         request.setValue("Bearer \(token)",
                          forHTTPHeaderField: "Authorization")
