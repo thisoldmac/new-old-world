@@ -127,17 +127,28 @@ then observed the frontmost `HelloForks` alert and its enabled `OK` dialog item.
 After a semantic dismissal the process disappeared and the built candidate was
 discarded cleanly.
 
-That is full host-home build/run/dialog evidence in the emulator, not metal
-verification and not evidence for guest-home promotion. Guest import/workspace
-refresh, divergent and successful promotion, and CodeKitten handoff have not
-run in the emulator. A separate onboarding smoke transferred the exact
+The same preservation path is now metal-verified on the PowerBook 1400c. Guest
+build `33bfe4e3e211` qualified the machine's own
+`mpw-ffff-00007b37@structural-1`; MCP revised only the toolchain pin in that
+fork-bearing host project, sealed candidate `candidate-d4752f9e46d84f9c` at
+source digest `6c3e96f8e4e368fc5004e2817ab9bcc087bd1eacba5bdd5cb0437c3b77a13669`,
+and completed all three MrC/PPCLink/Rez actions. Product
+`product-cf2b162d6ea8648a` measured `APPL/H14E`, 1,832 data bytes and 578
+resource bytes, at digest
+`cf2b162d6ea8648a7108b10b3732994ebc647f39c40ba74a1986ada1f6e564a8`.
+Exact-product run matched process identity; retained semantic UI and the person
+at the PowerBook observed the live Hello World alert; after dismissal a fresh
+process list showed the application absent, and candidate discard succeeded.
+
+That is full host-home build/run/dialog evidence on metal. It is not evidence
+for guest-home promotion. Guest import/workspace refresh, divergent and
+successful promotion, and CodeKitten handoff have not run in the emulator or
+on the PowerBook. A separate onboarding smoke transferred the exact
 CodeKitten payload and `LaunchApplication` accepted it, but the process exited
 before the five-second observation; that is a failed runtime gate, not handoff
-evidence. On the PowerBook, the numeric candidate-finalize fix did allow an
-inactive candidate to seal, but MPW then refused the first source as “not a
-TEXT file.” That metal result is the evidence that led to first-class fork and
-Finder identity transport; the current preservation patch still needs its own
-PowerBook rerun.
+evidence. The earlier PowerBook refusal of the first source as “not a TEXT
+file” is retained as the evidence that led to first-class fork and Finder
+identity transport; the successful rung above closes that specific metal gap.
 
 Two preservation/settlement limits are still open and are intentionally not
 hidden behind a successful receipt:

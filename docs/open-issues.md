@@ -1,6 +1,6 @@
 # Open issues
 
-## EMULATOR-VERIFIED, NOT METAL-VERIFIED: host project, classic identity, MPW build/run/dialog (2026-08-09)
+## METAL-VERIFIED: host project, classic identity, MPW build/run/dialog (2026-08-09)
 
 The host Projects store, guest Development module, private import/candidate
 lanes, declarative ToolServer runtime, promotion guard, exact-product run and
@@ -91,6 +91,25 @@ HFS's 31-byte component limit. The project was revised through MCP. Host and
 guest parsers now refuse the derived `.xcoff` overflow before staging; both
 guards were mutation-tested. The current fork/identity stack has not run on the
 PowerBook, so it remains emulator-verified rather than metal-verified.
+
+**Updated 2026-08-10, PowerBook acceptance complete:** the signed host at
+source `3de370bf` connected to PowerBook guest build `33bfe4e3e211` with Full
+Access. The guest qualified its selected
+`mpw-ffff-00007b37@structural-1` ToolServer/MrC installation. MCP changed only
+the emulator project's toolchain pin, producing host revision 5, then sealed
+candidate `candidate-d4752f9e46d84f9c` at digest
+`6c3e96f8e4e368fc5004e2817ab9bcc087bd1eacba5bdd5cb0437c3b77a13669`.
+MrC, PPCLink and Rez completed 3 of 3 actions. Product
+`product-cf2b162d6ea8648a` measured `APPL/H14E`, 1,832 data-fork bytes and 578
+resource-fork bytes, digest
+`cf2b162d6ea8648a7108b10b3732994ebc647f39c40ba74a1986ada1f6e564a8`.
+Exact-product run reported a matched process identity. Retained semantic state
+and the person at the machine observed the frontmost Hello World alert and its
+enabled OK item; after the person dismissed it, a fresh process census showed
+`HelloForks` absent. Candidate discard then completed. The fork/Finder identity
+repair and complete host-home build/run/dialog lane are therefore
+metal-verified on the PowerBook 1400c. The test-receipt, guest-home promotion
+and CodeKitten handoff gaps below remain open and are not covered by this claim.
 
 Two implementation gaps block a full development/preservation/acceptance
 claim today:
