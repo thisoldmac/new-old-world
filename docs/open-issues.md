@@ -126,6 +126,17 @@ published snapshot as proof that its named entities are actable. Reconcile the
 read and drive authorities and mutation-test that exact split before calling
 semantic runtime settlement autonomous-loop reliable.
 
+Two MCP contract edges made diagnosis harder than it needed to be. The local
+server does not expose an early host-build/protocol compatibility verdict, so
+an older running host reported the generic `now-host-invalid-response` for
+each new Projects/Development call instead of naming that its response shape
+predated those tools. Separately, `now_projects` publishes one broad input
+schema for all operations, while project `apply` and workspace `apply` accept
+mutually exclusive revision/commit guards; supplying both reached only the
+generic invalid-arguments sentence. A version handshake and discriminated
+per-operation schema are required before treating ordinary agent mistakes or a
+stale deployment as product-domain failures.
+
 Two implementation gaps block a full development/preservation/acceptance
 claim today:
 
