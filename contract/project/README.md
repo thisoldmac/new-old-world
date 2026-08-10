@@ -22,8 +22,9 @@ unsupported major versions are refused.
 | `file` | 1+ | Project-relative source or resource path. |
 
 Optional records are `type`, `creator`, `architecture`, `entry`, `include`,
-`define`, `compiler-option`, `linker-option`, `package`, `file-info`, and
-`build-action`.
+`define`, `compiler-option`, `linker-option`, `package`, `file-info`,
+`build-action`, `test-action`, `test-assertion`, `test-timeout`, and
+`test-artifacts`.
 Repeated records retain their file order. Four-character `type` and `creator`
 values are MacRoman byte identities represented as four ASCII characters.
 
@@ -69,6 +70,14 @@ places a `.xcoff` symbol sidecar beside it, and both names must fit the classic
 HFS 31-byte component limit; publishers refuse the project before staging when
 that derived name cannot exist.
 
+The version-1 test plan is closed and all-or-none. It contains exactly
+`test-action=launch`, `test-assertion=process-identity`, a `test-timeout`
+between 1 and 60 seconds, and `test-artifacts` equal to `never`, `on-failure`,
+or `always`. The runner launches only the unchanged opaque product from the
+successful build and confirms that Process Manager reports the same file and
+creator. Richer UI actions and assertions use NOW's semantic scene surface and
+produce their own operation receipts; they are not embedded command text.
+
 ## Project home and working state
 
 Project home is catalog state, not portable project data. `host` means the
@@ -87,6 +96,7 @@ Workspace, candidate, build, promotion, and run records are JSON receipts with
 - `ckproject.promotion-receipt/1`
 - `ckproject.build-receipt/1`
 - `ckproject.run-receipt/1`
+- `ckproject.test-receipt/1`
 
 Every receipt carries opaque identities rather than host paths. A build binds
 the actual guest source digest, project revision, qualified toolchain, product

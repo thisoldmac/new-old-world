@@ -14,7 +14,11 @@ static const char minimal[] =
     "product=Build/Memory Meter\r"
     "type=APPL\r"
     "creator=MMTR\r"
-    "file=Sources/Main.c\r";
+    "file=Sources/Main.c\r"
+    "test-action=launch\r"
+    "test-assertion=process-identity\r"
+    "test-timeout=15\r"
+    "test-artifacts=on-failure\r";
 
 int main(void)
 {
@@ -30,6 +34,10 @@ int main(void)
     assert(strcmp(project.product_type, "APPL") == 0);
     assert(strcmp(project.product_creator, "MMTR") == 0);
     assert(project.file_count == 1);
+    assert(strcmp(project.test_action, "launch") == 0);
+    assert(strcmp(project.test_assertion, "process-identity") == 0);
+    assert(project.test_timeout_seconds == 15);
+    assert(strcmp(project.test_artifacts, "on-failure") == 0);
 
     snprintf(with_action, sizeof with_action, "%s%s", minimal,
              "build-action=compile|Sources/Main.c|Objects/Main.o\r");
@@ -59,5 +67,16 @@ int main(void)
         "build-action=link|Build/Main.o|Build/Hello World Emulator Forks\n",
         &project, reason, sizeof reason));
     assert(strstr(reason, ".xcoff") != NULL);
+    assert(!dev_project_parse(
+        "CKPROJECT 1\nid=0123456789abcdef0123456789abcdef\nname=X\ntarget=app\nconfiguration=release\n"
+        "toolchain=mpw@1\nproduct=Build/X\ntype=APPL\ncreator=TEST\nfile=Sources/Main.c\n"
+        "test-action=launch\n", &project, reason, sizeof reason));
+    assert(strstr(reason, "incomplete") != NULL);
+    assert(!dev_project_parse(
+        "CKPROJECT 1\nid=0123456789abcdef0123456789abcdef\nname=X\ntarget=app\nconfiguration=release\n"
+        "toolchain=mpw@1\nproduct=Build/X\ntype=APPL\ncreator=TEST\nfile=Sources/Main.c\n"
+        "test-action=launch\ntest-assertion=process-identity\ntest-timeout=0\ntest-artifacts=never\n",
+        &project, reason, sizeof reason));
+    assert(strstr(reason, "timeout") != NULL);
     return 0;
 }

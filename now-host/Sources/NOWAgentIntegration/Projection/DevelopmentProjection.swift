@@ -12,6 +12,7 @@ public enum DevelopmentProjection: HostProjection {
         AgentIntegrationCapabilityNames.developmentStageCommand,
         AgentIntegrationCapabilityNames.developmentBuildCommand,
         AgentIntegrationCapabilityNames.developmentRunCommand,
+        AgentIntegrationCapabilityNames.developmentTestCommand,
     ]
     public static let exposes = requires
     public static let authorityDomain =
@@ -76,6 +77,7 @@ public enum DevelopmentProjection: HostProjection {
             branch(.buildStatus),
             branch(.buildCancel),
             branch(.run, ["productRef": productRef], ["productRef"]),
+            branch(.test, ["productRef": productRef], ["productRef"]),
         ],
     ]
 

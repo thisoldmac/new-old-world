@@ -1613,6 +1613,10 @@ void now_command_run(const char *name, const char *request_json, long id,
         now_development_run_command(request_json, id, out, cap);
         return;
     }
+    if (strcmp(name, "development-test") == 0) {
+        now_development_test_command(request_json, id, out, cap);
+        return;
+    }
     if (strcmp(name, "development-open") == 0) {
         now_development_open_command(request_json, id, out, cap);
         return;

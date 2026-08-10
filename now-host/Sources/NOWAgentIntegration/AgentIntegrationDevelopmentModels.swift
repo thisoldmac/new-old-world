@@ -10,6 +10,7 @@ public enum AgentIntegrationDevelopmentOperation: String, Codable, Sendable {
     case buildStatus = "build-status"
     case buildCancel = "build-cancel"
     case run
+    case test
     case openInCodeKitten = "open-in-codekitten"
 }
 
@@ -69,7 +70,7 @@ public struct AgentIntegrationDevelopmentRequest: Codable, Equatable, Sendable {
         case .buildStatus, .buildCancel:
             return projectID == nil && workspaceID == nil
                 && candidateID == nil && productRef == nil
-        case .run:
+        case .run, .test:
             return productRef != nil && projectID == nil
                 && workspaceID == nil && candidateID == nil
         }

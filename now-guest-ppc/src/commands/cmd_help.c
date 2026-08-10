@@ -612,6 +612,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "development-project <projectID>", d_development_project },
     { "development-run", 1, "launch the exact last built product",
       "development-run <productRef>", d_development_run },
+    { "development-test", 1, "test the exact product by the closed plan",
+      "development-test <productRef>", d_development_run },
     { "development-open", 1, "open one active Project.ckp in CodeKitten",
       "development-open <projectID>", d_development_open },
     { "gestalt", 1, "report this Mac: system, model, RAM, CarbonLib",

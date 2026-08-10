@@ -13,6 +13,9 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
         XCTAssertTrue(AgentIntegrationDevelopmentRequest(
             operation: .run,
             productRef: "product-0123456789abcdef").isWellFormed)
+        XCTAssertTrue(AgentIntegrationDevelopmentRequest(
+            operation: .test,
+            productRef: "product-0123456789abcdef").isWellFormed)
         XCTAssertFalse(AgentIntegrationDevelopmentRequest(
             operation: .run, projectID: project,
             productRef: "product-0123456789abcdef").isWellFormed)
@@ -41,6 +44,31 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
         XCTAssertTrue(branches.allSatisfy {
             ($0["additionalProperties"] as? Bool) == false
         }, "every Development operation must reject sibling fields")
+    }
+
+    func testAdapterMapsTypedTestToClosedGuestCommand() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        let product = "product-0123456789abcdef"
+        guest.onMessage = { message in
+            guard case .commandRequest(let request) = message,
+                  request.name == "development-test" else { return }
+            XCTAssertEqual(request.args?["productRef"], .text(product))
+            try? guest.send(.commandResult(.init(
+                id: request.id, ok: true,
+                output: ["development-test": [
+                    ["Schema", "ckproject.test-receipt/1"],
+                    ["State", "succeeded"],
+                ]], error: nil)))
+        }
+        let adapter = AgentIntegrationHostAdapter(listener: listener)
+        guard case .completed(let report) = await adapter.development(.init(
+            operation: .test, productRef: product)) else {
+            return XCTFail("expected a typed test receipt")
+        }
+        XCTAssertEqual(report.verb, "development-test")
+        XCTAssertEqual(report.groups[0].rows.first?.value,
+                       "ckproject.test-receipt/1")
     }
 
     func testDevelopmentRequestAndResultSurviveLocalCodec() throws {

@@ -78,6 +78,9 @@ final class AgentIntegrationDevelopmentControl {
         case .run:
             route = ("development-run", "development-run",
                      ["productRef": request.productRef!])
+        case .test:
+            route = ("development-test", "development-test",
+                     ["productRef": request.productRef!])
         case .openInCodeKitten:
             route = ("development-open", "development-open",
                      ["projectID": request.projectID!])

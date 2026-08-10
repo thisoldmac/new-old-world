@@ -5,6 +5,8 @@ void now_development_build_command(const char *request_json, long id,
                                    char *out, long cap);
 void now_development_run_command(const char *request_json, long id,
                                  char *out, long cap);
+void now_development_test_command(const char *request_json, long id,
+                                  char *out, long cap);
 void now_development_open_command(const char *request_json, long id,
                                   char *out, long cap);
 void now_development_runtime_idle(void);

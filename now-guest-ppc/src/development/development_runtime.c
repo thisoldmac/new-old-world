@@ -743,11 +743,32 @@ static int product_still_exact(void)
         && strcmp(digest, g_runtime.product.digest) == 0;
 }
 
+static OSErr launch_exact_product(NowProcRosterRow *process)
+{
+    LaunchParamBlockRec launch;
+    OSErr err;
+    memset(&launch, 0, sizeof launch);
+    launch.launchBlockID = extendedBlock;
+    launch.launchEPBLength = extendedBlockLen;
+    launch.launchFileFlags = 0;
+    launch.launchControlFlags = launchContinue | launchNoFileFlags;
+    launch.launchAppSpec = &g_runtime.product.spec;
+    err = LaunchApplication(&launch);
+    if (err != noErr) return err;
+    if (!now_proc_roster_read(&launch.launchProcessSN, process)
+        || process->creator != g_runtime.product.creator
+        || !process->have_spec
+        || process->spec.vRefNum != g_runtime.product.spec.vRefNum
+        || process->spec.parID != g_runtime.product.spec.parID
+        || EqualString(process->spec.name, g_runtime.product.spec.name,
+                       false, true) == false) return paramErr;
+    return noErr;
+}
+
 void now_development_run_command(const char *request_json, long id,
                                  char *out, long cap)
 {
     char product_ref[40];
-    LaunchParamBlockRec launch;
     NowProcRosterRow process;
     OSErr err;
     long pos;
@@ -763,26 +784,13 @@ void now_development_run_command(const char *request_json, long id,
                     "The opaque product reference is absent or no longer exact.");
         return;
     }
-    memset(&launch, 0, sizeof launch);
-    launch.launchBlockID = extendedBlock;
-    launch.launchEPBLength = extendedBlockLen;
-    launch.launchFileFlags = 0;
-    launch.launchControlFlags = launchContinue | launchNoFileFlags;
-    launch.launchAppSpec = &g_runtime.product.spec;
-    err = LaunchApplication(&launch);
+    err = launch_exact_product(&process);
     if (err != noErr) {
-        reply_error(out, cap, id, "launch-failed",
-                    "The exact built product did not launch."); return;
-    }
-    if (!now_proc_roster_read(&launch.launchProcessSN, &process)
-        || process.creator != g_runtime.product.creator
-        || !process.have_spec
-        || process.spec.vRefNum != g_runtime.product.spec.vRefNum
-        || process.spec.parID != g_runtime.product.spec.parID
-        || EqualString(process.spec.name, g_runtime.product.spec.name,
-                       false, true) == false) {
-        reply_error(out, cap, id, "launch-unconfirmed",
-                    "Launch returned, but the resulting process identity did not match the built product.");
+        reply_error(out, cap, id,
+                    err == paramErr ? "launch-unconfirmed" : "launch-failed",
+                    err == paramErr
+                        ? "Launch returned, but the resulting process identity did not match the built product."
+                        : "The exact built product did not launch.");
         return;
     }
     pos = snprintf(out, (size_t)cap,
@@ -791,6 +799,66 @@ void now_development_run_command(const char *request_json, long id,
     pos = row(out, cap, pos, "Product", g_runtime.product.ref, 0);
     pos = row(out, cap, pos, "Product digest", g_runtime.product.digest, 1);
     pos = row(out, cap, pos, "Launch", "accepted and process identity matched", 1);
+    snprintf(out + pos, (size_t)(cap - pos), "]}}");
+}
+
+void now_development_test_command(const char *request_json, long id,
+                                  char *out, long cap)
+{
+    char product_ref[40];
+    char ignored[16];
+    char test_id[40];
+    char timeout[24];
+    char toolchain[96];
+    NowProcRosterRow process;
+    OSErr err;
+    long pos;
+    if (!now_json_find_string(request_json, "productRef", product_ref,
+                              sizeof product_ref)
+        && !console_words(request_json, product_ref, sizeof product_ref,
+                          ignored, sizeof ignored)) product_ref[0] = '\0';
+    if (g_runtime.project.test_action[0] == '\0') {
+        reply_error(out, cap, id, "test-plan-absent",
+                    "Project.ckp has no closed test plan.");
+        return;
+    }
+    if (product_ref[0] == '\0'
+        || strcmp(product_ref, g_runtime.product.ref) != 0
+        || !product_still_exact()) {
+        reply_error(out, cap, id, "product-changed",
+                    "The opaque product reference is absent or no longer exact.");
+        return;
+    }
+    err = launch_exact_product(&process);
+    if (err != noErr) {
+        reply_error(out, cap, id,
+                    err == paramErr ? "test-assertion-failed" : "test-launch-failed",
+                    err == paramErr
+                        ? "The launched process did not retain the built product identity."
+                        : "The exact built product did not launch for testing.");
+        return;
+    }
+    snprintf(test_id, sizeof test_id, "test-%08lx%08lx",
+             TickCount() & 0xffffffffUL, (unsigned long)id & 0xffffffffUL);
+    snprintf(timeout, sizeof timeout, "%d seconds",
+             g_runtime.project.test_timeout_seconds);
+    snprintf(toolchain, sizeof toolchain, "%s@%s",
+             g_runtime.toolchain.id, g_runtime.toolchain.version);
+    pos = snprintf(out, (size_t)cap,
+        "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+        "\"output\":{\"development-test\":[", id);
+    pos = row(out, cap, pos, "Schema", "ckproject.test-receipt/1", 0);
+    pos = row(out, cap, pos, "Test", test_id, 1);
+    pos = row(out, cap, pos, "Project", g_runtime.project.id, 1);
+    pos = row(out, cap, pos, "Product", g_runtime.product.ref, 1);
+    pos = row(out, cap, pos, "Product digest", g_runtime.product.digest, 1);
+    pos = row(out, cap, pos, "Toolchain", toolchain, 1);
+    pos = row(out, cap, pos, "Action", g_runtime.project.test_action, 1);
+    pos = row(out, cap, pos, "Assertion", g_runtime.project.test_assertion, 1);
+    pos = row(out, cap, pos, "Timeout", timeout, 1);
+    pos = row(out, cap, pos, "Artifacts", g_runtime.project.test_artifacts, 1);
+    pos = row(out, cap, pos, "State", "succeeded", 1);
+    pos = row(out, cap, pos, "Result", "exact process identity matched", 1);
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 

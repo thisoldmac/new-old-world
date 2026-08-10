@@ -299,6 +299,7 @@ final class CommandParityTests: XCTestCase {
         "development-stage": "closed candidate action grammar is the raw line",
         "development-project": "one opaque project ID is the raw line",
         "development-run": "one opaque product reference is the raw line",
+        "development-test": "one opaque product reference is the raw line",
         "development-open": "one opaque project ID is the raw line",
     ]
 

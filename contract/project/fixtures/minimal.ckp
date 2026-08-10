@@ -8,3 +8,7 @@ product=Build/Memory Meter
 type=APPL
 creator=MMTR
 file=Sources/Main.c
+test-action=launch
+test-assertion=process-identity
+test-timeout=15
+test-artifacts=on-failure
