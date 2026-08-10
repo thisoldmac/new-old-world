@@ -3,6 +3,7 @@ import Foundation
 struct OnboardingAsset: Identifiable, Equatable {
     enum Kind: Equatable {
         case application
+        case codeKitten
         case extensionComponent
         case dependency
     }
@@ -17,11 +18,13 @@ struct OnboardingAsset: Identifiable, Equatable {
 
 struct OnboardingAssetSnapshot: Equatable {
     let application: OnboardingAsset?
+    let codeKitten: OnboardingAsset?
     let extensionComponent: OnboardingAsset?
     let dependencies: [OnboardingAsset]
 
     static let empty = OnboardingAssetSnapshot(
-        application: nil, extensionComponent: nil, dependencies: [])
+        application: nil, codeKitten: nil, extensionComponent: nil,
+        dependencies: [])
 
     var hasCarbonLib: Bool {
         OnboardingDependencyCatalog.carbonLib.installedAsset(in: self) != nil
@@ -74,6 +77,9 @@ struct OnboardingAssetCatalog {
             application: firstAsset(
                 named: ["New Old World.bin", "now-guest-ppc.bin"],
                 kind: .application),
+            codeKitten: firstAsset(
+                named: ["CodeKitten.bin", "codekitten.bin"],
+                kind: .codeKitten),
             extensionComponent: firstAsset(
                 named: ["NOW Extension.bin", "NowExt.bin"],
                 kind: .extensionComponent),

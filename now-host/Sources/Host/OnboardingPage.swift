@@ -14,6 +14,10 @@ enum OnboardingPage {
         }
         downloads += item("/now/settings.bin",
                           "Settings for \(host):\(wirePort)")
+        if assets.codeKitten != nil {
+            downloads += item("/now/codekitten.bin",
+                              "CodeKitten (optional standalone IDE)")
+        }
         if assets.extensionComponent != nil {
             downloads += item("/now/extension.bin",
                               "NOW Extension (optional; restart required)")
@@ -67,7 +71,8 @@ enum OnboardingPage {
         <b>New Old World Setup.img</b> file. Open that image with Disk Copy.
         It contains the native
         application, settings for this host, the optional extension, and every
-        dependency the host has prepared. No StuffIt installation is needed
+        selected companion application and dependency the host has prepared.
+        No StuffIt installation is needed
         for packages the host was able to extract.</p>
         <p>If the browser saves a file ending in <b>.bin</b>, turn on its
         automatic MacBinary decoding and download again. You can also
@@ -88,6 +93,9 @@ enum OnboardingPage {
         <b>\(escape(host)):\(wirePort)</b>.</li>
         <li>When the connection succeeds, this Mac appears under Active in
         the host's Connections page.</li>
+        <li>If included, copy <b>CodeKitten</b> wherever you keep applications.
+        It is optional; NOW's project build and run workflow does not depend
+        on the IDE.</li>
         </ol>
         <h2>Optional extension and dependencies</h2>
         <ul>

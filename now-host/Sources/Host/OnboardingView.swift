@@ -108,11 +108,14 @@ struct OnboardingSheet: View {
             packageLine("New Old World",
                         asset: portal.assets.application,
                         required: true)
+            packageLine("CodeKitten",
+                        asset: portal.assets.codeKitten,
+                        required: false)
             packageLine("NOW Extension",
                         asset: portal.assets.extensionComponent,
                         required: false)
             Divider()
-            Text("Dependencies")
+            Text("System dependencies")
                 .font(.subheadline.weight(.semibold))
             ForEach(OnboardingDependencyCatalog.all) { dependency in
                 dependencyLine(dependency)
