@@ -32,6 +32,25 @@ address `stage-status` or `stage-discard`; the host's finalize-refusal path
 does not automatically discard the guest candidate. The two attempts may
 therefore have left inactive residue with no agent-visible recovery handle.
 
+**Updated 2026-08-10:** the candidate was accepting. The host encoded
+`expectedFiles` as the JSON string `"3"`, while the contract and guest parser
+require an integer; the parser therefore saw zero and the old compound guard
+collapsed that type error into `candidate-unavailable`. Project import had the
+same latent defect for its numeric cursor. Both fields now cross as typed JSON
+integers. The guest reports malformed digest, count, candidate root/folder,
+seal, measurement and marker failures separately and logs the failed
+predicate. The host logs each publication phase and, after a finalize refusal,
+either discards both candidates or retains the host receipt and returns its
+candidate ID for `stage-status` / `stage-discard`. A mutation-checked wire test
+guards both number fields. On a private mac99/OS 9.1 guest running build
+`995a13285c98`, MCP staged the same revision-2 project, transferred its three
+files, sealed candidate `candidate-fb94b4e9b84e4fd0` at the exact
+`f3401211847f396634542276c44243a1262871510bdadcc8ca7238a36739c730`
+digest, observed it with `stage-status`, then discarded it. Candidate staging
+is therefore emulator-verified. The PowerBook has not yet rerun this patched
+stack, so the original metal failure is diagnosed and fixed but not
+metal-reverified.
+
 The onboarding server can now place a separately supplied CodeKitten
 MacBinary at the setup-volume root, select it by default, advertise it as a
 standalone optional IDE, and serve it directly at `/now/codekitten.bin`. The

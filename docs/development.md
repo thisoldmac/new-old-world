@@ -118,12 +118,21 @@ a command-stack overflow and relative-path ToolServer failure before this claim
 was made.
 
 That is a partial emulator rung, not a full end-to-end one and not metal
-verification. Guest import/workspace refresh, candidate staging, divergent and
+verification. Candidate staging has now also passed through the MCP surface on
+a private mac99/OS 9.1 guest: the same three-file host project that failed on
+the first PowerBook attempt was transferred, sealed at its exact source digest,
+observed with `stage-status`, and discarded. That run found the PowerBook
+failure's cause in the shared host code: `expectedFiles` crossed as a JSON
+string instead of the contract's integer, so the guest parsed zero. The cursor
+used by project import had the same latent type error; both are covered by a
+mutation-checked wire test. Guest import/workspace refresh, divergent and
 successful promotion, and CodeKitten handoff have not run in the emulator. A
 separate onboarding smoke transferred the exact CodeKitten payload and
 `LaunchApplication` accepted it, but the process exited before the five-second
-observation; that is a failed runtime gate, not handoff evidence. No Development
-workflow has run on a PowerBook.
+observation; that is a failed runtime gate, not handoff evidence. The
+PowerBook workflow reached project history, toolchain qualification and two
+complete candidate transfers, but the patched finalize/build/run path has not
+yet been rerun there.
 
 Two preservation/settlement limits are still open and are intentionally not
 hidden behind a successful receipt:
