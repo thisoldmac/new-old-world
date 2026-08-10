@@ -199,6 +199,27 @@ as documented. The exact old post-`_graceful` `return 0` mutation fails the new
 guard. This corrects cleanup observability; it does not invalidate the build,
 test, promotion, divergence or semantic receipts gathered before shutdown.
 
+**Second correction, later 2026-08-10:** enforcing that verdict exposed the
+pre-INIT restart in `scripts/spin-up-ppc`: it launched only the direct
+`ShutDwnPower` fallback and therefore could no longer produce a clean receipt.
+The restart now launches NOW against the resident already active in the base
+and drives Finder Special > Shut Down over the wire before cold-booting the
+newly staged resident. The exact missing-`--wire` mutation fails both rig
+guards. The first updater bake then caught a separate identity encoding error:
+`NWid` contained two full SHA-256 values while its fixed ABI reader consumed
+two 160-bit fields. `NWid` now carries exactly the same 40-hex prefixes as the
+resident table, and the old 128-hex payload fails the component identity gate.
+
+The corrected shared bake from `8fe5baff2a4f` is emulator-verified: both Finder
+shutdowns powered QEMU off in six seconds and left HFS clean; resident 1.2
+reported source manifest `fae73d4d5c7150b7105e0f0350446cf5111ee248`, build
+fingerprint `c725b32b77634fb8d1702b0a54f17fc2ce70e48f`, all 511 declared
+capabilities, a passing act ABI self-test, and survival of all 14 census probes.
+The installed shared image is SHA-256
+`ccbff00f4ed1c18eed879b94798df191ea8dae15a83f2ffb0e465cd53126add4`;
+`qemu-img check` and the HFS unmounted-bit check both passed. This is
+**emulator-verified, not metal-verified**.
+
 The run also found one sharp authoring boundary: `Project.ckp` participates in
 the project digest as `TEXT/NOWD`. Uploading identical bytes as `TEXT/MPS ` let
 the guest catalog parse the document but made import end in the generic

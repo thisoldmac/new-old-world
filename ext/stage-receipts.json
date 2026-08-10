@@ -318,6 +318,28 @@
         "ext/cmake/build_identity.cmake"
       ],
       "reason": "Checkpoint the NWid identity encoding fix before the required shared bake."
+    },
+    {
+      "at": "2026-08-10T14:52:32-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/host-owned-updater",
+      "commit": "8fe5baff2a4fdfe727b4e68cc3c5b86bf08a450b",
+      "extBuildFingerprint": "c725b32b77634fb8d1702b0a54f17fc2ce70e48f",
+      "extDigest": "5f724a7550217154d268a25c7323cb02ce415549",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 643956736,
+      "imageName": "codex-host-owned-updater",
+      "imageSha256": "ccbff00f4ed1c18eed879b94798df191ea8dae15a83f2ffb0e465cd53126add4",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260810-2",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "fae73d4d5c7150b7105e0f0350446cf5111ee248",
+      "volumeClean": "clean"
     }
   ]
 }
