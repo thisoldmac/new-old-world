@@ -35,8 +35,29 @@ if [ "$#" -ne 0 ]; then
     exit 2
 fi
 
-# Initiating from this worktree is deliberate: core.hooksPath=.githooks then
-# resolves to the candidate hook, including on the first landing that adds a
-# new gate. Moving the ref does not rewrite another worktree's files.
-git fetch . "HEAD:main"
-echo "[land-main] main advanced to $new; resync its checkout separately"
+# The shared checkout is supposed to keep main checked out. Git correctly
+# refuses `fetch HEAD:main` while that branch is checked out, so update that
+# clean worktree through an ordinary fast-forward when it exists. The explicit
+# candidate gates above are still the bootstrap boundary: the old main tree may
+# not contain a gate this candidate introduces. Untracked lab material is not
+# dirt for this purpose and an ordinary merge preserves it (or refuses if an
+# incoming tracked path would collide).
+main_worktree=$(
+    git worktree list --porcelain | awk '
+        /^worktree / { path = substr($0, 10) }
+        $0 == "branch refs/heads/main" { print path; exit }
+    '
+)
+if [ -n "$main_worktree" ]; then
+    if [ -n "$(git -C "$main_worktree" status --porcelain --untracked-files=no)" ]; then
+        echo "[land-main] main worktree has tracked changes: $main_worktree" >&2
+        exit 1
+    fi
+    git -C "$main_worktree" merge --ff-only "$new"
+    echo "[land-main] main worktree advanced to $new: $main_worktree"
+else
+    # Initiating from the candidate remains deliberate for a repository that
+    # has no main worktree: the candidate contains every gate just run above.
+    git fetch . "HEAD:main"
+    echo "[land-main] main ref advanced to $new (no main worktree present)"
+fi

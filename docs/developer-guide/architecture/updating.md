@@ -87,9 +87,13 @@ component, full build ID, and artifact SHA-256. `write-update-manifest.py`
 refuses a moved tag, dirty source tree, or different bytes under that release
 identity. `tools/land-main` is the bootstrap-safe route when a branch introduces
 a new main-ref gate: it runs the candidate gates before moving the ref from the
-candidate worktree. The `reference-transaction` hook then covers later merges,
-fast-forwards, `git fetch . branch:main`, and forced local ref moves. Extension
-build inputs follow the parallel non-rollback and exact shared-bake gate.
+candidate worktree. When `main` is checked out in the shared checkout, as this
+repository requires, the tool refuses tracked dirt and fast-forwards that
+worktree in place; unrelated untracked lab material is preserved. If no
+worktree has `main`, it advances the ref directly. The `reference-transaction`
+hook then covers later merges, fast-forwards, `git fetch . branch:main`, and
+forced local ref moves. Extension build inputs follow the parallel non-rollback
+and exact shared-bake gate.
 
 ## Transfer and install
 

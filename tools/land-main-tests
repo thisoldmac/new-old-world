@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Integration test for the checked-out-main landing path."""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def run(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(args, cwd=cwd, text=True, capture_output=True)
+    if check and result.returncode:
+        raise AssertionError(result.stdout + result.stderr)
+    return result
+
+
+def git(cwd: Path, *args: str) -> str:
+    return run("git", *args, cwd=cwd).stdout.strip()
+
+
+def main() -> int:
+    with tempfile.TemporaryDirectory(prefix="now-land-main-") as temp:
+        base = Path(temp)
+        repo = base / "repo"
+        feature = base / "feature"
+        repo.mkdir()
+        git(repo, "init", "-b", "main")
+        git(repo, "config", "user.name", "NOW Test")
+        git(repo, "config", "user.email", "now-test@example.invalid")
+        git(repo, "config", "core.hooksPath", "/dev/null")
+
+        tools = repo / "tools"
+        tools.mkdir()
+        shutil.copy2(ROOT / "tools" / "land-main", tools / "land-main")
+        for name in ("ext-bake-gate", "product-version-gate",
+                     "derived-doc-gate"):
+            path = tools / name
+            path.write_text("#!/bin/sh\nexit 0\n")
+            path.chmod(0o755)
+        (repo / "base.txt").write_text("base\n")
+        git(repo, "add", "base.txt", "tools")
+        git(repo, "commit", "-m", "base")
+
+        git(repo, "worktree", "add", "-b", "feature", str(feature))
+        (feature / "candidate.txt").write_text("candidate\n")
+        git(feature, "add", "candidate.txt")
+        git(feature, "commit", "-m", "candidate")
+        candidate = git(feature, "rev-parse", "HEAD")
+
+        # Untracked shared material is common in the real main checkout. It
+        # must survive, while any tracked dirt would be refused by land-main.
+        mirror = repo / "mirror"
+        mirror.mkdir()
+        (mirror / "keep.txt").write_text("foreign work\n")
+
+        landed = run(str(feature / "tools" / "land-main"), cwd=feature)
+        if git(repo, "rev-parse", "main") != candidate:
+            raise AssertionError("main ref did not reach the candidate")
+        if not (repo / "candidate.txt").is_file():
+            raise AssertionError("checked-out main files were not advanced")
+        if (mirror / "keep.txt").read_text() != "foreign work\n":
+            raise AssertionError("untracked main-worktree material changed")
+        if "main worktree advanced" not in landed.stdout:
+            raise AssertionError("landing did not report the checked-out path")
+
+    print("land-main: checked-out main fast-forward and untracked preservation passed")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except AssertionError as exc:
+        print(f"FAILED: {exc}")
+        raise SystemExit(1)
