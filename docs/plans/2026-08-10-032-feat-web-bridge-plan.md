@@ -283,26 +283,43 @@ contract or guest-served behavior reaches `main` with only one half present.
 
 ## Verification and closeout
 
-Current receipt on `ab34d8d1`:
+Integrated verification receipt (merge parent `62c080c4`):
 
-- `scripts/test-all` completed stages 1-7: documentation, staged-image
-  discipline, Web Bridge, native tests, MirrorKit, both guest cross-builds and
-  the host package/Debug/Release gate. Stage 8 reported its expected skip
-  because `NOW_GUEST_LIVE` was not set; nothing in this run reached a classic
-  Macintosh.
+- `scripts/test-all` passed all eight stages after merging current `main`.
+  Documentation, release/staged-image discipline, 14 Web Bridge tests, 161
+  native tests, MirrorKit, both guest cross-builds and the host
+  package/Debug/Release gate passed. The live-guest stage reported its expected
+  skip because `NOW_GUEST_LIVE` was not set.
+- A private bake and the landing `--shared` bake then cold-booted the integrated
+  PowerPC guest. In both runs the guest reported resident 1.2, capability word
+  511, source manifest `fae73d4d5c71` and build fingerprint `c725b32b7763`;
+  all 14 census probes completed and the guest remained responsive. Finder
+  performed both shutdowns, `qemu-img check` passed, and the HFS unmounted bit
+  was clean.
+- The shared oracle installed by that bake has SHA-256
+  `72aeaaf5fc0cacb4bf0cb69abb3439abf99fe31e1a4c51472b603e49e0c15714`;
+  `ext/stage-receipts.json` records the exact image and resident inputs.
+- Product version `0.2.0`, resident version `1.2`, generated AsyncAPI,
+  module/feature manifests and all eight derived documents passed their
+  repository gates. This integration does not require another product-version
+  increment: it preserves the current pre-alpha product release while adding a
+  separately versioned module and preferences migration.
 - A separate retained Debug build contained
   `Contents/Resources/WebBridge/nowweb/__main__.py`, and the bundled package's
   CLI entry point launched successfully.
-- No mac99, q800, Classilla, MacWeb or physical-machine acceptance row ran.
-  The implementation is Tested, not emulator- or metal-verified.
+- The bake verified the integrated application and resident lifecycle, not a
+  browser request through the Web module. No Classilla, MacWeb, q800 or
+  physical-machine Web acceptance row ran. The Web implementation remains
+  Tested, not emulator- or metal-verified.
 
 - Helper Python suite and a spawned HTTP integration test.
 - Host package suites plus Debug and Release app targets.
 - PPC and 68K native tests registered in `scripts/test-native`.
 - Both guest cross-builds, with a skip reported as unavailable evidence.
 - Documentation and derived-document gates.
-- `scripts/test-all` on the integrated revision.
-- mac99 and q800 acceptance through the repository harness.
+- mac99 Web acceptance through the repository harness and a real classic
+  browser; the resident-only bake is not a substitute for this row.
+- q800 Web acceptance if the 68K configuration surface or relay is added.
 - PB1400c/Classilla required before Compatible Page is called metal-verified.
 - PB180c/MacWeb required before any 68K Relay or memory-budget claim.
 
