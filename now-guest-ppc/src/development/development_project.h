@@ -18,6 +18,8 @@ typedef struct DevProject {
     char toolchain_id[kDevIdentityCap];
     char toolchain_version[kDevVersionCap];
     char product[kDevBuildPathCap];
+    char product_type[5];
+    char product_creator[5];
     char files[kDevProjectMaxFiles][kDevBuildPathCap];
     int file_count;
     DevBuildPlan build;

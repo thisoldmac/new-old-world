@@ -379,7 +379,7 @@ static int project_id_in_folder(const FSSpec *folder, long dir_id,
     short ref = -1;
     long eof, count;
     char *text;
-    DevProject project;
+    DevProject *project;
     char reason[120];
     OSErr err = FSMakeFSSpec(folder->vRefNum, dir_id,
         (ConstStr255Param)"\pProject.ckp", &manifest);
@@ -388,17 +388,22 @@ static int project_id_in_folder(const FSSpec *folder, long dir_id,
     if (err != noErr || eof <= 0 || eof >= 131072) { FSClose(ref); return 0; }
     text = (char *)NewPtr(eof + 1);
     if (text == NULL) { FSClose(ref); return 0; }
+    project = (DevProject *)NewPtr(sizeof *project);
+    if (project == NULL) {
+        DisposePtr((Ptr)text); FSClose(ref); return 0;
+    }
     count = eof;
     err = FSRead(ref, &count, text);
     FSClose(ref);
     if (err == eofErr && count == eof) err = noErr;
     text[eof] = '\0';
-    if (err != noErr || !dev_project_parse(text, &project,
+    if (err != noErr || !dev_project_parse(text, project,
                                             reason, sizeof reason)) {
-        DisposePtr((Ptr)text); return 0;
+        DisposePtr((Ptr)project); DisposePtr((Ptr)text); return 0;
     }
     DisposePtr((Ptr)text);
-    strcpy(project_id, project.id);
+    strcpy(project_id, project->id);
+    DisposePtr((Ptr)project);
     return 1;
 }
 

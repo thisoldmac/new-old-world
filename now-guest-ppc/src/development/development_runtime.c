@@ -860,7 +860,7 @@ void now_development_open_command(const char *request_json, long id,
 {
     char project_id[kDevProjectIDCap];
     char reason[160];
-    DevProject project;
+    DevProject *project;
     FSSpec folder;
     FSSpec manifest;
     long dir;
@@ -876,12 +876,20 @@ void now_development_open_command(const char *request_json, long id,
                               sizeof project_id)
         && !console_words(request_json, project_id, sizeof project_id,
                           ignored, sizeof ignored)) project_id[0] = '\0';
+    project = (DevProject *)NewPtr(sizeof *project);
+    if (project == NULL) {
+        reply_error(out, cap, id, "memory-full",
+                    "There is not enough memory to resolve the project.");
+        return;
+    }
     if (project_id[0] == '\0'
-        || !find_project(project_id, &folder, &dir, &project,
+        || !find_project(project_id, &folder, &dir, project,
                          reason, sizeof reason)) {
+        DisposePtr((Ptr)project);
         reply_error(out, cap, id, "project-not-found",
                     "The active guest project could not be resolved."); return;
     }
+    DisposePtr((Ptr)project);
     err = find_codekitten(&psn);
     if (err != noErr) {
         err = launch_codekitten();

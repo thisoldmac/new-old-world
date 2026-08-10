@@ -46,6 +46,16 @@ static int copy_value(char *dst, long cap, const char *value)
     return 1;
 }
 
+static int fourcc_valid(const char *value)
+{
+    const unsigned char *p = (const unsigned char *)value;
+    int count = 0;
+    for (; *p != '\0'; ++p, ++count) {
+        if (*p < 0x20 || *p > 0x7e || *p == '\'' || *p == '"') return 0;
+    }
+    return count == 4;
+}
+
 static int fail(char *reason, long cap, const char *message)
 {
     if (reason != NULL && cap > 0) {
@@ -142,6 +152,18 @@ int dev_project_parse(const char *text, DevProject *project,
                 || !copy_value(project->product,
                                sizeof project->product, value)) return fail(
                     reason, reason_cap, "invalid product path");
+        } else if (strcmp(key, "type") == 0) {
+            if (project->product_type[0] != '\0' || !fourcc_valid(value)
+                || !copy_value(project->product_type,
+                               sizeof project->product_type, value)) {
+                return fail(reason, reason_cap, "invalid product type");
+            }
+        } else if (strcmp(key, "creator") == 0) {
+            if (project->product_creator[0] != '\0' || !fourcc_valid(value)
+                || !copy_value(project->product_creator,
+                               sizeof project->product_creator, value)) {
+                return fail(reason, reason_cap, "invalid product creator");
+            }
         } else if (strcmp(key, "file") == 0) {
             if (project->file_count >= kDevProjectMaxFiles
                 || !dev_project_path_valid(value)
@@ -161,8 +183,15 @@ int dev_project_parse(const char *text, DevProject *project,
         || project->name[0] == '\0' || project->target[0] == '\0'
         || project->configuration[0] == '\0'
         || project->toolchain_id[0] == '\0'
-        || project->product[0] == '\0' || project->file_count == 0) {
+        || project->product[0] == '\0' || project->product_type[0] == '\0'
+        || project->product_creator[0] == '\0'
+        || project->file_count == 0) {
         return fail(reason, reason_cap, "project is missing required records");
     }
+    snprintf(project->build.configuration,
+             sizeof project->build.configuration, "%s",
+             project->configuration);
+    memcpy(project->build.product_type, project->product_type, 5);
+    memcpy(project->build.product_creator, project->product_creator, 5);
     return 1;
 }

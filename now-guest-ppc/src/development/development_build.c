@@ -60,27 +60,56 @@ static int hfs_path(const char *path, char *out, long cap)
     return 1;
 }
 
-int dev_mpw_render_action(const DevBuildAction *action,
+int dev_mpw_render_action(const DevBuildPlan *plan,
+                          const DevBuildAction *action,
                           char *out, long cap)
 {
     char input[kDevBuildPathCap];
     char output[kDevBuildPathCap];
-    const char *tool;
+    const char *symbols;
+    const char *optimization;
     int written;
-    if (action == NULL || out == NULL || cap <= 0
+    if (plan == NULL || action == NULL || out == NULL || cap <= 0
         || !hfs_path(action->input, input, sizeof input)
         || !hfs_path(action->output, output, sizeof output)) return 0;
+    symbols = strcmp(plan->configuration, "debug") == 0 ? "on" : "off";
+    optimization = strcmp(plan->configuration, "debug") == 0
+        ? "off" : "speed";
     switch (action->kind) {
-    case kDevActionCompile: tool = "MrC"; break;
-    case kDevActionRez: tool = "Rez"; break;
-    case kDevActionLink: tool = "PPCLink"; break;
-    case kDevActionCopy: tool = "Duplicate"; break;
-    case kDevActionStage: tool = "Duplicate"; break;
-    case kDevActionMetadata: tool = "SetFile"; break;
+    case kDevActionCompile:
+        written = snprintf(out, (size_t)cap,
+            "MrC \"%s\" -o \"%s\" -proto strict -w 2 -sym %s -opt %s",
+            input, output, symbols, optimization);
+        break;
+    case kDevActionRez:
+        written = snprintf(out, (size_t)cap,
+            "Rez \"%s\" -o \"%s\" -a -t '%s' -c '%s'",
+            input, output, plan->product_type, plan->product_creator);
+        break;
+    case kDevActionLink:
+        written = snprintf(out, (size_t)cap,
+            "PPCLink -warn -sym %s -main __cplusstart -o \"%s\" \"%s\" "
+            "\"{SharedLibraries}\"InterfaceLib "
+            "\"{SharedLibraries}\"StdCLib "
+            "\"{SharedLibraries}\"MathLib "
+            "\"{PPCLibraries}\"StdCRuntime.o "
+            "\"{PPCLibraries}\"PPCCRuntime.o "
+            "\"{PPCLibraries}\"MrCPlusLib.o -t '%s' -c '%s' -mf",
+            symbols, output, input, plan->product_type,
+            plan->product_creator);
+        break;
+    case kDevActionCopy:
+    case kDevActionStage:
+        written = snprintf(out, (size_t)cap,
+                           "Duplicate -o \"%s\" \"%s\"", output, input);
+        break;
+    case kDevActionMetadata:
+        written = snprintf(out, (size_t)cap,
+            "SetFile -t '%s' -c '%s' \"%s\"",
+            plan->product_type, plan->product_creator, input);
+        break;
     default: return 0;
     }
-    written = snprintf(out, (size_t)cap, "%s -o \"%s\" \"%s\"",
-                       tool, output, input);
     return written > 0 && written < cap;
 }
 
@@ -129,7 +158,8 @@ int dev_build_service_tick(DevBuildService *service,
         return dev_job_finish(&service->job, service->job.id, 0);
     }
     index = service->next_action;
-    if (!dev_mpw_render_action(&service->plan.actions[index],
+    if (!dev_mpw_render_action(&service->plan,
+                               &service->plan.actions[index],
                                command, sizeof command)
         || !submit(service->job.id, index, command, context)) {
         return dev_job_finish(&service->job, service->job.id, 1);

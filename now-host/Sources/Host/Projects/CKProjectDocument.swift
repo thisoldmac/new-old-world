@@ -49,9 +49,18 @@ struct CKProjectDocument: Equatable, Sendable {
         guard name.unicodeScalars.count <= 64 else {
             throw ProjectStoreError.invalidProject("The name is longer than 64 characters.")
         }
-        for required in ["target", "configuration", "toolchain", "product", "file"] {
+        for required in ["target", "configuration", "toolchain", "product",
+                         "type", "creator", "file"] {
             guard records.contains(where: { $0.0 == required && !$0.1.isEmpty }) else {
                 throw ProjectStoreError.invalidProject("At least one \(required) record is required.")
+            }
+        }
+        for key in ["type", "creator"] {
+            let values = records.filter { $0.0 == key }.map(\.1)
+            guard values.count == 1, values[0].utf8.count == 4,
+                  values[0].utf8.allSatisfy({ $0 >= 0x20 && $0 <= 0x7e }) else {
+                throw ProjectStoreError.invalidProject(
+                    "\(key) must be one printable four-character code.")
             }
         }
         for (key, value) in records where ["product", "file", "entry", "include"].contains(key) {

@@ -27,6 +27,9 @@ int main(void)
     DevToolchain toolchain;
     Submitted seen;
     memset(&plan, 0, sizeof plan);
+    strcpy(plan.configuration, "debug");
+    strcpy(plan.product_type, "APPL");
+    strcpy(plan.product_creator, "MMTR");
     memset(&toolchain, 0, sizeof toolchain);
     memset(&seen, 0, sizeof seen);
     strcpy(toolchain.id, "mpw-1-2");
@@ -46,11 +49,13 @@ int main(void)
     assert(dev_build_service_tick(&service, submit, &seen));
     assert(seen.count == 1 && seen.index == 0);
     assert(strcmp(seen.command,
-        "MrC -o \"Objects:Main.o\" \"Sources:Main.c\"") == 0);
+        "MrC \"Sources:Main.c\" -o \"Objects:Main.o\" -proto strict -w 2 -sym on -opt off") == 0);
     assert(dev_build_service_complete(&service, "job-one", 0, 0,
                                       "compiled\r"));
     assert(dev_build_service_tick(&service, submit, &seen));
     assert(strstr(seen.command, "PPCLink") == seen.command);
+    assert(strstr(seen.command, "StdCRuntime.o") != NULL);
+    assert(strstr(seen.command, "-t 'APPL' -c 'MMTR' -mf") != NULL);
 
     assert(dev_build_service_cancel(&service));
     assert(service.job.state == kDevJobCancelled);

@@ -28,6 +28,9 @@ typedef struct DevBuildAction {
 typedef struct DevBuildPlan {
     DevBuildAction actions[kDevBuildMaxActions];
     int count;
+    char configuration[64];
+    char product_type[5];
+    char product_creator[5];
 } DevBuildPlan;
 
 typedef int (*DevBuildSubmit)(const char *job_id, int action_index,
@@ -44,7 +47,8 @@ typedef struct DevBuildService {
 
 int dev_build_plan_add(DevBuildPlan *plan, const char *kind,
                        const char *input, const char *output);
-int dev_mpw_render_action(const DevBuildAction *action,
+int dev_mpw_render_action(const DevBuildPlan *plan,
+                          const DevBuildAction *action,
                           char *out, long cap);
 int dev_build_service_begin(DevBuildService *service, const char *job_id,
                             const DevBuildPlan *plan,

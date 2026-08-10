@@ -12,6 +12,8 @@ static const char minimal[] =
     "configuration=debug\r"
     "toolchain=mpw-golden@3.6\r"
     "product=Build/Memory Meter\r"
+    "type=APPL\r"
+    "creator=MMTR\r"
     "file=Sources/Main.c\r";
 
 int main(void)
@@ -25,6 +27,8 @@ int main(void)
     assert(strcmp(project.toolchain_id, "mpw-golden") == 0);
     assert(strcmp(project.toolchain_version, "3.6") == 0);
     assert(strcmp(project.product, "Build/Memory Meter") == 0);
+    assert(strcmp(project.product_type, "APPL") == 0);
+    assert(strcmp(project.product_creator, "MMTR") == 0);
     assert(project.file_count == 1);
 
     snprintf(with_action, sizeof with_action, "%s%s", minimal,
