@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Mutation tests for tools/product-version-gate and its main-ref hook."""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def command(*args: str, cwd: Path, check: bool = False):
+    result = subprocess.run(args, cwd=cwd, text=True, capture_output=True)
+    if check and result.returncode:
+        raise AssertionError(result.stdout + result.stderr)
+    return result
+
+
+def write_version(repo: Path, version: tuple[int, int, int]) -> None:
+    major, minor, patch = version
+    text = f"{major}.{minor}.{patch}"
+    (repo / "contract/product_version.h").write_text(
+        "#define NOW_PRODUCT_VERSION_MAJOR " + str(major) + "\n"
+        "#define NOW_PRODUCT_VERSION_MINOR " + str(minor) + "\n"
+        "#define NOW_PRODUCT_VERSION_PATCH " + str(patch) + "\n"
+        f'#define NOW_PRODUCT_VERSION "{text}"\n')
+    (repo / "now-host/Sources/Host/ProductIdentity.swift").write_text(
+        f'enum ProductIdentity {{ static let version = "{text}" }}\n')
+    (repo / "now-host/NewOldWorld.xcodeproj/project.pbxproj").write_text(
+        f"MARKETING_VERSION = {text};\nMARKETING_VERSION = {text};\n")
+    (repo / "scripts/HostInfo.plist.in").write_text(
+        "<key>CFBundleShortVersionString</key>\n"
+        f"<string>{text}</string>\n")
+    packed = (minor << 4) | patch
+    (repo / "now-guest-ppc/resources/app.r").write_text(
+        "resource 'vers' (1) {\n"
+        f"  0x{major:02X}, 0x{packed:02X}, release, 0x00, verUS,\n"
+        f'  "{text}", "{text}, New Old World"\n}};\n')
+    (repo / "now-guest-ppc/src/core/product_identity.h").write_text(
+        '#include "product_version.h"\n'
+        "#define PRODUCT_VERSION_MAJOR NOW_PRODUCT_VERSION_MAJOR\n"
+        "#define PRODUCT_VERSION_MINOR NOW_PRODUCT_VERSION_MINOR\n"
+        "#define PRODUCT_VERSION_PATCH NOW_PRODUCT_VERSION_PATCH\n"
+        "#define PRODUCT_VERSION NOW_PRODUCT_VERSION\n")
+
+
+def make_repo(path: Path) -> Path:
+    for directory in (
+        "contract", "now-host/Sources/Host",
+        "now-host/NewOldWorld.xcodeproj", "now-guest-ppc/resources",
+        "now-guest-ppc/src/core", "scripts", "tools", ".githooks",
+    ):
+        (path / directory).mkdir(parents=True, exist_ok=True)
+    shutil.copy(ROOT / "tools/product-version-gate",
+                path / "tools/product-version-gate")
+    shutil.copy(ROOT / ".githooks/reference-transaction",
+                path / ".githooks/reference-transaction")
+    os.chmod(path / "tools/product-version-gate", 0o755)
+    os.chmod(path / ".githooks/reference-transaction", 0o755)
+    # The production hook composes both main gates. This stub isolates the
+    # product half while still exercising the real hook entrypoint.
+    (path / "tools/ext-bake-gate").write_text("#!/bin/sh\nexit 0\n")
+    os.chmod(path / "tools/ext-bake-gate", 0o755)
+    write_version(path, (0, 1, 0))
+    (path / "now-host/Sources/Host/Feature.swift").write_text("let value = 1\n")
+    command("git", "init", "-q", "-b", "main", cwd=path, check=True)
+    command("git", "config", "user.email", "gate@example.invalid",
+            cwd=path, check=True)
+    command("git", "config", "user.name", "Version Gate",
+            cwd=path, check=True)
+    command("git", "add", ".", cwd=path, check=True)
+    command("git", "commit", "-qm", "base 0.1.0", cwd=path, check=True)
+    command("git", "checkout", "-qb", "lane", cwd=path, check=True)
+    return path
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
+
+
+def main() -> int:
+    with tempfile.TemporaryDirectory(prefix="now-product-version-") as tmp:
+        repo = make_repo(Path(tmp))
+        base = command("git", "rev-parse", "main", cwd=repo,
+                       check=True).stdout.strip()
+
+        # Scratch builds keep their semantic version and remain committable.
+        (repo / "now-host/Sources/Host/Feature.swift").write_text("let value = 2\n")
+        command("git", "add", ".", cwd=repo, check=True)
+        coherent = command("tools/product-version-gate", "check", cwd=repo)
+        require(coherent.returncode == 0, coherent.stdout + coherent.stderr)
+        command("git", "commit", "-qm", "scratch build", cwd=repo, check=True)
+
+        # The exact mutation: moving main to product changes with the same
+        # version must fail through Git's real reference-transaction hook.
+        command("git", "config", "core.hooksPath", ".githooks", cwd=repo,
+                check=True)
+        stale = command("git", "branch", "-f", "main", "lane", cwd=repo)
+        require(stale.returncode != 0, "same-version product landing passed")
+        require("did not advance: 0.1.0 -> 0.1.0" in stale.stderr,
+                stale.stdout + stale.stderr)
+        require(command("git", "rev-parse", "main", cwd=repo,
+                        check=True).stdout.strip() == base,
+                "a refused update moved main")
+
+        # A bump with one stale copy is still not a release identity.
+        write_version(repo, (0, 2, 0))
+        (repo / "scripts/HostInfo.plist.in").write_text(
+            "<key>CFBundleShortVersionString</key>\n<string>0.1.0</string>\n")
+        command("git", "add", ".", cwd=repo, check=True)
+        mismatch = command("tools/product-version-gate", "check", cwd=repo)
+        require(mismatch.returncode != 0, "stale plist copy passed")
+        require("HostInfo.plist.in does not state 0.2.0" in mismatch.stderr,
+                mismatch.stdout + mismatch.stderr)
+
+        # Restore every checked copy, commit, and prove the main ref can move.
+        write_version(repo, (0, 2, 0))
+        command("git", "add", ".", cwd=repo, check=True)
+        command("git", "commit", "-qm", "release 0.2.0", cwd=repo,
+                check=True)
+        good = command("git", "branch", "-f", "main", "lane", cwd=repo)
+        require(good.returncode == 0, good.stdout + good.stderr)
+
+        # Version rollback is a product change even without another feature.
+        released = command("git", "rev-parse", "main", cwd=repo,
+                           check=True).stdout.strip()
+        command("git", "checkout", "-qb", "rollback", cwd=repo, check=True)
+        write_version(repo, (0, 1, 0))
+        command("git", "add", ".", cwd=repo, check=True)
+        command("git", "commit", "-qm", "bad rollback", cwd=repo, check=True)
+        rollback = command("git", "branch", "-f", "main", "rollback",
+                           cwd=repo)
+        require(rollback.returncode != 0, "version rollback passed")
+        require("did not advance: 0.2.0 -> 0.1.0" in rollback.stderr,
+                rollback.stdout + rollback.stderr)
+        require(command("git", "rev-parse", "main", cwd=repo,
+                        check=True).stdout.strip() == released,
+                "a refused rollback moved main")
+
+    print("product-version gate: 4 mutation cases passed")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except AssertionError as exc:
+        print(f"FAILED: {exc}", file=sys.stderr)
+        raise SystemExit(1)

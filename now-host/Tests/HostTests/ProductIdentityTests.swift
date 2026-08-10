@@ -22,9 +22,16 @@ final class ProductIdentityTests: XCTestCase {
         let project = try String(contentsOf: root.appendingPathComponent(
             "now-host/NewOldWorld.xcodeproj/project.pbxproj"))
         XCTAssertTrue(project.contains("MARKETING_VERSION = \(expected);"))
+        let fallbackPlist = try String(contentsOf: root.appendingPathComponent(
+            "scripts/HostInfo.plist.in"))
+        XCTAssertTrue(fallbackPlist.contains("<string>\(expected)</string>"))
+
+        // AsyncAPI's info.version describes the contract document. The
+        // handshake is gated by info.x-contract-revision. Neither is the
+        // product release identity, even when their strings coincide.
         let contract = try String(contentsOf: root.appendingPathComponent(
             "contract/asyncapi.yaml"))
-        XCTAssertTrue(contract.contains("version: \(expected)"))
+        XCTAssertTrue(contract.contains("x-contract-revision: "))
     }
     /// The shipped app must be unaffected: no env var, no change. This is
     /// the case that matters — a suffix leaking into a normal launch would

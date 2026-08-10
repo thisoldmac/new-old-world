@@ -54,16 +54,34 @@ onboarding, but `UpdateProvider` will not advertise it. The provider reads the
 normal onboarding catalog, then recomputes byte count and SHA-256 before every
 catalog snapshot becomes an offer.
 
-`contract/product_version.h` owns the application release version. The classic
-`vers` resource, Swift identity, Xcode marketing version, and AsyncAPI info
-version remain copies because their build systems cannot all consume the same C
-macro; `ProductIdentityTests` pins them to the authority. Application build
-identity is the guest source hash. The Extension continues to use
-`contract/resident_version.h` plus its generated resident fingerprint.
+`contract/product_version.h` owns the host/PPC application-family release
+version. The classic `vers` resource, Swift identity, Xcode marketing version,
+and fallback host `Info.plist` remain checked copies because their build systems
+cannot all consume the same C macro. Application build identity is the guest
+source hash. The Extension continues to use `contract/resident_version.h` plus
+its generated resident fingerprint. NOW-68K retains its separate experimental
+deployment version.
 
-Release version answers compatibility and product display. Build identity
-answers which bytes. A host scratch build with the same version and a different
-source hash is therefore a real offer rather than “already current.”
+The wire has a third identity: `info.x-contract-revision` in AsyncAPI, shared
+through `contract/wire_limits.h`. It gates compatibility during `hello` and is
+not a product or Extension release number. AsyncAPI's own `info.version`
+versions the contract document; it may happen to equal a product release but no
+gate treats that equality as an invariant.
+
+Release version answers product ordering and display. Build identity answers
+which bytes. A host scratch build with the same version and a different source
+hash is therefore a real offer rather than “already current.” An older host
+artifact is identified as older and cannot arm Install; a version difference is
+not permission to downgrade.
+
+`tools/product-version-gate` enforces the release boundary. Branch commits may
+keep a semantic version while producing distinct scratch hashes. Any update to
+the host or PPC product surface that moves `refs/heads/main` must advance the
+three-part product version, and the candidate's header, Finder resource, Swift
+identity, Xcode setting and fallback bundle plist must all agree. The
+`reference-transaction` hook covers merge commits, fast-forwards,
+`git fetch . branch:main`, and forced local ref moves. Extension source follows
+the parallel two-part resident-version and shared-bake gate instead.
 
 ## Transfer and install
 

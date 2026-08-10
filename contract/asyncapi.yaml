@@ -218,7 +218,7 @@ asyncapi: 3.0.0
 
 info:
   title: New Old World wire contract
-  version: 0.1.0
+  version: 0.2.0
   x-contract-revision: 2
 
 defaultContentType: application/json

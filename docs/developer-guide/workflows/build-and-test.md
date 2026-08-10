@@ -32,14 +32,20 @@ scripts/test-host
 
 Guest builds may skip when Retro68 is unavailable. State the skip. Metal suites are opt-in through their documented environment variables and fail, rather than skip, once opted in.
 
+`tools/product-version-gate check` verifies the release identity copies in a
+candidate index. `tools/product-version-gate main-ref-check OLD NEW` is the
+immutable-tree check the `reference-transaction` hook runs before any product
+change reaches main. `scripts/test-all` mutation-tests both that refusal and the
+Extension's independent main/bake gate.
+
 ## Verify a new guard
 
 Mutate the exact condition the guard claims to detect, prove the mutation built, and observe that test fail. Restore the source and observe it pass. A build failure is not a test failure, and a different mutation is not evidence for the named guard.
 
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
-sources-sha1: f8849af89f752f7442c23825e8d04e766db4adbf
-derive test-stages sha256=2d6638da49b3316ba431218c34560f20dad6d57af1aea4eeec11ded124b7d0dd lines=7
+sources-sha1: d5c009fd43d35e995cdd21e7bf4e82b765045b2b
+derive test-stages sha256=ad6d3bd7fb51c5fc4cd3cdb44dbdade900f718b79b8fbde26ec53ebc69e848bf lines=7
     scripts/docs-source-group build
 rederived: pending
 rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, test-stages 7->7
@@ -60,4 +66,6 @@ rederived: 2026-08-09T22:18:48-0400 e637efd3 sources
 rederived: 2026-08-10T03:07:05-0400 9cbb4c28 sources
 rederived: 2026-08-10T03:08:46-0400 9cbb4c28 unchanged
 rederived: 2026-08-10T03:11:42-0400 9cbb4c28 unchanged
+rederived: 2026-08-10T03:46:11-0400 68d74d72 sources, test-stages 7->7
+rederived: 2026-08-10T03:46:36-0400 68d74d72 unchanged
 -->

@@ -1,0 +1,304 @@
+#!/usr/bin/env python3
+"""Keep NOW's product release identity coherent and monotonic at main.
+
+Branch builds may deliberately share a release version: the updater uses the
+exact build identity to distinguish those scratch builds.  Crossing into
+refs/heads/main is the release boundary.  If the host or PowerPC product
+surface changed there, the semantic product version must advance.
+
+The Extension is a separately deployable component and remains owned by
+contract/resident_version.h plus tools/ext-bake-gate.  The 68K application is
+also separately deployed and is outside this product-version family.
+
+Commands:
+
+    tools/product-version-gate check
+    tools/product-version-gate main-ref-check <old> <new>
+    tools/product-version-gate verify-revision <revision>
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+
+
+AUTHORITY = "contract/product_version.h"
+LEGACY_AUTHORITY = "now-guest-ppc/src/core/product_identity.h"
+
+# These are the release-bearing halves that share NOW_PRODUCT_VERSION. Tests,
+# docs, the independently-versioned resident, and NOW-68K are deliberately not
+# here. Packaging inputs are: a product can be mis-versioned without changing
+# executable source.
+PRODUCT_PREFIXES = (
+    "contract/asyncapi.yaml",
+    AUTHORITY,
+    "now-host/Sources/",
+    "now-host/NewOldWorld.xcodeproj/",
+    "now-guest-ppc/CMakeLists.txt",
+    "now-guest-ppc/resources/",
+    "now-guest-ppc/src/",
+    "assets/icons/classic/",
+    "scripts/HostInfo.plist.in",
+    "scripts/build-host-app",
+)
+
+
+@dataclass(frozen=True, order=True)
+class Version:
+    major: int
+    minor: int
+    patch: int
+
+    def __str__(self) -> str:
+        return f"{self.major}.{self.minor}.{self.patch}"
+
+
+def run(*args: str) -> str:
+    return subprocess.run(args, check=True, capture_output=True,
+                          text=True).stdout
+
+
+def root() -> str:
+    return run("git", "rev-parse", "--show-toplevel").strip()
+
+
+def spec(revision: str, path: str) -> str:
+    return f":{path}" if revision == ":" else f"{revision}:{path}"
+
+
+def read_blob(repo: str, revision: str, path: str) -> str | None:
+    try:
+        return run("git", "-C", repo, "show", spec(revision, path))
+    except subprocess.CalledProcessError:
+        return None
+
+
+def macro_int(raw: str, name: str, source: str) -> int:
+    match = re.search(rf"^\s*#define\s+{re.escape(name)}\s+(\d+)\s*$",
+                      raw, re.MULTILINE)
+    if match is None:
+        raise ValueError(f"{source} does not define {name} as an integer")
+    return int(match.group(1))
+
+
+def canonical_version(repo: str, revision: str) -> Version:
+    raw = read_blob(repo, revision, AUTHORITY)
+    if raw is not None:
+        source = f"{revision}:{AUTHORITY}"
+        version = Version(
+            macro_int(raw, "NOW_PRODUCT_VERSION_MAJOR", source),
+            macro_int(raw, "NOW_PRODUCT_VERSION_MINOR", source),
+            macro_int(raw, "NOW_PRODUCT_VERSION_PATCH", source),
+        )
+        stated = re.search(
+            r'^\s*#define\s+NOW_PRODUCT_VERSION\s+"([^"]+)"\s*$',
+            raw, re.MULTILINE)
+        if stated is None:
+            raise ValueError(f"{source} does not define NOW_PRODUCT_VERSION")
+        if stated.group(1) != str(version):
+            raise ValueError(
+                f"{source} disagrees with itself: components say {version}, "
+                f"string says {stated.group(1)!r}")
+        return version
+
+    # Adoption path: main already shipped 0.1.0 before the shared authority
+    # existed. Reading that immutable old tree makes the first gated landing
+    # compare against the real prior release rather than treating it as zero.
+    legacy = read_blob(repo, revision, LEGACY_AUTHORITY)
+    if legacy is None:
+        raise ValueError(f"{revision} has neither {AUTHORITY} nor "
+                         f"{LEGACY_AUTHORITY}")
+    match = re.search(r'^\s*#define\s+PRODUCT_VERSION\s+"(\d+)\.(\d+)\.(\d+)"',
+                      legacy, re.MULTILINE)
+    if match is None:
+        raise ValueError(f"{revision}:{LEGACY_AUTHORITY} has no parseable "
+                         "PRODUCT_VERSION")
+    return Version(*(int(value) for value in match.groups()))
+
+
+def expected_vers_bytes(version: Version) -> tuple[int, int]:
+    # NumVersion stores the one-digit major in the low nibble of the first
+    # byte and minor/bugfix in the two nibbles of the second. NOW is pre-1.0,
+    # but refusing an unrepresentable tuple is safer than truncating it.
+    if any(value > 9 for value in (version.major, version.minor,
+                                   version.patch)):
+        raise ValueError(f"{version} cannot be represented by the classic "
+                         "NumVersion resource used by New Old World")
+    return version.major, (version.minor << 4) | version.patch
+
+
+def consistency_problems(repo: str, revision: str) -> list[str]:
+    try:
+        version = canonical_version(repo, revision)
+    except ValueError as exc:
+        return [str(exc)]
+    problems: list[str] = []
+
+    guest = read_blob(repo, revision, LEGACY_AUTHORITY) or ""
+    required_guest_lines = (
+        '#include "product_version.h"',
+        "#define PRODUCT_VERSION_MAJOR NOW_PRODUCT_VERSION_MAJOR",
+        "#define PRODUCT_VERSION_MINOR NOW_PRODUCT_VERSION_MINOR",
+        "#define PRODUCT_VERSION_PATCH NOW_PRODUCT_VERSION_PATCH",
+        "#define PRODUCT_VERSION NOW_PRODUCT_VERSION",
+    )
+    for line in required_guest_lines:
+        if line not in guest:
+            problems.append(f"{LEGACY_AUTHORITY} does not map {line!r} to "
+                            f"{AUTHORITY}")
+
+    swift_path = "now-host/Sources/Host/ProductIdentity.swift"
+    swift = read_blob(repo, revision, swift_path) or ""
+    if not re.search(rf'static let version\s*=\s*"{re.escape(str(version))}"',
+                     swift):
+        problems.append(f"{swift_path} does not state {version}")
+
+    project_path = "now-host/NewOldWorld.xcodeproj/project.pbxproj"
+    project = read_blob(repo, revision, project_path) or ""
+    marketing = re.findall(r"MARKETING_VERSION\s*=\s*([^;]+);", project)
+    if not marketing or any(value.strip() != str(version)
+                            for value in marketing):
+        problems.append(f"every MARKETING_VERSION in {project_path} must be "
+                        f"{version} (found {marketing or 'none'})")
+
+    plist_path = "scripts/HostInfo.plist.in"
+    plist = read_blob(repo, revision, plist_path) or ""
+    plist_pattern = (r"<key>CFBundleShortVersionString</key>\s*"
+                     rf"<string>{re.escape(str(version))}</string>")
+    if not re.search(plist_pattern, plist):
+        problems.append(f"{plist_path} does not state {version}")
+
+    resource_path = "now-guest-ppc/resources/app.r"
+    resource = read_blob(repo, revision, resource_path) or ""
+    body_match = re.search(r"resource\s+'vers'\s*\(1\)\s*\{(.*?)\};",
+                           resource, re.DOTALL)
+    if body_match is None:
+        problems.append(f"{resource_path} has no vers(1) resource")
+    else:
+        body = body_match.group(1)
+        numbers = re.findall(r"0x([0-9A-Fa-f]{2})", body)
+        try:
+            expected_numbers = expected_vers_bytes(version)
+        except ValueError as exc:
+            problems.append(str(exc))
+        else:
+            actual = tuple(int(value, 16) for value in numbers[:2])
+            if actual != expected_numbers:
+                problems.append(
+                    f"{resource_path} vers(1) numeric version is {actual}, "
+                    f"expected {expected_numbers} for {version}")
+        strings = re.findall(r'"([^"]*)"', body)
+        if len(strings) < 2 or strings[0] != str(version) or not strings[1].startswith(
+                f"{version},"):
+            problems.append(f"{resource_path} vers(1) strings do not state "
+                            f"{version}")
+    return problems
+
+
+def changed_paths(repo: str, old: str, new: str) -> list[str]:
+    if not old or set(old) == {"0"}:
+        out = run("git", "-C", repo, "ls-tree", "-r", "--name-only", new)
+    else:
+        out = run("git", "-C", repo, "diff", "--name-only", old, new, "--")
+    return out.splitlines()
+
+
+def product_path(path: str) -> bool:
+    return any(path == prefix or path.startswith(prefix)
+               for prefix in PRODUCT_PREFIXES)
+
+
+def fail(title: str, old: Version | None, new: Version | None,
+         problems: list[str], paths: list[str] | None = None) -> int:
+    print("", file=sys.stderr)
+    print(f"[product-version-gate] refusing {title}.", file=sys.stderr)
+    if old is not None:
+        print(f"  old product version  {old}", file=sys.stderr)
+    if new is not None:
+        print(f"  new product version  {new}", file=sys.stderr)
+    if paths:
+        shown = ", ".join(paths[:6]) + (" ..." if len(paths) > 6 else "")
+        print(f"  release-bearing changes: {shown}", file=sys.stderr)
+    for problem in problems:
+        print(f"  {problem}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(f"  Advance {AUTHORITY}, update its checked copies, and retry.",
+          file=sys.stderr)
+    print("  Branch scratch builds may share a version; only a main landing",
+          file=sys.stderr)
+    print("  must advance it, because exact build identity distinguishes "
+          "scratch bytes.", file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
+def check(repo: str) -> int:
+    problems = consistency_problems(repo, ":")
+    if problems:
+        return fail("this commit: product-version copies disagree", None,
+                    None, problems)
+    version = canonical_version(repo, ":")
+    print(f"[product-version-gate] product identity is coherent at {version}.")
+    return 0
+
+
+def verify_revision(repo: str, revision: str) -> int:
+    problems = consistency_problems(repo, revision)
+    if problems:
+        return fail(f"{revision}: product-version copies disagree", None,
+                    None, problems)
+    print(f"[product-version-gate] {revision} is coherent at "
+          f"{canonical_version(repo, revision)}.")
+    return 0
+
+
+def main_ref_check(repo: str, old: str, new: str) -> int:
+    if not new or set(new) == {"0"}:
+        return 0
+    problems = consistency_problems(repo, new)
+    old_version: Version | None = None
+    new_version: Version | None = None
+    try:
+        new_version = canonical_version(repo, new)
+    except ValueError as exc:
+        if str(exc) not in problems:
+            problems.append(str(exc))
+    if old and set(old) != {"0"}:
+        try:
+            old_version = canonical_version(repo, old)
+        except ValueError as exc:
+            problems.append(f"cannot establish prior main version: {exc}")
+
+    product_changes = [path for path in changed_paths(repo, old, new)
+                       if product_path(path)]
+    if product_changes and old_version is not None and new_version is not None:
+        if new_version <= old_version:
+            problems.append(
+                f"the product release version did not advance: "
+                f"{old_version} -> {new_version}")
+    if problems:
+        return fail("refs/heads/main update: product identity is stale or "
+                    "incoherent", old_version, new_version, problems,
+                    product_changes)
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    repo = root()
+    command = argv[1] if len(argv) > 1 else "check"
+    if command == "check" and len(argv) == 2:
+        return check(repo)
+    if command == "verify-revision" and len(argv) == 3:
+        return verify_revision(repo, argv[2])
+    if command == "main-ref-check" and len(argv) == 4:
+        return main_ref_check(repo, argv[2], argv[3])
+    print(__doc__.strip(), file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

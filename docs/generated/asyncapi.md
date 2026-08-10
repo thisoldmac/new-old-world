@@ -5,7 +5,7 @@
 This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/architecture/wire-contract.md). The contract file remains normative. NOW's eight-byte binary frame is normative prose in that file because AsyncAPI describes messages, not this custom framing layer.
 
 - AsyncAPI version: `3.0.0`
-- Product contract version: `0.1.0`
+- Product contract version: `0.2.0`
 - Contract revision: `2`
 - Default content type: `application/json`
 

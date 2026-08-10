@@ -18,12 +18,23 @@ typedef struct {
     int requires_restart;
 } NowUpdateOffer;
 
+typedef enum {
+    kNowUpdateOfferNone = 0,
+    kNowUpdateOfferMatches,
+    kNowUpdateOfferScratch,
+    kNowUpdateOfferNewer,
+    kNowUpdateOfferOlder
+} NowUpdateOfferStatus;
+
 void now_update_model_reset(void);
 int now_update_component_parse(const char *word, NowUpdateComponent *out);
 const char *now_update_component_name(NowUpdateComponent component);
 int now_update_offer_set(NowUpdateComponent component,
                          const NowUpdateOffer *offer);
 int now_update_offer_get(NowUpdateComponent component, NowUpdateOffer *out);
+NowUpdateOfferStatus now_update_offer_status(
+    NowUpdateComponent component, const char *installed_version,
+    const char *installed_build);
 int now_update_offer_differs(NowUpdateComponent component,
                              const char *installed_version,
                              const char *installed_build);

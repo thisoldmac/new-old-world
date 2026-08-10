@@ -31,6 +31,14 @@ int main(void)
     if (now_update_offer_differs(kNowUpdateApplication,
                                  "0.1.0", "scratch123456"))
         return fail("matching exact build called an update");
+    if (now_update_offer_status(kNowUpdateApplication,
+                                "0.2.0", "newer-installed")
+        != kNowUpdateOfferOlder)
+        return fail("older host release was offered as an update");
+    now_update_offer_line(kNowUpdateApplication,
+                          "0.2.0", "newer-installed", line, sizeof line);
+    if (strstr(line, "host has older") == NULL)
+        return fail("older host release was not explained");
     now_update_offer_line(kNowUpdateApplication,
                           "0.1.0", "release123456", line, sizeof line);
     if (strstr(line, "unsigned") == NULL
@@ -39,5 +47,12 @@ int main(void)
     offer.sha256[3] = 'Z';
     if (now_update_offer_set(kNowUpdateExtension, &offer))
         return fail("non-hex digest accepted");
+    offer.sha256[3] = 'a';
+    strcpy(offer.version, "0.2");
+    if (now_update_offer_set(kNowUpdateApplication, &offer))
+        return fail("two-part application version accepted");
+    strcpy(offer.version, "1.2.0");
+    if (now_update_offer_set(kNowUpdateExtension, &offer))
+        return fail("three-part extension version accepted");
     return 0;
 }

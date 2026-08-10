@@ -7,8 +7,8 @@
    consume one C macro directly. A scratch build is distinguished by build
    identity; it does not invent a release version. */
 #define NOW_PRODUCT_VERSION_MAJOR 0
-#define NOW_PRODUCT_VERSION_MINOR 1
+#define NOW_PRODUCT_VERSION_MINOR 2
 #define NOW_PRODUCT_VERSION_PATCH 0
-#define NOW_PRODUCT_VERSION "0.1.0"
+#define NOW_PRODUCT_VERSION "0.2.0"
 
 #endif
