@@ -241,19 +241,20 @@ final class ProjectStore {
                                              fileManager: fileManager)
         let document = try CKProjectDocument.parse(Data(contentsOf:
             root.appendingPathComponent("Project.ckp")))
-        let declared = path == "Project.ckp"
-            ? CKProjectDocument.FileIdentity(path: path, type: "TEXT",
-                                             creator: "NOWD", finderFlags: 0)
-            : document.fileIdentities[path]
-        guard let identity = declared else {
-            throw ProjectStoreError.unavailable(
-                "The project file has no declared classic identity.")
+        let identity: ClassicProjectFile.Identity?
+        if path == "Project.ckp" {
+            identity = .init(type: "TEXT", creator: "NOWD", finderFlags: 0)
+        } else if let declared = document.fileIdentities[path] {
+            identity = .init(type: declared.type, creator: declared.creator,
+                             finderFlags: declared.finderFlags)
+        } else {
+            identity = ClassicProjectFile.identity(at: url)
         }
         return ProjectFileInspection(
             dataBytes: try Data(contentsOf: url).count,
             resourceBytes: try ClassicProjectFile.resourceFork(at: url).count,
-            type: identity.type, creator: identity.creator,
-            finderFlags: identity.finderFlags)
+            type: identity?.type, creator: identity?.creator,
+            finderFlags: identity?.finderFlags)
     }
 
     @discardableResult

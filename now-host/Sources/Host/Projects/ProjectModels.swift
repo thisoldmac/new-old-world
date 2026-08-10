@@ -116,9 +116,9 @@ struct ProjectManifestEntry: Codable, Equatable, Sendable {
 struct ProjectFileInspection: Equatable, Sendable {
     let dataBytes: Int
     let resourceBytes: Int
-    let type: String
-    let creator: String
-    let finderFlags: UInt16
+    let type: String?
+    let creator: String?
+    let finderFlags: UInt16?
 }
 
 struct ProjectCandidateReceipt: Codable, Equatable, Sendable {

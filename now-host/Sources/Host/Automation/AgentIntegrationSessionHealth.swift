@@ -264,7 +264,7 @@ final class AgentIntegrationHostAdapter {
                 return .init(contentsBase64: data.base64EncodedString(),
                              fork: fork.rawValue, finderType: info.type,
                              finderCreator: info.creator,
-                             finderFlags: Int(info.finderFlags))
+                             finderFlags: info.finderFlags.map(Int.init))
             case .apply:
                 let changes = try request.changes!.map(projectChange)
                 if let raw = request.projectID {

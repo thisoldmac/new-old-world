@@ -95,6 +95,35 @@ final class ProjectStoreTests: XCTestCase {
             "file-info=TEXT|MPS |ZZZZ|Sources/Main.c")))
     }
 
+    func testLegacyProjectFileCanBeReadWithoutDeclaredIdentity() throws {
+        let store = try ProjectStore(root: root())
+        let legacyDocument = Data("""
+            CKPROJECT 1
+            id=0123456789abcdef0123456789abcdef
+            name=Legacy Sources
+            target=application
+            configuration=debug
+            toolchain=mpw@3.6
+            product=Build/Product
+            type=APPL
+            creator=TEST
+            file=Sources/Main.c
+            """.utf8)
+        let created = try store.create(
+            name: "Legacy Sources", home: .host,
+            projectDocument: legacyDocument,
+            files: [.init(path: "Sources/Main.c",
+                          contents: Data("int main(void) {}".utf8))])
+
+        XCTAssertEqual(try store.read(projectID: created.projectID,
+                                      path: "Sources/Main.c"),
+                       Data("int main(void) {}".utf8))
+        XCTAssertEqual(try store.inspect(projectID: created.projectID,
+                                         path: "Sources/Main.c"),
+                       .init(dataBytes: 17, resourceBytes: 0,
+                             type: nil, creator: nil, finderFlags: nil))
+    }
+
     func testCreateAndApplyProduceRecoverableGitHistory() throws {
         let root = try root()
         let store = try ProjectStore(root: root)

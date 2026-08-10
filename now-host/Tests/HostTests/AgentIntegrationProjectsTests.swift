@@ -119,6 +119,41 @@ final class AgentIntegrationProjectsTests: XCTestCase {
             AgentIntegrationLocalCodec.encode(response)), response)
     }
 
+    func testReadOfLegacyProjectReturnsBytesWithoutInventingIdentity() throws {
+        let projectStore = try store()
+        let document = Data("""
+            CKPROJECT 1
+            id=0123456789abcdef0123456789abcdef
+            name=Legacy
+            target=application
+            configuration=debug
+            toolchain=mpw@3.6
+            product=Build/Legacy
+            type=APPL
+            creator=TEST
+            file=Sources/Main.c
+            """.utf8)
+        let created = try projectStore.create(
+            name: "Legacy", home: .host, projectDocument: document,
+            files: [.init(path: "Sources/Main.c",
+                          contents: Data("legacy".utf8))])
+        let adapter = AgentIntegrationHostAdapter(
+            listener: GuestListener(identity: .init(
+                version: "project-test", name: "Project Test Host")),
+            projectStore: projectStore)
+
+        let result = adapter.projects(.init(
+            operation: .read, projectID: created.projectID.rawValue,
+            path: "Sources/Main.c", maximumBytes: 1024))
+
+        XCTAssertEqual(result.contentsBase64.flatMap { Data(base64Encoded: $0) },
+                       Data("legacy".utf8))
+        XCTAssertNil(result.finderType)
+        XCTAssertNil(result.finderCreator)
+        XCTAssertNil(result.finderFlags)
+        XCTAssertNil(result.failure)
+    }
+
     func testProjectProjectionDeclaresHostAuthorityAndDelegatesTypedRequest()
         async {
         XCTAssertEqual(ProjectsProjection.authorityDomain, .hostProjects)
