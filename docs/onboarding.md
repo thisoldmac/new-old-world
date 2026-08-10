@@ -40,12 +40,14 @@ fallback path. This is the unavoidable first bootstrap boundary: HTTP itself
 cannot create a Finder type or resource fork on the receiving HFS volume.
 
 The setup volume contains the application, generated preferences, optional
-extension and whichever prepared dependencies are selected, as native classic
-files. New Old World itself is required; every optional installed row is a
-checkbox. The host decodes their MacBinary envelopes while constructing the
-HFS Plus filesystem, so no archive or fork-restoration utility is required on
-the guest after Disk Copy mounts it. **Save a Copy…** saves the exact currently
-served image as `New Old World Setup.img.bin` for a separate
+CodeKitten IDE, extension and whichever prepared dependencies are selected, as
+native classic files. New Old World itself is required; every optional
+installed row is a checkbox. CodeKitten is selected by default when present,
+but remains a standalone application: the headless Projects and Development
+services do not depend on it. The host decodes each MacBinary envelope while
+constructing the HFS Plus filesystem, so no archive or fork-restoration utility
+is required on the guest after Disk Copy mounts it. **Save a Copy…** saves the
+exact currently served image as `New Old World Setup.img.bin` for a separate
 MacBinary-preserving transfer.
 
 The builder keeps one completed image in memory. `/now/setup.img` and its
@@ -68,6 +70,13 @@ The NOW Extension is optional. Put its decoded file in
 without the resident, with the reduced capability set described in
 [resident-components.md](resident-components.md).
 
+CodeKitten is optional and belongs wherever the person keeps applications. It
+targets Mac OS 9.1 or later with CarbonLib 1.6; including it does not raise
+NOW's Mac OS 8.6 floor, and the portal does not imply it is usable on an older
+system. A future **Open in CodeKitten** handoff is a human editing surface over
+the same project contract, not the build engine or a prerequisite for agent
+work.
+
 This first surface is deliberately PPC/Carbon-only. NOW-68K remains an
 experimental sibling with a different artifact and configuration path; the
 portal does not imply that it is a supported choice here.
@@ -87,6 +96,7 @@ names are:
 | File | Portal role |
 |---|---|
 | `New Old World.bin` | canonical PPC MacBinary; required |
+| `CodeKitten.bin` or `codekitten.bin` | optional standalone IDE, normalized to `CodeKitten.bin` and installed at the setup-volume root |
 | `NowExt.bin` or `NOW Extension.bin` | optional resident |
 | `Dependencies/CarbonLib.bin` | optional host-prepared native CarbonLib; avoids archive extraction at image-build time |
 | `Dependencies/CarbonLib_161.sit.bin` | checksum-verified CarbonLib StuffIt archive in a MacBinary envelope |
@@ -151,6 +161,7 @@ only these fixed route families:
 - `/now/setup.img` (MacBinary MIME decoding path)
 - `/now/setup.img.bin` (explicit envelope fallback)
 - `/now/application.bin`
+- `/now/codekitten.bin`
 - `/now/settings.bin`
 - `/now/extension.bin`
 - the exact installed names beneath `/now/dependencies/`
@@ -173,13 +184,14 @@ emulator interfaces are not guessed a second time after the browser arrives.
 The host tests exercise the real temporary listener over loopback, both setup
 image routes and their headers, application and generated-settings downloads,
 method and unknown-route refusals, package precedence, explicit dependency
-enumeration, selection and cached-image replacement, checksum refusal, and
-MacBinary fork boundaries plus preference bytes. A macOS integration test
-builds a realistically sized HFS Plus volume, decodes the NDIF's MacBinary
-envelope, mounts the raw disk read-only, and verifies native application,
-extension and CarbonLib resource forks plus preferences and instructions. It
-also asserts a sub-6-MiB carrier with less than 128 KiB free, and proves that a
-native CarbonLib supersedes the matching StuffIt representation.
+enumeration, CodeKitten discovery and download, selection and cached-image
+replacement, checksum refusal, and MacBinary fork boundaries plus preference
+bytes. A macOS integration test builds a realistically sized HFS Plus volume,
+decodes the NDIF's MacBinary envelope, mounts the raw disk read-only, and
+verifies native NOW, CodeKitten, extension and CarbonLib resource forks plus
+preferences and instructions. It also asserts a content-fitted carrier with
+less than 128 KiB free, and proves that a native CarbonLib supersedes the
+matching StuffIt representation.
 
 The host-facing selection, rebuild and image-detail workflow was also exercised
 from the `457823dd` release build and accepted after the fixed-capacity image was
@@ -191,5 +203,15 @@ Separately, the generated NDIF image was transferred into a Mac OS 9.1 QEMU
 guest and mounted by its stock Disk Copy 6.3.3. That proves the carrier and its
 contents are compatible with the target OS; it does not prove that every
 classic browser configuration automatically decodes the outer MacBinary.
-The `/now/setup.img` browser step and a first launch/`hello` on physical
-PowerPC hardware remain not Metal-verified.
+For the CodeKitten-bearing image built from `59cfd071`, the exact 6,316,800-byte
+MacBinary reached the emulator and Disk Copy accepted its open-document event,
+but the pristine snapshot stopped at Apple's first-run Disk Copy license; that
+license was not accepted on the user's behalf, so this particular combined
+image was not mounted in the guest. The exact CodeKitten MacBinary from the
+same asset set transferred with 628,086 data-fork and 6,888 resource-fork bytes
+and `APPL/O9ID` identity. `LaunchApplication` returned success, but the process
+exited before the five-second observation, matching CodeKitten's existing
+early-entry open issue rather than closing its runtime gate. The
+`/now/setup.img` browser step, a persistent CodeKitten launch from this stack,
+and a first launch/`hello` on physical PowerPC hardware remain not
+Metal-verified.

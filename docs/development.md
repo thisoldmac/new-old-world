@@ -99,7 +99,10 @@ CodeKitten by creator in each mounted volume's Desktop database, launches it if
 needed, and returns immediately. The host polls cooperatively until it can send
 one standard `odoc` for the active `Project.ckp`, then brings CodeKitten
 forward. CodeKitten implements that handler, but no build or sync path requires
-the IDE to exist.
+the IDE to exist. The PPC onboarding disk can carry a separately supplied
+CodeKitten MacBinary as a selected-by-default optional application, which makes
+initial installation one transfer without turning that distribution seam into
+a runtime dependency.
 
 ## Verification and current limits
 
@@ -116,8 +119,11 @@ was made.
 
 That is a partial emulator rung, not a full end-to-end one and not metal
 verification. Guest import/workspace refresh, candidate staging, divergent and
-successful promotion, and CodeKitten handoff have not run in the emulator. No
-Development workflow has run on a PowerBook.
+successful promotion, and CodeKitten handoff have not run in the emulator. A
+separate onboarding smoke transferred the exact CodeKitten payload and
+`LaunchApplication` accepted it, but the process exited before the five-second
+observation; that is a failed runtime gate, not handoff evidence. No Development
+workflow has run on a PowerBook.
 
 Two preservation/settlement limits are still open and are intentionally not
 hidden behind a successful receipt:

@@ -1,5 +1,23 @@
 # Status: what works and what does not
 
+## 2026-08-09 — Onboarding carries optional CodeKitten; its runtime gate remains open
+
+The PPC onboarding package now recognizes a top-level `CodeKitten.bin`, shows
+it as a first-class optional application selected by default, includes its
+native forks at the setup-volume root, serves `/now/codekitten.bin`, and names
+it in the generated Read Me. It remains a standalone human IDE: NOW's headless
+Projects and Development services neither launch nor depend on it.
+
+This packaging slice is tested and host-image-verified, not metal-verified. A
+host mount of the exact combined image preserved CodeKitten as `APPL/O9ID`
+with 628,086 data-fork and 6,888 resource-fork bytes. On the Mac OS 9.1
+emulator, those exact payload bytes transferred and LaunchApplication returned
+success, but CodeKitten exited before the five-second process observation. The
+combined image itself reached Disk Copy and received `odoc`; mounting stopped
+at Apple's first-run Disk Copy license, which the automation did not accept.
+The package is therefore ready for continued diagnosis, not evidence that
+CodeKitten persists or that the one-disk flow works on physical hardware.
+
 ## 2026-08-09 — Active-project MPW Development is emulator-verified, not metal-verified
 
 NOW now owns a bounded host Projects root with pure Git history, recoverable

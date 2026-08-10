@@ -375,10 +375,13 @@ when it is missing, rather than failing to launch.
 To set up a physical PPC Mac without FTP, open **Connections** in the host and
 choose **Set Up a New Mac…**. The temporary old-browser-friendly page serves
 the canonical MacBinary and a generated settings file already pointed at this
-host. Dependencies are enumerated; known missing packages can be downloaded
-into the external package store with a pinned checksum and delivered in a
-MacBinary envelope. Optional dependencies stay outside Git; the package layout
-and the tested-but-not-metal-verified boundary are in
+host. When its MacBinary is installed in the onboarding package store, the
+same generated disk also carries CodeKitten as a selected-by-default,
+standalone IDE; NOW's headless Development lane remains independent of it.
+Dependencies are enumerated; known missing packages can be downloaded into the
+external package store with a pinned checksum and delivered in a MacBinary
+envelope. Optional applications and dependencies stay outside Git; the package
+layout and the tested-but-not-metal-verified boundary are in
 [docs/onboarding.md](docs/onboarding.md).
 
 The optional agent companion is a separate executable with no

@@ -17,6 +17,18 @@ emulator acceptance gap. The PowerBook metal rung still owes the exact MPW
 toolchain/version, both product fork sizes/digest, process identity and an
 `odoc` edit imported as a new revision.
 
+The onboarding server can now place a separately supplied CodeKitten
+MacBinary at the setup-volume root, select it by default, advertise it as a
+standalone optional IDE, and serve it directly at `/now/codekitten.bin`. The
+host-mounted combined image preserved CodeKitten's 628,086-byte data fork,
+6,888-byte resource fork and `APPL/O9ID` identity. On the Mac OS 9.1 emulator,
+the exact payload transferred and `LaunchApplication` returned success, but
+CodeKitten left the process table before the five-second observation. This is
+not a passed CodeKitten handoff or runtime gate. The combined image's Disk Copy
+mount was separately blocked by the pristine snapshot's unaccepted Apple
+license; the earlier image-carrier mount result below remains valid for the
+carrier, not for this new payload set.
+
 Three implementation gaps block a full development/preservation/acceptance
 claim today:
 
@@ -66,8 +78,9 @@ listener and a separate temporary HTTP listener, displays a detected LAN IPv4
 and actual HTTP port, and serves an HTML 3.2-shaped fixed-route page. The page
 offers the canonical PPC MacBinary when installed, a per-request MacBinary
 `New Old World Prefs` aimed at the accepting interface and configured wire
-port, the optional NOW Extension, and explicitly enumerated files from the
-external dependency store. A missing CarbonLib row can download the known
+port, the optional standalone CodeKitten IDE, the optional NOW Extension, and
+explicitly enumerated files from the external dependency store. A missing
+CarbonLib row can download the known
 1.6.1 archive directly into that store after verifying its published SHA-1;
 NOW wraps the unchanged StuffIt bytes in MacBinary with `SIT5` / `SIT!`
 metadata before serving them. It can now also generate one setup disk: native
@@ -139,7 +152,12 @@ that run reached a Macintosh.
 Disk Copy 6.3.3 on the Mac OS 9.1 QEMU guest mounted a generated setup image
 and exposed its Read Me, application, preferences, extension and Dependencies
 folder. This is emulator evidence for the image carrier, not a physical-metal
-result. What remains unverified is the browser boundary: no Netscape, Internet
+result. A later CodeKitten-bearing image reached Disk Copy through the same
+wire and `odoc` path, but the pristine snapshot presented Apple's first-run
+license; it was not accepted automatically, so that image's guest mount remains
+unverified. Direct deployment proved the payload's forks and identity, then
+exposed CodeKitten's pre-existing early process exit. What remains unverified
+is the browser boundary: no Netscape, Internet
 Explorer or Classilla-era browser has yet downloaded `/now/setup.img` and
 automatically decoded its MacBinary envelope; no physical PPC
 Mac has installed the generated preference file, launched the guest, and sent
