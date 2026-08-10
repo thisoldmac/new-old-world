@@ -47,7 +47,8 @@ import os
 import subprocess
 import sys
 
-HOOKS = ("pre-commit", "pre-merge-commit", "post-merge")
+HOOKS = ("pre-commit", "pre-merge-commit", "reference-transaction",
+         "post-merge")
 
 
 def git(*args: str, root: str = ".") -> str:
@@ -131,7 +132,12 @@ def main(argv: list[str]) -> int:
         for hook in HOOKS:
             full = os.path.join(resolved, hook)
             if not os.path.exists(full):
-                notes.append(f"no {hook} hook in {resolved}")
+                if hook == "reference-transaction":
+                    problems.append(
+                        f"no {hook} hook in {resolved} — fast-forward main "
+                        "updates can bypass the resident bake gate.")
+                else:
+                    notes.append(f"no {hook} hook in {resolved}")
             elif not os.access(full, os.X_OK):
                 problems.append(f"{full} is not executable — git skips it "
                                 "SILENTLY.")
@@ -178,10 +184,11 @@ def main(argv: list[str]) -> int:
         for n in notes:
             print(f"  - {n}")
         print("")
-        print("  Nothing refuses a commit here: not the main guardrail, not "
-              "the ext bake")
-        print("  gate. A deferral written with TBT_DEFER_EXT_BAKE is not "
-              "recorded either,")
+        print("  The gate set is incomplete: commits or main ref updates can "
+              "bypass the")
+        print("  resident bake policy. A deferral written with "
+              "TBT_DEFER_EXT_BAKE may not")
+        print("  be recorded either,")
         print("  because the gate that records it never runs.")
         if tracked_hooks:
             print("  Gate YOUR OWN commits now — safe, nothing shared "

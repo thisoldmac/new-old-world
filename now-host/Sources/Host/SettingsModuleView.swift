@@ -20,12 +20,14 @@ import SwiftUI
 struct ConnectionLinkSection: View {
     @ObservedObject var settings: SettingsModel
     @ObservedObject var listener: GuestListener
+    @ObservedObject var onboarding: OnboardingPortal
     var onStart: () -> Void
     var onStop: () -> Void
     var focusPort = false
     var selectedGuest: GuestKey?
 
     @State private var portText: String = ""
+    @State private var showingOnboarding = false
     @FocusState private var portIsFocused: Bool
 
     var body: some View {
@@ -60,6 +62,24 @@ struct ConnectionLinkSection: View {
                     .padding(.leading, 6)
             }
 
+            HStack(spacing: 10) {
+                Button("Set Up a New Mac…", action: openOnboarding)
+                if let endpoint = onboarding.endpoint,
+                   let url = endpoint.pageURL {
+                    Text("Onboarding at \(url.absoluteString)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Button("Stop") { onboarding.stop() }
+                        .controlSize(.small)
+                } else {
+                    Text("Hosts the PPC app, settings, extension and local "
+                         + "dependencies for an old browser.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             /* No status line here. The page's header carries one sentence
                for the state of the link AND how many machines are on it —
                which is the whole reason the two panes folded together. A
@@ -82,6 +102,10 @@ struct ConnectionLinkSection: View {
         .onChange(of: focusPort) { wanted in
             if wanted && !isListening { portIsFocused = true }
         }
+        .sheet(isPresented: $showingOnboarding) {
+            OnboardingSheet(portal: onboarding,
+                            wirePort: settings.listenPort)
+        }
     }
 
     private var isListening: Bool {
@@ -97,6 +121,18 @@ struct ConnectionLinkSection: View {
             return
         }
         portText = String(settings.listenPort)
+    }
+
+    private func openOnboarding() {
+        if !isListening {
+            guard settings.submitListenPort(portText, start: onStart) else {
+                portText = String(settings.listenPort)
+                return
+            }
+            portText = String(settings.listenPort)
+        }
+        onboarding.start(wirePort: settings.listenPort)
+        showingOnboarding = true
     }
 
     /// How the paired session is actually behaving — the one thing on this

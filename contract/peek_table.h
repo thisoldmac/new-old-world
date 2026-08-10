@@ -47,6 +47,7 @@ typedef SInt32 NowPeekI32;
 #endif
 
 #include <stddef.h>
+#include "resident_version.h"
 
 /* Spelled out so no compiler warns about multi-character constants. */
 #define NOW_PEEK_4CC(a, b, c, d)                                      \
@@ -59,9 +60,13 @@ enum {
     /* First prelude field; a table without it is not a table. */
     kNowPeekTableMagic = (long)NOW_PEEK_4CC('N', 'W', 'p', 't'),
 
-    /* Exact-match compatibility. Bump ONLY when an existing field's
-       meaning changes; new fields ride on length instead. */
-    kNowPeekExtMajor = 1,
+    /* Major is exact-match compatibility: bump it only when an existing
+       field's meaning changes. Minor is the resident release sequence and
+       advances for every resident source change; new fields still ride on
+       length rather than compatibility guesses. Both values come from the
+       resident's one release identity. */
+    kNowPeekExtMajor = NOW_RESIDENT_VERSION_MAJOR,
+    kNowPeekExtMinor = NOW_RESIDENT_VERSION_MINOR,
 
     /* Matches the Process Manager walk's cap in processes_module.c;
        classic systems run a dozen-odd processes, 32 is headroom. */
@@ -1267,7 +1272,7 @@ typedef struct {
 typedef struct {
     NowPeekU32 magic;         /* kNowPeekTableMagic */
     NowPeekU16 ext_major;     /* exact match required */
-    NowPeekU16 ext_minor;     /* informational */
+    NowPeekU16 ext_minor;     /* release sequence; informational */
     NowPeekU32 length;        /* bytes valid; readers gate on >= */
     NowPeekU32 caps;          /* planes present in this binary */
     NowPeekU32 heartbeat;     /* TickCount at last filter pass */

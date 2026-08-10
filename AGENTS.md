@@ -293,9 +293,14 @@ a shared bake over. The rules that must not be restated anywhere else:
   touches nothing shared. `--shared` is the deliberate, announced act that
   replaces the oracle everybody clones; it refuses while other guests are
   running on this Mac. Nothing in flight should be baking `--shared`.
-- **A commit that touches `ext/` or `contract/peek_table.h` must be baked
-  first**, enforced by `tools/ext-bake-gate` from `.githooks/pre-commit`:
-  the newest receipt in `ext/stage-receipts.json` must record a bake of
+- **A commit that touches `ext/`, `contract/peek_table.h`, or
+  `contract/resident_version.h` must advance the resident version and be
+  baked first**, enforced by `tools/ext-bake-gate` from
+  `.githooks/pre-commit`. `contract/resident_version.h` is the one release
+  identity used by both the shared table and the resident's own liveness
+  connection; the gate refuses resident source whose major/minor tuple did
+  not increase. The newest receipt in `ext/stage-receipts.json` must also
+  record a bake of
   exactly this source, with the five facts that make a bake believable —
   the fingerprint the **guest itself** reported, the image sha256, a
   passing `qemu-img check`, a guest-clean shutdown, and a cleanly
@@ -304,10 +309,14 @@ a shared bake over. The rules that must not be restated anywhere else:
   `main`.** `TBT_DEFER_EXT_BAKE=1` with `TBT_DEFER_EXT_BAKE_REASON="…"`
   allows the *commit* and writes the reason into `ext/stage-receipts.json`,
   so it lands in the same commit as the work it excuses. It does not allow
-  the *landing*: `merge-check` refuses on `main` when the resident source
-  arriving is covered by no bake, quoting the deferral's own reason back.
-  Lane-to-lane merges are untouched. As with `TBT_ALLOW_MAIN=1`, the
-  enforcement is the floor and not the rule.
+  the *landing*: `.githooks/reference-transaction` checks the exact old and
+  proposed `main` trees and refuses any resident-source change whose version
+  did not advance or which is not covered by a verified **shared** bake
+  receipt. It sees merge commits, fast-forwards,
+  `git fetch . branch:main`, and forced ref updates—the paths commit and merge
+  hooks cannot see—and a branch deferral cannot override it. Lane-to-lane
+  updates are untouched. As with `TBT_ALLOW_MAIN=1`, the enforcement is the
+  floor and not the rule.
 - **A note is not a bake.** An image can reach the oracle's path by hand —
   that is how the current one got there. `tools/ext-bake-gate note-image
   --reason "…"` records who put it there and why, and says in its own

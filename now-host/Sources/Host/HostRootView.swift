@@ -217,6 +217,7 @@ struct HostRootView: View {
             ConnectionsModuleView(model: state.connections,
                                   settings: state.settings,
                                   listener: state.listener,
+                                  onboarding: state.onboarding,
                                   onStart: { state.startListening() },
                                   onStop: { state.stopListening() })
         default:

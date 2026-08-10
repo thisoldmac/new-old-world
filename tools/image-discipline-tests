@@ -106,6 +106,7 @@ class Repo:
                     os.path.join(self.path, ".gitattributes"))
         self.write("ext/src/now_ext.c", "int resident(void) { return 1; }\n")
         self.write("contract/peek_table.h", "enum { kNowPeekTableCapA = 1u << 0 };\n")
+        self.version(1, 0)
         self.receipts([])
         sh("git", "init", "-q", "-b", "main", cwd=self.path)
         sh("git", "config", "user.email", "t@example.com", cwd=self.path)
@@ -123,6 +124,12 @@ class Repo:
         self.write("ext/stage-receipts.json",
                    json.dumps({"receipts": entries}, indent=2, sort_keys=True)
                    + "\n")
+
+    def version(self, major: int, minor: int) -> None:
+        self.write(
+            "contract/resident_version.h",
+            "#define NOW_RESIDENT_VERSION_MAJOR " + str(major) + "\n"
+            "#define NOW_RESIDENT_VERSION_MINOR " + str(minor) + "\n")
 
     def read_receipts(self) -> dict:
         with open(os.path.join(self.path, "ext/stage-receipts.json")) as fh:
@@ -231,7 +238,8 @@ def _(tmp):
     img = os.path.join(tmp, "stage.qcow2")
     fake_image(img, b"ORIGINAL")
     r.write("ext/src/now_ext.c", "int resident(void) { return 2; }\n")
-    r.git("add", "--", "ext/src/now_ext.c")
+    r.version(1, 1)
+    r.git("add", "--", "ext/src/now_ext.c", "contract/resident_version.h")
     r.receipts([receipt(r.digest(), img, sha_of(img))])
     r.git("add", "--", "ext/stage-receipts.json")
     fake_image(img, b"ANOTHER LANE BAKED OVER IT")   # THE MUTATION
@@ -241,6 +249,21 @@ def _(tmp):
          f"moved:\n{out.stdout}\n{out.stderr}")
     must("THE ORACLE ON DISK IS NOT THE ONE THIS RECEIPT DESCRIBES" in out.stdout,
          f"the warning must be unmissable:\n{out.stdout}")
+
+
+@case("commit gate refuses resident source with a stale version")
+def _(tmp):
+    r = Repo(tmp, "version-commit")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"EXACT BAKE")
+    r.write("ext/src/now_ext.c", "int resident(void) { return 8; }\n")
+    r.git("add", "--", "ext/src/now_ext.c")
+    r.receipts([receipt(r.digest(), img, sha_of(img))])
+    r.git("add", "--", "ext/stage-receipts.json")
+
+    out = r.gate("check", env={"NOW_STAGE_IMAGE": img})
+    must(out.returncode == 1, "a matching bake must not excuse stale version")
+    must("version did not advance: 1.0 -> 1.0" in out.stderr, out.stderr)
 
 
 @case("commit gate REFUSES a receipt that could never have been true")
@@ -377,6 +400,98 @@ def _(tmp):
     out = r.gate("merge-check")
     must(out.returncode == 1, "markers must not pass")
     must("conflict markers" in out.stderr, out.stderr)
+
+
+@case("main ref gate blocks fast-forward resident changes until shared bake")
+def _(tmp):
+    r = Repo(tmp, "mainref")
+    base = r.git("rev-parse", "main").stdout.strip()
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"THE PROMOTED ORACLE")
+
+    # Build the exact bypass this hook exists for: a committed lane whose
+    # resident is unbaked, advanced with a ref operation rather than a merge
+    # commit. pre-commit and pre-merge-commit cannot see `git branch -f`.
+    r.git("checkout", "-qb", "lane")
+    r.write("ext/src/now_ext.c", "int resident(void) { return 77; }\n")
+    r.version(1, 1)
+    r.git("add", "--", "ext/src/now_ext.c", "contract/resident_version.h")
+    r.git("commit", "-qm", "unbaked resident")
+
+    os.makedirs(os.path.join(r.path, ".githooks"))
+    hook = os.path.join(r.path, ".githooks", "reference-transaction")
+    shutil.copy(os.path.join(ROOT, ".githooks", "reference-transaction"),
+                hook)
+    os.chmod(hook, 0o755)
+    r.git("config", "core.hooksPath", ".githooks")
+
+    bad = r.git("branch", "-f", "main", "lane")
+    must(bad.returncode != 0,
+         "an unbaked fast-forward main update must be refused")
+    must("changed without a verified shared bake and promotion" in bad.stderr,
+         bad.stderr)
+    must(r.git("rev-parse", "main").stdout.strip() == base,
+         "a refused reference transaction must leave main untouched")
+
+    # A private bake is still not a promotion. This is a distinct failure:
+    # the digest agrees, but the image every other lane clones was not moved.
+    r.receipts([receipt(r.digest(), img, sha_of(img), scope="throwaway")])
+    r.git("add", "--", "ext/stage-receipts.json")
+    r.git("commit", "-qm", "private bake only")
+    private = r.git("branch", "-f", "main", "lane")
+    must(private.returncode != 0,
+         "a private bake must not satisfy the main promotion gate")
+    must("not promoted to the shared oracle" in private.stderr,
+         private.stderr)
+
+    # The same candidate source, now carrying a shared bake receipt, is the
+    # one allowed route. The gate reads the candidate commit tree rather than
+    # this checkout's index or current branch name.
+    r.receipts([receipt(r.digest(), img, sha_of(img), scope="shared")])
+    r.git("add", "--", "ext/stage-receipts.json")
+    r.git("commit", "-qm", "shared bake promoted")
+    good = r.git("branch", "-f", "main", "lane")
+    must(good.returncode == 0, good.stdout + good.stderr)
+    must(r.git("rev-parse", "main").stdout.strip()
+         == r.git("rev-parse", "lane").stdout.strip(),
+         "the verified shared-bake candidate must advance main")
+
+
+@case("main ref gate blocks a promoted resident with a stale version")
+def _(tmp):
+    r = Repo(tmp, "mainref-version")
+    base = r.git("rev-parse", "main").stdout.strip()
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"PROMOTED BUT MISVERSIONED")
+
+    r.git("checkout", "-qb", "lane")
+    r.write("ext/src/now_ext.c", "int resident(void) { return 88; }\n")
+    r.receipts([receipt(r.digest(), img, sha_of(img), scope="shared")])
+    r.git("add", "--", "ext/src/now_ext.c", "ext/stage-receipts.json")
+    r.git("commit", "-qm", "promoted resident without version bump")
+
+    os.makedirs(os.path.join(r.path, ".githooks"))
+    hook = os.path.join(r.path, ".githooks", "reference-transaction")
+    shutil.copy(os.path.join(ROOT, ".githooks", "reference-transaction"),
+                hook)
+    os.chmod(hook, 0o755)
+    r.git("config", "core.hooksPath", ".githooks")
+
+    lane = r.git("rev-parse", "lane").stdout.strip()
+    direct = r.gate("main-ref-check", base, lane)
+    must(direct.returncode != 0,
+         "the immutable-tree check must reject the stale version:\n"
+         + direct.stdout + direct.stderr)
+    must("version did not advance: 1.0 -> 1.0" in direct.stderr,
+         direct.stderr)
+
+    out = r.git("branch", "-f", "main", "lane")
+    must(out.returncode != 0,
+         "promotion alone must not excuse a stale release identity:\n"
+         + out.stdout + out.stderr)
+    must("version did not advance: 1.0 -> 1.0" in out.stderr, out.stderr)
+    must(r.git("rev-parse", "main").stdout.strip() == base,
+         "the stale-version candidate must leave main untouched")
 
 
 # --------------------------------------------------------------------------
@@ -576,7 +691,8 @@ def _(tmp):
     # standing reminder that a check adjacent to the question reads exactly
     # like an answer to it.
     r.write("ext/src/now_ext.c", "int resident(void) { return 3; }\n")
-    r.git("add", "--", "ext/src/now_ext.c")
+    r.version(1, 1)
+    r.git("add", "--", "ext/src/now_ext.c", "contract/resident_version.h")
     gated = r.gate("check", env=env)
     must(gated.returncode == 1,
          "a note must never satisfy the bake gate:\n" + gated.stdout)
@@ -613,7 +729,8 @@ def _(tmp):
     # guardrail and it fires first — which this test watched happen.
     r.git("checkout", "-qb", "claude/whoever")
     r.write("ext/src/now_ext.c", "int resident(void) { return 5; }\n")
-    r.git("add", "--", "ext/src/now_ext.c")
+    r.version(1, 1)
+    r.git("add", "--", "ext/src/now_ext.c", "contract/resident_version.h")
     wired = r.git("commit", "-qm", "resident change, gated", env=env)
     must(wired.returncode != 0,
          "the wired hook must refuse a resident commit with no bake:\n"
@@ -640,7 +757,8 @@ def _(tmp):
                 os.path.join(r.path, "tools", "hooks-doctor"))
     os.chmod(os.path.join(r.path, "tools", "hooks-doctor"), 0o755)
     os.makedirs(os.path.join(r.path, ".githooks"))
-    for hook in ("pre-commit", "pre-merge-commit", "post-merge"):
+    for hook in ("pre-commit", "pre-merge-commit",
+                 "reference-transaction", "post-merge"):
         shutil.copy(os.path.join(ROOT, ".githooks", hook),
                     os.path.join(r.path, ".githooks", hook))
         os.chmod(os.path.join(r.path, ".githooks", hook), 0o755)

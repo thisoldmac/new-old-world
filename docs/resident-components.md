@@ -102,8 +102,13 @@ trusting them.
 
 Rules the table carries:
 
-- **Accretive, per-plane versioning.** The prelude has the extension's
-  major (exact match required) and a length; each plane has its own
+- **One resident release identity, plus accretive per-plane versioning.**
+  [`contract/resident_version.h`](../contract/resident_version.h) owns the
+  major/minor release tuple reported by both the table and the resident's
+  liveness connection. Every resident source change advances it; the commit
+  and `main`-ref gates enforce monotonic movement. The prelude's major remains
+  the exact-match compatibility boundary and its minor is the human release
+  sequence. New fields ride on table length, while each plane carries its own
   format word. A reader requires its plane's format and
   `length >=` what it reads — the prefs-record rule, applied here.
 - **Capabilities are bits, never inferred from versions.** A plane can
