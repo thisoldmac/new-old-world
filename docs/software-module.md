@@ -1,3 +1,7 @@
+---
+search:
+  exclude: true
+---
 # The Software module
 
 What is installed on the machine, and the ability to start it — the

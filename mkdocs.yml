@@ -82,6 +82,13 @@ exclude_docs: |
   !architecture.md
   !contract-coverage.md
   !mcp-coverage.md
+  !command-parity.md
+  !emu-readiness.md
+  !files.md
+  !icloud.md
+  !mirror-knowledge.md
+  !processes-and-peek.md
+  !software-module.md
 
 nav:
   - Docs home: index.md

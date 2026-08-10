@@ -1,3 +1,7 @@
+---
+search:
+  exclude: true
+---
 # Open issues
 
 Things known to be wrong, unfinished, or unverified, with enough detail

@@ -1,3 +1,7 @@
+---
+search:
+  exclude: true
+---
 # The Processes page, and the extension behind it
 
 This is the spec for the Workshop's Processes module and for the ladder

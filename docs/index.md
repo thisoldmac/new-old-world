@@ -60,6 +60,8 @@ before putting irreplaceable data or an untrusted network in the loop.
   it, and why its contracts and verification boundaries exist.
 - **Engineering records** preserve status, measurements, known-wrong behavior,
   and the append-only issue ledger. They are evidence, not first-run prose.
+  Current summaries remain searchable; linked deep records and the append-only
+  ledger keep stable URLs but stay out of primary search results.
 
 ## Contributing
 

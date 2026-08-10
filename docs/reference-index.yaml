@@ -9,6 +9,7 @@ entries:
   - path: open-issues.md
     lifecycle: reference
     audience: developer
+    search: exclude
   - path: architecture.md
     lifecycle: current
     audience: developer
@@ -18,6 +19,35 @@ entries:
   - path: mcp-coverage.md
     lifecycle: current
     audience: developer
+  - path: command-parity.md
+    lifecycle: current
+    audience: developer
+    search: exclude
+  - path: emu-readiness.md
+    lifecycle: current
+    audience: developer
+    search: exclude
+  - path: files.md
+    lifecycle: current
+    audience: developer
+    search: exclude
+  - path: icloud.md
+    lifecycle: current
+    audience: developer
+    search: exclude
+  - path: mirror-knowledge.md
+    lifecycle: current
+    audience: developer
+    search: exclude
+  - path: processes-and-peek.md
+    lifecycle: current
+    audience: developer
+    search: exclude
+  - path: software-module.md
+    lifecycle: current
+    audience: developer
+    search: exclude
   - path: plans/README.md
     lifecycle: historical
     audience: developer
+    search: exclude

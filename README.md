@@ -79,7 +79,7 @@ uv pip install --python .docs-venv/bin/python -r docs/requirements.txt
 scripts/test-docs
 ```
 
-The docs gate validates structure, links, source dependencies, images, live module inventories, AsyncAPI references, generated pages, rendered accessibility landmarks, and declared derivations. Its mutation self-test proves nine representative failures are refused by name.
+The docs gate validates structure, links, source dependencies, images, live module inventories, AsyncAPI references, generated pages, rendered accessibility landmarks, and declared derivations. Its mutation self-test proves each named failure class is refused for the reason it claims.
 
 ## Repository map
 

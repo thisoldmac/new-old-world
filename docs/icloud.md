@@ -1,3 +1,7 @@
+---
+search:
+  exclude: true
+---
 # iCloud — the module, both halves
 
 "Making Old World Macs a first-class member of the modern Apple

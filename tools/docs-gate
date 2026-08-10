@@ -102,6 +102,21 @@ def published_files(root: Path, nav: list[str]) -> list[Path]:
     return [docs / rel for rel in nav if (docs / rel).exists()]
 
 
+def rendered_markdown_path(site_dir: Path, docs: Path, source: Path) -> Path:
+    rel = source.relative_to(docs)
+    if rel.name == "index.md":
+        return site_dir / rel.parent / "index.html"
+    return site_dir / rel.with_suffix("") / "index.html"
+
+
+def markdown_url(docs: Path, source: Path) -> str:
+    rel = source.relative_to(docs)
+    if rel.name == "index.md":
+        parent = rel.parent.as_posix()
+        return f"{parent}/" if parent != "." else ""
+    return f"{rel.with_suffix('').as_posix()}/"
+
+
 def nav_paths(node: object) -> list[str]:
     found: list[str] = []
     if isinstance(node, str) and node.endswith(".md"):
@@ -361,7 +376,45 @@ def check(root: Path, site_dir: Path | None) -> int:
             if not re.search(r"\bText equivalent:", following, re.IGNORECASE):
                 errors.append(f"{rel}: Mermaid diagram lacks a nearby text equivalent")
 
+    reference_index = load_yaml(docs / "reference-index.yaml")
+    reference_rows = reference_index.get("entries", [])
+    reference_paths: set[str] = set()
+    excluded_search_paths: set[str] = set()
+    for row in reference_rows:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            errors.append("docs/reference-index.yaml: every entry needs a path")
+            continue
+        record_rel = row["path"]
+        if record_rel in reference_paths:
+            errors.append(f"docs/reference-index.yaml: duplicate path {record_rel}")
+            continue
+        reference_paths.add(record_rel)
+        record = docs / record_rel
+        if not record.exists():
+            errors.append(f"docs/reference-index.yaml: record does not exist: {record_rel}")
+            continue
+        search_policy = row.get("search", "include")
+        if search_policy not in {"include", "exclude"}:
+            errors.append(
+                f"docs/reference-index.yaml: {record_rel} has invalid search policy {search_policy!r}"
+            )
+        if search_policy == "exclude":
+            excluded_search_paths.add(record_rel)
+            record_meta, _ = frontmatter(record)
+            search_meta = record_meta.get("search", {})
+            if not isinstance(search_meta, dict) or search_meta.get("exclude") is not True:
+                errors.append(
+                    f"docs/reference-index.yaml: {record_rel} is search-excluded but its "
+                    "front matter does not set search.exclude: true"
+                )
+
     published = published_files(root, nav)
+    nav_legacy = {
+        rel for rel in nav
+        if rel not in curated_rel and not rel.startswith(("generated/", "assets/"))
+    }
+    for rel in sorted(nav_legacy - reference_paths):
+        errors.append(f"docs/reference-index.yaml: navigable engineering record is unclassified: {rel}")
     for path in published:
         text = path.read_text()
         for raw in LINK_RE.findall(text):
@@ -374,6 +427,22 @@ def check(root: Path, site_dir: Path | None) -> int:
             if (fragment and path in curated and target.suffix.lower() == ".md"
                     and fragment not in headings(target)):
                 errors.append(f"{path.relative_to(root)}: missing fragment #{fragment} in {target.relative_to(root)}")
+
+    for path in curated:
+        for raw in LINK_RE.findall(path.read_text()):
+            target, _ = resolve_doc_link(path, raw)
+            if target is None or target.suffix.lower() != ".md":
+                continue
+            try:
+                target_rel = str(target.relative_to(docs))
+            except ValueError:
+                continue
+            if target_rel not in curated_rel and not target_rel.startswith("generated/"):
+                if target_rel not in reference_paths:
+                    errors.append(
+                        f"docs/reference-index.yaml: linked engineering record is unclassified: "
+                        f"{target_rel} (from {path.relative_to(root)})"
+                    )
 
     media = load_yaml(docs / "assets/screenshots/manifest.yaml")
     image_items = media.get("images", [])
@@ -731,6 +800,44 @@ def check(root: Path, site_dir: Path | None) -> int:
             if not required_types.issubset(json_types):
                 errors.append(f"{path}: JSON-LD types are {sorted(json_types)}, need {sorted(required_types)}")
 
+        for source in curated:
+            for raw in LINK_RE.findall(source.read_text()):
+                target, _ = resolve_doc_link(source, raw)
+                if target is None or target.suffix.lower() != ".md":
+                    continue
+                try:
+                    target.relative_to(docs)
+                except ValueError:
+                    continue
+                rendered_target = rendered_markdown_path(site_dir, docs, target)
+                if not rendered_target.exists():
+                    errors.append(
+                        f"{source.relative_to(root)}: rendered local link target is not "
+                        f"published: {target.relative_to(docs)}"
+                    )
+
+        search_path = site_dir / "search/search_index.json"
+        if not search_path.exists():
+            errors.append(f"{search_path}: rendered site has no search index")
+        else:
+            try:
+                search_entries = json.loads(search_path.read_text()).get("docs", [])
+            except (json.JSONDecodeError, AttributeError) as exc:
+                errors.append(f"{search_path}: invalid search index: {exc}")
+                search_entries = []
+            indexed_locations = {
+                str(entry.get("location", ""))
+                for entry in search_entries if isinstance(entry, dict)
+            }
+            for rel in sorted(excluded_search_paths):
+                record = docs / rel
+                url = markdown_url(docs, record)
+                if any(location == url or location.startswith(f"{url}#")
+                       for location in indexed_locations):
+                    errors.append(
+                        f"{search_path}: search-excluded engineering record is indexed: {rel}"
+                    )
+
     placeholder = subprocess.run(
         [sys.executable, str(root / "tools/docs-placeholders"), "--check"],
         cwd=root,
@@ -757,6 +864,10 @@ def check(root: Path, site_dir: Path | None) -> int:
     )
     notices.append(f"extension feature coverage: {len(extension_coverage)} user-facing rows")
     notices.append(f"Mermaid diagrams: {sum(len(MERMAID_RE.findall(frontmatter(path)[1])) for path in curated)}")
+    notices.append(
+        f"engineering records: {len(reference_paths)} classified, "
+        f"{len(excluded_search_paths)} excluded from primary search"
+    )
     print("[docs-gate] passed")
     for notice in notices:
         print(f"  {notice}")

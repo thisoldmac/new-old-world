@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import shutil
@@ -207,6 +208,11 @@ def main() -> int:
             "source dependency does not exist",
         )
         expect_mutation(
+            test_root, "engineering record search policy", test_root / "docs/reference-index.yaml",
+            "    search: exclude\n", "    search: hidden\n",
+            "has invalid search policy 'hidden'",
+        )
+        expect_mutation(
             test_root, "CI required-check wiring", test_root / ".github/workflows/ci.yml",
             "name: Documentation", "name: Docs changed name",
             "does not expose the recorded required check",
@@ -293,6 +299,43 @@ def main() -> int:
                 '<aside class="now-release-banner"></aside><h1 id="files-module">',
                 "need 0", rendered,
             )
+            deep_record = rendered / "files/index.html"
+            deep_record_bytes = deep_record.read_bytes()
+            deep_record.unlink()
+            try:
+                missing_target = run_gate(test_root, rendered)
+                if (missing_target.returncode == 0
+                        or "rendered local link target is not published: files.md"
+                        not in missing_target.stderr):
+                    raise RuntimeError(
+                        "rendered deep-link mutation was not refused by name\n"
+                        + missing_target.stdout + missing_target.stderr
+                    )
+                print("[docs-gate-selftest] rendered deep-link target: refused by name")
+            finally:
+                deep_record.write_bytes(deep_record_bytes)
+
+            search_index = rendered / "search/search_index.json"
+            search_original = search_index.read_text()
+            try:
+                search_data = json.loads(search_original)
+                search_data["docs"].append({
+                    "location": "open-issues/",
+                    "title": "Open issues",
+                    "text": "must stay out of primary search",
+                })
+                search_index.write_text(json.dumps(search_data))
+                leaked_search = run_gate(test_root, rendered)
+                if (leaked_search.returncode == 0
+                        or "search-excluded engineering record is indexed: open-issues.md"
+                        not in leaked_search.stderr):
+                    raise RuntimeError(
+                        "excluded-search mutation was not refused by name\n"
+                        + leaked_search.stdout + leaked_search.stderr
+                    )
+                print("[docs-gate-selftest] excluded engineering search: refused by name")
+            finally:
+                search_index.write_text(search_original)
 
     print("[docs-gate-selftest] all documentation mutations refused")
     return 0

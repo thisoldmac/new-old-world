@@ -6,7 +6,7 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [docs/site-integration.yaml, scripts/test-docs]
-source_dependencies: [docs/site-integration.yaml, docs/assets/screenshots/manifest.yaml, docs/feature-catalog.yaml, scripts/test-docs, scripts/docs-build, docs/status.md, docs/known-wrong.md, docs/open-issues.md]
+source_dependencies: [docs/site-integration.yaml, docs/assets/screenshots/manifest.yaml, docs/feature-catalog.yaml, scripts/test-docs, scripts/docs-build, scripts/verify-host-signature, docs/naming.md, contract/resident_version.h, docs/status.md, docs/known-wrong.md, docs/open-issues.md]
 media_ids: []
 last_verified: 2026-08-09
 ---
@@ -41,9 +41,19 @@ The release mode refuses incomplete integration and generates `security.txt` and
 - Compare every packaged artifact with the active profile in
   `docs/feature-catalog.yaml`; excluded features must not appear in release
   setup instructions or the bundle.
+- Freeze an artifact record from the actual packaged output. For every shipped
+  payload, record its filename, byte size, and SHA-256. Also record the host's
+  verified signing identity, the PowerPC guest's internal Macintosh name,
+  creator, and fork sizes, and the Extension's resident version. Do not fill
+  this record from a build directory or a planned filename.
 - Install the actual host and PowerPC artifacts by the documented path, then
   test the bundled optional Extension both installed and absent. The alpha
   profile excludes the stale NOW-68K artifact.
+- Repeat [Connect your first classic Mac](../../user-guide/tutorials/first-connection.md)
+  from a clean staging location with no repository checkout, `.env.lab`, or
+  source-build directory available. Record every place where the published
+  instructions require knowledge or a file that the release bundle does not
+  provide.
 - Exercise the setup portal from its fixed `/now` route through the final
   mounted image and first named session. Record classic-browser, MacBinary,
   Disk Copy, and hardware evidence separately; do not collapse a host test or

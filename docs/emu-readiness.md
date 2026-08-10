@@ -1,3 +1,7 @@
+---
+search:
+  exclude: true
+---
 # Emulator readiness
 
 **Date:** 2026-07-31, revised 2026-08-01 · **Status:** an operator's
