@@ -483,6 +483,28 @@ def cmd_show(root: str, want: str | None) -> int:
     return 0
 
 
+def cmd_check_all(root: str) -> int:
+    """Strict CI form: evaluate every declared document, independent of the
+    staged diff. The hook's ordinary-commit leniency is deliberate; a clean
+    CI tree has no staged paths, so it needs this separate whole-corpus mode
+    or a stale declaration can look green merely because nothing is staged."""
+    hits = []
+    for block in declared(root):
+        problems = block.problems(root)
+        if problems:
+            hits.append((block, problems))
+    if not hits:
+        print(f"[derived-doc-gate] all {len(declared(root))} declared documents are current")
+        return 0
+    print("[derived-doc-gate] strict check failed:", file=sys.stderr)
+    for block, problems in hits:
+        print(f"  {block.path}", file=sys.stderr)
+        for problem in problems:
+            print(f"    - {problem}", file=sys.stderr)
+    print("  Repair: tools/derived-doc-gate rederive", file=sys.stderr)
+    return 1
+
+
 def cmd_rederive(root: str, paths: list[str], note: str) -> int:
     any_moved = False
     for block in declared(root):
@@ -508,6 +530,8 @@ def main(argv: list[str]) -> int:
     root = repo_root()
     if cmd == "check":
         return check(root)
+    if cmd == "check-all":
+        return cmd_check_all(root)
     if cmd == "list":
         return cmd_list(root)
     if cmd == "show":

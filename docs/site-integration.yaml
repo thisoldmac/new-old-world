@@ -1,0 +1,19 @@
+version: 1
+base_path: /docs/
+global_nav_label: Docs
+required_ci_check: Documentation
+canonical_origin: null
+website_repository: https://github.com/mishyjari/newoldworld-web
+security_contact: null
+security_expires: null
+release_requirements:
+  - canonical_origin
+  - website_repository
+  - security_contact
+  - security_expires
+notes:
+  - The public website is a separate repository and owns URL assembly and deployment.
+  - The intended future application routes are /app/ and /app/docs/.
+  - Cross-repository assembly is deferred until the website is published; the current standalone preview remains at /docs/.
+  - This application repository owns documentation source, gates, and a future immutable release artifact.
+  - NOW_DOCS_RELEASE=1 still refuses until the canonical origin and security fields are supplied.

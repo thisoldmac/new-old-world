@@ -1335,7 +1335,7 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 5b5db45d5aa4110cd20d4093e2f291504a26a083
+sources-sha1: 20847ab13c7d948487356ee3415476438e3327e9
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1373,6 +1373,15 @@ rederived: 2026-08-08T21:56:10-0400 0ca7eb51 unchanged
 rederived: 2026-08-09T04:12:08-0400 3159abaf sources
 rederived: 2026-08-09T04:56:02-0400 ecdf1284 unchanged
 rederived: 2026-08-09T04:56:23-0400 04313f08 unchanged
+rederived: 2026-08-09T16:10:25-0400 e74b3ab1 sources
+rederived: 2026-08-09T16:29:42-0400 9034e3eb unchanged
+rederived: 2026-08-09T17:05:27-0400 446cf620 unchanged
+rederived: 2026-08-09T17:08:03-0400 446cf620 unchanged
+rederived: 2026-08-09T17:53:27-0400 ed9436c0 unchanged
+rederived: 2026-08-09T18:53:51-0400 181db7a5 unchanged
+rederived: 2026-08-09T18:56:22-0400 181db7a5 unchanged
+rederived: 2026-08-09T19:21:55-0400 dc5bfcd2 unchanged
+rederived: 2026-08-09T19:33:55-0400 c854246d unchanged
 rederived: 2026-08-09T16:17:39-0400 451d757c sources
 rederived: 2026-08-09T17:11:01-0400 5c773d12 unchanged
 rederived: 2026-08-09T17:11:40-0400 5c773d12 unchanged
@@ -1380,4 +1389,9 @@ rederived: 2026-08-09T17:29:58-0400 b5f126e7 unchanged
 rederived: 2026-08-09T18:18:25-0400 a1883ceb sources, x-commands-registry 48->49, ppc-verbs 45->51
 rederived: 2026-08-09T18:18:50-0400 a1883ceb x-commands-registry 49->54
 rederived: 2026-08-09T19:12:11-0400 a1df31e3 sources
+rederived: 2026-08-09T20:56:35-0400 9864da82 sources
+rederived: 2026-08-09T21:05:26-0400 9864da82 unchanged
+rederived: 2026-08-09T21:43:46-0400 2b3c2c0e unchanged
+rederived: 2026-08-09T22:09:30-0400 d54812c2 unchanged
+rederived: 2026-08-09T22:18:48-0400 e637efd3 unchanged
 -->

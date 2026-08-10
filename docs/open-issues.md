@@ -1,3 +1,7 @@
+---
+search:
+  exclude: true
+---
 # Open issues
 
 ## METAL-VERIFIED: host project, classic identity, MPW build/run/dialog (2026-08-09)
@@ -175,6 +179,112 @@ under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
 `MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
 retain their original path spelling so the ledger remains an honest receipt.
 
+## RESOLVED DOCUMENTATION CURRENCY: onboarding, Mirror scheduling, and resident versioning are in the web guides (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+
+The host gained a guided PowerPC setup portal and classic-media builder, while
+Mirror gained session-wide work admission, symmetric invalidation hints, and
+coherent generation publication. Resident releases also gained one shared
+major/minor identity and a main-reference landing gate. Those changes landed
+in `main` after the first documentation pass and were absent from the curated
+web guide even though engineering records existed.
+
+The setup portal is now a gated cross-product row in Core features, an early
+Getting started path, a user how-to with three screenshot slots, and a human
+developer architecture page. Mirror user and developer pages now explain
+human-over-ambient admission, non-preemption, hint coalescing, gap repair,
+cadence fallback, and generation-safe publication. Resident documentation now
+names `contract/resident_version.h` and its landing rule. The review preserves
+the evidence boundary: setup through a classic browser and the PowerBook
+Mirror latency target remain unverified on hardware.
+
+## RESOLVED DOCUMENTATION UX: navigation is incremental and Extension coverage is feature-first (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+
+The initial site performed a full document load for every internal link, and
+the User guide placed NOW Extension ahead of the first-connection tutorial.
+Its main Extension table then exposed P0–P8 implementation planes rather than
+answering the reader's first questions: what works normally, what needs the
+Extension, and what remains experimental.
+
+MkDocs Material instant navigation now replaces the document content for
+internal links, while the Mermaid initializer subscribes to each navigation
+update. User-guide navigation begins with a Getting started group: connect a
+classic Mac first, then review core features and Extension coverage. The
+coverage page now renders 15 user-facing feature rows from
+`docs/feature-catalog.yaml`, including app-only coverage, whether the Extension
+is required, and current maturity or evidence. The technical P0–P8 inventory
+remains in developer documentation. The docs gate maps every human-facing
+Extension row back to the complete resident capability inventory and its
+mutation suite proves that navigation, script lifecycle, or capability
+coverage cannot be removed silently.
+
+**Corrected later on 2026-08-09:** that 15-row matrix was still incomplete.
+It named all nine Extension outcomes but compressed the 14 application modules
+into six broad rows, omitting iCloud, Chat, Diagnostics, Networking, MCP, and
+Logs as distinct features and hiding Hardware and Software behind one
+"inventory" label. The page now renders a 14-row application table and a
+separate nine-row Extension table. The gate compares the application row IDs
+exactly with `docs/module-manifest.yaml`, while the existing capability check
+continues to compare the Extension rows with P0–P8; its mutation suite has
+watched both omissions refuse by name.
+
+**Corrected again later on 2026-08-09:** “initial alpha availability” was
+being presented as a tag even though alpha availability is the default, and
+the text incorrectly said the NOW Extension shipped separately. The profile
+and navigation now say **alpha**; included PowerPC pages and ordinary module
+pages no longer receive redundant availability banners. Optional and excluded
+states remain called out. The Extension is documented as a component included
+in the alpha bundle but optional to install, and the first-connection tutorial
+introduces that choice before sending the reader to the renamed **Core
+features** page.
+
+## DEFERRED WEBSITE HANDOFF: app documentation will be assembled by the separate website repository (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+
+The public website now lives at
+`https://github.com/mishyjari/newoldworld-web`, outside this application
+repository. The intended route is `/app/docs/`, but cross-repository assembly
+is deferred until that website is published. The current local framework
+therefore remains a standalone `/docs/` preview and release mode remains
+incomplete.
+
+When this is resumed, the application repository should continue to own the
+Markdown, docs gates, and an immutable versioned documentation artifact. The
+website repository should pin that artifact and assemble it beneath
+`/app/docs/` as part of its own deployment. No submodule, copied generated
+working tree, or cross-repository commit automation has been adopted.
+
+## RESOLVED DOCUMENTATION OWNERSHIP: developer and coding-agent prose now have separate owners (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+
+The original developer entry path mixed architecture and code-reading material
+with instructions specific to automated sessions. That was not only a
+navigation problem: the same reader had to move between explanatory prose and
+imperative agent protocol, and future edits would have duplicated technical
+claims to serve both.
+
+`docs/developer-guide/` now addresses developers digging into the code: mental
+models, source tracing, debugging, architecture, implementation workflows, and
+verification rationale. `docs/agent-guide/` is a smaller operational overlay
+for coding agents: authority and scope, shared-repository protocol, platform
+routing, change routing, mutation evidence, and handoff. Agent pages link to
+the developer documentation owner instead of restating it. The docs gate
+validates the folder/audience distinction and its mutation suite proves both
+directions are rejected; prose ownership still requires review because
+metadata cannot prove that a paragraph serves the right reader.
+
+## PLANNED RELEASE CONTROL: documentation has a feature profile; runtime flags do not yet exist (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
+
+`docs/feature-catalog.yaml` now declares the alpha product boundary:
+the PowerPC Carbon guest is included, NOW Extension is optional, and the stale
+NOW-68K/pre-Carbon build is excluded. MkDocs renders those states on owning
+pages and generates the public release table and P0–P8 extension inventory from
+the catalog. The documentation gate rejects an incomplete profile, a page
+bound to an unknown feature, or an extension capability list that differs from
+`contract/peek_table.h`; its mutation suite has watched each refusal run.
+
+This is documentation control, not runtime control. No application feature-flag
+system reads the catalog yet. The future implementation must either consume
+the reserved `classic.pre-carbon` key and active-profile default or replace the
+catalog as the single authority. Landing a second runtime-only availability
+matrix would recreate the release drift this gate is intended to prevent.
 ## TESTED, NOT METAL-VERIFIED: the PPC LAN onboarding portal has not run in a classic browser (2026-08-09, `codex/onboarding-portal`)
 
 Connections now has **Set Up a New Mac…**. It starts the configured NOW wire

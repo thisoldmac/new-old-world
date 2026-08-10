@@ -15,8 +15,7 @@ call site to implementation, and the GWorld lifecycle understood well
 enough to predict what an unknown application will do.
 
 The immediate consumer is the GWorld probe
-([the brief](../../../gworld-probe-brief.md),
-[run notes](../../../gworld-probe-run-notes.md)), which is blocked on exactly
+([the brief](../../../gworld-probe-brief.md)), which is blocked on exactly
 this: after a night of measurement it still cannot say whether the
 Finder's composite has an owning CGrafPort, and every explanation left
 standing is a fact about the Toolbox nobody here knows.

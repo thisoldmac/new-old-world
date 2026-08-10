@@ -47,6 +47,16 @@ if [ -x "$root/tools/ext-bake-gate" ]; then
     "$root/tools/ext-bake-gate" check || exit 1
 fi
 
+# Public documentation is a product surface. Run its complete gate when a
+# commit changes the site, the wire authority, or either live module registry.
+# This includes ordinary commits and conflicted merges completed by `git
+# commit`; the auto-merge path is paired in pre-merge-commit below.
+docs_changed=$(git diff --cached --name-only --diff-filter=ACMR | \
+    grep -E '^(docs/|mkdocs\.yml$|README\.md$|CONTRIBUTING\.md$|AGENTS\.md$|contract/asyncapi\.yaml$|now-host/Sources/Host/ModuleRegistry\.swift$|now-guest-ppc/src/workshop/workshop_module\.h$|now-guest-68k/src/commands/commands68\.c$|scripts/docs-|scripts/test-docs$|tools/docs-)' || true)
+if [ -n "$docs_changed" ]; then
+    "$root/tools/docs-commit-gate" || exit 1
+fi
+
 # ---------------------------------------------------------------------
 # derived-doc-gate — BUILT, TESTED, AND DELIBERATELY NOT ARMED.
 #

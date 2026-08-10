@@ -1,0 +1,958 @@
+#!/usr/bin/env python3
+"""Fast, host-only checks for NOW's curated and generated documentation."""
+
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from datetime import date
+import hashlib
+from html.parser import HTMLParser
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+from urllib.parse import unquote, urlsplit
+import xml.etree.ElementTree as ET
+
+import yaml
+
+
+ALLOWED_DOC_TYPES = {"tutorial", "how-to", "reference", "explanation"}
+ALLOWED_AUDIENCES = {"user", "developer", "operator", "agent"}
+ALLOWED_LIFECYCLES = {"current", "experimental", "reference", "historical"}
+REQUIRED_META = {
+    "page_id", "title", "description", "doc_type", "audience", "lifecycle",
+    "authority", "source_dependencies", "media_ids", "last_verified",
+}
+LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+MERMAID_RE = re.compile(r"```mermaid\s*\n(.*?)\n```", re.DOTALL)
+MODULE_SECTIONS = {
+    "What it does", "Availability", "On the modern Mac", "On the classic Mac",
+    "Common tasks", "Safety, consent, and privacy", "Failure states",
+    "Current limitations", "For developers",
+}
+ALLOWED_RELEASE_STATES = {"included", "optional", "excluded"}
+
+
+class DocsLoader(yaml.SafeLoader):
+    pass
+
+
+def _env(loader: DocsLoader, node: yaml.Node) -> str:
+    if isinstance(node, yaml.SequenceNode):
+        values = loader.construct_sequence(node)
+        return os.environ.get(str(values[0]), str(values[1]) if len(values) > 1 else "")
+    return os.environ.get(loader.construct_scalar(node), "")
+
+
+DocsLoader.add_constructor("!ENV", _env)
+DocsLoader.add_multi_constructor(
+    "tag:yaml.org,2002:python/name:",
+    lambda loader, suffix, node: suffix,
+)
+
+
+def repo_root(value: str | None = None) -> Path:
+    raw = value or os.environ.get("NOW_DOCS_GATE_ROOT")
+    return Path(raw).resolve() if raw else Path(__file__).resolve().parent.parent
+
+
+def load_yaml(path: Path, docs_loader: bool = False) -> dict:
+    loader = DocsLoader if docs_loader else yaml.SafeLoader
+    value = yaml.load(path.read_text(), Loader=loader)
+    if not isinstance(value, dict):
+        raise ValueError(f"{path}: expected a YAML mapping")
+    return value
+
+
+def frontmatter(path: Path) -> tuple[dict, str]:
+    text = path.read_text()
+    if not text.startswith("---\n"):
+        return {}, text
+    end = text.find("\n---\n", 4)
+    if end < 0:
+        raise ValueError(f"{path}: unterminated front matter")
+    meta = yaml.safe_load(text[4:end]) or {}
+    if not isinstance(meta, dict):
+        raise ValueError(f"{path}: front matter must be a mapping")
+    return meta, text[end + 5:]
+
+
+def curated_files(root: Path) -> list[Path]:
+    docs = root / "docs"
+    files = [docs / "index.md"] if (docs / "index.md").exists() else []
+    for subtree in (docs / "user-guide", docs / "developer-guide", docs / "agent-guide"):
+        if subtree.exists():
+            files.extend(sorted(subtree.rglob("*.md")))
+    return files
+
+
+def all_markdown(root: Path) -> list[Path]:
+    return [p for p in sorted((root / "docs").rglob("*.md"))
+            if "local" not in p.relative_to(root / "docs").parts]
+
+
+def published_files(root: Path, nav: list[str]) -> list[Path]:
+    docs = root / "docs"
+    return [docs / rel for rel in nav if (docs / rel).exists()]
+
+
+def rendered_markdown_path(site_dir: Path, docs: Path, source: Path) -> Path:
+    rel = source.relative_to(docs)
+    if rel.name == "index.md":
+        return site_dir / rel.parent / "index.html"
+    return site_dir / rel.with_suffix("") / "index.html"
+
+
+def markdown_url(docs: Path, source: Path) -> str:
+    rel = source.relative_to(docs)
+    if rel.name == "index.md":
+        parent = rel.parent.as_posix()
+        return f"{parent}/" if parent != "." else ""
+    return f"{rel.with_suffix('').as_posix()}/"
+
+
+def nav_paths(node: object) -> list[str]:
+    found: list[str] = []
+    if isinstance(node, str) and node.endswith(".md"):
+        found.append(node)
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(nav_paths(item))
+    elif isinstance(node, dict):
+        for value in node.values():
+            found.extend(nav_paths(value))
+    return found
+
+
+def slug(text: str) -> str:
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"[*_~]", "", text).strip().lower()
+    text = re.sub(r"[^\w\- ]", "", text)
+    return re.sub(r"[-\s]+", "-", text).strip("-")
+
+
+def headings(path: Path) -> set[str]:
+    _, body = frontmatter(path)
+    return {slug(text) for _, text in HEADING_RE.findall(body)}
+
+
+def resolve_doc_link(source: Path, raw: str) -> tuple[Path | None, str]:
+    raw = raw.strip().strip("<>")
+    parts = urlsplit(raw)
+    if parts.scheme or parts.netloc or raw.startswith(("mailto:", "tel:")):
+        return None, ""
+    fragment = unquote(parts.fragment)
+    if not parts.path:
+        return source, fragment
+    target = (source.parent / unquote(parts.path)).resolve()
+    if target.is_dir():
+        target = target / "index.md"
+    elif not target.suffix:
+        md = target.with_suffix(".md")
+        target = md if md.exists() else target / "index.md"
+    return target, fragment
+
+
+class SiteHTML(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.lang = ""
+        self.main = 0
+        self.h1 = 0
+        self.skip_link = False
+        self.canonical = ""
+        self.images = 0
+        self.unlabelled_images = 0
+        self.tables = 0
+        self.mermaid = 0
+        self.release_banners = 0
+        self.json_ld: list[str] = []
+        self._json = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if tag == "html":
+            self.lang = values.get("lang") or ""
+        elif tag == "main":
+            self.main += 1
+        elif tag == "h1":
+            self.h1 += 1
+        elif tag == "a" and (values.get("href") or "").startswith("#"):
+            classes = (values.get("class") or "").split()
+            if "md-skip" in classes:
+                self.skip_link = True
+        elif tag == "script" and values.get("type") == "application/ld+json":
+            self._json = True
+            self.json_ld.append("")
+        elif tag == "link" and "canonical" in (values.get("rel") or "").split():
+            self.canonical = values.get("href") or ""
+        elif tag == "img":
+            self.images += 1
+            if not (values.get("alt") or "").strip():
+                self.unlabelled_images += 1
+        elif tag == "table":
+            self.tables += 1
+        elif "mermaid" in (values.get("class") or "").split():
+            self.mermaid += 1
+        elif "now-release-banner" in (values.get("class") or "").split():
+            self.release_banners += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script":
+            self._json = False
+
+    def handle_data(self, data: str) -> None:
+        if self._json:
+            self.json_ld[-1] += data
+
+
+def extract_host_ids(root: Path) -> list[str]:
+    text = (root / "now-host/Sources/Host/ModuleRegistry.swift").read_text()
+    return re.findall(r"\bid:\s*\"([^\"]+)\"", text[text.index("static let standard"):])
+
+
+def extract_ppc_pages(root: Path) -> list[str]:
+    text = (root / "now-guest-ppc/src/workshop/workshop_module.h").read_text()
+    block = text[text.index("typedef enum {"):text.index("} WorkshopModuleID")]
+    return re.findall(r"\b(kWorkshop[A-Za-z0-9]+)\b", block)
+
+
+def local_refs(value: object) -> list[str]:
+    refs: list[str] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "$ref" and isinstance(child, str) and child.startswith("#/"):
+                refs.append(child)
+            else:
+                refs.extend(local_refs(child))
+    elif isinstance(value, list):
+        for child in value:
+            refs.extend(local_refs(child))
+    return refs
+
+
+def ref_exists(document: object, ref: str) -> bool:
+    current = document
+    for raw in ref[2:].split("/"):
+        token = raw.replace("~1", "/").replace("~0", "~")
+        if not isinstance(current, dict) or token not in current:
+            return False
+        current = current[token]
+    return True
+
+
+def mermaid_error(source: str) -> str | None:
+    lines = [line.strip() for line in source.splitlines() if line.strip() and not line.strip().startswith("%%")]
+    if not lines:
+        return "empty Mermaid fence"
+    first = lines[0]
+    if first.startswith(("flowchart", "graph")) and not re.match(r"^(flowchart|graph)\s+(TB|TD|BT|RL|LR)$", first):
+        return f"invalid flowchart declaration {first!r}"
+    allowed = (
+        "flowchart ", "graph ", "sequenceDiagram", "stateDiagram", "classDiagram",
+        "erDiagram", "journey", "timeline", "gitGraph", "pie", "quadrantChart",
+        "mindmap", "architecture-beta", "block-beta",
+    )
+    if not first.startswith(allowed):
+        return f"unknown Mermaid diagram declaration {first!r}"
+    for opening, closing in (("[", "]"), ("(", ")"), ("{", "}")):
+        if source.count(opening) != source.count(closing):
+            return f"unbalanced {opening}{closing} delimiters"
+    return None
+
+
+def check(root: Path, site_dir: Path | None) -> int:
+    errors: list[str] = []
+    notices: list[str] = []
+    docs = root / "docs"
+    config = load_yaml(root / "mkdocs.yml", docs_loader=True)
+    theme_features = config.get("theme", {}).get("features", [])
+    if "navigation.instant" not in theme_features:
+        errors.append("mkdocs.yml: navigation.instant must be enabled for partial-page navigation")
+    mermaid_init = (docs / "assets/javascripts/mermaid-init.js").read_text()
+    if "document$.subscribe" not in mermaid_init:
+        errors.append(
+            "docs/assets/javascripts/mermaid-init.js: Mermaid must subscribe to instant-navigation page updates"
+        )
+    if "pymdownx.superfences.fence_div_format" not in (root / "mkdocs.yml").read_text():
+        errors.append(
+            "mkdocs.yml: Mermaid fences must use fence_div_format so the runtime receives diagram text"
+        )
+    nav = nav_paths(config.get("nav", []))
+    nav_counts = Counter(nav)
+    for rel, count in nav_counts.items():
+        if count > 1:
+            errors.append(f"mkdocs.yml: {rel} appears in navigation {count} times")
+        target = (docs / rel).resolve()
+        if not target.exists():
+            errors.append(f"mkdocs.yml: navigation target does not exist: {rel}")
+
+    curated = curated_files(root)
+    curated_rel = {str(path.relative_to(docs)) for path in curated}
+    missing_nav = sorted(curated_rel - set(nav))
+    for rel in missing_nav:
+        errors.append(f"{rel}: curated page is absent from navigation")
+
+    ids: dict[str, Path] = {}
+    metadata: dict[Path, dict] = {}
+    for path in curated:
+        rel = path.relative_to(root)
+        try:
+            meta, body = frontmatter(path)
+        except (ValueError, yaml.YAMLError) as exc:
+            errors.append(str(exc))
+            continue
+        metadata[path] = meta
+        missing = sorted(REQUIRED_META - set(meta))
+        if missing:
+            errors.append(f"{rel}: missing front matter fields: {', '.join(missing)}")
+            continue
+        page_id = str(meta["page_id"])
+        if page_id in ids:
+            errors.append(f"{rel}: duplicate page_id {page_id!r} also used by {ids[page_id].relative_to(root)}")
+        ids[page_id] = path
+        if meta["doc_type"] not in ALLOWED_DOC_TYPES:
+            errors.append(f"{rel}: invalid doc_type {meta['doc_type']!r}")
+        if meta["audience"] not in ALLOWED_AUDIENCES:
+            errors.append(f"{rel}: invalid audience {meta['audience']!r}")
+        doc_parts = path.relative_to(docs).parts
+        if doc_parts[0] == "agent-guide" and meta["audience"] != "agent":
+            errors.append(f"{rel}: agent-guide pages must use audience: agent")
+        if doc_parts[0] == "developer-guide" and meta["audience"] == "agent":
+            errors.append(f"{rel}: developer-guide pages cannot use audience: agent")
+        if meta["lifecycle"] not in ALLOWED_LIFECYCLES:
+            errors.append(f"{rel}: invalid lifecycle {meta['lifecycle']!r}")
+        if not isinstance(meta["authority"], list) or not meta["authority"]:
+            errors.append(f"{rel}: authority must be a non-empty list")
+        if not isinstance(meta["source_dependencies"], list):
+            errors.append(f"{rel}: source_dependencies must be a list")
+        else:
+            for source in meta["source_dependencies"]:
+                if not (root / str(source)).exists():
+                    errors.append(f"{rel}: source dependency does not exist: {source}")
+        if not isinstance(meta["media_ids"], list):
+            errors.append(f"{rel}: media_ids must be a list")
+        verified_raw = meta["last_verified"]
+        try:
+            if isinstance(verified_raw, date):
+                verified = verified_raw
+            elif isinstance(verified_raw, str):
+                verified = date.fromisoformat(verified_raw)
+            else:
+                raise ValueError
+        except ValueError:
+            errors.append(f"{rel}: last_verified must be an ISO date in YYYY-MM-DD form")
+        else:
+            if verified > date.today():
+                errors.append(f"{rel}: last_verified cannot be in the future")
+        h1 = [text for marks, text in HEADING_RE.findall(body) if len(marks) == 1]
+        if len(h1) != 1:
+            errors.append(f"{rel}: expected exactly one H1, found {len(h1)}")
+        if meta["doc_type"] == "reference" and re.search(
+            r"^##\s+(Steps|Procedure|Before you begin)\s*$", body, re.MULTILINE | re.IGNORECASE
+        ):
+            errors.append(f"{rel}: reference page contains a procedure heading; link to a how-to page")
+        module_ids = meta.get("module_ids")
+        if module_ids:
+            present = {text for marks, text in HEADING_RE.findall(body) if len(marks) == 2}
+            missing_sections = sorted(MODULE_SECTIONS - present)
+            if missing_sections:
+                errors.append(f"{rel}: module page is missing sections: {', '.join(missing_sections)}")
+
+        for diagram in MERMAID_RE.findall(body):
+            issue = mermaid_error(diagram)
+            if issue:
+                errors.append(f"{rel}: {issue}")
+        mermaid_matches = list(MERMAID_RE.finditer(body))
+        for match in mermaid_matches:
+            following = body[match.end():match.end() + 500]
+            if not re.search(r"\bText equivalent:", following, re.IGNORECASE):
+                errors.append(f"{rel}: Mermaid diagram lacks a nearby text equivalent")
+
+    reference_index = load_yaml(docs / "reference-index.yaml")
+    reference_rows = reference_index.get("entries", [])
+    reference_paths: set[str] = set()
+    excluded_search_paths: set[str] = set()
+    for row in reference_rows:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            errors.append("docs/reference-index.yaml: every entry needs a path")
+            continue
+        record_rel = row["path"]
+        if record_rel in reference_paths:
+            errors.append(f"docs/reference-index.yaml: duplicate path {record_rel}")
+            continue
+        reference_paths.add(record_rel)
+        record = docs / record_rel
+        if not record.exists():
+            errors.append(f"docs/reference-index.yaml: record does not exist: {record_rel}")
+            continue
+        search_policy = row.get("search", "include")
+        if search_policy not in {"include", "exclude"}:
+            errors.append(
+                f"docs/reference-index.yaml: {record_rel} has invalid search policy {search_policy!r}"
+            )
+        if search_policy == "exclude":
+            excluded_search_paths.add(record_rel)
+            record_meta, _ = frontmatter(record)
+            search_meta = record_meta.get("search", {})
+            if not isinstance(search_meta, dict) or search_meta.get("exclude") is not True:
+                errors.append(
+                    f"docs/reference-index.yaml: {record_rel} is search-excluded but its "
+                    "front matter does not set search.exclude: true"
+                )
+
+    published = published_files(root, nav)
+    nav_legacy = {
+        rel for rel in nav
+        if rel not in curated_rel and not rel.startswith(("generated/", "assets/"))
+    }
+    for rel in sorted(nav_legacy - reference_paths):
+        errors.append(f"docs/reference-index.yaml: navigable engineering record is unclassified: {rel}")
+    for path in published:
+        text = path.read_text()
+        for raw in LINK_RE.findall(text):
+            target, fragment = resolve_doc_link(path, raw)
+            if target is None:
+                continue
+            if not target.exists():
+                errors.append(f"{path.relative_to(root)}: broken local link {raw!r}")
+                continue
+            if (fragment and path in curated and target.suffix.lower() == ".md"
+                    and fragment not in headings(target)):
+                errors.append(f"{path.relative_to(root)}: missing fragment #{fragment} in {target.relative_to(root)}")
+
+    for path in curated:
+        for raw in LINK_RE.findall(path.read_text()):
+            target, _ = resolve_doc_link(path, raw)
+            if target is None or target.suffix.lower() != ".md":
+                continue
+            try:
+                target_rel = str(target.relative_to(docs))
+            except ValueError:
+                continue
+            if target_rel not in curated_rel and not target_rel.startswith("generated/"):
+                if target_rel not in reference_paths:
+                    errors.append(
+                        f"docs/reference-index.yaml: linked engineering record is unclassified: "
+                        f"{target_rel} (from {path.relative_to(root)})"
+                    )
+
+    media = load_yaml(docs / "assets/screenshots/manifest.yaml")
+    image_items = media.get("images", [])
+    by_id = {item["id"]: item for item in image_items}
+    if len(by_id) != len(image_items):
+        errors.append("docs/assets/screenshots/manifest.yaml: duplicate image id")
+    referenced_media: set[str] = set()
+    placeholder_count = 0
+    real_count = 0
+    for item in image_items:
+        target = docs / item["path"]
+        status = item.get("status", media.get("defaults", {}).get("status"))
+        placeholder_count += status == "placeholder"
+        real_count += status == "captured"
+        if status not in {"placeholder", "captured"}:
+            errors.append(f"media {item['id']}: invalid status {status!r}")
+        if status == "captured" and item.get(
+            "privacy_reviewed", media.get("defaults", {}).get("privacy_reviewed")
+        ) is not True:
+            errors.append(
+                f"media {item['id']}: captured image requires privacy_reviewed: true"
+            )
+        if not target.exists():
+            errors.append(f"media {item['id']}: missing file {item['path']}")
+            continue
+        if target.suffix.lower() == ".svg":
+            try:
+                root_el = ET.parse(target).getroot()
+                width = int(float(root_el.attrib["width"]))
+                height = int(float(root_el.attrib["height"]))
+                if (width, height) != (int(item["width"]), int(item["height"])):
+                    errors.append(f"media {item['id']}: SVG is {width}x{height}, manifest says {item['width']}x{item['height']}")
+            except (ET.ParseError, KeyError, ValueError) as exc:
+                errors.append(f"media {item['id']}: invalid SVG dimensions: {exc}")
+
+    for path, meta in metadata.items():
+        body = frontmatter(path)[1]
+        actual_paths: set[str] = set()
+        for alt, raw in IMAGE_RE.findall(body):
+            if not alt.strip():
+                errors.append(f"{path.relative_to(root)}: image has empty alt text: {raw}")
+            target, _ = resolve_doc_link(path, raw)
+            if target is not None:
+                try:
+                    actual_paths.add(str(target.relative_to(docs)))
+                except ValueError:
+                    errors.append(f"{path.relative_to(root)}: guide image escapes docs/: {raw}")
+        declared_ids = set(meta.get("media_ids", []))
+        referenced_media.update(declared_ids)
+        unknown = sorted(declared_ids - set(by_id))
+        if unknown:
+            errors.append(f"{path.relative_to(root)}: unknown media_ids: {', '.join(unknown)}")
+        declared_paths = {by_id[mid]["path"] for mid in declared_ids if mid in by_id}
+        if actual_paths != declared_paths:
+            errors.append(
+                f"{path.relative_to(root)}: image links and media_ids disagree "
+                f"(links={sorted(actual_paths)}, declared={sorted(declared_paths)})"
+            )
+
+    feature_catalog = load_yaml(docs / "feature-catalog.yaml")
+    if feature_catalog.get("schema_version") != 1:
+        errors.append("docs/feature-catalog.yaml: schema_version must be 1")
+    feature_defs = feature_catalog.get("features", {})
+    if not isinstance(feature_defs, dict) or not feature_defs:
+        errors.append("docs/feature-catalog.yaml: features must be a non-empty mapping")
+        feature_defs = {}
+    active_profile_id = feature_catalog.get("active_profile")
+    profiles = feature_catalog.get("profiles", {})
+    active_profile = profiles.get(active_profile_id, {}) if isinstance(profiles, dict) else {}
+    profile_features = active_profile.get("features", {}) if isinstance(active_profile, dict) else {}
+    if not active_profile:
+        errors.append(f"docs/feature-catalog.yaml: active profile {active_profile_id!r} does not exist")
+    elif set(profile_features) != set(feature_defs):
+        errors.append(
+            "docs/feature-catalog.yaml: active profile feature IDs differ from catalog "
+            f"(profile={sorted(profile_features)}, catalog={sorted(feature_defs)})"
+        )
+    for feature_id, feature in feature_defs.items():
+        if not isinstance(feature, dict):
+            errors.append(f"feature {feature_id}: definition must be a mapping")
+            continue
+        binding = feature.get("runtime_binding")
+        flag_key = feature.get("flag_key")
+        if binding == "planned" and not flag_key:
+            errors.append(f"feature {feature_id}: planned runtime binding needs flag_key")
+        if binding != "planned" and flag_key:
+            errors.append(f"feature {feature_id}: flag_key requires runtime_binding: planned")
+        entry = profile_features.get(feature_id, {})
+        state = entry.get("state") if isinstance(entry, dict) else None
+        if state not in ALLOWED_RELEASE_STATES:
+            errors.append(f"feature {feature_id}: invalid release state {state!r}")
+        primary_pages = feature.get("primary_pages", [])
+        if not isinstance(primary_pages, list) or not primary_pages:
+            errors.append(f"feature {feature_id}: primary_pages must be a non-empty list")
+            continue
+        for page_rel in primary_pages:
+            page = docs / str(page_rel)
+            if not page.exists():
+                errors.append(f"feature {feature_id}: primary page does not exist: {page_rel}")
+                continue
+            page_features = metadata.get(page, {}).get("feature_ids", [])
+            if feature_id not in page_features:
+                errors.append(f"feature {feature_id}: primary page {page_rel} does not declare feature_ids")
+    for path, meta in metadata.items():
+        page_features = meta.get("feature_ids", [])
+        if not isinstance(page_features, list):
+            errors.append(f"{path.relative_to(root)}: feature_ids must be a list")
+            continue
+        unknown_features = sorted(set(page_features) - set(feature_defs))
+        if unknown_features:
+            errors.append(f"{path.relative_to(root)}: unknown feature_ids: {', '.join(unknown_features)}")
+
+    capabilities = feature_catalog.get("extension_capabilities", [])
+    capability_ids = [row.get("id") for row in capabilities if isinstance(row, dict)]
+    capability_planes = [row.get("plane") for row in capabilities if isinstance(row, dict)]
+    if len(capability_ids) != len(set(capability_ids)):
+        errors.append("docs/feature-catalog.yaml: duplicate extension capability id")
+    expected_planes = {f"P{number}" for number in range(9)}
+    if set(capability_planes) != expected_planes or len(capability_planes) != len(expected_planes):
+        errors.append(
+            "docs/feature-catalog.yaml: extension capability planes must be exactly P0-P8 "
+            f"(got={capability_planes})"
+        )
+    declared_symbols = [
+        symbol
+        for row in capabilities if isinstance(row, dict)
+        for symbol in row.get("symbols", [])
+    ]
+    header = (root / "contract/peek_table.h").read_text()
+    live_symbols = re.findall(r"^\s*(kNowPeekTableCap[A-Za-z]+)\s*=", header, re.MULTILINE)
+    if set(declared_symbols) != set(live_symbols) or len(declared_symbols) != len(live_symbols):
+        errors.append(
+            "docs/feature-catalog.yaml: extension capability symbols differ from peek_table.h "
+            f"(catalog={declared_symbols}, live={live_symbols})"
+        )
+    modules = load_yaml(docs / "module-manifest.yaml")
+    module_rows = modules.get("modules", [])
+    manifest_ids = [row["id"] for row in module_rows]
+    module_coverage = feature_catalog.get("module_feature_coverage", [])
+    module_coverage_ids = [
+        row.get("module_id") for row in module_coverage if isinstance(row, dict)
+    ]
+    if (set(module_coverage_ids) != set(manifest_ids)
+            or len(module_coverage_ids) != len(manifest_ids)):
+        errors.append(
+            "docs/feature-catalog.yaml: module feature coverage IDs do not match module manifest "
+            f"(coverage={module_coverage_ids}, manifest={manifest_ids})"
+        )
+    required_module_coverage_fields = {
+        "module_id", "title", "without_extension", "extension_required", "status",
+    }
+    for row in module_coverage:
+        if not isinstance(row, dict):
+            errors.append("docs/feature-catalog.yaml: module feature coverage rows must be mappings")
+            continue
+        missing_fields = sorted(required_module_coverage_fields - set(row))
+        if missing_fields:
+            errors.append(
+                f"module feature coverage {row.get('module_id', '<unknown>')}: missing fields: "
+                f"{', '.join(missing_fields)}"
+            )
+            continue
+        if not isinstance(row["extension_required"], bool):
+            errors.append(
+                f"module feature coverage {row['module_id']}: extension_required must be true or false"
+            )
+
+    product_coverage = feature_catalog.get("product_feature_coverage", [])
+    product_coverage_ids = [
+        row.get("id") for row in product_coverage if isinstance(row, dict)
+    ]
+    if not product_coverage or len(product_coverage_ids) != len(set(product_coverage_ids)):
+        errors.append("docs/feature-catalog.yaml: product feature coverage needs unique rows")
+    required_product_coverage_fields = {
+        "id", "title", "without_extension", "extension_required", "status", "primary_page",
+    }
+    for row in product_coverage:
+        if not isinstance(row, dict):
+            errors.append("docs/feature-catalog.yaml: product feature coverage rows must be mappings")
+            continue
+        missing_fields = sorted(required_product_coverage_fields - set(row))
+        if missing_fields:
+            errors.append(
+                f"product feature coverage {row.get('id', '<unknown>')}: missing fields: "
+                f"{', '.join(missing_fields)}"
+            )
+            continue
+        if not isinstance(row["extension_required"], bool):
+            errors.append(
+                f"product feature coverage {row['id']}: extension_required must be true or false"
+            )
+        primary_page = docs / str(row["primary_page"])
+        if not primary_page.exists():
+            errors.append(
+                f"product feature {row['id']}: primary page does not exist: {row['primary_page']}"
+            )
+
+    extension_coverage = feature_catalog.get("extension_feature_coverage", [])
+    coverage_ids = [row.get("id") for row in extension_coverage if isinstance(row, dict)]
+    if not extension_coverage or len(coverage_ids) != len(set(coverage_ids)):
+        errors.append("docs/feature-catalog.yaml: extension feature coverage needs unique rows")
+    covered_capabilities: list[str] = []
+    required_coverage_fields = {
+        "id", "title", "without_extension", "extension_required", "status", "capability_ids",
+    }
+    for row in extension_coverage:
+        if not isinstance(row, dict):
+            errors.append("docs/feature-catalog.yaml: extension feature coverage rows must be mappings")
+            continue
+        missing_fields = sorted(required_coverage_fields - set(row))
+        if missing_fields:
+            errors.append(
+                f"extension feature coverage {row.get('id', '<unknown>')}: missing fields: "
+                f"{', '.join(missing_fields)}"
+            )
+            continue
+        if not isinstance(row["extension_required"], bool):
+            errors.append(
+                f"extension feature coverage {row['id']}: extension_required must be true or false"
+            )
+        if not isinstance(row["capability_ids"], list):
+            errors.append(f"extension feature coverage {row['id']}: capability_ids must be a list")
+            continue
+        covered_capabilities.extend(row["capability_ids"])
+    if set(covered_capabilities) != set(capability_ids) or len(covered_capabilities) != len(capability_ids):
+        errors.append(
+            "docs/feature-catalog.yaml: feature coverage capability IDs differ from extension "
+            f"capability inventory (coverage={covered_capabilities}, inventory={capability_ids})"
+        )
+    release_page = docs / "user-guide/reference/release-profile.md"
+    extension_page = docs / "user-guide/explanation/core-features.md"
+    if release_page.read_text().count("<!-- release-feature-table -->") != 1:
+        errors.append("release-profile.md: expected exactly one release-feature-table marker")
+    if extension_page.read_text().count("<!-- extension-feature-matrix -->") != 1:
+        errors.append("core-features.md: expected exactly one extension-feature-matrix marker")
+    hooks = config.get("hooks", [])
+    if "docs/hooks/release_features.py" not in hooks:
+        errors.append("mkdocs.yml: release feature hook is not configured")
+    orphan_media = sorted(set(by_id) - referenced_media)
+    if orphan_media:
+        errors.append(f"media manifest entries are unused: {', '.join(orphan_media)}")
+
+    host_ids = extract_host_ids(root)
+    if set(manifest_ids) != set(host_ids) or len(manifest_ids) != len(host_ids):
+        errors.append(f"module manifest IDs do not match host registry (manifest={manifest_ids}, host={host_ids})")
+    ppc_declared = [page for row in module_rows for page in row.get("ppc_pages", [])]
+    ppc_live = extract_ppc_pages(root)
+    if set(ppc_declared) != set(ppc_live) or len(ppc_declared) != len(ppc_live):
+        errors.append(f"module manifest PPC pages do not match live enum (manifest={ppc_declared}, live={ppc_live})")
+    for row in module_rows:
+        page = docs / row["page"]
+        if not page.exists():
+            errors.append(f"module {row['id']}: guide page does not exist: {row['page']}")
+            continue
+        meta = metadata.get(page, {})
+        if meta.get("module_ids") != [row["id"]]:
+            errors.append(f"module {row['id']}: page module_ids must be exactly [{row['id']!r}]")
+        if len(meta.get("media_ids", [])) < 2:
+            errors.append(f"module {row['id']}: page needs at least host and PPC media slots")
+
+    contract = load_yaml(root / "contract/asyncapi.yaml")
+    missing_refs = sorted(set(ref for ref in local_refs(contract) if not ref_exists(contract, ref)))
+    for ref in missing_refs:
+        errors.append(f"contract/asyncapi.yaml: dangling local $ref: {ref}")
+
+    integration = load_yaml(docs / "site-integration.yaml")
+    if integration.get("base_path") != "/docs/":
+        errors.append("docs/site-integration.yaml: base_path must be /docs/")
+    required_check = str(integration.get("required_ci_check") or "")
+    workflow = (root / ".github/workflows/ci.yml").read_text()
+    if not required_check or f"name: {required_check}" not in workflow:
+        errors.append(f"CI workflow does not expose the recorded required check {required_check!r}")
+    if "run: NOW_DOCS_PYTHON=python scripts/test-docs" not in workflow:
+        errors.append("CI Documentation job does not run scripts/test-docs")
+    test_all = (root / "scripts/test-all").read_text()
+    stages = re.findall(r'echo "==> \[(\d+)/(\d+)\] ([^"]+)"', test_all)
+    if not stages or stages[0][2] != "documentation gate":
+        errors.append("scripts/test-all: documentation gate must be stage 1")
+    for hook in (".githooks/pre-commit", ".githooks/pre-merge-commit"):
+        if "docs-commit-gate" not in (root / hook).read_text():
+            errors.append(f"{hook}: documentation merge gate is not wired")
+    if os.environ.get("NOW_DOCS_RELEASE"):
+        for key in integration.get("release_requirements", []):
+            if not integration.get(key):
+                errors.append(f"release integration is incomplete: {key} is not set")
+        origin = str(integration.get("canonical_origin") or "").rstrip("/")
+        expected_site = f"{origin}{integration.get('base_path')}" if origin else ""
+        if expected_site and config.get("site_url") != expected_site:
+            errors.append(
+                f"release site_url must be {expected_site!r}; got {config.get('site_url')!r} "
+                "(set NOW_DOCS_SITE_URL)"
+            )
+
+    if site_dir:
+        representative = {
+            site_dir / "index.html": {"product": True},
+            site_dir / "user-guide/tutorials/first-connection/index.html": {},
+            site_dir / "user-guide/how-to/set-up-new-mac/index.html": {"images": True, "release_banners": 1},
+            site_dir / "user-guide/how-to/configure-connection/index.html": {},
+            site_dir / "user-guide/how-to/install-ppc/index.html": {"release_banners": 0},
+            site_dir / "user-guide/how-to/install-68k/index.html": {"release_banners": 1},
+            site_dir / "user-guide/explanation/core-features/index.html": {"tables_min": 2, "release_banners": 1},
+            site_dir / "user-guide/reference/release-profile/index.html": {"table": True},
+            site_dir / "user-guide/reference/modules/files/index.html": {"images": True, "release_banners": 0},
+            site_dir / "developer-guide/architecture/system-context/index.html": {"mermaid": True},
+            site_dir / "developer-guide/reference/verification-levels/index.html": {"table": True, "mermaid": True},
+            site_dir / "agent-guide/index.html": {},
+        }
+        for path, expected in representative.items():
+            if not path.exists():
+                errors.append(f"rendered representative page is missing: {path}")
+                continue
+            parser = SiteHTML()
+            parser.feed(path.read_text())
+            if parser.lang != "en":
+                errors.append(f"{path}: rendered html lacks lang=en")
+            if parser.main != 1:
+                errors.append(f"{path}: rendered html has {parser.main} main landmarks")
+            if parser.h1 != 1:
+                errors.append(f"{path}: rendered html has {parser.h1} H1 elements")
+            if not parser.skip_link:
+                errors.append(f"{path}: rendered html has no skip link")
+            if not parser.canonical:
+                errors.append(f"{path}: rendered html has no canonical URL")
+            if parser.unlabelled_images:
+                errors.append(f"{path}: rendered html has {parser.unlabelled_images} image(s) without alt text")
+            if expected.get("images") and parser.images < 1:
+                errors.append(f"{path}: representative image page rendered no images")
+            if expected.get("table") and parser.tables < 1:
+                errors.append(f"{path}: representative table page rendered no table")
+            if expected.get("tables_min") and parser.tables < expected["tables_min"]:
+                errors.append(
+                    f"{path}: representative table page rendered {parser.tables} tables; "
+                    f"need at least {expected['tables_min']}"
+                )
+            if expected.get("mermaid") and parser.mermaid < 1:
+                errors.append(f"{path}: representative diagram page rendered no Mermaid container")
+            if ("release_banners" in expected
+                    and parser.release_banners != expected["release_banners"]):
+                errors.append(
+                    f"{path}: rendered feature page has {parser.release_banners} release banners; "
+                    f"need {expected['release_banners']}"
+                )
+            json_types: set[str] = set()
+            for raw in parser.json_ld:
+                try:
+                    value = json.loads(raw)
+                    if isinstance(value, dict) and isinstance(value.get("@type"), str):
+                        json_types.add(value["@type"])
+                except json.JSONDecodeError as exc:
+                    errors.append(f"{path}: invalid JSON-LD: {exc}")
+            required_types = {"TechArticle", "BreadcrumbList"}
+            if expected.get("product"):
+                required_types.add("SoftwareApplication")
+            if not required_types.issubset(json_types):
+                errors.append(f"{path}: JSON-LD types are {sorted(json_types)}, need {sorted(required_types)}")
+
+        for source in curated:
+            for raw in LINK_RE.findall(source.read_text()):
+                target, _ = resolve_doc_link(source, raw)
+                if target is None or target.suffix.lower() != ".md":
+                    continue
+                try:
+                    target.relative_to(docs)
+                except ValueError:
+                    continue
+                rendered_target = rendered_markdown_path(site_dir, docs, target)
+                if not rendered_target.exists():
+                    errors.append(
+                        f"{source.relative_to(root)}: rendered local link target is not "
+                        f"published: {target.relative_to(docs)}"
+                    )
+
+        search_path = site_dir / "search/search_index.json"
+        if not search_path.exists():
+            errors.append(f"{search_path}: rendered site has no search index")
+        else:
+            try:
+                search_entries = json.loads(search_path.read_text()).get("docs", [])
+            except (json.JSONDecodeError, AttributeError) as exc:
+                errors.append(f"{search_path}: invalid search index: {exc}")
+                search_entries = []
+            indexed_locations = {
+                str(entry.get("location", ""))
+                for entry in search_entries if isinstance(entry, dict)
+            }
+            for rel in sorted(excluded_search_paths):
+                record = docs / rel
+                url = markdown_url(docs, record)
+                if any(location == url or location.startswith(f"{url}#")
+                       for location in indexed_locations):
+                    errors.append(
+                        f"{search_path}: search-excluded engineering record is indexed: {rel}"
+                    )
+
+    placeholder = subprocess.run(
+        [sys.executable, str(root / "tools/docs-placeholders"), "--check"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if placeholder.returncode:
+        errors.append((placeholder.stderr or placeholder.stdout).strip())
+
+    if errors:
+        print("[docs-gate] FAILED", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 1
+    notices.append(f"curated pages: {len(curated)} ({dict(Counter(meta['doc_type'] for meta in metadata.values()))})")
+    notices.append(f"published links scanned: {sum(len(LINK_RE.findall(path.read_text())) for path in published)}")
+    notices.append(f"media: {real_count} captured, {placeholder_count} placeholders")
+    notices.append(f"module coverage: {len(module_rows)} host modules, {len(ppc_declared)} PPC pages")
+    notices.append(f"release profile: {active_profile_id}, {len(feature_defs)} product features")
+    notices.append(f"extension capabilities: {len(capabilities)} planes, {len(declared_symbols)} capability bits")
+    notices.append(
+        f"application feature coverage: {len(product_coverage)} product rows, "
+        f"{len(module_coverage)} module rows"
+    )
+    notices.append(f"extension feature coverage: {len(extension_coverage)} user-facing rows")
+    notices.append(f"Mermaid diagrams: {sum(len(MERMAID_RE.findall(frontmatter(path)[1])) for path in curated)}")
+    notices.append(
+        f"engineering records: {len(reference_paths)} classified, "
+        f"{len(excluded_search_paths)} excluded from primary search"
+    )
+    print("[docs-gate] passed")
+    for notice in notices:
+        print(f"  {notice}")
+    return 0
+
+
+def module_inventory(root: Path) -> int:
+    manifest = load_yaml(root / "docs/module-manifest.yaml")
+    for row in manifest["modules"]:
+        print(f"{row['id']}\t{','.join(row['ppc_pages'])}\t{row['guest_68k']}\t{row['page']}")
+    return 0
+
+
+def contract_summary(root: Path) -> int:
+    contract = load_yaml(root / "contract/asyncapi.yaml")
+    messages = contract.get("components", {}).get("messages", {})
+    commands = contract.get("components", {}).get("x-commands", {})
+    print(f"asyncapi\t{contract.get('asyncapi')}")
+    print(f"contract-revision\t{contract.get('info', {}).get('x-contract-revision')}")
+    print(f"channels\t{len(contract.get('channels', {}))}")
+    print(f"operations\t{len(contract.get('operations', {}))}")
+    print(f"messages\t{len(messages)}")
+    print(f"commands\t{len(commands)}")
+    return 0
+
+
+def source_summary(root: Path, group: str) -> int:
+    if group == "contract":
+        return contract_summary(root)
+    if group == "build":
+        text = (root / "scripts/test-all").read_text()
+        for number, total, name in re.findall(r'echo "==> \[(\d+)/(\d+)\] ([^"]+)"', text):
+            print(f"{number}/{total}\t{name}")
+        return 0
+    if group == "setup":
+        naming = (root / "docs/naming.md").read_text()
+        for line in naming.splitlines():
+            if line.startswith("| ") and any(token in line for token in ("PowerPC Carbon guest", "68K guest", "Host application")):
+                print(" ".join(line.split()))
+        ppc = (root / "now-guest-ppc/CMakeLists.txt").read_text()
+        print(f"ppc-canonical-artifact\t{'New Old World.bin' if 'OUTPUT \"New Old World.bin\"' in ppc else 'missing'}")
+        guest_68k = (root / "now-guest-68k/CMakeLists.txt").read_text()
+        target = re.search(r"targets the ([^)]+)\) only", guest_68k)
+        print(f"68k-target\t{target.group(1) if target else 'unresolved'}")
+        return 0
+    if group == "resident":
+        header = (root / "contract/peek_table.h").read_text()
+        names = ["kNowPeekExtMajor", "kNowPeekMaxAnchors"]
+        names.extend(re.findall(r"\b(kNowPeekTableCap[A-Za-z]+)\s*=", header))
+        for name in names:
+            match = re.search(rf"\b{re.escape(name)}\s*=\s*([^,\n}}]+)", header)
+            if match:
+                print(f"{name}\t{' '.join(match.group(1).split())}")
+        return 0
+    if group == "mcp":
+        catalog = (root / "now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift").read_text()
+        block = catalog[catalog.index("public static let projections"):]
+        projections = re.findall(r"^\s*([A-Za-z0-9]+Projection)\.self,", block, re.MULTILINE)
+        print(f"host-projections\t{len(projections)}")
+        print(f"first\t{projections[0] if projections else 'none'}")
+        print(f"last\t{projections[-1] if projections else 'none'}")
+        return 0
+    print(f"unknown source group: {group}", file=sys.stderr)
+    return 2
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", nargs="?", default="check", choices=["check", "module-inventory", "contract-summary", "source-summary"])
+    parser.add_argument("group", nargs="?")
+    parser.add_argument("--root")
+    parser.add_argument("--site-dir")
+    args = parser.parse_args()
+    root = repo_root(args.root)
+    if args.command == "module-inventory":
+        return module_inventory(root)
+    if args.command == "contract-summary":
+        return contract_summary(root)
+    if args.command == "source-summary":
+        if not args.group:
+            parser.error("source-summary requires a group")
+        return source_summary(root, args.group)
+    site_dir = Path(args.site_dir).resolve() if args.site_dir else None
+    return check(root, site_dir)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

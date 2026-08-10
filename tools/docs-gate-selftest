@@ -1,0 +1,345 @@
+#!/usr/bin/env python3
+"""Mutation evidence for the documentation source gate."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def run_gate(test_root: Path, site_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["NOW_DOCS_GATE_ROOT"] = str(test_root)
+    command = [sys.executable, str(ROOT / "tools/docs-gate")]
+    if site_dir:
+        command.extend(["--site-dir", str(site_dir)])
+    return subprocess.run(
+        command,
+        cwd=test_root,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+
+def replace(path: Path, old: str, new: str) -> str:
+    original = path.read_text()
+    if old not in original:
+        raise RuntimeError(f"selftest fixture moved: {old!r} not found in {path}")
+    path.write_text(original.replace(old, new, 1))
+    return original
+
+
+def expect_mutation(test_root: Path, name: str, path: Path, old: str, new: str, needle: str,
+                    site_dir: Path | None = None) -> None:
+    original = replace(path, old, new)
+    try:
+        result = run_gate(test_root, site_dir)
+        output = result.stdout + result.stderr
+        if result.returncode == 0 or needle not in output:
+            raise RuntimeError(
+                f"{name}: expected refusal containing {needle!r}; exit={result.returncode}\n{output}"
+            )
+        print(f"[docs-gate-selftest] {name}: refused by name")
+    finally:
+        path.write_text(original)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--site-dir")
+    args = parser.parse_args()
+    with tempfile.TemporaryDirectory(prefix="now-docs-gate-") as raw:
+        test_root = Path(raw)
+        shutil.copytree(ROOT / "docs", test_root / "docs")
+        shutil.copytree(ROOT / "contract", test_root / "contract")
+        shutil.copy2(ROOT / "mkdocs.yml", test_root / "mkdocs.yml")
+        for name in ("now-host", "now-guest-ppc", "now-guest-68k", ".github", ".githooks"):
+            shutil.copytree(ROOT / name, test_root / name)
+        for name in (
+            "AGENTS.md", "README.md", "CONTRIBUTING.md", "SECURITY.md",
+            "ext", "scripts", "tools",
+        ):
+            (test_root / name).symlink_to(ROOT / name, target_is_directory=(ROOT / name).is_dir())
+
+        baseline = run_gate(test_root)
+        if baseline.returncode:
+            raise RuntimeError("baseline gate failed:\n" + baseline.stdout + baseline.stderr)
+
+        expect_mutation(
+            test_root, "navigation coverage", test_root / "mkdocs.yml",
+            "      - Overview: user-guide/index.md\n", "", "curated page is absent from navigation",
+        )
+        expect_mutation(
+            test_root, "partial-page navigation", test_root / "mkdocs.yml",
+            "    - navigation.instant\n", "",
+            "navigation.instant must be enabled for partial-page navigation",
+        )
+        expect_mutation(
+            test_root, "instant-navigation Mermaid lifecycle",
+            test_root / "docs/assets/javascripts/mermaid-init.js",
+            "document$.subscribe", "documentFullPage.subscribe",
+            "Mermaid must subscribe to instant-navigation page updates",
+        )
+        expect_mutation(
+            test_root, "Mermaid fence shape", test_root / "mkdocs.yml",
+            "pymdownx.superfences.fence_div_format",
+            "pymdownx.superfences.fence_code_format",
+            "Mermaid fences must use fence_div_format",
+        )
+        expect_mutation(
+            test_root, "broken link", test_root / "docs/index.md",
+            "# New Old World documentation", "# New Old World documentation\n\n[missing](no-such-page.md)",
+            "broken local link",
+        )
+        expect_mutation(
+            test_root, "broken fragment", test_root / "docs/index.md",
+            "# New Old World documentation", "# New Old World documentation\n\n[missing heading](user-guide/index.md#no-such-heading)",
+            "missing fragment",
+        )
+        expect_mutation(
+            test_root, "image alt text", test_root / "docs/user-guide/tutorials/first-connection.md",
+            "![The alpha bundle with the host, PowerPC guest, and bundled optional Extension identified]",
+            "![]", "image has empty alt text",
+        )
+        expect_mutation(
+            test_root, "image dimensions", test_root / "docs/assets/screenshots/overview/host.svg",
+            'width="980"', 'width="981"', "SVG is 981x650",
+        )
+        expect_mutation(
+            test_root, "captured image privacy review",
+            test_root / "docs/assets/screenshots/manifest.yaml",
+            "  - id: overview-host\n", "  - id: overview-host\n    status: captured\n",
+            "captured image requires privacy_reviewed: true",
+        )
+        expect_mutation(
+            test_root, "placeholder freshness", test_root / "docs/assets/screenshots/overview/host.svg",
+            "SCREENSHOT NEEDED", "SCREENSHOT STALE", "stale or missing placeholders",
+        )
+        expect_mutation(
+            test_root, "module inventory", test_root / "docs/module-manifest.yaml",
+            "  - id: screen\n", "  - id: screen-renamed\n", "do not match host registry",
+        )
+        expect_mutation(
+            test_root, "host module without guide", test_root / "now-host/Sources/Host/ModuleRegistry.swift",
+            'id: "screen"', 'id: "screen-unmapped"', "do not match host registry",
+        )
+        expect_mutation(
+            test_root, "PPC page without mapping", test_root / "now-guest-ppc/src/workshop/workshop_module.h",
+            "    kWorkshopPreferences,", "    kWorkshopUnmapped,\n    kWorkshopPreferences,",
+            "do not match live enum",
+        )
+        expect_mutation(
+            test_root, "release profile coverage", test_root / "docs/feature-catalog.yaml",
+            "      classic.pre-carbon:\n", "      classic.pre-carbon-renamed:\n",
+            "active profile feature IDs differ from catalog",
+        )
+        expect_mutation(
+            test_root, "extension capability inventory", test_root / "docs/feature-catalog.yaml",
+            "symbols: [kNowPeekTableCapAnchors]", "symbols: []",
+            "extension capability symbols differ from peek_table.h",
+        )
+        expect_mutation(
+            test_root, "module feature coverage", test_root / "docs/feature-catalog.yaml",
+            "module_id: screen", "module_id: screen-renamed",
+            "module feature coverage IDs do not match module manifest",
+        )
+        expect_mutation(
+            test_root, "product feature page", test_root / "docs/feature-catalog.yaml",
+            "primary_page: user-guide/how-to/set-up-new-mac.md",
+            "primary_page: user-guide/how-to/no-such-setup.md",
+            "product feature guided-setup: primary page does not exist",
+        )
+        expect_mutation(
+            test_root, "extension feature coverage", test_root / "docs/feature-catalog.yaml",
+            "capability_ids: [structure]", "capability_ids: []",
+            "feature coverage capability IDs differ from extension capability inventory",
+        )
+        expect_mutation(
+            test_root, "feature page binding", test_root / "docs/user-guide/how-to/install-extension.md",
+            "feature_ids: [resident.extension]", "feature_ids: [classic.powerpc]",
+            "primary page user-guide/how-to/install-extension.md does not declare feature_ids",
+        )
+        expect_mutation(
+            test_root, "AsyncAPI reference", test_root / "contract/asyncapi.yaml",
+            '#/components/messages/fileProgress', '#/components/messages/doesNotExist',
+            "dangling local $ref",
+        )
+        expect_mutation(
+            test_root, "Diataxis page type", test_root / "docs/user-guide/reference/requirements.md",
+            "# Requirements", "# Requirements\n\n## Steps", "reference page contains a procedure heading",
+        )
+        expect_mutation(
+            test_root, "missing doc_type", test_root / "docs/developer-guide/index.md",
+            "doc_type: explanation\n", "", "missing front matter fields: doc_type",
+        )
+        expect_mutation(
+            test_root, "verification date syntax", test_root / "docs/developer-guide/index.md",
+            "last_verified: 2026-08-09\n", "last_verified: someday\n",
+            "last_verified must be an ISO date in YYYY-MM-DD form",
+        )
+        expect_mutation(
+            test_root, "agent guide audience ownership", test_root / "docs/agent-guide/index.md",
+            "audience: agent\n", "audience: developer\n",
+            "agent-guide pages must use audience: agent",
+        )
+        expect_mutation(
+            test_root, "developer guide audience ownership", test_root / "docs/developer-guide/index.md",
+            "audience: developer\n", "audience: agent\n",
+            "developer-guide pages cannot use audience: agent",
+        )
+        expect_mutation(
+            test_root, "Mermaid syntax", test_root / "docs/developer-guide/architecture/system-context.md",
+            "flowchart LR", "flowchart", "invalid flowchart declaration",
+        )
+        expect_mutation(
+            test_root, "source dependency", test_root / "docs/developer-guide/index.md",
+            "source_dependencies: [README.md, contract/asyncapi.yaml, scripts/test-all, docs/developer-guide/orientation.md]",
+            "source_dependencies: [README.md, contract/nope.yaml, scripts/test-all, docs/developer-guide/orientation.md]",
+            "source dependency does not exist",
+        )
+        expect_mutation(
+            test_root, "engineering record search policy", test_root / "docs/reference-index.yaml",
+            "    search: exclude\n", "    search: hidden\n",
+            "has invalid search policy 'hidden'",
+        )
+        expect_mutation(
+            test_root, "CI required-check wiring", test_root / ".github/workflows/ci.yml",
+            "name: Documentation", "name: Docs changed name",
+            "does not expose the recorded required check",
+        )
+
+        generated = test_root / "docs/generated/asyncapi.md"
+        original_generated = replace(generated, "# Generated wire contract reference", "# Stale wire contract reference")
+        try:
+            env = os.environ.copy()
+            env["NOW_DOCS_GATE_ROOT"] = str(test_root)
+            stale = subprocess.run(
+                [sys.executable, str(ROOT / "tools/docs-contract-projector"), "--check"],
+                cwd=test_root, env=env, text=True, capture_output=True,
+            )
+            if stale.returncode == 0 or "generated reference is stale" not in stale.stderr:
+                raise RuntimeError("generated AsyncAPI mutation was not refused by name")
+            print("[docs-gate-selftest] generated AsyncAPI freshness: refused by name")
+        finally:
+            generated.write_text(original_generated)
+
+        image = test_root / "docs/assets/screenshots/overview/host.svg"
+        image_bytes = image.read_bytes()
+        image.unlink()
+        try:
+            missing_image = run_gate(test_root)
+            if missing_image.returncode == 0 or "missing file" not in missing_image.stderr:
+                raise RuntimeError("missing image mutation was not refused by name")
+            print("[docs-gate-selftest] missing image: refused by name")
+        finally:
+            image.write_bytes(image_bytes)
+
+        integration = test_root / "docs/site-integration.yaml"
+        configured = integration.read_text()
+        configured = configured.replace("canonical_origin: null", "canonical_origin: https://now.example")
+        configured = configured.replace("website_repository: null", "website_repository: https://example.invalid/now-site")
+        configured = configured.replace("security_contact: null", "security_contact: mailto:security@now.example")
+        configured = configured.replace("security_expires: null", "security_expires: 2099-08-09T00:00:00Z")
+        integration.write_text(configured)
+        release_site = test_root / "release-site"
+        env = os.environ.copy()
+        env["NOW_DOCS_GATE_ROOT"] = str(test_root)
+        generated_release = subprocess.run(
+            [sys.executable, str(ROOT / "tools/docs-release-assets"), "--site-dir", str(release_site)],
+            cwd=test_root, env=env, text=True, capture_output=True,
+        )
+        if generated_release.returncode:
+            raise RuntimeError("release asset fixture failed:\n" + generated_release.stdout + generated_release.stderr)
+        configured = integration.read_text()
+        integration.write_text(configured.replace("mailto:security@now.example", "mailto:changed@now.example"))
+        stale_security = subprocess.run(
+            [sys.executable, str(ROOT / "tools/docs-release-assets"), "--site-dir", str(release_site), "--check"],
+            cwd=test_root, env=env, text=True, capture_output=True,
+        )
+        if stale_security.returncode == 0 or "release asset is stale" not in stale_security.stderr:
+            raise RuntimeError("security.txt source mismatch was not refused by name")
+        print("[docs-gate-selftest] security.txt source mismatch: refused by name")
+
+        if args.site_dir:
+            rendered = test_root / "rendered"
+            shutil.copytree(Path(args.site_dir), rendered)
+            index = rendered / "index.html"
+            expect_mutation(
+                test_root, "rendered language", index, 'lang="en"', 'lang=""',
+                "rendered html lacks lang=en", rendered,
+            )
+            expect_mutation(
+                test_root, "canonical URL", index, 'rel="canonical"', 'rel="alternate"',
+                "rendered html has no canonical URL", rendered,
+            )
+            expect_mutation(
+                test_root, "structured data", index, '"@type": "TechArticle"', '"@type": "BrokenArticle"',
+                "JSON-LD types", rendered,
+            )
+            extension = rendered / "user-guide/explanation/core-features/index.html"
+            expect_mutation(
+                test_root, "rendered release banner", extension,
+                'class="now-release-banner"', 'class="now-release-banner-missing"',
+                "rendered feature page has 0 release banners", rendered,
+            )
+            files = rendered / "user-guide/reference/modules/files/index.html"
+            expect_mutation(
+                test_root, "redundant default availability banner", files,
+                '<h1 id="files-module">',
+                '<aside class="now-release-banner"></aside><h1 id="files-module">',
+                "need 0", rendered,
+            )
+            deep_record = rendered / "files/index.html"
+            deep_record_bytes = deep_record.read_bytes()
+            deep_record.unlink()
+            try:
+                missing_target = run_gate(test_root, rendered)
+                if (missing_target.returncode == 0
+                        or "rendered local link target is not published: files.md"
+                        not in missing_target.stderr):
+                    raise RuntimeError(
+                        "rendered deep-link mutation was not refused by name\n"
+                        + missing_target.stdout + missing_target.stderr
+                    )
+                print("[docs-gate-selftest] rendered deep-link target: refused by name")
+            finally:
+                deep_record.write_bytes(deep_record_bytes)
+
+            search_index = rendered / "search/search_index.json"
+            search_original = search_index.read_text()
+            try:
+                search_data = json.loads(search_original)
+                search_data["docs"].append({
+                    "location": "open-issues/",
+                    "title": "Open issues",
+                    "text": "must stay out of primary search",
+                })
+                search_index.write_text(json.dumps(search_data))
+                leaked_search = run_gate(test_root, rendered)
+                if (leaked_search.returncode == 0
+                        or "search-excluded engineering record is indexed: open-issues.md"
+                        not in leaked_search.stderr):
+                    raise RuntimeError(
+                        "excluded-search mutation was not refused by name\n"
+                        + leaked_search.stdout + leaked_search.stderr
+                    )
+                print("[docs-gate-selftest] excluded engineering search: refused by name")
+            finally:
+                search_index.write_text(search_original)
+
+    print("[docs-gate-selftest] all documentation mutations refused")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

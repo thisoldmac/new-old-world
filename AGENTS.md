@@ -420,6 +420,24 @@ agents branch in their own worktrees — so the shared checkout stays on
 
 ## Docs
 
+The public guide is built by MkDocs from `mkdocs.yml` at the `/docs/` base
+path. `docs/user-guide/` and `docs/developer-guide/` use the Diátaxis page
+types in front matter; every curated page also declares authority, source
+dependencies, lifecycle, media IDs, and a verification date. Run
+`scripts/test-docs` before landing documentation or a source change named by
+those pages. `tools/docs-gate-selftest` is the mutation evidence for that
+gate.
+
+Module documentation is derived from the live host registry and PowerPC
+Workshop enum through `docs/module-manifest.yaml`. A new module updates the
+registry, manifest, module page, nav, and screenshot slots in the same
+change. The AsyncAPI reading copy is generated with `scripts/docs-contract`;
+`contract/asyncapi.yaml` remains the authority.
+
+Screenshot placeholders are deliberate, exact-size artifacts listed in
+`docs/assets/screenshots/manifest.yaml`. Replace them in place after a
+privacy review; do not change dimensions or delete a slot silently.
+
 **`docs/` is published; `docs/local/` is scratch and gitignored.** The
 split is by audience, not by who typed the file. `docs/` is read by
 people who have never seen this project, and every file there is a

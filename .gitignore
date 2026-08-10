@@ -40,6 +40,7 @@ run/
 
 # Python bytecode from the asset generators in assets/.
 __pycache__/
+.docs-venv/
 
 # The extracted Platinum asset pack: Apple's own icons, cursors, patterns
 # and NFNT strikes, pulled off a local OS 9 image. It is a DEPENDENCY of

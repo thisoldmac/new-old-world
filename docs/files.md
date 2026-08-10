@@ -1,3 +1,7 @@
+---
+search:
+  exclude: true
+---
 # Files module — spec
 
 Move files between the guest and the host with smooth interop: automatic

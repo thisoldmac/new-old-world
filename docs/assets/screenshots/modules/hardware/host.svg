@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="650" viewBox="0 0 980 650" role="img" aria-labelledby="title desc">
+  <title id="title">Screenshot placeholder for macOS Hardware module</title>
+  <desc id="desc">Hardware census grouped by probe. Replace with a privacy-reviewed capture at 980 by 650 pixels.</desc>
+  <rect width="980" height="650" fill="#f4f2e8"/>
+  <rect x="16" y="16" width="948" height="618" rx="8" fill="none" stroke="#3a3a3a" stroke-width="3" stroke-dasharray="12 8"/>
+  <path d="M32 32 L948 618 M948 32 L32 618" stroke="#c7c3b3" stroke-width="2"/>
+  <rect x="240" y="208" width="500" height="210" rx="8" fill="#f4f2e8" stroke="#777"/>
+  <text text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="18" fill="#202020">
+    <tspan x="490" y="253">SCREENSHOT NEEDED</tspan>
+    <tspan x="490" y="284">macOS Hardware module</tspan>
+    <tspan x="490" y="315">Hardware census grouped by probe</tspan>
+    <tspan x="490" y="346">Rig: modern macOS</tspan>
+    <tspan x="490" y="377">Privacy: remove names, addresses, contacts, paths, and message content</tspan>
+    <tspan x="490" y="408">Final size: 980 x 650 pixels</tspan>
+  </text>
+</svg>

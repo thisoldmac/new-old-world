@@ -1,0 +1,341 @@
+version: 1
+defaults:
+  status: placeholder
+  privacy_reviewed: false
+images:
+  - id: overview-host
+    path: assets/screenshots/overview/host.svg
+    width: 980
+    height: 650
+    surface: macOS host
+    state: Connected overview with the module sidebar visible
+    machine: modern macOS
+  - id: overview-workshop
+    path: assets/screenshots/overview/workshop.svg
+    width: 744
+    height: 478
+    surface: PowerPC Workshop
+    state: Connected Workshop with the navigation rail visible
+    machine: Mac OS 9
+  - id: setup-artifacts
+    path: assets/screenshots/getting-started/artifacts.svg
+    width: 980
+    height: 650
+    surface: release artifacts
+    state: Alpha bundle with host app, PPC guest, and bundled optional extension identified
+    machine: modern macOS
+  - id: setup-onboarding-host
+    path: assets/screenshots/getting-started/onboarding-host.svg
+    width: 980
+    height: 650
+    surface: macOS Connections
+    state: Set Up a New Mac sheet with address, packages, and setup image state
+    machine: modern macOS
+  - id: setup-onboarding-browser
+    path: assets/screenshots/getting-started/onboarding-browser.svg
+    width: 744
+    height: 478
+    surface: classic web browser
+    state: Old-browser setup page with the complete setup disk download
+    machine: Mac OS 9
+  - id: setup-onboarding-disk
+    path: assets/screenshots/getting-started/onboarding-disk.svg
+    width: 744
+    height: 478
+    surface: Disk Copy and Finder
+    state: Mounted NOW Setup disk with application, preferences, and optional Extension
+    machine: Mac OS 9
+  - id: setup-host-install
+    path: assets/screenshots/getting-started/host-install.svg
+    width: 980
+    height: 650
+    surface: macOS Finder
+    state: New Old World app placed in Applications
+    machine: modern macOS
+  - id: setup-ppc-install
+    path: assets/screenshots/getting-started/ppc-install.svg
+    width: 744
+    height: 478
+    surface: PowerPC Finder
+    state: New Old World copied to the classic Mac
+    machine: Mac OS 8.6 to 9.2.2
+  - id: setup-68k-install
+    path: assets/screenshots/getting-started/68k-install.svg
+    width: 640
+    height: 480
+    surface: NOW-68K
+    state: NOW-68K main connection window after first launch
+    machine: System 7.1 68K Mac
+  - id: setup-host-listener
+    path: assets/screenshots/getting-started/host-listener.svg
+    width: 980
+    height: 650
+    surface: macOS host
+    state: Listener ready and local address visible
+    machine: modern macOS
+  - id: setup-guest-connection
+    path: assets/screenshots/getting-started/guest-connection.svg
+    width: 744
+    height: 478
+    surface: PowerPC Workshop
+    state: Host address and port configured before connecting
+    machine: Mac OS 9
+  - id: setup-connected
+    path: assets/screenshots/getting-started/connected.svg
+    width: 980
+    height: 650
+    surface: macOS host
+    state: Named classic Mac connected with capability status
+    machine: modern macOS
+  - id: setup-extension
+    path: assets/screenshots/getting-started/extension.svg
+    width: 744
+    height: 478
+    surface: PowerPC Workshop
+    state: Bundled optional NOW Extension active and its capabilities stated
+    machine: Mac OS 9
+  - id: setup-recovery
+    path: assets/screenshots/getting-started/recovery.svg
+    width: 980
+    height: 650
+    surface: macOS host
+    state: Refused or disconnected session with the reason visible
+    machine: modern macOS
+  - id: setup-transfer
+    path: assets/screenshots/getting-started/file-transfer.svg
+    width: 980
+    height: 650
+    surface: macOS host Files module
+    state: One file transfer with destination and progress visible
+    machine: modern macOS
+  - id: screen-host
+    path: assets/screenshots/modules/screen/host.svg
+    width: 980
+    height: 650
+    surface: macOS Screen module
+    state: Still capture controls and latest frame
+    machine: modern macOS
+  - id: screen-ppc
+    path: assets/screenshots/modules/screen/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Screenshots page
+    state: Capture and streaming controls
+    machine: Mac OS 9
+  - id: screen-detail
+    path: assets/screenshots/modules/screen/detail.svg
+    width: 980
+    height: 650
+    surface: macOS Screen module
+    state: Active stream with ownership and stop control visible
+    machine: modern macOS
+  - id: files-host
+    path: assets/screenshots/modules/files/host.svg
+    width: 980
+    height: 650
+    surface: macOS Files module
+    state: Classic Mac share browser with native table and path
+    machine: modern macOS
+  - id: files-ppc
+    path: assets/screenshots/modules/files/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Files page
+    state: Host share browser and local sharing controls
+    machine: Mac OS 9
+  - id: files-detail
+    path: assets/screenshots/modules/files/detail.svg
+    width: 980
+    height: 650
+    surface: macOS Files module
+    state: Rename, move, trash, and restore actions for a selected item
+    machine: modern macOS
+  - id: icloud-host
+    path: assets/screenshots/modules/icloud/host.svg
+    width: 980
+    height: 650
+    surface: macOS iCloud module
+    state: Service grants for Drive, Photos, and Contacts
+    machine: modern macOS
+  - id: icloud-ppc
+    path: assets/screenshots/modules/icloud/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC iCloud page
+    state: Drive, Photos, or Contacts browser
+    machine: Mac OS 9
+  - id: icloud-detail
+    path: assets/screenshots/modules/icloud/detail.svg
+    width: 744
+    height: 478
+    surface: PowerPC iCloud page
+    state: Contact card or photo preview after explicit selection
+    machine: Mac OS 9
+  - id: processes-host
+    path: assets/screenshots/modules/processes/host.svg
+    width: 980
+    height: 650
+    surface: macOS Processes module
+    state: Grouped process list with safe actions
+    machine: modern macOS
+  - id: processes-ppc
+    path: assets/screenshots/modules/processes/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Processes page
+    state: Process list and polite quit action
+    machine: Mac OS 9
+  - id: mirror-host
+    path: assets/screenshots/modules/mirror/host.svg
+    width: 980
+    height: 650
+    surface: macOS Mirror module
+    state: Semantic mirror with provenance and experimental controls
+    machine: modern macOS
+  - id: mirror-ppc
+    path: assets/screenshots/modules/mirror/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Mirror page
+    state: Extension plane status and consent controls
+    machine: Mac OS 9
+  - id: mirror-detail
+    path: assets/screenshots/modules/mirror/detail.svg
+    width: 980
+    height: 650
+    surface: macOS Mirror module
+    state: One observed window with act settlement and authoritative reread
+    machine: modern macOS
+  - id: console-host
+    path: assets/screenshots/modules/console/host.svg
+    width: 980
+    height: 650
+    surface: macOS Console module
+    state: Remote console history and command entry
+    machine: modern macOS
+  - id: console-ppc
+    path: assets/screenshots/modules/console/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Console page
+    state: Local command entry using the same command table
+    machine: Mac OS 9
+  - id: chat-host
+    path: assets/screenshots/modules/chat/host.svg
+    width: 980
+    height: 650
+    surface: macOS Chat module
+    state: Provider and model harness status
+    machine: modern macOS
+  - id: chat-ppc
+    path: assets/screenshots/modules/chat/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Chat page
+    state: Conversation about this Mac with access state visible
+    machine: Mac OS 9
+  - id: chat-detail
+    path: assets/screenshots/modules/chat/detail.svg
+    width: 744
+    height: 478
+    surface: PowerPC Chat page
+    state: Streaming reply and cancel control
+    machine: Mac OS 9
+  - id: hardware-host
+    path: assets/screenshots/modules/hardware/host.svg
+    width: 980
+    height: 650
+    surface: macOS Hardware module
+    state: Hardware census grouped by probe
+    machine: modern macOS
+  - id: hardware-ppc
+    path: assets/screenshots/modules/hardware/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Hardware page
+    state: Passive probe selection and result rows
+    machine: Mac OS 9
+  - id: diagnostics-host
+    path: assets/screenshots/modules/diagnostics/host.svg
+    width: 980
+    height: 650
+    surface: macOS Diagnostics module
+    state: Explicit diagnostic list with cost and status
+    machine: modern macOS
+  - id: diagnostics-ppc
+    path: assets/screenshots/modules/diagnostics/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Diagnostics page
+    state: Diagnostic selected with its cost stated before running
+    machine: Mac OS 9
+  - id: networking-host
+    path: assets/screenshots/modules/networking/host.svg
+    width: 980
+    height: 650
+    surface: macOS Networking module
+    state: Guest link, address, and network hardware facts
+    machine: modern macOS
+  - id: networking-ppc
+    path: assets/screenshots/modules/networking/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Networking page
+    state: Open Transport link and interface facts
+    machine: Mac OS 9
+  - id: software-host
+    path: assets/screenshots/modules/software/host.svg
+    width: 980
+    height: 650
+    surface: macOS Software module
+    state: Installed software inventory and launch action
+    machine: modern macOS
+  - id: software-ppc
+    path: assets/screenshots/modules/software/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Software page
+    state: Applications and System Folder domains
+    machine: Mac OS 9
+  - id: mcp-host
+    path: assets/screenshots/modules/mcp/host.svg
+    width: 980
+    height: 650
+    surface: macOS MCP module
+    state: Companion readiness, grant ceiling, and recent calls
+    machine: modern macOS
+  - id: mcp-ppc
+    path: assets/screenshots/modules/mcp/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC MCP page
+    state: Machine consent and capability ceiling
+    machine: Mac OS 9
+  - id: logs-host
+    path: assets/screenshots/modules/logs/host.svg
+    width: 980
+    height: 650
+    surface: macOS Logs module
+    state: Filtered host and guest diagnostics
+    machine: modern macOS
+  - id: logs-ppc
+    path: assets/screenshots/modules/logs/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Logs page
+    state: Bounded guest log tail
+    machine: Mac OS 9
+  - id: settings-host
+    path: assets/screenshots/modules/settings/host.svg
+    width: 980
+    height: 650
+    surface: macOS Connections module
+    state: Listener, named guest sessions, and preferences
+    machine: modern macOS
+  - id: settings-ppc
+    path: assets/screenshots/modules/settings/ppc.svg
+    width: 744
+    height: 478
+    surface: PowerPC Preferences and Connection pages
+    state: Connection address, port, retry, and product preferences
+    machine: Mac OS 9

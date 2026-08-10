@@ -28,6 +28,13 @@ if [ -x "$root/tools/ext-bake-gate" ]; then
     }
 fi
 
+# A clean textual merge can still make a module map, contract projection, or
+# source digest stale. Run the whole docs gate on every automatic merge. The
+# conflicted-merge path is the staged-path check in pre-commit.
+if [ -x "$root/tools/docs-commit-gate" ]; then
+    "$root/tools/docs-commit-gate" || exit 1
+fi
+
 # derived-doc-gate — BUILT, TESTED, AND DELIBERATELY NOT ARMED. It is
 # inert until NOW_DERIVED_DOC_GATE=1 is set; the arming procedure and the
 # reason it ships unarmed are in .githooks/pre-commit, stated once.
