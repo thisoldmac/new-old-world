@@ -511,25 +511,30 @@ NOW_ANCHOR_PORT="$ANCHOR" NOW_WIRE_PORT="$WIRE" \
     NOW_SHUTDOWN_BIN="$SHUTDOWN_BIN" \
     python3 "$NOW/tools/stage-ext.py"
 
-# Rule 1. The Macintosh, not QEMU, owns the volume-clean transition — and
-# it owns it from inside, because nothing outside can reach its interface:
-# QMP keyboard events do not arrive on mac99 (`has-adb=false`, so no ADB
-# keyboard and no power key), there is no absolute pointing device, and a
-# posted click cannot select from a menu. So the applet staged above calls
-# the Shutdown Manager, and shutdown-guest.py waits for QEMU to exit. If it
-# will not go, STOP with the VM intact: falling back to `quit` would
-# manufacture the very Disk First Aid boot this gate exists to avoid.
-#
-# NO --wire HERE, AND THAT IS DELIBERATE — do not "fix" it to match the
-# stop: recipe printed at the end. The Finder route drives NOW's act
-# plane, which needs NOW's app RUNNING and dialled in; at this point the
-# app has only just been staged and has never been launched, so there is
-# no wire to give. Everywhere the app IS up (scripts/bake-ext-image, the
-# printed recipe, tools/lane-ports reclaim) passes it, because there the
-# clean-volume route is real.
+# Rule 1. The Macintosh, not QEMU, owns the volume-clean transition. The
+# only measured clean route is the Finder's actual Special > Shut Down menu,
+# driven through NOW's act plane. The freshly staged resident cannot load
+# until the cold boot, but the base's resident is still active in memory, so
+# launch the staged app against that resident and give shutdown-guest the wire
+# it needs. The direct Shutdown Manager applet remains a fallback, and its
+# dirty HFS result is a refusal rather than a successful reboot receipt.
+if [ "$RESTRICT" = "1" ]; then
+    echo "restricted input-only run has no NOW wire for a proven clean reboot" >&2
+    echo "clean shutdown failed; VM left running at $QMP" >&2
+    exit 1
+fi
+python3 - "$ANCHOR" "$LAB" <<'PY'
+import sys
+anchor, lab = int(sys.argv[1]), sys.argv[2]
+sys.path.insert(0, f"{lab}/mcp-classic")
+from timbottu_mcp_classic.harness import Harness
+Harness(host="127.0.0.1", port=anchor, expect_backing={"worker"}).request(
+    "launch", {"path": "Macintosh HD:TimBotTu:now-dev:New Old World"})
+print("  preboot NOW launch requested for Finder-owned shutdown")
+PY
 echo "== guest-clean shutdown, then COLD boot so the INIT loads =="
 python3 "$NOW/tools/shutdown-guest.py" "$QMP" --port "$ANCHOR" \
-    --timeout "${NOW_SHUTDOWN_WAIT:-120}" || {
+    --wire "$WIRE" --timeout "${NOW_SHUTDOWN_WAIT:-120}" || {
         echo "clean shutdown failed; VM left running at $QMP" >&2
         exit 1
     }

@@ -22,56 +22,27 @@
  *     because MenuSelect's tracking loop reads the real button state and
  *     a posted event pair is already up by the time it looks.
  *
- * What is left is the standard shutdown Apple event addressed to the Finder.
- * This is the programmatic form of asking the Finder to shut down, so the
- * Finder owns its normal quit-application and Shutdown Manager sequence.
- * The earlier version called ShutDwnPower directly. That started shutdown,
- * but three preserved mac99 images still had the HFS mounted bit set after
- * the disk went quiet; a direct power request is therefore not evidence of
- * the clean Finder route this rig needs.
+ * What is left as a fallback is the Toolbox call the Finder itself eventually
+ * makes. ShutDwnPower starts the Shutdown Manager sequence, but mac99 does not
+ * reliably finish the HFS unmount on this route. The host therefore verifies
+ * the unmounted bit and refuses to preserve a dirty image. The measured clean
+ * route drives the Finder's actual Special > Shut Down menu through NOW.
  *
- * This remains a RIG INSTRUMENT rather than a product feature. It asks the
- * whole machine to shut down as soon as it is launched, and should only be
- * staged into a disposable emulator clone whose ownership is already known.
+ * This is a RIG INSTRUMENT rather than a product feature: it exists only as a
+ * last guest-side route for a disposable emulator clone. Do not use it to stop
+ * a machine somebody is using or treat disk quiet as a clean shutdown.
  */
 
-#include <AppleEvents.h>
-#include <AERegistry.h>
-
-static OSErr ask_finder_to_shut_down(void)
-{
-    const OSType finder = 'MACS';
-    AEAddressDesc target = { typeNull, NULL };
-    AppleEvent event = { typeNull, NULL };
-    AppleEvent reply = { typeNull, NULL };
-    OSErr err;
-
-    err = AECreateDesc(typeApplSignature, &finder, sizeof finder, &target);
-    if (err == noErr) {
-        err = AECreateAppleEvent(kCoreEventClass, kAEShutDown, &target,
-                                 kAutoGenerateReturnID, kAnyTransactionID,
-                                 &event);
-    }
-    if (err == noErr) {
-        err = AESend(&event, &reply, kAENoReply | kAECanInteract,
-                     kAENormalPriority, kAEDefaultTimeout, NULL, NULL);
-    }
-
-    AEDisposeDesc(&reply);
-    AEDisposeDesc(&event);
-    AEDisposeDesc(&target);
-    return err;
-}
+#include <ShutDown.h>
 
 int main(void)
 {
-    OSErr err = ask_finder_to_shut_down();
+    ShutDwnPower();
 
     /*
-     * AESend only establishes whether the Finder accepted the event; the
-     * host independently waits for the machine to go down and verifies the
-     * HFS unmounted bit. Returning quits this helper either way, so a failed
-     * request leaves the guest up for diagnosis rather than power-cutting it.
+     * Returning leaves the guest up for diagnosis if the Shutdown Manager
+     * declines. The host independently verifies the HFS unmounted bit even
+     * when the call appears to complete.
      */
-    return err == noErr ? 0 : 1;
+    return 0;
 }
