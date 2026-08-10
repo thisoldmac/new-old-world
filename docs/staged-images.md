@@ -238,11 +238,11 @@ more than the gates themselves.
 
 | Gate | Asserts | May it refuse? |
 |---|---|---|
-| `ext-bake-gate check` | the resident release tuple advanced and a receipt in this tree records a bake of exactly this resident source | **yes** — both are facts in git, entirely in the committer's power |
+| `ext-bake-gate check` | the resident release tuple did not roll back and a receipt in this tree records a bake of the exact declared resident build inputs | **yes** — both are facts in git, entirely in the committer's power |
 | `ext-bake-gate verify-image` | the bytes at the oracle's path hash to what the newest receipt claims | **no, on the commit path** — a fact about a shared file any lane can invalidate a second later. It warns, loudly. `--require` refuses for a caller who has asked for it |
 | the staged-receipt check | a receipt being *written* is true when written | **yes, in one case** — see below |
 | `ext-bake-gate merge-check` | a merge did not silently combine two branches' claims | **yes** — via `pre-merge-commit` |
-| `ext-bake-gate main-ref-check` | the exact resident tree proposed for `main` has a newer release tuple and is covered by a verified shared bake and promotion | **yes** — via `reference-transaction`; sees merge commits, fast-forwards and direct ref updates, with no branch-deferral override |
+| `ext-bake-gate main-ref-check` | the exact resident build proposed for `main` does not roll its release tuple back and is covered by a verified shared bake and promotion | **yes** — via `reference-transaction`; sees merge commits, fast-forwards and direct ref updates, with no branch-deferral override |
 | `tools/image-provenance` | these bytes are (or are not) claimed by a receipt, **and whether the volume inside them is cleanly unmounted** | nothing; it only speaks |
 | `tools/base-image fit` | this base is (or is not) the designated one for a stated purpose, its volume's state, and whether its baked resident predates this checkout's `ext/` | **per check** — see *Warn or refuse, argued per check*. It is the only gate here that runs **before a clone**, which is why it may refuse at all |
 

@@ -19,6 +19,8 @@ class SpinUpPPCShutdownTests(unittest.TestCase):
         reboot = text[staged:cold]
 
         self.assertIn("tools/shutdown-guest.py", reboot)
+        self.assertIn('--wire "$WIRE"', reboot)
+        self.assertIn("preboot NOW launch requested", reboot)
         self.assertNotIn('tools/qmp" "$QMP" quit', reboot)
 
     def test_the_default_base_is_the_stage_oracle_not_the_plain_runner(self):

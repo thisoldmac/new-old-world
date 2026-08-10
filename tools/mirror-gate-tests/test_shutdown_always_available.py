@@ -261,12 +261,18 @@ class EveryCallerPassesTheCleanRoute(unittest.TestCase):
                         cut.index("qmp_quit(sock)"),
                         "the guard must run BEFORE the quit, not beside it")
 
-    def test_the_in_run_shutdown_explains_why_it_has_no_wire(self):
-        """The one caller that legitimately cannot pass --wire says so, so
-        that a reader closing the gap above does not 'fix' it."""
+    def test_the_preboot_restart_launches_now_and_passes_wire(self):
+        """The staged resident is not loaded yet, but the base's still is.
+
+        MUTATION: remove the preboot launch or `--wire` and this fails before
+        a bake can silently accept the dirty direct-power fallback.
+        """
         text = (ROOT / "scripts" / "spin-up-ppc").read_text()
         pre = text[:text.index("boot cold; wait_anchor")]
-        self.assertIn("NO --wire HERE, AND THAT IS DELIBERATE", pre)
+        launch = pre.index("preboot NOW launch requested")
+        shutdown = pre.index('shutdown-guest.py" "$QMP"')
+        self.assertLess(launch, shutdown)
+        self.assertIn('--wire "$WIRE"', pre[shutdown:])
 
 
 class TheRefusalIsActionable(unittest.TestCase):

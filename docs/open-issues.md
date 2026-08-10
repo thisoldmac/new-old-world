@@ -199,6 +199,27 @@ as documented. The exact old post-`_graceful` `return 0` mutation fails the new
 guard. This corrects cleanup observability; it does not invalidate the build,
 test, promotion, divergence or semantic receipts gathered before shutdown.
 
+**Second correction, later 2026-08-10:** enforcing that verdict exposed the
+pre-INIT restart in `scripts/spin-up-ppc`: it launched only the direct
+`ShutDwnPower` fallback and therefore could no longer produce a clean receipt.
+The restart now launches NOW against the resident already active in the base
+and drives Finder Special > Shut Down over the wire before cold-booting the
+newly staged resident. The exact missing-`--wire` mutation fails both rig
+guards. The first updater bake then caught a separate identity encoding error:
+`NWid` contained two full SHA-256 values while its fixed ABI reader consumed
+two 160-bit fields. `NWid` now carries exactly the same 40-hex prefixes as the
+resident table, and the old 128-hex payload fails the component identity gate.
+
+The corrected shared bake from `8fe5baff2a4f` is emulator-verified: both Finder
+shutdowns powered QEMU off in six seconds and left HFS clean; resident 1.2
+reported source manifest `fae73d4d5c7150b7105e0f0350446cf5111ee248`, build
+fingerprint `c725b32b77634fb8d1702b0a54f17fc2ce70e48f`, all 511 declared
+capabilities, a passing act ABI self-test, and survival of all 14 census probes.
+The installed shared image is SHA-256
+`ccbff00f4ed1c18eed879b94798df191ea8dae15a83f2ffb0e465cd53126add4`;
+`qemu-img check` and the HFS unmounted-bit check both passed. This is
+**emulator-verified, not metal-verified**.
+
 The run also found one sharp authoring boundary: `Project.ckp` participates in
 the project digest as `TEXT/NOWD`. Uploading identical bytes as `TEXT/MPS ` let
 the guest catalog parse the document but made import end in the generic
@@ -293,6 +314,63 @@ it existed when the evidence was recorded. The standalone project now lives
 under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
 `MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
 retain their original path spelling so the ledger remains an honest receipt.
+
+## EMULATOR-VERIFIED, NOT METAL-VERIFIED: host-owned PowerPC application and NOW Extension updater (2026-08-10, `codex/host-owned-updater`)
+
+The host now treats its validated canonical PPC application and NOW Extension
+artifacts as an update catalog. It advertises release version, exact build
+identity, byte count, SHA-256, channel and explicit signature state after
+rechecking the artifact against its generated sidecar. The guest Connection
+page distinguishes a different scratch build of the same version, requests the
+exact offered build, receives it over the existing fork-preserving MacBinary
+lane, verifies SHA-256 and Finder identity, and uses `FSpExchangeFiles` to keep
+rollback bytes. Application replacement exits through normal teardown before a
+Process Manager relaunch; Extension replacement reports restart-required and
+makes the retained old copy non-INIT. The guest also warns when the active
+resident release differs from the version the application expects.
+
+The flow is still explicitly unsigned. SHA-256 detects corruption against the
+connected host's manifest; it does not authenticate a publisher. Unsigned
+installation therefore requires a local modal confirmation, and the shared
+console/wire command cannot bypass it. Release signing remains open until a
+pinned trust root, key rotation, revocation and recovery policy are chosen.
+
+The native suites cover SHA-256, exact-build comparison, unsigned-consent
+ordering, host catalog validation, contract conformance and version-copy drift;
+the host suites and Debug/Release app builds pass, as do the PowerPC, 68K,
+Extension and rig cross-builds. Mutation runs watched stale artifact acceptance,
+bare signed-flag acceptance and remote unsigned-consent bypass fail by name.
+
+One private mac99/OS 9.1 acceptance exercised the actual host and guest UI from
+an updater-capable 0.1 application with resident 1.1. Connections displayed
+the host's different 0.2 scratch build and unsigned 1.2 Extension, plus the
+1.1/1.2 mismatch warning. Local confirmation served the exact SHA-addressed
+application artifact; the guest exchanged it, completed normal teardown,
+relaunched, and reconnected as 0.2. A second local confirmation exchanged the
+Extension and returned `restart-required`. After a guest-clean shutdown and
+cold boot of the same disk, the guest reported resident 1.2 active with all 511
+capabilities and fingerprint `085c4ebf8457`.
+
+That acceptance exposed a terminal-state UI defect: after successful Extension
+installation the footer could retain `Downloading...` and leave Install
+enabled. The guest now retains restart-required state until restart, renders
+`Extension installed. Restart this Mac to activate it.`, and disables the
+button. The exact source guard was mutation-tested and the corrected guest
+cross-builds, but the corrected wording was not re-driven through the live UI:
+the post-relaunch act plane refused generic Control Manager actions even while
+the updater itself remained connected. Checksum refusal, low-disk refusal and
+rollback-file recovery also remain suite-tested rather than emulator-accepted.
+Physical-hardware acceptance still owes the whole lifecycle on the PowerBook
+1400c.
+
+Product release 0.2.0 is stated coherently in the shared guest header, PPC
+`vers` resource, host catalog and both host build paths; the wire-contract
+revision remains independent. Main-reference hooks reject incoherent copies,
+same-version product landings and resident changes without a strictly advanced
+resident version plus a verified shared bake. The 1.2 shared bake passed exact
+guest fingerprint/capability checks, all census probes, guest-clean shutdown,
+clean HFS+ volume and `qemu-img check`; its committed receipt accounts for the
+current shared oracle.
 
 ## RESOLVED DOCUMENTATION CURRENCY: onboarding, Mirror scheduling, and resident versioning are in the web guides (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 

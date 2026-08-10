@@ -36,7 +36,7 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: 6f3f93ecd78e6470f0e532b7076fcee210248a3f
+sources-sha1: b7c3497b781fb9c37959229c8c1a0c41ce404607
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -54,13 +54,22 @@ rederived: 2026-08-09T21:05:28-0400 9864da82 sources
 rederived: 2026-08-09T21:43:47-0400 2b3c2c0e sources
 rederived: 2026-08-09T22:09:31-0400 d54812c2 sources
 rederived: 2026-08-09T22:18:49-0400 e637efd3 sources
+rederived: 2026-08-10T03:07:05-0400 9cbb4c28 sources
+rederived: 2026-08-10T03:08:47-0400 9cbb4c28 unchanged
+rederived: 2026-08-10T03:11:43-0400 9cbb4c28 unchanged
+rederived: 2026-08-10T03:46:37-0400 68d74d72 unchanged
 rederived: 2026-08-10T02:53:59-0400 62603174 sources
+rederived: 2026-08-10T04:18:15-0400 423ef214 sources
+rederived: 2026-08-10T04:49:22-0400 cd585106 unchanged
 rederived: 2026-08-10T04:27:17-0400 886ee556 unchanged
 rederived: 2026-08-10T04:38:55-0400 886ee556 unchanged
 rederived: 2026-08-10T05:38:07-0400 a0ede9ec unchanged
+rederived: 2026-08-10T13:37:39-0400 2f62ec11 unchanged
+rederived: 2026-08-10T13:51:46-0400 f4a92045 sources
+rederived: 2026-08-10T14:07:45-0400 b22898ee unchanged
 rederived: 2026-08-10T13:10:56-0400 47bf54fb sources
 rederived: 2026-08-10T13:36:45-0400 b15b4827 unchanged
-rederived: 2026-08-10T14:45:43-0400 26b75393 unchanged
-rederived: 2026-08-10T14:48:16-0400 26b75393 unchanged
-rederived: 2026-08-10T15:30:55-0400 32bdd096 unchanged
+rederived: 2026-08-10T14:20:14-0400 9e432b8b sources
+rederived: 2026-08-10T15:11:52-0400 eb9d991c unchanged
+rederived: 2026-08-10T15:34:29-0400 72868e9e unchanged
 -->

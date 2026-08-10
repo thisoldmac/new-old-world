@@ -16,6 +16,7 @@ and it is the place that would catch it drifting.
 
 import os
 import pathlib
+import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -29,7 +30,24 @@ def _client_sanitiser():
     return namespace["sanitised_suffix"], namespace["socket_path"]
 
 
+def _client_protocol_version():
+    source = (ROOT / "tools" / "now-agent").read_text()
+    namespace: dict = {}
+    exec(source.split("def call(")[0], namespace)   # noqa: S102 — our own file
+    return namespace["PROTOCOL_VERSION"]
+
+
 class AgentSocketSuffixParity(unittest.TestCase):
+
+    def test_the_client_uses_the_host_protocol_version(self):
+        source = (ROOT / "now-host" / "Sources" / "NOWAgentIntegration"
+                  / "AgentIntegrationLocalProtocol.swift").read_text()
+        match = re.search(r"public static let version = ([0-9]+)", source)
+        self.assertIsNotNone(match, "host protocol version declaration moved")
+        self.assertEqual(
+            _client_protocol_version(), int(match.group(1)),
+            "tools/now-agent would be refused by the running host before "
+            "any operation reached it")
 
     def test_the_client_accepts_exactly_what_the_host_accepts(self):
         sanitise, _ = _client_sanitiser()

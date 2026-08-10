@@ -35,6 +35,9 @@
 #include "transitions_cmd.h"
 #include "development_candidate.h"
 #include "wire_sleep.h"
+#include "sha256.h"
+#include "update_install.h"
+#include "update_model.h"
 
 enum {
     /* Room for the one field whose VALUE is not known until the sizing
@@ -222,6 +225,19 @@ static Boolean g_wake_enabled = true;
    passes a second for a machine that is usually idle. Settable so both
    can be measured on one boot rather than one per rebuild. */
 static long g_idle_sleep_ticks = 6;
+
+static struct {
+    Boolean pending;
+    /* The new INIT is on disk, while the old table necessarily remains
+       active until a cold boot. Keep this distinct from `pending`: the
+       transfer is over, and offering the button again would install the
+       same bytes twice while telling the person nothing about the one
+       remaining action. Reset only by conn_init, which runs after restart. */
+    Boolean restart_required;
+    long id;
+    NowUpdateComponent component;
+    char build[65];
+} g_update;
 
 static unsigned long wide_delta_us(const UnsignedWide *then,
                                    const UnsignedWide *now)
@@ -485,6 +501,8 @@ static void link_drop_transfers(void)
        withdrawn on every path out for the same reason every transfer is
        ended here rather than at each call site. */
     now_peek_withdraw_endpoint();
+    g_update.pending = false;
+    now_update_model_reset();
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -752,13 +770,13 @@ static void send_hello(void)
     now_machine_model(model, sizeof model);
     now_json_escape(model, model_esc, sizeof model_esc);
     now_system_version(sysver, sizeof sysver);
-    /* build carries what version cannot: PRODUCT_VERSION is hand-edited, so
-       a stale build on a machine reports the same string as the current one
-       and a host has no way to tell them apart. It cost a misdiagnosis on
-       2026-07-30. now_build_stamp() is __DATE__ " " __TIME__ of a file CMake
-       touches every build, so it differs whenever the build does. Not
-       escaped: those macros are "Mmm dd yyyy hh:mm:ss" and contain neither a
-       quote nor a backslash. */
+    /* build carries what version cannot: two builds of one release version
+       deliberately share a string, so a stale build on a machine otherwise
+       looks current and a host has no way to tell them apart. It cost a misdiagnosis on
+       2026-07-30. now_build_stamp() is the deterministic SHA-256 CMake
+       regenerates from the complete declared build surface and toolchain.
+       It deliberately carries no wall clock. Not escaped: it is generated
+       lowercase hex and contains neither a quote nor a backslash. */
     /* agent is this MACHINE'S answer to whether a companion may drive it,
        stated rather than left to silence: the contract reads an absent
        field as "predates the feature", never as consent, so a machine that
@@ -1051,6 +1069,8 @@ static int on_hello(const char *reply)
         strcpy(g.peer_version, "?");
     }
     g.phase = kConnConnected;
+    now_update_model_reset();
+    memset(&g_update, 0, sizeof g_update);
     g.connected_tick = TickCount();
     /* **Published here and not one step earlier.** The resident cannot
        report a failed dial to anybody - it has no UI, no log and no
@@ -4311,6 +4331,10 @@ static struct {
     Boolean at_candidate;             /* private Development candidate */
     short dest_vref;
     long dest_dir;
+    Boolean update;
+    NowUpdateComponent update_component;
+    NowSHA256 update_sha;
+    char update_sha256[65];
 } g_put;
 
 static Boolean wire_busy(void)
@@ -4319,6 +4343,61 @@ static Boolean wire_busy(void)
        a preview mid-arrival holds it exactly as a file would. */
     return g_stream.active || g_xfer.active || g_offer.active
         || g_send.active || g_put.active || g_prev.receiving;
+}
+
+int now_wire_update_request(NowUpdateComponent component,
+                            Boolean allow_unsigned,
+                            char *err, long cap)
+{
+    NowUpdateOffer offer;
+    char json[256];
+
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Connect to the other Mac first");
+        return -1;
+    }
+    if (!now_update_offer_get(component, &offer)) {
+        snprintf(err, (size_t)cap, "The other Mac has no %s update",
+                 now_update_component_name(component));
+        return -1;
+    }
+    if (!offer.signed_artifact && !allow_unsigned) {
+        snprintf(err, (size_t)cap,
+                 "Unsigned updates require confirmation in Connections");
+        return -1;
+    }
+    if (g_update.pending || wire_busy()) {
+        snprintf(err, (size_t)cap, "Another transfer is in progress");
+        return -1;
+    }
+    ++g.offer_seq;
+    g_update.pending = true;
+    g_update.id = g.offer_seq;
+    g_update.component = component;
+    snprintf(g_update.build, sizeof g_update.build, "%s", offer.build);
+    snprintf(json, sizeof json,
+             "{\"type\":\"update.request\",\"id\":%ld,"
+             "\"component\":\"%s\",\"build\":\"%s\","
+             "\"sha256\":\"%s\"}",
+             g_update.id, now_update_component_name(component), offer.build,
+             offer.sha256);
+    if (!send_control(json)) {
+        g_update.pending = false;
+        snprintf(err, (size_t)cap, "Could not send the update request");
+        return -1;
+    }
+    return 0;
+}
+
+Boolean now_wire_update_pending(NowUpdateComponent *component)
+{
+    if (g_update.pending && component != NULL) *component = g_update.component;
+    return g_update.pending;
+}
+
+Boolean now_wire_update_restart_required(void)
+{
+    return g_update.restart_required;
 }
 
 /* The inbound receive, read-only, for whoever wants to draw it moving
@@ -4436,6 +4515,7 @@ static void put_drop(void)
     if (g_put.active) {
         now_files_receive_abort(&g_put.rx);
         g_put.active = false;
+        g_update.pending = false;
         rx_outcome("Connection lost during the transfer");
     }
 }
@@ -4530,6 +4610,9 @@ static void take_bulk_in(const unsigned char *bytes, long len)
     if (!g_put.active) {
         return;                       /* nothing is expecting these */
     }
+    if (g_put.update) {
+        now_sha256_update(&g_put.update_sha, bytes, len);
+    }
     rc = now_files_receive_chunk(&g_put.rx, bytes, len);
     if (rc != kFilesOK) {
         put_abort("io-error", "could not write the file");
@@ -4564,9 +4647,13 @@ static void serve_file_offer(const char *request)
     Boolean overwrite;
     Boolean create_parents;
     Boolean cloud_born;
+    Boolean update_born = false;
+    NowUpdateComponent update_component = kNowUpdateApplication;
+    char purpose[32];
     long have;
     int rc;
 
+    note[0] = '\0';
     /* A pending cloud.get's success arrives as this offer, correlated
        by arrival (see the cloud block's header comment). Noted before
        anything can refuse it, so the page's status and the outcome
@@ -4575,6 +4662,18 @@ static void serve_file_offer(const char *request)
     if (g_cloudget.pending) {
         g_cloudget.pending = false;
         cloud_note(kCloudAnswerGetUnderWay, request);
+    }
+    purpose[0] = '\0';
+    now_json_find_string(request, "purpose", purpose, sizeof purpose);
+    if (strncmp(purpose, "update.", 7) == 0) {
+        update_born = now_update_component_parse(purpose + 7,
+                                                 &update_component);
+        if (!update_born || !g_update.pending || id != g_update.id
+            || update_component != g_update.component) {
+            file_refuse(id, "not-requested",
+                        "that update was not requested by this guest");
+            return;
+        }
     }
     if (wire_busy()) {
         file_refuse(id, "busy", "a transfer is already in flight");
@@ -4627,7 +4726,41 @@ static void serve_file_offer(const char *request)
     g_put.create_parents = create_parents;
     g_put.overwrite = overwrite;
 
-    if (development_candidate[0] != '\0') {
+    if (update_born) {
+        NowUpdateOffer offered;
+        const char *leaf = NULL;
+        char offered_sha[65];
+
+        offered_sha[0] = '\0';
+        now_json_find_string(request, "sha256", offered_sha,
+                             sizeof offered_sha);
+        if (container != kContainerMacBinary
+            || !now_update_offer_get(update_component, &offered)
+            || strcmp(offered.sha256, offered_sha) != 0
+            || offered.bytes != bytes
+            || !now_update_destination(update_component,
+                                       &g_put.dest_vref, &g_put.dest_dir,
+                                       &leaf, note, sizeof note)) {
+            file_refuse(id, "invalid-update",
+                        note[0] != '\0' ? note
+                                        : "the update identity did not match");
+            g_update.pending = false;
+            return;
+        }
+        snprintf(g_put.name, sizeof g_put.name, "%s", leaf);
+        g_put.at_dest = true;
+        g_put.update = true;
+        g_put.update_component = update_component;
+        snprintf(g_put.update_sha256, sizeof g_put.update_sha256,
+                 "%s", offered_sha);
+        now_sha256_init(&g_put.update_sha);
+        g_put.token[0] = '\0';
+        have = 0;
+        rc = now_files_receive_begin_at(
+            g_put.dest_vref, g_put.dest_dir, g_put.name, container, bytes,
+            file_type, creator, (unsigned long)modified, true, NULL, 0,
+            &g_put.rx);
+    } else if (development_candidate[0] != '\0') {
         FSSpec candidate;
         long candidate_dir;
         if (cloud_born
@@ -4783,6 +4916,11 @@ static void put_begin(const char *request)
         return;
     }
     offset = now_json_find_int(request, "offset", 0);
+    if (g_put.update && offset != 0) {
+        put_abort("invalid-update", "an update cannot resume at an offset");
+        g_update.pending = false;
+        return;
+    }
     if (offset == g_put.rx.received) {
         return;                       /* the sender took our advice */
     }
@@ -4871,6 +5009,20 @@ static void finish_put(const char *reply)
         note_shot("Incoming file was corrupt");
         return;
     }
+    if (g_put.update) {
+        unsigned char digest[32];
+        char got[65];
+
+        now_sha256_final(&g_put.update_sha, digest);
+        now_sha256_hex(digest, got);
+        if (strcmp(got, g_put.update_sha256) != 0) {
+            now_files_receive_discard(&g_put.rx);
+            put_done(false, "corrupt", "the SHA-256 did not match",
+                     "temp-discarded");
+            g_update.pending = false;
+            return;
+        }
+    }
     /* One last report before the confirmation, so the far side sees the
        count reach the total rather than stopping at whatever the 32 KB
        cadence last happened to land on. Forced past the yield rule: it
@@ -4884,6 +5036,45 @@ static void finish_put(const char *reply)
                     : "could not finish writing the file",
                  "temp-discarded");
         note_shot("Incoming file failed");
+        return;
+    }
+    if (g_put.update) {
+        char install_reason[160];
+        char update_reply[512];
+        const char *component = now_update_component_name(
+            g_put.update_component);
+        const char *action = g_put.update_component == kNowUpdateApplication
+            ? "relaunch" : "restart-required";
+
+        install_reason[0] = '\0';
+        if (!now_update_install(g_put.update_component, &g_put.rx.final,
+                                install_reason, sizeof install_reason)) {
+            char esc[240];
+            now_json_escape(install_reason, esc, sizeof esc);
+            put_done(false, "install-failed", install_reason,
+                     "download-retained");
+            snprintf(update_reply, sizeof update_reply,
+                     "{\"type\":\"update.result\",\"id\":%ld,"
+                     "\"component\":\"%s\",\"ok\":false,"
+                     "\"code\":\"install-failed\",\"reason\":\"%s\"}",
+                     g_put.id, component, esc);
+            send_control(update_reply);
+            g_update.pending = false;
+            return;
+        }
+        put_done(true, NULL, NULL, "installed");
+        snprintf(update_reply, sizeof update_reply,
+                 "{\"type\":\"update.result\",\"id\":%ld,"
+                 "\"component\":\"%s\",\"ok\":true,"
+                 "\"action\":\"%s\"}", g_put.id, component, action);
+        send_control(update_reply);
+        if (g_put.update_component == kNowUpdateExtension) {
+            g_update.restart_required = true;
+        }
+        g_update.pending = false;
+        note_shot(g_put.update_component == kNowUpdateApplication
+                  ? "Update installed - relaunching"
+                  : "Extension installed - restart this Mac");
         return;
     }
     now_log(kLogInfo, "put", "#%ld complete, %ld bytes%s", g_put.id,
@@ -6538,6 +6729,37 @@ static int handle_frame(const char *reply)
         serve_file_offer(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "update.offer")) {
+        char component[16];
+        NowUpdateComponent which;
+        NowUpdateOffer offer;
+
+        memset(&offer, 0, sizeof offer);
+        now_json_find_string(reply, "component", component,
+                             sizeof component);
+        if (!now_update_component_parse(component, &which)) return 1;
+        offer.present = 1;
+        now_json_find_string(reply, "version", offer.version,
+                             sizeof offer.version);
+        now_json_find_string(reply, "build", offer.build,
+                             sizeof offer.build);
+        now_json_find_string(reply, "sha256", offer.sha256,
+                             sizeof offer.sha256);
+        now_json_find_string(reply, "channel", offer.channel,
+                             sizeof offer.channel);
+        offer.bytes = now_json_find_int(reply, "bytes", 0);
+        /* A peer's boolean is not a signature. Until this guest verifies
+           signature bytes against a pinned key, every offer is unsigned and
+           must take the local-consent path. */
+        offer.signed_artifact = 0;
+        offer.requires_restart = now_json_find_bool(
+            reply, "requiresRestart", 0);
+        if (!now_update_offer_set(which, &offer)) {
+            now_log(kLogWarn, "update", "ignored invalid %s offer",
+                    component);
+        }
+        return 1;
+    }
     if (now_json_type_is(reply, "file.accept")) {
         send_accepted(reply);
         return 1;
@@ -6591,7 +6813,15 @@ static int handle_frame(const char *reply)
         return 1;
     }
     if (now_json_type_is(reply, "file.refuse")) {
-        if (g_get.pending && now_json_find_int(reply, "id", -1) == g_get.id) {
+        long refused_id = now_json_find_int(reply, "id", -1);
+        if (g_update.pending && refused_id == g_update.id) {
+            char reason[96];
+            if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
+                strcpy(reason, "the update is no longer available");
+            }
+            now_log(kLogWarn, "update", "%s", reason);
+            g_update.pending = false;
+        } else if (g_get.pending && refused_id == g_get.id) {
             char reason[96];
 
             get_cleanup(false);
@@ -6865,6 +7095,8 @@ void conn_init(void)
     NowPrefs prefs;
 
     memset(&g, 0, sizeof g);
+    now_update_model_reset();
+    memset(&g_update, 0, sizeof g_update);
     g.ep = kOTInvalidEndpointRef;
     g.last_rtt_ms = -1;
     loopstat_reset(&g_pass_stat);
@@ -7075,6 +7307,8 @@ void conn_disconnect(void)
     link_drop_transfers();
     close_endpoint();
     g.want_connection = false;
+    g_update.pending = false;
+    now_update_model_reset();
     g.phase = kConnIdle;
     strcpy(g.status, "Not connected");
 }

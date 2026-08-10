@@ -87,6 +87,7 @@ way (AGENTS.md, *Enumerated lists rot at merges*).
 | `mach` | the machine family: activate, the act self-test |
 | `net` | the Network page's refresh |
 | `chat` | the chat transcript's own sequencing faults |
+| `update` | update offers rejected by validation, requests refused, and installation results |
 | `dev` | project candidate publication and Development build/run settlement |
 | `mirror` | the Mirror: the writer verdict, plane arm/disarm requests and outcomes, the Workshop page, and the resident's own counters read back |
 | `sw` | the software family: the `catsearch` probe, and `launch` outcomes (the `sw` listing itself is a read and stays quiet) |

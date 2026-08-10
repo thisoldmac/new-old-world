@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.13)
 project(NowGuest C)
 
+set(NOW_UPDATE_CHANNEL "development" CACHE STRING
+    "Update manifest channel (development or release)")
+
 add_application(now-guest-ppc
     CREATOR "NOWo"
     src/main.c
@@ -99,6 +102,10 @@ add_application(now-guest-ppc
     src/connection/conn_fields.c
     src/connection/conn_edit_dialog.c
     src/connection/connection_module.c
+    src/update/sha256.c
+    src/update/update_model.c
+    src/update/update_install.c
+    src/update/update_status.c
     src/peek/peek.c
     src/peek/peek_lease.c
     src/peek/peek_validate.c
@@ -321,13 +328,14 @@ else()
 endif()
 
 # Generate the build stamp on every build. The buildstamp.cmake script hashes
-# all sources and produces a header with NOW_SRC_HASH and NOW_BUILT_AT. The
-# header is rewritten only when the hash changes, so an unchanged tree does
+# the full declared application build surface plus the toolchain profile. The
+# header is rewritten only when the identity changes, so an unchanged tree does
 # not force a universal recompile. See cmake/buildstamp.cmake for rationale.
 set(_buildstamp_header ${CMAKE_CURRENT_BINARY_DIR}/build_stamp_gen.h)
 add_custom_target(generate_buildstamp ALL
     COMMAND ${CMAKE_COMMAND}
-            -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src
+            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}/..
+            -DTOOLCHAIN_ID=${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}
             -DOUT=${_buildstamp_header}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/buildstamp.cmake
     BYPRODUCTS ${_buildstamp_header}
@@ -373,6 +381,27 @@ if(PYTHON3_EXECUTABLE)
         COMMENT "Stamping canonical MacBinary: New Old World.bin"
         VERBATIM)
     add_custom_target(now-guest-ppc-canonical ALL DEPENDS "New Old World.bin")
+    add_custom_command(
+        OUTPUT "New Old World.bin.now-update.json"
+        COMMAND ${PYTHON3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
+                --artifact "New Old World.bin"
+                --component application
+                --version-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/product_version.h"
+                --version-major NOW_PRODUCT_VERSION_MAJOR
+                --version-minor NOW_PRODUCT_VERSION_MINOR
+                --version-patch NOW_PRODUCT_VERSION_PATCH
+                --identity-header "${_buildstamp_header}"
+                --identity-define NOW_BUILD_ID
+                --channel ${NOW_UPDATE_CHANNEL}
+                --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        DEPENDS "New Old World.bin" ${_buildstamp_header}
+                "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
+        COMMENT "Writing canonical update identity"
+        VERBATIM)
+    add_custom_target(now-guest-ppc-update-manifest ALL
+        DEPENDS "New Old World.bin.now-update.json")
 else()
     message(WARNING
         "python3 not found: skipping the canonical 'New Old World.bin' "

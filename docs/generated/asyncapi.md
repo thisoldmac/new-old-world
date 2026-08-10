@@ -5,7 +5,7 @@
 This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/architecture/wire-contract.md). The contract file remains normative. NOW's eight-byte binary frame is normative prose in that file because AsyncAPI describes messages, not this custom framing layer.
 
 - AsyncAPI version: `3.0.0`
-- Product contract version: `0.1.0`
+- Product contract version: `0.2.0`
 - Contract revision: `2`
 - Default content type: `application/json`
 
@@ -20,6 +20,8 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 
 | Operation | Direction | Channel | Messages |
 |---|---|---|---|
+| `hostPublishesUpdates` | `send` | `control` | `updateOffer` |
+| `guestRequestsUpdate` | `send` | `control` | `updateRequest`, `updateResult` |
 | `hostExecutesLine` | `receive` | `control` | `execRequest`, `execCancel`, `execInput` |
 | `guestAnswersExec` | `send` | `control` | `execOutput`, `execResult` |
 | `guestOffersCapture` | `send` | `control` | `captureOffer`, `captureBegin`, `captureEnd` |
@@ -79,6 +81,9 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `fileListing` | `file.listing` | `FileListing` |
 | `fileGet` | `file.get` | `FileGet` |
 | `fileOffer` | `file.offer` | `FileOffer` |
+| `updateOffer` | `update.offer` | `UpdateOffer` |
+| `updateRequest` | `update.request` | `UpdateRequest` |
+| `updateResult` | `update.result` | `UpdateResult` |
 | `fileAccept` | `file.accept` | `FileAccept` |
 | `fileDone` | `file.done` | `FileDone` |
 | `fileProgress` | `file.progress` | `FileProgress` |
@@ -147,6 +152,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 | `development-test` | `productRef` (required) | `development-test` | Executes the closed test plan declared by the Project.ckp that produced the unchanged opaque product. |
 | `development-open` | `projectID` (required) | `development-open` | Optionally locates and launches CodeKitten through the classic Desktop database, then sends the active Project.ckp for one opaque project ID using the standard open-documents Apple Event. |
 | `help` | `topic` | `help` | What commands THIS machine serves, asked of the machine that serves them. |
+| `update` | `component` | `update` | Reads the exact application and extension builds the connected host has published. |
 | `gestalt` | — | `snapshot`, `cpu`, `memory`, `os`, `network`, `hw`, `notice` | The guest's own account of itself, via the Gestalt Manager. |
 | `ls` | `path` | `ls` | List a folder in the guest's share. |
 | `put` | `name` | `put` | Send a file from the guest to the host. |

@@ -22,19 +22,15 @@
  *     because MenuSelect's tracking loop reads the real button state and
  *     a posted event pair is already up by the time it looks.
  *
- * What is left is the Toolbox call the Finder itself ends up making.
- * ShutDwnPower (_ShutDown, selector 1, since System 7.1) runs every
- * registered shutdown procedure, flushes and unmounts the volumes, and
- * asks the power manager to cut power - which on QEMU exits the process,
- * so the host can watch for that and know the guest went down on its own.
+ * What is left as a fallback is the Toolbox call the Finder itself eventually
+ * makes. ShutDwnPower starts the Shutdown Manager sequence, but mac99 does not
+ * reliably finish the HFS unmount on this route. The host therefore verifies
+ * the unmounted bit and refuses to preserve a dirty image. The measured clean
+ * route drives the Finder's actual Special > Shut Down menu through NOW.
  *
- * WHAT IT DELIBERATELY DOES NOT DO: send quit AppleEvents to running
- * applications. The Finder does that before it calls the Shutdown Manager,
- * and this does not, so an application holding unsaved work loses it. That
- * is why this is a RIG INSTRUMENT and not a product feature: the moment
- * scripts/spin-up-ppc uses it is chosen so that nothing but the system's
- * own background processes is running. Do not reach for it to stop a
- * machine somebody is using.
+ * This is a RIG INSTRUMENT rather than a product feature: it exists only as a
+ * last guest-side route for a disposable emulator clone. Do not use it to stop
+ * a machine somebody is using or treat disk quiet as a clean shutdown.
  */
 
 #include <ShutDown.h>
@@ -44,11 +40,9 @@ int main(void)
     ShutDwnPower();
 
     /*
-     * Only reached if the Shutdown Manager declined, which nothing here
-     * has ever seen. Returning quits the application and leaves the guest
-     * up, so the host's wait-for-exit times out and says so - the same
-     * outcome as any other failure to go down, and better than a bomb box
-     * nobody is present to read.
+     * Returning leaves the guest up for diagnosis if the Shutdown Manager
+     * declines. The host independently verifies the HFS unmounted bit even
+     * when the call appears to complete.
      */
     return 0;
 }

@@ -5,6 +5,7 @@
 
 #include "agent_access.h"
 #include "fileshare.h"
+#include "update_model.h"
 
 /* The persistent connection to the host. The guest holds one TCP connection
    open for its whole run: dial the saved host, hello, then keep it alive with
@@ -49,6 +50,14 @@ void conn_connect_now(void);
 
 ConnPhase conn_phase(void);
 Boolean conn_is_connected(void);
+
+/* Host-owned update publication. The offer is read-only until one of these
+   is called by the Connections page or the shared `update` command. */
+int now_wire_update_request(NowUpdateComponent component,
+                            Boolean allow_unsigned,
+                            char *err, long cap);
+Boolean now_wire_update_pending(NowUpdateComponent *component);
+Boolean now_wire_update_restart_required(void);
 
 /* True while a transfer, stream, offer, or queued control frame needs the
    event loop to spin fast. The main loop drops its WaitNextEvent sleep to
