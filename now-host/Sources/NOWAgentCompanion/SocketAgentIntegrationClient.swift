@@ -649,6 +649,8 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         // going to answer the same way every time.
         case .notImplemented(let pending):
             return pending
+        case .attemptRefused(let code, let message):
+            return .init(code: code, message: message)
         case .hostUnavailable:
             return .host
         case .unsafeEndpoint:

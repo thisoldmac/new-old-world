@@ -813,6 +813,11 @@ public struct AgentIntegrationLocalClient: Sendable {
                     .notImplemented(pending)
             }
             if let error = decoded.error {
+                if error.code == "attempt-pending"
+                    || error.code == "attempt-collision" {
+                    throw AgentIntegrationLocalTransportError.attemptRefused(
+                        code: error.code, message: error.message)
+                }
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "\(error.code): \(error.message)")
             }

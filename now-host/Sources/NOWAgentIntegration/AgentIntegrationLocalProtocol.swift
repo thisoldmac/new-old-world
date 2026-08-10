@@ -2508,6 +2508,10 @@ public enum AgentIntegrationLocalTransportError: Error, Equatable {
     /// unwired verb is told that rather than "the response had no result" —
     /// which would send whoever wires it looking for a decoding bug.
     case notImplemented(AgentIntegrationUnavailable)
+    /// The host understood the local request but rejected this mutation's
+    /// idempotency identity. It is actionable retry state, not malformed
+    /// transport, and keeps a collision distinct from an unknown outcome.
+    case attemptRefused(code: String, message: String)
     case hostUnavailable
     case unsafeEndpoint(String)
     case invalidMessage(String)
