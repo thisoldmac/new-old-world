@@ -179,7 +179,7 @@ under `archive/mirror-standalone-2026-08-09/`; production `MirrorKit` and
 `MirrorKitUI` live under `now-host/Packages/MirrorKit/`. Historical entries
 retain their original path spelling so the ledger remains an honest receipt.
 
-## TESTED, NOT EMULATOR-ACCEPTED OR METAL-VERIFIED: host-owned PowerPC application and NOW Extension updater (2026-08-10, `codex/host-owned-updater`)
+## EMULATOR-VERIFIED, NOT METAL-VERIFIED: host-owned PowerPC application and NOW Extension updater (2026-08-10, `codex/host-owned-updater`)
 
 The host now treats its validated canonical PPC application and NOW Extension
 artifacts as an update catalog. It advertises release version, exact build
@@ -205,12 +205,36 @@ the host suites and Debug/Release app builds pass, as do the PowerPC, 68K,
 Extension and rig cross-builds. Mutation runs watched stale artifact acceptance,
 bare signed-flag acceptance and remote unsigned-consent bypass fail by name.
 
-No emulator or PowerBook has yet exercised the actual catalog-to-relaunch or
-catalog-to-restart sequence. Emulator acceptance still owes: exact offer
-visibility, same-version scratch replacement, checksum refusal, low-disk
-refusal, clean app exchange/relaunch, rollback file identity, Extension
-exchange, restart activation, and resident mismatch warning. Physical-hardware
-acceptance owes the same lifecycle on the PowerBook 1400c.
+One private mac99/OS 9.1 acceptance exercised the actual host and guest UI from
+an updater-capable 0.1 application with resident 1.1. Connections displayed
+the host's different 0.2 scratch build and unsigned 1.2 Extension, plus the
+1.1/1.2 mismatch warning. Local confirmation served the exact SHA-addressed
+application artifact; the guest exchanged it, completed normal teardown,
+relaunched, and reconnected as 0.2. A second local confirmation exchanged the
+Extension and returned `restart-required`. After a guest-clean shutdown and
+cold boot of the same disk, the guest reported resident 1.2 active with all 511
+capabilities and fingerprint `085c4ebf8457`.
+
+That acceptance exposed a terminal-state UI defect: after successful Extension
+installation the footer could retain `Downloading...` and leave Install
+enabled. The guest now retains restart-required state until restart, renders
+`Extension installed. Restart this Mac to activate it.`, and disables the
+button. The exact source guard was mutation-tested and the corrected guest
+cross-builds, but the corrected wording was not re-driven through the live UI:
+the post-relaunch act plane refused generic Control Manager actions even while
+the updater itself remained connected. Checksum refusal, low-disk refusal and
+rollback-file recovery also remain suite-tested rather than emulator-accepted.
+Physical-hardware acceptance still owes the whole lifecycle on the PowerBook
+1400c.
+
+Product release 0.2.0 is stated coherently in the shared guest header, PPC
+`vers` resource, host catalog and both host build paths; the wire-contract
+revision remains independent. Main-reference hooks reject incoherent copies,
+same-version product landings and resident changes without a strictly advanced
+resident version plus a verified shared bake. The 1.2 shared bake passed exact
+guest fingerprint/capability checks, all census probes, guest-clean shutdown,
+clean HFS+ volume and `qemu-img check`; its committed receipt accounts for the
+current shared oracle.
 
 ## RESOLVED DOCUMENTATION CURRENCY: onboarding, Mirror scheduling, and resident versioning are in the web guides (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
