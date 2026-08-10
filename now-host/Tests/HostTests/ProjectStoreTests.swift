@@ -20,6 +20,8 @@ final class ProjectStoreTests: XCTestCase {
         configuration=debug
         toolchain=mpw@3.6
         product=Build/Memory Meter
+        type=APPL
+        creator=MMTR
         file=Sources/Main.c
         """.utf8)
 
@@ -41,6 +43,8 @@ final class ProjectStoreTests: XCTestCase {
             configuration=debug
             toolchain=mpw@3.6
             product=Build/Product
+            type=APPL
+            creator=TEST
             file=Build/Generated.c
             """.utf8)))
     }
