@@ -137,18 +137,51 @@ base digest, opened in CodeKitten for a human, and recovered after interruption.
 Acceptance: both repositories consume the same versioned fixtures and reject
 the same malformed records; neither imports the other's application core.
 
+## Workstream F — portable starter pack and qualified VM fixture
+
+- Define a versioned, redistributable Development starter pack rather than a
+  desk-specific `Lab` layout. Its manifest names supported guest platforms,
+  toolchain versions, required components, licenses/provenance, install size,
+  and qualification probes without embedding HFS directory IDs.
+- Keep toolchain registration human-owned after installation. Resolve the
+  selected directory into a fresh opaque identity on that guest; never copy a
+  directory ID from another image or machine and call it portable.
+- Extend onboarding's portable image input so one build can carry NOW,
+  CodeKitten and the selected starter toolchains. Until an installer owns the
+  layout, the image input directory and manifest are relocatable and contain
+  no machine-local absolute path.
+- Maintain a versioned mac99 acceptance fixture with both the canonical anchor
+  worker and MPW. Qualify the worker and toolchain independently before a
+  Development loop begins, and fail with the missing component rather than a
+  generic boot or build timeout.
+- Publish a platform matrix after research: which MPW/compiler/SDK combination
+  is useful and legally redistributable for each supported System 7, Mac OS 8
+  and Mac OS 9 target. Do not imply that one PPC MPW pack serves NOW-68K or
+  every classic target.
+- Add fixture provenance beside each VM receipt: base image digest, pack
+  manifest digest, anchor policy digest, guest build, resident fingerprint and
+  qualified toolchain identity.
+
+Acceptance: from a relocatable input directory, onboarding produces one image
+that installs NOW, CodeKitten and the starter pack; a fresh session-private VM
+boots without manual repair, reports the expected anchor policy, qualifies the
+installed MPW from a human-owned registration, and completes the canonical MCP
+create/build/run/observe/act/discard loop.
+
 ## Verification ladder
 
 1. Native unit and mutation tests for compatibility, schema discrimination,
    operation journals, classic identity, and the exact scene-authority split.
 2. `scripts/test-all`, including docs, both guest builds, native suites,
    MirrorKit, host tests, and the app target.
-3. An isolated mac99/OS 9.1 loop through the canonical HTTP MCP: create/revise,
+3. A portable-fixture preflight proving the anchor policy and registered
+   toolchain pack independently.
+4. An isolated mac99/OS 9.1 loop through the canonical HTTP MCP: create/revise,
    stage, build, typed test, exact run, observe, semantic act, terminal wait,
    process exit, discard, and restart recovery.
-4. Negative VM rungs for stale host, response loss after dispatch, session
+5. Negative VM rungs for stale host, response loss after dispatch, session
    replacement, stale scene reference, divergent promotion, and cancelled job.
-5. PowerBook 1400c acceptance using the same recipe and exact identity receipt.
+6. PowerBook 1400c acceptance using the same recipe and exact identity receipt.
 
 No rung may use host Retro68 builds or host-side classic execution as evidence
 for the guest-native workflow. Host use is limited to NOW-owned project scratch,
