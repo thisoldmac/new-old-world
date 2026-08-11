@@ -315,8 +315,8 @@ a shared bake over. The rules that must not be restated anywhere else:
   receipt. It sees merge commits, fast-forwards,
   `git fetch . branch:main`, and forced ref updates—the paths commit and merge
   hooks cannot see—and a branch deferral cannot override it. Lane-to-lane
-  updates are untouched. As with `TBT_ALLOW_MAIN=1`, the enforcement is the
-  floor and not the rule.
+  updates are untouched. The local protected-main policy has no override; the
+  enforcement is the floor and not the rule.
 - **A note is not a bake.** An image can reach the oracle's path by hand —
   that is how the current one got there. `tools/ext-bake-gate note-image
   --reason "…"` records who put it there and why, and says in its own
@@ -361,20 +361,19 @@ agents branch in their own worktrees — so the shared checkout stays on
 `main`, at the head of the work.
 
 - **Work on a branch, never on `main`.** Before your first edit, cut one
-  — `git checkout -b <ns>/<slug>`, forked off the parent branch you are
-  continuing, not off main. `main` receives finished work by
-  fast-forward or merge; it is never where work is typed. This is
+  — `git checkout -b <ns>/dev/<domain>/<slug>`, forked off the parent branch
+  you are continuing. GitHub `main` receives finished work only through its
+  protected pull-request path; local `main` is a mirror, not another landing
+  boundary. This is
   enforced (`.githooks/pre-commit`, plus a PreToolUse hook on
   `Write`/`Edit`/`Bash` — `.claude/hooks/guard-main.sh`) — **run
   `tools/setup-hooks` once per clone** to point git at it, which every
-  worktree off that checkout then inherits. Neither half reaches a
-  worktree cut off `main`, because `.githooks` and the `tools/` it
-  invokes are **not on `main`** and never have been; that outage, and
-  where every rule in this repository ought to live, is
-  [docs/rule-scopes.md](docs/rule-scopes.md).
-  The enforcement is the floor, not the
-  rule: don't reach for `TBT_ALLOW_MAIN=1` to get past a block you
-  should have avoided by branching. The namespaces in use are
+  worktree off that checkout then inherits. `.githooks/pre-push` refuses every
+  direct remote-main update, and `.githooks/reference-transaction` permits a
+  local-main update only when it is the fetched `origin/main` and a
+  fast-forward. There is no environment override for those two boundaries.
+  The history of the old scope outage, and where every rule belongs, is
+  [docs/rule-scopes.md](docs/rule-scopes.md). The namespaces in use are
   `claude/`, `codex/`, `thread/` and `fork/` — pick the one that says
   who is working.
 - **Commit early and often — a session can end without warning.** Commit
@@ -398,21 +397,17 @@ agents branch in their own worktrees — so the shared checkout stays on
   resuming someone else's interrupted work, **commit their tree before
   you touch it** — it is one careless checkout from oblivion, and it is
   not yours to lose.
-- **`main` is the head — keep the shared checkout on it.** Land a
-  finished thread by fast-forward or merge (`git -C <path> merge
-  --ff-only <branch>`), or move the ref without disturbing a working
-  tree with `git fetch . <branch>:main`. Don't leave the shared checkout
-  parked on a side branch; that is how it drifted onto a stale one and
-  looked like the app had regressed.
-- **Moving the ref leaves the files behind — re-sync after.** `git fetch
-  . <branch>:main` advances the *ref* only; the shared checkout's index
-  and working tree stay at the old commit. `git status` then reports the
-  newly-landed files as **staged deletions**, which reads exactly like a
-  session that ripped them out, and committing it would revert the work
-  that just landed. When a clean checkout shows a large staged `D` diff,
-  diff the index against main's ancestors before believing it — if the
-  index matches an ancestor of `main`, nothing was deleted and the cure
-  is `git reset --hard main`, not a commit.
+- **GitHub `main` is the head; local `main` follows it.** Push the working
+  branch, merge its protected pull request after the required checks pass, then
+  run `tools/sync-main` from the public clone's checked-out main. Do not merge,
+  cherry-pick, fetch a feature ref into main, or use the retired
+  `tools/land-main` path. `tools/github-policy-check` verifies that the live
+  ruleset still matches `.github/repository-policy.json`.
+- **The pre-public private-history checkout is an archive, not the public
+  clone.** Its parentless public root and private `main` are unrelated histories.
+  Do not attach the public `origin` and merge them, and do not rewrite its
+  worktree-local hook configuration as a side effect of public-repository work.
+  Reconcile or retire that fleet as its own measured operation.
 - Use `git -C <absolute path>` rather than `cd`. A bare `cd` into the
   wrong repository root has put commits on another session's branch.
 - Stage explicit paths. Never `git add -A` — it is the difference

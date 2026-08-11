@@ -114,8 +114,8 @@ echo "==> [2/8] release and staged-image discipline gates"
     || fail "update manifest release gate"
 "$script_dir/../tools/host-signing-policy-tests" \
     || fail "host signing policy gate"
-"$script_dir/../tools/land-main-tests" \
-    || fail "checked-out main landing gate"
+"$script_dir/../tools/main-policy-tests" \
+    || fail "protected GitHub main and local-mirror gates"
 "$script_dir/../tools/ci-policy-test" || fail "GitHub Actions policy gate"
 
 echo

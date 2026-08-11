@@ -507,7 +507,7 @@ def main(argv: list[str]) -> int:
         if reason is None:
             return 3
         # The override exists because the enforcement is the floor and not
-        # the rule (AGENTS.md > Git, on TBT_ALLOW_MAIN). An override with
+        # the rule (AGENTS.md > Git, on the protected-main boundary). A flag with
         # no reason is refused: a decision nobody wrote down is the thing
         # that made every one of these four failures unattributable.
         if not reason.strip():

@@ -11,11 +11,16 @@
 [ "${1:-}" = prepared ] || exit 0
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || {
-    echo "[ext-bake-gate] cannot locate the worktree for a main ref update" >&2
+    echo "[main-ref-gate] cannot locate the worktree for a main ref update" >&2
     exit 1
 }
+main_policy="$root/tools/main-ref-policy"
 resident_gate="$root/tools/ext-bake-gate"
 product_gate="$root/tools/product-version-gate"
+[ -x "$main_policy" ] || {
+    echo "[main-ref-gate] refusing main ref update: $main_policy is unavailable" >&2
+    exit 1
+}
 [ -x "$resident_gate" ] || {
     echo "[main-ref-gate] refusing main ref update: $resident_gate is unavailable" >&2
     exit 1
@@ -39,6 +44,7 @@ while read -r old new ref; do
                     [ -z "$prior" ] || old=$prior
                     ;;
             esac
+            "$main_policy" main-ref-check "$old" "$new" || exit $?
             "$resident_gate" main-ref-check "$old" "$new" || exit $?
             "$product_gate" main-ref-check "$old" "$new" || exit $?
             ;;

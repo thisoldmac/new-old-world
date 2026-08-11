@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Compare committed repository policy with the live GitHub configuration."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import sys
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parent.parent
+POLICY_PATH = ROOT / ".github" / "repository-policy.json"
+
+
+def load(path: str | Path) -> Any:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def gh_json(endpoint: str) -> Any:
+    result = subprocess.run(
+        ["gh", "api", endpoint], text=True, capture_output=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or f"gh api {endpoint} failed")
+    return json.loads(result.stdout)
+
+
+def subset_errors(expected: Any, actual: Any, path: str) -> list[str]:
+    errors: list[str] = []
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict):
+            return [f"{path}: expected object, got {type(actual).__name__}"]
+        for key, value in expected.items():
+            if key not in actual:
+                errors.append(f"{path}.{key}: missing")
+            else:
+                errors.extend(subset_errors(value, actual[key], f"{path}.{key}"))
+    elif isinstance(expected, list):
+        if actual != expected:
+            errors.append(f"{path}: expected {expected!r}, got {actual!r}")
+    elif expected != actual:
+        errors.append(f"{path}: expected {expected!r}, got {actual!r}")
+    return errors
+
+
+def rules_by_type(rules: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {rule["type"]: rule for rule in rules}
+
+
+def compare(policy: dict[str, Any], ruleset: dict[str, Any],
+            repository: dict[str, Any]) -> list[str]:
+    errors = subset_errors(policy["settings"], repository, "repository")
+    expected = policy["ruleset"]
+    for key in ("name", "target", "enforcement", "bypass_actors", "conditions"):
+        errors.extend(subset_errors(expected[key], ruleset.get(key), f"ruleset.{key}"))
+
+    expected_rules = rules_by_type(expected["rules"])
+    actual_rules = rules_by_type(ruleset.get("rules", []))
+    if set(expected_rules) != set(actual_rules):
+        errors.append(
+            "ruleset.rules: expected types "
+            f"{sorted(expected_rules)}, got {sorted(actual_rules)}")
+    for rule_type in sorted(set(expected_rules) & set(actual_rules)):
+        errors.extend(subset_errors(
+            expected_rules[rule_type], actual_rules[rule_type],
+            f"ruleset.rules.{rule_type}"))
+    return errors
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ruleset-file")
+    parser.add_argument("--repository-file")
+    args = parser.parse_args(argv[1:])
+    policy = load(POLICY_PATH)
+
+    try:
+        if args.ruleset_file or args.repository_file:
+            if not args.ruleset_file or not args.repository_file:
+                parser.error("fixture mode requires both file arguments")
+            ruleset = load(args.ruleset_file)
+            repository = load(args.repository_file)
+        else:
+            repo = policy["repository"]
+            summaries = gh_json(f"repos/{repo}/rulesets")
+            matching = [item for item in summaries
+                        if item.get("name") == policy["ruleset"]["name"]]
+            if len(matching) != 1:
+                raise RuntimeError(
+                    f"expected one {policy['ruleset']['name']!r} ruleset, "
+                    f"found {len(matching)}")
+            ruleset = gh_json(f"repos/{repo}/rulesets/{matching[0]['id']}")
+            repository = gh_json(f"repos/{repo}")
+    except (OSError, RuntimeError, json.JSONDecodeError) as exc:
+        print(f"[github-policy] cannot inspect policy: {exc}", file=sys.stderr)
+        return 2
+
+    errors = compare(policy, ruleset, repository)
+    if errors:
+        print("[github-policy] DRIFT", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 1
+    print("[github-policy] live repository matches committed protected-main policy")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

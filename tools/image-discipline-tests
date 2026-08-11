@@ -98,7 +98,7 @@ class Repo:
         # answer for the dirty case and would have hidden the very gap
         # these tests were added for.
         for tool in ("ext-bake-gate", "image-provenance", "base-image",
-                     "receipts-merge-driver", "volclean.py"):
+                     "main-ref-policy", "receipts-merge-driver", "volclean.py"):
             shutil.copy(os.path.join(ROOT, "tools", tool),
                         os.path.join(self.path, "tools", tool))
             os.chmod(os.path.join(self.path, "tools", tool), 0o755)
@@ -112,6 +112,9 @@ class Repo:
                  0o755)
         shutil.copy(os.path.join(ROOT, ".gitattributes"),
                     os.path.join(self.path, ".gitattributes"))
+        os.makedirs(os.path.join(self.path, ".github"), exist_ok=True)
+        shutil.copy(os.path.join(ROOT, ".github", "repository-policy.json"),
+                    os.path.join(self.path, ".github", "repository-policy.json"))
         self.write("ext/src/now_ext.c", "int resident(void) { return 1; }\n")
         self.write("now-guest-shared/src/now_act_guard.c",
                    "int shared_guard(void) { return 1; }\n")
@@ -123,6 +126,16 @@ class Repo:
         sh("git", "config", "user.name", "Test", cwd=self.path)
         self.git("add", "-A")
         self.git("commit", "-qm", "base")
+        self.git("remote", "add", "origin",
+                 "https://github.com/thisoldmac/new-old-world.git")
+        for key, value in (("branch.main.remote", "origin"),
+                           ("branch.main.merge", "refs/heads/main"),
+                           ("pull.ff", "only"),
+                           ("fetch.prune", "true"),
+                           ("push.default", "simple")):
+            self.git("config", key, value)
+        self.git("update-ref", "refs/remotes/origin/main",
+                 self.git("rev-parse", "main").stdout.strip())
 
     def write(self, rel: str, body: str) -> None:
         full = os.path.join(self.path, rel)
@@ -451,6 +464,8 @@ def _(tmp):
     os.chmod(hook, 0o755)
     r.git("config", "core.hooksPath", ".githooks")
 
+    r.git("update-ref", "refs/remotes/origin/main",
+          r.git("rev-parse", "lane").stdout.strip())
     bad = r.git("branch", "-f", "main", "lane")
     must(bad.returncode != 0,
          "an unbaked fast-forward main update must be refused")
@@ -464,6 +479,8 @@ def _(tmp):
     r.receipts([receipt(r.digest(), img, sha_of(img), scope="throwaway")])
     r.git("add", "--", "ext/stage-receipts.json")
     r.git("commit", "-qm", "private bake only")
+    r.git("update-ref", "refs/remotes/origin/main",
+          r.git("rev-parse", "lane").stdout.strip())
     private = r.git("branch", "-f", "main", "lane")
     must(private.returncode != 0,
          "a private bake must not satisfy the main promotion gate")
@@ -476,6 +493,8 @@ def _(tmp):
     r.receipts([receipt(r.digest(), img, sha_of(img), scope="shared")])
     r.git("add", "--", "ext/stage-receipts.json")
     r.git("commit", "-qm", "shared bake promoted")
+    r.git("update-ref", "refs/remotes/origin/main",
+          r.git("rev-parse", "lane").stdout.strip())
     good = r.git("branch", "-f", "main", "lane")
     must(good.returncode == 0, good.stdout + good.stderr)
     must(r.git("rev-parse", "main").stdout.strip()
@@ -506,6 +525,7 @@ def _(tmp):
     r.git("config", "core.hooksPath", ".githooks")
 
     lane = r.git("rev-parse", "lane").stdout.strip()
+    r.git("update-ref", "refs/remotes/origin/main", lane)
     direct = r.gate("main-ref-check", base, lane)
     must(direct.returncode != 0,
          "the immutable-tree check must reject the rollback:\n"
@@ -785,7 +805,7 @@ def _(tmp):
                 os.path.join(r.path, "tools", "hooks-doctor"))
     os.chmod(os.path.join(r.path, "tools", "hooks-doctor"), 0o755)
     os.makedirs(os.path.join(r.path, ".githooks"))
-    for hook in ("pre-commit", "pre-merge-commit",
+    for hook in ("pre-commit", "pre-push", "pre-merge-commit",
                  "reference-transaction", "post-merge"):
         shutil.copy(os.path.join(ROOT, ".githooks", hook),
                     os.path.join(r.path, ".githooks", hook))
