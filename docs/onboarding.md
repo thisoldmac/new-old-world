@@ -71,11 +71,11 @@ without the resident, with the reduced capability set described in
 [resident-components.md](resident-components.md).
 
 CodeKitten is optional and belongs wherever the person keeps applications. It
-targets Mac OS 9.1 or later with CarbonLib 1.6; including it does not raise
-NOW's Mac OS 8.6 floor, and the portal does not imply it is usable on an older
-system. A future **Open in CodeKitten** handoff is a human editing surface over
-the same project contract, not the build engine or a prerequisite for agent
-work.
+shares NOW's Mac OS 8.6 through 9.2.2 runtime range with CarbonLib 1.6.
+Individual toolchains and packages may require a newer system, but that does
+not raise the IDE shell's minimum. A future **Open in CodeKitten** handoff is a
+human editing surface over the same project contract, not the build engine or
+a prerequisite for agent work.
 
 This first surface is deliberately PPC/Carbon-only. NOW-68K remains an
 experimental sibling with a different artifact and configuration path; the

@@ -96,7 +96,7 @@ scripts/sheepshaver-86 install-apps \
 scripts/sheepshaver-86 launch
 scripts/sheepshaver-86 snapshot "Mac OS 8.6 + CarbonLib 1.6"
 scripts/sheepshaver-86 rig
-scripts/sheepshaver-86 seal "os86-carbon16-now020-codekitten-af521a5"
+scripts/sheepshaver-86 seal "os86-carbon16-now020-codekitten-747a81d"
 ```
 
 `stage` accepts a MacBinary artifact and passes it to `hcopy -m`, preserving
@@ -128,11 +128,12 @@ The 8.6 oracle carries two project applications for different reasons:
 
 - **New Old World** is the application under test. A visible Workshop after a
   clean reboot is the positive CarbonLib and minimum-floor UI assertion.
-- **CodeKitten** is installed so the profile and transfer workflow preserve the
-  complete development stack and Finder registration. Its own current platform
-  authority requires Mac OS 9.1 or later with CarbonLib 1.6. Presence on this
-  disk does not make it supported or expected to remain running on 8.6; launch
-  compatibility belongs to `qemu-ppc` or metal on 9.1+.
+- **CodeKitten** is a second application under test. Its IDE shell supports Mac
+  OS 8.6 through 9.2.2 with CarbonLib 1.6, although an individual toolchain or
+  package may declare a higher floor. It must launch and remain responsive in
+  this profile. Failure is a CodeKitten compatibility bug to capture with the
+  exact artifact and rig identities; it must not be reclassified as an expected
+  limit of the 8.6 oracle.
 
 Record both MacBinary SHA-256 values and source revisions in the sealed-version
 receipt or companion evidence. Do not let a convenient old artifact silently
@@ -153,7 +154,10 @@ ran, Finder refused it because `CarbonLib` could not be found.
 
 After the updater finishes, shut the guest down cleanly, relaunch it, and open
 the staged `New Old World`. Seeing the Workshop proves the application loaded
-against CarbonLib in this profile. It does not prove hardware behavior.
+against CarbonLib in this profile. Then launch CodeKitten and exercise its
+initial window and one menu. A failure to launch or remain responsive is a bug
+in the supported 8.6 runtime, not a reason to move the declared floor. Neither
+observation proves hardware behavior.
 
 ## UI automation seams
 

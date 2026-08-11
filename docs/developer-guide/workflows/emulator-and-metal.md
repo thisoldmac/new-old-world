@@ -21,7 +21,7 @@ scripts/emulator matrix
 | Domain | Use it for | Do not infer |
 |---|---|---|
 | `qemu-ppc` | Full-stack PowerPC behavior on `mac99`: Mac OS 9.1+, resident components, networking, hardware interactions, wire and QMP-driven acceptance. | That the UI is the quickest or minimum-floor Carbon reference; that hardware timing matches a PowerBook. |
-| `sheepshaver-86` | Fast PowerPC Carbon UI iteration on Mac OS 8.6 plus CarbonLib 1.6: native Toolbox controls, menus, windows, application launch, and minimum-floor compatibility. | Resident, hardware, or 9.1+ behavior; QMP semantics; CodeKitten support on 8.6. |
+| `sheepshaver-86` | Fast PowerPC Carbon UI iteration on Mac OS 8.6 plus CarbonLib 1.6: native Toolbox controls, menus, windows, application launch, and minimum-floor compatibility for NOW and CodeKitten. | Resident, hardware, or 9.1+ behavior; QMP semantics; compatibility of a toolchain or package whose own manifest requires a newer system. |
 | `qemu-68k` | 68K correctness on the current q800 profile: application logic, MacTCP, File Manager, and frame integrity before metal. | Exact System 7 or target-machine UI, memory pressure, timing, or hardware fidelity. |
 | Metal | Final behavior on the actual machine with its real OS, peripherals, storage, network, and timing. | Nothing broader than the named machine, build, and observation. |
 
