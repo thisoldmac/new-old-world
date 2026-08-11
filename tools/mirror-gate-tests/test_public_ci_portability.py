@@ -85,6 +85,20 @@ class PublicCIPortabilityTests(unittest.TestCase):
         self.assertEqual(script.count(flag + "=1"), 2)
         self.assertEqual(script.count("\n    " + case + "\n"), 1)
 
+    def test_projection_registries_bridge_swift_diagnostics(self):
+        """MUTATION: leave either Swift compiler with the wrong declaration."""
+        paths = [
+            ROOT / "now-host" / "Sources" / "NOWAgentIntegration"
+            / "Projection" / "HostProjectionCatalog.swift",
+            ROOT / "now-host" / "Sources" / "NOWAgentIntegration"
+            / "Projection" / "MirrorActProjections.swift",
+        ]
+        for path in paths:
+            source = path.read_text()
+            self.assertIn("#if compiler(>=6.2)", source)
+            self.assertIn("public nonisolated(unsafe) static let", source)
+            self.assertIn("#else\n    public static let", source)
+
 
 if __name__ == "__main__":
     unittest.main()
