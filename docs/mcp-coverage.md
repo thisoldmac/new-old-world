@@ -636,6 +636,7 @@ to exist:
 | `cloud.listing` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.list` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
 | `cloud.refuse` | message | ppc | deliberate | The refusal half of the same family, same reason ([command-parity.md](command-parity.md)). |
 | `cloud.report` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.services` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
+| `continuity.report` | message | none | deliberate | The guest's control-plane answer to a host `continuity.arm` or `continuity.disarm`, plus the unsolicited notice that physical guest input or lease expiry ended ownership. It is not an independently askable guest capability: the Mirror's private Continuity controller consumes it to settle a temporary pointer lease, and the feature is explicitly excluded from MCP and agent integration ([continuity-mode.md](continuity-mode.md)). Exposing the report would give an agent neither authority to arm nor useful state outside the Mirror session that owns its nonce and epoch. |
 | `exec.cancel` | message | both | deliberate | Ends an exec, and is excluded with the rest of the console plane — [agent-integration.md](agent-integration.md). |
 | `exec.input` | message | both | deliberate | Part of the console plane excluded under rule 3 — [agent-integration.md](agent-integration.md) and the parity slice plan. |
 | `exec.request` | message | both | deliberate | The console plane. A shell is not user-initiable in any meaningful sense and is the one thing [agent-integration.md](agent-integration.md) is right to keep out. |
@@ -1186,14 +1187,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 1c7dd3378b79041942f941e7ffbc83851064a213
-derive ppc-inbound-types sha256=29ff3abf372ea8de2e8cd4b487efb7dcb7b9fa03d5e20959f10c127320146842 lines=50 published
+sources-sha1: d07f941081d3b3cb76bd0a2a400d2d003b6a7e53
+derive ppc-inbound-types sha256=70184f879d1f371f59646737ffce6b468c0bb20c337172a78ff612a4fa6efbbc lines=52 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
-derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
+derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=c69239c1c5342f684edfff98bd177a24c438158feeaf4ca0cc7580876344bf7e lines=3
+derive disposition-census sha256=72111076c8035b5bd9cceacc45e74c81bbcb8059cc93b1468147c1141a29dabe lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
@@ -1232,6 +1233,7 @@ rederived: 2026-08-08T21:56:10-0400 0ca7eb51 sources, disposition-census 3->3
 rederived: 2026-08-09T04:12:08-0400 3159abaf sources
 rederived: 2026-08-09T04:56:02-0400 ecdf1284 unchanged
 rederived: 2026-08-09T04:56:23-0400 04313f08 unchanged
+rederived: 2026-08-09T17:43:15-0400 ce45cbb8 sources, ppc-inbound-types 49->51, 68k-inbound-types 23->25, disposition-census 3->3
 rederived: 2026-08-09T16:10:25-0400 e74b3ab1 sources
 rederived: 2026-08-09T16:29:42-0400 9034e3eb unchanged
 rederived: 2026-08-09T17:05:28-0400 446cf620 unchanged
@@ -1280,4 +1282,6 @@ rederived: 2026-08-11T04:04:48-0400 edc4294 unchanged
 rederived: 2026-08-11T04:18:29-0400 c830686 unchanged
 rederived: 2026-08-11T13:21:46-0400 181ba5a unchanged
 rederived: 2026-08-11T13:23:43-0400 181ba5a unchanged
+rederived: 2026-08-11T18:32:08-0400 1e25306c sources, ppc-inbound-types 50->52, disposition-census 3->3
+rederived: 2026-08-11T18:35:08-0400 66eedfc sources, disposition-census 3->3
 -->

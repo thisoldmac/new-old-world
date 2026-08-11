@@ -49,4 +49,9 @@ enum {
 int now_ext_liveness_should_run(const NowPeekTable *table,
                                 NowPeekU32 now_ticks);
 
+/* Metal safety gate for P9. This remains a function, rather than a local
+   preprocessor switch in the resident, so a native test must change with any
+   attempt to expose Continuity again. */
+int now_ext_continuity_safe_on_hardware(void);
+
 #endif

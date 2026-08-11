@@ -110,6 +110,21 @@
 #   ADDITIVE — no revision bump. A host that has never heard of the field
 #   sees a hello it will refuse busy, which is the previous behaviour and
 #   costs a machine nothing it had.
+# - Continuity adds one lossy state lane beside this reliable stream. It is
+#   UDP on the SAME numeric port as TCP: the host sends from an ephemeral UDP
+#   source port and the PowerPC guest binds UDP/N while its TCP session uses
+#   TCP/N. They are separate transport namespaces, so no second configured
+#   port is required. QEMU must forward both protocols explicitly.
+#   UDP NEVER ARMS CONTINUITY. A continuity.arm on this TCP session
+#   establishes a fresh 64-bit nonce and monotonically-new epoch; fixed-size
+#   state datagrams in continuity_udp.h are accepted only while both match
+#   that live arm. Reconnect, disarm, lease expiry and local guest input
+#   invalidate the epoch. Stale, replayed and malformed packets are counted
+#   and ignored.
+#   v0 state is absolute movement and coalescible: a later position supersedes
+#   an earlier one. The fixed packet reserves its button generation and primary
+#   flag for v0.5a, but a v0 sender writes zero and a v0 resident never mutates
+#   mouse-button or Event Manager state.
 # - Control messages that expect an answer carry `id`; answers echo it.
 # - Bulk transfers are announced on control (`capture.begin`), stream on the
 #   bulk channel in chunks (default 8192 bytes, negotiable in hello), and
@@ -287,6 +302,9 @@ channels:
       softwareList: { $ref: "#/components/messages/softwareList" }
       softwareListing: { $ref: "#/components/messages/softwareListing" }
       agentAccess: { $ref: "#/components/messages/agentAccess" }
+      continuityArm: { $ref: "#/components/messages/continuityArm" }
+      continuityReport: { $ref: "#/components/messages/continuityReport" }
+      continuityDisarm: { $ref: "#/components/messages/continuityDisarm" }
       cloudServices: { $ref: "#/components/messages/cloudServices" }
       cloudReport: { $ref: "#/components/messages/cloudReport" }
       cloudList: { $ref: "#/components/messages/cloudList" }
@@ -1221,6 +1239,29 @@ operations:
       it is. `reason` carries the host's own words for the human-facing
       status line and is MacRoman-expressible, the hostServesCloud rule
       verbatim.
+  hostAsksGuestContinuity:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/continuityArm"
+      - $ref: "#/channels/control/messages/continuityDisarm"
+    description: >
+      Reliable session ownership for the optional Continuity input plane.
+      The host arms before sending UDP state and disarms on disable,
+      disconnect, Mirror close, or an explicit guest-side exit report. An
+      older or unsupported receiver refuses by continuity.report rather than
+      treating UDP arrival as authority. This is user-only Mirror input, not
+      an MCP verb, automation capability, or generic coordinate click API.
+  guestReportsContinuity:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/continuityReport"
+    description: >
+      The PowerPC guest answers every arm and disarm and may also report an
+      asynchronous guest-input or lease-expiry exit. The `state` and `reason`
+      fields are the authoritative ownership answer; UDP acknowledgements are
+      transport telemetry and cannot re-arm an exited session.
   peerAnnouncesMirrorInvalidation:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -1422,6 +1463,15 @@ components:
     agentAccess:
       name: agent.access
       payload: { $ref: "#/components/schemas/AgentAccess" }
+    continuityArm:
+      name: continuity.arm
+      payload: { $ref: "#/components/schemas/ContinuityArm" }
+    continuityReport:
+      name: continuity.report
+      payload: { $ref: "#/components/schemas/ContinuityReport" }
+    continuityDisarm:
+      name: continuity.disarm
+      payload: { $ref: "#/components/schemas/ContinuityDisarm" }
     cloudServices:
       name: cloud.services
       payload: { $ref: "#/components/schemas/CloudServices" }
@@ -2053,6 +2103,76 @@ components:
           description: >
             The host's own words, converted MacRoman-expressible, for
             the guest's status line. Shown, not swallowed.
+    ContinuityArm:
+      type: object
+      required: [type, version, id, nonceHi, nonceLo, epoch, requestedHz, leaseTicks]
+      additionalProperties: false
+      properties:
+        type: { const: continuity.arm }
+        version:
+          const: 1
+          description: >
+            Continuity control-contract version. This matches the fixed-size
+            UDP lane's version; a receiver refuses a missing or different
+            value as wrong-version before granting pointer ownership.
+        id: { type: integer }
+        nonceHi: { type: integer, minimum: 0, maximum: 4294967295 }
+        nonceLo: { type: integer, minimum: 0, maximum: 4294967295 }
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: Newer than the preceding arm on this TCP session.
+        requestedHz:
+          enum: [15, 30, 60]
+          description: User-selected send ceiling; the guest reports acceptance.
+        leaseTicks:
+          type: integer
+          minimum: 15
+          maximum: 600
+          description: >
+            Classic 60 Hz ticks. After the first accepted state, the
+            resident releases pointer ownership if no later accepted state
+            refreshes this lease. Before the first state,
+            the resident uses its fixed five-second arming grace so UDP
+            setup cannot consume the live-input dead-man.
+    ContinuityDisarm:
+      type: object
+      required: [type, version, id, epoch, reason]
+      additionalProperties: false
+      properties:
+        type: { const: continuity.disarm }
+        version: { const: 1 }
+        id: { type: integer }
+        epoch: { type: integer, minimum: 1, maximum: 4294967295 }
+        reason:
+          enum: [disabled, host-left, mirror-closed, disconnecting]
+    ContinuityReport:
+      type: object
+      required: [type, version, epoch, state]
+      additionalProperties: false
+      properties:
+        type: { const: continuity.report }
+        version: { const: 1 }
+        id:
+          type: integer
+          description: Echoed for an arm or disarm answer; absent for takeover.
+        epoch: { type: integer, minimum: 0, maximum: 4294967295 }
+        state: { enum: [inactive, armed, active, exited, refused] }
+        acceptedHz: { enum: [15, 30, 60] }
+        udpPort: { type: integer, minimum: 1, maximum: 65535 }
+        reason:
+          enum: [unsupported, unavailable, wrong-version, guest-input,
+                 lease-expired, host-left, disarmed, bad-epoch]
+        acceptedPackets: { type: integer, minimum: 0 }
+        stalePackets: { type: integer, minimum: 0 }
+        malformedPackets: { type: integer, minimum: 0 }
+        appliedPositionSequence:
+          { type: integer, minimum: 0, maximum: 4294967295 }
+        appliedButtonGeneration:
+          type: integer
+          const: 0
+          description: Reserved for v0.5a; movement-only v0 reports zero.
     MirrorInvalidate:
       type: object
       required: [type, generation, domains, quality]

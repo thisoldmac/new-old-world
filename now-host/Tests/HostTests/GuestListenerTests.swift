@@ -447,6 +447,43 @@ final class GuestListenerTests: XCTestCase {
                        .connected(guestName: "PowerBook 1400"))
     }
 
+    func testContinuityAuthorityTravelsOnTheActiveTCPConversation()
+        async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello())
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        let key = try XCTUnwrap(listener.activeKey)
+        var delivered: (GuestKey, ContinuityReport)?
+        listener.onContinuityReport = { delivered = ($0, $1) }
+        let id = try XCTUnwrap(listener.armContinuity(
+            nonceHi: 0x0102_0304, nonceLo: 0x0506_0708, epoch: 9,
+            requestedHz: 30, leaseTicks: 90))
+        try await waitUntil("continuity arm") {
+            guest.received.contains { message in
+                guard case .continuityArm(let arm) = message else {
+                    return false
+                }
+                return arm.version == ContinuityContract.version
+                    && arm.id == id && arm.epoch == 9
+                    && arm.requestedHz == 30 && arm.leaseTicks == 90
+            }
+        }
+
+        let report = ContinuityReport(
+            version: ContinuityContract.version,
+            id: id, epoch: 9, state: "armed", acceptedHz: 30,
+            udpPort: Int(listener.boundPort!), reason: nil,
+            acceptedPackets: 0, stalePackets: 0, malformedPackets: 0,
+            appliedPositionSequence: 0, appliedButtonGeneration: 0)
+        try guest.send(.continuityReport(report))
+        try await waitUntil("continuity report") { delivered != nil }
+
+        XCTAssertEqual(delivered?.0, key)
+        XCTAssertEqual(delivered?.1, report)
+    }
+
     /// The symmetric census family: the guest may ask the host for a
     /// census too, and the host answers a well-formed refusal (not a
     /// protocol error) until it grows its own. Proves the whole path -

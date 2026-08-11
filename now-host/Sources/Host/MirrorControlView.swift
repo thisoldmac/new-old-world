@@ -156,6 +156,8 @@ struct MirrorControlView: View {
             MirrorScrollBox {
                 VStack(alignment: .leading, spacing: 14) {
                     MirrorLifecycleCard(model: model)
+                    ContinuityControlCard(controller: source.continuity,
+                                          mirrorRunning: source.running)
                     MirrorPlanesCard(model: model)
                     hostFinderCard
                     MirrorSceneFactsCard(source: source)
@@ -274,6 +276,41 @@ struct MirrorControlView: View {
                     Text("A changed pack is loaded on next launch.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct ContinuityControlCard: View {
+    @ObservedObject var controller: MirrorContinuityController
+    var mirrorRunning: Bool
+
+    var body: some View {
+        GroupBox("Continuity") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Move the guest pointer directly",
+                       isOn: $controller.isEnabled)
+                    .disabled(!mirrorRunning)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Update rate")
+                    Picker("Update rate", selection: $controller.requestedHz) {
+                        Text("15 Hz").tag(15)
+                        Text("30 Hz").tag(30)
+                        Text("60 Hz").tag(60)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .disabled(!controller.isEnabled || !mirrorRunning)
+                }
+                Text(controller.status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Optional and off by default. Clicks still use Mirror. Moving the physical guest mouse immediately returns control to that Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

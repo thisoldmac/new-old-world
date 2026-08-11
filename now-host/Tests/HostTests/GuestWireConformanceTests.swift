@@ -582,6 +582,8 @@ final class GuestWireConformanceTests: XCTestCase {
         "hello": "test68KHelloAsTheGuestWritesIt",
         "ping": "test68KPingAsTheGuestWritesIt",
         "error": "test68KErrorReplyAsTheGuestWritesIt",
+        "continuity.report":
+            "test68KContinuityRefusalAsTheGuestWritesIt",
         "bye": "test68KByeAsTheGuestWritesIt",
         // The guest's half of the revision gate (wire68.c,
         // send_refuse_and_close). `refuse` used to be the host's message

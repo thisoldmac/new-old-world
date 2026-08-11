@@ -1136,6 +1136,24 @@ final class GuestWireFixtureTests: XCTestCase {
             """)
     }
 
+    /// handle_continuity_unsupported() - now-guest-68k/src/core/wire68.c.
+    ///
+    /// NOW-68K has no resident continuity vehicle, but it must answer in the
+    /// continuity family's own envelope so the host can settle the arm
+    /// immediately instead of mistaking an unsupported guest for packet loss.
+    func test68KContinuityRefusalAsTheGuestWritesIt() throws {
+        guard case .continuityReport(let report) =
+                try decode(Guest68KWire.continuityRefusal) else {
+            return XCTFail("not a continuity.report")
+        }
+        XCTAssertEqual(report.id, 17)
+        XCTAssertEqual(report.version, ContinuityContract.version)
+        XCTAssertEqual(report.epoch, 9)
+        XCTAssertEqual(report.state, "refused")
+        XCTAssertEqual(report.reason, "unsupported")
+        XCTAssertNil(report.udpPort)
+    }
+
     /// send_bye_and_close() - now-guest-68k/src/core/wire68.c.
     ///
     /// Piecemeal since it was written, and invisible to
@@ -1424,6 +1442,11 @@ enum Guest68KWire {
         + #""machine":{"id":34,"model":"Macintosh Quadra 950"},"#
         + #""chunk":4096}"#
 
+    // handle_continuity_unsupported() answers both arm and disarm. The same
+    // envelope is used in each case; only the echoed id and epoch differ.
+    static let continuityRefusal = #"{"type":"continuity.report","version":1,"id":17,"#
+        + #""epoch":9,"state":"refused","reason":"unsupported"}"#
+
 
     // The file family's receive half, as handle_file_offer / put_refuse /
     // put_report_progress / put_done append them.
@@ -1674,7 +1697,7 @@ enum Guest68KWire {
 
     /// Every fixture string above, for the contract check next door.
     static let all: [String] = [
-        hello, pingFirst, pingLater,
+        hello, pingFirst, pingLater, continuityRefusal,
         errorWithID, errorWithoutID, errorNegativeID,
         psReply, psReplyTruncated,
         fileListingRoot, fileListingSubfolder, lsReply,

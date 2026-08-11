@@ -61,7 +61,7 @@ the Extension's bounded state later. Removing the Extension returns NOW to the
 application-only coverage shown above.
 
 For installation and recovery, see [Install the NOW
-Extension](../how-to/install-extension.md). Developers looking for the P0–P8
+Extension](../how-to/install-extension.md). Developers looking for the P0–P9
 contract and capability-bit mapping should use [Resident
 components](../../developer-guide/architecture/resident-components.md); those
 implementation details are deliberately not the primary user-facing feature

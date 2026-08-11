@@ -203,6 +203,39 @@ final class LiveMirrorCursorTests: XCTestCase {
                       + "while it actually calls it")
     }
 
+    /// SwiftUI can end and recreate a hover region when a new guest scene
+    /// redraws under a stationary pointer. That visual lifecycle must not
+    /// release a raw-input lease; the AppKit capture view is the single event
+    /// authority because it follows the actual window pointer instead.
+    func testVisualHoverCannotDriveOrReleaseContinuity() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources")
+        let live = try String(
+            contentsOf: sources.appendingPathComponent(
+                "MirrorKitUI/LiveMirror.swift"), encoding: .utf8)
+        let hoverStart = try XCTUnwrap(
+            live.range(of: ".onContinuousHover")).lowerBound
+        let hoverEnd = try XCTUnwrap(
+            live.range(of: "guard let idx = openMenu",
+                       range: hoverStart..<live.endIndex)).lowerBound
+        let visualHover = String(live[hoverStart..<hoverEnd])
+        XCTAssertFalse(visualHover.contains("continuityInputDriver"),
+                       "a SwiftUI hover redraw can emit ended without the "
+                        + "pointer leaving and must not release Continuity")
+
+        let captureStart = try XCTUnwrap(
+            live.range(of: "PointerCaptureView(")).lowerBound
+        let captureEnd = try XCTUnwrap(
+            live.range(of: ".frame(maxWidth: .infinity",
+                       range: captureStart..<live.endIndex)).lowerBound
+        let capture = String(live[captureStart..<captureEnd])
+        XCTAssertTrue(capture.contains(".pointerMoved("))
+        XCTAssertTrue(capture.contains(".pointerLeft()"),
+                      "the AppKit pointer capture must retain both ownership "
+                        + "edges when visual hover is observation-only")
+    }
+
     /// The pointer and the act must name the same object, which they do
     /// by both being handed the resolver's answer for the same point.
     /// Asserted over a real scene rather than over the source, because

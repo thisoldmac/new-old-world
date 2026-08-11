@@ -53,6 +53,7 @@ final class Session {
     private let onExecResult: (ExecResult) -> Void
     private let onGuestError: (ErrorMessage) -> Void
     private let onCensusReport: (CensusReport) -> Void
+    private let onContinuityReport: (ContinuityReport) -> Void
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
         -> Void
@@ -190,6 +191,7 @@ final class Session {
          onExecResult: @escaping (ExecResult) -> Void,
          onGuestError: @escaping (ErrorMessage) -> Void,
          onCensusReport: @escaping (CensusReport) -> Void,
+         onContinuityReport: @escaping (ContinuityReport) -> Void,
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
                                       GuestListener.CaptureFailure>) -> Void,
          onCaptureProgress: @escaping (GuestListener.CaptureProgress?) -> Void,
@@ -245,6 +247,7 @@ final class Session {
         self.onExecResult = onExecResult
         self.onGuestError = onGuestError
         self.onCensusReport = onCensusReport
+        self.onContinuityReport = onContinuityReport
         self.onCapture = onCapture
         self.onCaptureProgress = onCaptureProgress
         self.onScene = onScene
@@ -513,6 +516,13 @@ final class Session {
             onCensusReport(report)
         case .censusRequest(let request):
             serveCensusRefusal(request)
+        case .continuityReport(let report):
+            onContinuityReport(report)
+        case .continuityArm, .continuityDisarm:
+            /* Declared asymmetry: authority is host-to-guest. A guest may
+               report that its resident relinquished ownership, but it may
+               never arm the host's input lane or disarm another session. */
+            break
         case .fileListing(let listing):
             onFileListing(listing)
         case .fileResult(let result):

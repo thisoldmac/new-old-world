@@ -1,6 +1,37 @@
 import Foundation
 import Combine
+import AppKit
 import MirrorKit
+import NOWAgentIntegration
+
+enum HostProcessIssueProbe {
+    static func issues(processIdentifiers: [pid_t])
+        -> [AgentIntegrationHostIssue] {
+        let identifiers = Array(Set(processIdentifiers)).sorted()
+        guard identifiers.count > 1 else { return [] }
+        return [.init(
+            code: "now-host-session-collision",
+            severity: .error,
+            message: "Multiple New Old World host applications are running. "
+                + "MCP may be connected to a different host than the visible "
+                + "window, while that window reports Address already in use.",
+            processIDs: identifiers)]
+    }
+
+    static func current() -> [AgentIntegrationHostIssue] {
+        let executableNames = Set(["Host", ProductIdentity.displayName])
+        return issues(processIdentifiers: NSWorkspace.shared
+            .runningApplications
+            .filter {
+                !$0.isTerminated
+                    && ($0.bundleIdentifier == ProductIdentity.bundleIdentifier
+                        || $0.executableURL.map {
+                            executableNames.contains($0.lastPathComponent)
+                        } == true)
+            }
+            .map(\.processIdentifier))
+    }
+}
 
 @MainActor
 final class HostAppState: ObservableObject {
@@ -74,6 +105,7 @@ final class HostAppState: ObservableObject {
     /// Not lazy: constructing it applies the saved disk-persistence switch
     /// to HostLog before the first wire event has a line to write.
     let logs: LogsModel
+    let localNetworkAccess: LocalNetworkAccessController
     let listener: GuestListener
     let mirrorEngines: MirrorStateEngineRegistry
     let agentIntegration: AgentIntegrationHostAdapter
@@ -125,6 +157,7 @@ final class HostAppState: ObservableObject {
                 currentSessionID: { [unowned self] in
                     self.agentIntegration.connectedSessionID()
                 }),
+            localNetworkAccess: localNetworkAccess,
             planePolicy: { [unowned self] key in
                 self.mirror.requestedPlaneIDs(for: key)
             },
@@ -342,6 +375,7 @@ final class HostAppState: ObservableObject {
         settings = SettingsModel(defaults: defaults)
         onboarding = OnboardingPortal()
         logs = LogsModel(log: .shared, defaults: defaults)
+        localNetworkAccess = LocalNetworkAccessController()
         mirrorEngines = MirrorStateEngineRegistry()
         listener = GuestListener(
             identity: .init(
@@ -356,7 +390,8 @@ final class HostAppState: ObservableObject {
         let integration = AgentIntegrationHostAdapter(
             listener: listener,
             artifactApprovals: artifactApprovals,
-            mirrorEngines: mirrorEngines)
+            mirrorEngines: mirrorEngines,
+            hostIssues: HostProcessIssueProbe.current)
         agentIntegration = integration
         guestFiles = GuestFilesCommandService(
             listener: listener,

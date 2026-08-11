@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import NOWAgentIntegration
 
@@ -10,6 +11,7 @@ struct ConnectionsModuleView: View {
     @ObservedObject var settings: SettingsModel
     @ObservedObject var listener: GuestListener
     @ObservedObject var onboarding: OnboardingPortal
+    @ObservedObject var localNetworkAccess: LocalNetworkAccessController
     var onStart: () -> Void
     var onStop: () -> Void
     @State private var selectedID: String?
@@ -117,6 +119,9 @@ struct ConnectionsModuleView: View {
                         focusPort: adding,
                         selectedGuest: selectedRow?.key)
                     trustedLANNotice
+                    LocalNetworkAccessSection(
+                        controller: localNetworkAccess,
+                        targetHost: listener.activeContinuityTarget?.host)
                     if let row = selectedRow {
                         ConnectionCard(row: row, model: model) {
                             beginRenaming(row)
@@ -303,6 +308,47 @@ struct ConnectionsModuleView: View {
         }
         return "This forgets \(row.name) and its saved machine ID. "
             + "This cannot be undone."
+    }
+}
+
+private struct LocalNetworkAccessSection: View {
+    @ObservedObject var controller: LocalNetworkAccessController
+    let targetHost: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Local Network Access")
+                .font(.title3.weight(.semibold))
+            Text(controller.status)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Request Access") {
+                    controller.request()
+                    guard let targetHost else { return }
+                    controller.verifyDirectAccess(to: targetHost)
+                }
+                Button("Open Settings…", action: openSettings)
+            }
+            Text("Request Access repeats the app-owned macOS request, then "
+                 + "checks the connected Mac directly when available. If "
+                 + "access was denied earlier, enable NOW Continuity in "
+                 + "System Settings.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(nsColor: .controlBackgroundColor)))
+    }
+
+    private func openSettings() {
+        guard let url = URL(string:
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork")
+        else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 

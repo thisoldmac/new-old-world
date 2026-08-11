@@ -447,6 +447,15 @@ and acknowledgement times and says only `requestSent`; process exit still
 requires a later listing.
 
 Artifact transfer is deliberately two-step. In NOW's Files page, navigate to the intended guest folder, choose **Add File… > Approve One-Time Agent Transfer…**, select one file, and hand the copied receipt to `now_transfer_approved_artifact` within ten minutes. Approval does not start a transfer. Redemption is one attempt, never overwrites, cannot be retried with the same receipt, and may wait up to one hour locally for the existing size-scaled guest transfer watchdog. A delivery receipt carries the source and handed-to-NOW digests separately and says `guestAcknowledgedWrite: true`, but always says `destinationBytesVerified: false`: current `file.done` proves the guest reported a successful write and stamp, not a read-back hash. The MCP transport does not start, stop, configure, or keep the guest alive.
+`now_session_health` also reports host-process problems before guest details.
+If more than one NOW host application is running, its required `issues` array
+contains `now-host-session-collision` at error severity and names the process
+IDs. This is not inferred from the listener that happened to answer: the
+running host enumerates its peer applications. The message says explicitly
+that MCP may be connected to one host while another visible window reports
+Address already in use, so an agent does not diagnose the guest through an
+arbitrary surviving socket. Older local-health payloads without `issues`
+decode as an empty array for compatibility.
 
 Generic V0.5 upload is a separate three-call command lifecycle. Begin declares
 one root-relative destination, byte count, SHA-256, container, and optional

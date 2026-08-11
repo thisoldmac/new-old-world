@@ -115,6 +115,7 @@
  * budget looked at rather than assumed.
  */
 #include "wire68.h"
+#include "continuity_udp.h"
 #include "commands68.h"
 
 #include "contract.h"
@@ -956,6 +957,35 @@ static void send_error_reply(long id, int have_id)
     }
     if (!enqueue_control_send(payload, pos)) {
         now68k_log("wire: error reply dropped, outbound queue full");
+    }
+}
+
+/* Continuity is deliberately absent on NOW-68K, but the control contract
+ * still requires this family to answer in its own envelope. A generic error
+ * would leave the host's arm waiter unresolved for five seconds and make an
+ * unsupported machine look like a lossy one. */
+static void handle_continuity_unsupported(const char *json, long len)
+{
+    char payload[160];
+    long id = 0;
+    long epoch = 0;
+    long pos = 0;
+    int ok = 1;
+
+    (void)now68k_json_find_int(json, (size_t)len, "id", &id);
+    (void)now68k_json_find_int(json, (size_t)len, "epoch", &epoch);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+        "{\"type\":\"continuity.report\",\"version\":1,\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload,
+                                       &pos, id);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      ",\"epoch\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload,
+                                       &pos, epoch);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+        ",\"state\":\"refused\",\"reason\":\"unsupported\"}");
+    if (!ok || pos <= 0 || !enqueue_control_send(payload, pos)) {
+        now68k_log("wire: continuity refusal dropped");
     }
 }
 
@@ -2793,6 +2823,11 @@ static void handle_control_message(const char *json, long len)
     }
     if (strcmp(type, "census.request") == 0) {
         handle_census_request(json, len);
+        return;
+    }
+    if (strcmp(type, "continuity.arm") == 0
+            || strcmp(type, "continuity.disarm") == 0) {
+        handle_continuity_unsupported(json, len);
         return;
     }
     if (strcmp(type, "capture.request") == 0) {

@@ -7,6 +7,21 @@ import CoreGraphics
 /// if view→guest and guest→view don't invert cleanly the small widgets
 /// drift. These pin the round-trip across the letterbox cases.
 final class FitTransformTests: XCTestCase {
+    func testContinuityRejectsLetterboxButCapturedDragClampsToEdge() {
+        let fit = FitTransform(logical: CGSize(width: 640, height: 480),
+                               view: CGSize(width: 1000, height: 1000))
+
+        XCTAssertNil(fit.toGuestIfInside(CGPoint(x: 500, y: 100)))
+        let top = fit.toGuestClamped(CGPoint(x: 500, y: 100))
+        XCTAssertEqual(top.x, 320)
+        XCTAssertEqual(top.y, 0)
+
+        XCTAssertNil(fit.toGuestIfInside(CGPoint(x: 1001, y: 500)))
+        let right = fit.toGuestClamped(CGPoint(x: 1001, y: 500))
+        XCTAssertEqual(right.x, 639)
+        XCTAssertEqual(right.y, 240)
+    }
+
 
     func testRoundTripExactFit() {
         // View exactly matches logical → scale 1, no offset.

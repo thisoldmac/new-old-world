@@ -30,11 +30,13 @@
  * redraw it. **On Mac OS 8/9 the Cursor Device Manager owns the sprite,
  * and the low-memory globals are downstream of it rather than upstream.**
  *
- * SO THIS FILE CALLS THE MANAGER. `CursorDeviceMoveTo` is the call a
- * mouse driver's own interrupt handler makes, sixty times a second, on
- * the device the manager hands out - which is why it is safe from the
- * drag Time Manager task, and why it is an absolute move with no
- * acceleration applied, which is what an act needs.
+ * SO THIS FILE CALLS THE MANAGER, BUT ONLY AT TASK TIME. The first metal
+ * Continuity candidates treated `CursorDeviceMoveTo` as though calling it
+ * from our arbitrary Time Manager task were equivalent to the ADB driver's
+ * own interrupt path. Twice, the PowerBook stopped accepting clicks after
+ * one or a few placements. The manager and QuickDraw therefore settle from
+ * the next jGNE pass; interrupt time publishes low-memory state and one
+ * preallocated latest-point debt only.
  *
  * THE LOW-MEMORY WRITES DID NOT GO AWAY, and that is deliberate. They
  * are what a tracking loop reads, they are what makes an act's click
@@ -71,6 +73,7 @@
 
 #include "peek_table.h"
 #include "now_cursor_logic.h"
+#include "now_ext_cursor_input.h"
 
 /* CrsrNew and CrsrCouple are past where this toolchain's LowMem.h stops
    (CrsrBusy, 0x08CD), and are reached through VOLATILE POINTER VARIABLES
@@ -106,11 +109,6 @@ static volatile UInt8 *volatile gCrsrObscure = (volatile UInt8 *)0x08D2UL;
    cannot be C declarations with TWOWORDINLINE. */
 extern long now_cdm_move_to(void *device, long absX, long absY);
 extern long now_cdm_next_device(void **device);
-/* The cursor task, through JCrsrTask. The manager moves the POSITION and
-   this is what moves the PICTURE - see the shim's own header for how
-   that was established, because the two look identical from inside the
-   guest and the difference is 340 pixels of arrow. */
-extern void now_cdm_crsr_task(void);
 
 static NowPeekTable *gTable = NULL;
 static CursorDevicePtr gDevice = NULL;
@@ -127,13 +125,197 @@ static Boolean gEverPlaced = false;
    same split P7 uses for its owed mouseUp, and for the same reason: the
    part that must not fail runs where it cannot, and the part that needs
    a context waits for one. */
-static Boolean gRedrawOwed = false;
+static volatile Boolean gTaskApplyOwed = false;
+static volatile NowPeekI32 gTaskH = 0;
+static volatile NowPeekI32 gTaskV = 0;
+static volatile NowPeekU32 gTaskApplySeq = 0;
+static volatile NowPeekI32 gTaskAppliedH = 0;
+static volatile NowPeekI32 gTaskAppliedV = 0;
+/* Native-input observation is deliberately task-time sampling of both the
+   CursorDevice record and RawMouse, not a Time Manager dereference and not
+   the jGNE EventRecord. Real ADB/USB input updates RawMouse on every tested
+   rig, while CursorData.where can remain at our last CursorDeviceMoveTo point.
+   The system filter also runs before Event Manager commits its returned
+   record, so treating A1 as an input notification misses real movement. */
+static volatile NowPeekU32 gPhysicalInputSeq = 0;
+static volatile NowPeekU32 gPhysicalSamples = 0;
+static volatile NowPeekU32 gPhysicalChanges = 0;
+static volatile NowPeekU32 gPhysicalTrigger = 0;
+static volatile NowPeekU32 gDebtCancels = 0;
+static unsigned gPhysicalButtons = 0;
+static Boolean gPhysicalButtonsValid = false;
+static Boolean gPhysicalValid = false;
+static Point gPhysicalRawWhere;
+static Boolean gPhysicalRawValid = false;
+static Point gPhysicalReportedWhere;
+static Point gOwnedDeviceWhere;
+static Boolean gOwnedDeviceValid = false;
+enum { kOwnedHistoryCount = 8 };
+static Point gOwnedHistory[kOwnedHistoryCount];
+static unsigned gOwnedHistoryNext = 0;
+static unsigned gOwnedHistoryUsed = 0;
 
 int now_ext_cursor_boot(NowPeekTable *table);
 void now_ext_cursor_rollback(NowPeekTable *table);
 void now_ext_cursor_gne(NowPeekTable *table);
+int now_ext_cursor_task_apply_state(NowPeekU32 *seq, NowPeekI32 *h,
+                                    NowPeekI32 *v);
 int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
 NowPeekCursorCell *now_ext_cursor_cell(NowPeekTable *table);
+
+static void remember_owned_device_point(Point pt)
+{
+    gOwnedDeviceWhere = pt;
+    gOwnedDeviceValid = gDevice != NULL;
+    if (!gOwnedDeviceValid)
+        return;
+    gOwnedHistory[gOwnedHistoryNext] = pt;
+    gOwnedHistoryNext = (gOwnedHistoryNext + 1u) % kOwnedHistoryCount;
+    if (gOwnedHistoryUsed < kOwnedHistoryCount)
+        gOwnedHistoryUsed++;
+}
+
+/* Continuity v0 owns only the low-memory point. Remember it separately from
+   the physical CursorDevice so the next native-input sample does not mistake
+   our own write for an ADB/USB report. The short history closes the race where
+   the timer advances the latest point while the sampler classifies the
+   preceding one. */
+static void remember_owned_lowmem_point(Point pt)
+{
+    gOwnedHistory[gOwnedHistoryNext] = pt;
+    gOwnedHistoryNext = (gOwnedHistoryNext + 1u) % kOwnedHistoryCount;
+    if (gOwnedHistoryUsed < kOwnedHistoryCount)
+        gOwnedHistoryUsed++;
+}
+
+static Boolean is_recent_owned_device_point(Point pt)
+{
+    unsigned i;
+
+    for (i = 0; i < gOwnedHistoryUsed; i++) {
+        if (gOwnedHistory[i].h == pt.h && gOwnedHistory[i].v == pt.v)
+            return true;
+    }
+    return false;
+}
+
+static Boolean is_owned_or_pending_point(Point pt)
+{
+    if (gTaskApplyOwed
+        && pt.h == (short)gTaskH && pt.v == (short)gTaskV)
+        return true;
+    return is_recent_owned_device_point(pt);
+}
+
+/* Publish the low-memory position left by the most recent task-time manager
+   apply. The Time Manager reads only these resident globals; it never follows
+   a CursorDevice pointer. Odd means the task-time writer is between fields. */
+int now_ext_cursor_task_apply_state(NowPeekU32 *seq, NowPeekI32 *h,
+                                    NowPeekI32 *v)
+{
+    NowPeekU32 before = gTaskApplySeq;
+
+    if ((before & 1u) != 0)
+        return 0;
+    *h = gTaskAppliedH;
+    *v = gTaskAppliedV;
+    *seq = before;
+    return before == gTaskApplySeq ? 1 : 0;
+}
+
+/* Sample native mouse motion only from RawMouse. Continuity v0
+   deliberately does not inspect or mutate the physical CursorDevice record:
+   the PowerBook 1400 trackpad owns that ADB-backed object, and treating it as
+   our synthetic device produced two whole-system metal wedges. This routine
+   is bounded low-memory/resident-state work so the timer samples immediately
+   before each placement; that prevents a host point from overwriting an ADB
+   report before optimistic takeover sees it. Recent host-owned points are
+   excluded. Button state is diagnostic in v0. */
+NowPeekU32 now_ext_cursor_physical_input_seq(void)
+{
+    Point raw;
+    unsigned buttons;
+    Boolean owned_raw;
+    Boolean changed = false;
+    NowPeekU32 trigger = 0;
+
+    raw = LMGetRawMouseLocation();
+    buttons = (LMGetMouseButtonState() & 0x80u) ? 0u : 1u;
+    gPhysicalSamples++;
+    owned_raw = is_owned_or_pending_point(raw);
+
+    if (!gPhysicalRawValid) {
+        if (!owned_raw) {
+            gPhysicalRawWhere = raw;
+            gPhysicalReportedWhere = raw;
+            gPhysicalRawValid = true;
+            gPhysicalValid = true;
+        }
+    } else if (!owned_raw
+               && (raw.h != gPhysicalRawWhere.h
+                   || raw.v != gPhysicalRawWhere.v)) {
+        changed = true;
+        trigger |= (NowPeekU32)kNowCursorInputTriggerPosition;
+        gPhysicalReportedWhere = raw;
+    }
+    if (!owned_raw)
+        gPhysicalRawWhere = raw;
+    if (!gPhysicalButtonsValid) {
+        gPhysicalButtons = buttons;
+        gPhysicalButtonsValid = true;
+    } else if (buttons != gPhysicalButtons) {
+        changed = true;
+        trigger |= (NowPeekU32)kNowCursorInputTriggerButton;
+    }
+    gPhysicalButtons = buttons;
+    if (changed) {
+        gPhysicalInputSeq++;
+        gPhysicalChanges++;
+        gPhysicalTrigger = trigger;
+    }
+    return gPhysicalInputSeq;
+}
+
+/* CursorDevicesGlue now performs P9's placement from the PPC application.
+   The resident remembers the point only after the application publishes a
+   successful result, so RawMouse takeover does not classify our own report as
+   physical ADB/USB input. No Cursor Device pointer crosses this boundary. */
+void now_ext_cursor_remember_continuity_point(NowPeekI32 h, NowPeekI32 v)
+{
+    Point pt;
+
+    pt.h = (short)h;
+    pt.v = (short)v;
+    remember_owned_device_point(pt);
+}
+
+/* Revoking authority also revokes an interrupt-published redraw debt. Without
+   this, the following jGNE pass can move the manager back to a stale host
+   point after Continuity has already reported that the guest took over. */
+void now_ext_cursor_cancel_task_apply(void)
+{
+    if (gTaskApplyOwed)
+        gDebtCancels++;
+    gTaskApplyOwed = false;
+}
+
+void now_ext_cursor_input_diagnostics(NowCursorInputDiagnostics *out)
+{
+    if (out == NULL)
+        return;
+    out->sequence = gPhysicalInputSeq;
+    out->samples = gPhysicalSamples;
+    out->changes = gPhysicalChanges;
+    out->trigger = gPhysicalTrigger;
+    out->h = (NowPeekI32)gPhysicalReportedWhere.h;
+    out->v = (NowPeekI32)gPhysicalReportedWhere.v;
+    out->owned_h = (NowPeekI32)gOwnedDeviceWhere.h;
+    out->owned_v = (NowPeekI32)gOwnedDeviceWhere.v;
+    out->buttons = (NowPeekU32)gPhysicalButtons;
+    out->physical_valid = gPhysicalValid ? 1u : 0u;
+    out->owned_valid = gOwnedDeviceValid ? 1u : 0u;
+    out->debt_cancels = gDebtCancels;
+}
 
 /* The cursor cell, or NULL when this table is too short to hold one.
    The accretive rule's other half, and the same check the drag cell
@@ -180,10 +362,9 @@ static Boolean cursor_manager_present(void)
  * caller is holding the pointer for the duration of a gesture and must
  * never yield.
  *
- * INTERRUPT-SAFE: the drag task calls this every tick. Nothing here
- * allocates, blocks or moves memory - the low-memory accessors are
- * absolute moves, and CursorDeviceMoveTo is the call the ADB driver
- * makes from its own interrupt handler. */
+ * INTERRUPT-SAFE: the drag and Continuity tasks call this every tick. The
+ * interrupt branch returns after low-memory writes and a preallocated debt;
+ * it neither dereferences Cursor Device records nor calls a manager. */
 int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
 {
     NowPeekCursorCell *cell = now_ext_cursor_cell(gTable);
@@ -194,6 +375,36 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
 
     pt.h = (short)h;
     pt.v = (short)v;
+
+    if (flags & kNowCursorPlaceInterrupt) {
+        /* This is deliberately the complete interrupt-time surface. A call
+           that is safe inside an ADB driver's private interrupt contract is
+           not thereby safe inside an unrelated Time Manager callback. */
+        LMSetMouseTemp(pt);
+        LMSetRawMouseLocation(pt);
+        LMSetMouseLocation(pt);
+        remember_owned_lowmem_point(pt);
+        gTaskH = h;
+        gTaskV = v;
+        if (flags & kNowCursorPlaceApplicationRedraw) {
+            /* A low-memory byte, not QuickDraw: a real device report clears
+               this before the cursor is redrawn too. The PPC application
+               performs the balanced HideCursor/ShowCursor at task time. */
+            *gCrsrObscure = 0;
+        } else {
+            gTaskApplyOwed = true;   /* publish after the coordinates */
+        }
+        if (cell != NULL) {
+            cell->seq++;
+            cell->asked++;
+            cell->at_h = h;
+            cell->at_v = v;
+            cell->by_lowmem++;
+            cell->route = (NowPeekU32)kNowPeekCursorRouteLowMem;
+            cell->seq++;
+        }
+        return kNowPeekCursorRouteLowMem;
+    }
 
     /* WHO MOVED IT LAST, asked of the MANAGER rather than of RawMouse.
        It was RawMouse, and that was wrong in a way only driving found:
@@ -255,7 +466,7 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
         if (cell != NULL) {
             cell->yielded++;
         }
-    } else if (!(flags & kNowCursorPlaceInterrupt)) {
+    } else {
         /* THE ONLY ROUTE THAT MOVES THE PICTURE, and it is the crudest
            of the three.
 
@@ -281,53 +492,14 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
            The drag vehicle does not, which is why the flag exists and
            why a drag still reports `device` and is still invisible. */
         (void)now_cdm_move_to(gDevice, (long)h, (long)v);
+        remember_owned_device_point(pt);
         *gCrsrObscure = 0;
         HideCursor();
         ShowCursor();
-        gRedrawOwed = false;
+        gTaskApplyOwed = false;
         route = kNowPeekCursorRouteQuickDraw;
         if (cell != NULL) {
             cell->by_device++;
-        }
-    } else if (gDevice != NULL) {
-        long err = now_cdm_move_to(gDevice, (long)h, (long)v);
-        if (err == 0) {
-            /* State, then picture, and BOTH are required. The manager
-               call alone leaves CursorData holding the new point with
-               the arrow still drawn at the old one; the task alone would
-               redraw from a position the manager does not agree with.
-               CrsrNew is set first because the task is what consumes
-               it. */
-            *gCrsrNew = *gCrsrCouple;
-            now_cdm_crsr_task();
-            /* Neither of those draws - see the QuickDraw branch above.
-               The debt is what makes an interrupt-time placement visible
-               at all, at the next moment there is a context. */
-            gRedrawOwed = true;
-            route = kNowPeekCursorRouteDevice;
-            if (cell != NULL) {
-                cell->by_device++;
-            }
-        } else {
-            /* A manager that refused is not a manager that is absent,
-               and the fallback runs anyway: a sprite that did not move
-               is better than a pointer the Toolbox and the picture
-               disagree about. The errno is kept because "it refused"
-               and "it refused with -1" are different investigations. */
-            *gCrsrNew = *gCrsrCouple;
-            now_cdm_crsr_task();
-            route = kNowPeekCursorRouteLowMem;
-            if (cell != NULL) {
-                cell->last_err = (NowPeekI32)err;
-                cell->by_lowmem++;
-            }
-        }
-    } else {
-        *gCrsrNew = *gCrsrCouple;
-        now_cdm_crsr_task();
-        route = kNowPeekCursorRouteLowMem;
-        if (cell != NULL) {
-            cell->by_lowmem++;
         }
     }
 
@@ -357,40 +529,52 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
  * armed: the debt is a picture that disagrees with the machine, and
  * disarming the plane does not make the arrow correct again.
  *
- * The yield rule is re-checked here rather than trusted from the
- * placement, because time has passed and a person may have taken the
- * mouse in between - which is exactly the window this settles into. */
+ * Native movement is sampled from the driver-owned CursorData record before
+ * this routine runs. The debt itself is owned input and always settles the
+ * latest point; letting the manager's stale record veto it recreates the
+ * fight this task-time split is meant to remove. */
 void now_ext_cursor_gne(NowPeekTable *table)
 {
     NowPeekCursorCell *cell;
-    Point where;
+    Point pt;
+    NowPeekI32 h;
+    NowPeekI32 v;
+    long err = 0;
 
     (void)table;
-    if (!gRedrawOwed) {
+    if (!gTaskApplyOwed) {
         return;
     }
-    gRedrawOwed = false;
-    if (gDevice != NULL && gDevice->whichCursor != NULL) {
-        where = gDevice->whichCursor->where;
-        /* A debt can only exist because a placement created one, so
-           gEverPlaced is necessarily true by the time this runs. It is
-           passed rather than hardcoded because the invariant is the
-           caller's and would go quiet if the debt were ever set from
-           somewhere else. */
-        if (now_cursor_is_foreign((NowPeekI32)where.h, (NowPeekI32)where.v,
-                                  (NowPeekI32)gLastPlaced.h,
-                                  (NowPeekI32)gLastPlaced.v,
-                                  gEverPlaced ? 1 : 0)) {
-            return;                 /* somebody else has it now */
-        }
-    }
+    /* Snapshot after observing the debt. A timer may publish a newer point
+       while this task-time apply runs; only clear the debt if the snapshot
+       is still current afterwards. */
+    h = gTaskH;
+    v = gTaskV;
+    pt.h = (short)h;
+    pt.v = (short)v;
+    gTaskApplySeq++;                  /* odd: manager apply in progress */
+    if (gDevice != NULL)
+        err = now_cdm_move_to(gDevice, (long)h, (long)v);
+    remember_owned_device_point(pt);
     *gCrsrObscure = 0;
     HideCursor();
     ShowCursor();
+    gLastPlaced = pt;
+    gEverPlaced = true;
+    pt = LMGetRawMouseLocation();
+    gTaskAppliedH = (NowPeekI32)pt.h;
+    gTaskAppliedV = (NowPeekI32)pt.v;
+    gTaskApplySeq++;                  /* even: applied position committed */
+    if (gTaskH == h && gTaskV == v)
+        gTaskApplyOwed = false;
     cell = now_ext_cursor_cell(gTable);
     if (cell != NULL) {
         cell->seq++;
         cell->route = (NowPeekU32)kNowPeekCursorRouteQuickDraw;
+        if (err != 0)
+            cell->last_err = (NowPeekI32)err;
+        else
+            cell->by_device++;
         cell->seq++;
     }
 }
@@ -418,6 +602,14 @@ int now_ext_cursor_boot(NowPeekTable *table)
     gLastPlaced.h = 0;
     gLastPlaced.v = 0;
     gEverPlaced = false;
+    gPhysicalValid = false;
+    gPhysicalButtonsValid = false;
+    gPhysicalRawValid = false;
+    gPhysicalReportedWhere.h = 0;
+    gPhysicalReportedWhere.v = 0;
+    gOwnedDeviceValid = false;
+    gOwnedHistoryNext = 0;
+    gOwnedHistoryUsed = 0;
 
     /* THE CELL IS REACHED DIRECTLY HERE, and only here.
        now_ext_cursor_cell() checks `magic`, and at boot MAGIC HAS NOT
@@ -479,5 +671,22 @@ void now_ext_cursor_rollback(NowPeekTable *table)
     gForeignTicks = 0;
     gBooted = false;
     gEverPlaced = false;
-    gRedrawOwed = false;
+    gTaskApplyOwed = false;
+    gTaskH = 0;
+    gTaskV = 0;
+    gTaskApplySeq = 0;
+    gTaskAppliedH = 0;
+    gTaskAppliedV = 0;
+    gPhysicalInputSeq = 0;
+    gPhysicalSamples = 0;
+    gPhysicalChanges = 0;
+    gPhysicalTrigger = 0;
+    gDebtCancels = 0;
+    gPhysicalButtons = 0;
+    gPhysicalButtonsValid = false;
+    gPhysicalValid = false;
+    gPhysicalRawValid = false;
+    gOwnedDeviceValid = false;
+    gOwnedHistoryNext = 0;
+    gOwnedHistoryUsed = 0;
 }

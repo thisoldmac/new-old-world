@@ -118,12 +118,39 @@ public enum SessionHealthProjection: HostProjection {
                                 "type": "array",
                                 "items": guestReferenceSchema,
                             ],
+                            "issues": [
+                                "type": "array",
+                                "description":
+                                    "Host-local failures that can make MCP address a different NOW process than the visible application.",
+                                "items": [
+                                    "type": "object",
+                                    "properties": [
+                                        "code": ["type": "string"],
+                                        "severity": [
+                                            "type": "string",
+                                            "enum": ["warning", "error"],
+                                        ],
+                                        "message": ["type": "string"],
+                                        "processIDs": [
+                                            "type": "array",
+                                            "items": ["type": "integer"],
+                                        ],
+                                    ],
+                                    "required": [
+                                        "code", "severity", "message",
+                                        "processIDs",
+                                    ],
+                                    "additionalProperties": false,
+                                ],
+                            ],
                             "compatibility": [
                                 "type": ["object", "null"],
                                 "description": "Host/stdio-bridge preflight identity: host build, local protocol, projection catalog and schema revisions.",
                             ],
                         ],
-                        "required": ["state", "observedAt", "roster"],
+                        "required": [
+                            "state", "observedAt", "roster", "issues",
+                        ],
                     ],
                     "unavailable":
                         HostProjectionSchema.unavailableFailure,

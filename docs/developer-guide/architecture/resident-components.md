@@ -17,7 +17,7 @@ The NOW Extension performs only work that must run in a foreign application cont
 
 The public [feature coverage
 matrix](../../user-guide/explanation/core-features.md#feature-coverage)
-starts with user outcomes. This page owns the deeper P0–P8 execution, memory,
+starts with user outcomes. This page owns the deeper P0–P9 execution, memory,
 shared-header, bake, and recovery contracts.
 
 ```mermaid
@@ -43,8 +43,8 @@ deferral may permit a branch checkpoint but never the landing.
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: b3fe7ac16e51c9a8b7945102fea8af4f59af2fc3
-derive resident-contract sha256=c9c8ffa94f6c2db0af0a8b407badbd9af9e80265cae227b57b68270df462ed0a lines=11
+sources-sha1: 9cc241aa284f634c04c7c5c3a2ed3c6e86ba38d5
+derive resident-contract sha256=94aa1ceb2d2998a0973bc7f381405e008f6bcfcd416bac1a70e2b26d14ef97f8 lines=12
     scripts/docs-source-group resident
 rederived: pending
 rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, resident-contract 11->11
@@ -96,4 +96,6 @@ rederived: 2026-08-11T04:04:47-0400 edc4294 unchanged
 rederived: 2026-08-11T04:18:28-0400 c830686 unchanged
 rederived: 2026-08-11T13:21:46-0400 181ba5a sources
 rederived: 2026-08-11T13:23:42-0400 181ba5a sources
+rederived: 2026-08-11T18:32:07-0400 1e25306c sources, resident-contract 11->12
+rederived: 2026-08-11T18:35:07-0400 66eedfc sources
 -->

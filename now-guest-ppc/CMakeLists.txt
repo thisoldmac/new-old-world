@@ -237,6 +237,13 @@ add_application(now-guest-ppc
     # input_cmds.c is the thin Toolbox layer over it.
     src/input/input_args.c
     src/input/input_cmds.c
+    src/input/continuity_intake.c
+    src/input/continuity_cdm_transition.c
+    src/input/continuity_cursor.c
+    src/input/continuity_service.c
+    src/input/continuity_report_logic.c
+    ../now-guest-shared/src/now_continuity_wire.c
+    ../now-guest-shared/src/now_continuity_logic.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that

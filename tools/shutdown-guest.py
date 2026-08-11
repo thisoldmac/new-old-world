@@ -594,6 +594,28 @@ def quit_front_application(h):
     print(f"  [warn] {name} is still front; shutting down over it")
 
 
+def open_anchor_for_applet(port, applet, attempts=3, pause=time.sleep):
+    """Open the anchor and prove the staged applet exists.
+
+    The classic worker closes one connection before accepting the next. On a
+    cold-boot rig that handoff can reset the first new connection even though
+    the worker answers again immediately. `stat` is read-only, so retry this
+    narrow preflight rather than misreporting a live VM as having no graceful
+    shutdown route.
+    """
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            harness = Harness(host="127.0.0.1", port=port,
+                              expect_backing={"worker"})
+            return harness, harness.request("stat", {"path": applet})
+        except Exception as exc:
+            last_error = exc
+            if attempt + 1 < attempts:
+                pause(0.5)
+    raise last_error
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sock", help="the VM's qmp.sock")
@@ -701,8 +723,7 @@ def _graceful(a):
     # the least actionable ending this file has ever had.
     Harness, HarnessError = harness_types()
     try:
-        h = Harness(host="127.0.0.1", port=a.port, expect_backing={"worker"})
-        st = h.request("stat", {"path": a.applet})
+        h, st = open_anchor_for_applet(a.port, a.applet)
     except Exception as exc:
         print(f"the anchor on port {a.port} did not answer ({exc}), so the "
               f"applet route is closed too", file=sys.stderr)

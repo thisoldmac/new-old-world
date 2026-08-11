@@ -383,6 +383,17 @@ final class NOWMCPServerTests: XCTestCase {
             health["properties"] as? [String: Any])
         let roster = try XCTUnwrap(
             healthProperties["roster"] as? [String: Any])
+        let issues = try XCTUnwrap(
+            healthProperties["issues"] as? [String: Any])
+        let required = try XCTUnwrap(health["required"] as? [String])
+        XCTAssertTrue(required.contains("issues"))
+        let issue = try XCTUnwrap(issues["items"] as? [String: Any])
+        let issueProperties = try XCTUnwrap(
+            issue["properties"] as? [String: Any])
+        XCTAssertNotNil(issueProperties["code"])
+        XCTAssertNotNil(issueProperties["severity"])
+        XCTAssertNotNil(issueProperties["message"])
+        XCTAssertNotNil(issueProperties["processIDs"])
         let reference = try XCTUnwrap(roster["items"] as? [String: Any])
         let referenceProperties = try XCTUnwrap(
             reference["properties"] as? [String: Any])

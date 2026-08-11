@@ -25,11 +25,11 @@
    plane's format word. Capabilities are bits, never inferred from
    versions - a plane can ship dark before it is metal-verified.
 
-   Write discipline: the extension's filter writes every field except
-   arm_request, which only the application writes. One writer per word,
-   both sides big-endian (same machine), no locks; stamp fields are the
-   ordering signal - a reader treats a slot as valid only when its
-   stamp is nonzero and fresh enough for the reader's purpose.
+   Write discipline: every cell names its writer; P9 is split explicitly
+   into an application-owned mailbox and a resident-owned status block.
+   One writer per word, both sides big-endian (same machine), no locks;
+   stamp fields are the ordering signal - a reader treats a slot as valid
+   only when its stamp is nonzero and fresh enough for the reader's purpose.
    Freshness is per-slot and honest: anchors are captured when a
    process pumps its event loop, so a faceless or wedged app has an
    absent or stale slot - distinct states, both rendered truthfully. */
@@ -175,7 +175,11 @@ enum {
        Without it every act and every drag behaves exactly as before,
        which is the resident-component charter's rule, and the picture is
        the only thing missing. */
-    kNowPeekTableCapCursor = 1u << 8
+    kNowPeekTableCapCursor = 1u << 8,
+    /* P9: Continuity's resident input vehicle. The PowerPC application
+       owns network intake; this bit says the resident can consume its
+       bounded latest-state cell while another application is tracking. */
+    kNowPeekTableCapContinuity = 1u << 9
 };
 
 /* P3 asked for 1u << 2 and for its field at the head of the appended
@@ -847,7 +851,12 @@ enum {
        never yield to another mover - mid-drag, the plane IS the mover. */
     kNowCursorPlaceOwned = 1u << 0,
     /* No Toolbox beyond low-memory accessors may be called. */
-    kNowCursorPlaceInterrupt = 1u << 1
+    kNowCursorPlaceInterrupt = 1u << 1,
+    /* The PowerPC NOW application, not the global jGNE filter, owns the
+       balanced task-time redraw for this placement. Continuity v0 uses this
+       route so its resident never enters Cursor Device, QuickDraw, or Event
+       Manager code on behalf of an arbitrary foreground process. */
+    kNowCursorPlaceApplicationRedraw = 1u << 2
 };
 
 enum {
@@ -890,6 +899,149 @@ typedef struct {
        published FROM. */
     NowPeekU32 device_found;
 } NowPeekCursorCell;
+
+enum {
+    kNowPeekContinuityFormatV1 = 1,
+    /* V2 appends a resident 68K service entry. The PPC application invokes
+       it through Mixed Mode from its cooperative wire pump; V1 is the
+       metal-failed Time Manager route and must never be inferred as V2. */
+    kNowPeekContinuityFormatV2 = 2,
+    /* V3 moves Cursor Device ownership and placement into the PPC application.
+       Apple requires PowerPC callers to use CursorDevicesGlue because the
+       original ROM Mixed Mode transition for this manager is wrong. The
+       resident now publishes a requested point, the app calls the official
+       glue from cooperative task time, and the resident commits the result. */
+    kNowPeekContinuityFormatV3 = 3,
+    kNowPeekContinuityStateInactive = 0,
+    kNowPeekContinuityStateArmed = 1,
+    kNowPeekContinuityStateActive = 2,
+    kNowPeekContinuityStateExited = 3,
+    kNowPeekContinuityStateRefused = 4
+};
+
+enum {
+    kNowPeekContinuityExitNone = 0,
+    kNowPeekContinuityExitHostLeft = 1,
+    kNowPeekContinuityExitGuestInput = 2,
+    kNowPeekContinuityExitLeaseExpired = 3,
+    kNowPeekContinuityExitDisarmed = 4,
+    kNowPeekContinuityExitUnavailable = 5
+};
+
+enum {
+    kNowPeekContinuityInside = 1u << 0,
+    kNowPeekContinuityPrimaryDown = 1u << 1,
+    kNowPeekContinuityKeepalive = 1u << 2,
+    kNowPeekContinuityLeaseMinTicks = 15,
+    kNowPeekContinuityLeaseMaxTicks = 600,
+    kNowPeekContinuityLeaseDefaultTicks = 90,
+    /* Authority has crossed TCP but UDP is not live yet. No button can be
+       held in this state, so setup gets a separate bounded grace instead of
+       spending the live-input release lease before its first packet. */
+    kNowPeekContinuityArmGraceTicks = 300,
+    kNowPeekContinuityTickMs = 16
+};
+
+enum {
+    kNowPeekContinuityTraceServiceEnter = 1,
+    kNowPeekContinuityTraceControl = 2,
+    kNowPeekContinuityTraceRequest = 3,
+    kNowPeekContinuityTraceApplied = 4,
+    kNowPeekContinuityTraceApplyError = 5,
+    kNowPeekContinuityTraceExit = 6,
+    kNowPeekContinuityTraceReentry = 7,
+    kNowPeekContinuityTraceCapacity = 8
+};
+
+/* Resident-only, allocation-free flight recorder. `seq` commits an entry
+   last. The PPC application drains it only after the synchronous resident
+   service returns, then serializes it through the normal task-time logger. */
+typedef struct {
+    NowPeekU32 seq;
+    NowPeekU32 event;
+    NowPeekU32 ticks;
+    NowPeekI32 arg0;
+    NowPeekI32 arg1;
+} NowPeekContinuityTraceEntry;
+
+/* P9. One app-owned latest-state mailbox and one resident-owned status
+   block. The application commits control_seq and packet_seq LAST; the
+   resident commits status_seq odd/even around its half. Every field is
+   four bytes so the PPC and 68K compilers cannot disagree about padding. */
+typedef struct {
+    /* ---- written by the APPLICATION -------------------------------- */
+    NowPeekU32 control_seq;
+    NowPeekU32 enabled;
+    NowPeekU32 epoch;
+    NowPeekU32 lease_ticks;
+    NowPeekU32 requested_hz;
+    NowPeekU32 packet_seq;
+    NowPeekU32 packet_epoch;
+    NowPeekU32 position_seq;
+    NowPeekI32 want_h;
+    NowPeekI32 want_v;
+    NowPeekU32 button_generation;
+    NowPeekU32 flags;
+    NowPeekU32 arrival_ticks;
+
+    /* ---- written by the RESIDENT ----------------------------------- */
+    NowPeekU32 status_seq;
+    NowPeekU32 state;
+    NowPeekU32 observed_control_seq;
+    NowPeekU32 observed_packet_seq;
+    NowPeekU32 applied_position_seq;
+    NowPeekU32 applied_button_generation;
+    NowPeekI32 at_h;
+    NowPeekI32 at_v;
+    NowPeekU32 last_arrival_ticks;
+    NowPeekU32 apply_ticks;
+    NowPeekU32 exit_reason;
+    NowPeekU32 accepted_packets;
+    NowPeekU32 stale_packets;
+    NowPeekU32 timer_ticks;
+    NowPeekU32 local_takeovers;
+    NowPeekU32 button_down;
+    NowPeekU32 accepted_hz;
+    /* Safety telemetry. These distinguish a lease/reset that recovered from
+       an Event Manager failure from a clean pointer-only session. */
+    NowPeekU32 tasktime_cursor_applies;
+    NowPeekU32 forced_resets;
+    NowPeekU32 event_down_posts;
+    NowPeekU32 event_up_posts;
+    NowPeekU32 event_post_failures;
+    NowPeekU32 event_reset_generation;
+    /* Native takeover/reset diagnostics. Appended because this cell is the
+       table tail; every preceding resident offset remains stable. */
+    NowPeekU32 native_input_samples;
+    NowPeekU32 native_input_changes;
+    NowPeekU32 native_input_trigger;
+    NowPeekI32 native_input_h;
+    NowPeekI32 native_input_v;
+    NowPeekI32 native_owned_h;
+    NowPeekI32 native_owned_v;
+    NowPeekU32 native_buttons;
+    NowPeekU32 native_physical_valid;
+    NowPeekU32 native_owned_valid;
+    NowPeekU32 cursor_debt_cancels;
+    /* V2 resident-owned tail. `service_proc` is a raw, relocated 68K code
+       address, not a UPP and never called as a PPC function pointer. The app
+       wraps it in a kM68kISA|kOld68kRTA RoutineDescriptor and reaches it only
+       with CallUniversalProc from cooperative task time. Stable for the boot. */
+    NowPeekU32 service_proc;
+    NowPeekU32 service_calls;
+    /* V3 application result. `apply_result_seq` commits `apply_result_err`
+       last, after CursorDevicesGlue returns to the PPC task-time caller. */
+    NowPeekU32 apply_result_seq;
+    NowPeekI32 apply_result_err;
+    /* V3 resident request. The application snapshots these only after the
+       synchronous service returns and confirms the active state. */
+    NowPeekU32 request_position_seq;
+    NowPeekI32 request_h;
+    NowPeekI32 request_v;
+    NowPeekU32 service_reentries;
+    NowPeekU32 trace_write_seq;
+    NowPeekContinuityTraceEntry trace[kNowPeekContinuityTraceCapacity];
+} NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
    process's context is current - the only place its low-memory
@@ -1475,6 +1627,11 @@ typedef struct {
     NowPeekU16 rest_format;
     NowPeekU16 rest_state;
     NowPeekU32 gne_passes;
+    /* U14 P9 append. The resident consumes only this bounded cell; the
+       Open Transport endpoint and all datagram parsing remain in the PPC
+       application, outside interrupt context. */
+    NowPeekU32 continuity_format;
+    NowPeekContinuityCell continuity;
 } NowPeekTable;
 
 /* What the resident currently HAS INSTALLED. A bitmask rather than a
@@ -1789,8 +1946,31 @@ _Static_assert(offsetof(NowPeekTable, rest_format)
 _Static_assert(offsetof(NowPeekTable, gne_passes)
                    == offsetof(NowPeekTable, rest_format) + 4,
                "the filter pass counter follows the rest-state pair");
-_Static_assert(sizeof(NowPeekTable)
+_Static_assert(sizeof(NowPeekContinuityTraceEntry) == 20,
+               "continuity trace ABI drift");
+_Static_assert(sizeof(NowPeekContinuityCell) == 384,
+               "continuity cell size");
+_Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
+               "continuity packet commit offset");
+_Static_assert(offsetof(NowPeekContinuityCell, status_seq) == 52,
+               "continuity resident half offset");
+_Static_assert(offsetof(NowPeekContinuityCell, service_proc) == 188,
+               "continuity V2 service offset");
+_Static_assert(offsetof(NowPeekContinuityCell, apply_result_seq) == 196,
+               "continuity V3 application result offset");
+_Static_assert(offsetof(NowPeekContinuityCell, request_position_seq) == 204,
+               "continuity V3 resident request offset");
+_Static_assert(offsetof(NowPeekContinuityCell, trace) == 224,
+               "continuity V3 trace offset");
+_Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
-               "the filter pass counter is the new tail");
+               "continuity appends behind the pass counter");
+_Static_assert(offsetof(NowPeekTable, continuity)
+                   == offsetof(NowPeekTable, continuity_format) + 4,
+               "continuity cell offset");
+_Static_assert(sizeof(NowPeekTable)
+                   == offsetof(NowPeekTable, continuity)
+                          + sizeof(NowPeekContinuityCell),
+               "the continuity cell is the new tail");
 
 #endif /* NOW_PEEK_TABLE_H */

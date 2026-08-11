@@ -560,10 +560,10 @@ def check(root: Path, site_dir: Path | None) -> int:
     capability_planes = [row.get("plane") for row in capabilities if isinstance(row, dict)]
     if len(capability_ids) != len(set(capability_ids)):
         errors.append("docs/feature-catalog.yaml: duplicate extension capability id")
-    expected_planes = {f"P{number}" for number in range(9)}
+    expected_planes = {f"P{number}" for number in range(10)}
     if set(capability_planes) != expected_planes or len(capability_planes) != len(expected_planes):
         errors.append(
-            "docs/feature-catalog.yaml: extension capability planes must be exactly P0-P8 "
+            "docs/feature-catalog.yaml: extension capability planes must be exactly P0-P9 "
             f"(got={capability_planes})"
         )
     declared_symbols = [

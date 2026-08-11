@@ -69,6 +69,7 @@
 
 #include "peek_table.h"
 #include "now_drag_logic.h"
+#include "now_input_owner.h"
 
 /* THE CURSOR IS NOT THIS FILE'S JOB ANY MORE.
    It was: this vehicle wrote MTemp, RawMouse and MouseLocation and then
@@ -173,6 +174,9 @@ int now_ext_drag_press(NowPeekTable *table, NowPeekU32 session,
     if (cell == NULL || !gDragInstalled) {
         return 0;
     }
+    if (!now_input_owner_acquire(kNowInputOwnerDrag)) {
+        return 0;
+    }
     ticks = (unsigned long)LMGetTicks();
     /* The destination rides in with the press because there is no later.
        Once this returns the application stops being scheduled - see
@@ -180,6 +184,7 @@ int now_ext_drag_press(NowPeekTable *table, NowPeekU32 session,
        arrive after the gesture it was meant to carry. */
     if (!now_drag_begin_to(cell, session, target_a5, h, v, (NowPeekU32)ticks,
                            idle_asked, cap_asked, have_to, to_h, to_v)) {
+        now_input_owner_release(kNowInputOwnerDrag);
         return 0;
     }
 
@@ -232,6 +237,7 @@ void now_ext_drag_tick(TMTaskPtr task)
            stops costing interrupts immediately. */
         drag_button(0);
         drag_place(cell->at_h, cell->at_v);
+        now_input_owner_release(kNowInputOwnerDrag);
         return;
     case kNowDragTickMove:
         drag_place(cell->at_h, cell->at_v);
@@ -269,6 +275,7 @@ void now_ext_drag_abandon(NowPeekTable *table)
     if (now_drag_abandon(cell, (NowPeekU32)LMGetTicks())
             == kNowDragTickRelease) {
         drag_button(0);
+        now_input_owner_release(kNowInputOwnerDrag);
     }
 }
 

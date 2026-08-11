@@ -28,6 +28,30 @@ final class ContractMessageTests: XCTestCase {
             ControlMessageCodec.encode(.updateResult(result))),
             .updateResult(result))
     }
+
+    func testContinuityOwnershipMessagesRoundTrip() throws {
+        let arm = ContinuityArm(version: ContinuityContract.version,
+                                id: 9, nonceHi: 0x0123_4567,
+                                nonceLo: 0x89AB_CDEF, epoch: 4,
+                                requestedHz: 30, leaseTicks: 90)
+        let report = ContinuityReport(
+            version: ContinuityContract.version,
+            id: 9, epoch: 4, state: "armed", acceptedHz: 30,
+            udpPort: 1984, reason: nil, acceptedPackets: 0,
+            stalePackets: 0, malformedPackets: 0,
+            appliedPositionSequence: 0, appliedButtonGeneration: 0)
+        let disarm = ContinuityDisarm(version: ContinuityContract.version,
+                                      id: 10, epoch: 4,
+                                      reason: "mirror-closed")
+
+        for message in [ControlMessage.continuityArm(arm),
+                        .continuityReport(report),
+                        .continuityDisarm(disarm)] {
+            XCTAssertEqual(
+                try ControlMessageCodec.decode(
+                    ControlMessageCodec.encode(message)), message)
+        }
+    }
     func testSceneRequestCarriesNamedPlanePolicy() throws {
         let request = SceneRequest(id: 9, chunkKb: 8, paceMs: 0,
                                    staleAfterMs: 500, semantics: false,

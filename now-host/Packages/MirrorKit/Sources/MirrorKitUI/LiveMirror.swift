@@ -1,6 +1,24 @@
 import SwiftUI
 import MirrorKit
 
+/// Optional raw pointer ownership layered over the semantic Mirror act plane.
+/// The view only knows whether an event was accepted; session authority,
+/// transport, acknowledgements, and release guarantees stay with the driver.
+@MainActor
+public protocol ContinuityInputDriver: AnyObject {
+    var isEnabled: Bool { get set }
+    var isActive: Bool { get }
+    var requestedHz: Int { get set }
+    var status: String { get }
+
+    func pointerMoved(to point: MirrorKit.Point)
+    func pointerLeft()
+    @discardableResult func primaryDown(at point: MirrorKit.Point) -> Bool
+    @discardableResult func primaryDragged(to point: MirrorKit.Point) -> Bool
+    @discardableResult func primaryUp(at point: MirrorKit.Point) -> Bool
+    func cancel(reason: String)
+}
+
 /// **What the live view actually needs from whatever is driving it.**
 ///
 /// DIVERGENCE FROM MIRROR ORIGIN, 2026-08-02, and the smallest one that
@@ -55,6 +73,8 @@ public protocol MirrorSceneSource: ObservableObject {
     var scrollbarDragDriver: ScrollbarDragDriver? { get }
     /// Bulk selection, open-selection, and rename for host-owned Finder UI.
     var finderInteractionDriver: FinderInteractionDriver? { get }
+    /// Raw guest pointer ownership, when this source can negotiate it.
+    var continuityInputDriver: ContinuityInputDriver? { get }
     /// Abandon the in-flight act and everything queued behind it,
     /// answering how many acts were ended. The default does nothing, for
     /// a driver with no lane to free.
@@ -95,6 +115,7 @@ public extension MirrorSceneSource {
     var itemDragDriver: ItemDragDriver? { nil }
     var scrollbarDragDriver: ScrollbarDragDriver? { nil }
     var finderInteractionDriver: FinderInteractionDriver? { nil }
+    var continuityInputDriver: ContinuityInputDriver? { nil }
     @discardableResult
     func cancelPendingActs() -> Int { 0 }
 
@@ -263,7 +284,61 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         .gesture(mouseGesture(scene: scene, size: geo.size))
                         .overlay {
                             PointerCaptureView(
-                                onLeftDown: { _, mods in pointerMods = mods },
+                                onMove: { point in
+                                    guard let guest = continuityGuestPoint(
+                                        point, scene: scene, size: geo.size)
+                                    else {
+                                        controller.continuityInputDriver?
+                                            .pointerLeft()
+                                        return
+                                    }
+                                    controller.continuityInputDriver?
+                                        .pointerMoved(to: .init(
+                                            x: guest.x, y: guest.y))
+                                },
+                                onExit: {
+                                    controller.continuityInputDriver?
+                                        .pointerLeft()
+                                },
+                                onLeftDown: { point, mods in
+                                    pointerMods = mods
+                                    guard let guest = continuityGuestPoint(
+                                        point, scene: scene, size: geo.size)
+                                    else { return false }
+                                    return controller.continuityInputDriver?
+                                        .primaryDown(at: .init(
+                                            x: guest.x, y: guest.y)) ?? false
+                                },
+                                onLeftDragged: { point, _ in
+                                    guard let guest = continuityGuestPoint(
+                                        point, scene: scene, size: geo.size,
+                                        clampToEdge: true)
+                                    else {
+                                        controller.continuityInputDriver?
+                                            .cancel(reason: "guest screen unavailable")
+                                        return true
+                                    }
+                                    return controller.continuityInputDriver?
+                                        .primaryDragged(to: .init(
+                                            x: guest.x, y: guest.y)) ?? false
+                                },
+                                onLeftUp: { point, _ in
+                                    guard let guest = continuityGuestPoint(
+                                        point, scene: scene, size: geo.size,
+                                        clampToEdge: true)
+                                    else {
+                                        controller.continuityInputDriver?
+                                            .cancel(reason: "guest screen unavailable")
+                                        return true
+                                    }
+                                    return controller.continuityInputDriver?
+                                        .primaryUp(at: .init(
+                                            x: guest.x, y: guest.y)) ?? false
+                                },
+                                onCancel: {
+                                    controller.continuityInputDriver?
+                                        .cancel(reason: "host focus changed")
+                                },
                                 onRightDown: { point, mods in
                                     if case .sharesWindow = keyboard {
                                         keyboardEngaged = true
@@ -305,6 +380,12 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                             reconcilePress(with: observedScene)
                         }
                         .onContinuousHover { phase in
+                            /* Visual hover is observation-only. SwiftUI can
+                               emit ended while rebuilding this region for a
+                               new guest scene, even though the pointer never
+                               left. PointerCaptureView owns the raw pointer
+                               lease because its AppKit monitor follows the
+                               actual window event instead. */
                             /* Name what is under the pointer, and shape
                                the cursor to it. A mirror is a picture of
                                another machine, and a person cannot tell a
@@ -430,6 +511,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             return nil
         }
         return FitTransform(logical: logical, view: size).toGuest(p)
+    }
+
+    private func continuityGuestPoint(
+        _ p: CGPoint, scene: MirrorKit.Scene, size: CGSize,
+        clampToEdge: Bool = false
+    ) -> (x: Int, y: Int)? {
+        guard let logical = SceneRenderer(scene: scene).logicalSize else {
+            return nil
+        }
+        let fit = FitTransform(logical: logical, view: size)
+        return clampToEdge ? fit.toGuestClamped(p) : fit.toGuestIfInside(p)
     }
 
     /// What the capture view is told about focus. In `ownsWindow` this is

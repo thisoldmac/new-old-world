@@ -444,6 +444,27 @@
         "ext/CMakeLists.txt"
       ],
       "reason": "RC manifest plumbing was privately cold-baked and verified; shared bake is deferred until release-candidate landing."
+    },
+    {
+      "at": "2026-08-11T18:35:33-0400",
+      "branch": "codex/dev/cross-cutting/continuity-cursor-v0",
+      "extDigest": "2c2eb9b55cb8ce8dc51850ad2b1d81f38f9f0e1d",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_core_logic.c",
+        "ext/src/now_ext_core_logic.h",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_cdm.S",
+        "ext/src/now_ext_cursor_input.h",
+        "ext/src/now_ext_drag.c",
+        "ext/src/now_ext_install.c",
+        "ext/src/now_ext_install.h"
+      ],
+      "reason": "Feature-branch integration checkpoint: focused Continuity and transactional INIT guards pass; full repository gates and an exact branch-private cold bake remain before release-candidate handoff."
     }
   ]
 }

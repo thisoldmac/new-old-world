@@ -492,6 +492,38 @@ class AdditiveTests(unittest.TestCase):
                      text.index('python3 "$NOW/tools/stage-ext.py"')]
         self.assertIn('NOW_WIRE_PORT="$WIRE"', stage)
 
+    def test_spin_up_forwards_tcp_and_udp_on_the_same_wire_number(self):
+        """The reliable stream and replaceable pointer lane share N, not a
+        socket. Both forwards must reach QEMU's `-netdev` argument; exporting
+        a spare environment variable looked right in the script while booting
+        a VM with TCP only, and the guest could arm but never receive a point.
+        """
+        text = SPIN.read_text()
+        udp = ('HOSTFWD="${HOSTFWD},hostfwd=udp:127.0.0.1:'
+               '${WIRE}-:${WIRE}"')
+        self.assertIn(udp, text)
+        self.assertIn('"$HOSTFWD" "" "$QMP"', text,
+                      "the combined forward string never reaches the QEMU helper")
+        self.assertLess(text.index(udp),
+                        text.index('boot fresh; wait_anchor'))
+
+    def test_spin_up_selects_only_the_three_mac99_input_profiles(self):
+        """PMU/ADB and CUDA comparisons change one machine property only.
+
+        The later `-machine via=...` reaches the shared launcher through its
+        existing extra-argument seam; a second hand-written QEMU boot line
+        would let the supposedly identical rigs drift in every other respect.
+        """
+        text = SPIN.read_text()
+        self.assertIn('VIA="${NOW_SPIN_VIA:-pmu}"', text)
+        self.assertIn('pmu|pmu-adb|cuda)', text)
+        self.assertIn('TBT_QEMU_EXTRA_ARGS=(-machine "via=$VIA")', text)
+        self.assertIn('"mac99Via": via', text)
+        self.assertIn('"artifactOverride": artifact_override', text)
+        self.assertIn('if not artifact_override:', text)
+        self.assertLess(text.index('TBT_QEMU_EXTRA_ARGS=(-machine "via=$VIA")'),
+                        text.index('boot fresh; wait_anchor'))
+
     def test_spin_up_actually_honours_the_ports_it_is_given(self):
         """The behavioural half, because the three above read text.
 

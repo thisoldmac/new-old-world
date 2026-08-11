@@ -12,10 +12,14 @@ candidate.
   owner namespace, for example `codex/dev/host/swift-ownership`. Domains are
   `contract`, `host`, `guest-ppc`, `guest-68k`, `resident`, `docs`, `tooling`,
   `release`, or `cross-cutting`.
-- `release/vX.Y.Z` is cut from a green `main` for qualification. After the cut,
-  it accepts only reviewed fixes, release metadata, documentation, and
-  packaging changes. Product work continues on `main`; a release fix is also
-  merged forward when it applies there.
+- `release/vX.Y.Z` is cut from a green `main` for qualification. A feature may
+  target that branch directly when the release candidate is its explicit
+  integration boundary. In that case the feature does not land on `main`
+  independently: the reviewed feature branch is merged into the release
+  branch, the exact combined revision is qualified, and an accepted release is
+  merged forward to `main`. After the candidate scope is fixed, the release
+  branch accepts only reviewed fixes, release metadata, documentation, and
+  packaging changes.
 
 On GitHub, protect `main` and `release/v*`: disallow direct and force pushes,
 require an up-to-date pull request, and require **Documentation**, **Native

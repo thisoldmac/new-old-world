@@ -144,7 +144,7 @@ This is the part worth reading before anyone "simplifies" the plane.
 | Route | What it does | Does the sprite move? |
 |---|---|---|
 | low memory | `MTemp`/`RawMouse`/`MouseLocation`, then `CrsrNew` ← `CrsrCouple` | **no** |
-| device | `CursorDeviceMoveTo`, then the cursor task through `JCrsrTask` | **no** |
+| device | `CursorDeviceMoveTo`; interrupt-time callers record redraw debt | **no** |
 | QuickDraw | `HideCursor()` then `ShowCursor()` | **yes** |
 
 The first two are not decoration and are not dead code: they are what
@@ -154,7 +154,11 @@ exactly the requested point — verified from outside the guest, `where`
 was 760,520 — while the drawn arrow sat at 419,333 where the emulated
 device had last left it. Calling the cursor task directly through
 `JCrsrTask` (0x08EE), the vector the pointing device's own interrupt
-handler uses, changed nothing either.
+handler uses, changed nothing either. That call is measurement history,
+not part of the current route: the first Continuity metal run made it
+from a Time Manager callback, partially wedged the PowerBook after a few
+moves, and it was removed on 2026-08-10. Interrupt-time placement now
+stops after the bounded state update and records redraw debt.
 
 So on Mac OS 9 the **blit** lives somewhere in the device interrupt path
 that neither the manager's state nor the compatibility vector reaches.

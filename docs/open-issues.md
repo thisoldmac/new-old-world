@@ -427,7 +427,7 @@ update. User-guide navigation begins with a Getting started group: connect a
 classic Mac first, then review core features and Extension coverage. The
 coverage page now renders 15 user-facing feature rows from
 `docs/feature-catalog.yaml`, including app-only coverage, whether the Extension
-is required, and current maturity or evidence. The technical P0–P8 inventory
+is required, and current maturity or evidence. The technical P0–P9 inventory
 remains in developer documentation. The docs gate maps every human-facing
 Extension row back to the complete resident capability inventory and its
 mutation suite proves that navigation, script lifecycle, or capability
@@ -440,7 +440,7 @@ Logs as distinct features and hiding Hardware and Software behind one
 "inventory" label. The page now renders a 14-row application table and a
 separate nine-row Extension table. The gate compares the application row IDs
 exactly with `docs/module-manifest.yaml`, while the existing capability check
-continues to compare the Extension rows with P0–P8; its mutation suite has
+continues to compare the Extension rows with P0–P9; its mutation suite has
 watched both omissions refuse by name.
 
 **Corrected again later on 2026-08-09:** “initial alpha availability” was
@@ -491,7 +491,7 @@ metadata cannot prove that a paragraph serves the right reader.
 `docs/feature-catalog.yaml` now declares the alpha product boundary:
 the PowerPC Carbon guest is included, NOW Extension is optional, and the stale
 NOW-68K/pre-Carbon build is excluded. MkDocs renders those states on owning
-pages and generates the public release table and P0–P8 extension inventory from
+pages and generates the public release table and P0–P9 extension inventory from
 the catalog. The documentation gate rejects an incomplete profile, a page
 bound to an unknown feature, or an extension capability list that differs from
 `contract/peek_table.h`; its mutation suite has watched each refusal run.
@@ -607,6 +607,396 @@ cost, and who decided. Several of its rows draw their evidence from
 entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
+
+## BOUNDED METAL PASS AFTER SIX WEDGES; CADENCE JITTER OPEN; CAPABILITY QUARANTINED: Mirror Continuity mode (2026-08-09, `codex/continuity-mode-plan`)
+
+**2026-08-11 transport and metal update:** the first resident 1.17 host handoff armed
+over TCP but delivered no UDP packet to the guest: 70 host sends, zero guest
+accepted/stale/malformed packets, zero ACK attempts, and zero resident applies.
+The guest was reporting its requested TCP preference as `udpPort` instead of
+validating and publishing the address returned by `OTBind`. Commit `b0c9386b`
+reports the actual bound port. A private mac99 run accepted/applied one state,
+ACKed it with zero rejects, disarmed, and shut down through Finder. The next
+attended PowerBook 1400c run then produced accurate repeated movement without
+the immediate whole-system wedge seen in the six preceding routes. Repeated v0
+movement through resident 1.17's V3 PPC path is therefore metal-verified.
+Motion remained visibly jittery, however, and 15/30/60 Hz produced roughly the
+same perceived smoothness. Sustained stability, rate fidelity, teardown and
+recovery remain open, so quarantine is unchanged. Exact evidence and the next
+per-stage timing measurements are in [continuity-mode.md](continuity-mode.md).
+
+The optional Continuity lane is implemented through v0.5b: hover movement,
+direct primary clicks, and sustained drags. Reliable TCP grants and revokes a
+nonce/epoch; fixed-state UDP uses the same numeric port in its own protocol
+namespace. The update rate is selectable at 15/30/60 Hz, default 30, and is
+remembered per stable guest identity. P9 owns a
+clamped dead-man and yields immediately to physical guest movement; delayed
+button bookkeeping is diagnostic until button-only takeover is proven;
+P7 drag and P9 Continuity arbitrate one resident input owner.
+
+The C/Swift wire codecs, pure takeover/lease logic, owner arbitration, TCP
+routing, explicit control-contract version, and real loopback TCP+UDP
+press/ACK/release sequence pass. A private scrap-image bake cold-booted
+mac99/OS 9.1 and the guest reported resident lifecycle `active`, capabilities
+`1023`, source manifest `24e137184757`, and fingerprint `6a5fd22b092b`, then
+Finder shut down guest-cleanly to a clean HFS volume. That private image is
+`agent-stage/now-stage-continuity-cursor-fix.qcow2`, SHA-256 `14b98852e4d9…`.
+The shared oracle was not touched; it is not promoted until this work lands on
+`main`.
+
+A host protocol probe then made version `2` fail as `wrong-version`, armed
+version `1`, read back the two requested cursor positions through the guest's
+own `mouseloc`, and observed move, down, held drag, and up generations applied
+by P9. That was useful emulator evidence and it did not survive first contact
+with the PowerBook.
+
+On 2026-08-10 the first metal run connected and moved the pointer a few times,
+then the PowerBook stayed on the wristwatch and stopped accepting clicks. Its
+physical trackpad could still move the arrow, but the cooperative UI remained
+partially wedged and required a reboot. The resident was calling the foreign
+cursor task through `JCrsrTask` directly inside its 16 ms Time Manager
+callback. If that call does not return, the same callback cannot notice local
+input, expire the lease, or release a held button. The imported cursor spike
+never made that call: it performed bounded low-memory and
+`CursorDeviceMoveTo` placement at interrupt time and deferred QuickDraw redraw
+to task time.
+
+The repaired candidate removes the cursor-task call and its assembly
+trampoline. Emulator stress then found two additional false assumptions before
+another metal build was handed out: `CursorData.where` changes during the
+manager's own settlement and falsely reported `guest-input`, and closing then
+immediately recreating an asynchronous Open Transport endpoint at each
+disarm/re-arm partially wedged an OS 9 VM. Movement takeover now reads
+`RawMouse`, button takeover reads `CursorData.buttonCount`, disarm invalidates
+the nonce/epoch without tearing transport down, and TCP disconnect remains the
+endpoint teardown boundary.
+
+A fresh private clone reported source manifest `e2a48cb67346` and fingerprint
+`c4b55adcdcdb` with capabilities `1023`. Guest build `64345c292ce4` then held
+15, 30, and 60 Hz epochs active, applied click generations 1/2 and drag
+generations 3/4, released a held generation after `lease-expired`, answered
+`mouseloc` afterwards, and accepted a new epoch. All datagrams were accepted
+with zero rejects and zero transport retries. This is emulator data-path
+evidence, not a claim that the repaired resident is metal-verified. Physical
+movement/button takeover and a visible application click/drag remain part of
+the PowerBook retest. The same exact resident was baked into the private image
+`agent-stage/now-stage-continuity-cursor-safe.qcow2` (SHA-256
+`2800a280d3c1835bf9cb7bf42ff633906f39e75a4e06a5fd8e4045d8de1e55e3`),
+which passed exact identity/capability, ABI, census, container, clean shutdown,
+and clean-volume gates. The shared oracle was not touched. See
+[continuity-mode.md](continuity-mode.md).
+
+The second metal run on 2026-08-10 falsified that repair. It connected and
+accepted one host move; the pointer remained an arrow rather than changing to
+the wristwatch, but the PowerBook then stopped accepting native clicks and the
+guest's TCP control connection dropped. This is a whole-system liveness
+failure. With `JCrsrTask` gone, the remaining foreign manager call in the 16 ms
+Time Manager placement path is `CursorDeviceMoveTo`. Its behavior in the OS 9
+emulator was not evidence that it was safe from this interrupt context on the
+1400c.
+
+The candidate bundle and private image were renamed
+`UNSAFE-DO-NOT-DEPLOY`. The containment source at that point left the P9
+capability bit clear and did not install its Time Manager task, causing the PPC
+application to refuse an arm before it opened UDP. No third metal retest was
+pending. Re-enabling the capability required a task-time-only placement design
+and staged physical evidence that independently preserves native input and the
+TCP loop.
+
+The third attended run falsified that wording too. Resident 1.11 moved the
+foreign Cursor Device and QuickDraw operations out of the timer, but paid their
+debt from the global jGNE filter. At 15:58:01 the host's UDP lane was genuinely
+ready on `en7`; it cancelled about 4.8 seconds later. The resident connection
+died at 15:58:48 and the PPC application at 15:58:55, while the PowerBook sat on
+the wristwatch, accepted no native clicks, and rendered an empty Force Quit
+modal frame. Permissions and UDP setup are ruled out. “Task time” inside Event
+Manager's own global filter is still reentrant Event Manager context and is not
+a safe settlement owner.
+
+The replacement is a new boundary, not another relocation of the same call:
+movement-only v0 never consumes button fields, writes `MBState`, or posts an
+event; its timer writes low-memory position without creating global jGNE debt;
+the PPC NOW application balances the QuickDraw redraw from its own cooperative
+pump; and native takeover reads `RawMouse` without touching the physical ADB
+trackpad's CursorDevice record.
+
+Resident 1.12 fingerprint `d0ef99d20320b8352a6472764414cfc6e71d1ec5`
+passed cold PMU/USB and CUDA/ADB campaigns: 180 movement updates at 30 Hz,
+native click plus wire liveness, optimistic native-motion exit, disarm and
+native motion, TCP loss/reconnect, fresh epoch, and final disarm. The first PMU
+attempt exposed a real false takeover because the new RawMouse-only sampler
+mistook the timer's own write for physical input; recent owned low-memory points
+are now excluded and the timer samples immediately before overwriting RawMouse.
+The exact button-global, timer CursorDevice, and jGNE-debt mutations each made
+their source guard fail. This is emulator evidence only. The first private bake
+attempt stopped on an anchor reset and was guest-cleanly recovered through its
+own QMP socket. The retry verified the exact fingerprint into
+`agent-stage/now-stage-continuity-v0-1.12-no-event-manager.qcow2` (SHA-256
+`55bdb4237d46ce11d223f41834a7c5e03f5604ac5c33fb9cc582ea80abaa0eae`) with
+guest identity/capability, full-census survival, `qemu-img check`, guest-clean
+shutdown, and clean HFS-volume gates. No shared image was touched by this lane.
+
+The first signed 1.12 handoff was blocked before a metal cursor test. Its
+app-owned `NWBrowser` reported `.ready` at 17:22:05, but at 17:25:25 the actual
+Continuity UDP path was unsatisfied with `Network.NWError` 50, `Local network
+prohibited`, on `en7`. The signed bundle carried the expected Local Network
+usage text, Bonjour declaration, `B93A9CG7F9` team and application identifier;
+the defect was treating browser readiness as a permission verdict. A unique
+self-publication was an improvement but not a final proof: the 1.16 handoff
+later discovered its own Bonjour service at 21:48:18, then the actual unicast
+UDP lane was refused at 21:48:26 as `Local network prohibited` on `en7`. The
+real lane was therefore the only operation that could provide useful evidence.
+
+The replacement handoff still produced no prompt because its publication
+listener failed at 17:40:17 with POSIX `EINVAL` before Local Network privacy
+could evaluate it. A TCP `NWListener` requires `newConnectionHandler` before
+`start` even when the probe carries no application data. The probe now installs
+a bounded handler that immediately cancels any connection; removing it made the
+runtime test reproduce the exact `EINVAL`.
+
+The 14:45 signed handoff showed that the direct operation cannot reliably own
+the prompt on this macOS build either. It queued content to the active guest,
+and macOS immediately returned `Local network prohibited` on `en7` without a
+prompt. The next build separates responsibilities: an app-owned Bonjour
+browse/advertise operation exists only to solicit macOS privacy UI, while the
+guest-targeted UDP connection remains the only authorization proof. Browser
+readiness, listener readiness, and self-discovery cannot set the ready state.
+Both operations remain alive until the direct path settles.
+
+Network.framework selects and logs the viable interface; simultaneous Wi-Fi
+and Ethernet are supported without naming either in code. Focused runtime tests
+inject both operations. Source, plist, identity, and signed-build gates require
+the Bonjour prompt declaration, an app-owned launch request without a guest,
+and a separate real UDP verification send; they refuse interface pinning and
+feature ownership of the app request, and require the stable team, application
+identifier, usage text, and executable UUID. The complete ownership and
+evidence rules live in the
+[Local Network access contract](local-network-access.md). This is tested host
+behavior, not evidence from the PowerBook.
+
+The signed `1db72e80` handoff did not justify assigning the failure to macOS.
+At 14:59:31 its listener and browser reached `.ready`, while the guest path was
+`Local network prohibited` on `en7`; macOS 27 beta 4 build `26A5388g` does have
+Apple-known Local Network privacy defect `r. 181140179`. But NOW had prompted
+successfully on this machine before. History showed the application regression:
+`f46c18fd` and `96513cc6` made the request an app-launch responsibility;
+`33d19759` deleted it, transferred solicitation to Continuity, removed the
+Bonjour declarations, and inverted the guard to reject the known-good shape.
+`1db72e80` restored the mechanism without restoring ownership.
+
+The repaired contract requests at app launch with no guest target, then lets
+Continuity verify the direct path without owning privacy. A source/build guard
+requires both halves and fails if the optional feature calls the app request.
+Apple's beta defect remains a separate environment risk to retest on offered
+build `26A5406e`; it is not treated as the root cause of this regression. Do not
+use the unsupported SIP-disable-and-delete privacy database workaround: it
+destroys the evidence Apple asks to receive in a sysdiagnose.
+
+The hardware-specific ownership error is now explicit rather than left as
+“possibly ADB.” The PowerBook 1400 trackpad translates motion into ADB
+commands through the machine's power-management path. P9 retained the first
+Cursor Device Manager record, which was therefore a physical device it did
+not create, and called `CursorDeviceMoveTo` on it from interrupt context. The
+replacement contract forbids Cursor Device, Event, QuickDraw, Open Transport,
+Memory and Resource Manager calls from the timer. v0 is movement-only;
+epoch-scoped click settlement belongs to v0.5a and is not present in this
+candidate. Bounded resident counters plus task-time guest logs cover every v0
+teardown stage. The detailed derivation and reset rules live in
+[continuity-mode.md](continuity-mode.md).
+
+The containment build itself was privately baked and guest-verified with
+capabilities `511` (P9 absent), source manifest `6c9a1df22adc`, and fingerprint
+`0c81a3cc5cc1`. It passed the ABI oracle, all 14 census probes, guest-clean
+shutdown, clean HFS-volume inspection, and `qemu-img check`; the private image
+is `agent-stage/now-stage-continuity-quarantined.qcow2`, SHA-256
+`f2de4f653451be46adde69a76248404307fe23c4b1a944303b772d055bac95cd`.
+The shared oracle remains unchanged.
+
+Resident 1.12 then produced the same wedge with every Cursor Device, Event,
+QuickDraw, and Event Manager call removed from its timer. The fresh host
+identity confirmed Local Network access at 17:58:45, connected the PPC app at
+17:58:46 and resident 1.12 at 17:58:56, and opened a ready UDP lane at
+17:59:07. The person observed the same system-wide input failure; resident
+liveness was lost at 18:00:11 and the PPC app at 18:00:19. The remaining
+mechanism was direct interrupt-time writes to `MTemp`, `RawMouse`, and
+`MouseLocation`. Three PowerBook failures had already ruled out foreign
+Cursor Device and Event Manager contexts; the fourth now rules out treating
+the physical ADB path's downstream low-memory globals as an injection API.
+
+Resident 1.13 clears P9 again. The next candidate must create and configure
+its own absolute Cursor Device, never retain the first physical trackpad
+record, and never write those low-memory position globals directly. That
+owned-device direction was still emulator- and metal-unverified at that point.
+
+Resident 1.14 implements that direction without changing P8's existing
+task-time visual service. P9 creates its own absolute Cursor Device at boot,
+configures it before publishing capability, disposes partial setup, and moves
+only that record. The timer no longer writes `MTemp`, `RawMouse`, or
+`MouseLocation`; it does not allocate, configure, or dispose a device and
+reaches no QuickDraw or Event Manager API. Retargeting the placement to the
+first physical device made the ownership source guard fail by name.
+
+The exact 1.14 resident fingerprint `1d5317ff7380bda7891d9c27de08fff9d307343d`
+reported capabilities `1023` on cold PMU/USB and CUDA/ADB boots. Both rigs
+proved their native device first, completed 180 points at 30 Hz, revoked P9 on
+a physical button press with the wire still live, independently revoked on
+physical movement, disarmed, returned to native input, survived TCP loss and
+reconnect, re-armed, and shut down through Finder. Rejected datagrams were zero
+on both. At that point this was emulator evidence only, and no fifth PowerBook
+run was authorized until the private bake and complete local gates passed.
+
+Those gates now pass. `scripts/test-all` completed all documentation, image
+discipline, 162 native, MirrorKit, guest cross-build, and Debug/Release host
+stages. The exact resident was privately baked into
+`agent-stage/now-stage-continuity-owned-1.14.qcow2`, SHA-256
+`e383b794bdf862cde2aced7135663a0df186adc0e15762e9138e9c5cc3c27a8a`;
+the guest verified its fingerprint and capabilities, survived all 14 census
+probes, shut down through Finder, passed `qemu-img check`, and left a clean HFS
+volume. The shared oracle remains untouched.
+
+The first attended PowerBook 1400c run of that exact 1.14 pair completed one
+host-pointer placement, then returned control to native trackpad input
+guest-side. This is bounded metal evidence for owned-device placement and
+optimistic physical takeover. It is not a general safety close: repeated and
+sustained movement, 15/30/60 Hz cadence, click-only takeover, lease/TCP-loss
+recovery, repeated boot/shutdown, disable/removal, host click pass-through, and
+drag remain open. The next run must widen one row at a time and stop on any
+native-input or system-liveness regression.
+
+That wider run failed. At 30 Hz the same exact pair produced roughly one second
+of smooth motion and then wedged the PowerBook with the pointer cursor still
+drawn. Native pointer input, clicks, and keyboard stopped; the PPC connection
+was lost at 19:20:11 and resident liveness at 19:20:17. Resident 1.14 still
+combined interrupt-time `CursorDeviceMoveTo` on its owned device with a legacy
+PPC-pump `HideCursor`/`ShowCursor` redraw. This run cannot distinguish those two
+operations, so neither is allowed in the replacement. Resident 1.15 clears P9;
+there was no current metal candidate at that containment point.
+
+Resident 1.16 is now the emulator-qualified replacement, not a metal result.
+It removes Continuity's Time Manager task, global jGNE service, downstream
+mouse-global writes, and PPC `HideCursor`/`ShowCursor` redraw. The ordinary and
+nested PPC wire pumps enter one no-argument resident 68K service through Mixed
+Mode; the resident applies the latest point only to its owned absolute Cursor
+Device and returns. The new app refuses the metal-failed V1 resident format.
+The owned-device and cooperative-pump guards were mutation-proved, and the full
+local gate passed.
+
+On independent cold boots, PMU/USB and CUDA/ADB each proved native input first,
+then ran a fresh 900-position/30-second campaign at 30 Hz. Both passed native
+click and movement takeover, explicit disarm, native return, TCP loss and
+reconnect, fresh arm/disarm, zero rejected datagrams, and Finder shutdown. The
+receipts are under `run/continuity-app-pump-{pmu,cuda}-1.16/`. This does not
+close the issue: all failed metal routes also passed emulation. A private bake
+has now verified fingerprint `17b5b866d60e` into
+`agent-stage/now-stage-continuity-app-pump-1.16.qcow2`, SHA-256
+`5c62381f29a42929a6dbfc71115bf48819cee102358cecf100ea1a969b00e6f7`,
+with guest identity/capability, full census, clean Finder shutdown, clean HFS
+volume, and `qemu-img check`. The shared oracle was untouched. A deliberately
+bounded attended PowerBook run remains required.
+
+That 1.16 metal run failed. It moved briefly, released when the host left the
+Mirror, moved briefly again after re-entry, and then wedged on the wristwatch.
+Native pointer, click, and keyboard input stopped and both NOW connections
+died. This is the sixth PowerBook wedge and revokes the raw resident CDM route,
+not merely another scheduling location for it.
+
+The subsequent audit found an ABI requirement the route had bypassed. Apple's
+Universal Interfaces `CursorDevices.h` says PowerPC callers must link
+`CursorDevicesGlue.o` plus InterfaceLib because the original ROM Mixed Mode
+transition for Cursor Device Manager was wrong. Resident 1.16 crossed a
+generic PPC-to-68K routine descriptor and dispatched AADB from resident C.
+QEMU passing that shape was not evidence that the hardware transition was
+valid.
+
+Resident 1.17 / Continuity V3 moves CDM ownership completely into the
+cooperative PPC application. The Extension publishes a requested point,
+returns, and later commits only the matching PPC result. It owns no P9 device
+and performs no post-boot P9 manager call. The app reproduces the corrected
+fallback transition in Apple's supplied `CursorDevicesGlue.o` for its five
+calls: runtime-resolved `NGetTrapAddress($AADB, ToolTrap)` plus
+`CallUniversalProc`, using Apple's exact selectors and `ProcInfoType` values.
+The supplied object could not be linked wholesale: Retro68's monolithic
+InterfaceLib import member made the Carbon app unload before `main` on OS 9.1.
+The final-PEF build guard now refuses any load-time InterfaceLib import. A
+fixed resident trace ring and sampled, volume-flushed guest `move begin`/`move
+return` lines bracket the risky call. The V3 handshake, the exact transition,
+and absence of resident CDM are source-tested. Both cold-boot emulator rigs and
+the branch-private bake now pass. This qualifies a bounded seventh attended
+run, not PowerBook safety.
+
+A subsequent clean-boot PMU stream reproduced the wedge at sequence 416 and
+made the earlier callback claim falsifiable. The offline platter log repeated
+`writer: REFUSED - binary is not 'New Old World'` once per packet and ended at
+`move begin n=120 seq=413` without a return. `accept_datagram()` was calling
+`cell()` from the OT notifier; that resolved the table through Process Manager
+identity, writer-lease publication, and disk logging. The notifier now uses a
+cell pointer published by task-time arm and is source-guarded against table
+resolution, logging, allocation, Process Manager calls, and volume flushes.
+Independent cold PMU/USB and CUDA/ADB runs then each completed 900 streamed
+positions at 30 Hz, both takeover modes, disarm, authority-lane reconnect,
+re-arm, native return, and clean Finder shutdown with zero rejected datagrams.
+The CUDA platter trace paired all 19 sampled move entries with returns and
+contained no writer refusal. These runs qualify the emulator boundary; they do
+not establish PowerBook safety.
+
+The complete repository gate then passed. A branch-private bake at commit
+`286104bb` verified the exact resident fingerprint, all 1023 capabilities, full
+census survival, Finder shutdown, a clean HFS volume, and a clean qcow2 at
+`agent-stage/now-stage-continuity-1.17-callback-safe.qcow2` (SHA-256
+`6dd741efe4f31ab29ed9b32236fd8adcbc10bd6c7d3b50c0d29f6ed4185014e1`).
+The shared oracle was not modified.
+
+**Updated 2026-08-11, first positive attended V3 result:** the corrected route
+moved the PowerBook 1400c pointer accurately without wedging the machine.
+Motion remained somewhat jittery, with no clear cadence difference between
+15, 30, and 60 Hz. This closes the claim that V3 has no positive metal result;
+it does not close sustained-motion stability, rate fidelity, recovery, or
+release qualification. Continuity remains isolated on a feature branch that
+will target a release-candidate branch rather than landing independently on
+`main`.
+
+The 2026-08-10 emulator input-controller isolation did not reproduce either
+metal wedge. Basic native control passed first on PMU/USB and CUDA/ADB,
+including guest-observed movement and held-button release. The exact unsafe
+resident then applied 180 positions at 30 Hz on each rig, disarmed, and
+returned to native movement with zero rejected datagrams. The PMU-ADB
+diagnostic did not pass the prerequisite: QEMU delivered and Mac OS
+acknowledged an ADB mouse autopoll packet, but the guest cursor never moved, so
+P9 was not armed there. Exact results and the distinction between negative
+emulator evidence and physical safety are in
+[continuity-mode.md](continuity-mode.md). The quarantine remains unchanged.
+
+**Updated 2026-08-10, task-time candidate ready for attended metal retest:**
+resident 1.11 removes Cursor Device, QuickDraw, and Event Manager work from the
+Time Manager callback. Task-time jGNE owns manager placement and checked,
+epoch-scoped down/up posting; every reset forces low-memory up immediately and
+cancels stale cursor debt. Native takeover samples both `CursorData.where` and
+`RawMouse` with separate baselines, excluding the pending host point and eight
+recent owned points.
+
+The emulator campaign also reproduced a guest-wide communications failure in
+the PPC application at 78/84 positions: `OTSndUData` was called inside the
+asynchronous UDP notifier. A `T_GODATA` retry alone passed once and then
+reproduced. Commit `f72b9358` makes the notifier publish only the latest ACK
+debt/address and sends one bounded attempt from each task-time wire pump.
+Source guards for that boundary and the low-memory takeover path were each
+mutation-checked.
+
+Guest build `7b6806dca802`, resident source manifest `59430281706f`, and
+fingerprint `69fabb4c5718` passed the complete 180-position fault campaign on
+both PMU/USB and CUDA/ADB: synthetic click, movement-triggered `guest-input`,
+held-button disarm, native motion, held-button TCP loss, reconnect, native
+motion after reconnect, and a fresh fourth epoch. The independent anchor
+answered after each run and both guests shut down through Finder. CUDA native
+motion/button control was separately proven on a clean boot so its click could
+not contaminate the Continuity run.
+
+The verified branch-private image is
+`agent-stage/now-stage-continuity-1.11-tasktime-safe.qcow2`, SHA-256
+`7c7f64af5da9d42bca2160d51b1e9fc2c74c81df877e46e1cfb1751d05c07783`.
+Nothing shared was baked or promoted. This changes the status from “no third
+metal retest pending” to “attended metal retest candidate available”; it does
+not erase the two negative PowerBook runs or make the feature metal-verified.
 
 ## PRE-MERGE CONSOLIDATION: Mirror is NOW-owned; the standalone product is archived (2026-08-09, `codex/mirror-session-teardown`)
 

@@ -208,6 +208,61 @@ parallel availability lists.
 
 ## What works today
 
+- **Mirror Continuity is isolated on a release-candidate-bound feature branch**
+  (updated 2026-08-11). Its contract, host UI, and transport are implemented.
+  V0 hover movement uses a
+  TCP-authorized, same-numbered UDP lane at a user-selected 15/30/60 Hz. The
+  resident releases on host departure, focus loss, link loss, lease expiry, or
+  physical guest mouse input; guest input also switches the host toggle off
+  rather than allowing a troubled host to keep ownership. The first PowerBook
+  first three runs ruled out cursor-task reentry, reporting through the
+  physical ADB device, and global jGNE settlement. The fourth reproduced the
+  wedge with only direct interrupt-time mouse-global writes remaining.
+  Branch resident 1.14 instead creates a separate absolute Cursor Device and
+  reports only through that owned record. PMU/USB and CUDA/ADB emulator rigs
+  pass movement, click-only and motion takeover, disarm, native return, TCP
+  reconnect and re-arm with zero rejects. Its first attended PB1400c run then
+  completed one host-pointer movement and returned control through native
+  trackpad input, but the next 30 Hz run produced about one second of smooth
+  motion before a fifth system-wide wedge stopped native pointer, click, and
+  keyboard input and both connections died. Resident 1.16 removes both
+  remaining 1.14 mechanisms: there is no Continuity timer or global jGNE path,
+  and the PPC pump no longer calls `HideCursor`/`ShowCursor`. Instead the pump
+  enters one no-argument resident service through Mixed Mode, which moves only
+  the owned absolute device and returns. Fresh PMU/USB and CUDA/ADB boots each
+  passed native-input preflight plus 900 points over 30 seconds at 30 Hz,
+  takeover, disarm, native return, TCP reconnect, re-arm, and clean shutdown.
+  A branch-private bake also verified that exact 1.16 fingerprint, full census,
+  clean HFS shutdown, and qcow integrity without touching the shared oracle.
+  Nevertheless the attended 1.16 run briefly moved before a leave/re-enter
+  cycle ended in the sixth system-wide wedge. The audit then found that Apple
+  requires PowerPC clients to use `CursorDevicesGlue` because the original ROM
+  Mixed Mode transition is wrong. Resident 1.17 / Continuity V3 leaves only
+  arbitration, native takeover, and a trace ring in the Extension; the PPC app
+  owns the synthetic device and uses Apple's corrected fallback transition,
+  with a request/result handshake and durable pre/post-call breadcrumbs. The
+  final PEF guard refuses the load-time InterfaceLib dependency that made the
+  Carbon app unload before `main`. The notifier no longer resolves that shared
+  cell through Process Manager or performs logging from callback context; its
+  task-time owner publishes and revokes one cached pointer. Independent cold
+  PMU/USB and CUDA/ADB runs of exact app build `55302ed3deef`, resident
+  fingerprint `31fba85add055dfed4c7581af559c42904d916b1`, each completed 900
+  streamed points at 30 Hz, click and movement takeover, disarm, authority-lane
+  reconnect, re-arm, native return, and clean Finder shutdown with zero rejected
+  datagrams. The CUDA platter log had 19 sampled call entries and 19 matching
+  returns, with zero notifier-context writer refusals. The complete repository
+  gate passes, and a branch-private
+  bake at commit `286104bb` verified the exact resident, full census survival,
+  Finder shutdown, clean HFS volume, and clean qcow2 without touching the
+  shared oracle. An attended PowerBook 1400c run then moved accurately without
+  wedging; motion remained somewhat jittery and the selected 15/30/60 Hz rate
+  did not produce a clearly different cadence. This is bounded positive metal
+  evidence, not sustained-motion or rate-fidelity qualification. There is no
+  direct `main` landing: the feature branch targets a release-candidate branch,
+  where recovery and release packaging remain gates. Direct clicks and drags
+  remain v0.5a/v0.5b work.
+  [continuity-mode.md](continuity-mode.md) carries the boundary.
+
 - **Mirror human work has a session-wide priority boundary and attributable
   clocks** (2026-08-09, Tested locally; not emulator- or Metal-verified).
   Human gestures preserve FIFO order and run before queued ambient Mirror

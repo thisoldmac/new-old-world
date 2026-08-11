@@ -185,6 +185,17 @@ run_c now-guest-shared now_drag_logic_test.c \
 run_c now-guest-shared now_cursor_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_cursor_logic.c
 run_c now-guest-shared log_retention_test.c "" src/log_retention.c
+# P8/P9 execution-context safety. Five PowerBook runs established that both
+# the Time Manager placement route and its later PPC HideCursor/ShowCursor
+# redraw variant can wedge the cooperative system. Continuity V2 has neither:
+# the ordinary/nested PPC wire pump enters one resident 68K service through
+# Mixed Mode, and that service reports only through its owned Cursor Device.
+run_py now-guest-shared cursor_interrupt_safety_source_test.py
+run_py now-guest-shared continuity_event_safety_source_test.py
+run_c now-guest-shared now_continuity_wire_test.c "-DNOW_CONTINUITY_HOST" \
+      src/now_continuity_wire.c
+run_c now-guest-shared now_input_owner_test.c "" src/now_input_owner.c
+run_c now-guest-shared now_continuity_logic_test.c "" src/now_continuity_logic.c
 run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c
 run_py now-guest-shared act_inflight_wiring_source_test.py
 # The gestaltSystemVersion decode `hello.os` carries since 2026-08-07.
@@ -247,7 +258,9 @@ run_py_path tools/mirror-gate-tests/test_spin_up_ppc_shutdown.py
 run_py_path tools/mirror-gate-tests/test_lane_ports.py
 run_py_path tools/mirror-gate-tests/test_shutdown_always_available.py
 run_py_path tools/mirror-gate-tests/test_public_ci_portability.py
+run_py_path tools/mirror-gate-tests/test_continuity_probe.py
 run_py_path tools/mirror-gate-tests/test_build_guests_env.py
+run_py_path tools/mirror-gate-tests/test_extension_product_name.py
 run_py_path tools/mirror-gate-tests/test_qemu_memory_oracle.py
 # The tool that reports where the arc stands, driven against a synthetic
 # repository rather than read. It was wrong about arc state — a source
@@ -714,6 +727,9 @@ run_c now-guest-ppc gestalt_json_test.c     ""  src/commands/gestalt_json.c
 run_c now-guest-ppc input_args_test.c       ""  src/input/input_args.c
 run_py now-guest-ppc ae_document_desc_source_test.py
 run_py now-guest-ppc apple_event_lifetime_source_test.py
+run_c now-guest-ppc continuity_report_logic_test.c "" \
+      src/input/continuity_report_logic.c
+run_py now-guest-ppc continuity_intake_lifecycle_source_test.py
 # `key`'s ordering, which the C test above cannot see: PostEvent is Toolbox
 # and does not exist on a host cc, so nothing there can observe whether the
 # handler stopped at a refusal or posted first and explained afterwards. A

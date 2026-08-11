@@ -43,6 +43,9 @@ OSStatus now_ot_resolve(void)
         { "OTRcvDisconnect", (void **)&gNowOT.rcvDisconnect },
         { "OTUnbind", (void **)&gNowOT.unbind },
         { "OTOptionManagement", (void **)&gNowOT.optionManagement },
+        { "OTSndUData", (void **)&gNowOT.sndUData },
+        { "OTRcvUData", (void **)&gNowOT.rcvUData },
+        { "OTRcvUDErr", (void **)&gNowOT.rcvUDErr },
     };
     /* Resolved separately because a miss here must NOT be fatal. Every
        symbol above is load-bearing, so the loop treats absence as a

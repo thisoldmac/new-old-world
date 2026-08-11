@@ -227,6 +227,22 @@ static void cursor_rows(InputRows *rows)
     row_addl(rows, "cursor by lowmem", (long)c->by_lowmem);
     row_addl(rows, "cursor yielded", (long)c->yielded);
     row_addl(rows, "cursor last err", (long)c->last_err);
+    if (t->length >= (NowPeekU32)(offsetof(NowPeekTable, continuity)
+                                  + sizeof(NowPeekContinuityCell))
+        && t->continuity_format == (NowPeekU32)kNowPeekContinuityFormatV3) {
+        const NowPeekContinuityCell *continuity = &t->continuity;
+
+        row_addl(rows, "native samples", (long)continuity->native_input_samples);
+        row_addl(rows, "native changes", (long)continuity->native_input_changes);
+        row_addl(rows, "native trigger", (long)continuity->native_input_trigger);
+        row_addl(rows, "native at x", (long)continuity->native_input_h);
+        row_addl(rows, "native at y", (long)continuity->native_input_v);
+        row_addl(rows, "owned at x", (long)continuity->native_owned_h);
+        row_addl(rows, "owned at y", (long)continuity->native_owned_v);
+        row_addl(rows, "native buttons", (long)continuity->native_buttons);
+        row_addl(rows, "cursor debt cancels",
+                 (long)continuity->cursor_debt_cancels);
+    }
 }
 
 void now_input_run_mouseloc(const char *request_json, long id,

@@ -49,6 +49,8 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `hostServesChat` | `receive` | `control` | `chatCatalog`, `chatDelta`, `chatStatus`, `chatResult` |
 | `guestAsksHostSurface` | `send` | `control` | `hostShow` |
 | `hostServesHostSurface` | `receive` | `control` | `hostShown` |
+| `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm` |
+| `guestReportsContinuity` | `receive` | `control` | `continuityReport` |
 | `peerAnnouncesMirrorInvalidation` | `send` | `control` | `mirrorInvalidate` |
 | `peerReceivesMirrorInvalidation` | `receive` | `control` | `mirrorInvalidate` |
 
@@ -115,6 +117,9 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `softwareList` | `software.list` | `SoftwareList` |
 | `softwareListing` | `software.listing` | `SoftwareListing` |
 | `agentAccess` | `agent.access` | `AgentAccess` |
+| `continuityArm` | `continuity.arm` | `ContinuityArm` |
+| `continuityReport` | `continuity.report` | `ContinuityReport` |
+| `continuityDisarm` | `continuity.disarm` | `ContinuityDisarm` |
 | `cloudServices` | `cloud.services` | `CloudServices` |
 | `cloudReport` | `cloud.report` | `CloudReport` |
 | `cloudList` | `cloud.list` | `CloudList` |

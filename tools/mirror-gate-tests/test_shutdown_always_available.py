@@ -447,6 +447,30 @@ spec.loader.exec_module(mod)
         self.assertFalse(rows[1][1])
         self.assertIn("not the canonical anchor", rows[1][2])
 
+    def test_applet_preflight_retries_one_transient_anchor_reset(self):
+        attempts = []
+
+        class ResetOnceHarness:
+            def __init__(self, **kwargs):
+                attempts.append(kwargs)
+
+            def request(self, verb, args):
+                if len(attempts) == 1:
+                    raise ConnectionResetError("classic worker handoff")
+                return {"exists": True}
+
+        original = self.mod.Harness
+        self.mod.Harness = ResetOnceHarness
+        try:
+            harness, stat = self.mod.open_anchor_for_applet(
+                15464, "Macintosh HD:NOW Shut Down", pause=lambda _: None)
+        finally:
+            self.mod.Harness = original
+
+        self.assertIsInstance(harness, ResetOnceHarness)
+        self.assertEqual(stat, {"exists": True})
+        self.assertEqual(len(attempts), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

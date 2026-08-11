@@ -37,6 +37,7 @@ final class AgentIntegrationHostAdapter {
     private let diagnosticsTimeout: TimeInterval
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private let mirrorEngines: MirrorStateEngineRegistry?
+    private let hostIssues: () -> [AgentIntegrationHostIssue]
     private let projectStore: ProjectStore?
     private lazy var processControl = AgentIntegrationProcessControl(
         listener: listener,
@@ -207,6 +208,7 @@ final class AgentIntegrationHostAdapter {
             AgentIntegrationDiagnosticsPolicy.commandTimeout,
         artifactApprovals: AgentIntegrationArtifactApprovalStore? = nil,
         mirrorEngines: MirrorStateEngineRegistry? = nil,
+        hostIssues: @escaping () -> [AgentIntegrationHostIssue] = { [] },
         projectStore: ProjectStore? = try? ProjectStore()
     ) {
         /* Compatibility hashes the running executable. Do that while the
@@ -222,6 +224,7 @@ final class AgentIntegrationHostAdapter {
         self.diagnosticsTimeout = diagnosticsTimeout
         self.artifactApprovals = artifactApprovals
         self.mirrorEngines = mirrorEngines
+        self.hostIssues = hostIssues
         self.projectStore = projectStore
     }
 
@@ -429,6 +432,7 @@ final class AgentIntegrationHostAdapter {
                 listeningPort: nil,
                 sessionID: nil,
                 guest: nil,
+                issues: hostIssues(),
                 failure: nil, compatibility: Self.compatibility))
 
         case .listening(let port):
@@ -439,6 +443,7 @@ final class AgentIntegrationHostAdapter {
                 listeningPort: port,
                 sessionID: nil,
                 guest: nil,
+                issues: hostIssues(),
                 failure: nil, compatibility: Self.compatibility))
 
         case .failed(let reason):
@@ -449,6 +454,7 @@ final class AgentIntegrationHostAdapter {
                 listeningPort: nil,
                 sessionID: nil,
                 guest: nil,
+                issues: hostIssues(),
                 failure: reason, compatibility: Self.compatibility))
 
         case .connected(let guestName):
@@ -475,6 +481,7 @@ final class AgentIntegrationHostAdapter {
                 sessionID: sessionID,
                 guest: guest,
                 roster: roster(),
+                issues: hostIssues(),
                 failure: nil, compatibility: Self.compatibility))
         }
     }

@@ -150,6 +150,12 @@ final class GuestListener: ObservableObject {
     private var pendingCommands: [Int: (CommandResult) -> Void] = [:]
     private var nextCensusId = 1
     private var pendingCensus: [Int: (CensusReport) -> Void] = [:]
+    private var nextContinuityId = 1
+
+    /// Reports belong to the session that emitted them. The controller
+    /// compares this key to the arm it owns before accepting either a
+    /// correlated answer or an unsolicited guest-side takeover.
+    var onContinuityReport: ((GuestKey, ContinuityReport) -> Void)?
 
     /// One exec in flight, from exec.request to its terminal exec.result.
     ///
@@ -675,6 +681,40 @@ final class GuestListener: ObservableObject {
     /// The port actually bound (differs from the requested one when 0 was
     /// passed for an ephemeral port — used by tests).
     var boundPort: UInt16? { listener?.port?.rawValue }
+
+    struct ContinuityTarget: Equatable {
+        var key: GuestKey
+        var host: String
+    }
+
+    var activeContinuityTarget: ContinuityTarget? {
+        guard let key = activeKey, let live = sessions[key] else { return nil }
+        return ContinuityTarget(key: key, host: live.guestAddress.text)
+    }
+
+    @discardableResult
+    func armContinuity(nonceHi: UInt32, nonceLo: UInt32, epoch: UInt32,
+                       requestedHz: Int, leaseTicks: Int) -> Int? {
+        guard let session else { return nil }
+        let id = nextContinuityId
+        nextContinuityId &+= 1
+        session.send(.continuityArm(.init(
+            version: ContinuityContract.version,
+            id: id, nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
+            requestedHz: requestedHz, leaseTicks: leaseTicks)))
+        return id
+    }
+
+    @discardableResult
+    func disarmContinuity(epoch: UInt32, reason: String) -> Int? {
+        guard let session else { return nil }
+        let id = nextContinuityId
+        nextContinuityId &+= 1
+        session.send(.continuityDisarm(.init(
+            version: ContinuityContract.version,
+            id: id, epoch: epoch, reason: reason)))
+        return id
+    }
 
     /// Runs one declared command on the connected guest. Completion fires on
     /// the main actor with the guest's result, or a synthesized failure when
@@ -2991,6 +3031,11 @@ final class GuestListener: ObservableObject {
             onCensusReport: { [weak self] report in
                 guard fromActive() else { return }
                 self?.resolveCensus(report)
+            },
+            onContinuityReport: { [weak self] report in
+                guard let self, fromActive(),
+                      let key = origin.session?.guestKey else { return }
+                self.onContinuityReport?(key, report)
             },
             onCapture: { [weak self] result in
                 guard fromActive() else { return }

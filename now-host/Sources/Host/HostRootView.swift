@@ -222,6 +222,7 @@ struct HostRootView: View {
                                   settings: state.settings,
                                   listener: state.listener,
                                   onboarding: state.onboarding,
+                                  localNetworkAccess: state.localNetworkAccess,
                                   onStart: { state.startListening() },
                                   onStop: { state.stopListening() })
         default:

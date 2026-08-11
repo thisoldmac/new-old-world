@@ -292,6 +292,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     nonisolated var planes: ActionPlanes { .residentActPlane }
 
     private let listener: GuestListener
+    private weak var localNetworkAccess: LocalNetworkAccessController?
+    private(set) lazy var continuity = MirrorContinuityController(
+        listener: listener, localNetworkAccess: localNetworkAccess)
+    var continuityInputDriver: ContinuityInputDriver? { continuity }
     private let hostFinder: HostFinderSession
     private var lastGuestScene: MirrorKit.Scene?
     private let engineRegistry: MirrorStateEngineRegistry?
@@ -418,6 +422,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     init(listener: GuestListener,
          engineRegistry: MirrorStateEngineRegistry? = nil,
          act: AgentIntegrationActControl,
+         localNetworkAccess: LocalNetworkAccessController? = nil,
          interval: TimeInterval = 0.75,
          planePolicy: @escaping @MainActor (GuestKey) -> Set<MirrorPlaneID> = {
              _ in
@@ -438,6 +443,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
          hostFinderDefaults: UserDefaults? = nil,
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
+        self.localNetworkAccess = localNetworkAccess
         self.workScheduler = listener.workScheduler
         self.hostFinder = hostFinderDefaults.map {
             HostFinderSession(listener: listener, defaults: $0)
@@ -551,6 +557,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     func stop() {
+        continuity.cancel(reason: "Mirror stopped")
         let stoppingKey = pinnedGuestKey
         let canRelease = stoppingKey != nil
             && stoppingKey == cycleIO.activeKey()
@@ -599,6 +606,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Called immediately before the listener changes focus, while the
     /// outgoing guest can still receive the content owner's explicit stop.
     func activeGuestWillChange() {
+        continuity.sessionWillEnd(reason: "the selected Mac is changing")
         guard let pinnedGuestKey,
               pinnedGuestKey == cycleIO.activeKey() else { return }
         endSessionReleasingContent(
@@ -633,6 +641,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// A later resume is a fresh start even when it is the same physical Mac.
     func activeGuestDidChange() {
         hostFinder.resetForGuestChange()
+        if let pinnedGuestKey,
+           pinnedGuestKey == cycleIO.activeKey() { return }
+        continuity.sessionDidChange()
         guard let pinnedGuestKey,
               pinnedGuestKey != cycleIO.activeKey() else { return }
         endSession(

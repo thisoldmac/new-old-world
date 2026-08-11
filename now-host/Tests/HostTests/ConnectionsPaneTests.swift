@@ -110,6 +110,21 @@ final class ConnectionsPaneTests: XCTestCase {
         XCTAssertTrue(source.contains("do not expose this port"))
     }
 
+    func testLocalNetworkPermissionHasRequestAndSystemSettingsDoors()
+        throws {
+        let source = try GateSource.hostSwift(
+            "now-host/Sources/Host/ConnectionsModuleView.swift")
+        XCTAssertTrue(source.contains("Button(\"Request Access\")"))
+        XCTAssertTrue(source.contains("controller.request()"))
+        XCTAssertTrue(source.contains(
+            "controller.verifyDirectAccess(to: targetHost)"))
+        XCTAssertTrue(source.contains("Button(\"Open Settings…\""))
+        XCTAssertTrue(source.contains("Privacy_LocalNetwork"))
+        XCTAssertTrue(source.contains("app-owned macOS request"))
+        XCTAssertTrue(source.contains("connected Mac directly"))
+        XCTAssertTrue(source.contains("denied earlier"))
+    }
+
     // MARK: - The retired id still resolves
 
     /// **A saved selection of the retired id lands on the merged page.**

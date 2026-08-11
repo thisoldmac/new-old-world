@@ -39,6 +39,9 @@ typedef struct {
     OSStatus (*unbind)(EndpointRef ref);
     OSStatus (*optionManagement)(EndpointRef ref, TOptMgmt *req,
                                  TOptMgmt *ret);
+    OSStatus (*sndUData)(EndpointRef ref, TUnitData *udata);
+    OSStatus (*rcvUData)(EndpointRef ref, TUnitData *udata, OTFlags *flags);
+    OSStatus (*rcvUDErr)(EndpointRef ref, TUDErr *uderr);
     /* How many bytes are readable right now. Diagnostic only: it is the
        one way to tell a guest that cannot keep up from a guest that is
        being starved, and those two look identical from the far end. */

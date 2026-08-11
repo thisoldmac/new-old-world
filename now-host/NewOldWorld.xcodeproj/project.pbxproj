@@ -216,18 +216,17 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
 				CODE_SIGN_ENTITLEMENTS = NewOldWorld.entitlements;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSContactsUsageDescription = "NOW shares contact cards with the classic Mac it is driving, when you turn Contacts on in the iCloud page.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "NOW shares your photo library with the classic Mac it is driving, when you turn Photos on in the iCloud page.";
-				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "NewOldWorld-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.2.0;
+				NOW_DISPLAY_NAME = "New Old World";
+				NOW_PRODUCT_NAME = "$(TARGET_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = dev.newoldworld.now;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "$(NOW_PRODUCT_NAME)";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -241,18 +240,17 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
 				CODE_SIGN_ENTITLEMENTS = NewOldWorld.entitlements;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSContactsUsageDescription = "NOW shares contact cards with the classic Mac it is driving, when you turn Contacts on in the iCloud page.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "NOW shares your photo library with the classic Mac it is driving, when you turn Photos on in the iCloud page.";
-				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "NewOldWorld-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.2.0;
+				NOW_DISPLAY_NAME = "New Old World";
+				NOW_PRODUCT_NAME = "$(TARGET_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = dev.newoldworld.now;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "$(NOW_PRODUCT_NAME)";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;

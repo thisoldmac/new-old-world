@@ -15,6 +15,7 @@
 #include "commands.h"
 #include "census.h"
 #include "console_model.h"   /* the exec plane runs the Console's dispatch */
+#include "continuity_intake.h"
 #include "json.h"
 #include "loopstat.h"
 #include "mirror_policy.h"
@@ -503,6 +504,7 @@ static void link_drop_transfers(void)
     now_peek_withdraw_endpoint();
     g_update.pending = false;
     now_update_model_reset();
+    now_continuity_disconnect();
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -6629,6 +6631,132 @@ static void service_stream(void)
     }
 }
 
+static int send_continuity_report(const NowContinuityReport *report)
+{
+    char json[512];
+    const char *state = now_continuity_state_name(report->state);
+    const char *reason = now_continuity_reason_name(report->exit_reason);
+
+    if (report->id != 0 && reason != NULL) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.report\",\"version\":%u,"
+                 "\"id\":%ld,"
+                 "\"epoch\":%lu,\"state\":\"%s\",\"acceptedHz\":%lu,"
+                 "\"udpPort\":%u,\"reason\":\"%s\","
+                 "\"acceptedPackets\":%lu,\"stalePackets\":%lu,"
+                 "\"malformedPackets\":%lu,"
+                 "\"appliedPositionSequence\":%lu,"
+                 "\"appliedButtonGeneration\":%lu}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 report->id, (unsigned long)report->epoch, state,
+                 (unsigned long)report->accepted_hz,
+                 (unsigned)now_continuity_udp_port(),
+                 reason, (unsigned long)report->accepted_packets,
+                 (unsigned long)report->stale_packets,
+                 (unsigned long)report->malformed_packets,
+                 (unsigned long)report->applied_position_seq,
+                 (unsigned long)report->applied_button_generation);
+    } else if (report->id != 0) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.report\",\"version\":%u,"
+                 "\"id\":%ld,"
+                 "\"epoch\":%lu,\"state\":\"%s\",\"acceptedHz\":%lu,"
+                 "\"udpPort\":%u,\"acceptedPackets\":%lu,"
+                 "\"stalePackets\":%lu,\"malformedPackets\":%lu,"
+                 "\"appliedPositionSequence\":%lu,"
+                 "\"appliedButtonGeneration\":%lu}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 report->id, (unsigned long)report->epoch, state,
+                 (unsigned long)report->accepted_hz,
+                 (unsigned)now_continuity_udp_port(),
+                 (unsigned long)report->accepted_packets,
+                 (unsigned long)report->stale_packets,
+                 (unsigned long)report->malformed_packets,
+                 (unsigned long)report->applied_position_seq,
+                 (unsigned long)report->applied_button_generation);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.report\",\"version\":%u,"
+                 "\"epoch\":%lu,"
+                 "\"state\":\"%s\",\"acceptedHz\":%lu,\"udpPort\":%u,"
+                 "\"reason\":\"%s\",\"acceptedPackets\":%lu,"
+                 "\"stalePackets\":%lu,\"malformedPackets\":%lu,"
+                 "\"appliedPositionSequence\":%lu,"
+                 "\"appliedButtonGeneration\":%lu}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 (unsigned long)report->epoch, state,
+                 (unsigned long)report->accepted_hz,
+                 (unsigned)now_continuity_udp_port(),
+                 reason != NULL ? reason : "disarmed",
+                 (unsigned long)report->accepted_packets,
+                 (unsigned long)report->stale_packets,
+                 (unsigned long)report->malformed_packets,
+                 (unsigned long)report->applied_position_seq,
+                 (unsigned long)report->applied_button_generation);
+    }
+    return send_control(json);
+}
+
+static int continuity_refuse(long id, unsigned long epoch,
+                             const char *reason)
+{
+    char json[224];
+    snprintf(json, sizeof json,
+             "{\"type\":\"continuity.report\",\"version\":%u,"
+             "\"id\":%ld,"
+             "\"epoch\":%lu,\"state\":\"refused\","
+             "\"reason\":\"%s\"}",
+             (unsigned)NOW_CONTINUITY_VERSION, id, epoch, reason);
+    return send_control(json);
+}
+
+static void serve_continuity_arm(const char *request)
+{
+    long id = now_json_find_int(request, "id", 0);
+    unsigned long nonce_hi = now_json_find_u32(request, "nonceHi", 0);
+    unsigned long nonce_lo = now_json_find_u32(request, "nonceLo", 0);
+    unsigned long epoch = now_json_find_u32(request, "epoch", 0);
+    unsigned long hz = now_json_find_u32(request, "requestedHz", 0);
+    unsigned long lease = now_json_find_u32(request, "leaseTicks", 0);
+    unsigned long version = now_json_find_u32(request, "version", 0);
+    int result;
+
+    if (version != NOW_CONTINUITY_VERSION) {
+        (void)continuity_refuse(id, epoch, "wrong-version");
+        return;
+    }
+    if (id == 0 || epoch == 0 || (nonce_hi == 0 && nonce_lo == 0)
+        || (hz != 15 && hz != 30 && hz != 60)) {
+        (void)continuity_refuse(id, epoch, "unavailable");
+        return;
+    }
+    result = now_continuity_arm(id, g.port, nonce_hi, nonce_lo, epoch,
+                                hz, lease);
+    if (result == kNowContinuityArmUnsupported)
+        (void)continuity_refuse(id, epoch, "unsupported");
+    else if (result == kNowContinuityArmTransportUnavailable)
+        (void)continuity_refuse(id, epoch, "unavailable");
+}
+
+static void serve_continuity_disarm(const char *request)
+{
+    long id = now_json_find_int(request, "id", 0);
+    unsigned long epoch = now_json_find_u32(request, "epoch", 0);
+    unsigned long version = now_json_find_u32(request, "version", 0);
+    if (version != NOW_CONTINUITY_VERSION)
+        (void)continuity_refuse(id, epoch, "wrong-version");
+    else if (id == 0 || !now_continuity_disarm(id, epoch))
+        (void)continuity_refuse(id, epoch, "bad-epoch");
+}
+
+static void service_continuity(void)
+{
+    NowContinuityReport report;
+    if (now_continuity_take_report(&report)
+        && !send_continuity_report(&report))
+        fail("Connection lost");
+}
+
 /* Returns 0 if the connection should be torn down (bye/protocol error). */
 static int handle_frame(const char *reply)
 {
@@ -6671,6 +6799,14 @@ static int handle_frame(const char *reply)
        Below the `pong` return on purpose - our own heartbeat's echo is
        not a consumer asking for something. See renew_scene_planes(). */
     renew_scene_planes();
+    if (now_json_type_is(reply, "continuity.arm")) {
+        serve_continuity_arm(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "continuity.disarm")) {
+        serve_continuity_disarm(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "capture.request")) {
         serve_capture(reply);
         return 1;
@@ -7244,6 +7380,9 @@ void conn_service(void)
             break;
         }
         service_connected_io();
+        if (g.phase == kConnConnected) {
+            service_continuity();
+        }
         if (g.phase == kConnConnected) {
             service_offer();
     service_send();

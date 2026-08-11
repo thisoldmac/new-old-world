@@ -6,7 +6,12 @@ import SwiftUI
 /// identity, press-time modifiers, and scroll-wheel deltas. The view draws
 /// nothing and observes only events inside its own mirror surface.
 struct PointerCaptureView: NSViewRepresentable {
-    var onLeftDown: (CGPoint, Int) -> Void
+    var onMove: (CGPoint) -> Void
+    var onExit: () -> Void
+    var onLeftDown: (CGPoint, Int) -> Bool
+    var onLeftDragged: (CGPoint, Int) -> Bool
+    var onLeftUp: (CGPoint, Int) -> Bool
+    var onCancel: () -> Void
     var onRightDown: (CGPoint, Int) -> Void
     var onScroll: (CGPoint, Int) -> Void
 
@@ -21,13 +26,21 @@ struct PointerCaptureView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ view: CaptureView, coordinator: ()) {
-        view.removeMonitor()
+        view.stopObserving()
     }
 
     final class CaptureView: NSView {
         private var monitor: Any?
+        private var observers: [NSObjectProtocol] = []
         private var wheelRemainder = 0.0
-        private var left: ((CGPoint, Int) -> Void)?
+        private var pointerInside = false
+        private var capturedLeft = false
+        private var move: ((CGPoint) -> Void)?
+        private var exit: (() -> Void)?
+        private var leftDown: ((CGPoint, Int) -> Bool)?
+        private var leftDragged: ((CGPoint, Int) -> Bool)?
+        private var leftUp: ((CGPoint, Int) -> Bool)?
+        private var cancel: (() -> Void)?
         private var right: ((CGPoint, Int) -> Void)?
         private var scroll: ((CGPoint, Int) -> Void)?
 
@@ -35,7 +48,12 @@ struct PointerCaptureView: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         func update(from owner: PointerCaptureView) {
-            left = owner.onLeftDown
+            move = owner.onMove
+            exit = owner.onExit
+            leftDown = owner.onLeftDown
+            leftDragged = owner.onLeftDragged
+            leftUp = owner.onLeftUp
+            cancel = owner.onCancel
             right = owner.onRightDown
             scroll = owner.onScroll
             installMonitorIfNeeded()
@@ -44,25 +62,53 @@ struct PointerCaptureView: NSViewRepresentable {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             installMonitorIfNeeded()
+            installObserversIfNeeded()
         }
 
         private func installMonitorIfNeeded() {
             guard monitor == nil, window != nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(
-                matching: [.leftMouseDown, .rightMouseDown, .scrollWheel]
+                matching: [.mouseMoved, .leftMouseDown, .leftMouseDragged,
+                           .leftMouseUp, .rightMouseDown, .scrollWheel]
             ) { [weak self] event in
                 guard let self, event.window === self.window else { return event }
                 let point = self.convert(event.locationInWindow, from: nil)
-                guard self.bounds.contains(point) else { return event }
+                let isInside = self.bounds.contains(point)
+                if isInside {
+                    self.pointerInside = true
+                } else if self.pointerInside && !self.capturedLeft {
+                    self.pointerInside = false
+                    self.exit?()
+                }
                 let mods = KeyCaptureView.Mods.from(event.modifierFlags)
                 switch event.type {
-                case .leftMouseDown:
-                    self.left?(point, mods)
+                case .mouseMoved:
+                    if isInside { self.move?(point) }
                     return event
+                case .leftMouseDown:
+                    guard isInside else { return event }
+                    self.move?(point)
+                    self.capturedLeft = self.leftDown?(point, mods) ?? false
+                    return self.capturedLeft ? nil : event
+                case .leftMouseDragged:
+                    guard self.capturedLeft else { return event }
+                    _ = self.leftDragged?(point, mods)
+                    return nil
+                case .leftMouseUp:
+                    guard self.capturedLeft else { return event }
+                    _ = self.leftUp?(point, mods)
+                    self.capturedLeft = false
+                    if !isInside {
+                        self.pointerInside = false
+                        self.exit?()
+                    }
+                    return nil
                 case .rightMouseDown:
+                    guard isInside else { return event }
                     self.right?(point, mods | KeyCaptureView.Mods.control)
                     return nil
                 case .scrollWheel:
+                    guard isInside else { return event }
                     let towardBottom = -Double(event.scrollingDeltaY)
                     if event.hasPreciseScrollingDeltas {
                         self.wheelRemainder += towardBottom / 8.0
@@ -81,13 +127,43 @@ struct PointerCaptureView: NSViewRepresentable {
             }
         }
 
+        private func installObserversIfNeeded() {
+            guard observers.isEmpty, let window else { return }
+            let center = NotificationCenter.default
+            observers.append(center.addObserver(
+                forName: NSWindow.didResignKeyNotification,
+                object: window, queue: .main) { [weak self] _ in
+                    self?.cancelCapture()
+                })
+            observers.append(center.addObserver(
+                forName: NSApplication.didResignActiveNotification,
+                object: nil, queue: .main) { [weak self] _ in
+                    self?.cancelCapture()
+                })
+        }
+
+        private func cancelCapture() {
+            pointerInside = false
+            capturedLeft = false
+            cancel?()
+        }
+
         func removeMonitor() {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
         }
 
+        func stopObserving() {
+            cancelCapture()
+            removeMonitor()
+            for observer in observers {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            observers = []
+        }
+
         deinit {
-            MainActor.assumeIsolated { removeMonitor() }
+            MainActor.assumeIsolated { stopObserving() }
         }
     }
 }

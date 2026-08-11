@@ -96,6 +96,7 @@ It takes no flags. Everything is set through the environment:
   NOW_SPIN_RUN        where the run directory goes (default: <now>/run/<anchor>)
   NOW_SPIN_DISPLAY    1 to open a window, 0 for headless
   NOW_SPIN_RESTRICT   1 to cut the guest off from anything but the host
+  NOW_SPIN_VIA        mac99 input controller: pmu (default), pmu-adb, or cuda
   NOW_ANCHOR_PORT     override the anchor port  ) normally DERIVED from your
   NOW_WIRE_PORT       override the wire port    ) worktree by tools/lane-ports
   NOW_HUMAN_STACK     1 to use the reserved human block instead of a lane's
@@ -231,7 +232,7 @@ QMP="$RUN/qmp.sock"
 # checkout, exactly as scripts/build-guests keys them, so many worktrees
 # can run at once without sharing a CMake cache.
 OUT="${TMPDIR:-/tmp}/now-guest-builds/$(printf '%s' "$NOW" | shasum | cut -c1-12)"
-EXT_BIN="${NOW_EXT_BIN:-$OUT/ext/NowExt.bin}"
+EXT_BIN="${NOW_EXT_BIN:-$OUT/ext/NOW Extension.bin}"
 APP_BIN="${NOW_APP_BIN:-$OUT/ppc/New Old World.bin}"
 SHUTDOWN_BIN="${NOW_SHUTDOWN_BIN:-$OUT/shutdown/NowShutDown.bin}"
 
@@ -249,7 +250,7 @@ if [ -n "${NOW_SPIN_BASE:-}" ]; then
 else
     echo "== base image (designated by tools/base-image for $PURPOSE): $BASE"
 fi
-[ -f "$EXT_BIN" ] || { echo "no NowExt.bin at $EXT_BIN — run scripts/build-guests 68k"; exit 1; }
+[ -f "$EXT_BIN" ] || { echo "no NOW Extension.bin at $EXT_BIN — run scripts/build-guests 68k"; exit 1; }
 [ -f "$APP_BIN" ] || { echo "no guest app at $APP_BIN — run scripts/build-guests ppc"; exit 1; }
 # Checked HERE, before a 150-second boot, and not at the shutdown step
 # three minutes in. Without this applet the machine cannot be asked to go
@@ -260,6 +261,22 @@ scripts/build-guests 68k (it is what asks the guest to shut itself down)"; exit 
 
 export TBT_MACHINE_PROFILE=mac99
 tbt_select_machine_profile mac99
+
+# `mac99` is one machine with three relevant input-controller paths. The lab
+# launcher deliberately owns the rest of the command line, so override only
+# this machine property with a second `-machine` option. QEMU applies the later
+# property to the already-selected mac99 machine; this keeps disk, display,
+# network and lifecycle behavior identical across the comparison.
+VIA="${NOW_SPIN_VIA:-pmu}"
+case "$VIA" in
+    pmu|pmu-adb|cuda) ;;
+    *)
+        echo "NOW_SPIN_VIA=$VIA is not a mac99 input profile; expected pmu, pmu-adb, or cuda" >&2
+        exit 64
+        ;;
+esac
+TBT_QEMU_EXTRA_ARGS=(-machine "via=$VIA")
+echo "input profile: mac99,via=$VIA"
 mkdir -p "$RUN"
 
 # --- IS THIS BASE FIT TO CLONE? Asked before anything boots --------------
@@ -295,9 +312,9 @@ mkdir -p "$RUN"
 # remembering. The sweep that got this right did it by hand
 # (docs/fidelity-sweep-2026-08-07-a.md); the next one should not have to.
 STAGED_JSON="$RUN/staged.json"
-python3 - "$STAGED_JSON" "$NOW" "$EXT_BIN" "$APP_BIN" "$OUT" <<'PY'
+python3 - "$STAGED_JSON" "$NOW" "$EXT_BIN" "$APP_BIN" "$OUT" "$VIA" <<'PY'
 import json, os, re, subprocess, sys
-out_path, now, ext_bin, app_bin, out = sys.argv[1:6]
+out_path, now, ext_bin, app_bin, out, via = sys.argv[1:7]
 def git(*a):
     try:
         return subprocess.run(["git", "-C", now, *a], capture_output=True,
@@ -305,13 +322,16 @@ def git(*a):
     except Exception:
         return None
 ident = os.path.join(out, "ext", "now_ext_identity.r")
+default_ext = os.path.join(out, "ext", "NOW Extension.bin")
+artifact_override = os.path.abspath(ext_bin) != os.path.abspath(default_ext)
 source = build = None
-try:
-    hexes = re.search(r'\$"([0-9a-f]+)"', open(ident).read().replace("\r", "\n"))
-    if hexes:
-        source, build = hexes.group(1)[:40], hexes.group(1)[40:80]
-except Exception:
-    pass
+if not artifact_override:
+    try:
+        hexes = re.search(r'\$"([0-9a-f]+)"', open(ident).read().replace("\r", "\n"))
+        if hexes:
+            source, build = hexes.group(1)[:40], hexes.group(1)[40:80]
+    except Exception:
+        pass
 json.dump({
     "tree": now,
     "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
@@ -319,6 +339,8 @@ json.dump({
     "dirty": bool(git("status", "--porcelain")),
     "extBin": ext_bin,
     "appBin": app_bin,
+    "mac99Via": via,
+    "artifactOverride": artifact_override,
     "localSourceManifest": source,
     "localBuildFingerprint": build,
 }, open(out_path, "w"), indent=2)
@@ -397,6 +419,7 @@ is up, and the guest's compiled-in default would dial IT, not us"; exit 1; }
 fi
 HOSTFWD="hostfwd=tcp:127.0.0.1:${ANCHOR}-:1400"
 [ "$RESTRICT" = "1" ] && HOSTFWD="restrict=on,$HOSTFWD"
+HOSTFWD="${HOSTFWD},hostfwd=udp:127.0.0.1:${WIRE}-:${WIRE}"
 printf '%s %s\n' "$ANCHOR" "$WIRE" > "$RUN/ports"
 echo "ports: anchor=$ANCHOR wire=$WIRE"
 

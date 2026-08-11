@@ -2,14 +2,24 @@
 set -eu
 
 expected_team=B93A9CG7F9
-expected_bundle=dev.newoldworld.now
+
+profile=canonical
+if [ "${1:-}" = "--profile" ]; then
+    [ "$#" -ge 2 ] || { echo "--profile requires a value" >&2; exit 64; }
+    profile=$2
+    shift 2
+fi
 
 if [ "$#" -ne 1 ]; then
-    echo "usage: $0 /absolute/path/New Old World.app" >&2
+    echo "usage: $0 [--profile canonical|continuity] /absolute/path/app" >&2
     exit 64
 fi
 
 bundle=$1
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+identity="$(dirname "$script_dir")/tools/host-build-identity"
+expected_bundle=$($identity "$profile" bundle-id)
+expected_display=$($identity "$profile" display-name)
 codesign --verify --strict "$bundle"
 
 details=$(codesign -dvv "$bundle" 2>&1)
@@ -37,5 +47,40 @@ if [ "$application_id" != "$expected_id" ]; then
 fi
 if [ "$keychain_group" != "$expected_id" ]; then
     echo "host app has wrong Keychain access group (got ${keychain_group:-none})" >&2
+    exit 70
+fi
+
+info="$bundle/Contents/Info.plist"
+actual_bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info")
+actual_display=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$info")
+local_network=$(/usr/libexec/PlistBuddy \
+    -c 'Print :NSLocalNetworkUsageDescription' "$info" 2>/dev/null || true)
+
+if [ "$actual_bundle" != "$expected_bundle" ]; then
+    echo "host app plist has wrong bundle identifier (got $actual_bundle)" >&2
+    exit 70
+fi
+if [ "$actual_display" != "$expected_display" ]; then
+    echo "host app plist has wrong display name (got $actual_display)" >&2
+    exit 70
+fi
+if [ -z "$local_network" ]; then
+    echo "host app lacks NSLocalNetworkUsageDescription" >&2
+    exit 70
+fi
+bonjour=$(/usr/libexec/PlistBuddy \
+    -c 'Print :NSBonjourServices:0' "$info" 2>/dev/null || true)
+if [ "$bonjour" != _newoldworld._tcp ]; then
+    echo "host app lacks the app-owned Bonjour permission prompt service " \
+         "(got ${bonjour:-none})" >&2
+    exit 70
+fi
+
+executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$info")
+uuid_count=$(dwarfdump --uuid "$bundle/Contents/MacOS/$executable" \
+    2>/dev/null | wc -l | tr -d ' ')
+if [ "$uuid_count" -ne 1 ]; then
+    echo "host main executable must carry exactly one UUID for Local Network " \
+         "privacy tracking (got $uuid_count)" >&2
     exit 70
 fi

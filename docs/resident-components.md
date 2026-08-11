@@ -413,6 +413,46 @@ gets at least one deliberate boot before "verified" is claimed.
   *Emulator-verified.* See docs/open-issues.md for what was watched and
   what remains unwatched on metal.
 
+- **P9 — Continuity** (2026-08-09): an optional raw pointer lane layered
+  over Mirror. The PPC application owns Open Transport and the fixed-size
+  UDP decoder; the resident owns the 60 Hz writer, mouse state, and release.
+
+  Authority is granted only by `continuity.arm` on the existing TCP
+  conversation. UDP carries the matching nonce and epoch but cannot mint
+  either. TCP and UDP use the same numeric port in separate protocol
+  namespaces, including separate QEMU forwards. The notifier is bounded to
+  eight preallocated datagrams per event and publishes one latest-state cell;
+  JSON, policy, allocation, and UI remain outside the resident.
+
+  P9 and P7 share one explicit input owner. More importantly, P9 does not
+  suppress the guest pointing device: it samples driver-published `RawMouse`
+  movement and `CursorData.buttonCount`, treating any unexpected change as an
+  immediate local takeover. It does not use manager-owned `CursorData.where`,
+  which changes while the manager settles its own absolute move. A held button
+  is lifted before ownership is released. Lease expiry supplies the same
+  guarantee when no side can speak.
+  This is P8's “a resident that competes with a person must lose” rule made
+  into ownership rather than courtesy.
+
+  *Quarantined on `main` after six PowerBook wedges.* Resident 1.14's extension-owned
+  Cursor Device passed PMU and CUDA emulator campaigns and completed one
+  bounded PowerBook move/takeover, but sustained 30 Hz movement then wedged the
+  machine system-wide. Its route still combined interrupt-time
+  `CursorDeviceMoveTo` with an application-pump `HideCursor`/`ShowCursor`
+  redraw. Resident 1.16 removed those contexts, but its generic PPC-to-68K
+  entry still reached raw resident CDM dispatch and caused the sixth wedge.
+  Branch resident 1.17 / Continuity V3 instead leaves arbitration and a fixed
+  trace ring in the Extension while the cooperative PPC app owns and moves the
+  device through the corrected AADB/`CallUniversalProc` fallback disassembled
+  from Apple's required `CursorDevicesGlue`. The final Carbon PEF is guarded
+  against the load-time InterfaceLib import that made it unload before
+  `main`. The resident publishes a request and commits only the matching PPC
+  result; it owns no P9 device and performs no P9 manager call. This
+  replacement is not yet fully emulator- or metal-qualified; the shared oracle
+  is unchanged.
+  [continuity-mode.md](continuity-mode.md) is the operating contract and
+  evidence boundary.
+
 ## What each plane costs at rest
 
 The charter says a resident component is **always optional — the product

@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# spin-up - build the rig, put it on a guest, COLD-boot it properly, and
+# make the guest prove which build it is running.
+#
+#     scripts/spin-up                 # from the shared base, first time
+#     scripts/spin-up --boot-only     # reuse the baked image, no re-stage
+#
+# EVERY STEP HERE IS A LESSON. In order:
+#
+# 1. AN INIT LOADS AT BOOT ONLY. Staging without a cold boot leaves the
+#    PREVIOUS extension resident and attributes its behaviour to the new
+#    one. This is the most expensive failure on this bench.
+#
+# 2. THE REBOOT IS NOT A QMP `quit`. That is a power cut: it leaves the
+#    HFS volume marked mounted, so every later clone opens Disk First
+#    Aid. Neither is it `system_powerdown` - OS 9 on mac99 ignores ACPI
+#    entirely. Nor is it a menu click: the harness posts mouseDown and
+#    mouseUp together, so MenuSelect's tracking loop sees the button
+#    already up and selects nothing (watched, 2026-08-07).
+#
+#    A classic Mac shuts down from INSIDE. So the rig ships a two-line
+#    68K application that calls the Shutdown Manager, and that is what
+#    reboots the guest - volumes flushed and unmounted on the way out.
+#
+# 3. QEMU THEN NEEDS A RELAUNCH ANYWAY. mac99 does not re-run its boot
+#    after the guest resets itself: the screen sits at "Guest has not
+#    initialized the display (yet)" and `system_reset` does not rescue
+#    it. So the emulator IS quit here - but only AFTER the OS has shut
+#    itself down cleanly, which is the difference between turning off a
+#    machine that is already off and pulling the plug on a live one.
+#    Proof it worked: OS 9 does not announce an improper shutdown on the
+#    way back up, and this script says so.
+#
+# 4. THE SPIKE OWNS ITS OWN IMAGE. The staged disk is copied to the
+#    spike's private stage image and runs boot from clones of THAT - the
+#    shared base is never written, and no other session's staged image
+#    is depended on (theirs carry residents that would collide with this
+#    one, and CursorRig refuses to install beside them).
+#
+# 5. THE GUEST IS THE ORACLE. It reports the build identity compiled
+#    into the resident, and the run refuses to start unless it matches
+#    the binary just staged.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LAB="$HERE"
+while [ "$LAB" != / ] && [ ! -f "$LAB/tools/lib.sh" ]; do LAB="$(dirname "$LAB")"; done
+[ -f "$LAB/tools/lib.sh" ] || { echo "no lab checkout above $HERE"; exit 1; }
+
+INSTANCE="${RIG_INSTANCE:-7}"
+ANCHOR=$((1400 + INSTANCE))
+UDP="${RIG_UDP_PORT:-17400}"
+STAGE="${RIG_STAGE_IMAGE:-$HOME/Lab/Assets/os91-qemu/agent-stage/cursor-rig-stage.qcow2}"
+BASE="${RIG_BASE_IMAGE:-$HOME/Lab/Assets/os91-qemu/os91-runner.qcow2}"
+RUN="$LAB/run/i-$INSTANCE"
+OUT="${TMPDIR:-/tmp}/cursor-rig-builds"
+
+say () { printf '\n== %s ==\n' "$*"; }
+
+# --- 1. build ---------------------------------------------------------
+say "build"
+"$HERE/scripts/build"
+
+INIT_BIN="$OUT/init/CursorRig.bin"
+APP_BIN="$OUT/app/CursorRigIntake.bin"
+LOAD_BIN="$OUT/starver/CursorRigStarver.bin"
+RESTART_BIN="$OUT/restarter/RigRestart.bin"
+
+# --- 2. a guest to stage onto -----------------------------------------
+# STAGE ONTO A CLONE OF THE PRISTINE BASE, ALWAYS - never onto the
+# previous stage image. Learned the expensive way: a build whose INIT
+# crashed the Finder made the NEXT cycle unrunnable, because the
+# Shutdown Manager cannot shut down a machine whose Finder has quit, so
+# the clean reboot failed and the only way out was a dirty quit that
+# then broke LaunchApplication (-199) on the salvaged disk. One bad
+# build should cost one cycle, not the bench.
+#
+# The stage image is therefore an OUTPUT of this script and never an
+# input to it: `--boot-only` reuses it to get a guest up fast without
+# re-staging, and that is the only thing that reads it.
+FROM="$BASE"
+if [ "${1:-}" = "--boot-only" ]; then
+    [ -f "$STAGE" ] || { echo "no stage image yet; run without --boot-only"; exit 1; }
+    FROM="$STAGE"
+fi
+say "boot a clone of $(basename "$FROM")"
+"$LAB/tools/stop" --instance "$INSTANCE" >/dev/null 2>&1 || true
+TBT_EXTRA_HOSTFWD="hostfwd=udp:127.0.0.1:${UDP}-:${UDP}" \
+    "$LAB/tools/launch" --instance "$INSTANCE" --headless --from "$FROM" | tail -2
+
+wait_anchor () {
+    python3 - "$LAB" "$ANCHOR" "${1:-330}" <<'PY'
+import sys, time
+lab, port, limit = sys.argv[1], int(sys.argv[2]), float(sys.argv[3])
+sys.path.insert(0, f"{lab}/mcp-classic")
+from timbottu_mcp_classic.harness import Harness
+t0 = time.time()
+while time.time() - t0 < limit:
+    try:
+        Harness(host="127.0.0.1", port=port,
+                expect_backing={"worker"}).request("hello", {})
+        print(f"  anchor ready ({int(time.time()-t0)}s)")
+        sys.exit(0)
+    except Exception:
+        pass
+    time.sleep(5)
+sys.exit("anchor never answered")
+PY
+}
+wait_anchor
+
+# --- 3. stage ---------------------------------------------------------
+if [ "${1:-}" = "--boot-only" ]; then
+    say "boot-only: skipping stage and the cold cycle"
+    python3 "$HERE/host/rigdrive.py" --port "$UDP" status || true
+    exit 0
+fi
+say "stage"
+RIG_ANCHOR_PORT="$ANCHOR" RIG_INIT_BIN="$INIT_BIN" RIG_APP_BIN="$APP_BIN" \
+    RIG_LOAD_BIN="$LOAD_BIN" RIG_RESTART_BIN="$RESTART_BIN" \
+    python3 "$HERE/host/stage.py"
+
+# --- 4. the cold cycle ------------------------------------------------
+say "shut the OS down from inside (Shutdown Manager), then relaunch"
+python3 - "$LAB" "$ANCHOR" <<'PY'
+import sys
+lab, port = sys.argv[1], int(sys.argv[2])
+sys.path.insert(0, f"{lab}/mcp-classic")
+from timbottu_mcp_classic.harness import Harness
+h = Harness(host="127.0.0.1", port=port, expect_backing={"worker"})
+h.request("launch",
+          {"path": "Macintosh HD:TimBotTu:cursor-rig:CursorRig Restart"})
+print("  asked the Shutdown Manager to restart")
+PY
+
+# Wait for the machine to actually go down. The anchor going silent is
+# the signal; polling it is free and the guest is doing nothing else.
+python3 - "$LAB" "$ANCHOR" <<'PY'
+import sys, time
+lab, port = sys.argv[1], int(sys.argv[2])
+sys.path.insert(0, f"{lab}/mcp-classic")
+from timbottu_mcp_classic.harness import Harness
+# CONSECUTIVE failures, not the first one. A single dropped socket is
+# not a machine going down - watched here: the agent's connection
+# dropped the instant the restart was requested, this loop called it
+# "went down (0s)", and the guest was still sitting on the desktop 25
+# seconds later with everything running. Believing that would have
+# baked a stage image from a LIVE volume, which is precisely the dirty
+# disk this whole path exists to avoid.
+t0 = time.time()
+misses = 0
+while time.time() - t0 < 150:
+    try:
+        Harness(host="127.0.0.1", port=port,
+                expect_backing={"worker"}).request("hello", {})
+        misses = 0
+    except Exception:
+        misses += 1
+        if misses >= 4:
+            print(f"  the guest went down ({int(time.time()-t0)}s)")
+            sys.exit(0)
+    time.sleep(3)
+sys.exit("the guest never shut down. Do NOT quit it blind - look at the "
+         "screen first (tools/qmp <sock> screendump). The known cause is a "
+         "CRASHED FINDER: the Shutdown Manager cannot shut down a machine "
+         "whose Finder has quit, and a Finder that quits at boot is very "
+         "probably this rig's INIT faulting inside the first process to "
+         "pump events.")
+PY
+# Give the Shutdown Manager time to finish flushing after the agent dies.
+python3 -c "import time; time.sleep(12)"
+
+say "bake the spike's own stage image"
+DISK="$RUN/overlay.qcow2"
+[ -f "$DISK" ] || DISK="$RUN/session.qcow2"
+mkdir -p "$(dirname "$STAGE")"
+cp -c "$DISK" "$STAGE" 2>/dev/null || cp "$DISK" "$STAGE"
+"$LAB/qemu/build/qemu-img" check "$STAGE" | tail -2
+"$LAB/tools/stop" --instance "$INSTANCE" >/dev/null 2>&1 || true
+
+say "boot the baked image"
+TBT_EXTRA_HOSTFWD="hostfwd=udp:127.0.0.1:${UDP}-:${UDP}" \
+    "$LAB/tools/launch" --instance "$INSTANCE" --headless --from "$STAGE" | tail -1
+wait_anchor
+
+# --- 5. did it come up clean, and is the rig the build we staged? -----
+say "did the volume come up clean?"
+python3 "$HERE/host/check_clean_boot.py" --port "$ANCHOR" || true
+
+say "launch the intake and the starver"
+python3 - "$LAB" "$ANCHOR" <<'PY'
+import sys, time
+lab, port = sys.argv[1], int(sys.argv[2])
+sys.path.insert(0, f"{lab}/mcp-classic")
+from timbottu_mcp_classic.harness import Harness
+h = Harness(host="127.0.0.1", port=port, expect_backing={"worker"})
+for app in ("CursorRig Intake", "CursorRig Starver"):
+    h.request("launch", {"path": f"Macintosh HD:TimBotTu:cursor-rig:{app}"})
+    print(f"  launched {app}")
+    time.sleep(3)
+PY
+
+say "the guest's own account of which build it is running"
+python3 "$HERE/host/rigdrive.py" --port "$UDP" \
+    --require-init "$INIT_BIN" --require-app "$APP_BIN" status
+
+echo
+echo "ready.  anchor=127.0.0.1:$ANCHOR  rig=udp/$UDP  stage=$STAGE"
+echo "run:    host/rigdrive.py --port $UDP battery --outdir runs"

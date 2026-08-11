@@ -24,7 +24,7 @@ final class OnboardingAssetCatalogTests: XCTestCase {
         try Data("codekitten".utf8).write(to: bundled
             .appendingPathComponent("codekitten.bin"))
         try Data("extension".utf8).write(to: bundled
-            .appendingPathComponent("NowExt.bin"))
+            .appendingPathComponent("NOW Extension.bin"))
         try Data("carbon-user".utf8).write(to: writable
             .appendingPathComponent("Dependencies/CarbonLib 1.6.smi.bin"))
         try Data("carbon-bundle".utf8).write(to: bundled
@@ -40,10 +40,25 @@ final class OnboardingAssetCatalogTests: XCTestCase {
             snapshot.application?.fileURL)), Data("user-app".utf8))
         XCTAssertEqual(snapshot.codeKitten?.fileName, "CodeKitten.bin")
         XCTAssertEqual(snapshot.codeKitten?.kind, .codeKitten)
-        XCTAssertEqual(snapshot.extensionComponent?.fileName, "NowExt.bin")
+        XCTAssertEqual(snapshot.extensionComponent?.fileName,
+                       "NOW Extension.bin")
         XCTAssertEqual(snapshot.dependencies.map(\.fileName),
                        ["CarbonLib 1.6.smi.bin", "StuffIt Expander.bin"])
         XCTAssertTrue(snapshot.hasCarbonLib)
+    }
+
+    func testLegacyAbbreviatedExtensionNameIsNotAPackageAsset() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try makeDirectory(temporary)
+        try Data("legacy-extension".utf8).write(to: temporary
+            .appendingPathComponent("NowExt.bin"))
+
+        let catalog = OnboardingAssetCatalog(
+            roots: [temporary], writableRoot: temporary)
+
+        XCTAssertNil(catalog.snapshot().extensionComponent)
     }
 
     func testPreparingTheOperatorStoreAlsoCreatesDependenciesFolder()

@@ -2,13 +2,35 @@
 set -eu
 
 signing=developer
-if [ "${1:-}" = "--adhoc" ]; then
-    signing=adhoc
-    shift
-fi
+profile=canonical
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --adhoc) signing=adhoc; shift ;;
+        --profile)
+            [ "$#" -ge 2 ] || {
+                echo "--profile requires canonical or continuity" >&2
+                exit 64
+            }
+            profile=$2
+            shift 2
+            ;;
+        --) shift; break ;;
+        -*) echo "unknown option: $1" >&2; exit 64 ;;
+        *) break ;;
+    esac
+done
 
 if [ "$#" -ne 1 ]; then
-    echo "usage: $0 [--adhoc] /absolute/output/directory" >&2
+    echo "usage: $0 [--adhoc] [--profile canonical|continuity] /absolute/output/directory" >&2
+    exit 64
+fi
+
+# These used to let every candidate mint a new macOS privacy identity. Refuse
+# them even when their value happens to match: the supported choice is a
+# named, reviewed profile whose Team ID and plist are verified after signing.
+if [ "${NOW_HOST_BUNDLE_IDENTIFIER+x}" = x ] \
+        || [ "${NOW_HOST_DISPLAY_NAME+x}" = x ]; then
+    echo "NOW_HOST_BUNDLE_IDENTIFIER/NOW_HOST_DISPLAY_NAME are unsupported; use --profile canonical|continuity" >&2
     exit 64
 fi
 
@@ -50,7 +72,15 @@ case "$output_root/" in
 esac
 mkdir -p "$output_root"
 
-bundle="$output_root/New Old World.app"
+if [ "$signing" = developer ] && [ "$profile" = continuity ]; then
+    "$repo_root/tools/host-handoff-path" "$output_root"
+fi
+
+identity="$repo_root/tools/host-build-identity"
+bundle_identifier=$($identity "$profile" bundle-id)
+display_name=$($identity "$profile" display-name)
+bundle_name=$($identity "$profile" bundle-name)
+bundle="$output_root/$bundle_name"
 
 if [ "$signing" = developer ]; then
     rm -rf "$bundle"
@@ -62,8 +92,11 @@ if [ "$signing" = developer ]; then
         -allowProvisioningUpdates \
         DEVELOPMENT_TEAM=B93A9CG7F9 \
         CONFIGURATION_BUILD_DIR="$output_root" \
+        PRODUCT_BUNDLE_IDENTIFIER="$bundle_identifier" \
+        NOW_PRODUCT_NAME="$display_name" \
+        NOW_DISPLAY_NAME="$display_name" \
         build
-    "$script_dir/verify-host-signature" "$bundle"
+    "$script_dir/verify-host-signature" --profile "$profile" "$bundle"
 else
     scratch="$output_root/swift-build"
     binary="$scratch/debug/Host"
@@ -91,8 +124,8 @@ else
     fi
 
     sed \
-        -e 's/@DISPLAY_NAME@/New Old World/g' \
-        -e 's/@BUNDLE_ID@/dev.newoldworld.now/g' \
+        -e "s/@DISPLAY_NAME@/$display_name/g" \
+        -e "s/@BUNDLE_ID@/$bundle_identifier/g" \
         "$script_dir/HostInfo.plist.in" > "$bundle/Contents/Info.plist"
     codesign --force --sign - "$bundle"
 fi

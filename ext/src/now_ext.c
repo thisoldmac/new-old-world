@@ -29,6 +29,7 @@
  */
 
 #include <Gestalt.h>
+#include <Events.h>
 #include <LowMem.h>
 #include <MacMemory.h>
 #include <OSUtils.h>
@@ -71,6 +72,10 @@ extern void now_ext_drag_abandon(NowPeekTable *table);
 extern int now_ext_cursor_boot(NowPeekTable *table);
 extern void now_ext_cursor_rollback(NowPeekTable *table);
 extern void now_ext_cursor_gne(NowPeekTable *table);
+/* P9 consumes the application's latest-state mailbox only when the PPC
+   application's cooperative wire pump enters its resident service. */
+extern int now_ext_continuity_boot(NowPeekTable *table);
+extern void now_ext_continuity_rollback(NowPeekTable *table);
 
 /* The content plane (now_content.c), P3. Two entry points rather than
    P4's one, and the split is the plane's own: boot allocates and
@@ -471,6 +476,8 @@ INSTALL_STAGE(content, now_content_boot, now_content_rollback)
 INSTALL_STAGE(event, now_event_boot, now_event_rollback)
 INSTALL_STAGE(drag, now_ext_drag_boot, now_ext_drag_rollback)
 INSTALL_STAGE(cursor, now_ext_cursor_boot, now_ext_cursor_rollback)
+INSTALL_STAGE(continuity, now_ext_continuity_boot,
+              now_ext_continuity_rollback)
 INSTALL_STAGE(liveness, now_liveness_install, now_liveness_rollback)
 
 static int install_publish(void *opaque, NowPeekTable *table)
@@ -532,6 +539,8 @@ void _start(void)
     ops.rollback_drag = rollback_drag;
     ops.prepare_cursor = install_cursor;
     ops.rollback_cursor = rollback_cursor;
+    ops.prepare_continuity = install_continuity;
+    ops.rollback_continuity = rollback_continuity;
     ops.prepare_liveness = install_liveness;
     ops.rollback_liveness = rollback_liveness;
     ops.publish = install_publish;

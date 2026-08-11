@@ -11,6 +11,7 @@ enum {
     kFailEvent,
     kFailDrag,
     kFailCursor,
+    kFailContinuity,
     kFailLiveness,
     kFailPublish,
     kSucceed
@@ -19,7 +20,7 @@ enum {
 typedef struct Fixture {
     int fail_at;
     int live_table;
-    int live[5];
+    int live[6];
     int published;
     char rollback[16];
     int rollback_len;
@@ -63,7 +64,8 @@ STAGE(content, 0, kFailContent, 'c')
 STAGE(event, 1, kFailEvent, 'e')
 STAGE(drag, 2, kFailDrag, 'd')
 STAGE(cursor, 3, kFailCursor, 'u')
-STAGE(liveness, 4, kFailLiveness, 'l')
+STAGE(continuity, 4, kFailContinuity, 'n')
+STAGE(liveness, 5, kFailLiveness, 'l')
 
 static int publish(void *opaque, NowPeekTable *table)
 {
@@ -89,6 +91,8 @@ static NowExtInstallOps ops_for(Fixture *f)
     ops.rollback_drag = rollback_drag;
     ops.prepare_cursor = prepare_cursor;
     ops.rollback_cursor = rollback_cursor;
+    ops.prepare_continuity = prepare_continuity;
+    ops.rollback_continuity = rollback_continuity;
     ops.prepare_liveness = prepare_liveness;
     ops.rollback_liveness = rollback_liveness;
     ops.publish = publish;
@@ -106,7 +110,7 @@ static void assert_failed_stage(int fail_at, const char *rollback_order)
     assert(now_ext_install_transaction(&ops) == NULL);
     assert(!f.live_table);
     assert(!f.published);
-    for (i = 0; i < 5; ++i) assert(!f.live[i]);
+    for (i = 0; i < 6; ++i) assert(!f.live[i]);
     assert(strcmp(f.rollback, rollback_order) == 0);
 }
 
@@ -122,8 +126,9 @@ int main(void)
     assert_failed_stage(kFailEvent, "ec");
     assert_failed_stage(kFailDrag, "dec");
     assert_failed_stage(kFailCursor, "udec");
-    assert_failed_stage(kFailLiveness, "ludec");
-    assert_failed_stage(kFailPublish, "ludec");
+    assert_failed_stage(kFailContinuity, "nudec");
+    assert_failed_stage(kFailLiveness, "lnudec");
+    assert_failed_stage(kFailPublish, "lnudec");
 
     memset(&success, 0, sizeof success);
     success.fail_at = kSucceed;
@@ -131,7 +136,7 @@ int main(void)
     table = now_ext_install_transaction(&ops);
     assert(table != NULL);
     assert(success.live_table && success.published);
-    for (i = 0; i < 5; ++i) assert(success.live[i]);
+    for (i = 0; i < 6; ++i) assert(success.live[i]);
     assert(success.rollback_len == 0);
     free(table);
     puts("now_ext_install_test ok");

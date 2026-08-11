@@ -186,6 +186,12 @@ extension_feature_coverage:
     extension_required: true
     status: Experimental and emulator-verified; physical mouse movement takes priority.
     capability_ids: [cursor]
+  - id: continuity-input
+    title: Mirror the host pointer and primary button into the guest
+    without_extension: Not available.
+    extension_required: true
+    status: Quarantined after two PowerBook 1400c wedges; current resident builds withhold the capability pending task-time-only hardening and new metal evidence.
+    capability_ids: [continuity]
 
 extension_capabilities:
   - id: discovery
@@ -242,3 +248,9 @@ extension_capabilities:
     symbols: [kNowPeekTableCapCursor]
     exposes: A drawn cursor that follows remote actions while yielding after physical mouse movement.
     posture: Emulator-verified; absence affects cursor presentation, not the underlying action.
+  - id: continuity
+    plane: P9
+    title: Mirror Continuity input
+    symbols: [kNowPeekTableCapContinuity]
+    exposes: TCP-authorized, fixed-size UDP latest-state input for pointer movement, primary clicks, and drags.
+    posture: Quarantined; the resident deliberately withholds this capability until the timer path contains no manager calls and the replacement earns fresh hardware evidence.

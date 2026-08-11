@@ -82,7 +82,7 @@ struct OnboardingAssetCatalog {
                 named: ["CodeKitten.bin", "codekitten.bin"],
                 kind: .codeKitten),
             extensionComponent: firstAsset(
-                named: ["NOW Extension.bin", "NowExt.bin"],
+                named: ["NOW Extension.bin"],
                 kind: .extensionComponent),
             dependencies: dependencyAssets())
     }

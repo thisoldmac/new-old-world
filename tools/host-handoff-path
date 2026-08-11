@@ -1,0 +1,25 @@
+#!/bin/sh
+# A Local Network privacy candidate must be an installed application, not a
+# bundle Launch Services marks in-temp-dir. neagent ignores that registration
+# and caches zero executable UUIDs, so no privacy row or prompt can exist.
+set -eu
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: $0 /absolute/output/directory" >&2
+    exit 64
+fi
+
+case "$1" in
+    /*) ;;
+    *) echo "host handoff directory must be absolute" >&2; exit 64 ;;
+esac
+
+case "$1/" in
+    /tmp/|/tmp/*|/private/tmp/|/private/tmp/*|\
+    /var/folders/*/T/|/var/folders/*/T/*|\
+    /private/var/folders/*/T/|/private/var/folders/*/T/*)
+        echo "Continuity handoff cannot live in a temporary directory; " \
+             "build it into a stable location such as \$HOME/Applications" >&2
+        exit 65
+        ;;
+esac

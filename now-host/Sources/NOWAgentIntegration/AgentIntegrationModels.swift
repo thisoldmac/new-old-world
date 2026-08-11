@@ -160,6 +160,26 @@ extension AgentIntegrationSessionHealthResult: Codable {
     }
 }
 
+public struct AgentIntegrationHostIssue: Codable, Equatable, Sendable {
+    public enum Severity: String, Codable, Equatable, Sendable {
+        case warning
+        case error
+    }
+
+    public let code: String
+    public let severity: Severity
+    public let message: String
+    public let processIDs: [Int32]
+
+    public init(code: String, severity: Severity, message: String,
+                processIDs: [Int32] = []) {
+        self.code = code
+        self.severity = severity
+        self.message = message
+        self.processIDs = processIDs
+    }
+}
+
 public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
     public struct Compatibility: Codable, Equatable, Sendable {
         public let hostBuild: String
@@ -248,14 +268,19 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
     /// the active one had no way to discover the id it needs to address
     /// another — and no way to know the others were there at all.
     public let roster: [AgentIntegrationGuestReference]
+    /// Host-local conditions that can make the process reached by MCP differ
+    /// from the application a person is looking at.
+    public let issues: [AgentIntegrationHostIssue]
     public let failure: String?
     public let compatibility: Compatibility?
 
     public init(state: State, observedAt: Date, listeningPort: UInt16?,
                 sessionID: UUID?, guest: Guest?,
                 roster: [AgentIntegrationGuestReference] = [],
+                issues: [AgentIntegrationHostIssue] = [],
                 failure: String?, compatibility: Compatibility? = nil) {
         self.roster = roster
+        self.issues = issues
         self.state = state
         self.observedAt = observedAt
         self.listeningPort = listeningPort
@@ -263,6 +288,28 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
         self.guest = guest
         self.failure = failure
         self.compatibility = compatibility
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case state, observedAt, listeningPort, sessionID, guest, roster
+        case issues, failure, compatibility
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        state = try container.decode(State.self, forKey: .state)
+        observedAt = try container.decode(Date.self, forKey: .observedAt)
+        listeningPort = try container.decodeIfPresent(
+            UInt16.self, forKey: .listeningPort)
+        sessionID = try container.decodeIfPresent(UUID.self, forKey: .sessionID)
+        guest = try container.decodeIfPresent(Guest.self, forKey: .guest)
+        roster = try container.decodeIfPresent(
+            [AgentIntegrationGuestReference].self, forKey: .roster) ?? []
+        issues = try container.decodeIfPresent(
+            [AgentIntegrationHostIssue].self, forKey: .issues) ?? []
+        failure = try container.decodeIfPresent(String.self, forKey: .failure)
+        compatibility = try container.decodeIfPresent(
+            Compatibility.self, forKey: .compatibility)
     }
 }
 

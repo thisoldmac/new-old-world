@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "confirm.h"
+#include "continuity_intake.h"
 #include "nowlog.h"
 #include "fileshare.h"
 #include "product_identity.h"
@@ -616,6 +617,7 @@ int main(void)
     now_log(kLogInfo, "app", "quit: closing connection");
     now_log_flush();
     conn_shutdown();
+    now_continuity_shutdown();
 
     now_log(kLogInfo, "app", "quit: stopping pump");
     now_log_flush();

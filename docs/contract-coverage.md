@@ -1352,11 +1352,11 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: d1cea41b5925b03bdf6b4769fc023ef273c1f8e8
-derive ppc-inbound-types sha256=29ff3abf372ea8de2e8cd4b487efb7dcb7b9fa03d5e20959f10c127320146842 lines=50 published
+sources-sha1: 412b6df4910cb44405b206b4a8da4467a38ca2f3
+derive ppc-inbound-types sha256=70184f879d1f371f59646737ffce6b468c0bb20c337172a78ff612a4fa6efbbc lines=52 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
-derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
+derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
 derive x-commands-registry sha256=84fd10914e2ab1a2301c3273ca1a3654ff7440e908d2c2e15753ded767a0d153 lines=56 published
@@ -1449,4 +1449,7 @@ rederived: 2026-08-11T04:04:47-0400 edc4294 unchanged
 rederived: 2026-08-11T04:18:28-0400 c830686 unchanged
 rederived: 2026-08-11T13:21:46-0400 181ba5a unchanged
 rederived: 2026-08-11T13:23:42-0400 181ba5a unchanged
+rederived: 2026-08-11T18:31:44-0400 1e25306c sources, ppc-inbound-types 50->52
+rederived: 2026-08-11T18:32:07-0400 1e25306c unchanged
+rederived: 2026-08-11T18:35:07-0400 66eedfc unchanged
 -->

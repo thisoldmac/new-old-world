@@ -4,7 +4,7 @@ booted emulator guest, through the lab's baked anchor worker.
 
     NOW_ANCHOR_PORT=1702 tools/stage-ext.py
 
-    NowExt.bin       -> Macintosh HD:System Folder:Extensions:NOW Extension
+    NOW Extension.bin -> Macintosh HD:System Folder:Extensions:NOW Extension
     the app          -> Macintosh HD:TimBotTu:now-dev:New Old World
     NowShutDown.bin  -> Macintosh HD:TimBotTu:now-dev:NOW Shut Down
 
@@ -98,7 +98,7 @@ SHUTDOWN_BIN = os.environ.get("NOW_SHUTDOWN_BIN")  # optional (rig instrument)
 
 if not EXT_BIN or not os.path.isfile(EXT_BIN):
     raise SystemExit(
-        "stage-ext: set NOW_EXT_BIN to the built NowExt.bin "
+        "stage-ext: set NOW_EXT_BIN to the built NOW Extension.bin "
         "(scripts/build-guests 68k builds it)")
 
 h = Harness(host="127.0.0.1", port=ANCHOR_PORT, expect_backing={"worker"})

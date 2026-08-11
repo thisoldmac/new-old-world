@@ -91,6 +91,9 @@ enum ControlMessage: Equatable, Sendable {
     case previewEnd(PreviewEnd)
     case hostShow(HostShow)
     case hostShown(HostShown)
+    case continuityArm(ContinuityArm)
+    case continuityReport(ContinuityReport)
+    case continuityDisarm(ContinuityDisarm)
     case mirrorInvalidate(MirrorInvalidate)
     case updateOffer(UpdateOffer)
     case updateRequest(UpdateRequest)
@@ -158,6 +161,52 @@ struct HostShown: Codable, Equatable, Sendable {
     var ok: Bool
     var code: String?
     var reason: String?
+}
+
+// MARK: - Continuity session ownership
+
+enum ContinuityContract {
+    static let version = Int(ContinuityStateDatagram.version)
+}
+
+/// Reliable authority for the lossy UDP lane. A datagram with these values
+/// is still only state; it cannot create this arm for itself.
+struct ContinuityArm: Codable, Equatable, Sendable {
+    var version: Int
+    var id: Int
+    var nonceHi: UInt32
+    var nonceLo: UInt32
+    var epoch: UInt32
+    var requestedHz: Int
+    var leaseTicks: Int
+}
+
+struct ContinuityDisarm: Codable, Equatable, Sendable {
+    var version: Int
+    var id: Int
+    var epoch: UInt32
+    var reason: String
+}
+
+/// An arm/disarm answer when `id` is present; an unsolicited local-takeover
+/// report when it is absent.
+struct ContinuityReport: Codable, Equatable, Sendable {
+    /* Optional only at the decoder boundary: an older guest's missing value
+       must become an explicit wrong-version status, not an unreadable frame
+       followed by the same five-second timeout as packet loss. Every message
+       this build emits includes version 1. */
+    var version: Int?
+    var id: Int?
+    var epoch: UInt32
+    var state: String
+    var acceptedHz: Int?
+    var udpPort: Int?
+    var reason: String?
+    var acceptedPackets: Int?
+    var stalePackets: Int?
+    var malformedPackets: Int?
+    var appliedPositionSequence: UInt32?
+    var appliedButtonGeneration: UInt32?
 }
 
 /// An additive hint from the peer that serves scene state. It names what
@@ -1577,6 +1626,15 @@ enum ControlMessageCodec {
             return .hostShow(try decoder.decode(HostShow.self, from: data))
         case "host.shown":
             return .hostShown(try decoder.decode(HostShown.self, from: data))
+        case "continuity.arm":
+            return .continuityArm(
+                try decoder.decode(ContinuityArm.self, from: data))
+        case "continuity.report":
+            return .continuityReport(
+                try decoder.decode(ContinuityReport.self, from: data))
+        case "continuity.disarm":
+            return .continuityDisarm(
+                try decoder.decode(ContinuityDisarm.self, from: data))
         case "mirror.invalidate":
             return .mirrorInvalidate(
                 try decoder.decode(MirrorInvalidate.self, from: data))
@@ -1726,6 +1784,11 @@ enum ControlMessageCodec {
         case .previewEnd(let m): return try tagged("preview.end", m)
         case .hostShow(let m): return try tagged("host.show", m)
         case .hostShown(let m): return try tagged("host.shown", m)
+        case .continuityArm(let m): return try tagged("continuity.arm", m)
+        case .continuityReport(let m):
+            return try tagged("continuity.report", m)
+        case .continuityDisarm(let m):
+            return try tagged("continuity.disarm", m)
         case .mirrorInvalidate(let m):
             return try tagged("mirror.invalidate", m)
         case .streamRequest(let m): return try tagged("stream.request", m)

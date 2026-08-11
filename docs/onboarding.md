@@ -97,7 +97,7 @@ names are:
 |---|---|
 | `New Old World.bin` | canonical PPC MacBinary; required |
 | `CodeKitten.bin` or `codekitten.bin` | optional standalone IDE, normalized to `CodeKitten.bin` and installed at the setup-volume root |
-| `NowExt.bin` or `NOW Extension.bin` | optional resident |
+| `NOW Extension.bin` | optional resident |
 | `Dependencies/CarbonLib.bin` | optional host-prepared native CarbonLib; avoids archive extraction at image-build time |
 | `Dependencies/CarbonLib_161.sit.bin` | checksum-verified CarbonLib StuffIt archive in a MacBinary envelope |
 | `Dependencies/*` | other operator-provided dependencies, each listed separately and served as supplied |
