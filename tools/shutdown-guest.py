@@ -594,7 +594,8 @@ def quit_front_application(h):
     print(f"  [warn] {name} is still front; shutting down over it")
 
 
-def open_anchor_for_applet(port, applet, attempts=3, pause=time.sleep):
+def open_anchor_for_applet(port, applet, attempts=3, pause=time.sleep,
+                           harness_type=None):
     """Open the anchor and prove the staged applet exists.
 
     The classic worker closes one connection before accepting the next. On a
@@ -603,11 +604,13 @@ def open_anchor_for_applet(port, applet, attempts=3, pause=time.sleep):
     narrow preflight rather than misreporting a live VM as having no graceful
     shutdown route.
     """
+    if harness_type is None:
+        harness_type, _ = harness_types()
     last_error = None
     for attempt in range(attempts):
         try:
-            harness = Harness(host="127.0.0.1", port=port,
-                              expect_backing={"worker"})
+            harness = harness_type(host="127.0.0.1", port=port,
+                                   expect_backing={"worker"})
             return harness, harness.request("stat", {"path": applet})
         except Exception as exc:
             last_error = exc
@@ -723,7 +726,8 @@ def _graceful(a):
     # the least actionable ending this file has ever had.
     Harness, HarnessError = harness_types()
     try:
-        h, st = open_anchor_for_applet(a.port, a.applet)
+        h, st = open_anchor_for_applet(a.port, a.applet,
+                                       harness_type=Harness)
     except Exception as exc:
         print(f"the anchor on port {a.port} did not answer ({exc}), so the "
               f"applet route is closed too", file=sys.stderr)

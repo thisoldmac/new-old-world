@@ -459,13 +459,9 @@ spec.loader.exec_module(mod)
                     raise ConnectionResetError("classic worker handoff")
                 return {"exists": True}
 
-        original = self.mod.Harness
-        self.mod.Harness = ResetOnceHarness
-        try:
-            harness, stat = self.mod.open_anchor_for_applet(
-                15464, "Macintosh HD:NOW Shut Down", pause=lambda _: None)
-        finally:
-            self.mod.Harness = original
+        harness, stat = self.mod.open_anchor_for_applet(
+            15464, "Macintosh HD:NOW Shut Down", pause=lambda _: None,
+            harness_type=ResetOnceHarness)
 
         self.assertIsInstance(harness, ResetOnceHarness)
         self.assertEqual(stat, {"exists": True})
