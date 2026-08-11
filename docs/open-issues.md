@@ -4,6 +4,33 @@ search:
 ---
 # Open issues
 
+## BROKEN: CodeKitten does not launch on supported Mac OS 8.6 plus CarbonLib 1.6 (2026-08-11, `codex/codekitten-os86-support`)
+
+The dedicated SheepShaver minimum-floor oracle clean-booted Mac OS 8.6 after
+the CarbonLib Update 1.6 installer and opened New Old World's Workshop. The
+same profile does not open CodeKitten's initial window, so its required menu
+acceptance is blocked by a product bug. Mac OS 8.6 plus CarbonLib 1.6 remains
+a supported CodeKitten runtime.
+
+The first corrected-floor artifact (`747a81d`) failed because the CFM loader
+could not find standalone fragment `Textension`. The current artifact
+(`5d404f7`, MacBinary SHA-256
+`c4a6f8466f0cb7cc8ba8c4d0b60a62b469ea7bee4fde80ff1877e3a657264a01`)
+instead imports all 32 MLTE symbols from CarbonLib's embedded
+`Textension_CL` fragment, but launch still stops in Finder with `CarbonLib`
+not found. Inspection while the guest was stopped proved that the installed
+data and resource forks exactly match the artifact, the installed system file
+identifies itself as CarbonLib Update 1.6, and every imported symbol assigned
+to the main `CarbonLib` fragment exists there. The remaining failure is
+unresolved CFM dependency/load ownership; it is not evidence that the
+application or updater is stale, and it must not be reclassified as an 8.6
+limitation.
+
+The private bring-up ledger retains the exact capture paths, disk identities,
+fragment inventories, and install receipt. The next diagnosis should inspect
+the embedded `Textension_CL` fragment's own import closure at load time before
+changing another application import library.
+
 ## UNVERIFIED: NOW Web Direct needs Classilla and MacWeb acceptance (2026-08-10, `codex/web-proxy`)
 
 The Direct implementation, host supervision, PowerPC Workshop page, semantic

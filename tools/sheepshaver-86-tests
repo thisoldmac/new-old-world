@@ -49,6 +49,7 @@ run_harness () {
     NOW_SHEEPSHAVER_LSOF="$TMP/lsof" \
     NOW_SHEEPSHAVER_OPEN="$TMP/open" \
     NOW_SHEEPSHAVER_HDIUTIL="$TMP/hdiutil" \
+    NOW_SHEEPSHAVER_INPUT_SETTLE="${NOW_SHEEPSHAVER_INPUT_SETTLE:-0}" \
     NOW_CODEKITTEN_SOURCE="${NOW_CODEKITTEN_SOURCE:-}" \
     NOW_TEST_LOG="$LOG" \
     "$HARNESS" "$@"
@@ -124,6 +125,28 @@ wait "$capture_writer"
 [ "$(cat "$capture")" = BMfixture ] \
     || { echo "FAILED: capture did not publish the emulator response" >&2; exit 1; }
 
+(
+    while [ ! -f "$VM/.now-input-request" ]; do sleep 0.01; done
+    grep -Fx "move 320 200" "$VM/.now-input-request" >/dev/null
+    grep -Fx "down 0" "$VM/.now-input-request" >/dev/null
+    grep -Fx "up 0" "$VM/.now-input-request" >/dev/null
+    mv "$VM/.now-input-request" "$VM/.now-input-processing"
+    printf 'ok actions=3\n' > "$VM/.now-input-response"
+    rm -f "$VM/.now-input-processing"
+) &
+input_responder=$!
+NOW_TEST_LSOF_RESULT=0 run_harness input \
+    "move 320 200" "down 0" "up 0" >/dev/null
+wait "$input_responder"
+
+invalid_input="$(NOW_TEST_LSOF_RESULT=0 run_harness input "move nowhere" 2>&1 || true)"
+printf '%s\n' "$invalid_input" | grep -F "invalid oracle input action" >/dev/null
+
+invalid_settle="$(NOW_TEST_LSOF_RESULT=0 NOW_SHEEPSHAVER_INPUT_SETTLE=soon \
+    run_harness input "move 0 0" 2>&1 || true)"
+printf '%s\n' "$invalid_settle" \
+    | grep -F "NOW_SHEEPSHAVER_INPUT_SETTLE must be a non-negative number" >/dev/null
+
 printf 'boot disk bytes' > "$VM/Mac OS 8.6.hfv"
 run_harness snapshot "post-carbonlib" >/dev/null
 cmp "$VM/Mac OS 8.6.hfv" "$VM/Snapshots/post-carbonlib.hfv"
@@ -179,4 +202,4 @@ NOW_CODEKITTEN_SOURCE="$desk_lane" \
 grep -F "codekitten_revision=$(git -C "$desk_lane" rev-parse HEAD)" \
     "$VM/Installed Apps.rig" >/dev/null
 
-echo "sheepshaver-86: 15 harness behaviors passed"
+echo "sheepshaver-86: 17 harness behaviors passed"

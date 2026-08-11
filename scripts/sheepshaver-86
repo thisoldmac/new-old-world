@@ -11,6 +11,7 @@
 #     scripts/sheepshaver-86 stage path/to/Application.bin
 #     scripts/sheepshaver-86 install-apps path/to/NOW.bin path/to/CodeKitten.bin
 #     scripts/sheepshaver-86 capture path/to/frame.bmp
+#     scripts/sheepshaver-86 input "move 200 120" "down 0" "up 0"
 #     scripts/sheepshaver-86 snapshot clean-name
 #     scripts/sheepshaver-86 rig
 #     scripts/sheepshaver-86 seal version-name
@@ -41,6 +42,7 @@ load_env_lab () {
     local lsof_set="${NOW_SHEEPSHAVER_LSOF+x}" lsof_value="${NOW_SHEEPSHAVER_LSOF:-}"
     local source_set="${NOW_SHEEPSHAVER_SOURCE+x}" source_value="${NOW_SHEEPSHAVER_SOURCE:-}"
     local kitten_set="${NOW_CODEKITTEN_SOURCE+x}" kitten_value="${NOW_CODEKITTEN_SOURCE:-}"
+    local settle_set="${NOW_SHEEPSHAVER_INPUT_SETTLE+x}" settle_value="${NOW_SHEEPSHAVER_INPUT_SETTLE:-}"
 
     set -a; . "$ENV_LAB"; set +a
     [ -z "$app_set" ] || export NOW_SHEEPSHAVER_APP="$app_value"
@@ -53,6 +55,7 @@ load_env_lab () {
     [ -z "$lsof_set" ] || export NOW_SHEEPSHAVER_LSOF="$lsof_value"
     [ -z "$source_set" ] || export NOW_SHEEPSHAVER_SOURCE="$source_value"
     [ -z "$kitten_set" ] || export NOW_CODEKITTEN_SOURCE="$kitten_value"
+    [ -z "$settle_set" ] || export NOW_SHEEPSHAVER_INPUT_SETTLE="$settle_value"
 }
 if [ -f "$ENV_LAB" ]; then
     load_env_lab
@@ -80,6 +83,7 @@ OPEN_TOOL="${NOW_SHEEPSHAVER_OPEN:-open}"
 LSOF_TOOL="${NOW_SHEEPSHAVER_LSOF:-lsof}"
 HDIUTIL_TOOL="${NOW_SHEEPSHAVER_HDIUTIL:-/usr/bin/hdiutil}"
 MACBINARY_TOOL="${NOW_MACBINARY_IDENTITY_TOOL:-$REPO/tools/macbinary-identity.py}"
+INPUT_SETTLE="${NOW_SHEEPSHAVER_INPUT_SETTLE:-1}"
 
 require_file () {
     [ -f "$1" ] || die "missing $2: $1"
@@ -277,6 +281,56 @@ capture () {
     die "framebuffer capture timed out; the configured SheepShaver app lacks the oracle capture seam or is not presenting frames"
 }
 
+oracle_input () {
+    [ "$#" -gt 0 ] \
+        || die 'usage: scripts/sheepshaver-86 input "ACTION" ["ACTION" ...]'
+    if ! disk_is_open "$BOOT_DISK"; then
+        die "the SheepShaver profile is not running"
+    fi
+    [[ "$INPUT_SETTLE" =~ ^([0-9]+)(\.[0-9]+)?$ ]] \
+        || die "NOW_SHEEPSHAVER_INPUT_SETTLE must be a non-negative number of seconds"
+
+    local action
+    for action in "$@"; do
+        if [[ "$action" =~ ^move\ [0-9]+\ [0-9]+$ ]] \
+            || [[ "$action" =~ ^(down|up)\ [0-2]$ ]] \
+            || [[ "$action" =~ ^(keydown|keyup)\ ([0-9]|[1-9][0-9]|1[01][0-9]|12[0-7])$ ]]; then
+            continue
+        fi
+        die "invalid oracle input action: $action"
+    done
+
+    local request="$VM/.now-input-request"
+    local request_temporary="$VM/.now-input-request.tmp"
+    local response="$VM/.now-input-response"
+    [ ! -e "$request" ] && [ ! -e "$request_temporary" ] \
+        || die "an oracle input request is already pending"
+    rm -f "$response"
+    printf '%s\n' "$@" > "$request_temporary"
+    mv "$request_temporary" "$request"
+
+    local attempt result
+    for attempt in $(seq 1 100); do
+        if [ -f "$response" ]; then
+            result="$(cat "$response")"
+            rm -f "$response"
+            case "$result" in
+                ok\ *)
+                    # The renderer receipt proves ADB dispatch, not that the
+                    # cooperative guest event loop has consumed the transition.
+                    sleep "$INPUT_SETTLE"
+                    echo "sheepshaver-86: oracle input completed: $result"
+                    return
+                    ;;
+                *) die "oracle input failed: $result" ;;
+            esac
+        fi
+        sleep 0.05
+    done
+    rm -f "$request" "$request_temporary"
+    die "oracle input timed out; the configured SheepShaver app lacks the oracle input seam or is not presenting frames"
+}
+
 snapshot () {
     [ "$#" -eq 1 ] || die "usage: scripts/sheepshaver-86 snapshot NAME"
     local name="$1"
@@ -366,8 +420,9 @@ case "${1:-}" in
     stage) shift; stage "$@" ;;
     install-apps) shift; install_apps "$@" ;;
     capture) shift; capture "$@" ;;
+    input) shift; oracle_input "$@" ;;
     snapshot) shift; snapshot "$@" ;;
     rig) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 rig"; rig ;;
     seal) shift; seal "$@" ;;
-    *) die "usage: scripts/sheepshaver-86 {doctor|launch|stage APPLICATION.bin|install-apps NOW.bin CODEKITTEN.bin|capture DESTINATION.bmp|snapshot NAME|rig|seal VERSION}" ;;
+    *) die "usage: scripts/sheepshaver-86 {doctor|launch|stage APPLICATION.bin|install-apps NOW.bin CODEKITTEN.bin|capture DESTINATION.bmp|input ACTION...|snapshot NAME|rig|seal VERSION}" ;;
 esac

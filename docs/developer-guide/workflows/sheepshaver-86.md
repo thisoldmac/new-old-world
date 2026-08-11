@@ -100,9 +100,10 @@ scripts/sheepshaver-86 install-apps \
   "path/to/New Old World.bin" "path/to/CodeKitten.bin"
 scripts/sheepshaver-86 launch
 scripts/sheepshaver-86 capture "path/to/evidence/frame.bmp"
+scripts/sheepshaver-86 input "move 200 120" "down 0" "up 0"
 scripts/sheepshaver-86 snapshot "Mac OS 8.6 + CarbonLib 1.6"
 scripts/sheepshaver-86 rig
-scripts/sheepshaver-86 seal "os86-carbon16-now020-codekitten-747a81d"
+scripts/sheepshaver-86 seal "os86-carbon16-now020-codekitten-5d404f7"
 ```
 
 `stage` accepts a MacBinary artifact and passes it to `hcopy -m`, preserving
@@ -165,6 +166,19 @@ initial window and one menu. A failure to launch or remain responsive is a bug
 in the supported 8.6 runtime, not a reason to move the declared floor. Neither
 observation proves hardware behavior.
 
+The first acceptance on 2026-08-11 reached the NOW Workshop. CodeKitten did
+not reach its initial window, so the menu step is blocked by a product bug. The
+first artifact imported MLTE from a standalone `Textension` fragment that is
+absent from the installed CarbonLib 1.6. A repaired artifact imports the 32
+MLTE symbols from CarbonLib's embedded `Textension_CL` fragment, but the Mac OS
+8.6 CFM loader still reports that `CarbonLib` cannot be found. Read-only disk
+inspection proved that the installed data/resource forks exactly match that
+artifact and that the system file is CarbonLib Update 1.6; static import-name
+comparison found no missing strong or weak symbol in CarbonLib's main
+fragment. The remaining cause is unresolved CFM load/dependency behavior, not
+a stale application, a skipped updater, or an unsupported runtime. See
+`docs/open-issues.md` for the live bug record.
+
 ## UI automation seams
 
 The guest framebuffer exposes no useful macOS accessibility tree. Automation
@@ -183,14 +197,24 @@ Coordinates are profile-specific evidence, not a durable API. The harness
 should grow toward semantic guest-side controls or deterministic framebuffer
 recognition before unattended installation is treated as reliable.
 
-## Native framebuffer capture
+## Native framebuffer capture and input
 
-The versioned local macemu branch `codex/now-oracle-capture` adds one bounded
-profile-local request seam. `scripts/sheepshaver-86 capture` creates a sentinel
+The versioned local macemu branch `codex/now-oracle-capture` adds bounded,
+profile-local request seams. `scripts/sheepshaver-86 capture` creates a sentinel
 in the active `.sheepvm`; the SDL renderer answers with a BMP of its native
-guest surface and removes the request. The harness times out rather than
-accepting a stale or absent frame. Captures therefore exclude macOS window
-chrome, scaling, and the host cursor.
+guest surface and removes the request. `scripts/sheepshaver-86 input` publishes
+validated native-pixel mouse actions or raw ADB key transitions atomically and
+requires the renderer's completion receipt. Both commands time out rather than
+accepting stale state. Captures exclude macOS window chrome, scaling, and the
+host cursor.
+
+An input receipt proves that the renderer dispatched the ADB transitions; it
+does not prove that the cooperative guest event loop consumed them. Immediate
+follow-up input during bring-up retained mouse-button or modifier state and
+caused Finder drags and multi-selection. The harness therefore waits one
+second after a successful renderer receipt by default. Override that with
+`NOW_SHEEPSHAVER_INPUT_SETTLE` only for a measured profile, and use a capture
+after the settle interval as the behavioral observation.
 
 The seam deliberately does not replace SheepShaver's renderer:
 
@@ -200,18 +224,18 @@ The seam deliberately does not replace SheepShaver's renderer:
 - `video_sdl2.cpp` already owns `guest_surface`, `host_surface`, and the exact
   dirty rectangle immediately before `SDL_RenderPresent`; the hook reads that
   existing surface only after an explicit profile-local request.
-- The same file drains SDL keyboard and mouse events into ADB calls. A local,
-  profile-scoped control socket can inject events at this boundary and preserve
-  the emulator's own key mapping.
+- The same file drains SDL keyboard and mouse events into ADB calls. The input
+  seam invokes those ADB calls on the renderer thread, using native guest
+  coordinates and explicit key transitions rather than the macOS pointer.
 - The existing `--gui-connection` RPC is not that control plane. It connects the
   emulator back to the settings UI and currently carries alerts and exit only.
 - `nogui` suppresses the settings front end; it does not make video headless.
 
-The remaining useful macemu-side experiment is a loopback-only socket for
-profile identity and bounded input events. Keep that as a separately reviewable
-fork patch until its licensing and redistribution posture are chosen. The
-current capture-only patch is likewise not an upstream or product dependency;
-the sealed rig records its exact source and executable identities.
+The next useful macemu-side experiment is a loopback-only socket for profile
+identity and longer-lived control. Keep that as a separately reviewable fork
+patch until its licensing and redistribution posture are chosen. The current
+capture/input patch is likewise not an upstream or product dependency; the
+sealed rig records its exact source and executable identities.
 
 ## Evidence status
 
@@ -220,6 +244,9 @@ Use the repository's verification vocabulary:
 - A successful cross-build means the PowerPC guest **builds**.
 - A visible Workshop in this profile is **emulator-observed on Mac OS 8.6 with
   CarbonLib 1.6**.
+- CodeKitten revision `5d404f7` is **installed and emulator-observed failing to
+  launch** with a CFM `CarbonLib` error. It is a supported-runtime bug, not a
+  passed launch or menu acceptance.
 - Only a run on the PowerBook is **metal-verified**.
 
 Capture the source revision, profile/input hashes, staged artifact build ID,
