@@ -310,8 +310,14 @@ final class AgentIntegrationSocketTests: XCTestCase {
         ) { group in
             for _ in 0..<8 {
                 group.addTask {
+                    // This case proves that concurrent sockets keep their
+                    // replies separate. It injects its own deadline so a
+                    // test sharing a CI runner with the full host suite does
+                    // not also redefine the shipping two-second default.
                     try await AgentIntegrationLocalClient(
-                        endpoint: endpoint).sessionHealth()
+                        endpoint: endpoint,
+                        readOnlyReceiveTimeout: 10,
+                        launchReceiveTimeout: 35).sessionHealth()
                 }
             }
             var values: [AgentIntegrationSessionHealthResult] = []
