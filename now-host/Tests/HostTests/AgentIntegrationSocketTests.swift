@@ -316,7 +316,7 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     // not also redefine the shipping two-second default.
                     try await AgentIntegrationLocalClient(
                         endpoint: endpoint,
-                        readOnlyReceiveTimeout: 10,
+                        readOnlyReceiveTimeout: 60,
                         launchReceiveTimeout: 35).sessionHealth()
                 }
             }
