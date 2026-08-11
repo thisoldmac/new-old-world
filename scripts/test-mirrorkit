@@ -1,0 +1,124 @@
+#!/bin/sh
+# The MirrorKit gate: NOW's production semantic core and renderer libraries,
+# plus their independently-owned fixture suite.
+#
+#     scripts/test-mirrorkit [/absolute/scratch/directory]
+#
+# `now-host/Packages/MirrorKit` is a full SwiftPM package with its own scene
+# IR, fixture corpus, hit-testing, renderer, and wire-resync tests.
+#
+# It was ungated. Nothing in this tree ran it: `scripts/test-host` points
+# at `now-host`, `scripts/test-native` compiles C, `scripts/build-guests`
+# runs cross-compilers. So `scripts/test-all` was green for three days
+# while seven of those tests were red (docs/open-issues.md, 2026-08-06) —
+# the same shape of hole AGENTS.md names about the cross-compilers, and
+# the same reason: no gate invoked the tool that would have noticed.
+#
+# `swift test` and `swift build` both, for the reason test-host runs
+# xcodebuild beside `swift test`: the host consumes the library products, but
+# their standalone package boundary must remain buildable too.
+#
+# Scratch lives outside the repository (AGENTS.md > Testing). Pass a
+# directory to keep it; otherwise a temporary one is made and removed.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+package="$repo_root/now-host/Packages/MirrorKit"
+
+if [ "$#" -gt 1 ]; then
+    echo "usage: $0 [/absolute/scratch/directory]" >&2
+    exit 64
+fi
+
+# A SKIP is loud and says why. A contributor who cannot run a gate is not
+# failing it (AGENTS.md) — but a gate that vanishes silently is how this
+# one rotted in the first place, so the reason is always printed.
+if [ ! -f "$package/Package.swift" ]; then
+    echo "==> SKIP: MirrorKit gate — $package/Package.swift not found."
+    echo "    The production MirrorKit package is absent from this checkout."
+    exit 0
+fi
+if ! command -v swift >/dev/null 2>&1; then
+    echo "==> SKIP: MirrorKit gate — no swift on PATH."
+    echo "    Install the Xcode command line tools to run it."
+    exit 0
+fi
+
+keep_scratch=yes
+if [ "$#" -eq 1 ]; then
+    case "$1" in
+        /*) scratch_root=$1 ;;
+        *) echo "scratch directory must be absolute" >&2; exit 64 ;;
+    esac
+    case "$scratch_root/" in
+        "$repo_root"/*)
+            echo "scratch directory must live outside the source repository" >&2
+            exit 64
+            ;;
+    esac
+else
+    scratch_root=$(mktemp -d "${TMPDIR:-/tmp}/now-test-mirrorkit.XXXXXX")
+    keep_scratch=no
+fi
+
+cleanup() {
+    [ "$keep_scratch" = yes ] || rm -rf "$scratch_root"
+}
+trap cleanup EXIT INT TERM
+
+mkdir -p "$scratch_root"
+
+run_swift_step() {
+    log=$1
+    shift
+    if ! "$@" > "$log" 2>&1; then
+        cat "$log" >&2
+        return 1
+    fi
+    cat "$log"
+    "$script_dir/check-swift-warnings" "$package" "$log"
+}
+
+# The Platinum asset pack is a runtime dependency, not repository content
+# (docs/asset-pack.md). Tests needing its bytes skip BY NAME without one,
+# so a fresh clone is honest rather than red — but on a machine that HAS
+# the pack a skip would be a gate quietly declining to run, so this turns
+# them back into failures whenever one resolves. The pack's own resolver
+# prints where it looked; this only decides how hard absence bites.
+if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
+    pack=${NOW_MIRROR_ASSETS:-}
+    if [ -z "$pack" ]; then
+        asset_store=${NOW_MIRROR_ASSET_STORE:-"$HOME/Lab/Assets/now-mirror-assets"}
+        pack=$(ls -d "$asset_store"/pack-*/Resources \
+               2>/dev/null | sort -r | head -1)
+    fi
+    if [ -n "$pack" ] && [ -f "$pack/manifest.json" ]; then
+        NOW_REQUIRE_ASSET_PACK=1
+        export NOW_REQUIRE_ASSET_PACK
+        echo "==> asset pack found ($pack) — pack gates ENFORCED"
+    else
+        echo "==> asset pack absent — pack gates will SKIP by name."
+        echo "    tools/extract-assets-offline regenerates it; see"
+        echo "    docs/asset-pack.md."
+    fi
+fi
+
+echo "==> swift build (MirrorKit, MirrorKitUI)"
+run_swift_step "$scratch_root/swift-build.log" \
+    swift build --package-path "$package" --scratch-path "$scratch_root/swift"
+
+echo "==> swift test (MirrorKitTests, MirrorKitUITests)"
+run_swift_step "$scratch_root/swift-test.log" \
+    swift test --package-path "$package" --scratch-path "$scratch_root/swift"
+
+# And again with NO pack. A suite that only passes on a machine which
+# happens to have the dependency is the silent-skip defect rebuilt: a
+# fresh clone has no pack, and "it works here" would be all anyone could
+# say. The build is already cached, so this costs the test run only.
+echo "==> swift test again with NOW_MIRROR_ASSETS=none (honest degradation)"
+run_swift_step "$scratch_root/swift-test-no-assets.log" \
+    env NOW_MIRROR_ASSETS=none NOW_REQUIRE_ASSET_PACK= \
+    swift test --package-path "$package" --scratch-path "$scratch_root/swift"
+
+echo "==> MirrorKit gate passed"

@@ -1,0 +1,244 @@
+schema_version: 1
+active_profile: alpha
+
+features:
+  classic.powerpc:
+    title: PowerPC Carbon guest
+    description: The initial classic-Mac guest for Mac OS 8.6–9.2.2 with CarbonLib 1.6.
+    flag_key: null
+    runtime_binding: intrinsic
+    primary_pages:
+      - user-guide/how-to/install-ppc.md
+  resident.extension:
+    title: NOW Extension
+    description: The optional resident that adds process-local observation, interaction, transition, and liveness planes.
+    flag_key: null
+    runtime_binding: capability-negotiated
+    primary_pages:
+      - user-guide/explanation/core-features.md
+      - user-guide/how-to/install-extension.md
+  classic.pre-carbon:
+    title: Pre-Carbon support (NOW-68K)
+    description: The non-Carbon Toolbox and MacTCP guest for older 68K Macintosh systems.
+    flag_key: classic.pre-carbon
+    runtime_binding: planned
+    primary_pages:
+      - user-guide/how-to/install-68k.md
+      - developer-guide/architecture/68k-guest.md
+
+profiles:
+  alpha:
+    title: Alpha
+    description: The public release profile planned for the downloadable alpha.
+    features:
+      classic.powerpc:
+        state: included
+        note: Primary classic guest and the supported alpha path.
+      resident.extension:
+        state: optional
+        note: Bundled with the alpha; install it only for the resident-backed features listed below.
+      classic.pre-carbon:
+        state: excluded
+        note: The current NOW-68K build is stale and excluded from the alpha.
+
+product_feature_coverage:
+  - id: guided-setup
+    title: Set up a PowerPC Mac from the host
+    without_extension: Available; the Extension is an optional package selection.
+    extension_required: false
+    status: Tested locally and mounted in Mac OS 9.1 QEMU; classic-browser download and first hardware connection remain unverified.
+    primary_page: user-guide/how-to/set-up-new-mac.md
+
+module_feature_coverage:
+  - module_id: screen
+    title: Capture or stream the classic Mac screen
+    without_extension: Available.
+    extension_required: false
+    status: Current; streaming and large transfers have documented limits.
+  - module_id: files
+    title: Browse, transfer, and manage files
+    without_extension: Available.
+    extension_required: false
+    status: Current; resume and large transfers have documented limits.
+  - module_id: icloud
+    title: Use iCloud Drive, Photos, and Contacts
+    without_extension: Available.
+    extension_required: false
+    status: Experimental; each macOS service requires an explicit grant.
+  - module_id: processes
+    title: Inspect and manage running applications
+    without_extension: Available.
+    extension_required: false
+    status: Current; state-changing requests settle through typed results.
+  - module_id: mirror
+    title: Open Mirror and inspect its application-level shell
+    without_extension: Basic shell only.
+    extension_required: false
+    status: Experimental; interactive requests take priority over queued background refreshes, but the hardware latency target is not yet verified.
+  - module_id: console
+    title: Run classic-side console commands
+    without_extension: Available.
+    extension_required: false
+    status: Current; the connected guest advertises its own command set.
+  - module_id: chat
+    title: Chat through a model configured on the modern Mac
+    without_extension: Available.
+    extension_required: false
+    status: Experimental; provider credentials remain on the modern Mac.
+  - module_id: web
+    title: Translate modern web pages for classic browsers
+    without_extension: Available from the host Direct listener.
+    extension_required: false
+    status: Experimental; deterministic rendering is tested, while classic-browser metal verification and guest-local relay remain open.
+  - module_id: development
+    title: Build and run classic software with a guest-owned toolchain
+    without_extension: Available on the PowerPC guest.
+    extension_required: false
+    status: Experimental; the host-home MPW build/run loop is metal-verified and typed tests, retry settlement, and guarded guest-home promotion are emulator-verified. CodeKitten acceptance and the new hardening receipts on metal remain open.
+  - module_id: census
+    title: Inspect classic Mac hardware
+    without_extension: Available.
+    extension_required: false
+    status: Current; unsupported and unavailable probes remain explicit.
+  - module_id: diagnostics
+    title: Run bounded diagnostics
+    without_extension: Available.
+    extension_required: false
+    status: Experimental; each diagnostic states its cost before it runs.
+  - module_id: networking
+    title: Inspect classic network and link state
+    without_extension: Available.
+    extension_required: false
+    status: Current; listener configuration remains in Connections.
+  - module_id: software
+    title: Inventory classic applications and system software
+    without_extension: Available.
+    extension_required: false
+    status: Current; availability depends on what the connected guest serves.
+  - module_id: mcp
+    title: Control MCP transports and inspect agent activity
+    without_extension: Available.
+    extension_required: false
+    status: Experimental; running a transport is not itself a guest access grant.
+  - module_id: logs
+    title: Review bounded host and guest logs
+    without_extension: Available.
+    extension_required: false
+    status: Current; entries retain machine, operation, time, and reason where known.
+  - module_id: settings
+    title: Manage connections and preferences
+    without_extension: Available.
+    extension_required: false
+    status: Current; the listener is plaintext and intended for trusted networks.
+
+extension_feature_coverage:
+  - id: extension-health
+    title: See whether the Extension is active and compatible
+    without_extension: Reports that the Extension is not installed.
+    extension_required: false
+    status: Current diagnostic for an optional component.
+    capability_ids: [discovery]
+  - id: window-structure
+    title: See live windows and menus from other applications
+    without_extension: Not available.
+    extension_required: true
+    status: Experimental; absence and stale observations remain visible.
+    capability_ids: [structure]
+  - id: semantic-controls
+    title: Recognize standard controls, list items, and menu items
+    without_extension: Not available.
+    extension_required: true
+    status: Experimental; custom and unsupported controls remain explicit.
+    capability_ids: [semantics]
+  - id: structured-content
+    title: Reconstruct application interiors from drawing activity
+    without_extension: Not available.
+    extension_required: true
+    status: Experimental and high risk; off by default and armed for an exact target only.
+    capability_ids: [content]
+  - id: interaction
+    title: Interact with windows, menus, controls, text, and selections
+    without_extension: Not available through process-local Mirror actions.
+    extension_required: true
+    status: Experimental; success requires application-owned confirmation.
+    capability_ids: [interaction]
+  - id: transitions
+    title: Follow short-lived interface changes
+    without_extension: Changes between scene reads may be missed.
+    extension_required: true
+    status: Experimental; changes prompt a coalesced refresh, while periodic refresh remains the fallback.
+    capability_ids: [transitions]
+  - id: modal-liveness
+    title: Stay reachable while an application is in a modal or tracking loop
+    without_extension: The normal guest connection may pause until the loop exits.
+    extension_required: true
+    status: Experimental and emulator-verified; not a blanket hardware claim.
+    capability_ids: [liveness]
+  - id: drag
+    title: Carry a drag through classic tracking loops
+    without_extension: Not available as a held remote drag session.
+    extension_required: true
+    status: Experimental; builds and native tests pass, but it is not machine-verified.
+    capability_ids: [drag]
+  - id: cursor-following
+    title: Show a classic cursor following remote actions
+    without_extension: The action can still occur, but the remote cursor is not drawn.
+    extension_required: true
+    status: Experimental and emulator-verified; physical mouse movement takes priority.
+    capability_ids: [cursor]
+
+extension_capabilities:
+  - id: discovery
+    plane: P0
+    title: Discovery and lifecycle
+    symbols: []
+    exposes: Installed, restart-needed, wrong-version, build identity, writer, and negotiated-capability state.
+    posture: Core contract; the product remains usable when it reports the extension absent.
+  - id: structure
+    plane: P1
+    title: Process-local structure
+    symbols: [kNowPeekTableCapAnchors]
+    exposes: Per-process window and menu anchors, front-window geometry, and bounded window discovery.
+    posture: Armed only while requested; stale and absent observations remain distinct.
+  - id: semantics
+    plane: P2
+    title: Semantic controls
+    symbols: [kNowPeekTableCapTree]
+    exposes: Bounded classification of standard controls, list cells, and system menu items.
+    posture: Experimental; custom controls and unsupported shapes remain explicit.
+  - id: content
+    plane: P3
+    title: Structured drawing content
+    symbols: [kNowPeekTableCapContent]
+    exposes: Target-scoped QuickDraw records used to reconstruct window interiors without treating a screenshot as structure.
+    posture: Experimental and high risk; compiled dark and armed only for an exact target.
+  - id: interaction
+    plane: P4
+    title: In-context interaction
+    symbols: [kNowPeekTableCapAct]
+    exposes: Guarded menus, controls, dialog items, text, visibility, and window move, resize, zoom, close, and selection requests.
+    posture: Experimental; effects require application-owned confirmation, not merely a resident reply.
+  - id: transitions
+    plane: P5
+    title: UI transitions
+    symbols: [kNowPeekTableCapEvents]
+    exposes: A bounded event tail for observing UI changes that can disappear between full scene reads.
+    posture: Experimental; availability and freshness are reported rather than inferred.
+  - id: liveness
+    plane: P6
+    title: Liveness below the application
+    symbols: [kNowPeekTableCapLiveness, kNowPeekTableCapLivenessNet]
+    exposes: A resident-owned host channel that can remain alive while the foreground application is starved by a modal or tracking loop.
+    posture: Emulator-verified; the vehicle and network transport are negotiated separately.
+  - id: drag
+    plane: P7
+    title: Drag sessions
+    symbols: [kNowPeekTableCapDrag]
+    exposes: A held mouse button across tracking loops, with resident-enforced idle and maximum-duration release.
+    posture: Builds and native tests pass; the vehicle has not yet been machine-verified.
+  - id: cursor
+    plane: P8
+    title: Cursor following
+    symbols: [kNowPeekTableCapCursor]
+    exposes: A drawn cursor that follows remote actions while yielding after physical mouse movement.
+    posture: Emulator-verified; absence affects cursor presentation, not the underlying action.

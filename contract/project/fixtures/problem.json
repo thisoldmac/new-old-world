@@ -1,0 +1,9 @@
+{
+  "schema": "ckproject.problem/1",
+  "severity": "error",
+  "code": "compiler-error",
+  "message": "Expected expression",
+  "file": "Sources/Main.c",
+  "line": 42,
+  "column": 7
+}

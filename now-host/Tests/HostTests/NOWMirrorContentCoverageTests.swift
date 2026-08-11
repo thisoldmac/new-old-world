@@ -1,0 +1,628 @@
+import XCTest
+import MirrorKit
+import MirrorKitUI
+@testable import Host
+
+/// The coverage gate for host-side interior composition (plan 013 and its
+/// follow-up): every fixture here is a drain captured LIVE off a mac99
+/// guest on 2026-08-06, one per surface the mirror must compose —
+/// archived Finder composites, two non-compositing control panels
+/// (window-port drawing, no join needed), and NOW's own window. Application
+/// captures still exercise composition on real bytes. Finder captures now
+/// prove the opposite product rule: the plane recognizes their identity and
+/// publishes none of their display stream. None of it has touched metal.
+///
+/// The one NEGATIVE from the same runs is documented rather than gated:
+/// Appearance builds a transient world per widget blit, which beats the
+/// sight→chase→hook cycle (10 misses, 136 small sights) — the case the
+/// D0 resident NewGWorld patch exists to close. See open-issues.md.
+@MainActor
+final class NOWMirrorContentCoverageTests: XCTestCase {
+    private func plane() -> NOWMirrorContentPlane {
+        NOWMirrorContentPlane(listener: GuestListener(
+            identity: .init(version: "test", name: "Test Host")))
+    }
+
+    /// The canned scene, with windows[0] re-identified as the CAPTURED
+    /// window — address, psn, title, AND geometry.
+    ///
+    /// Identity alone was not enough, and the render said so: a capture
+    /// dropped into another application's window rect drew Sherlock's
+    /// 490×448 interior inside a 404×203 Finder window, complete with
+    /// the Finder's own scrollbars, which is a picture of a join that
+    /// never happened. The window's real content size is carried by the
+    /// capture itself — the full-window blit's `dst` IS the content
+    /// rect — so `contentSize` takes it from there, and every control
+    /// and item belonging to the canned window is cleared, because
+    /// those are another application's furniture.
+    private func scene(address: UInt32, psn: String, title: String,
+                       content: [Int]? = nil) throws -> MirrorKit.Scene {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "now-scene-ir-v1", withExtension: "json",
+            subdirectory: "Fixtures"))
+        var value = try NOWMirrorSceneDecoder.decode(
+            irVersion: 1, document: Data(contentsOf: url))
+        for index in value.windows.indices {
+            value.windows[index].front = false
+            value.windows[index].psn = "0.99999999"
+        }
+        value.windows[0].front = true
+        value.windows[0].addr = address
+        value.windows[0].psn = psn
+        value.windows[0].title = title
+        value.windows[0].app = Self.finderTitles.contains(title)
+            ? "Finder" : title
+        value.windows[0].display = nil
+        value.windows[0].controls = []
+        value.windows[0].items = nil
+        if let content, content.count == 4 {
+            let origin = value.windows[0].rect
+            value.windows[0].rect = MirrorKit.Rect(
+                l: origin.l, t: origin.t,
+                r: origin.l + (content[2] - content[0]),
+                b: origin.t + (content[3] - content[1]))
+        }
+        return value
+    }
+
+    /// The captured window's own content size, derived from what the
+    /// application actually drew into it: the union of every op's
+    /// bounds on the window port.
+    ///
+    /// The first version took the largest blit's destination, which is
+    /// exactly right for a compositing application and NONSENSE for one
+    /// that does not composite - Date & Time's biggest blit is an icon,
+    /// so its panel rendered as a sliver. A union covers both: a
+    /// composite's full-window blit dominates it, and a panel's spread
+    /// of controls and labels describes it just as well.
+    private func contentSize(_ drain: QDTraceDecode.Drain,
+                             window: UInt32) -> [Int]? {
+        var right = 0
+        var bottom = 0
+        for record in drain.records where record.portAddress == window {
+            let op = record.op
+            for box in [op.dst, op.rect].compactMap({ $0 })
+            where box.count == 4 {
+                right = max(right, box[2])
+                bottom = max(bottom, box[3])
+            }
+            if op.op == "text", let pen = op.pen, pen.count == 2 {
+                right = max(right, pen[0])
+                bottom = max(bottom, pen[1])
+            }
+        }
+        guard right > 32, bottom > 32 else { return nil }
+        return [0, 0, right, bottom]
+    }
+
+    private func capture(_ name: String) throws -> QDTraceDecode.Drain {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: name, withExtension: "json",
+            subdirectory: "Fixtures"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any])
+        let drain = try XCTUnwrap(QDTraceDecode.drain(object))
+        XCTAssertTrue(drain.recordCountAgrees, "\(name) decodes whole")
+        return drain
+    }
+
+    private func compose(_ fixture: String, window: UInt32, psn: String,
+                         title: String) throws -> [DisplayOp] {
+        try composed(fixture, window: window, psn: psn, title: title)
+            .windows[0].display ?? []
+    }
+
+    /// The whole composed scene, with the window sized from the capture.
+    @discardableResult
+    private func composed(_ fixture: String, window: UInt32, psn: String,
+                          title: String) throws -> MirrorKit.Scene {
+        let drain = try capture(fixture)
+        let model = plane()
+        let update = model.apply(
+            drain,
+            to: try scene(address: window, psn: psn, title: title,
+                          content: contentSize(drain, window: window)))
+        if update.scene.windows[0].app == "Finder" {
+            XCTAssertNil(update.scene.windows[0].display,
+                         "\(fixture) crossed Finder's permanent P3 boundary")
+        } else {
+            XCTAssertNotNil(update.scene.windows[0].display,
+                            "\(fixture) composed nothing")
+        }
+        return update.scene
+    }
+
+    private static let finderTitles: Set<String> = ["Desktop", "Macintosh HD"]
+
+    private func texts(_ display: [DisplayOp]) -> [String] {
+        display.filter { $0.op == "text" }.compactMap(\.text)
+    }
+
+    // MARK: - Archived Finder captures never enter the live content plane
+
+    func testFinderListViewCaptureIsRecognisedThenDiscarded() throws {
+        let raw = try capture("qdtrace-drain-blitsrc-finder-list")
+        let labels = texts(raw.records.map(\.op))
+        for header in ["Name", "Date Modified", "Size"] {
+            XCTAssertTrue(labels.contains(header), "missing header \(header)")
+        }
+        let scene = try composed("qdtrace-drain-blitsrc-finder-list",
+                                 window: 0x00a03580, psn: "0.29949953",
+                                 title: "Macintosh HD")
+        XCTAssertNil(scene.windows[0].display)
+        XCTAssertNil(scene.windows[0].displayEpoch)
+    }
+
+    func testFinderButtonViewCaptureIsRecognisedThenDiscarded() throws {
+        let raw = try capture("qdtrace-drain-blitsrc-finder-buttons")
+        let labels = texts(raw.records.map(\.op))
+        for label in ["Applications (Mac OS 9)", "Documents", "TimBotTu"] {
+            XCTAssertTrue(labels.contains(label), "missing \(label)")
+        }
+        let scene = try composed("qdtrace-drain-blitsrc-finder-buttons",
+                                 window: 0x00a03580, psn: "0.29949953",
+                                 title: "Macintosh HD")
+        XCTAssertNil(scene.windows[0].display)
+        XCTAssertNil(scene.windows[0].displayEpoch)
+    }
+
+    // The icon view is the original payoff gate in
+    // NOWMirrorContentPlaneTests.testFinderCaptureComposesTheRealInteriorHostSide.
+
+    // MARK: - Control panels: no composite, no join — the window port
+    // carries everything, and the plane must pass it through untouched.
+
+    func testDateAndTimePanelRecordsItsInterior() throws {
+        let display = try compose("qdtrace-drain-cp-datetime",
+                                  window: 0x1f6fd220, psn: "0.35520514",
+                                  title: "Date & Time")
+        let labels = texts(display)
+        for label in ["Current Date", "Current Time", "Time Zone"] {
+            XCTAssertTrue(labels.contains(label), "missing \(label)")
+        }
+    }
+
+    func testMemoryPanelRecordsItsInterior() throws {
+        let display = try compose("qdtrace-drain-cp-memory",
+                                  window: 0x1e9dffa0, psn: "0.36438017",
+                                  title: "Memory")
+        XCTAssertTrue(texts(display).contains("Startup Memory Tests"))
+    }
+
+    /// THE APPEARANCE ANSWER (plan 015 G3), and it was the load-bearing
+    /// question about control panels: their field VALUES are drawn into
+    /// offscreen worlds that AppearanceLib creates on the panel's
+    /// behalf — Date & Time imports no `NewGWorld` at all — so a
+    /// window-port hook never saw them and the replay could only plate
+    /// them. With the trap patch hooking every world at birth (it
+    /// patches the TRAP, not the caller), the same panel reports 286
+    /// worlds born, 286 died, 0 missed, and its data crosses: the
+    /// date and time digits themselves, plus every control's label.
+    func testDateAndTimeValuesCrossFromTheThemesOwnWorlds() throws {
+        let display = try compose("qdtrace-drain-cp-datetime-hooked",
+                                  window: 0x1f6fd590, psn: "0.34734082",
+                                  title: "Date & Time")
+        let labels = texts(display)
+        /* The values, which is the whole point of that window. */
+        XCTAssertTrue(labels.contains("2026"), "the year crosses")
+        XCTAssertTrue(labels.contains(":"), "the time separator crosses")
+        XCTAssertTrue(labels.contains { $0.trimmingCharacters(
+            in: .whitespaces) == "PM" }, "the meridiem crosses")
+        XCTAssertTrue(labels.contains { Int($0) != nil },
+                      "numeric date/time fields cross")
+        /* And the controls' own text, which the window-port hook never
+           carried either. */
+        for label in ["Clock Options…", "Time Formats…", "Menu Bar Clock"] {
+            XCTAssertTrue(labels.contains(label), "missing \(label)")
+        }
+    }
+
+    // MARK: - What the mirror cannot draw yet, over the whole corpus
+
+    /// THE PROJECT'S STANDING ANSWER to "what can the mirror not draw
+    /// yet", asserted over every committed capture at once rather than
+    /// eyeballed. `QDTraceDecode.undrawnName` classifies each op the
+    /// renderer defers and `NOWMirrorContentPlane` reports it in the
+    /// drain sentence; this is the inventory that counter produces.
+    ///
+    /// It was 73 across the nine fixtures on 2026-08-06: 39 regions
+    /// called "bounds only" and 34 rect inverts skipped outright. Invert
+    /// is now drawn, and the regions are reported honestly — the
+    /// contract's shape discriminator is new, so every capture here was
+    /// taken by a resident that never sent it, and "shape unreported" is
+    /// the only true thing to say about them. It is not a synonym for
+    /// "bounds only", which asserted the box was wrong; nobody asked.
+    ///
+    /// A NEW ENTRY HERE IS A REAL FINDING and belongs in
+    /// docs/open-issues.md, not in this dictionary quietly.
+    func testTheDeferredOpInventoryOverEveryCapture() throws {
+        let fixtures = [
+            "qdtrace-drain-blitsrc-control",
+            "qdtrace-drain-blitsrc-finder",
+            "qdtrace-drain-blitsrc-finder-buttons",
+            "qdtrace-drain-blitsrc-finder-list",
+            "qdtrace-drain-cp-datetime",
+            "qdtrace-drain-cp-datetime-hooked",
+            "qdtrace-drain-cp-memory",
+            "qdtrace-drain-now-window",
+            "qdtrace-drain-sherlock",
+            "qdtrace-drain-sherlock-hooked",
+            "qdtrace-drain-sherlock-live",
+        ]
+        var total: [String: Int] = [:]
+        for name in fixtures {
+            for (key, count) in try capture(name).undrawn {
+                total[key, default: 0] += count
+            }
+        }
+        XCTAssertEqual(total, ["rgn (shape unreported)": 39],
+                       "the deferred-op inventory moved — say so in "
+                       + "docs/open-issues.md")
+    }
+
+    /// Renders every capture at its own size, for eyes rather than
+    /// assertions. Opt-in: NOW_RENDER_DIR names a directory.
+    func testRenderEveryCapture() throws {
+        guard let dir = ProcessInfo.processInfo
+            .environment["NOW_RENDER_DIR"] else { return }
+        let all: [(String, String, UInt32, String, String)] = [
+            ("finder-icon", "qdtrace-drain-blitsrc-finder",
+             0x00a01c40, "0.29949953", "Macintosh HD"),
+            ("finder-list", "qdtrace-drain-blitsrc-finder-list",
+             0x00a03580, "0.29949953", "Macintosh HD"),
+            ("finder-buttons", "qdtrace-drain-blitsrc-finder-buttons",
+             0x00a03580, "0.29949953", "Macintosh HD"),
+            ("cp-datetime", "qdtrace-drain-cp-datetime",
+             0x1f6fd220, "0.35520514", "Date & Time"),
+            ("cp-datetime-hooked", "qdtrace-drain-cp-datetime-hooked",
+             0x1f6fd590, "0.34734082", "Date & Time"),
+            ("sherlock-live", "qdtrace-drain-sherlock-live",
+             0x1e9a0780, "0.35979266", "Sherlock 2"),
+            ("cp-memory", "qdtrace-drain-cp-memory",
+             0x1e9dffa0, "0.36438017", "Memory"),
+            ("now-window", "qdtrace-drain-now-window",
+             0x1ecb4550, "0.29360131", "New Old World"),
+            ("sherlock", "qdtrace-drain-sherlock-hooked",
+             0x1e99ffc0, "0.35520514", "Sherlock 2"),
+        ]
+        for (name, fixture, window, psn, title) in all {
+            let png = try RenderShot.png(scene: try composed(
+                fixture, window: window, psn: psn, title: title))
+            try png.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
+        }
+    }
+
+    /// The 2026-08-06 fidelity sweep's captures, rendered for eyes.
+    ///
+    /// SEPARATE from `testRenderEveryCapture` on purpose. That list is
+    /// the coverage gate's own evidence and every entry there is also
+    /// asserted on somewhere above; this list is a SURVEY — windows
+    /// captured to be judged against the machine's own pixels, most of
+    /// which have no assertion yet and some of which are here precisely
+    /// because they render badly. Mixing the two would let a survey
+    /// entry read as a proven surface.
+    ///
+    /// The renders pair with `<label>-guest.ppm` from the same run via
+    /// tools/fidelity-pair.py; the verdicts are in
+    /// docs/fidelity-sweep-2026-08-06.md.
+    func testRenderSweepCaptures() throws {
+        guard let dir = ProcessInfo.processInfo
+            .environment["NOW_RENDER_DIR"] else { return }
+        for capture in Self.sweepCaptures {
+            let png = try RenderShot.png(scene: try composedSweep(capture))
+            try png.write(to: URL(fileURLWithPath: "\(dir)/\(capture.0).png"))
+        }
+    }
+
+    /// A sweep capture composed at the window's REAL size.
+    ///
+    /// `composed` derives the window from `contentSize` — a union of
+    /// everything drawn — which is a reasonable guess when nothing
+    /// better exists and a BAD one to judge chrome by: Scrapbook's
+    /// union came out nearly twice the window's true width, so the
+    /// render drew a 780-wide window whose centred title fell off the
+    /// visible area, and "the title never renders" was about to go on
+    /// the red list as a mirror defect. It is a harness artifact.
+    ///
+    /// The sweep already knows the answer — `<label>-scene.json`
+    /// carries the window's own rect, straight off the guest — so the
+    /// survey uses that and the union is not consulted at all. Nothing
+    /// in the product does this: `contentSize` exists because the
+    /// coverage fixtures predate the sweep, and a production scene
+    /// carries the real rect the way this table does.
+    private func composedSweep(
+        _ capture: (String, String, UInt32, String, String, Int, Int)
+    ) throws -> MirrorKit.Scene {
+        let (_, fixture, window, psn, title, width, height) = capture
+        let drain = try self.capture(fixture)
+        let update = plane().apply(
+            drain, to: try scene(address: window, psn: psn, title: title,
+                                 content: [0, 0, width, height]))
+        if update.scene.windows[0].app == "Finder" {
+            XCTAssertNil(update.scene.windows[0].display,
+                         "\(fixture) crossed Finder's permanent P3 boundary")
+        } else {
+            XCTAssertNotNil(update.scene.windows[0].display,
+                            "\(fixture) composed nothing")
+        }
+        return update.scene
+    }
+
+    /// Every application sweep capture must still compose. Finder is the
+    /// categorical exception: its archived stream must decode but the live
+    /// plane must discard it before publication.
+    func testEverySweepCaptureComposes() throws {
+        for capture in Self.sweepCaptures {
+            let window = try composedSweep(capture).windows[0]
+            if window.app == "Finder" {
+                XCTAssertNil(window.display,
+                             "\(capture.0) crossed Finder's P3 boundary")
+            } else {
+                let display = try XCTUnwrap(window.display)
+                XCTAssertFalse(display.isEmpty,
+                               "\(capture.0) composed nothing")
+            }
+        }
+    }
+
+    /// label, fixture, window address, psn, title, and the window's OWN
+    /// width and height as the guest reported them in the same run.
+    static let sweepCaptures:
+        [(String, String, UInt32, String, String, Int, Int)] = [
+        ("appearance", "qdtrace-drain-sweep-appearance",
+         0x1ea880b0, "0.35520514", "Appearance", 464, 330),
+        ("date-and-time", "qdtrace-drain-sweep-date-and-time",
+         0x1f6fcca0, "0.35979265", "Date & Time", 364, 361),
+        ("memory", "qdtrace-drain-sweep-memory",
+         0x1ea37530, "0.36438017", "Memory", 352, 318),
+        ("sound", "qdtrace-drain-sweep-sound",
+         0x1e612eb0, "0.37355521", "Sound", 400, 367),
+        ("general-controls", "qdtrace-drain-sweep-general-controls",
+         0x1e5cc1c0, "0.37814273", "General Controls", 348, 454),
+        /* The CONTROL for the flattened-epoch finding: the same Sound
+           window, same build, captured over ONE repaint pass instead of
+           three. `sound` loses its whole sound list; this one keeps it,
+           and the only difference between the two runs is how many
+           passes got flattened into the single displayEpoch the
+           resident hands out per ARM. */
+        ("sound-1pass", "qdtrace-drain-sweep-sound-1pass",
+         0x1e612eb0, "0.37355521", "Sound", 400, 367),
+        ("finder-desktop", "qdtrace-drain-sweep-finder",
+         0x009a6610, "0.29949953", "Desktop", 800, 600),
+        ("note-pad", "qdtrace-drain-sweep-note-pad",
+         0x1e581360, "0.38338561", "Note Pad", 220, 290),
+        ("stickies", "qdtrace-drain-sweep-stickies",
+         0x1e503798, "0.38600705", "Stickies", 100, 70),
+        ("scrapbook", "qdtrace-drain-sweep-scrapbook",
+         0x1e3eec00, "0.38862849", "Scrapbook", 402, 327),
+        ("sherlock-2", "qdtrace-drain-sweep-sherlock-2",
+         0x1e9f7550, "0.34406401", "Sherlock", 490, 468),
+        ("key-caps", "qdtrace-drain-sweep-key-caps",
+         0x1e945a40, "0.36044802", "Key Caps", 480, 220),
+        /* THE SELECTION BASELINE. The guest screendump for this run
+           shows "System Folder" selected — inverted label, darkened
+           icon. Whether the capture carries that is the whole question
+           the invert work needs answered before and after. */
+        ("finder-selected", "qdtrace-drain-sweep-finder-selected",
+         0x009e4a20, "0.29949953", "Macintosh HD", 404, 238),
+    ]
+
+    /// The Finder's selection highlight does not reach the capture.
+    ///
+    /// Selection is drawn by INVERT on this machine, the replay skips
+    /// invert outright, and the accent-ramp thread showed the corpus
+    /// could not tell: a forced-magenta highlight regenerated every
+    /// committed render byte-identically, because no capture had a
+    /// selection in it.
+    ///
+    /// This capture was taken with one deliberately selected — reveal
+    /// selects `System Folder`, and a reflowing resize forces the
+    /// icon-view composite to rebuild (a front/back cycle does not, and
+    /// yields zero text ops). All ten item labels cross. **No invert
+    /// op does**, and no drawing mode other than `srcCopy` appears.
+    ///
+    /// So the gap is upstream of the renderer: fixing invert in the
+    /// replay cannot restore a Finder selection that was never
+    /// recorded. When the capture starts carrying it, this fails and
+    /// says the baseline moved.
+    func testTheFindersSelectionNeverReachesTheCapture() throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "qdtrace-drain-sweep-finder-selected",
+            withExtension: "json", subdirectory: "Fixtures"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any])
+        let ops = try XCTUnwrap(object["ops"] as? [[String: Any]])
+
+        XCTAssertTrue(ops.contains {
+            ($0["text"] as? String) == "System Folder"
+        }, "the selected item's own label stopped crossing")
+        XCTAssertTrue(ops.contains {
+            ($0["text"] as? String) == "10 items, 3.21 GB available"
+        }, "the composite stopped being rebuilt — is the resize still "
+           + "reaching the Finder?")
+
+        let inverts = ops.filter { ($0["verb"] as? Int) == 3 }
+        XCTAssertTrue(inverts.isEmpty,
+                      "the Finder's selection now REACHES the capture "
+                      + "(\(inverts.count) invert ops) — the baseline has "
+                      + "moved and the invert work can be measured here")
+
+        /* But the highlight is not wholly absent, and the render says
+           so: the Finder PAINTS the selected label's background, so a
+           filled rect does cross — and `finder-selected.png` draws it
+           as a solid black bar with the label swallowed inside it,
+           because the text that follows is drawn in the same colour.
+           White-on-dark is the missing half, not the fill. */
+        XCTAssertFalse(ops.filter { ($0["verb"] as? Int) == 1 }.isEmpty,
+                       "the painted highlight stopped crossing too — the "
+                       + "selection is now entirely absent, not half-drawn")
+    }
+
+    /// THE FLATTENED-EPOCH FINDING, and it is a DRAW-ORDER defect, not
+    /// a composition one. The distinction cost one wrong hypothesis:
+    /// the first version of this test asserted the three-pass capture
+    /// had LOST the sound list, and failed, because the rows are all
+    /// present in the composed display. They are simply painted over.
+    ///
+    /// `displayEpoch` advances once per ARM and never per repaint pass,
+    /// so a capture spanning three front/back cycles arrives as one
+    /// frame carrying three successive repaints end to end. The Sound
+    /// panel builds its interior from two offscreen worlds and blits a
+    /// full-window composite from one of them; concatenated, a LATER
+    /// pass's full-window blit lands after an EARLIER pass's list blit
+    /// and covers it. The renders say so plainly — `sound.png` has an
+    /// empty list box, `sound-1pass.png` has all nine rows — and the
+    /// only difference between the two runs is the number of passes.
+    ///
+    /// So the invariant is about ORDER: in the flattened capture a
+    /// window-spanning op follows the list content; in the one-pass
+    /// capture it does not.
+    func testFlattenedPassesPutAWindowBlitOverTheSoundList() throws {
+        /* ANSWERED 2026-08-07 (plan 018 slice 1), and the assertion is
+           inverted rather than deleted, because the finding above is the
+           reason the fix exists and would otherwise leave no trace.
+
+           `NOWMirrorContentPlane.lastRepaintPass` now publishes the LAST
+           repaint pass alone. So the three-pass capture no longer carries
+           an earlier pass's list rows for a later pass's window blit to
+           paint over: it carries one pass, and whatever that pass could
+           account for. The pixels are unchanged — content that was covered
+           was already invisible — and what changes is that the frame no
+           longer contains a contradiction about which repaint it is.
+
+           The one-pass control still composes its list, which is the half
+           that could regress silently: if truncation ever cut inside a
+           pass, this is where it would show. */
+        func spanningOpsAfterList(_ fixture: String) throws -> (list: Int?,
+                                                                after: Int) {
+            let display = try compose(fixture, window: 0x1e612eb0,
+                                      psn: "0.37355521", title: "Sound")
+            let list = display.lastIndex {
+                $0.op == "text" && $0.text == "ChuToy"
+            }
+            let after = display.indices.filter { i -> Bool in
+                guard display[i].op == "bits" || display[i].op == "rect",
+                      let box = display[i].dst ?? display[i].rect,
+                      box.count == 4 else { return false }
+                guard (box[2] - box[0]) >= 350, (box[3] - box[1]) >= 250
+                else { return false }
+                return i > (list ?? Int.max)
+            }.count
+            return (list, after)
+        }
+
+        let flattened = try spanningOpsAfterList("qdtrace-drain-sweep-sound")
+        XCTAssertEqual(flattened.after, 0, """
+            the published frame still has a window-scale op painting over \
+            its own list rows. Truncation to the last repaint pass is \
+            supposed to make that impossible — see \
+            NOWMirrorContentPlane.lastRepaintPass.
+            """)
+
+        let control = try spanningOpsAfterList("qdtrace-drain-sweep-sound-1pass")
+        XCTAssertNotNil(control.list, """
+            the ONE-PASS capture lost its list rows. Nothing in slice 1 may \
+            cut inside a pass; if this fails, `lastRepaintPass` found a \
+            boundary that is not one.
+            """)
+        XCTAssertEqual(control.after, 0)
+    }
+
+    /// Sherlock 2 WAS the boundary case, and this gate is the boundary
+    /// moving. Its whole interior is built in a transient offscreen
+    /// world per repaint, which the sight-then-chase route hooked 0 of
+    /// 8 times — so none of it could cross. With the resident's
+    /// QDExtensions patch hooking every world at CREATION (plan 014),
+    /// the same application recorded 77 worlds born, 77 died, 0 missed,
+    /// and its interior crosses: this capture is one such world's whole
+    /// life, from worldborn through its drawing to the blitsrc+bits
+    /// pair that reveals it.
+    func testSherlockInteriorComposesFromWorldsHookedAtBirth() throws {
+        let display = try compose("qdtrace-drain-sherlock-hooked",
+                                  window: 0x1e99ffc0, psn: "0.35520514",
+                                  title: "Sherlock 2")
+        let labels = texts(display)
+        /* The radio labels and column headers the boundary test used to
+           assert were UNREACHABLE. */
+        for label in ["File Names", "Contents", "Name", "On",
+                      "Index Status"] {
+            XCTAssertTrue(labels.contains(label),
+                          "missing \(label) — the interior stopped crossing")
+        }
+        /* And the list row, which is content rather than chrome. */
+        XCTAssertTrue(labels.contains("Macintosh HD"))
+        XCTAssertTrue(labels.contains { $0.hasPrefix("Volume indexed") },
+                      "the volume's real index status crosses")
+        XCTAssertTrue(update(display), "the composite replaced its hatch")
+
+        if let out = ProcessInfo.processInfo.environment["NOW_RENDER_OUT"] {
+            let png = try RenderShot.png(scene: try composed(
+                "qdtrace-drain-sherlock-hooked", window: 0x1e99ffc0,
+                psn: "0.35520514", title: "Sherlock 2"))
+            try png.write(to: URL(fileURLWithPath: out))
+        }
+    }
+
+    /// The joined blit must not survive as a hatch over the content it
+    /// was replaced by.
+    private func update(_ display: [DisplayOp]) -> Bool {
+        !display.contains {
+            $0.op == "bits" && ($0.dst?.count == 4)
+                && ($0.dst![2] - $0.dst![0]) >= 490
+        }
+    }
+
+    // MARK: - NOW's own window, and retention across a retarget
+
+    func testNowWindowComposesItsWorkshop() throws {
+        let display = try compose("qdtrace-drain-now-window",
+                                  window: 0x1ecb4550, psn: "0.29360131",
+                                  title: "New Old World")
+        let labels = texts(display)
+        XCTAssertTrue(labels.contains("Screenshots"))
+        XCTAssertTrue(labels.contains(
+            "Capture this Mac, send a still, or stream its screen."))
+    }
+
+    /// An application window captured under one arm stays composed while a
+    /// later Finder drain is refused. Retargeting must neither erase the
+    /// application's evidence nor publish Finder's historical stream.
+    func testApplicationWindowSurvivesARefusedFinderRetarget() throws {
+        let model = plane()
+
+        /* Each capture composes into a window carrying ITS name: NOW's
+           Workshop into the scene's own 'New Old World' window, the
+           Finder into a 'Macintosh HD'-titled one. A render that put one
+           application's content under another's title read exactly like
+           the wrong join this plane exists to refuse. windows[1] (the
+           Desktop) attaches a display but renders nowhere, so neither
+           capture goes there. */
+        var first = try scene(address: 0x00a01c40, psn: "0.29949953",
+                              title: "Macintosh HD")
+        let nowIndex = try XCTUnwrap(first.windows.indices.first {
+            first.windows[$0].title == "New Old World"
+        })
+        first.windows[nowIndex].addr = 0x1ecb4550
+        first.windows[nowIndex].psn = "0.29360131"
+        first.windows[0].front = false
+        first.windows[nowIndex].front = true
+        _ = model.apply(try capture("qdtrace-drain-now-window"), to: first)
+
+        var second = first
+        second.windows[nowIndex].front = false
+        second.windows[0].front = true
+        let update = model.apply(
+            try capture("qdtrace-drain-blitsrc-finder"), to: second)
+
+        let now = try XCTUnwrap(update.scene.windows[nowIndex].display,
+                                "NOW's window lost its display on retarget")
+        XCTAssertTrue(texts(now).contains("Screenshots"))
+        XCTAssertNil(update.scene.windows[0].display)
+        XCTAssertNil(update.scene.windows[0].displayEpoch)
+
+        if let out = ProcessInfo.processInfo.environment["NOW_RENDER_OUT"] {
+            let png = try RenderShot.png(scene: update.scene)
+            try png.write(to: URL(fileURLWithPath: out))
+        }
+    }
+}

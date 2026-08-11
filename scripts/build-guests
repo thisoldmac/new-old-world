@@ -1,0 +1,185 @@
+#!/bin/sh
+# Cross-build both guests, which nothing else in this tree does.
+#
+#     scripts/build-guests           # both
+#     scripts/build-guests ppc       # only the PowerPC Carbon guest
+#     scripts/build-guests 68k       # only NOW-68K
+#
+# Until this existed, the only thing that compiled a guest was a person
+# about to deploy one. Every other gate here - 556 host tests, 31 native
+# tests, both Xcode configurations - can be green while neither guest
+# builds at all, because none of them invokes a cross-compiler. That is
+# the same shape as the defect this project has paid for most: a gate
+# that looks like coverage and never touched the thing it names.
+#
+# A build proves the code COMPILES and nothing whatever about behaviour
+# (AGENTS.md: verification is a status, not an adjective). It is the
+# cheapest possible check and it is not one of the three levels.
+#
+# Toolchains come from .env.lab - see docs/lab-setup.md. Absent, this
+# skips with a message and exit 0: a contributor with no Retro68 install
+# is not failing, they simply cannot run this gate. `scripts/test-all`
+# reports the skip rather than hiding it.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+which=${1:-both}
+
+# A WORKTREE does not inherit it, and that is the common case here rather
+# than a contributor without Retro68: `.env.lab` is gitignored by design
+# (it describes one desk), so every new worktree started without one and
+# this gate silently stopped running in it. Told to copy the file, a lane
+# on 2026-08-06 did — into its own worktree, where it will be lost with
+# the worktree, and only after the gate had already read "ok" once.
+#
+# So the MAIN WORKTREE's file is USED rather than pointed at. A worktree
+# is not a fresh clone: it is the same desk, the same Retro68 install and
+# the same person, and treating it as a stranger is what turned "the
+# toolchain is on this machine" into "SKIPPED (no toolchain)" — which is
+# a gate declining to run, which AGENTS.md treats as a defect in itself.
+env_lab=""
+if [ -f "$repo_root/.env.lab" ]; then
+    env_lab="$repo_root/.env.lab"
+else
+    common=$(git -C "$repo_root" rev-parse --git-common-dir 2>/dev/null || true)
+    case "$common" in
+        "") ;;
+        /*) ;;
+        *) common="$repo_root/$common" ;;
+    esac
+    if [ -n "$common" ] && [ -f "$(dirname "$common")/.env.lab" ]; then
+        env_lab="$(dirname "$common")/.env.lab"
+        echo "== .env.lab from the main worktree: $env_lab"
+    fi
+fi
+if [ -n "$env_lab" ]; then
+    set -a
+    . "$env_lab"
+    set +a
+else
+    echo "== no .env.lab in $repo_root, nor in this repository's main worktree"
+    # A sibling worktree's copy is EVIDENCE THE TOOLCHAIN IS INSTALLED —
+    # some lane wrote one locally because it was told to — and the cure
+    # is to put it where every worktree finds it, not to make a fourth
+    # copy that dies with this worktree.
+    main=""
+    if [ -n "${common:-}" ]; then main=$(dirname "$common"); fi
+    sibling=$(ls -1 "$repo_root"/../*/.env.lab 2>/dev/null | head -1)
+    if [ -n "$sibling" ]; then
+        echo "   a sibling worktree has one, so Retro68 IS on this machine:"
+        echo "     $sibling"
+        echo "   put it where every worktree will find it:"
+        echo "     cp \"$sibling\" \"${main:-$repo_root}/.env.lab\""
+    else
+        echo "   cp .env.lab.example .env.lab   # see docs/lab-setup.md"
+    fi
+fi
+
+# Keyed to THIS checkout. Build products stay outside the repository
+# (AGENTS.md), but a single shared path outside it is worse than useless
+# here: this project runs many worktrees at once, and CMake caches the
+# source directory in its build tree, so the second worktree to run this
+# fails with "does not match the source used to generate cache" - which
+# reads like a broken checkout rather than two of them sharing a drawer.
+# Found by building a merge trial in a scratch worktree.
+out_root=${TMPDIR:-/tmp}/now-guest-builds/$(printf '%s' "$repo_root" \
+    | shasum | cut -c1-12)
+rc=0
+
+have () { [ -n "${1:-}" ] && [ -f "$1" ]; }
+
+# build_guest <label> <source-dir> <toolchain-file> <build-subdir>
+build_guest() {
+    label=$1; src=$2; toolchain=$3; sub=$4
+    if ! have "$toolchain"; then
+        echo "== $label: SKIPPED (no toolchain; see docs/lab-setup.md)"
+        return 0
+    fi
+    dir="$out_root/$sub"
+    log="$dir/build.log"
+    mkdir -p "$dir"
+    # Configure quietly; a failure prints the log rather than a bare
+    # non-zero, because "cmake failed" with no output is a bug report
+    # nobody can act on.
+    if ! cmake -S "$repo_root/$src" -B "$dir" -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" >"$log" 2>&1 \
+        || ! cmake --build "$dir" >>"$log" 2>&1; then
+        echo "== $label: FAILED"
+        tail -30 "$log"
+        rc=1
+        return 0
+    fi
+    echo "== $label: ok"
+}
+
+if [ "$which" = both ] || [ "$which" = ppc ]; then
+    build_guest "now-guest-ppc (PowerPC Carbon)" now-guest-ppc \
+        "${NOW_PPC_TOOLCHAIN:-}" ppc
+fi
+
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "now-guest-68k (68K, System 7.1)" now-guest-68k \
+        "${NOW68K_TOOLCHAIN:-}" m68k
+fi
+
+# The extension, and it was missing from this script entirely until
+# 2026-07-31 - so the one piece of code here that runs at BOOT, in every
+# process's context, and whose failure needs a shift-boot to recover was
+# the one piece no gate ever compiled. It is 68K even on a PowerPC
+# machine, because an INIT is; that is a property of classic Mac OS
+# rather than a choice, so it builds with the 68K toolchain beside the
+# 68K guest.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "ext (NOW Extension, 68K INIT)" ext \
+        "${NOW68K_TOOLCHAIN:-}" ext
+fi
+
+# The rig's shutdown applet. Not a guest and not part of the product - it
+# is the emulator instrument scripts/spin-up-ppc launches to make the
+# machine shut ITSELF down before the cold reboot an INIT requires. It
+# builds here because this script is the only thing in the tree that
+# drives a cross-compiler, and it is 68K because the Shutdown Manager is
+# CALL_NOT_IN_CARBON: the toolchain the application uses cannot see it.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "guest-shutdown (NOW Shut Down, rig instrument)" \
+        tools/guest-shutdown "${NOW68K_TOOLCHAIN:-}" shutdown
+fi
+
+# The rig's wedge applet, sibling of the one above and here for the same
+# reason: this script is the only thing in the tree that drives a
+# cross-compiler. It starves the guest on purpose, for a bounded time, so
+# the liveness work of plan 012 can be tested without hand-driving the
+# Finder into a modal - which on 2026-08-05 cost a staged image, because
+# that wedge could not be released from software.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "guest-wedge (NOW Wedge, rig instrument)" \
+        tools/guest-wedge "${NOW68K_TOOLCHAIN:-}" wedge
+fi
+
+# The GWorld spike, third rig applet and the same kind of thing: it owns
+# both ends of the question the foreign probe cannot separate - does
+# offscreen drawing consult grafProcs at all, and where does a GWorld's
+# port actually live. docs/gworld-probe-brief.md, and the spike's own
+# header for why it is 68K.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "guest-gworld (NOW GWorld, rig instrument)" \
+        tools/guest-gworld "${NOW68K_TOOLCHAIN:-}" gworld
+fi
+
+# The ATA instrument, fourth rig applet. It asks one Macintosh's drive to
+# IDENTIFY twice - once with ataPBFlags zero and once with
+# bATAFlagIORead set - so a single run is a claim about the FLAG rather
+# than about this build. It exists because census_ata_identify left that
+# flag clear, so the ATA Manager never drove the data-in phase: the call
+# returned noErr with an empty buffer, left the device mid-command, and
+# cost every shutdown its final "volume unmounted" write. The source
+# comment in now-guest-ppc/src/census/census_probes.c still records an
+# "EMPTY IDENTIFY buffer" from the 1400c on 2026-07-22 - which was never
+# the drive having nothing to say. Nobody had asked for the data.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "guest-ata (NOW ATA, rig instrument)" \
+        tools/guest-ata "${NOW68K_TOOLCHAIN:-}" ata
+fi
+
+exit $rc

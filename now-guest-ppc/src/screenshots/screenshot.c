@@ -1,0 +1,334 @@
+#include "screenshot.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#include "capture.h"
+
+static long micros_to_ms(UnsignedWide start, UnsignedWide end)
+{
+    unsigned long lo = end.lo - start.lo;   /* spans are well under 2^32 us */
+    return (long)(lo / 1000);
+}
+
+/* Records the GWorld into a PICT; QuickDraw emits PackBits-compressed
+   opcodes on its own. Caller disposes the handle. */
+static PicHandle encode_pict(CaptureImage *image)
+{
+    CGrafPtr saved_port;
+    GDHandle saved_device;
+    PicHandle pic;
+    PixMapHandle pixels = GetGWorldPixMap(image->world);
+
+    if (pixels == NULL || !LockPixels(pixels)) {
+        return NULL;
+    }
+    GetGWorld(&saved_port, &saved_device);
+    SetGWorld(image->world, NULL);
+    pic = OpenPicture(&image->bounds);
+    if (pic != NULL) {
+        ClipRect(&image->bounds);
+        CopyBits(GetPortBitMapForCopyBits(image->world),
+                 GetPortBitMapForCopyBits(image->world),
+                 &image->bounds, &image->bounds, srcCopy, NULL);
+        ClosePicture();
+    }
+    SetGWorld(saved_port, saved_device);
+    UnlockPixels(pixels);
+    if (pic != NULL && GetHandleSize((Handle)pic) <= (Size)sizeof(Picture)) {
+        KillPicture(pic);
+        return NULL;
+    }
+    return pic;
+}
+
+/* Names the file the contemporary way — "Screenshot 2026-07-19 22.53.01"
+   (30 chars; HFS caps names at 31, which is why there is no " at ") — and
+   writes the PICT (512-byte header + picture data), type PICT / creator
+   ttxt so SimpleText opens it with a double-click. */
+static OSErr save_pict(PicHandle pic, char *name_out, long name_cap)
+{
+    short vref, ref;
+    long dirid;
+    FSSpec spec;
+    OSErr err;
+    int n;
+    char name[40];
+    Str255 pname;
+    long len;
+    char header[512];
+
+    err = FindFolder(kOnSystemDisk, kDesktopFolderType, kCreateFolder,
+                     &vref, &dirid);
+    if (err != noErr) {
+        return err;
+    }
+    for (n = 0; n < 2; ++n) {
+        if (n == 0) {
+            DateTimeRec when;
+
+            GetTime(&when);
+            snprintf(name, sizeof name,
+                     "Screenshot %04u-%02u-%02u %02u.%02u.%02u",
+                     (unsigned)when.year % 10000u,
+                     (unsigned)when.month % 100u,
+                     (unsigned)when.day % 100u,
+                     (unsigned)when.hour % 100u,
+                     (unsigned)when.minute % 100u,
+                     (unsigned)when.second % 100u);
+        } else {
+            /* Same-second collision: ticks are unique enough. */
+            snprintf(name, sizeof name, "Screenshot %lu",
+                     (unsigned long)TickCount());
+        }
+        CopyCStringToPascal(name, pname);
+        err = FSMakeFSSpec(vref, dirid, pname, &spec);
+        if (err == fnfErr) {
+            break;
+        }
+    }
+    if (n >= 100) {
+        return dupFNErr;
+    }
+    err = FSpCreate(&spec, 'ttxt', 'PICT', smSystemScript);
+    if (err != noErr) {
+        return err;
+    }
+    err = FSpOpenDF(&spec, fsRdWrPerm, &ref);
+    if (err != noErr) {
+        return err;
+    }
+    memset(header, 0, sizeof header);
+    len = sizeof header;
+    err = FSWrite(ref, &len, header);
+    if (err == noErr) {
+        HLock((Handle)pic);
+        len = GetHandleSize((Handle)pic);
+        err = FSWrite(ref, &len, *pic);
+        HUnlock((Handle)pic);
+    }
+    FSClose(ref);
+    if (err == noErr) {
+        snprintf(name_out, name_cap, "%s", name);
+    }
+    return err;
+}
+
+/* The latest capture, scaled once for the Workshop's preview well while
+   the full-screen pixels still exist - never by recapturing, and never
+   at full size. Owned here; each capture replaces the last. */
+static GWorldPtr g_preview;
+static Rect g_preview_bounds;
+
+enum {
+    kPreviewMaxW = 400,
+    kPreviewMaxH = 300
+};
+
+static void update_preview(CaptureImage *image)
+{
+    CGrafPtr saved_port;
+    GDHandle saved_device;
+    PixMapHandle src_pixels;
+    PixMapHandle dst_pixels;
+    GWorldPtr world = NULL;
+    Rect dst;
+    long w = image->bounds.right - image->bounds.left;
+    long h = image->bounds.bottom - image->bounds.top;
+    long pw = kPreviewMaxW;
+    long ph;
+    RGBColor black = { 0, 0, 0 };
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+
+    if (g_preview != NULL) {
+        DisposeGWorld(g_preview);
+        g_preview = NULL;
+    }
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    ph = h * pw / w;
+    if (ph > kPreviewMaxH) {
+        ph = kPreviewMaxH;
+        pw = w * ph / h;
+    }
+    SetRect(&dst, 0, 0, (short)pw, (short)ph);
+    if (NewGWorld(&world, image->depth, &dst, NULL, NULL, 0) != noErr
+        || world == NULL) {
+        return;                       /* the preview is optional */
+    }
+    src_pixels = GetGWorldPixMap(image->world);
+    dst_pixels = GetGWorldPixMap(world);
+    if (src_pixels == NULL || dst_pixels == NULL
+        || !LockPixels(src_pixels) || !LockPixels(dst_pixels)) {
+        DisposeGWorld(world);
+        return;
+    }
+    GetGWorld(&saved_port, &saved_device);
+    SetGWorld(world, NULL);
+    RGBForeColor(&black);
+    RGBBackColor(&white);
+    CopyBits(GetPortBitMapForCopyBits(image->world),
+             GetPortBitMapForCopyBits(world),
+             &image->bounds, &dst, srcCopy, NULL);
+    SetGWorld(saved_port, saved_device);
+    UnlockPixels(src_pixels);
+    UnlockPixels(dst_pixels);
+    g_preview = world;
+    g_preview_bounds = dst;
+}
+
+GWorldPtr now_screenshot_preview(Rect *bounds)
+{
+    if (g_preview != NULL && bounds != NULL) {
+        *bounds = g_preview_bounds;
+    }
+    return g_preview;
+}
+
+int now_screenshot_rect(const Rect *screen_rect, short depth, Boolean save,
+                        ShotStats *stats, char *err, long err_cap)
+{
+    CaptureImage image;
+    PicHandle pic;
+    UnsignedWide t0, t1, t2;
+    int rc;
+    OSErr oserr;
+
+    memset(stats, 0, sizeof *stats);
+    err[0] = '\0';
+
+    Microseconds(&t0);
+    rc = capture_screen_rect(depth, screen_rect, &image);
+    Microseconds(&t1);
+    if (rc != kCaptureOK) {
+        switch (rc) {
+        case kCaptureInvalidDepth:
+            snprintf(err, err_cap, "depth must be 1, 2, 4, 8, 16 or 32");
+            break;
+        case kCaptureNoScreen:
+            snprintf(err, err_cap, "the window is off-screen");
+            break;
+        case kCaptureNoMemory:
+            snprintf(err, err_cap, "not enough memory at %d-bit", depth);
+            break;
+        default:
+            snprintf(err, err_cap, "capture failed (%d)", rc);
+            break;
+        }
+        return rc;
+    }
+
+    pic = encode_pict(&image);
+    Microseconds(&t2);
+    if (pic == NULL) {
+        capture_image_dispose(&image);
+        snprintf(err, err_cap, "PICT encoding failed");
+        return kCapturePixelsUnavailable;
+    }
+
+    stats->width = (short)(image.bounds.right - image.bounds.left);
+    stats->height = (short)(image.bounds.bottom - image.bounds.top);
+    stats->depth = depth;
+    stats->bands = 1;
+    stats->raw_bytes = image.pixel_bytes;
+    stats->pict_bytes = GetHandleSize((Handle)pic);
+    stats->capture_ms = micros_to_ms(t0, t1);
+    stats->encode_ms = micros_to_ms(t1, t2);
+
+    if (save) {
+        oserr = save_pict(pic, stats->saved_name, sizeof stats->saved_name);
+        if (oserr != noErr) {
+            KillPicture(pic);
+            capture_image_dispose(&image);
+            snprintf(err, err_cap, "save failed (error %d)", oserr);
+            return kCapturePixelsUnavailable;
+        }
+    }
+    update_preview(&image);
+    KillPicture(pic);
+    capture_image_dispose(&image);
+    return 0;
+}
+
+int now_screenshot(short depth, short bands, Boolean save, ShotStats *stats,
+                   char *err, long err_cap)
+{
+    BandedCapture cap;
+    CaptureImage image;
+    PicHandle pic;
+    UnsignedWide t0, t1, t2;
+    int rc;
+    int b;
+    OSErr oserr;
+
+    memset(stats, 0, sizeof *stats);
+    err[0] = '\0';
+
+    Microseconds(&t0);
+    rc = banded_capture_begin(depth, bands, &cap);
+    while (rc == kCaptureOK && cap.cur_span < cap.n_spans) {
+        rc = banded_capture_step(&cap);
+        if (rc == kCaptureMoreBands) {
+            rc = kCaptureOK;
+        }
+    }
+    Microseconds(&t1);
+    if (rc == kCaptureOK) {
+        image = cap.image;
+        stats->bands = cap.steps;
+        for (b = 0; b < cap.steps && b < kCaptureMaxBands; ++b) {
+            long us = (long)cap.band_us[b];
+            if (b == 0 || us < stats->band_min_us) {
+                stats->band_min_us = us;
+            }
+            if (us > stats->band_max_us) {
+                stats->band_max_us = us;
+            }
+        }
+    }
+    if (rc != kCaptureOK) {
+        switch (rc) {
+        case kCaptureInvalidDepth:
+            snprintf(err, err_cap, "depth must be 1, 2, 4, 8, 16 or 32");
+            break;
+        case kCaptureNoMemory:
+            snprintf(err, err_cap, "not enough memory at %d-bit", depth);
+            break;
+        default:
+            snprintf(err, err_cap, "capture failed (%d)", rc);
+            break;
+        }
+        return rc;
+    }
+
+    pic = encode_pict(&image);
+    Microseconds(&t2);
+    if (pic == NULL) {
+        capture_image_dispose(&image);
+        snprintf(err, err_cap, "PICT encoding failed");
+        return kCapturePixelsUnavailable;
+    }
+
+    stats->width = (short)(image.bounds.right - image.bounds.left);
+    stats->height = (short)(image.bounds.bottom - image.bounds.top);
+    stats->depth = depth;
+    stats->raw_bytes = image.pixel_bytes;
+    stats->pict_bytes = GetHandleSize((Handle)pic);
+    stats->capture_ms = micros_to_ms(t0, t1);
+    stats->encode_ms = micros_to_ms(t1, t2);
+
+    if (save) {
+        oserr = save_pict(pic, stats->saved_name, sizeof stats->saved_name);
+        if (oserr != noErr) {
+            KillPicture(pic);
+            capture_image_dispose(&image);
+            snprintf(err, err_cap, "save failed (error %d)", oserr);
+            return kCapturePixelsUnavailable;
+        }
+    }
+    update_preview(&image);
+    KillPicture(pic);
+    capture_image_dispose(&image);
+    return 0;
+}

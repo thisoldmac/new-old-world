@@ -1,0 +1,32 @@
+#!/bin/sh
+# Point this clone's git at .githooks. Run once per clone:
+#
+#     tools/setup-hooks
+#
+# core.hooksPath is commonly stored in the shared repository config. Existing
+# worktrees can carry a worktree-local override; tools/hooks-doctor reports that
+# census, so never infer another lane is armed from this command's success.
+set -eu
+root=$(git rev-parse --show-toplevel)
+git -C "$root" config core.hooksPath .githooks
+
+# The receipts merge driver. A driver's BODY cannot be tracked — git will
+# not run a command named by a file in the tree it is merging — so
+# .gitattributes names it and this writes it, per clone. Both halves are
+# needed and neither is sufficient, which is why .githooks/pre-merge-commit
+# re-checks the result: a clone that skipped this step still gets caught.
+git -C "$root" config merge.nowreceipts.name \
+    "stage-image receipts — always conflict, a person must decide"
+git -C "$root" config merge.nowreceipts.driver \
+    "$root/tools/receipts-merge-driver %O %A %B %L %P"
+
+echo "core.hooksPath = .githooks"
+echo "  pre-commit:       main-guardrail (TBT_ALLOW_MAIN=1 overrides)"
+echo "                    ext-bake-gate  (TBT_DEFER_EXT_BAKE=1 + reason defers)"
+echo "                    product-version copies must agree"
+echo "  pre-merge-commit: ext-bake-gate merge-check (aborts an incoherent merge)"
+echo "  reference-transaction: refuses main resident changes without a shared bake"
+echo "                         or product changes without a release-version advance"
+echo "  post-merge:       says what the stage image is now (cannot refuse)"
+echo "merge.nowreceipts = tools/receipts-merge-driver"
+echo "  ext/stage-receipts.json conflicts BY DESIGN on every real merge."

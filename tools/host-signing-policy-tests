@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Mutation evidence for credential-free CI versus owner release signing."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parent.parent
+TEAM = "B93A9CG7F9"
+
+
+def problems(script: str, project: str, builder: str, releasing: str) -> list[str]:
+    found: list[str] = []
+    if "DEVELOPMENT_TEAM =" in project:
+        found.append("Xcode project hard-codes an owner development team")
+    required_script = (
+        "signing=${NOW_HOST_SIGNING:-unsigned}",
+        "unsigned|release",
+        "CODE_SIGNING_ALLOWED=NO",
+        "CODE_SIGNING_REQUIRED=NO",
+        f"release_team={TEAM}",
+        'if [ "$signing" = release ]; then',
+        '"$script_dir/verify-host-signature"',
+    )
+    for text in required_script:
+        if text not in script:
+            found.append(f"host gate lost signing policy fragment: {text}")
+    if f"DEVELOPMENT_TEAM={TEAM}" not in builder:
+        found.append("owner app builder does not select the release team")
+    if "NOW_HOST_SIGNING=release scripts/test-host" not in releasing:
+        found.append("release procedure does not require the owner-signing gate")
+    return found
+
+
+def require_refusal(name: str, script: str, project: str, builder: str,
+                    releasing: str, needle: str) -> None:
+    result = problems(script, project, builder, releasing)
+    if needle not in result:
+        raise AssertionError(f"{name} mutation was not refused by name: {result}")
+    print(f"  ok    {name}")
+
+
+def main() -> int:
+    script_path = ROOT / "scripts/test-host"
+    project_path = ROOT / "now-host/NewOldWorld.xcodeproj/project.pbxproj"
+    builder_path = ROOT / "scripts/build-host-app"
+    releasing_path = ROOT / "RELEASING.md"
+    script = script_path.read_text()
+    project = project_path.read_text()
+    builder = builder_path.read_text()
+    releasing = releasing_path.read_text()
+
+    baseline = problems(script, project, builder, releasing)
+    if baseline:
+        raise AssertionError("baseline signing policy failed: " + "; ".join(baseline))
+
+    env = os.environ.copy()
+    env["NOW_HOST_SIGNING"] = "invented"
+    with tempfile.TemporaryDirectory(prefix="now-signing-mode-") as scratch:
+        invalid = subprocess.run(
+            (str(script_path), scratch), cwd=ROOT, env=env,
+            text=True, capture_output=True,
+        )
+    if invalid.returncode != 64 or "must be unsigned or release" not in invalid.stderr:
+        raise AssertionError("unknown signing mode was not refused before building")
+    print("  ok    unknown signing mode fails closed")
+
+    require_refusal(
+        "project-owned team",
+        script,
+        project + f"\nDEVELOPMENT_TEAM = {TEAM};\n",
+        builder,
+        releasing,
+        "Xcode project hard-codes an owner development team",
+    )
+    require_refusal(
+        "unsigned build lost",
+        script.replace("CODE_SIGNING_ALLOWED=NO", "CODE_SIGNING_ALLOWED=YES", 1),
+        project,
+        builder,
+        releasing,
+        "host gate lost signing policy fragment: CODE_SIGNING_ALLOWED=NO",
+    )
+    require_refusal(
+        "release procedure lost",
+        script,
+        project,
+        builder,
+        releasing.replace("NOW_HOST_SIGNING=release scripts/test-host", "scripts/test-host", 1),
+        "release procedure does not require the owner-signing gate",
+    )
+    print("host signing policy: credential-free CI and owner release gates are distinct")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except AssertionError as error:
+        print(f"FAILED: {error}")
+        raise SystemExit(1)

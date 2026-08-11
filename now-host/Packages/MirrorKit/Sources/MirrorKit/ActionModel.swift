@@ -1,0 +1,485 @@
+import Foundation
+
+/// The semantic action vocabulary: what the mirror can DO to the guest,
+/// element-first. Every gesture resolves to a list of these; the dispatcher
+/// turns them into wire verbs or a concrete input-device adapter.
+public enum MirrorAction: Equatable {
+    /// Semantic, fail-closed click on a resolved control.
+    case axdo(ref: String, count: Int = 1, mods: Int = 0, text: String? = nil)
+    /// Keystroke. Menu shortcuts MUST carry the virtual keycode — Finder's
+    /// MenuEvent matches the code, not the char (CONTROL-SURFACE.md).
+    case key(code: Int, char: Int, mods: Int)
+    /// Type ASCII text into the current focus.
+    case type(text: String)
+    /// Bring a process forward (PSN as the scene's "hi.lo" string).
+    case activate(psn: String)
+    /// Positional click at a guest point (front app receives it).
+    case click(x: Int, y: Int, count: Int = 1, mods: Int = 0)
+    /// Press-move-release through a positioned input-device adapter. Drives
+    /// DragWindow/GrowWindow tracking loops the semantic wire cannot enter.
+    case deviceDrag(x0: Int, y0: Int, x1: Int, y1: Int)
+    /// A hardware-shaped press-release at a point, for title-bar widget
+    /// tracking loops such as TrackGoAway and TrackBox.
+    case deviceClick(x: Int, y: Int)
+    /// A hardware-shaped double-click at a point — two rapid
+    /// press-releases without repositioning between, so the guest sees a
+    /// genuine double-click (opens icons).
+    case deviceDoubleClick(x: Int, y: Int)
+    /// Select a shortcut-less menu item: press on the menubar title, drag
+    /// down the guest-drawn menu to the item row, release.
+    case menuTracking(menuLeft: Int, itemIndex: Int)
+
+    /// Perform a menu command through the Portal: the guest's in-process agent
+    /// answers the application's own MenuSelect with this item, so the app runs
+    /// its real command handler. No menu is drawn, no tracking loop runs, and
+    /// no input device is involved. This is the path for a shortcut-less
+    /// item; a ⌘ item should still go as a keystroke, which needs no patch.
+    case menuInvoke(menuID: Int, itemIndex: Int, titleLeft: Int)
+    /// **A Control Manager part on a resolved control.** The semantic form
+    /// of everything `deviceClick` does to a scroll bar: the arrow, the page
+    /// gap and the thumb are three different acts, and this says which one
+    /// without a mouse being involved.
+    ///
+    /// A resident act plane can serve this on an emulator or on metal. A
+    /// driver without one declares so and the gesture may fall back to its
+    /// input-device adapter when one is explicitly available.
+    case controlPart(ref: String, part: Int, mods: Int = 0)
+    /// **A window act addressed by reference**: select it, close it, zoom it,
+    /// move it, size it. The Window Manager's own operations, rather than a hardware
+    /// press inside a widget whose tracking loop then runs.
+    ///
+    /// Same argument as `controlPart`, and the same fallback. A title-bar
+    /// device drag depends on an input adapter; this works wherever the act
+    /// plane is resident.
+    case windowAct(ref: String, act: WindowAct)
+
+    /// What `windowAct` can ask for. `select` is the exact-window primitive
+    /// a process activation cannot replace: Finder may own several visible
+    /// windows and clicking one must select that one, not merely Finder.
+    public enum WindowAct: Equatable, Sendable {
+        case select
+        case close
+        case zoom(out: Bool)
+        case move(left: Int, top: Int)
+        case resize(width: Int, height: Int)
+    }
+
+    /// A scrollbar thumb drag. Distinct from `deviceDrag` because the drop
+    /// position is the value: TrackControl live-tracks the thumb, so this needs the
+    /// precise (unity-compensated) motion a menu drag needs — the 1.6x a
+    /// window drag wants would overshoot and slam the thumb to the end.
+    case thumbTracking(x0: Int, y0: Int, x1: Int, y1: Int)
+}
+
+/// Per-driver availability: the GUI grays what a driver can't do, the
+/// headless head reports it as data; nothing degrades silently.
+public enum ActionAvailability: Equatable {
+    case available
+    /// Requires a positioned input-device adapter and this driver has none.
+    case inputDeviceUnavailable(reason: String)
+    /// The driver serves no verb for this act at all. Distinct from
+    /// `inputDeviceUnavailable`, which says "this driver, not this act" - here the
+    /// act is simply outside what the target's wire can express, and no
+    /// emulator makes it possible. A GUI greys both and says different
+    /// things.
+    case unsupported(reason: String)
+}
+
+
+/// **What a driver can actually serve.**
+///
+/// The same gesture is not the same action on every target, and that is a
+/// fact about the wire rather than a preference. A click on a scroll arrow
+/// is a positioned hardware press for a driver whose only input is a
+/// mouse, and a Control Manager part for one with a resident act plane -
+/// and only the second works on a Macintosh that is not an emulator.
+///
+/// This exists so that difference lives in ONE place. The alternative was
+/// a second action model beside this one, and a gesture layer forked per
+/// target is where a behavioural difference becomes invisible in review
+/// and obvious to a person's hand.
+public struct ActionPlanes: Equatable, Sendable {
+    /// Positioned hardware-shaped input. Drives the
+    /// Toolbox tracking loops - DragWindow, GrowWindow, TrackControl -
+    /// that no semantic wire verb can enter.
+    public var inputDevice: Bool
+    /// Acts addressed by an opaque reference the guest minted: a control
+    /// part, a window act, a menu item. Needs a resident act plane on the
+    /// guest; works on metal, which is the point.
+    public var semanticActs: Bool
+    /// A positional click verb on the wire - a click at a point, posted
+    /// into the front application's event queue. Metal-safe where it
+    /// exists, and it does not exist everywhere: NOW's contract has no
+    /// such verb and says so deliberately.
+    public var positionalClick: Bool
+    /// Can this guest post a keystroke that carries MODIFIERS?
+    ///
+    /// Measured on NOW's Carbon guest, 2026-08-02: no, and it refuses
+    /// rather than lying. An event's modifiers live on the Event
+    /// Manager's queue element, and `PPostEvent` - the only call that
+    /// hands that element back - is not in CarbonLib. Posting without
+    /// the modifier would type a bare character and report success,
+    /// which is the failure mode worth refusing over.
+    ///
+    /// It matters because a menu shortcut is the obvious way to send a
+    /// command and is unavailable here; the act plane's `menuact`
+    /// answers the application's own MenuSelect instead and needs no
+    /// modifier at all.
+    public var modifiedKeystrokes: Bool
+
+    public init(inputDevice: Bool, semanticActs: Bool, positionalClick: Bool,
+                modifiedKeystrokes: Bool = true) {
+        self.inputDevice = inputDevice
+        self.semanticActs = semanticActs
+        self.positionalClick = positionalClick
+        self.modifiedKeystrokes = modifiedKeystrokes
+    }
+
+    /// A driver with positioned device input and a positional click verb,
+    /// but no resident semantic act plane.
+    public static let deviceDriven = ActionPlanes(
+        inputDevice: true, semanticActs: false, positionalClick: true)
+
+    /// A guest with the resident act plane and no positional click - NOW.
+    /// Window and control acts go semantically and work on metal; a click
+    /// on bare desktop has nowhere to go and is refused by name rather
+    /// than silently dropped.
+    public static let residentActPlane = ActionPlanes(
+        inputDevice: false, semanticActs: true, positionalClick: false,
+        modifiedKeystrokes: false)
+}
+
+public enum ActionModel {
+
+    /// Command-key modifier bit in the Mac event modifiers word (the wire's
+    /// `mods` is `evtQModifiers`: cmd=256 shift=512 opt=2048 ctrl=4096).
+    public static let cmdKey = 256
+
+    /// Mac US virtual keycodes. Menu shortcut matching keys off the CODE,
+    /// not just the char — sending char alone silently no-ops in Finder.
+    public static let keycodes: [Character: Int] = [
+        "a": 0, "b": 11, "c": 8, "d": 2, "e": 14, "f": 3, "g": 5, "h": 4,
+        "i": 34, "j": 38, "k": 40, "l": 37, "m": 46, "n": 45, "o": 31,
+        "p": 35, "q": 12, "r": 15, "s": 1, "t": 17, "u": 32, "v": 9,
+        "w": 13, "x": 7, "y": 16, "z": 6,
+        "0": 29, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22,
+        "7": 26, "8": 28, "9": 25,
+    ]
+
+    /// The same question asked of a driver rather than of a wire address,
+    /// because NOW is not one: it is reached over its own wire and serves
+    /// acts a `MirrorTarget` has no way to describe.
+    public static func availability(_ action: MirrorAction,
+                                    planes: ActionPlanes)
+        -> ActionAvailability {
+        switch action {
+        case .deviceDrag, .deviceClick, .deviceDoubleClick,
+             .menuTracking, .thumbTracking:
+            return planes.inputDevice
+                ? .available
+                : .inputDeviceUnavailable(
+                    reason: "needs a positioned input-device adapter; "
+                        + "this driver has none")
+        case .controlPart, .windowAct:
+            return planes.semanticActs
+                ? .available
+                : .unsupported(reason: "needs a resident act plane; this "
+                               + "target addresses nothing by reference")
+        case .click:
+            return planes.positionalClick
+                ? .available
+                : .unsupported(reason: "this target has no positional click "
+                               + "verb - it can act on an element it "
+                               + "resolved, and not on a bare point")
+        default:
+            return .available
+        }
+    }
+
+    /// A scroll bar region as the Control Manager numbers it. The mapping
+    /// is the guest's, quoted: `ctlact` names 20 up, 21 down, 22 page-up,
+    /// 23 page-down, 129 the indicator, in its own refusal text.
+    public static func partCode(_ part: Scrollbar.Part) -> Int {
+        switch part {
+        case .lineUp:   return 20
+        case .lineDown: return 21
+        case .pageUp:   return 22
+        case .pageDown: return 23
+        case .thumb:    return 129
+        }
+    }
+
+    // MARK: - Guest menu geometry (menu-drag targeting)
+
+    /// OS 9 standard menu rows are 16 px tall, drawn directly below the
+    /// 20 px menubar. Item i (1-based) centers at menubarBottom + (i-1)*16
+    /// + 8. Calibrated live (see the slice-7 commit) — a wrong row height
+    /// selects the wrong item, so treat changes as behavior changes.
+    public static let menuRowHeight = 16
+    public static let menubarHeight = HitTester.menubarHeight
+
+    public static func menuItemPoint(menuLeft: Int, itemIndex: Int)
+        -> (x: Int, y: Int) {
+        (menuLeft + 20,
+         menubarHeight + 1 + (itemIndex - 1) * menuRowHeight + menuRowHeight / 2)
+    }
+
+    // MARK: - Gesture → actions
+
+    /// A primary click on a hit target. Returns the action sequence to
+    /// dispatch in order (a background-window click activates first), or
+    /// [] when the element is inert (disabled control, desktop backdrop…).
+    public static func click(on target: HitTester.Target,
+                             count: Int = 1, mods: Int = 0) -> [MirrorAction] {
+        click(on: target, count: count, mods: mods,
+              planes: .deviceDriven, in: nil)
+    }
+
+    /// The same gesture, resolved against what the driver can actually do.
+    ///
+    /// `scene` is needed only to find a window's act reference from the
+    /// `windowID` a hit carries, and only when `planes.semanticActs` - a
+    /// hit names a rendering key, and an act needs the guest's own token.
+    ///
+    /// **What it does NOT do is silently substitute.** An act this target
+    /// cannot serve is still returned, so `availability` refuses it by
+    /// name and a person is told which half is missing. Swapping in a
+    /// coordinate click that lands somewhere plausible is the shape the
+    /// papering-over would take, and it is how a mirror ends up clicking
+    /// the wrong thing while looking like it works.
+    public static func click(on target: HitTester.Target,
+                             count: Int = 1, mods: Int = 0,
+                             planes: ActionPlanes,
+                             in scene: Scene?) -> [MirrorAction] {
+        if planes.semanticActs {
+            switch target {
+            case .scrollbar(_, let ctl, let part, _, _):
+                // The thumb stays a drag: its DROP POSITION is the value,
+                // and a part code presses rather than positions.
+                if part != .thumb, !ctl.ref.isEmpty {
+                    return [.controlPart(ref: ctl.ref,
+                                         part: partCode(part), mods: mods)]
+                }
+            case .widget(let windowID, let kind, _, _):
+                if let ref = windowRef(windowID, in: scene) {
+                    switch kind {
+                    case .close: return [.windowAct(ref: ref, act: .close)]
+                    case .zoom:  return [.windowAct(ref: ref,
+                                                    act: .zoom(out: true))]
+                    // The Window Manager exposes no collapse operation, so
+                    // the hardware press on the box is the only route and
+                    // it stays device-backed rather than being invented.
+                    case .collapse: break
+                    }
+                }
+            default:
+                break
+            }
+        }
+        return positionalClick(on: target, count: count, mods: mods)
+    }
+
+    /// A window's act reference, from the rendering key a hit carries.
+    static func windowRef(_ windowID: String, in scene: Scene?) -> String? {
+        guard let ref = scene?.windows.first(where: { $0.id == windowID })?.ref,
+              !ref.isEmpty else { return nil }
+        return ref
+    }
+
+    private static func positionalClick(on target: HitTester.Target,
+                                        count: Int,
+                                        mods: Int) -> [MirrorAction] {
+        switch target {
+        case .control(_, let ctl):
+            guard ctl.enabled, !ctl.ref.isEmpty else { return [] }
+            return [.axdo(ref: ctl.ref, count: count, mods: mods, text: nil)]
+        case .dialogItem:
+            // No legacy MirrorAction can express the Dialog Manager path.
+            // The object-first NOW driver serves this target directly.
+            return []
+        case .scrollbar(_, _, let part, let x, let y):
+            // A real press-release at the region: the Control Manager's
+            // TrackControl is a tracking loop the wire can't drive (the same
+            // story as the title-bar widgets), and it auto-repeats a line/page
+            // while the button is held. `axdo` would click the control's
+            // CENTRE — a page gap — whatever the user actually pressed.
+            // The thumb is a drag, not a click.
+            guard part != .thumb else { return [] }
+            return [.deviceClick(x: x, y: y)]
+        case .menubarBackground:
+            // Missing menubar content is inert; no local substitute may pose
+            // as a guest-provided menu.
+            return []
+        case .windowItem(_, _, let x, let y):
+            // Identical treatment to a desktop icon, and for the same reason:
+            // the coordinates are the icon's own centre as the FINDER reports
+            // it, so the click is as good as the guest's own layout. Select
+            // with a wire click (metal-safe); open with a real double-click,
+            // which needs a real input-device path.
+            if count >= 2 { return [.deviceDoubleClick(x: x, y: y)] }
+            return [.click(x: x, y: y, count: 1, mods: mods)]
+        case .desktopItem(_, let x, let y):
+            // A plain click SELECTS the icon; a double-click OPENS it. The
+            // coordinates are the icon's own centre, not where the pointer
+            // landed, so the click is as good as the position the guest itself
+            // reported. Selection is metal-safe (a posted click); opening still
+            // wants a real input-device double-click.
+            if count >= 2 { return [.deviceDoubleClick(x: x, y: y)] }
+            return [.click(x: x, y: y, count: 1, mods: mods)]
+        case .titlebar(_, _, let x, let y):
+            // A real click in the title bar raises the window (the guest's
+            // SelectWindow) — activate/SetFrontProcess only fronts the app,
+            // not a specific window, and never reorders same-app windows.
+            return [.deviceClick(x: x, y: y)]
+        case .content(_, _, let front, let x, let y):
+            // Double-click (open an icon/item) → a real device double-click.
+            if count >= 2 { return [.deviceDoubleClick(x: x, y: y)] }
+            // Front window: a semantic click (metal-safe). Background window:
+            // a real click to raise it (+ hit the content), like the guest.
+            return front ? [.click(x: x, y: y, count: 1, mods: mods)]
+                         : [.deviceClick(x: x, y: y)]
+        case .desktop(let x, let y):
+            // Double-click a desktop icon → a real device double-click (the
+            // Finder opens it); single click selects via a wire click.
+            if count >= 2 { return [.deviceDoubleClick(x: x, y: y)] }
+            return [.click(x: x, y: y, count: 1, mods: mods)]
+        case .widget(_, _, let x, let y):
+            // Real press-release inside the box; the widget's tracking loop
+            // needs the hardware button.
+            return [.deviceClick(x: x, y: y)]
+        case .growBox:
+            return []   // the grow box acts on drag, not click
+        case .menuTitle:
+            return []   // opening a menu is UI state, not a guest action
+        }
+    }
+
+    /// A grow-box drag → resize (GrowWindow tracks from the grab point).
+    public static func growDrag(from: (x: Int, y: Int),
+                                to: (x: Int, y: Int)) -> [MirrorAction] {
+        [.deviceDrag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
+    }
+
+    /// The same resize as a window act, when the driver can serve one.
+    ///
+    /// A drag is where the corner ENDED; a window act is how big the
+    /// window should be. The conversion is the window's own content
+    /// origin, which is why this needs the window and the bare drag
+    /// does not.
+    public static func growDrag(from: (x: Int, y: Int), to: (x: Int, y: Int),
+                                window: Scene.Window?,
+                                planes: ActionPlanes) -> [MirrorAction] {
+        if planes.semanticActs, let win = window, let ref = win.ref,
+           !ref.isEmpty {
+            let contentTop = win.rect.t + SceneBuilder.titleBarHeight
+            let width = max(1, to.x - win.rect.l)
+            let height = max(1, to.y - contentTop)
+            return [.windowAct(ref: ref,
+                               act: .resize(width: width, height: height))]
+        }
+        return growDrag(from: from, to: to)
+    }
+
+    /// A scrollbar thumb drag → scroll (TrackControl live-tracks the thumb).
+    /// Both points are GLOBAL; the caller maps the control's space through the
+    /// window's content origin.
+    public static func thumbTracking(from: (x: Int, y: Int),
+                                 to: (x: Int, y: Int)) -> [MirrorAction] {
+        [.thumbTracking(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
+    }
+
+    /// A wheel notch over a window → line scrolls on its scrollbar. OS 9 has
+    /// no wheel driver, so injecting wheel events would be a no-op dressed up
+    /// as support; the honest mapping is the arrow the user would have clicked.
+    /// `notches` > 0 scrolls DOWN. Global points, via the content origin.
+    public static func wheel(_ notches: Int, on ctl: Scene.Control,
+                             contentOrigin: (x: Int, y: Int)) -> [MirrorAction] {
+        guard Scrollbar.isLive(ctl), notches != 0,
+              let c = Scrollbar.center(ctl, notches > 0 ? .lineDown : .lineUp)
+        else { return [] }
+        let p = (x: c.x + contentOrigin.x, y: c.y + contentOrigin.y)
+        return Array(repeating: MirrorAction.deviceClick(x: p.x, y: p.y),
+                     count: Swift.min(abs(notches), 8))
+    }
+
+    /// Select a menu item, whatever it takes: ⌘ items go by keystroke
+    /// (cheap, wire-only, metal-safe); shortcut-less items use typed menu
+    /// tracking when an input-device adapter exists. A separator is inert.
+    ///
+    /// We deliberately do NOT gate on `item.enabled`. A classic app disables
+    /// its menus at rest and only AdjustMenus()es them at menu-down time, so
+    /// the passively-read enable flag reads false even for perfectly
+    /// selectable items (SimpleText's whole File menu reads disabled until
+    /// you actually pull it down). The guest's own MenuSelect / keystroke
+    /// dispatch is the real authority on enablement — a truly disabled item
+    /// just no-ops — and the caller verifies the effect by re-poll.
+    public static func menuSelect(menu: Scene.Menu,
+                                  item: Scene.MenuItem) -> [MirrorAction] {
+        guard !item.separator else { return [] }
+        if !item.cmd.isEmpty {
+            return menuItem(item)          // ⌘ items: a keystroke, no patch
+        }
+        // Shortcut-less items go through the Portal, which answers the app's own
+        // MenuSelect by IDENTITY. The menu-drag that used to serve this case
+        // aimed at rows computed from a uniform-16px assumption the guest has
+        // since disproved (separators are 6px), and was device-only besides.
+        guard let titleLeft = menu.left else {
+            /* The scene never reported where this title sits, and that
+               number is the whole of the press's identity: the resident
+               answers a MenuSelect at ONE point, so arming at a
+               made-up one answers a press that is not ours. Nothing to
+               send - the same answer a separator gets, for a different
+               reason, and both are better than a press aimed at a
+               guess. */
+            return []
+        }
+        return [.menuInvoke(menuID: menu.id, itemIndex: item.index,
+                            titleLeft: titleLeft)]
+    }
+
+    /// A title-bar drag gesture → window move (device-backed availability).
+    public static func titlebarDrag(from: (x: Int, y: Int),
+                                    to: (x: Int, y: Int)) -> [MirrorAction] {
+        [.deviceDrag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
+    }
+
+    /// The same move as a window act. The act names WHERE THE WINDOW GOES
+    /// - its content origin - and the gesture only knows how far the
+    /// pointer travelled, so the window's current position is what turns
+    /// one into the other.
+    public static func titlebarDrag(from: (x: Int, y: Int),
+                                    to: (x: Int, y: Int),
+                                    window: Scene.Window?,
+                                    planes: ActionPlanes) -> [MirrorAction] {
+        if planes.semanticActs, let win = window, let ref = win.ref,
+           !ref.isEmpty {
+            let contentTop = win.rect.t + SceneBuilder.titleBarHeight
+            return [.windowAct(ref: ref,
+                               act: .move(left: win.rect.l + (to.x - from.x),
+                                          top: contentTop + (to.y - from.y)))]
+        }
+        return titlebarDrag(from: from, to: to)
+    }
+
+    /// The keystroke path for a ⌘-shortcut menu item (both heads land here).
+    /// Shortcut-less items don't come through here — `menuSelect` routes them
+    /// to input-device menu tracking instead.
+    public static func menuItem(_ item: Scene.MenuItem) -> [MirrorAction] {
+        // No `item.enabled` gate — see menuSelect: the resting enable flag is
+        // not authoritative for app menus. A ⌘ keystroke to a truly disabled
+        // item is a guest-side no-op.
+        guard !item.separator, !item.cmd.isEmpty,
+              let ch = item.cmd.lowercased().first,
+              let ascii = ch.asciiValue else { return [] }
+        return [.key(code: keycodes[ch] ?? 0, char: Int(ascii),
+                     mods: cmdKey)]
+    }
+
+    /// Type into a resolved control: click-to-focus then keystrokes, in one
+    /// fail-closed verb.
+    public static func typeInto(_ ctl: Scene.Control,
+                                text: String) -> [MirrorAction] {
+        guard ctl.enabled, !ctl.ref.isEmpty else { return [] }
+        return [.axdo(ref: ctl.ref, count: 1, mods: 0, text: text)]
+    }
+}

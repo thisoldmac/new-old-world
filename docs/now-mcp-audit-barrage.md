@@ -1,0 +1,713 @@
+# NOW MCP audit and barrage
+
+> Completed audit run, 2026-08-09. Mapping, the bounded first-contact pass,
+> and a private identity-checked PPC Luna barrage are complete. The final
+> whole-repository gate is recorded below.
+
+This document maps NOW's agent surface, puts its integrated Mirror plane beside
+the two current TimBotTu MCP designs, records CodeKitten's non-MCP automation
+substrate, and defines a bounded live barrage. It is an audit inventory, not a
+proposal to unify the products.
+
+## Source snapshot
+
+| Surface | Source examined | Snapshot | Qualification |
+|---|---|---|---|
+| NOW | this repository | `ab3625e8460ebdaa80c238434ba2434a30c26712` | clean head of the referenced stable thread |
+| TBT classic / 0.6.4 line | TimBotTu repository: `mcp-classic/`, `runner/`, `data/capabilities.toml` | `d32cd4ea0d42bf5422379d7620389e3523ab8b18` | live checkout; read only for this audit |
+| TBT 0.7 / next line | TimBotTu repository: `mcp/`, `next/` | same snapshot | candidate line, not the qualified 0.6.4 release |
+| CodeKitten | CodeKitten repository | `c26c9197e22d2ffda1072c260ef10a2b67b907a6` | host-tested control substrate; no MCP implementation |
+
+Counts below are snapshot facts derived from registries or source. They are not
+new permanent product constants.
+
+## The map in one page
+
+| Surface | Public agent protocol | Public endpoint | Agent surface | Runtime owner behind it | Mirror relationship |
+|---|---|---|---|---|---|
+| NOW | MCP over stdio | client launches `NOWAgentCompanion` | 42 dedicated tools, one fixed first-contact resource, one prompt, and automatic server instructions | already-running NOW host, reached over private same-UID Unix socket | nine experimental semantic-UI tools over the same state engine and executor as human-facing Mirror |
+| TBT classic / 0.6.4 line | MCP over stdio | client launches `timbottu-mcp-classic` | 29 normal tools, 5 fixed resources, 6 resource templates, 4 prompts | configured Runner, which creates bounded Session/Worker execution | no integrated Mirror surface in this MCP |
+| TBT 0.7 / next | Streamable HTTP primarily; stdio parity entrypoint | `http://127.0.0.1:5251/mcp`; `timbottu-mcp-stdio` | 10 tools, 5 fixed resources, 5 resource templates, 2 prompts | Host domain graph over private same-user Unix socket | one generic `mirror_call` tool reaches a separate `mirror.sock` service |
+| CodeKitten | none | none | no MCP tools, resources, or prompts | versioned file carrier now; TCP carrier present but fail-closed | none |
+
+The most important distinction is ownership. NOW's companion is a renderer and
+client of an existing host-owned projection registry. TBT classic reaches a
+machine-explicit Runner and hides the ephemeral Session/Worker coordinates.
+TBT 0.7 reaches a Host-owned durable domain graph; its Mirror remains a sibling
+service. CodeKitten has a command seam an MCP could eventually project, but it
+does not currently expose one.
+
+```mermaid
+flowchart LR
+    A["MCP client"] -->|"stdio JSON-RPC"| B["NOWAgentCompanion"]
+    B -->|"private same-UID Unix socket"| C["NOW host projection dispatch"]
+    C --> D["session and wire"]
+    D --> E["PPC or 68K guest"]
+    C --> F["native Mirror state engine"]
+    F --> G["shared Mirror executor and journal"]
+    G --> D
+```
+
+The private socket in this diagram is local implementation IPC, not a second
+MCP transport and not a hosted endpoint.
+
+## NOW protocol and architecture
+
+| Layer | Contract | Boundary and notable limits |
+|---|---|---|
+| MCP transport | newline-delimited JSON-RPC 2.0 over stdin/stdout | one JSON message per line; 64 KiB frame cap; supported MCP versions `2025-11-25`, `2025-06-18`, `2025-03-26`, and `2024-11-05` |
+| MCP surface | initialize/initialized, ping, tools list/call, resources list/read, prompts list/get | closed tool schemas; structured replies and typed refusals; one server-owned first-contact guide exposed automatically and through discovery |
+| Local host IPC | private per-UID Unix socket, `host.sock` | same-user and filesystem-mode checks; companion never launches the host |
+| Projection registry | `HostProjectionCatalog` and `HostProjectionDispatch` | one transport-neutral catalog injects the optional `guest` selector, enforces consent, and emits an audit event |
+| Machine addressing | optional `guest` selector | machine ID follows reconnects; session ID pins one exact session; omission means the currently driven guest; a connected but non-driven named machine is refused rather than silently redirected |
+| Guest authorization | optional `hello.agent` ceiling | `disabled`, `read-only`, or `full`; unknown values deny; absence currently permits for compatibility by an explicit recorded decision |
+| Guest wire | NOW async contract plus command table | the projection may address, authorize, bound, and render; the guest remains the capability owner and answerer |
+| Mirror | native host state engine, executor, and operation journal | Mirror reads use retained host state and do not repoll the guest; drive uses the same executor as the human-facing host UI |
+
+There is no NOW HTTP, SSE, or Streamable HTTP MCP listener in this snapshot.
+The host can disable the local agent socket, and a connected companion then
+returns a typed host-unavailable result rather than starting anything.
+
+## NOW capability matrix
+
+Every registered tool is named below. “Write” includes stateful host actions,
+guest UI actions, transfers, and guest filesystem mutations; it is not limited
+to destructive operations.
+
+| Domain | Tools | Character | Authority path | Principal test evidence |
+|---|---|---|---|---|
+| Session and discovery | `now_list_machines`, `now_session_capabilities` | read | host listener and live capability ledger; machine titles share the Connections page's host-owned naming authority | companion protocol tests, capability tests, socket tests, guest identity tests |
+| Hardware | `now_hardware_census`, `now_machine_facts` | read | guest census family and `gestalt` command | projection, census, contract-coverage tests |
+| Processes | `now_list_processes`, `now_bring_to_front`, `now_request_quit` | read + write | guest process families; opaque references are revalidated | process projection tests, consent tests, socket tests |
+| Software | `now_software_inventory`, `now_launch_software`, `now_reveal_item` | read + write | live guest catalog plus exact bounded selection | software projection and companion argument tests |
+| Semantic UI | `now_observe_elements`, `now_window_act`, `now_control_act`, `now_menu_act`, `now_text_get`, `now_text_set` | read + write | guest semantic commands; observations mint opaque element references | projection strictness, forwarding parity, command-coverage tests |
+| Retained semantic UI state (experimental) | `now_semantic_ui_start`, `now_semantic_ui_status`, `now_semantic_ui_snapshot`, `now_semantic_ui_find`, `now_semantic_ui_wait`, `now_semantic_ui_metrics`, `now_semantic_ui_lifecycle`, `now_semantic_ui_journal` | read, except starting changes host state | native per-session state engine shared with human-facing Mirror | state-engine open, plane, clocks, lifecycle, and projection-service tests |
+| Semantic UI action (experimental) | `now_semantic_ui_act` | write | shared semantic plan executor and journal; gesture chooses the guest verb | act projection, face-parity, and executor tests |
+| Screen, diagnostics, and logs | `now_guest_log_tail`, `now_capture_screen`, `now_stream_screen`, `now_catalog_search`, `now_framebuffer_probe`, `now_capture_diagnostics`, `now_transfer_diagnostics` | read, with stream lifecycle state | bounded guest commands and capture/stream families | capture, stream, diagnostics, forwarding, contract tests |
+| Approved host-to-guest transfer | `now_transfer_approved_artifact`, `now_transfer_cancel` | write | existing one-at-a-time transfer lane; delivery requires a receipt minted by a person in the host UI | approval-receipt, transfer, socket, audit, and consent tests |
+| Guest filesystem reads | `now_guest_files_capabilities`, `now_guest_files_list`, `now_guest_files_stat`, `now_guest_files_download` | read | persisted root-relative guest policy; bounded results; caller cannot choose a modern-host destination | guest-files projection, policy, download, socket tests |
+| Guest filesystem mutation and upload | `now_guest_files_mutate`, `now_guest_files_upload_begin`, `now_guest_files_upload_append`, `now_guest_files_upload_commit` | write | typed move/trash/restore/mkdir or private staged create-only upload | mutation, upload, bounds, socket, audit, and consent tests |
+
+### The state engine and Mirror are siblings
+
+"Mirror" is the human product sitting on the state engine, not the agent's
+conceptual boundary. Scene retention, semantic projections, action planning,
+cycle clocks, and the journal form a shared semantic state engine. Human-facing
+Mirror and agent-facing projections are siblings over it. The agent should not
+need to know the Mirror product's vocabulary in order to understand desktop or
+application state.
+
+```mermaid
+flowchart LR
+    G["Guest state"] --> E["Semantic UI state engine"]
+    E --> H["Human-facing Mirror"]
+    E --> A["Agent-facing state projections"]
+    H --> X["Shared semantic executor"]
+    A --> X
+    X --> G
+```
+
+In the audited baseline the nine agent projections still carried
+`now_mirror_*` names. They did use the same machine selector, consent gate,
+socket, dispatch, audit path, state engine, and executor as every other NOW
+tool; the defect was agent-facing terminology and first-contact ordering, not a
+second MCP or a second state engine. This branch preserves a measured baseline
+before changing those names. The state engine and human Mirror remain intact.
+
+This differs materially from TBT 0.7. There, `mirror_call(method, params)` is
+one generic MCP tool and `mirror.sock` is a standalone service with its own
+session/grant model. That design keeps the experimental service replaceable,
+but makes tool discovery and per-operation schema guidance weaker for an agent.
+
+## NOW test-coverage matrix
+
+| Risk or boundary | Gate | What it proves | What it does not prove |
+|---|---|---|---|
+| MCP handshake, sequencing, errors, schemas | `NOWAgentCompanionTests` | supported initialization, bounded framing, closed argument handling, structured responses | a live host or guest can answer |
+| Stdio liveness | `StdioTransportLivenessTests` | one small request is answered while stdin remains open | VM behavior |
+| Advertised-tool totality | `MCPClientConformanceTests` | a real spawned client can call every constructible advertised tool and get an answer or typed refusal | default mode has no live host; one human-minted receipt cannot be constructed |
+| Companion-to-host parity | `SocketClientForwardingTests` | every projection/client lane has a concrete socket forwarding method | guest behavior |
+| Local socket privacy and framing | `AgentIntegrationSocketTests` | same-UID and mode checks, request/reply bounds, concurrency, schema rejection, typed round trips | security outside the local same-user boundary |
+| Registry integrity | `HostProjectionRegistryTests` | order, uniqueness, descriptors, annotations, and catalog construction | semantic quality of descriptions to an unfamiliar model |
+| Argument closure | `HostProjectionArgumentStrictnessTests` | every row rejects unknown keys and agrees with its published schema | agents choose the right legal arguments |
+| Central audit | `HostProjectionAuditTests`, `NOWAgentAuditTests` | all invocation flows cross the audited dispatch and reach the host audit path | the trace is sufficient for diagnosing model friction |
+| Guest consent | `HostProjectionConsentTests` | disabled/read-only/full derivation and enforcement | the default for an absent field remains the right product decision |
+| Contract and coverage drift | `MCPCoverageTests` | registry requirements/exposures agree with contract and guest dispatch; documentation table remains derived | transport liveness or live latency |
+| Mirror state and act plane | Mirror projection, engine, service, lifecycle, clocks, and act suites | retained scene semantics, bounds, waits, action routing, and journal attribution | a real guest draws and reacts as expected |
+| Whole build | `scripts/test-all` | native, MirrorKit, guest builds when available, host tests/app builds, optional live guest stage | physical PowerBook behavior unless a metal gate is explicitly run |
+
+### Baseline run for this audit
+
+At NOW `ab3625e8` on 2026-08-09:
+
+| Command scope | Result |
+|---|---|
+| `swift test list` | 1,988 enumerated Swift tests in the package snapshot |
+| all `NOWAgentCompanionTests` | 35 passed, 0 failed at baseline; 36 passed after the cleanup |
+| focused socket/projection/coverage/Mirror suites | 193 passed, 0 failed |
+| default real-client MCP conformance, no host | baseline: 42 advertised, 41 typed host-unavailable refusals, 0 failures, 1 uncovered; after cleanup: 41 refused, 0 failures, 1 human-gated, 0 uncovered |
+
+The uncovered row is `now_transfer_approved_artifact`: no MCP operation mints
+its `approvalReceipt`; a person approves the transfer in the host UI. That is
+an authority boundary, but “uncovered” makes the conformance summary look like
+a test omission. The live barrage should classify it as **human-gated**, then
+exercise its refusal without trying to manufacture authority.
+
+The baseline slice was **tested locally**, not VM-verified or metal-verified.
+The first-contact and barrage observations below are VM-verified. Nothing in
+this audit is physical-hardware evidence.
+
+### Pre-cleanup Luna baseline
+
+The private PPC run used lane `16136/16137`, base image SHA-256
+`c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70`, and a
+guest that identified itself as `Power Mac G4`, Mac OS 9.1.0, build
+`0aa097ba0c1b 2026-08-09T07:04:59Z`. The staged resident separately matched the
+run's source manifest `03b7d9519617` and build fingerprint `c90c4d4ff77f`.
+This is VM-verified first-contact evidence, not physical-hardware evidence.
+
+| Probe | Result | Calls before answer | Qualitative read |
+|---|---:|---:|---|
+| H0, connected Mac and readiness | 17 s, correct | one: `now_session_health` | good first tool choice and a direct answer; it did not quote the guest build even though the result carried it |
+| H1, visible desktop and front application | 37 s, substantively correct | five shell calls, then health + direct element walk + screen capture | poor surface-first behavior: it loaded global TBT emulator guidance, inspected an unrelated TBT runtime, and escalated to pixels without trying retained semantic state |
+
+H1 is intentionally retained as an environment-level baseline. NOW was the
+only configured MCP server, but the worker's global classic-Mac harness skill
+was still discoverable and routed it toward TimBotTu. `--ignore-user-config`
+removes configured MCP servers; it does not remove installed skills. The scored
+barrage therefore also uses a temporary auth-only Codex home. That control is
+not a product advantage: it simply separates friction in NOW's own MCP surface
+from unrelated global guidance.
+
+The raw `codex exec --json` streams, stderr, and timing metadata remain under
+`docs/local/now-mcp-barrage-2026-08-09/baseline/`. They contain the emitted
+event stream and token accounting, not private hidden chain-of-thought.
+
+### Post-cleanup first contact
+
+The controlled worker needed both an auth-only `CODEX_HOME` and an empty
+`HOME`. `--ignore-user-config` removed configured MCP servers but did not hide
+globally installed skills; changing only `CODEX_HOME` still allowed Atlas to
+route H0 to the modern Mac and produce a confident wrong answer. With both
+homes isolated, the same probes produced:
+
+| Probe | Result | NOW calls | Input-token accounting |
+|---|---:|---|---:|
+| H0, connected Mac and readiness | 11 s, correct | `now_list_machines` | 76,618 |
+| H1, visible desktop and front application | 26 s, correct | list machines, retained semantic snapshot, process list, then pixels | 200,093 |
+
+The rename made the intended entry point obvious once the model chose NOW.
+The first-contact resource, prompt, and initialize instructions did **not**
+make arbitrary Macintosh tasks choose NOW automatically. In this client,
+resources and prompts are opt-in discovery surfaces; the server instructions
+were insufficient to overcome task-plane ambiguity by themselves.
+
+### Cross-model first-contact regression
+
+Before the cross-model VM panel, an isolated local
+`Qwen3.6-27B-MLX-8bit` probe found a defect in the advertised first-contact
+resource. Codex sent the exact listed URI with normal MCP request metadata:
+
+```json
+{"uri":"now://agent/first-contact","_meta":{"progressToken":1}}
+```
+
+NOW's resource handler treated `_meta` as an unknown routing member and
+returned `-32602 Unknown NOW resource`. Qwen listed the resource, retried the
+exact URI, and then explored several wrong variants before stopping: 82,217
+input tokens and five failed reads for a guide the server claimed to serve.
+This was a server interoperability failure first and a model stop-discipline
+signal second.
+
+A real spawned-client regression was watched fail with the same parameters.
+The bounded fix permits dictionary-valued MCP `_meta` on `resources/read` and
+still rejects unknown members or malformed metadata. Replaying the identical
+Qwen prompt against the rebuilt companion succeeded on its first resource
+call, correctly returned `now_list_machines` as the first workflow step, and
+used 16,514 input tokens. This is local client/server evidence only, not a VM
+behavior score. Raw event streams and the captured stdio requests remain under
+`docs/local/now-mcp-barrage-2026-08-09/cross-model/`.
+
+### Cross-model barrage protocol
+
+The follow-up panel keeps one task, one private VM, one NOW build, and one
+scoring rubric fixed while changing only the actor. The actor set is Luna,
+GPT-5.4-mini, local `Qwen3.6-27B-MLX-8bit`, and local
+`gemma-4-31B-it-qat-OptiQ-4bit`. The two local models declare native 262,144
+token windows; their persisted oMLX caps were raised from the 32,768 default to
+98,304 for this panel. Sampling, thinking, output, and tool-result settings
+remain unchanged. Runs are serial so every actor sees the same guest state.
+Both caps were restored to 32,768 and the loaded model was unloaded when the
+local lane was benched.
+
+The fixed tasks are:
+
+| ID | Shape | Task boundary |
+|---|---|---|
+| H0 | first contact, read-only | discover the connected Mac and report readiness |
+| A1 | cross-domain action | inventory software, launch SimpleText, and independently verify it is frontmost |
+| M1 | mutating multistep | create a folder, verify it, trash it, restore it, and verify the restored state |
+| X1 | cross-domain mutation and UI | deliver caller-supplied text, launch SimpleText, open the exact guest file, and verify the document |
+
+Each run records prompt-to-first-NOW-call (“hello”), first call name, calls
+before hello, machine selection, domain and tool choices, evidence escalation,
+recovery, mutation verification, stop discipline, factual final answer,
+latency, and provider-reported tokens. The 100-point review rubric remains:
+connection 15, discovery 15, execution 25, verification 20, safety 15, and
+communication 10. Token totals are reported within a provider, never treated
+as directly equivalent across providers.
+
+The first local smoke uncovered a harness distinction that is retained rather
+than scored as NOW behavior. Codex 0.147 rejects oMLX's OpenAI-standard
+`/v1/models` list shape, falls back to unknown-model metadata, and does not
+materialize deferred MCP tools for these local model ids. Gemma therefore saw
+no NOW integration; Qwen found and read NOW's resource but then looped on fake
+shell “checks” instead of calling `now_list_machines`. Both models emit correct
+function calls through oMLX Responses when given a function directly.
+
+The scored local lane therefore uses a bounded direct bridge: one real stdio
+MCP handshake, all 42 live NOW tool schemas, the server's initialize
+instructions, oMLX Responses function calls, and real `tools/call` replies.
+It provides no shell tool and stops after a fixed turn limit. In the no-host
+control, Gemma and Qwen both chose `now_list_machines` from the full catalog on
+their first model turn and reported the typed `now-host-unavailable` result.
+Qwen's final sentence slightly over-inferred “no connected machines” from an
+unavailable host; Gemma preserved the refusal exactly. A longer socket suffix
+also exercised NOW's fail-closed Unix-path bound and was replaced with a short
+lane id; that safe configuration refusal is not a surface finding.
+
+### Cross-model panel result
+
+The live panel used one private Mac OS 9.1 clone, one isolated signed NOW host,
+and the same 42-tool companion build. The guest identified itself as `Power
+Mac G4`; every H0 run returned that same human machine name, `guest-1`, and the
+same live session. TBT remained present only as guest instrumentation; no TBT
+MCP was configured for any actor.
+
+| Actor | H0 | A1 | M1 | Review score(s) |
+|---|---|---|---|---|
+| GPT-5.6 Luna | one-call hello, 19.40 s | completed, 34.87 s; two rejected launch arguments before exact name; one unnecessary retained-state read | completed reversible chain, 31.71 s | 99 / 90 / 99 |
+| GPT-5.4-mini | one-call hello, 12.83 s | completed, 37.70 s; one path-as-reference retry; one unnecessary retained-state status read | completed reversible chain, 42.14 s | 98 / 93 / 98 |
+| Gemma 4 31B | one-call hello, 14.03 s | shortest correct path, four calls and 30.36 s | benched | 99 / 99 / — |
+| Qwen 3.6 27B | one-call hello, 20.61 s | completed in six calls and 106.63 s, then over-escalated and described pixels it had not received | benched | 99 / 78 / — |
+
+Every actor's first live NOW call was `now_list_machines`. Gemma's A1 was the
+clean reference path: machine discovery, application inventory, exact-name
+launch, then a fresh process snapshot showing `SimpleText` as the sole
+`front: true` process. The two OpenAI actors reached the same authoritative
+answer, but both treated the inventory's returned HFS `path` as if
+`now_launch_software` accepted it. The tool correctly refused and both
+recovered to `name: "SimpleText"`; this repeated handoff error is F-013.
+
+Qwen's A1 is scored down despite completing the task. The fresh process table
+already proved `SimpleText` frontmost, but it started retained state, received
+a typed unavailable result, and captured the screen. NOW correctly returned
+both capture metadata and an MCP `image` content block. The text-only local
+bridge had serialized that block as JSON instead of attaching its pixels, yet
+Qwen claimed the capture showed an Untitled SimpleText window. The bridge now
+replaces actor-facing image bytes with an explicit “pixels not attached; do
+not infer visual contents” sentinel while retaining the full raw MCP response
+in the trace. This is harness/model evidence, not a NOW capture defect; the
+unnecessary escalation remains evidence that F-012 guidance is not uniformly
+obeyed by smaller actors.
+
+The first Luna M1 control used a noninteractive read-only client. Both `mkdir`
+attempts were cancelled before NOW execution because no approval responder was
+present, and Luna correctly re-statted the path as absent and stopped. With
+the private VM explicitly pre-authorized, Luna and GPT-5.4-mini each completed
+and independently verified create, Trash, root absence, restore, and final
+presence without a tool failure. This reconfirms F-007 as an evaluator-launch
+requirement rather than a NOW mutation defect.
+
+Further local runs were benched after H0 and A1. They had already answered the
+surface questions, while remaining failures belonged to the Codex/oMLX
+adapter and local-model stop discipline. The existing Luna X1 trace remains
+the complex upload-plus-UI case and already isolates F-010; repeating that
+known expensive boundary was outside this bounded panel. Raw event streams,
+full tool replies, accessible reasoning summaries, stderr, and timings remain
+under `docs/local/now-mcp-barrage-2026-08-09/cross-model/panel/`. Hidden
+chain-of-thought is neither available nor claimed.
+
+## Comparative surfaces
+
+### TBT classic / 0.6.4 line
+
+The product/Runner line is 0.6.4; the Python MCP package currently identifies
+itself as 0.4.0. Its normal surface is machine-explicit and stdio-only. It
+reaches a configured Runner, which creates a bounded ephemeral Session and
+Worker while keeping their assigned transport coordinates out of MCP.
+
+| Domain | Normal typed tools |
+|---|---|
+| Fleet and lifecycle | `inspect_machine`, `inspect_sessions`, `inspect_activity`, `inspect_components`, `inspect_connections`, `retry_connection`, `close_session`, `hotswap_runner` |
+| Files and transfer | `inspect_files`, `read_text_file`, `write_text_file`, `download_file`, `upload_file` |
+| Process and app control | `inspect_processes`, `launch_application`, `activate_application`, `send_application_event` |
+| Machine execution | `inspect_hardware`, `run_script`, `type_text`, `press_key`, `click` |
+| Semantic and visual evidence | `inspect_ui_semantic`, `act_ui_semantic`, `extract_ui_text`, `capture_ui_region`, `capture_screen` |
+| Corpus | `search_corpus`, `read_dossier` |
+
+Discovery adds five fixed resources, six resource templates, and four prompts.
+Separate developer and Mordor entrypoints deliberately expose raw diagnostic
+and below-the-line operations; they are not part of the 29-tool normal count.
+
+The immediate audit finding is documentation drift: the classic README still
+says “19 operations” and enumerates the older surface, while the authoritative
+capability registry contains 29.
+
+### TBT 0.7 / next
+
+The MCP package is 0.5.0 within the 0.7 candidate line. Its primary supervised
+transport is stateless Streamable HTTP at the fixed loopback endpoint
+`http://127.0.0.1:5251/mcp`. It also provides a stdio parity entrypoint. HTTP
+has explicit health and readiness endpoints:
+
+- `/.well-known/timbottu/mcp/health`
+- `/.well-known/timbottu/mcp/readiness`
+
+Supervised HTTP requires a readiness identity. Host and Origin validation keep
+the endpoint loopback-only; the health contract explicitly reports no MCP auth
+or encryption. MCP then calls the private same-user Host `domain.sock` using a
+bounded canonical-JSON frame. Durable state and policy remain Host-owned.
+
+| Domain | MCP tools |
+|---|---|
+| Guest work | `guest_operation_submit`, `guest_operation_cancel` |
+| Host services | `service_start`, `service_stop`, `service_restart` |
+| Updates and resources | `update_request`, `resource_close` |
+| Corpus | `search_corpus`, `read_dossier` |
+| Mirror | `mirror_call` |
+
+`guest_operation_submit` is a typed envelope over 24 closed semantic operation
+kinds rather than 24 separately advertised MCP tools. Discovery adds five
+fixed resources, five templates, and two prompts.
+
+The standalone Mirror service exposes 15 method names through the one generic
+tool: attach, detach, status, scene, find, shot, wait, six act variants, and
+app inspection. Its private protocol is shared framing, not MCP. Sessions and
+semantic/tracking grants are in-memory, and tracking is emulator/QMP-only.
+
+### CodeKitten
+
+CodeKitten is an adjacent control-surface candidate, not a fourth MCP.
+
+| Plane | Current state |
+|---|---|
+| File carrier | version-1 request/status/incoming seam under System Folder Preferences, with journal archives |
+| Command layer | 15 commands dispatch into the shared `CKCommand` implementation: project open/build/run, toolchains, problems, and project-file mutations |
+| TCP carrier | Open Transport listener, desired-on by default at port 49191; bounded versioned envelope |
+| Admission | intentionally fail-closed before product mapping or dispatch until authenticated session/security policy exists |
+| MCP | absent: no server, endpoint, tools, resources, or prompts |
+| Verification | host-tested and Carbon-built; not metal-verified |
+
+An eventual MCP should project `CKCommand`; it should not bypass the carrier's
+admission work or invent a parallel command implementation. Designing that is
+outside this audit.
+
+## What NOW should learn from TimBotTu
+
+Port principles, not either catalog wholesale:
+
+| TBT property | Lesson for NOW | Port now? |
+|---|---|---|
+| Classic's machine-explicit normal tools | Machine choice should be a first-class discovery step, with transient execution coordinates hidden behind stable machine identity. | **Already applied:** `now_list_machines` plus optional `guest`; keep stable id, session id, human label, and reported name separate. |
+| Classic's fixed resources, templates, and workflow prompts | Server-owned orientation is useful and versioned with the server, but only after the client chooses that server. | **Partly applied:** one guide resource and prompt. Add machine-specific resource templates only if agents demonstrably use them. |
+| 0.7's Host-owned domain graph | Keep durable identity, policy, and state in the host; make transports thin projections. | **Already NOW's shape:** the companion is a thin stdio client of the host-owned registry/state. |
+| 0.7's closed `guest_operation_submit` envelope | A typed domain envelope can expose many operation kinds without advertising one large schema per verb. It may reduce catalog cost. | **Measured; do not port:** F-006 found negligible model-context savings from schema removal and no usable dynamic disclosure. Keep NOW's typed tools and the thin client router. |
+| 0.7's HTTP/stdio parity and readiness identity | Hosted transports need explicit readiness, identity, Host/Origin policy, and parity tests. | **No current port:** NOW has no remote/hosted requirement. Adding HTTP would enlarge its trust boundary for no measured gain. |
+| 0.7's separate generic `mirror_call` service | A sibling experimental service can remain replaceable, but one generic call weakens agent discovery and schemas. | **Do not port:** NOW's sibling relationship is conceptual inside one host; keep typed semantic projections while experimental. |
+| Classic's richer normal/developer/Mordor surface split | Dangerous diagnostics need an unmistakable boundary instead of crowding normal work. | **Keep as a review lens:** NOW's current direct probes are bounded normal tools; revisit their placement only with post-barrage hierarchy data. |
+
+The most immediate borrowed lesson is also the negative one: TBT's resources
+and prompts would not have fixed NOW's bare-task failures by themselves. The
+client still needs a small routing layer. F-006 also rejected a generic
+operation envelope as a context-cost fix for this client: retain the typed
+catalog and use deliberate `enabled_tools` profiles only when a client is
+intentionally narrow.
+
+## Review findings and bounded cleanups
+
+### Applied before the scored barrage
+
+1. Removed current-source prose counts that had already drifted from 41 to 42.
+   Historical issue and plan records remain historical.
+2. Classified `now_transfer_approved_artifact` as `human-gated`, not
+   `uncovered`. Default conformance now reports 42 advertised, 41 typed
+   refusals, zero failures, one human-gated, and zero uncovered.
+3. Added automatic first-contact instructions, the same guide as one fixed MCP
+   resource, and a prompt. They state machine selection, the semantic evidence
+   ladder, independent verification, and the human approval boundary.
+4. Replaced the agent-facing `now_mirror_*` vocabulary with nine explicitly
+   experimental `now_semantic_ui_*` tools. No compatibility aliases preserve
+   the old conceptual leak or enlarge the catalog.
+5. Made `now_list_machines` the obvious discovery entry point and shared its
+   human-facing machine title with the Connections page. Stable machine id,
+   exact session id, and guest-reported name remain separate fields.
+
+The barrage stays manual and machine-readable until its first batch proves a
+runner would be useful. Deeper consolidation of direct probes, retained state,
+and action hierarchy waits for the measured results.
+
+### Record, but do not cross the repository boundary here
+
+1. TBT classic's README should derive or link its normal inventory instead of
+   stating 19 while the registry contains 29.
+2. TBT 0.7's single generic `mirror_call` is a discoverability tradeoff worth
+   measuring in its own agent barrage. It is not a reason to copy NOW's nine
+   projections into the candidate line during this work.
+3. CodeKitten needs an authenticated admission decision before an MCP adapter;
+   adapter work now would invert its security boundary.
+
+No other cleanup is in scope without a failure from the live barrage.
+
+## Live Luna barrage
+
+### Isolation and evidence
+
+The run used one private PPC clone and matching host from this branch. QMP was
+used only for lifecycle; actions went through NOW. The guest identity and
+build are recorded in the baseline section. Fresh non-interactive
+`gpt-5.6-luna` workers ran from empty directories with temporary `HOME` and
+`CODEX_HOME`; NOW was their only MCP. The raw JSONL, stderr, prompts, and timing
+metadata remain in `docs/local/now-mcp-barrage-2026-08-09/`.
+
+The JSON event stream has process start/end timing but no timestamp on each
+MCP event. “Hello” below therefore records whether identity was the first NOW
+call; elapsed time is an upper bound, not a fabricated exact `T3 - T0`.
+
+### Bare prompts versus minimal routing
+
+The first batch used the bare tasks below. Failed tasks were repeated with one
+additional sentence: “Use the NOW integration on the connected classic
+Macintosh.” It named neither a tool nor a workflow.
+
+Scores use the 100-point rubric defined for the run: connection 15, discovery
+15, execution 25, verification 20, safety 15, communication 10. They are a
+review aid, not a model benchmark.
+
+| ID | Bare result | Routed result | Hello | Score, bare → routed |
+|---|---|---|---|---:|
+| H0 | correct after cleanup | not repeated | first and only call was `now_list_machines`; total 11 s | 98 |
+| R1 | correct process list and front app | not needed | `now_list_machines` first; total 29 s | 98 |
+| R2 | confidently listed the modern Unix root as the Mac disk | correct folder inventory; total 26 s | none bare; first call routed | 18 → 93 |
+| A1 | searched modern macOS and falsely said SimpleText was absent | catalogued, launched, and independently confirmed SimpleText frontmost; total 29 s | none bare; first call routed | 20 → 95 |
+| M1 | declared an unrelated workspace read-only | found the guest root, but every mutation was cancelled at the non-interactive client confirmation boundary; absence reverified; total 40 s | none bare; first call routed | 20 → 69 |
+| X1 | declared an unrelated workspace read-only and SimpleText absent | chose the right domains, but non-empty staging and UI actions were refused; file absence and blank window reverified; total 84 s | none bare; first call routed | 20 → 70 |
+| N1 | declined for unrelated read-only/no-file reasons | copied and verified a zero-byte Desktop file through guest upload; total 72 s | none bare; first call routed | 20 → 74 |
+
+The dominant baseline result was categorical: only two of seven bare tasks
+entered NOW. All five minimally routed repeats did so immediately.
+Server-owned instructions, a resource, and a prompt improve the route *after
+NOW is selected*; they are not a reliable client-side router.
+
+### Repo-scoped routing-skill follow-up
+
+The bounded F-005 follow-up installed `.agents/skills/now-mcp` into another
+otherwise isolated Luna home and reran the original prompts without a routing
+sentence or task-specific tool hint. The VM was a private clone of
+`now-stage-mirror-premerge-final-781f6281.qcow2` (SHA-256
+`a3dba627d43d14dc3a0171c3eb98974558844669c3de2639d4abb644bcd41d7a`),
+running the staged guest build `c25f6d220a73 2026-08-09T10:09:25Z` against an
+isolated host listener and same-UID socket. QMP performed lifecycle only.
+
+| ID | Skill result | First NOW call | Total | Input tokens | Score |
+|---|---|---|---:|---:|---:|
+| H0 | correct machine and readiness | `now_list_machines` | 17 s | 81,321 | 98 |
+| R1 | correct processes and frontmost app | `now_list_machines` | 16 s | 75,288 | 99 |
+| R2 | complete guest-root folder inventory | `now_list_machines` | 45 s | 181,415 | 98 |
+| A1 | launched, fronted, and reverified SimpleText | `now_list_machines` | 26 s | 196,133 | 98 |
+| M1 | mkdir, trash, restore, and final stat all confirmed | `now_list_machines` | 36 s | 229,217 | 98 |
+| X1 | file uploaded and byte-verified; modal UI confirmation did not complete | `now_list_machines` | 332 s, interrupted | unavailable | 62 |
+| N1 | copied and verified a 25-byte synthetic Desktop fixture | `now_list_machines` | 43 s | 218,770 | 98 |
+
+All seven bare prompts entered NOW first. None detoured into TimBotTu, the
+emulator harness, or the modern host as its target. The final A1 run is listed;
+an earlier A1 run triggered a skill correction after it called capabilities
+without a demonstrated need and invented a launch path instead of using the
+inventory's exact name. M1 and N1 used the client's supported automatic
+approval mode, preserving server annotations and NOW consent checks rather
+than weakening them.
+
+X1 is the useful failure. It eventually derived consistent size, digest, and
+base64 for the 52-byte file and verified the downloaded bytes. In SimpleText's
+Open dialog it then mixed retained-state and direct-observation action models
+and enumerated unsupported gesture synonyms. The evaluator stopped the run at
+the circuit breaker. The skill now separates those reference families,
+requires recomputing one immutable upload payload after integrity failure, and
+stops after two unsuccessful actions. The server-side action hierarchy itself
+is deliberately left for the post-barrage design pass.
+
+The JSONL preserves the accessible decision trace: agent status messages,
+tool calls and results, command executions, final answers where completed, and
+token accounting. The current runs emitted no separate private-reasoning
+records, and hidden chain-of-thought is not available or claimed. The raw local
+evidence remains under `docs/local/now-mcp-barrage-2026-08-09/f005-skill/`.
+
+### Semantic-action contract follow-up
+
+F-009 then received a server-owned correction rather than another prompt hint.
+`now_semantic_ui_act` publishes an exact 16-value gesture enum and one
+required-argument branch per gesture, and its decoder enforces the same
+Swift-owned contract before the host sees a request. The dialog route points
+to `snapshot.surfaces[].items`, where `source: dialogItem`, `number`, title,
+enabled state, and the containing surface entity are already present. Finder
+gestures explicitly exclude Standard File dialog rows.
+
+The original X1 shape was repeated once with GPT-5.6 Luna in a new isolated
+auth-only Codex home, the repo skill, the NOW companion, and no TimBotTu MCP or
+repo context. It used the same private stage-image clone and identity-checked
+guest as the F-005 run. The worker called `now_list_machines` first, uploaded
+and downloaded the exact 21-byte file, and verified its digest. After two
+direct `now_control_act` refusals it took a fresh retained snapshot, found the
+semantic dialog route, corrected `item` to `itemIndex` from the typed error,
+and dispatched dialog item 1, `Open`. It did not enumerate gesture synonyms.
+
+That successful act exposed a narrower failure. The Standard File list itself
+was one unnamed `userItem`; neither retained state nor direct observation
+published its rows or current selection. Setting the dialog text to `Luna
+Contract.txt` did not select that row, so `Open` launched the preselected
+`Apple DVD Player Read Me`. Later Finder and keyboard attempts could not turn
+the opaque list into a grounded target. The evaluator stopped the run after
+47 completed NOW calls and about 226 seconds. This is F-010, not a reason to
+weaken the now-explicit gesture contract.
+
+The accessible 610 KB JSONL, prompt metadata, and stderr are retained under
+`docs/local/now-mcp-barrage-2026-08-09/f009-action-contracts/`. The run was
+interrupted, so it has no final answer or token-usage event. As in the earlier
+runs, the trace contains status messages and tool I/O, not hidden
+chain-of-thought.
+
+### Post-barrage evidence-ladder follow-up
+
+The server guide, repo-scoped skill, and F-009 action grammar already agree on
+the intended hierarchy: structured product state, retained semantic state,
+typed semantic action and verification, targeted direct observation only for
+a missing fact or fresh opaque reference, and pixels last. The remaining local
+contradiction was in the escalation tools themselves. `now_observe_elements`
+did not tell a caller to prefer retained state, and `now_capture_screen` did
+not say that pixels were last-resort evidence.
+
+F-012 makes those descriptors self-routing. Its first registry guard was
+watched fail on all four missing rank phrases before the descriptors changed,
+then passed. A live VM repeat found one remaining ambiguity: Luna launched the
+retained snapshot and direct observation in parallel. A second mutation-watched
+guard therefore pins explicit sequencing in both directions — read retained
+coverage before deciding whether to escalate, and never start the direct probe
+in parallel. The matching skill sentence says the same thing.
+
+In an exact isolated Luna A/B, the first wording produced process, retained,
+and direct reads in parallel. The sequencing wording produced only process and
+retained reads even when the harness failed to load the skill, so the local
+tool descriptions changed the choice. A control with the skill readable called
+`now_list_machines`, started semantic UI, read its retained snapshot, and then
+cross-checked the process list. It used neither direct observation nor pixels.
+All answers were correct and read-only. Raw public event streams and complete
+rollouts are under
+`docs/local/now-mcp-barrage-2026-08-09/f012-evidence-ladder/`; the rollouts'
+reasoning records are encrypted and have no plaintext summaries.
+
+All 39 companion tests passed before this live refinement, including real
+spawned-client conformance over all 42 advertised tools. The refined registry
+guard and final repository gate pass as recorded below. This changes discovery
+guidance only; no guest, dispatch, state-engine, transport, or authority
+behavior changed.
+
+### What the barrage found
+
+1. **First-contact routing was the largest baseline friction.** “Macintosh” and classic
+   app names did not cause the client to select the only MCP. Four workers
+   instead reasoned about their empty working directory; one searched the
+   modern host. The repo-scoped NOW skill closed this gap across all seven bare
+   repeats. It says when to select NOW, names the evidence ladder, and leaves
+   all 42 live schemas authoritative.
+2. **Once routed, machine discovery is good.** Every repeat began with
+   `now_list_machines`, selected `guest-1`, and received the human-visible
+   `Power Mac G4` name plus the exact live session identifier. The host label,
+   reported name, stable id, and session id remained distinguishable.
+3. **The semantic ladder is now explicit and passes a simple live read, but
+   complex cross-domain work remains the real test.** The F-012 A/B removed an
+   unnecessary direct probe from the frontmost-app/window task without pixels.
+   R2 and X1 still show why the planes must remain separate: authoritative file
+   state, retained UI, direct references, and visual evidence answer different
+   questions. Do not collapse them from one successful read.
+4. **The barrage found and the cleanup fixed non-empty guest upload on this
+   Mac.** The host reported
+   `volumeAvailableCapacityForImportantUsage == 0` while ordinary available
+   capacity was about 714 GB. Every positive-size reservation therefore
+   returned `now-files-insufficient-host-space`; a zero-byte reservation and
+   commit succeeded. A four-byte live conformance run had already recorded the
+   same symptom on 2026-08-07. Both transfer directions now share a capacity
+   resolver that falls back to ordinary capacity without weakening the reserve.
+   A post-fix four-byte VM upload completed through the real MCP companion and
+   statted as four data-fork bytes on the guest.
+5. **The transfer authority model is narrower than the original N1 expected.**
+   `now_transfer_approved_artifact` requires a human-minted receipt because it
+   redeems a host-selected private file. `now_guest_files_upload_*` accepts
+   caller-supplied bytes under full guest agent access and requires no such
+   receipt. A Codex worker that can read the modern Desktop can therefore read
+   a file itself and upload its bytes. That is the implemented distinction,
+   not a forged receipt; whether the product intends all modern-host files to
+   require a second approval is a separate authority decision.
+6. **Automatic approval is sufficient for an isolated mutation barrage.** It
+   let annotations reach the client without changing NOW's consent model. M1
+   completed its reversible chain; X1 reached the real UI surface and then
+   failed for action-model friction rather than client cancellation.
+7. **Context cost is material.** The clean one-call H0 recorded 76,618 input
+   tokens. Routed R2 and A1 recorded 270,593 and 250,909; X1 reached 856,750
+   across eleven NOW calls, including large semantic payloads. These are
+   end-to-end Codex accounting numbers, not a claim that tool schemas alone
+   caused all of them. Catalog size and rich repeated results both deserve a
+   separate bounded measurement before redesign.
+8. **Modal buttons and modal contents are separate capability questions.** The
+   retained surface already identifies the Open button and its DITL number,
+   and the new action contract made Luna find and dispatch it. The Standard
+   File list remains opaque, so the task still cannot reliably choose which
+   file that button opens. That is now F-010.
+
+The emitted traces contained tool calls, tool results, final answers, and
+occasional reasoning summaries. They did not expose private hidden
+chain-of-thought, so this audit makes no claim to have captured it.
+
+### Verification status and next review
+
+The first-contact cleanup and routing skill are **tested and VM-verified for
+H0/H1/R1/R2/A1/M1/N1**.
+The staging failure, zero-byte baseline, and successful four-byte post-fix
+upload are VM-observed. X1's file lane and the retained `dialogItem` route are
+VM-observed; its SimpleText document selection remains failed with an
+attributable F-010 trace. Nothing here is metal-verified.
+
+The next brief review should decide only:
+
+1. whether caller-supplied guest upload bytes are intentionally outside the
+   one-time host-file approval boundary;
+2. whether to implement the bounded `now_open_document` slice from
+   [now-mcp-standard-file-review.md](now-mcp-standard-file-review.md).
+
+Literal Standard File/Navigation Services row discovery remains F-010 and is
+not a prerequisite for that slice. The public selection API requires an opaque
+`NavDialogRef` that the observed window does not provide, so pursuing it would
+be a resident-contract project rather than a cheap MCP cleanup.
+
+The larger direct-observation/retained-state/tool-hierarchy redesign remains a
+post-barrage design pass. The action grammar no longer needs to wait for it.
+
+### Final repository gate
+
+At closeout, `scripts/test-all` passed end to end on 2026-08-09 and was rerun
+successfully after the routing-skill, semantic-action-contract, and
+evidence-ladder follow-ups, then again after the cross-model panel and F-013
+launch-handoff cleanup:
+
+- staged-image discipline: 28 passed;
+- native guest tests: 149 passed;
+- MirrorKit gate: passed;
+- PPC, 68K, Extension, shutdown, wedge, GWorld, and ATA cross-builds: passed;
+- host gate: both asset modes plus Debug and Release app builds passed;
+- live-guest gate: skipped because `NOW_GUEST_LIVE` was not set.
+
+The separate identity-checked live conformance run reached all 42 advertised
+tools: 29 served, 12 explained refusals, one explicitly human-gated, zero
+failed, and zero uncovered; its repaired four-byte upload chain served begin,
+append, and commit. The deterministic gate is **tested**, these private guest
+observations are **VM-verified**, and nothing in this branch is
+physical-hardware/metal-verified.

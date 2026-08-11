@@ -1,0 +1,100 @@
+#!/bin/sh
+set -eu
+
+signing=developer
+if [ "${1:-}" = "--adhoc" ]; then
+    signing=adhoc
+    shift
+fi
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: $0 [--adhoc] /absolute/output/directory" >&2
+    exit 64
+fi
+
+case "$1" in
+    /*) output_root=$1 ;;
+    *) echo "output directory must be absolute" >&2; exit 64 ;;
+esac
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+case "$output_root/" in
+    "$repo_root"/*)
+        echo "output directory must live outside the source repository" >&2
+        exit 64
+        ;;
+esac
+
+if [ "$output_root" = / ]; then
+    echo "output directory must not be the filesystem root" >&2
+    exit 64
+fi
+
+if [ -d "$output_root" ]; then
+    output_root=$(CDPATH= cd -- "$output_root" && pwd -P)
+else
+    output_parent=$(dirname -- "$output_root")
+    if [ ! -d "$output_parent" ]; then
+        echo "output directory's parent must already exist" >&2
+        exit 64
+    fi
+    output_parent=$(CDPATH= cd -- "$output_parent" && pwd -P)
+    output_root="$output_parent/$(basename -- "$output_root")"
+fi
+case "$output_root/" in
+    "$repo_root"/*)
+        echo "output directory must live outside the source repository" >&2
+        exit 64
+        ;;
+esac
+mkdir -p "$output_root"
+
+bundle="$output_root/New Old World.app"
+
+if [ "$signing" = developer ]; then
+    rm -rf "$bundle"
+    xcodebuild \
+        -project "$repo_root/now-host/NewOldWorld.xcodeproj" \
+        -scheme "New Old World" \
+        -configuration Debug \
+        -derivedDataPath "$output_root/xcode-derived" \
+        -allowProvisioningUpdates \
+        DEVELOPMENT_TEAM=B93A9CG7F9 \
+        CONFIGURATION_BUILD_DIR="$output_root" \
+        build
+    "$script_dir/verify-host-signature" "$bundle"
+else
+    scratch="$output_root/swift-build"
+    binary="$scratch/debug/Host"
+
+    swift build --package-path "$repo_root/now-host" --scratch-path "$scratch"
+    rm -rf "$bundle"
+    mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
+    cp "$binary" "$bundle/Contents/MacOS/Host"
+
+    # SwiftPM puts target resources in bundles beside the binary. An ad-hoc
+    # package build that omits them launches successfully and then traps the
+    # first time Bundle.module is touched, so refuse to stage that shape.
+    found=0
+    for res in "$scratch"/debug/*.bundle; do
+        [ -e "$res" ] || continue
+        case "$res" in *Tests.bundle) continue ;; esac
+        rm -rf "$bundle/Contents/Resources/$(basename "$res")"
+        cp -R "$res" "$bundle/Contents/Resources/"
+        found=$((found + 1))
+    done
+    if [ "$found" -eq 0 ]; then
+        echo "no resource bundles found beside the binary - refusing to stage" \
+             "an app that would trap on its first resource" >&2
+        exit 70
+    fi
+
+    sed \
+        -e 's/@DISPLAY_NAME@/New Old World/g' \
+        -e 's/@BUNDLE_ID@/dev.newoldworld.now/g' \
+        "$script_dir/HostInfo.plist.in" > "$bundle/Contents/Info.plist"
+    codesign --force --sign - "$bundle"
+fi
+
+echo "$bundle"

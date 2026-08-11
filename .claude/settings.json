@@ -1,0 +1,57 @@
+{
+  "$comment": "Agent-side hooks for NOW. Two scopes are mixed here on purpose and the split is docs/rule-scopes.md. NOW-SCOPED: the main guardrail, which is true of this whole repository and is the Claude Code half of AGENTS.md > Git (the git half is .githooks/pre-commit). ARC-SCOPED, and mis-placed: the Mirror drive loop (tools/mirror-gate, docs/mirror-drive-loop.md) and the Toolbox/GWorld research arc (tools/toolbox-re-gate) belong to one subsystem and one arc, not to every worktree — each is inert unless its own state file exists, so a session running neither pays only two interpreter starts, but Claude Code has no per-subdirectory hook scope, so relocating them means arming them per run instead. See docs/rule-scopes.md > MIRROR-SCOPED.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/tools/mirror-gate\" check",
+            "timeout": 15,
+            "statusMessage": "mirror-gate: is the sweep finished?"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/tools/toolbox-re-gate\" check",
+            "timeout": 15,
+            "statusMessage": "toolbox-re-gate: is the research arc finished?"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-main.sh\"",
+            "timeout": 15,
+            "statusMessage": "main-guardrail: checking branch"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-main.sh\"",
+            "timeout": 15,
+            "statusMessage": "main-guardrail: checking branch"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/tools/mirror-gate\" guard-bash",
+            "timeout": 15,
+            "statusMessage": "mirror-gate: checking this is the mirror"
+          }
+        ]
+      }
+    ]
+  }
+}

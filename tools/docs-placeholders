@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""Generate exact-size, visibly honest screenshot placeholders."""
+
+from __future__ import annotations
+
+import argparse
+import html
+import os
+from pathlib import Path
+import sys
+
+import yaml
+
+
+def repo_root() -> Path:
+    override = os.environ.get("NOW_DOCS_GATE_ROOT")
+    return Path(override).resolve() if override else Path(__file__).resolve().parent.parent
+
+
+def render(item: dict[str, object]) -> str:
+    width = int(item["width"])
+    height = int(item["height"])
+    lines = [
+        "SCREENSHOT NEEDED",
+        str(item["surface"]),
+        str(item["state"]),
+        f"Rig: {item['machine']}",
+        "Privacy: remove names, addresses, contacts, paths, and message content",
+        f"Final size: {width} x {height} pixels",
+    ]
+    escaped = [html.escape(line) for line in lines]
+    start_y = max(78, height // 2 - 72)
+    tspans = "\n".join(
+        f'    <tspan x="{width // 2}" y="{start_y + i * 31}">{line}</tspan>'
+        for i, line in enumerate(escaped)
+    )
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc">
+  <title id="title">Screenshot placeholder for {escaped[1]}</title>
+  <desc id="desc">{escaped[2]}. Replace with a privacy-reviewed capture at {width} by {height} pixels.</desc>
+  <rect width="{width}" height="{height}" fill="#f4f2e8"/>
+  <rect x="16" y="16" width="{width - 32}" height="{height - 32}" rx="8" fill="none" stroke="#3a3a3a" stroke-width="3" stroke-dasharray="12 8"/>
+  <path d="M32 32 L{width - 32} {height - 32} M{width - 32} 32 L32 {height - 32}" stroke="#c7c3b3" stroke-width="2"/>
+  <rect x="{width // 2 - 250}" y="{start_y - 45}" width="500" height="210" rx="8" fill="#f4f2e8" stroke="#777"/>
+  <text text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="18" fill="#202020">
+{tspans}
+  </text>
+</svg>
+'''
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
+    root = repo_root()
+    manifest_path = root / "docs/assets/screenshots/manifest.yaml"
+    manifest = yaml.safe_load(manifest_path.read_text())
+    stale: list[str] = []
+    written = 0
+    for item in manifest["images"]:
+        if item.get("status", manifest["defaults"]["status"]) != "placeholder":
+            continue
+        target = root / "docs" / item["path"]
+        expected = render(item)
+        actual = target.read_text() if target.exists() else None
+        if actual == expected:
+            continue
+        if args.check:
+            stale.append(str(target.relative_to(root)))
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(expected)
+        written += 1
+    if stale:
+        print("[docs-placeholders] stale or missing placeholders:", file=sys.stderr)
+        for path in stale:
+            print(f"  {path}", file=sys.stderr)
+        print("Run: tools/docs-placeholders", file=sys.stderr)
+        return 1
+    if args.check:
+        print("[docs-placeholders] generated files match the manifest")
+    else:
+        print(f"[docs-placeholders] wrote {written} placeholder(s)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

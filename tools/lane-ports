@@ -1,0 +1,901 @@
+#!/usr/bin/env python3
+"""Every lane's own ports, derived rather than handed out.
+
+    tools/lane-ports                 # what are my ports?
+    tools/lane-ports --json
+    eval "$(tools/lane-ports --env)" # NOW_ANCHOR_PORT / NOW_WIRE_PORT / ...
+    tools/lane-ports list            # every lane, and whether it is live
+    tools/lane-ports whose --port N  # who owns this port?
+    tools/lane-ports attach --qmp S --run D   # record a VM against my block
+    tools/lane-ports reclaim         # take my own block back from a dead VM
+    tools/lane-ports gc              # drop claims whose worktree is gone
+
+WHY THIS EXISTS
+---------------
+On 2026-08-06 a dozen parallel lanes each needed a guest VM and a host
+app, and the ports were assigned BY HAND by one coordinating session:
+1700/5250, 1710/5260, ... 1890/5440. It worked only for as long as that
+one session held every allocation in its head, and it failed three ways
+in one day:
+
+  * A lane could not stage because port 1840 was held by a VM orphaned
+    by a host crash — a machine nobody owned any more. It lost its run.
+  * `HostMachineGuardTests` went red for lane after lane because a
+    DIFFERENT lane's QEMU was up. Under user-mode networking the guest's
+    outbound connection belongs to the `qemu` process, so `lsof` on a
+    wire port names QEMU itself; the guard could say "something holds
+    this port" and nothing more.
+  * An agent then spent a long stretch re-diagnosing that three ways,
+    because a busy machine looks exactly like a defect in your own
+    change.
+
+All three are the same missing fact: **which lane does this port belong
+to?** Answer it deterministically and each failure becomes a sentence.
+
+THE SCHEME, AND WHAT WAS WEIGHED AGAINST IT
+-------------------------------------------
+A lane is identified by its **git worktree root** — an absolute path,
+unique per lane by construction (two lanes cannot share one worktree),
+stable for the lane's whole life, and knowable from inside the lane with
+no coordinator. Not the branch name: a branch is renamed, is checked out
+in two places, and is empty in a detached HEAD.
+
+That path hashes to a **preferred block** of 8 consecutive ports in
+12000-19999. Hashing alone was the first design and is not enough: 1000
+blocks and fifteen lanes is a ~10% chance that two of them collide, and
+a scheme that is usually collision-free is the scheme we already had.
+
+So the hash chooses where to start and a **claim file** makes it exact.
+`REGISTRY/<block>.json` is created `O_EXCL` — atomic, so two lanes
+racing cannot both win — and a taken block is stepped past
+deterministically. The registry is the second half of the answer, not
+the first: wipe it entirely and every lane lands back on the same block
+it had, because the hash is unchanged. That is the property a pure
+registry does not have, and it is why neither mechanism is used alone:
+
+  * a hash has no liveness and needs no cleanup, but collides;
+  * a registry is exact and can say who owns what, but goes stale
+    exactly the way the run directories under /private/tmp did — 11 GB
+    of them outliving their VMs on the same day.
+
+Used together, the stale case is *harmless*: a claim only ever blocks
+the one lane whose hash points at it, and that lane is the block's owner
+anyway. Which is the whole trick — see `reclaim`.
+
+ORPHANS
+-------
+A block belongs to one lane, deterministically. So a VM orphaned inside
+a block can only ever be in that lane's way, and the lane that finds it
+in the way is guaranteed to be the lane that started it. There is no
+"whose is this?" left to ask and no human needed to decide.
+
+`reclaim` therefore acts on YOUR OWN block by default, and it goes
+through QMP **by socket path** — the path recorded at `attach` time.
+Never `kill` on whatever `lsof` returns: under user-mode networking the
+process holding a wire port IS QEMU, so killing by port kills the whole
+machine, and possibly not yours (done by accident 2026-08-03). Guest-
+clean shutdown is tried first; a QMP `quit` is a power cut and is only
+reached with `--power-cut`, which says so.
+"""
+
+from __future__ import annotations
+
+import argparse
+import errno
+import hashlib
+import json
+import os
+import shutil
+import socket
+import subprocess
+
+# tools/shutdown-guest.py's "I never reached the guest" code. Named here
+# rather than compared as a bare 3, because the whole point of the code is
+# that a reader can tell it from a refusal.
+SHUTDOWN_RIG_MISSING = 3
+import sys
+import time
+
+# --- the region -----------------------------------------------------------
+#
+# 12000-19999. Chosen by what it has to stay out of, in both directions:
+#
+#   * BELOW 20000, because `HostAppStateTestSupport.testListenPort` draws
+#     from 20000-40000 keyed on the pid, and 49152-65535 is where macOS
+#     draws every ephemeral port — a lane range inside either would be
+#     taken from the lane by its own test process.
+#   * ABOVE the ports this project already spells by hand: 1400 (the
+#     guest-side anchor worker), 1700+ (the hand-assigned hostfwds),
+#     5250-5253 (the product's own wire and the metal harnesses'). Those
+#     keep working untouched, which is what lets a lane already in flight
+#     on a hand-assigned pair finish undisturbed.
+#
+# 8 ports per lane rather than 2: an A/B drive needs two VMs at once, and
+# a lane that has to reach past its block for a third port is back to
+# guessing.
+BASE = int(os.environ.get("NOW_LANE_PORT_BASE", "12000"))
+STRIDE = 8
+BLOCKS = int(os.environ.get("NOW_LANE_BLOCKS", "1000"))
+
+# --- the human range, which allocation may never hand out -----------------
+#
+# Blocks 590-599, ports 16720-16799. Reserved for a PERSON's stack, and
+# reserved STRUCTURALLY: `allocate()` steps over these blocks, so there is
+# no sequence of calls by any lane that ends with one of them.
+#
+# WHY IT IS A RANGE AND NOT A CONVENTION. On 2026-08-07 Michelle's own VM
+# was running on 16728/16729 and a lane was allocated the block those
+# ports fall in — block 591, by the hash, which knew nothing about her.
+# Nothing was misconfigured and no rule was broken: the scheme reserved a
+# NAME and the collision happened on a SOCKET. A comment saying "leave
+# 591 alone" would have been read by every agent and enforced by none.
+#
+# 591 is the block her running stack was already on, so the reservation
+# ratifies where she is rather than moving her; 590 and 592-599 are room
+# for a second stack and for whatever a person needs next.
+#
+# THIS IS NECESSARY AND NOWHERE NEAR SUFFICIENT, and saying so is part of
+# the reservation. A port block stops a lane BINDING her sockets. It does
+# not stop a lane DRIVING her application: there is one `now-agent` socket
+# per user, it reaches whichever host holds it, and that is how a lane
+# retargeted a host app that was already running and already pointed at
+# her VM. Socket isolation is `NOW_PREFS_SUFFIX`, it is a separate
+# mechanism, and `docs/arc-coordination.md` states what each one covers.
+HUMAN_BLOCK_FIRST = int(os.environ.get("NOW_HUMAN_BLOCK_FIRST", "590"))
+HUMAN_BLOCK_LAST = int(os.environ.get("NOW_HUMAN_BLOCK_LAST", "599"))
+# The one a person's stack gets by default; the rest are spare.
+HUMAN_BLOCK = int(os.environ.get("NOW_HUMAN_BLOCK", "591"))
+
+
+def is_human_block(block: int) -> bool:
+    """Reserved for a person, and therefore never allocated to a lane."""
+    return HUMAN_BLOCK_FIRST <= block <= HUMAN_BLOCK_LAST
+
+
+def human_refusal(block: int) -> str:
+    """Why a lane may not have this block. Named, not just refused.
+
+    A bare "denied" teaches nothing and invites a workaround; this says
+    whose it is, what it protects, and what the caller should do instead.
+    """
+    ports = ports_of(block)
+    return (
+        f"block {block} (ports {ports['anchor']}-{ports['anchor'] + STRIDE - 1}) "
+        f"is in the RESERVED HUMAN RANGE {HUMAN_BLOCK_FIRST}-{HUMAN_BLOCK_LAST} "
+        f"(ports {BASE + HUMAN_BLOCK_FIRST * STRIDE}-"
+        f"{BASE + (HUMAN_BLOCK_LAST + 1) * STRIDE - 1}).\n"
+        "It belongs to a person's running stack, not to any lane. On "
+        "2026-08-07 a lane was allocated the block Michelle's own VM was "
+        "already on and her application was driven by that lane's guest; "
+        "allocation had reserved a name while the collision happened on a "
+        "socket. This range is skipped by allocation so that cannot recur.\n"
+        "Run `tools/lane-ports` with no arguments to get YOUR block. If you "
+        "genuinely need to inspect the human stack, `tools/lane-ports human` "
+        "reports it read-only.\n"
+        "NOTE a port block is not isolation: it stops you binding her "
+        "sockets, not driving her app. That is NOW_PREFS_SUFFIX — see "
+        "docs/arc-coordination.md.")
+
+# Offsets within a block. The names are the contract: `--env` exports
+# them, spin-up-ppc reads them, and the guard reports them.
+ROLES = [
+    ("anchor", "QEMU hostfwd to the guest's anchor worker on 1400"),
+    ("wire", "the host listener NOW's guest dials (10.0.2.2:<wire>)"),
+    ("anchor_b", "a second VM in the same lane — A/B drives"),
+    ("wire_b", "that second VM's wire"),
+    ("metal", "NOW_METAL_PORT for this lane's metal harness"),
+    ("spare0", ""),
+    ("spare1", ""),
+    ("spare2", ""),
+]
+assert len(ROLES) == STRIDE
+
+REGISTRY = os.environ.get("NOW_LANE_REGISTRY", "/private/tmp/now-lanes")
+
+
+# --- lane identity --------------------------------------------------------
+
+def lane_root(start: str | None = None) -> str:
+    """This lane's git worktree root, or the directory itself outside git.
+
+    `--show-toplevel` is the worktree's own root, not the shared
+    checkout's: that is exactly the distinction wanted, since every agent
+    lane here IS a worktree and the shared checkout on main is one more.
+    """
+    start = os.path.realpath(start or os.getcwd())
+    try:
+        out = subprocess.run(["git", "-C", start, "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=10)
+        if out.returncode == 0 and out.stdout.strip():
+            return os.path.realpath(out.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return start
+
+
+def lane_branch(root: str) -> str:
+    try:
+        out = subprocess.run(["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
+                             capture_output=True, text=True, timeout=10)
+        if out.returncode == 0:
+            return out.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return ""
+
+
+def preferred_block(root: str) -> int:
+    """Where this lane starts looking. Pure, and the reason a wiped
+    registry costs nothing."""
+    digest = hashlib.sha256(root.encode("utf-8")).hexdigest()
+    return int(digest[:12], 16) % BLOCKS
+
+
+def ports_of(block: int) -> dict[str, int]:
+    base = BASE + block * STRIDE
+    return {name: base + i for i, (name, _) in enumerate(ROLES)}
+
+
+def block_of_port(port: int) -> int | None:
+    """The block a port falls in, or None if it is outside the region."""
+    if not (BASE <= port < BASE + BLOCKS * STRIDE):
+        return None
+    return (port - BASE) // STRIDE
+
+
+# --- the registry ---------------------------------------------------------
+
+def claim_path(block: int) -> str:
+    return os.path.join(REGISTRY, f"{block:04d}.json")
+
+
+def read_claim(block: int) -> dict | None:
+    try:
+        with open(claim_path(block), "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def write_claim(block: int, claim: dict) -> None:
+    os.makedirs(REGISTRY, exist_ok=True)
+    tmp = claim_path(block) + f".{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(claim, handle, indent=1, sort_keys=True)
+        handle.write("\n")
+    os.replace(tmp, claim_path(block))
+
+
+def port_holders(port: int) -> list[str]:
+    """Who holds `port` on its own side, as `command [pid N] endpoint`.
+
+    The local-side filter is the same one `MetalMachineGuard.holdsLocally`
+    applies and it exists for the same reason: a GUEST dialling in shows
+    up as `qemu-system-ppc 127.0.0.1:50095->127.0.0.1:12001`, and the port
+    is on the far side of that arrow. Counting it would call every working
+    run a collision.
+    """
+    try:
+        out = subprocess.run(
+            ["/usr/sbin/lsof", "-nP", "-FpcnT", f"-iTCP:{port}"],
+            capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found, pid, command, endpoint, state = [], 0, "", None, ""
+
+    def flush():
+        nonlocal endpoint, state
+        if endpoint is not None:
+            local = endpoint.split("->")[0]
+            if local.endswith(f":{port}"):
+                where = f"{endpoint} ({state})" if state else endpoint
+                found.append(f"{command} [pid {pid}] {where}")
+        endpoint, state = None, ""
+
+    for line in out.stdout.splitlines():
+        tag, body = (line[:1], line[1:])
+        if tag == "p":
+            flush(); pid, command = int(body or 0), ""
+        elif tag == "c":
+            command = body
+        elif tag == "f":
+            flush()
+        elif tag == "n":
+            endpoint = body
+        elif tag == "T" and body.startswith("ST="):
+            state = body[3:]
+    flush()
+    return found
+
+
+def socket_answers(path: str) -> bool:
+    """Whether a UNIX socket has somebody listening — the cheapest proof
+    a recorded VM is still alive."""
+    if not path or not os.path.exists(path):
+        return False
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.settimeout(2)
+    try:
+        probe.connect(path)
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
+
+
+def liveness(block: int, claim: dict) -> dict:
+    """What is actually true about a claimed block, right now.
+
+    Three states, and they are not the same question:
+
+      * `busy`  — a port in the block is held, or a recorded QMP socket
+                  answers. Something is running.
+      * `idle`  — the lane's worktree is still there, nothing is running.
+                  The claim stands: this is the lane's home and only that
+                  lane will ever ask for it.
+      * `orphan`— the worktree is gone AND nothing is running. Nobody can
+                  ever ask for this block again by name. `gc` takes it.
+
+    A busy block whose worktree is gone is `busy` and reported as such,
+    not silently reaped: something is still running in it and stopping a
+    machine is not a garbage collector's decision.
+    """
+    ports = ports_of(block)
+    held = {name: port_holders(port) for name, port in ports.items()}
+    held = {name: rows for name, rows in held.items() if rows}
+    sockets = [s for s in claim.get("qmpSockets", []) if socket_answers(s)]
+    root_exists = os.path.isdir(claim.get("laneRoot", ""))
+    if held or sockets:
+        state = "busy"
+    elif root_exists:
+        state = "idle"
+    else:
+        state = "orphan"
+    return {"state": state, "heldPorts": held, "liveQmpSockets": sockets,
+            "laneRootExists": root_exists}
+
+
+# --- allocation -----------------------------------------------------------
+
+def allocate(root: str, *, create: bool = True) -> dict:
+    """This lane's block. Deterministic, and the same answer every time.
+
+    Linear-probes from the hash, taking the first block that is either
+    already ours or free. `O_EXCL` is what makes the taking atomic: two
+    lanes probing the same block at the same instant cannot both create
+    the file, so the loser sees EEXIST and steps on. No lock, no daemon,
+    no coordinator.
+    """
+    # BOTH SIDES OF THE COMPARISON BELOW MUST BE NORMALISED, and only one
+    # of them was. `lane_root()` realpaths what it returns, but `allocate`
+    # is also called with a raw path, and /var vs /private/var was enough
+    # to make a lane fail to recognise its own claim — so it stepped past
+    # its own block and took a fresh one on every call. A lane that moves
+    # is a lane that has lost its running VM, which is the failure this
+    # whole scheme exists to prevent, arriving through a symlink.
+    root = os.path.realpath(root)
+    start = preferred_block(root)
+    branch = lane_branch(root)
+    for step in range(BLOCKS):
+        block = (start + step) % BLOCKS
+        # The human range is stepped over, never handed out. This is the
+        # whole structural half of the reservation: a lane whose hash lands
+        # here simply takes the next block, and no sequence of calls by any
+        # lane ends with one of these. See HUMAN_BLOCK_FIRST above.
+        if is_human_block(block):
+            continue
+        existing = read_claim(block)
+        if existing is not None:
+            if os.path.realpath(existing.get("laneRoot", "")) == root:
+                if create:
+                    existing["touchedAt"] = time.time()
+                    existing["branch"] = branch
+                    write_claim(block, existing)
+                return describe(block, existing, step)
+            # Somebody else's, and only reusable once it is provably
+            # nobody's: worktree gone AND nothing running in it.
+            if liveness(block, existing)["state"] == "orphan":
+                os.unlink(claim_path(block))
+            else:
+                continue
+        if not create:
+            # Answering without claiming: report where we WOULD land.
+            return describe(block, {"laneRoot": root, "branch": branch,
+                                    "qmpSockets": [], "runDirs": []}, step)
+        claim = {"laneRoot": root, "branch": branch,
+                 "preferredBlock": start, "claimedAt": time.time(),
+                 "touchedAt": time.time(), "qmpSockets": [], "runDirs": []}
+        os.makedirs(REGISTRY, exist_ok=True)
+        try:
+            fd = os.open(claim_path(block), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except OSError as err:
+            if err.errno == errno.EEXIST:
+                continue          # lost the race; the winner keeps it
+            raise
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(claim, handle, indent=1, sort_keys=True)
+            handle.write("\n")
+        return describe(block, claim, step)
+    raise SystemExit(f"all {BLOCKS} lane blocks are claimed — run `lane-ports gc`")
+
+
+def describe(block: int, claim: dict, displaced: int = 0) -> dict:
+    out = {"block": block, "displacedBy": displaced,
+           "base": BASE + block * STRIDE, "stride": STRIDE}
+    out.update(claim)
+    out["ports"] = ports_of(block)
+    return out
+
+
+# --- reclamation ----------------------------------------------------------
+
+def reclaim(lane: dict, *, power_cut: bool, dry_run: bool) -> int:
+    """Stop whatever is running in this lane's block, then free the disk.
+
+    Ownership is what makes this safe without asking a human: the block is
+    derived from the lane, so anything running in it was started by this
+    lane. There is no case where reclaiming your own block stops somebody
+    else's machine.
+
+    ORDER MATTERS, and the order is the rule AGENTS.md already states.
+    Guest-clean first — `tools/shutdown-guest.py` launches the staged
+    applet so the Macintosh calls the Shutdown Manager itself and the
+    volume is marked clean. A QMP `quit` is a power cut: the next boot
+    spends its first minutes in Disk First Aid, so it is behind
+    `--power-cut` and prints what it costs.
+
+    What is NEVER done here is `kill` on whatever `lsof` returned. Under
+    user-mode networking the process holding a wire port is the emulator
+    itself, so killing by port kills the machine — and, before this
+    scheme, possibly not the one you meant.
+    """
+    block = lane["block"]
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    stopped = 0
+    for sock in list(lane.get("qmpSockets", [])):
+        if not socket_answers(sock):
+            print(f"  qmp {sock}: nothing listening (already down)")
+            continue
+        if dry_run:
+            print(f"  qmp {sock}: would shut down"); stopped += 1; continue
+        anchor = str(lane["ports"]["anchor"])
+        wire = str(lane["ports"]["wire"])
+        print(f"  qmp {sock}: guest-clean shutdown "
+              f"(anchor {anchor}, wire {wire})")
+        # --wire, AND IT IS NOT OPTIONAL HERE. Without it shutdown-guest.py
+        # skips the Finder route and goes straight to the applet - the one
+        # its own docstring says starts a shutdown without finishing it,
+        # and after which three preserved images were still marked
+        # mounted. This call omitted --wire until 2026-08-07, so every
+        # `reclaim` in this rig took the dirty route by construction while
+        # printing "guest-clean". The wire is derived from the same lane
+        # block as the anchor, so there was never anything to pass.
+        rc = subprocess.run([sys.executable, os.path.join(here, "tools",
+                                                          "shutdown-guest.py"),
+                             sock, "--port", anchor, "--wire", wire,
+                             "--timeout", "120"]).returncode
+        if rc == SHUTDOWN_RIG_MISSING:
+            # THE GUEST WAS NEVER ASKED. Reported apart from a refusal and
+            # WITHOUT the --power-cut suggestion, because the two want
+            # opposite responses: fix your own path, versus accept a dirty
+            # volume. Answering a host-side setup error with "re-run with
+            # --power-cut" is how a working VM gets a Disk First Aid boot.
+            print(f"  qmp {sock}: the shutdown tool could not start, so the"
+                  " guest was NOT asked (see above).")
+            print("    The VM is untouched and still running. Set"
+                  " NOW_LAB_ROOT and re-run reclaim.")
+            print("    Do NOT use --power-cut for this: nothing is wrong"
+                  " with the machine.")
+            return 1
+        if rc != 0 and power_cut:
+            # THROUGH THE GUARD, not around it. --power-cut is the owner's
+            # decision about their OWN lane's throwaway clone; it is not
+            # standing to power-cut a shared asset, and a lane booted with
+            # `launch --base` is writing to one.
+            print(f"  qmp {sock}: clean shutdown failed; --power-cut given")
+            guard = subprocess.run(
+                [sys.executable, os.path.join(here, "tools",
+                                              "shared-image-guard.py"), sock])
+            if guard.returncode != 0:
+                print("    REFUSED by the shared-image guard (above). The VM "
+                      "is left up.")
+                return 1
+            print("    POWER CUT (QMP quit): the volume will be dirty and "
+                  "the next boot of this image runs Disk First Aid")
+            qmp_quit(sock)
+        elif rc != 0:
+            print(f"  qmp {sock}: the GUEST did not shut down, and the VM is"
+                  " left up.")
+            print("    Look at it, or re-run with --power-cut to accept a"
+                  " dirty volume.")
+            return 1
+        stopped += 1
+    for run_dir in list(lane.get("runDirs", [])):
+        if not os.path.isdir(run_dir):
+            continue
+        if dry_run:
+            print(f"  run dir {run_dir}: would remove"); continue
+        print(f"  run dir {run_dir}: removing")
+        shutil.rmtree(run_dir, ignore_errors=True)
+    if not dry_run:
+        claim = read_claim(block) or lane
+        claim["qmpSockets"] = []
+        claim["runDirs"] = []
+        claim["touchedAt"] = time.time()
+        write_claim(block, claim)
+    still = {name: rows for name, rows in
+             ((n, port_holders(p)) for n, p in lane["ports"].items()) if rows}
+    if still:
+        print("  still held after reclaim (not started through this scheme?):")
+        for name, rows in still.items():
+            print(f"    {name}: " + "; ".join(rows))
+        return 1
+    print(f"  block {block} is clear ({stopped} machine(s) stopped)")
+    return 0
+
+
+def qmp_quit(sock_path: str) -> None:
+    """QMP `quit` by SOCKET PATH. The only kill route this file has, and
+    it addresses the machine rather than a port."""
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.settimeout(10)
+    client.connect(sock_path)
+    client.recv(65536)
+    client.sendall(b'{"execute":"qmp_capabilities"}\n')
+    client.recv(65536)
+    client.sendall(b'{"execute":"quit"}\n')
+    try:
+        client.recv(65536)
+    except OSError:
+        pass
+    client.close()
+
+
+# --- commands -------------------------------------------------------------
+
+def cmd_show(args) -> int:
+    lane = allocate(lane_root(args.lane), create=not args.no_claim)
+    if args.json:
+        print(json.dumps(lane, indent=2, sort_keys=True)); return 0
+    if args.env:
+        p = lane["ports"]
+        print(f"export NOW_LANE_BLOCK={lane['block']}")
+        for name, _ in ROLES:
+            print(f"export NOW_LANE_{name.upper()}={p[name]}")
+        # The two the rest of the project already reads by these names.
+        print(f"export NOW_ANCHOR_PORT={p['anchor']}")
+        print(f"export NOW_WIRE_PORT={p['wire']}")
+        print(f"export NOW_METAL_PORT={p['metal']}")
+        return 0
+    p = lane["ports"]
+    print(f"lane   {lane['laneRoot']}")
+    print(f"branch {lane.get('branch') or '(detached)'}")
+    print(f"block  {lane['block']}  ports {lane['base']}-{lane['base']+STRIDE-1}"
+          + (f"  (hash preferred {lane.get('preferredBlock')},"
+             f" displaced {lane['displacedBy']})"
+             if lane.get("displacedBy") else ""))
+    for name, why in ROLES:
+        held = port_holders(p[name])
+        note = "  <- HELD: " + "; ".join(held) if held else ""
+        print(f"  {name:<9} {p[name]}  {why}{note}")
+    return 0
+
+
+def cmd_list(args) -> int:
+    rows = []
+    for entry in sorted(os.listdir(REGISTRY) if os.path.isdir(REGISTRY) else []):
+        if not entry.endswith(".json"):
+            continue
+        block = int(entry[:-5])
+        claim = read_claim(block)
+        if claim is None:
+            continue
+        row = describe(block, claim)
+        row["liveness"] = liveness(block, claim)
+        rows.append(row)
+    if args.json:
+        print(json.dumps(rows, indent=2, sort_keys=True)); return 0
+    if not rows:
+        print(f"no lanes claimed (registry {REGISTRY})"); return 0
+    for row in rows:
+        print(f"block {row['block']:>4}  {row['liveness']['state']:<6} "
+              f"{row['base']}-{row['base']+STRIDE-1}  "
+              f"{row.get('branch') or '?':<34} {row['laneRoot']}")
+        for name, held in row["liveness"]["heldPorts"].items():
+            print(f"    {name} {row['ports'][name]}: " + "; ".join(held))
+    return 0
+
+
+def cmd_whose(args) -> int:
+    """The question the machine guard could not answer.
+
+    Returns the owning lane for a port in the region, whether or not that
+    lane is running anything — a port belongs to a lane by derivation, not
+    by occupancy.
+    """
+    block = block_of_port(args.port)
+    answer = {"port": args.port, "block": block, "inRegion": block is not None,
+              "owner": None, "holders": port_holders(args.port)}
+    if block is not None:
+        claim = read_claim(block)
+        if claim is not None:
+            answer["owner"] = describe(block, claim)
+            answer["owner"]["liveness"] = liveness(block, claim)
+        else:
+            answer["ownerHint"] = ("in the lane region but unclaimed — the "
+                                   "lane that hashes here has not run yet, or "
+                                   f"the registry ({REGISTRY}) was cleared")
+    mine = allocate(lane_root(args.lane), create=False)
+    answer["mine"] = mine
+    answer["isMine"] = block is not None and block == mine["block"]
+    if args.json:
+        print(json.dumps(answer, indent=2, sort_keys=True)); return 0
+    if block is None:
+        print(f"port {args.port} is outside the lane region "
+              f"{BASE}-{BASE + BLOCKS * STRIDE - 1}; no lane owns it")
+    elif is_human_block(block):
+        # Answered before ownership, because the registry cannot answer it:
+        # a person's stack is not started by `lane-ports` and files no claim,
+        # so "unclaimed" would be the literal truth and the wrong answer.
+        print(f"port {args.port} is block {block} — the RESERVED HUMAN RANGE, "
+              "not any lane's")
+        print(f"  {HUMAN_BLOCK_FIRST}-{HUMAN_BLOCK_LAST} is a person's stack; "
+              "allocation skips it, so no lane can hold this port")
+        print("  `tools/lane-ports human` reports it; do not bind it")
+    elif answer["isMine"]:
+        print(f"port {args.port} is block {block} — YOURS ({mine['laneRoot']})")
+    elif answer["owner"]:
+        own = answer["owner"]
+        print(f"port {args.port} is block {block} — lane "
+              f"{own.get('branch') or '?'} at {own['laneRoot']} "
+              f"({own['liveness']['state']})")
+    else:
+        print(f"port {args.port} is block {block}, unclaimed")
+    for row in answer["holders"]:
+        print(f"  held by {row}")
+    return 0
+
+
+def cmd_attach(args) -> int:
+    """Record a VM against this lane's block, so it can be found later.
+
+    Called by `scripts/spin-up-ppc` at boot. The QMP socket path is the
+    load-bearing field: it is the ONLY safe handle on a VM — a port is
+    not, because the process holding a wire port is QEMU itself.
+    """
+    lane = allocate(lane_root(args.lane))
+    claim = read_claim(lane["block"]) or lane
+    for key, value in (("qmpSockets", args.qmp), ("runDirs", args.run)):
+        if value and value not in claim.setdefault(key, []):
+            claim[key].append(value)
+    claim["touchedAt"] = time.time()
+    write_claim(lane["block"], claim)
+    print(f"attached to block {lane['block']}: "
+          f"qmp={args.qmp or '-'} run={args.run or '-'}")
+    return 0
+
+
+def cmd_human(args) -> int:
+    """Report the reserved human block. READ-ONLY, and deliberately so.
+
+    It writes no claim, because a person's stack is not a lane and the
+    registry is not where it lives. This exists so an agent that needs to
+    know which ports to stay off can ask, instead of inferring it from a
+    `whose` answer that would otherwise read "unclaimed".
+    """
+    # A predicate, for a caller that needs to BRANCH on the answer rather
+    # than read it. Silent and exit-coded, so shell can say `if ... then`.
+    if args.is_human is not None:
+        block = block_of_port(args.is_human)
+        return 0 if block is not None and is_human_block(block) else 1
+
+    ports = ports_of(HUMAN_BLOCK)
+    out = {"block": HUMAN_BLOCK, "reservedRange":
+           [HUMAN_BLOCK_FIRST, HUMAN_BLOCK_LAST],
+           "ports": ports, "allocatable": False,
+           "portIsolationOnly": True}
+    if args.json:
+        print(json.dumps(out, indent=2, sort_keys=True)); return 0
+    print(f"the human stack: block {HUMAN_BLOCK} "
+          f"(reserved range {HUMAN_BLOCK_FIRST}-{HUMAN_BLOCK_LAST}, "
+          f"ports {BASE + HUMAN_BLOCK_FIRST * STRIDE}-"
+          f"{BASE + (HUMAN_BLOCK_LAST + 1) * STRIDE - 1})")
+    for name, why in ROLES:
+        print(f"  {name:9} {ports[name]}  {why}")
+    print("allocation skips this range, so no lane can ever be given it.")
+    print("A port block is not isolation: it stops a lane BINDING these "
+          "sockets, not DRIVING the app that owns them — that is "
+          "NOW_PREFS_SUFFIX. See docs/arc-coordination.md.")
+    return 0
+
+
+def cmd_reclaim(args) -> int:
+    if args.block is not None:
+        # Asking for the human range BY NUMBER is an error, and --force does
+        # not open it: reclaim's whole job is to stop a machine, and the one
+        # machine no lane may stop is the person's. A lane that reaches here
+        # is either confused or working around the skip in allocate().
+        if is_human_block(args.block):
+            print(human_refusal(args.block))
+            return 2
+        claim = read_claim(args.block)
+        if claim is None:
+            print(f"block {args.block} is not claimed"); return 1
+        lane = describe(args.block, claim)
+        mine = allocate(lane_root(None), create=False)
+        if lane["block"] != mine["block"] and not args.force:
+            print(f"block {args.block} belongs to {lane['laneRoot']}, not to "
+                  f"you ({mine['laneRoot']}).")
+            print("Reclaiming it would stop THEIR machine. That is the exact "
+                  "collision this scheme removes — you should not need their "
+                  "block. --force if you are certain.")
+            return 1
+    else:
+        lane = allocate(lane_root(args.lane))
+    print(f"reclaiming block {lane['block']} ({lane['laneRoot']})")
+    return reclaim(lane, power_cut=args.power_cut, dry_run=args.dry_run)
+
+
+def cmd_gc(args) -> int:
+    """Drop claims nobody can ever ask for again, and their disk.
+
+    Only `orphan` blocks: worktree gone AND nothing running. A busy block
+    is left alone however old it looks, because stopping a machine is
+    `reclaim`'s decision and it is made by the owner.
+    """
+    freed, removed = 0, 0
+    for entry in sorted(os.listdir(REGISTRY) if os.path.isdir(REGISTRY) else []):
+        if not entry.endswith(".json"):
+            continue
+        block = int(entry[:-5])
+        claim = read_claim(block)
+        if claim is None:
+            continue
+        state = liveness(block, claim)["state"]
+        if state != "orphan":
+            continue
+        print(f"block {block}: worktree {claim.get('laneRoot')} is gone and "
+              "nothing is running")
+        for run_dir in claim.get("runDirs", []):
+            if os.path.isdir(run_dir):
+                size = dir_size(run_dir)
+                if args.dry_run:
+                    print(f"  would remove {run_dir} ({size // (1 << 20)} MB)")
+                else:
+                    print(f"  removing {run_dir} ({size // (1 << 20)} MB)")
+                    shutil.rmtree(run_dir, ignore_errors=True)
+                freed += size
+        if not args.dry_run:
+            os.unlink(claim_path(block))
+        removed += 1
+    print(f"{removed} orphan block(s), {freed // (1 << 20)} MB"
+          + (" would be freed" if args.dry_run else " freed"))
+    report_unrecorded_run_dirs()
+    return 0
+
+
+def report_unrecorded_run_dirs(root: str = "/private/tmp") -> None:
+    """Run directories from BEFORE this scheme — named, never removed.
+
+    On 2026-08-06 these reached 11 GB and outlived their VMs, because a
+    run directory is created by whoever boots and removed by whoever
+    remembers. `gc` cleans the ones a claim records; these predate any
+    claim, so nothing here can tell whose they are — which is the same
+    unattributability the port scheme exists to end, one layer down.
+
+    Reported rather than swept, and that is deliberate. Whether a
+    `session.qcow2` is open is knowable (a running QEMU holds it), but
+    "no process has it open" is not the same as "nobody wants it": a lane
+    between two boots has a live run directory and no live process.
+    Deleting somebody's mid-flight clone to reclaim disk would be the
+    2026-08-03 mistake in a different currency.
+    """
+    stale = []
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return
+    for name in entries:
+        path = os.path.join(root, name)
+        if not name.startswith("nowvm-") or not os.path.isdir(path):
+            continue
+        if any(path in claim.get("runDirs", [])
+               for claim in (read_claim(int(f[:-5]))
+                             for f in (os.listdir(REGISTRY)
+                                       if os.path.isdir(REGISTRY) else [])
+                             if f.endswith(".json"))
+               if claim):
+            continue
+        disk = os.path.join(path, "session.qcow2")
+        busy = bool(os.path.exists(disk)
+                    and subprocess.run(["/usr/sbin/lsof", "-t", disk],
+                                       capture_output=True).stdout.strip())
+        stale.append((path, dir_size(path), busy))
+    if not stale:
+        return
+    total = sum(size for _, size, busy in stale if not busy)
+    print(f"\nrun directories not recorded by any lane ({root}/nowvm-*):")
+    for path, size, busy in stale:
+        print(f"  {size // (1 << 20):>5} MB  {path}"
+              + ("   <- a process still has its disk open" if busy else ""))
+    print(f"  {total // (1 << 20)} MB in the ones nothing has open. NOT "
+          "removed here: an idle run directory between two boots looks "
+          "exactly like an abandoned one, and this cannot tell them apart. "
+          "Ask whoever is working, then `rm -rf` the ones they disown.")
+
+
+def dir_size(path: str) -> int:
+    total = 0
+    for root, _, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.lstat(os.path.join(root, name)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    sub = ap.add_subparsers(dest="command")
+
+    def with_lane(parser):
+        parser.add_argument("--lane",
+                            help="a directory inside the lane (default: cwd)")
+        return parser
+
+    for parser in (with_lane(ap), with_lane(sub.add_parser(
+            "show", help="this lane's ports (the default)"))):
+        parser.add_argument("--json", action="store_true")
+        parser.add_argument("--env", action="store_true",
+                            help="shell exports, for eval")
+        parser.add_argument("--no-claim", action="store_true",
+                            help="answer without writing a claim")
+
+    lister = sub.add_parser("list", help="every claimed lane and its liveness")
+    lister.add_argument("--json", action="store_true")
+
+    whose = with_lane(sub.add_parser("whose", help="which lane owns a port"))
+    whose.add_argument("--port", type=int, required=True)
+    whose.add_argument("--json", action="store_true")
+
+    attach = with_lane(sub.add_parser("attach",
+                                      help="record a VM against this block"))
+    attach.add_argument("--qmp", help="absolute path to the QMP socket")
+    attach.add_argument("--run", help="absolute path to the run directory")
+
+    rec = with_lane(sub.add_parser("reclaim",
+                                   help="stop this lane's VMs, free its ports"))
+    rec.add_argument("--block", type=int,
+                     help="another lane's block (needs --force)")
+    rec.add_argument("--force", action="store_true")
+    rec.add_argument("--power-cut", action="store_true",
+                     help="QMP quit if the clean shutdown fails (dirty volume)")
+    rec.add_argument("--dry-run", action="store_true")
+
+    gc = sub.add_parser("gc", help="drop claims whose worktree is gone")
+    gc.add_argument("--dry-run", action="store_true")
+
+    human = sub.add_parser(
+        "human", help="the reserved human block's ports (read-only)")
+    human.add_argument("--json", action="store_true")
+    # So a caller can ASK rather than restate 590-599. The range is stated
+    # once, here, and scripts/spin-up-ppc reads it through this flag to
+    # decide whether the machine it is about to boot belongs to a person.
+    # A second copy of the numbers in a shell script is exactly the
+    # "state a limit once" defect AGENTS.md names.
+    human.add_argument("--is-human", type=int, metavar="PORT", default=None,
+                       help="exit 0 if PORT is in the reserved human range, "
+                            "1 if it is not. Prints nothing.")
+
+    args = ap.parse_args(argv)
+    if args.command in (None, "show"):
+        return cmd_show(args)
+    return {"list": cmd_list, "whose": cmd_whose, "attach": cmd_attach,
+            "human": cmd_human,
+            "reclaim": cmd_reclaim, "gc": cmd_gc}[args.command](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

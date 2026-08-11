@@ -1,0 +1,1066 @@
+#!/usr/bin/env python3
+"""The commit gate for resident (extension) work: no commit that changes
+the resident may land until the stage image contains it.
+
+    tools/ext-bake-gate digest [--index|--worktree]   # the source digest
+    tools/ext-bake-gate check                         # what pre-commit runs
+    tools/ext-bake-gate record <receipt.json>         # what a bake writes
+    tools/ext-bake-gate verify-image [--require]      # image ?= newest receipt
+    tools/ext-bake-gate merge-check                   # what post-merge runs
+    tools/ext-bake-gate main-ref-check <old> <new>    # what ref transactions run
+    tools/ext-bake-gate note-image --reason "…"       # a hand-install, recorded
+
+WHAT EACH ONE CAN HONESTLY ASSERT, because the difference decides which of
+them may refuse a commit:
+
+  `check`   asserts that the resident release tuple did not roll back and that
+            a receipt in THIS tree records a bake of exactly this resident
+            build surface. Both are facts in git and fully in the committer's
+            power, so it REFUSES.
+  `verify-image` asserts that the bytes at the oracle's path right now hash
+            to what the newest receipt claims. That is a fact about a
+            SHARED MUTABLE FILE and it is not in the committer's power at
+            all — another lane can invalidate it a second after the bake.
+            So it WARNS on the commit path, loudly, and refuses only where
+            a commit is WRITING the claim (a bake receipt being staged must
+            be true at the moment it is written) or where a caller asks for
+            --require.
+  `merge-check` asserts that a merge did not silently combine two branches'
+            receipts. A clean textual merge of a receipts file is no
+            evidence at all — the same class as the derived tables in
+            AGENTS.md that merged cleanly and produced a lie.
+
+WHY THIS EXISTS. On 2026-08-06 the newest stage image
+(~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2) was three days old while
+SIX extension commits had landed that day: the re-armed liveness Time
+Manager vehicle, its ABI shim, the MacTCP .IPP probe. Every session
+cloned that image, staged a fresh build into a throwaway clone, and threw
+the clone away — so the resident code baked into the shared oracle was
+never any of them. docs/open-issues.md already carried the rule ("Future
+extension changes must update and cleanly shut down this stage image;
+merely copying a new INIT into a running clone does not change the
+resident code under test") and NOTHING ENFORCED IT, so the verified
+oracle went stale in silence and any Mirror sweep started from an old
+resident with no warning at all. A rule that lives only in prose is a
+rule the tenth session does not know about.
+
+WHAT IT CHECKS. When a commit changes any input to the resident identity —
+ext/, shared guest sources, or a shared contract header — the resident's
+major/minor tuple must not roll back and the newest receipt in
+ext/stage-receipts.json must
+be a bake whose recorded source digest EQUALS the digest of the staged
+tree — i.e. the image on disk contains exactly this resident — and must
+record the five facts that make a bake believable: the ext build
+fingerprint the guest itself reported, the image sha256, a passing
+`qemu-img check`, that the shutdown was guest-clean rather than a QMP
+power cut, and — the one that had to be learned the expensive way — that
+the VOLUME INSIDE the image was cleanly unmounted, which is a different
+question from all four of the others.
+
+The digest is content-exact and deliberately supersedes the "receipt
+newer than the newest source change" phrasing of the original rule: an
+mtime says when a file was touched, a digest says what is in it, and a
+`git checkout` or a worktree clone rewrites the first while preserving
+the second. The timestamps are still recorded and reported, because a
+human reading a failure wants to know how stale.
+
+WHAT IT CANNOT CHECK, said plainly: the image on disk is shared and the
+last bake wins. A receipt certifies that THIS source was baked, verified
+by the guest and installed — not that the file still contains it, because
+another branch may bake over it minutes later (watched on 2026-08-06, two
+sessions baking within the hour). The `imageSha256` is what tells you
+afterwards which resident a sweep actually cloned: compare it against the
+file before believing a result, and re-bake if it differs.
+
+DEFERRING is allowed and is a WRITTEN DECISION, never a silent skip:
+
+    TBT_DEFER_EXT_BAKE=1 TBT_DEFER_EXT_BAKE_REASON="..." git commit ...
+
+appends the reason to ext/stage-receipts.json and stages it, so the
+deferral lands in the same commit as the work it excuses. Enforcement is
+the floor, not the rule (AGENTS.md > Git says the same of TBT_ALLOW_MAIN).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+# ext/stage-receipts.json is EXCLUDED from the trigger set: a receipt is
+# the gate's own output, and a commit that carries one must not gate on
+# itself.
+RECEIPTS = "ext/stage-receipts.json"
+VERSION_FILE = "contract/resident_version.h"
+TRIGGER_DIRS = ("ext/",)
+TRIGGER_FILES = (
+    "now-guest-shared/src/now_act_guard.c",
+    "now-guest-shared/src/now_act_guard.h",
+    "now-guest-shared/src/now_drag_logic.c",
+    "now-guest-shared/src/now_drag_logic.h",
+    "now-guest-shared/src/now_cursor_logic.c",
+    "now-guest-shared/src/now_cursor_logic.h",
+    "now-guest-shared/src/now_semantic_guard.c",
+    "now-guest-shared/src/now_semantic_guard.h",
+    "contract/content_table.h",
+    "contract/event_tail.h",
+    "contract/peek_table.h",
+    VERSION_FILE,
+    "contract/wire_limits.h",
+)
+
+REQUIRED = (
+    ("extBuildFingerprint", "the fingerprint the GUEST reported for the resident"),
+    ("imageSha256", "the sha256 of the installed stage image"),
+    ("qemuImgCheck", "a passing qemu-img check"),
+    ("shutdown", "that the guest shut ITSELF down cleanly"),
+    # ADDED 2026-08-06, and the reason is worth more than the field. Three
+    # bakes that day installed an oracle whose HFS volume was still marked
+    # mounted, so every clone opened in Disk First Aid. Their receipts said
+    # `qemuImgCheck: clean` and `shutdown: guest-clean`, and both were
+    # TRUE — the container really was intact, and the guest really did run
+    # its own shutdown sequence. Neither is the question. `qemu-img check`
+    # validates the qcow2 wrapper and cannot see the filesystem inside it,
+    # and a shutdown that STARTS is not a shutdown that finished
+    # unmounting. A check adjacent to the question reads exactly like an
+    # answer to it, which is why this is a separate field rather than a
+    # stricter reading of an existing one: tools/volclean.py asks the
+    # volume itself, and a receipt without its verdict now certifies
+    # nothing.
+    ("volumeClean", "that the VOLUME was cleanly unmounted (tools/volclean.py)"),
+)
+
+
+def run(*args: str) -> str:
+    return subprocess.run(args, capture_output=True, text=True,
+                          check=True).stdout
+
+
+def repo_root() -> str:
+    return run("git", "rev-parse", "--show-toplevel").strip()
+
+
+def triggered(path: str) -> bool:
+    if path == RECEIPTS:
+        return False
+    return path.startswith(TRIGGER_DIRS) or path in TRIGGER_FILES
+
+
+def staged_paths(root: str) -> list[str]:
+    out = run("git", "-C", root, "diff", "--cached", "--name-only",
+              "--diff-filter=ACMRT")
+    return [p for p in out.splitlines() if triggered(p)]
+
+
+def tracked(root: str) -> list[str]:
+    out = run("git", "-C", root, "ls-files", "--", "ext", "contract",
+              "now-guest-shared/src")
+    return sorted(p for p in out.splitlines() if triggered(p))
+
+
+def digest(root: str, source: str) -> str:
+    """sha1 over "<path> <blob>" for every gated file.
+
+    `index` reads the blob ids git already has for the staged content;
+    `worktree` hashes the files on disk with the same function, so a
+    clean tree gives the same answer either way and a bake run from a
+    dirty tree gives the digest of what it actually staged into the VM.
+    """
+    lines = []
+    if source == "index":
+        for row in run("git", "-C", root, "ls-files", "-s", "--", "ext",
+                       "contract", "now-guest-shared/src").splitlines():
+            meta, _, path = row.partition("\t")
+            if triggered(path):
+                lines.append(f"{path} {meta.split()[1]}")
+        lines.sort()
+    else:
+        for path in tracked(root):
+            full = os.path.join(root, path)
+            if not os.path.exists(full):
+                continue
+            lines.append(f"{path} " + run("git", "-C", root, "hash-object",
+                                          "--", full).strip())
+    return hashlib.sha1("\n".join(lines).encode()).hexdigest()
+
+
+def load(root: str) -> dict:
+    path = os.path.join(root, RECEIPTS)
+    if not os.path.exists(path):
+        return {"receipts": []}
+    with open(path) as fh:
+        return json.load(fh)
+
+
+def load_revision(root: str, revision: str) -> dict:
+    """Read receipts from an immutable candidate tree, never the checkout.
+
+    A reference transaction can advance `main` while another branch is
+    checked out. Reading the worktree there would gate the branch issuing the
+    command rather than the commit `main` is about to name — the same wrong-
+    tree hole as deriving a merge document before rather than after a merge.
+    """
+    try:
+        raw = run("git", "-C", root, "show", f"{revision}:{RECEIPTS}")
+    except subprocess.CalledProcessError:
+        return {"receipts": []}
+    return json.loads(raw)
+
+
+def digest_revision(root: str, revision: str) -> str:
+    """The resident digest in one commit tree.
+
+    This is deliberately the same `path blob` digest as `digest(index)`, but
+    `git ls-tree` makes it independent of whichever worktree happened to
+    initiate the ref update.
+    """
+    lines = []
+    out = run("git", "-C", root, "ls-tree", "-r", revision, "--", "ext",
+              "contract", "now-guest-shared/src")
+    for row in out.splitlines():
+        meta, _, path = row.partition("\t")
+        fields = meta.split()
+        if triggered(path) and len(fields) >= 3 and fields[1] == "blob":
+            lines.append(f"{path} {fields[2]}")
+    lines.sort()
+    return hashlib.sha1("\n".join(lines).encode()).hexdigest()
+
+
+def parse_version(raw: str, source: str) -> tuple[int, int]:
+    """Read the resident release tuple from its one source of truth."""
+    values = {}
+    for component in ("MAJOR", "MINOR"):
+        match = re.search(
+            rf"^\s*#define\s+NOW_RESIDENT_VERSION_{component}\s+(\d+)\s*$",
+            raw, re.MULTILINE)
+        if match is None:
+            raise ValueError(
+                f"{source} does not define NOW_RESIDENT_VERSION_{component}")
+        values[component] = int(match.group(1))
+    return values["MAJOR"], values["MINOR"]
+
+
+def version_index(root: str) -> tuple[int, int]:
+    try:
+        raw = run("git", "-C", root, "show", f":{VERSION_FILE}")
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(f"the index has no {VERSION_FILE}") from exc
+    return parse_version(raw, f"staged {VERSION_FILE}")
+
+
+def version_revision(root: str, revision: str) -> tuple[int, int] | None:
+    try:
+        raw = run("git", "-C", root, "show", f"{revision}:{VERSION_FILE}")
+    except subprocess.CalledProcessError:
+        return None
+    return parse_version(raw, f"{revision}:{VERSION_FILE}")
+
+
+def version_text(value: tuple[int, int] | None) -> str:
+    return "none" if value is None else f"{value[0]}.{value[1]}"
+
+
+def version_advance_problem(old: tuple[int, int] | None,
+                            new: tuple[int, int] | None) -> str | None:
+    if new is None:
+        return f"the candidate has no parseable {VERSION_FILE}."
+    if old is not None and new < old:
+        return ("the resident version rolled back: "
+                f"{version_text(old)} -> {version_text(new)}. Development "
+                "builds may share a version, but main may not go backwards.")
+    return None
+
+
+def save(root: str, doc: dict) -> None:
+    path = os.path.join(root, RECEIPTS)
+    with open(path, "w") as fh:
+        json.dump(doc, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+
+
+def latest_bake(doc: dict) -> dict | None:
+    for entry in reversed(doc.get("receipts", [])):
+        if entry.get("kind") == "bake":
+            return entry
+    return None
+
+
+def newest_source_time(root: str, paths: list[str]) -> float:
+    times = [os.path.getmtime(os.path.join(root, p))
+             for p in paths if os.path.exists(os.path.join(root, p))]
+    return max(times) if times else 0.0
+
+
+def iso(ts: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(ts))
+
+
+def fail(lines: list[str]) -> int:
+    print("", file=sys.stderr)
+    print("[ext-bake-gate] refusing this commit: the stage image does not "
+          "contain this resident.", file=sys.stderr)
+    for line in lines:
+        print(f"  {line}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("  Bake it, which takes one command and about five minutes:",
+          file=sys.stderr)
+    print("      scripts/bake-ext-image", file=sys.stderr)
+    print("  Or defer it as a WRITTEN decision, never in silence:",
+          file=sys.stderr)
+    print("      TBT_DEFER_EXT_BAKE=1 \\", file=sys.stderr)
+    print("      TBT_DEFER_EXT_BAKE_REASON=\"why this can wait\" git commit ...",
+          file=sys.stderr)
+    print("", file=sys.stderr)
+    print("  WHY: on 2026-08-06 the stage image was three days old while six",
+          file=sys.stderr)
+    print("  extension commits had landed that day. Every session cloned it,",
+          file=sys.stderr)
+    print("  staged a build into a throwaway clone and discarded the clone, so",
+          file=sys.stderr)
+    print("  the resident under test was never any of them. The rule was in",
+          file=sys.stderr)
+    print("  docs/open-issues.md and nothing enforced it, so the verified",
+          file=sys.stderr)
+    print("  oracle went stale in silence.", file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
+def fail_version(problem: str) -> int:
+    print("", file=sys.stderr)
+    print("[ext-bake-gate] refusing this commit: resident version rollback.",
+          file=sys.stderr)
+    print(f"  {problem}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(f"  Restore a non-decreasing tuple in {VERSION_FILE}, then bake that",
+          file=sys.stderr)
+    print("  exact build. A bake proves which bytes ran; the",
+          file=sys.stderr)
+    print("  version is the human release identity those bytes report.",
+          file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
+def defer(root: str, paths: list[str], want: str) -> int:
+    reason = (os.environ.get("TBT_DEFER_EXT_BAKE_REASON")
+              or os.environ.get("TBT_DEFER_EXT_BAKE_WHY") or "").strip()
+    if len(reason) < 10:
+        print("", file=sys.stderr)
+        print("[ext-bake-gate] TBT_DEFER_EXT_BAKE=1 needs a REASON, and a "
+              "sentence rather than a word.", file=sys.stderr)
+        print("  TBT_DEFER_EXT_BAKE_REASON=\"the PowerBook is off; baking "
+              "tomorrow\" git commit ...", file=sys.stderr)
+        print("  It is written into ext/stage-receipts.json and lands in this "
+              "commit, so", file=sys.stderr)
+        print("  whoever finds a stale image can see who decided that and why.",
+              file=sys.stderr)
+        print("", file=sys.stderr)
+        return 1
+
+    doc = load(root)
+    doc.setdefault("receipts", []).append({
+        "kind": "deferral",
+        "at": iso(time.time()),
+        "extDigest": want,
+        "reason": reason,
+        "branch": run("git", "-C", root, "rev-parse", "--abbrev-ref",
+                      "HEAD").strip(),
+        "paths": paths,
+    })
+    save(root, doc)
+    subprocess.run(["git", "-C", root, "add", "--", RECEIPTS], check=True)
+    print(f"[ext-bake-gate] bake DEFERRED and recorded in {RECEIPTS}: {reason}")
+    # `git commit -a` and `git commit -- <paths>` build a TEMPORARY index, so
+    # a file staged by a hook does not join that commit — it waits, staged,
+    # for the next one. Said here rather than discovered later by someone
+    # whose deferral is missing from the commit it was meant to excuse.
+    print(f"  (staged into this commit — with `git commit -a` or an explicit")
+    print(f"   pathspec, name {RECEIPTS} in it or it lands in the next one.)")
+    print("  The image on disk does not contain this resident. Anything that "
+          "clones it")
+    print("  is testing older resident code until scripts/bake-ext-image runs.")
+    return 0
+
+
+def check(root: str) -> int:
+    # Runs on EVERY commit, not only resident ones, because it guards what
+    # the commit WRITES rather than what it depends on — and a receipt can
+    # be staged by a commit that touches no ext/ file at all.
+    if staged_receipt_claims(root):
+        return 1
+
+    paths = staged_paths(root)
+    if not paths:
+        return 0
+
+    try:
+        candidate_version = version_index(root)
+        prior_version = version_revision(root, "HEAD")
+        version_problem = version_advance_problem(prior_version,
+                                                  candidate_version)
+    except ValueError as exc:
+        version_problem = str(exc)
+    if version_problem:
+        return fail_version(version_problem)
+
+    want = digest(root, "index")
+    if os.environ.get("TBT_DEFER_EXT_BAKE"):
+        return defer(root, paths, want)
+
+    doc = load(root)
+    entry = latest_bake(doc)
+    shown = ", ".join(paths[:4]) + (" …" if len(paths) > 4 else "")
+    if entry is None:
+        return fail([f"staged resident changes: {shown}",
+                     f"no bake receipt in {RECEIPTS} at all."])
+
+    problems = []
+    if entry.get("extDigest") != want:
+        problems.append("the receipt is for a DIFFERENT resident source:")
+        problems.append(f"  baked   {entry.get('extDigest')}  at {entry.get('at')}")
+        problems.append(f"  staged  {want}")
+        newest = newest_source_time(root, paths)
+        if newest:
+            problems.append(f"  newest staged source change: {iso(newest)}")
+    for key, what in REQUIRED:
+        if not entry.get(key):
+            problems.append(f"the receipt records no {what} ({key}).")
+    if entry.get("shutdown") not in (None, "guest-clean"):
+        problems.append(f"the shutdown was {entry['shutdown']!r}, not "
+                        "'guest-clean' — a QMP quit is a power cut and the "
+                        "next boot sits in Disk First Aid.")
+    if entry.get("qemuImgCheck") not in (None, "clean"):
+        problems.append(f"qemu-img check was {entry['qemuImgCheck']!r}, "
+                        "not 'clean'.")
+    if entry.get("volumeClean") not in (None, "clean"):
+        problems.append(f"the volume check was {entry['volumeClean']!r}, not "
+                        "'clean' — the image's HFS volume is still marked "
+                        "mounted and every clone of it opens in Disk First "
+                        "Aid.")
+    if entry.get("correctedOn"):
+        problems.append(f"the newest receipt has been CORRECTED "
+                        f"({entry['correctedOn']}) and no longer certifies "
+                        f"the image: {entry.get('correction')}")
+    if problems:
+        return fail([f"staged resident changes: {shown}"] + problems)
+
+    print(f"[ext-bake-gate] a receipt records a bake of this resident "
+          f"({want[:12]}, baked {entry.get('at')}).")
+    # WARN, never refuse. Whether the shared file still holds that bake is
+    # not a property of this commit and not in this committer's power: any
+    # lane can replace it between the bake and the commit. Refusing here
+    # would strand correct work for a reason its author cannot act on —
+    # which, in a repository whose most expensive lesson is uncommitted
+    # work lost, is a worse failure than the one it would prevent.
+    for line in image_warning(root, entry):
+        print(line)
+    return 0
+
+
+# --- the image on disk, rather than the receipt's memory of it -----------
+
+def oracle_path() -> str:
+    return os.path.expanduser(
+        os.environ.get("NOW_STAGE_IMAGE",
+                       "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2"))
+
+
+def provenance(root: str, image: str | None = None) -> dict | None:
+    """Ask tools/image-provenance about the image, or None if it cannot.
+
+    Returns None — never a guess — when the tool or the image is absent.
+    A contributor on a machine with no images must not be told their oracle
+    is wrong; they have no oracle, and saying nothing is the honest answer.
+    """
+    tool = os.path.join(root, "tools", "image-provenance")
+    path = image or oracle_path()
+    if not os.path.exists(tool) or not os.path.exists(path):
+        return None
+    out = os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                       f"now-ext-bake-gate-prov.{os.getpid()}.json")
+    try:
+        subprocess.run([sys.executable, tool, path, "--quiet", "--json", out,
+                        "--repo", root], check=True, capture_output=True)
+        with open(out) as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+    finally:
+        try:
+            os.remove(out)
+        except OSError:
+            pass
+
+
+def image_warning(root: str, entry: dict) -> list[str]:
+    """The sha-vs-receipt check AGENTS.md already asked for in prose.
+
+    It was written down as a rule ("before believing a sweep, check the
+    image's sha256 against the receipt's imageSha256") and nothing ran it,
+    which is how the oracle came to hold a 3-August image with a ctime of
+    the 6th and no receipt describing it at all. This is that one `shasum`,
+    run for you.
+    """
+    p = provenance(root)
+    if p is None or not p.get("imageSha256"):
+        return []
+    if p["imageSha256"] == entry.get("imageSha256"):
+        return []
+    lines = [
+        "",
+        "  [image] THE ORACLE ON DISK IS NOT THE ONE THIS RECEIPT DESCRIBES.",
+        f"    receipt  {entry.get('imageSha256')}  ({entry.get('at')},"
+        f" {entry.get('branch')})",
+        f"    on disk  {p['imageSha256']}  (installed {p.get('imageCtime')})",
+    ]
+    if p.get("matchedReceipt"):
+        m = p["matchedReceipt"]
+        lines.append(f"    the file matches a LATER receipt: {m.get('at')} on "
+                     f"{m.get('branch')} — someone baked over yours.")
+    else:
+        lines.append("    the file matches NO receipt on this branch. Nobody can "
+                     "say what resident is in it.")
+    lines += [
+        "    This does not make your commit wrong and it is not refused: a",
+        "    receipt is an honest record of a bake that happened. It makes any",
+        "    RESULT from a clone of that image unattributable until it is",
+        "    re-baked (scripts/bake-ext-image --shared) or until whoever owns",
+        "    the newer bake says which resident is in there.",
+        "",
+    ]
+    return lines
+
+
+def verify_image(root: str, require: bool) -> int:
+    doc = load(root)
+    entry = latest_bake(doc)
+    p = provenance(root)
+    if p is None:
+        print("[ext-bake-gate] no image at "
+              f"{oracle_path()} — nothing to verify (this is not a failure; "
+              "a machine without the oracle simply has no oracle).")
+        return 0
+    print(f"[ext-bake-gate] oracle {p['image']}")
+    print(f"  sha256 on disk   {p['imageSha256']}")
+    print(f"  installed        {p.get('imageCtime')}"
+          f"  (content mtime {p.get('imageMtime')})")
+    if entry is None:
+        print("  newest receipt   none at all.")
+        return 3 if require else 0
+    print(f"  newest receipt   {entry.get('imageSha256')}"
+          f"  ({entry.get('at')}, {entry.get('branch')})")
+    if p["imageSha256"] == entry.get("imageSha256"):
+        if entry.get("correctedOn"):
+            print("  VERDICT          the file matches the newest receipt — and "
+                  "that receipt has been CORRECTED, so it certifies nothing.")
+            return 3 if require else 0
+        print("  VERDICT          MATCH. The oracle is the image this receipt "
+              "describes.")
+        return 0
+    print("  VERDICT          MISMATCH — the oracle is not the image the newest "
+          "receipt describes.")
+    for line in image_warning(root, entry)[1:]:
+        print(line)
+    return 3 if require else 0
+
+
+def staged_receipt_claims(root: str) -> int:
+    """A receipt being WRITTEN must be true when it is written. This refuses.
+
+    Two lies are possible on the way into the tracked file and neither can
+    be caught later, because afterwards both look exactly like a bake some
+    other lane replaced:
+
+      * a `throwaway` receipt pasted in — a claim about one lane's private
+        image, sitting in the file that means "the SHARED oracle contains
+        this";
+      * a bake receipt whose imageSha256 does not match the file it names,
+        at the moment it is staged.
+
+    Neither can strand in-flight work: scripts/bake-ext-image stages the
+    receipt in the same breath as installing the image, so the second is
+    true by construction, and nothing writes the first at all.
+    """
+    out = run("git", "-C", root, "diff", "--cached", "--name-only",
+              "--diff-filter=ACMRT")
+    if RECEIPTS not in out.splitlines():
+        return 0
+    try:
+        blob = run("git", "-C", root, "show", f":{RECEIPTS}")
+        staged = json.loads(blob).get("receipts", [])
+    except Exception as exc:
+        print(f"\n[ext-bake-gate] {RECEIPTS} is staged and does not parse as "
+              f"JSON: {exc}", file=sys.stderr)
+        print("  A receipts file that does not parse certifies nothing and "
+              "every gate", file=sys.stderr)
+        print("  that reads it silently degrades to 'no receipts'. Fix it "
+              "before committing.\n", file=sys.stderr)
+        return 1
+    head = []
+    try:
+        head = json.loads(run("git", "-C", root, "show",
+                              f"HEAD:{RECEIPTS}")).get("receipts", [])
+    except Exception:
+        head = []
+    new = staged[len(head):] if staged[:len(head)] == head else staged
+
+    problems = []
+    for entry in new:
+        if entry.get("kind") != "bake":
+            continue
+        if entry.get("scope") == "throwaway":
+            problems.append(
+                f"a THROWAWAY bake receipt ({entry.get('at')}, image "
+                f"{entry.get('imageName')}) is being committed into "
+                f"{RECEIPTS}.")
+            problems.append(
+                "  That file means 'the SHARED oracle contains this "
+                "resident'. A private")
+            problems.append(
+                "  lane image in it reads as the oracle to every gate and "
+                "every reader.")
+            problems.append(
+                "  Your image accounts for itself in its .provenance.json "
+                "sidecar; leave it there.")
+            continue
+        p = provenance(root, os.path.expanduser(
+            (entry.get("image") or "").replace("~", os.path.expanduser("~"))))
+        if p is None or not p.get("imageSha256"):
+            continue
+        if p["imageSha256"] == entry.get("imageSha256"):
+            continue
+        # A mismatch has TWO causes and only one of them is a lie. The
+        # file's ctime separates them, and getting this wrong in either
+        # direction is expensive:
+        #
+        #   ctime AFTER the receipt's time  — somebody installed over your
+        #     image between your bake and this commit. Your receipt is an
+        #     honest record of a bake that happened; it is merely no longer
+        #     true of the file. Refusing here would strand correct work for
+        #     a reason its author cannot act on (re-baking would stomp the
+        #     other lane straight back, which is an escalation, not a fix).
+        #     WARN.
+        #   ctime BEFORE it — the file at that path has not been written
+        #     since before this bake claims to have installed it, so this
+        #     bake did not install it. That claim was never true and no
+        #     amount of time makes it so. REFUSE.
+        #
+        # This case was found by its own test: the first version refused
+        # both, and the "another lane baked over it" test — the exact
+        # scenario six concurrent lanes make likely — went red.
+        superseded = False
+        try:
+            from datetime import datetime
+            fmt = "%Y-%m-%dT%H:%M:%S%z"
+            superseded = (datetime.strptime(p["imageCtime"], fmt)
+                          > datetime.strptime(entry["at"], fmt))
+        except Exception:
+            superseded = True     # cannot tell → do not refuse
+        if superseded:
+            print(f"[ext-bake-gate] NOTE: the image named by the receipt you are "
+                  f"committing has\n  been replaced since your bake "
+                  f"({p['imageCtime']} > {entry.get('at')}).\n"
+                  f"    receipt  {entry.get('imageSha256')}\n"
+                  f"    on disk  {p['imageSha256']}\n"
+                  f"  Your receipt is still an honest record of a bake and is "
+                  f"not refused.\n  The ORACLE, however, is now somebody "
+                  f"else's — say so wherever you quote a\n  result from it, "
+                  f"and see `tools/ext-bake-gate verify-image`.")
+            continue
+        problems.append(
+            "a bake receipt is being committed that CANNOT be true:")
+        problems.append(f"    receipt  {entry.get('imageSha256')}"
+                        f"   claimed installed {entry.get('at')}")
+        problems.append(f"    {entry.get('image')}")
+        problems.append(f"    on disk  {p['imageSha256']}"
+                        f"   last written {p.get('imageCtime')}")
+        problems.append(
+            "  The file has not been written since BEFORE this bake says it "
+            "installed it,")
+        problems.append(
+            "  so this bake did not install it. That is not a receipt "
+            "somebody overtook —")
+        problems.append(
+            "  it is a claim about a shared file that was never true, and "
+            "committing it")
+        problems.append(
+            "  puts it where the next reader has no way to check. Re-bake, "
+            "or drop it.")
+    if not problems:
+        return 0
+    print("", file=sys.stderr)
+    print("[ext-bake-gate] refusing this commit: it would write a receipt "
+          "that is not true.", file=sys.stderr)
+    for line in problems:
+        print(f"  {line}", file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
+def deferral_comes_due(root: str, doc: dict) -> list[str]:
+    """A defer is a promise to bake before landing. This is when it comes due.
+
+    `TBT_DEFER_EXT_BAKE=1` with a written reason lets a resident change be
+    COMMITTED without a bake, and that is right: a lane mid-arc has better
+    things to do than hold a VM for five minutes, and the reason lands in
+    the same commit as the work it excuses. What it must not do is let the
+    change LAND — an honest deferral on a branch is a sequencing decision,
+    and the same deferral on `main` is an unbaked resident that every
+    session's oracle now disagrees with, excused by a note nobody will read
+    again.
+
+    So this fires only when the merge target is `main`. Lane-to-lane merges
+    are untouched, which matters: eleven branches were in flight when this
+    was written and a gate that made them merge each other's work harder
+    would have cost more than the drift it prevents. On main it REFUSES,
+    and `TBT_DEFER_EXT_BAKE=1` with a reason is the same override it always
+    was — a written decision, not a silence.
+    """
+    branch = subprocess.run(
+        ["git", "-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"],
+        capture_output=True, text=True).stdout.strip()
+    if branch not in ("main", "master"):
+        return []
+    if os.environ.get("TBT_DEFER_EXT_BAKE"):
+        return []
+    want = digest(root, "worktree")
+    entry = latest_bake(doc)
+    if entry and entry.get("extDigest") == want:
+        return []
+    out = [
+        "this merge would land RESIDENT SOURCE that no bake receipt covers.",
+        f"  tree now  {want}",
+        f"  newest bake  {entry.get('extDigest') if entry else '(none)'}"
+        f"  {entry.get('at') if entry else ''}",
+    ]
+    defers = [r for r in doc.get("receipts", []) if r.get("kind") == "deferral"]
+    if defers:
+        out.append("  It is excused on the branch by a written deferral:")
+        for d in defers[-2:]:
+            out.append(f"    {d.get('at')}  {d.get('branch')}: {d.get('reason')}")
+        out.append("  Those reasons were good enough to COMMIT on a branch and "
+                   "are not good")
+        out.append("  enough to LAND: on main the oracle every session clones "
+                   "disagrees with")
+        out.append("  the resident source, and the deferral is a note nobody "
+                   "reads again.")
+    out.append("  Bake it (scripts/bake-ext-image --shared, announced), or land "
+               "it as an")
+    out.append("  explicit decision: TBT_DEFER_EXT_BAKE=1 "
+               "TBT_DEFER_EXT_BAKE_REASON=\"…\" git merge …")
+    return out
+
+
+def merge_check(root: str) -> int:
+    """After a merge: did two branches' receipts silently combine?
+
+    A receipts file merges textually without complaint — two lanes each
+    appending an entry produces a file with both, in an order nobody chose,
+    whose LAST entry (which every gate reads as 'the newest bake') may be
+    the one that lost the race. AGENTS.md already carries this lesson about
+    derived tables: 'treat a clean textual merge of a derived table as no
+    evidence at all'. This is the same shape with a shared file behind it.
+
+    .gitattributes routes the file to a merge driver that always conflicts,
+    so the normal path is that a person decides. This runs afterwards and
+    checks the decision, because a driver can be missing — it lives in
+    per-clone git config, and a clone that never ran tools/setup-hooks has
+    none.
+    """
+    # The text FIRST, and json.load only if the text is plausible: a file
+    # full of conflict markers is the single most likely thing to be sitting
+    # here, and a gate that dies with a JSONDecodeError traceback instead of
+    # saying "there are conflict markers in it" has answered nothing.
+    problems = []
+    doc: dict = {"receipts": []}
+    try:
+        with open(os.path.join(root, RECEIPTS)) as fh:
+            raw = fh.read()
+    except FileNotFoundError:
+        return 0
+    if "<<<<<<<" in raw or ">>>>>>>" in raw:
+        problems.append(f"{RECEIPTS} still has conflict markers in it.")
+    else:
+        try:
+            doc = json.loads(raw)
+        except Exception as exc:
+            problems.append(f"{RECEIPTS} does not parse: {exc}")
+
+    entry = latest_bake(doc)
+    if entry:
+        seq = [r for r in doc.get("receipts", []) if r.get("kind") == "bake"]
+        times = [r.get("at", "") for r in seq]
+        if times != sorted(times):
+            problems.append(
+                "the bake receipts are NOT in time order after this merge:")
+            for r in seq[-4:]:
+                problems.append(f"    {r.get('at')}  {r.get('branch')}")
+            problems.append(
+                "  Every gate reads the LAST entry as the newest bake. Two "
+                "branches each")
+            problems.append(
+                "  appended one and git interleaved them by text, so the "
+                "last entry is")
+            problems.append(
+                "  whichever line sorted last, not whichever bake happened "
+                "last. Decide")
+            problems.append(
+                "  which resident the oracle actually holds — "
+                "`tools/ext-bake-gate verify-image`")
+            problems.append(
+                "  answers it from the file — and reorder or re-bake.")
+        for r in seq:
+            if r.get("scope") == "throwaway":
+                problems.append(
+                    f"a THROWAWAY receipt ({r.get('at')}, {r.get('branch')}) "
+                    f"is in {RECEIPTS} after this merge; it is a claim about "
+                    "one lane's private image.")
+
+    problems += deferral_comes_due(root, doc)
+    if not problems:
+        return 0
+    print("", file=sys.stderr)
+    print("[ext-bake-gate] THIS MERGE NEEDS A DECISION — it combined stage "
+          "image receipts.", file=sys.stderr)
+    for line in problems:
+        print(f"  {line}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("  A clean textual merge of a receipt is no evidence at all. The "
+          "receipts", file=sys.stderr)
+    print("  describe ONE shared file and only one of them can be true of it.",
+          file=sys.stderr)
+    print("  Resolve it in a commit of its own, then re-run:", file=sys.stderr)
+    print("      tools/ext-bake-gate merge-check", file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
+def main_ref_check(root: str, old: str, new: str) -> int:
+    """Refuse any `main` update that imports unpromoted resident source.
+
+    `pre-commit` sees commits and `pre-merge-commit` sees merge commits. Git
+    invokes neither for a fast-forward, `git fetch . branch:main`, or
+    `git branch -f main branch`. A `reference-transaction` hook sees all three.
+    It supplies the exact old and proposed object ids, so this check reads both
+    immutable trees rather than whichever branch is checked out.
+
+    Deferrals deliberately do not apply here. They authorize saving work on a
+    lane; they do not authorize making that unbaked source the shared `main`.
+    """
+    if not new or set(new) == {"0"}:
+        return 0
+    try:
+        new_digest = digest_revision(root, new)
+        old_digest = (digest_revision(root, old)
+                      if old and set(old) != {"0"} else None)
+    except subprocess.CalledProcessError as exc:
+        print("[ext-bake-gate] refusing main ref update: cannot inspect the "
+              f"candidate tree ({exc}).", file=sys.stderr)
+        return 1
+    if old_digest == new_digest:
+        return 0
+
+    problems = []
+    old_version = None
+    new_version = None
+    try:
+        old_version = (version_revision(root, old)
+                       if old and set(old) != {"0"} else None)
+        new_version = version_revision(root, new)
+        version_problem = version_advance_problem(old_version, new_version)
+        if version_problem:
+            problems.append(version_problem)
+    except ValueError as exc:
+        problems.append(str(exc))
+
+    try:
+        doc = load_revision(root, new)
+    except (json.JSONDecodeError, subprocess.CalledProcessError) as exc:
+        print("[ext-bake-gate] refusing main ref update: candidate receipts "
+              f"do not parse ({exc}).", file=sys.stderr)
+        return 1
+    entry = latest_bake(doc)
+    if entry is None:
+        problems.append("the candidate tree contains no shared bake receipt.")
+    else:
+        if entry.get("extDigest") != new_digest:
+            problems.append("the newest bake covers a different resident:")
+            problems.append(f"  candidate  {new_digest}")
+            problems.append(f"  baked      {entry.get('extDigest')}")
+        if entry.get("scope") != "shared":
+            problems.append("the newest bake was not promoted to the shared "
+                            f"oracle (scope={entry.get('scope')!r}).")
+        for key, what in REQUIRED:
+            if not entry.get(key):
+                problems.append(f"the receipt records no {what} ({key}).")
+        if entry.get("shutdown") != "guest-clean":
+            problems.append(f"shutdown is {entry.get('shutdown')!r}, not "
+                            "'guest-clean'.")
+        if entry.get("qemuImgCheck") != "clean":
+            problems.append(f"qemuImgCheck is "
+                            f"{entry.get('qemuImgCheck')!r}, not 'clean'.")
+        if entry.get("volumeClean") != "clean":
+            problems.append(f"volumeClean is {entry.get('volumeClean')!r}, "
+                            "not 'clean'.")
+        if entry.get("correctedOn"):
+            problems.append("the newest bake receipt was corrected and no "
+                            "longer certifies an image.")
+    if not problems:
+        return 0
+
+    print("", file=sys.stderr)
+    print("[ext-bake-gate] refusing refs/heads/main update: resident build "
+          "inputs changed without a verified shared bake and promotion, or "
+          "the resident version rolled back.",
+          file=sys.stderr)
+    print(f"  old resident  {old_digest or '(no prior main)'}", file=sys.stderr)
+    print(f"  new resident  {new_digest}", file=sys.stderr)
+    print(f"  old version   {version_text(old_version)}", file=sys.stderr)
+    print(f"  new version   {version_text(new_version)}", file=sys.stderr)
+    for problem in problems:
+        print(f"  {problem}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("  Run `scripts/bake-ext-image --shared` on the candidate branch,",
+          file=sys.stderr)
+    print(f"  commit {RECEIPTS}, then retry the main update.", file=sys.stderr)
+    print("  A branch deferral cannot override the main ref gate.",
+          file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
+def note_image(root: str, argv: list[str]) -> int:
+    """Account for an image that arrived at the oracle's path WITHOUT a bake.
+
+        tools/ext-bake-gate note-image --reason "rolled back to the last
+            volume-clean image; see docs/open-issues.md 2026-08-06"
+
+    This exists because the real 2026-08-06 sequence had a step no receipt
+    could describe. Three bakes installed images whose HFS volume was still
+    marked mounted, so somebody sensibly cloned the last known-good file
+    back over the oracle by hand — a good decision, recorded in
+    docs/open-issues.md, and invisible to every gate. The image on disk
+    then matched no receipt at all and read as a mystery.
+
+    A note is DELIBERATELY WEAKER THAN A BAKE and the verdict says so: it
+    records who put these bytes there and why. It cannot say what resident
+    is inside, because nobody asked a guest. Only a bake can say that.
+    """
+    reason = ""
+    image = oracle_path()
+    it = iter(argv)
+    for arg in it:
+        if arg == "--reason":
+            reason = next(it, "")
+        elif arg.startswith("--reason="):
+            reason = arg.split("=", 1)[1]
+        elif arg == "--image":
+            image = os.path.expanduser(next(it, image))
+    if len(reason.strip()) < 20:
+        print("\n[ext-bake-gate] note-image needs a --reason, and a sentence "
+              "rather than a word.", file=sys.stderr)
+        print("  It is the only account anybody will have of why these bytes "
+              "are at the", file=sys.stderr)
+        print("  oracle's path. Name what happened and where the fuller story "
+              "is.\n", file=sys.stderr)
+        return 1
+    p = provenance(root, image)
+    if p is None:
+        print(f"[ext-bake-gate] no image at {image}", file=sys.stderr)
+        return 1
+    doc = load(root)
+    doc.setdefault("receipts", []).append({
+        "kind": "image-note",
+        "at": iso(time.time()),
+        "image": p["image"],
+        "imageSha256": p["imageSha256"],
+        "imageBytes": p["imageBytes"],
+        "imageCtime": p.get("imageCtime"),
+        "imageMtime": p.get("imageMtime"),
+        "reason": reason.strip(),
+        "branch": run("git", "-C", root, "rev-parse", "--abbrev-ref",
+                      "HEAD").strip(),
+        # Said in the record itself, so no reader has to infer it from the
+        # absence of the other fields.
+        "certifies": "provenance only — no guest was asked what resident is "
+                     "in this image, so this is NOT a bake and does not "
+                     "satisfy the commit gate.",
+    })
+    save(root, doc)
+    subprocess.run(["git", "-C", root, "add", "--", RECEIPTS], check=True)
+    print(f"[ext-bake-gate] noted {p['imageSha256'][:16]}… in {RECEIPTS} "
+          f"(staged).")
+    print(f"  {reason.strip()}")
+    print("  This accounts for how the file got there. It does NOT say what "
+          "resident is")
+    print("  in it — only scripts/bake-ext-image --shared can, by asking the "
+          "guest.")
+    return 0
+
+
+def record(root: str, path: str) -> int:
+    with open(path) as fh:
+        entry = json.load(fh)
+    entry["kind"] = "bake"
+    doc = load(root)
+    doc.setdefault("receipts", []).append(entry)
+    save(root, doc)
+    print(f"[ext-bake-gate] receipt appended to {RECEIPTS}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    cmd = argv[1] if len(argv) > 1 else "check"
+    root = os.environ.get("TBT_GATE_ROOT") or repo_root()
+    if cmd == "check":
+        return check(root)
+    if cmd == "digest":
+        source = "index"
+        if "--worktree" in argv:
+            source = "worktree"
+        print(digest(root, source))
+        return 0
+    if cmd == "record":
+        return record(root, argv[2])
+    if cmd == "verify-image":
+        return verify_image(root, "--require" in argv)
+    if cmd == "merge-check":
+        return merge_check(root)
+    if cmd == "main-ref-check":
+        if len(argv) != 4:
+            print("usage: tools/ext-bake-gate main-ref-check <old> <new>",
+                  file=sys.stderr)
+            return 64
+        return main_ref_check(root, argv[2], argv[3])
+    if cmd == "note-image":
+        return note_image(root, argv[2:])
+    if cmd == "defer":
+        # Recording a deferral WITHOUT going through the hook. Added
+        # 2026-08-06, when core.hooksPath was found pointing at a directory
+        # that does not exist: a lane had deferred twice with honest
+        # written reasons and nothing was written down, because the gate
+        # that writes the record is the gate that never ran. A decision
+        # whose only trace is a shell variable in a dead process is not a
+        # written decision. This makes the record reachable directly.
+        reason = ""
+        it = iter(argv[2:])
+        for arg in it:
+            if arg == "--reason":
+                reason = next(it, "")
+            elif arg.startswith("--reason="):
+                reason = arg.split("=", 1)[1]
+        os.environ["TBT_DEFER_EXT_BAKE"] = "1"
+        os.environ["TBT_DEFER_EXT_BAKE_REASON"] = reason
+        paths = staged_paths(root) or tracked(root)
+        return defer(root, paths, digest(root, "worktree"))
+    print(__doc__, file=sys.stderr)
+    return 64
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

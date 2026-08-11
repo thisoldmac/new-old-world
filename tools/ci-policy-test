@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Static public-CI supply-chain policy, with no package dependency."""
+
+from pathlib import Path
+import re
+import sys
+
+
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOWS = ROOT / ".github" / "workflows"
+USE = re.compile(r"^\s*-\s+uses:\s+([^\s#]+)", re.MULTILINE)
+PINNED = re.compile(r"^[^@]+@[0-9a-f]{40}$")
+
+
+def main() -> int:
+    failures: list[str] = []
+    workflows = sorted(WORKFLOWS.glob("*.yml")) + sorted(
+        WORKFLOWS.glob("*.yaml"))
+    if not workflows:
+        failures.append("no GitHub Actions workflow exists")
+    for path in workflows:
+        text = path.read_text(encoding="utf-8")
+        if not re.search(r"(?m)^permissions:\s*\n\s+contents:\s*read\s*$", text):
+            failures.append(f"{path.name}: missing top-level contents: read")
+        for action in USE.findall(text):
+            if action.startswith("./"):
+                continue
+            if not PINNED.fullmatch(action):
+                failures.append(
+                    f"{path.name}: external action is not pinned by full SHA: "
+                    f"{action}")
+
+    ci = WORKFLOWS / "ci.yml"
+    if ci.exists():
+        ci_text = ci.read_text(encoding="utf-8")
+        for release_tag in ("now-product-v*", "now-extension-v*"):
+            if not re.search(
+                    rf'(?m)^\s+-\s+["\']?{re.escape(release_tag)}["\']?\s*$',
+                    ci_text):
+                failures.append(
+                    f"ci.yml: release tags do not trigger CI: {release_tag}")
+
+    dependabot = ROOT / ".github" / "dependabot.yml"
+    if not dependabot.exists():
+        failures.append(".github/dependabot.yml is missing")
+    elif "package-ecosystem: github-actions" not in dependabot.read_text(
+            encoding="utf-8"):
+        failures.append("Dependabot does not cover github-actions")
+
+    if failures:
+        print("[ci-policy] FAILED", file=sys.stderr)
+        for failure in failures:
+            print(f"  - {failure}", file=sys.stderr)
+        return 1
+    print(f"[ci-policy] {len(workflows)} workflow(s), immutable actions, "
+          "read-only token, Dependabot enabled")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,710 @@
+#!/usr/bin/env python3
+"""A merge that DELETES live code reports nothing. This counts what
+survived it.
+
+    tools/merge-census-gate census <treeish>              # the census itself
+    tools/merge-census-gate compare <before> <after>      # what vanished
+    tools/merge-census-gate check [<merge-commit>]        # what a hook runs
+    tools/merge-census-gate pending                       # the uncommitted merge
+
+WHY IT EXISTS. Every keep-both hazard this repository has paid for was
+about a CONFLICT — two sides editing one region, a human choosing badly.
+This is the other half, and it is silent by construction: when git
+resolves cleanly by taking one side's REMOVAL of code the other side
+still has, there is no conflict, no marker, and no message. A revert of
+live code is textually indistinguishable from a deliberate deletion, so
+git is not doing anything wrong; it simply cannot tell, and neither can
+a reviewer reading a merge that reports "Auto-merging" and stops.
+
+On 2026-08-07 `fe4d8179` on `claude/019-asset-packs` reverted the
+CDEF-attribution work its own immediate predecessor had landed, across
+seven files, in a commit whose subject is about `hello.machine`. Merging
+that lane auto-resolved nearly all of the revert with no conflict. It
+would have gone red at the gate only because a sibling lane's
+`scene_json_test.c` assertions happened to survive with it — luck, not a
+guard. Had the test file been reverted too the merge would have been
+green and the product quietly worse.
+
+WHAT A CENSUS IS. Every top-level definition this tree can name -- C
+functions, prototypes, macros, tags; Swift declarations; Python defs and
+classes; the heading structure of every published document -- derived
+from the tree itself at the moment it is asked, never from a list. The
+same standard `CommandParityTests` holds: a gate that maintains an
+inventory is a second place to be wrong.
+
+THREE VERDICTS, against the merge base, and only two of them refuse.
+
+  DROPPED (refuses).  A definition a parent has, that NEITHER side
+      removed relative to the base, and the merge does not. Nobody
+      deleted it and it is gone, so the resolution lost it. That is the
+      two keep-both truncations already in this repository's ledger: six
+      duplicate Python `def`s that still parsed, and a docs entry gutted
+      by keeping a newer heading and dropping an older body. In both, the
+      shared trailing context sat OUTSIDE the conflict hunk, so keeping
+      both sides of the hunk still lost it.
+
+  IMPORTED SELF-REVERT (refuses).  A commit in `HEAD..MERGE_HEAD` that
+      `tools/self-revert-gate` flags: it undoes its own predecessor and
+      says nothing about it. This is the half that catches `fe4d8179`,
+      and it is a separate question from the census on purpose -- the
+      census saw exactly ONE name move in that seven-file revert
+      (`Scene.swift`'s `cdef`), and a gate that depended on that would be
+      depending on luck twice over. Only commits the merge IMPORTS are
+      asked about; history already on the first parent is not re-refused,
+      or an arc goes red forever for a commit nobody can now change. And
+      a merge whose own message NAMES the commit passes: round 7's real
+      merge did exactly that, resolved all seven files by hand, and must
+      not be refused for carrying the sha in its ancestry.
+
+  REMOVED BY A SIDE (reports, never refuses).  A definition one parent
+      removed after the base, honoured by the merge. A deliberate
+      deletion and a revert are the same bytes here -- that is the whole
+      difficulty -- so refusing would refuse every honest deletion in the
+      fleet. Each name is instead ATTRIBUTED to the commit that removed
+      it and grouped under its subject, because eighty bare names is a
+      list nobody reads and eighty names under six subjects is six
+      judgements. `--strict` refuses on it, for a quiet fleet.
+
+WHAT IT DOES NOT COVER, and the list is longer than the covered one:
+
+  * Anything INSIDE a function body. `fe4d8179` reverted three `switch`
+    arms in `now_cdef_role` -- the actual defect, an attribution that
+    names every check box in OS 9's control panels a push button -- and
+    the function is still called `now_cdef_role` before and after. A
+    census counts names, and the name did not move.
+  * Signatures. `put_coverage_claim` lost a parameter in the same revert
+    and is one symbol either way.
+  * Content. A document heading that survives with its body gutted is a
+    heading either way, unless the body held headings of its own.
+  * Renames. A file the merge renamed loses every symbol it had; those
+    are reported at FILE level and not symbol level, so a rename reads as
+    one line rather than forty, and a rename that also drops a function
+    reads as one line rather than two.
+
+So the census half is a gate against a merge SILENTLY DROPPING A NAME,
+and it is not a gate against a merge silently changing what the name
+does. The second one is what tests are for, and the reason the first is
+worth having anyway is that the tests only fire if something else
+survived to disagree. The imported-self-revert half is what covers the
+case where nothing did.
+
+Mutation evidence: `tools/mirror-gate-tests/test_merge_census_gate.py`,
+in `scripts/test-native`. Five mutations were watched to fail it,
+including one that stops censusing Swift properties -- which is what
+makes the replay of the real 2026-08-07 auto-merge load-bearing rather
+than decorative.
+"""
+
+import importlib.machinery
+import importlib.util
+import os
+import re
+import subprocess
+import sys
+
+# Trees that are not this project's live code. `archive/` is by definition
+# code that was removed on purpose, `.claude/worktrees/` contains nested agent
+# checkouts, and `qemu/` is a large upstream clone.
+SKIP_PREFIXES = (
+    "archive/",
+    "qemu/",
+    ".claude/worktrees/",
+)
+
+C_EXT = (".c", ".h")
+SWIFT_EXT = (".swift",)
+PY_EXT = (".py",)
+MD_EXT = (".md",)
+
+# Words that begin a statement, so a line matching the function-definition
+# shape with one of these in the name slot is a call or a control structure,
+# not a definition.
+C_NOT_A_NAME = {
+    "if", "for", "while", "switch", "return", "sizeof", "else", "do",
+    "case", "goto", "defined", "typedef", "struct", "union", "enum",
+    "static", "const", "extern", "inline", "void", "int", "char",
+    "unsigned", "signed", "short", "long", "float", "double", "register",
+    "volatile", "auto",
+}
+
+# EVERY PATTERN HERE IS LINEAR ON PURPOSE. The first version of C_FUNC was
+# `^[A-Za-z_][A-Za-z0-9_ \t\*]*?(\w+)\s*\(` -- two nested repetitions over
+# overlapping character classes -- and on the long comment lines this tree is
+# full of it backtracked exponentially: the census never finished a single
+# file. A gate whose runtime depends on the shape of a comment is not a gate.
+# So the C function rule splits on `(` in Python and matches only what is
+# left of it, and the Swift rules match one alternation of keywords rather
+# than an optional-modifier soup.
+C_FUNC_HEAD = re.compile(r"^[A-Za-z_][A-Za-z0-9_ \t\*]*$")
+C_LAST_IDENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*$")
+C_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+C_TAG = re.compile(
+    r"^(?:typedef[ \t]+)?(struct|union|enum)[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+C_TYPEDEF_END = re.compile(r"^\}[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*;")
+
+SWIFT_KEYWORD = re.compile(
+    r"\b(func|struct|class|enum|protocol|actor|extension|typealias)[ \t]+"
+    r"([A-Za-z_][A-Za-z0-9_]*)")
+SWIFT_PROP = re.compile(r"\b(let|var)[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+SWIFT_CASE = re.compile(r"^[ \t]*case[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*(?:$|[=(,:])")
+# A declaration line may carry modifiers, but everything before the keyword
+# must be one of these. That is what keeps `// a func named foo` and
+# `if let x = y` out of the census without a lookbehind.
+SWIFT_MODIFIERS = {
+    "public", "internal", "private", "fileprivate", "open", "final",
+    "static", "class", "override, ", "override", "mutating", "nonmutating",
+    "nonisolated", "lazy", "weak", "unowned", "indirect", "convenience",
+    "required", "dynamic", "optional", "@objc", "@discardableResult",
+    "@inlinable", "@MainActor", "@Published", "@State", "@Binding",
+    "@Environment", "@escaping", "@testable", "@available", "@usableFromInline",
+}
+
+PY_DEF = re.compile(r"^[ \t]*(def|class)[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+
+MD_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+
+# A conflicted blob from `git merge-tree` carries markers. Lines inside them
+# are still real text on one side or the other, but the `=======` and the
+# markers themselves are not, and neither is the count they would produce.
+CONFLICT_MARKER = re.compile(r"^(<<<<<<<|=======|>>>>>>>|\|\|\|\|\|\|\|)")
+
+
+def run(args, **kw):
+    return subprocess.run(
+        args, check=True, capture_output=True, text=True, **kw
+    ).stdout
+
+
+def repo_root():
+    return run(["git", "rev-parse", "--show-toplevel"]).strip()
+
+
+def interesting(path):
+    for p in SKIP_PREFIXES:
+        if path.startswith(p) or ("/" + p) in path:
+            return False
+    return path.endswith(C_EXT + SWIFT_EXT + PY_EXT + MD_EXT)
+
+
+def _swift_prefix_is_modifiers(prefix):
+    """Is everything before a Swift keyword an access/behaviour modifier?
+
+    This is the whole defence against counting prose. `func` inside a
+    comment, `var` inside a string, `let` in the middle of an expression --
+    all have something in front of them that is not a modifier.
+    """
+    for word in prefix.split():
+        if word not in SWIFT_MODIFIERS:
+            return False
+    return True
+
+
+def symbols_in(path, text):
+    """(kind, name) pairs a file declares. Derived, never listed."""
+    out = set()
+    lines = text.split("\n")
+
+    if path.endswith(C_EXT):
+        for line in lines:
+            if CONFLICT_MARKER.match(line):
+                continue
+            m = C_DEFINE.match(line)
+            if m:
+                out.add(("macro", m.group(1)))
+                continue
+            m = C_TAG.match(line)
+            if m:
+                out.add((m.group(1), m.group(2)))
+                continue
+            m = C_TYPEDEF_END.match(line)
+            if m:
+                out.add(("type", m.group(1)))
+                continue
+            if (line[:1].isalpha() or line[:1] == "_") and "(" in line:
+                head = line.split("(", 1)[0]
+                if C_FUNC_HEAD.match(head):
+                    m = C_LAST_IDENT.search(head)
+                    if m and m.group(1) not in C_NOT_A_NAME:
+                        out.add(("func", m.group(1)))
+
+    elif path.endswith(SWIFT_EXT):
+        for line in lines:
+            if CONFLICT_MARKER.match(line):
+                continue
+            m = SWIFT_KEYWORD.search(line)
+            if m and _swift_prefix_is_modifiers(line[:m.start()]):
+                out.add((m.group(1), m.group(2)))
+                continue
+            m = SWIFT_PROP.search(line)
+            if m and _swift_prefix_is_modifiers(line[:m.start()]):
+                out.add(("prop", m.group(2)))
+                continue
+            m = SWIFT_CASE.match(line)
+            if m:
+                out.add(("case", m.group(1)))
+
+    elif path.endswith(PY_EXT):
+        for line in lines:
+            if CONFLICT_MARKER.match(line):
+                continue
+            m = PY_DEF.match(line)
+            if m:
+                out.add((m.group(1), m.group(2)))
+
+    elif path.endswith(MD_EXT):
+        fenced = False
+        for line in lines:
+            if line.startswith("```"):
+                fenced = not fenced
+                continue
+            if fenced or CONFLICT_MARKER.match(line):
+                continue
+            m = MD_HEADING.match(line)
+            if m:
+                out.add(("heading", m.group(2)))
+
+    return out
+
+
+def census(treeish, root=None):
+    """{path: {(kind, name), ...}} for one tree.
+
+    One `git cat-file --batch` for the whole tree: reading 700 blobs with
+    700 `git show` calls takes a minute, and a gate nobody waits for is a
+    gate nobody runs.
+    """
+    listing = run(["git", "ls-tree", "-r", "-z", treeish], cwd=root)
+    wanted = []
+    for entry in listing.split("\0"):
+        if not entry:
+            continue
+        meta, _, path = entry.partition("\t")
+        parts = meta.split()
+        if len(parts) < 3 or parts[1] != "blob":
+            continue
+        if interesting(path):
+            wanted.append((parts[2], path))
+
+    if not wanted:
+        return {}
+
+    proc = subprocess.Popen(
+        ["git", "cat-file", "--batch"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=root,
+    )
+    stdout, _ = proc.communicate(
+        b"".join((h + "\n").encode() for h, _ in wanted)
+    )
+
+    out = {}
+    pos = 0
+    for _, path in wanted:
+        nl = stdout.index(b"\n", pos)
+        header = stdout[pos:nl].decode()
+        size = int(header.split()[2])
+        body = stdout[nl + 1:nl + 1 + size]
+        pos = nl + 1 + size + 1
+        syms = symbols_in(path, body.decode("utf-8", "replace"))
+        if syms:
+            out[path] = syms
+    return out
+
+
+def flatten(c):
+    return {(path, kind, name)
+            for path, syms in c.items() for kind, name in syms}
+
+
+def compare(before, after, root=None):
+    """Symbols `before` had that `after` does not, minus whole-file moves.
+
+    A path that is gone entirely is reported once as a file, not once per
+    symbol: a rename that drops forty names is one decision, and forty
+    lines of output about it would bury the one-line losses this exists to
+    surface.
+    """
+    cb = census(before, root)
+    ca = census(after, root)
+    gone_files = sorted(set(cb) - set(ca))
+    lost = sorted(
+        (p, k, n) for (p, k, n) in flatten(cb) - flatten(ca) if p in ca
+    )
+    return cb, ca, lost, gone_files
+
+
+def by_file(lost):
+    out = {}
+    for path, kind, name in lost:
+        out.setdefault(path, []).append((kind, name))
+    return out
+
+
+def report_losses(title, lost, gone_files, stream=None):
+    # Resolved at CALL time, not at def time. Binding sys.stdout in the
+    # signature makes this immune to `redirect_stdout`, which is how the
+    # gate's own tests first read its output as empty and passed a merge
+    # they had just made lose two functions.
+    p = (stream or sys.stdout).write
+    p("\n%s\n" % title)
+    if not lost and not gone_files:
+        p("    nothing\n")
+        return
+    for path, items in sorted(by_file(lost).items()):
+        p("    %s  (%d)\n" % (path, len(items)))
+        for kind, name in sorted(items):
+            p("        %-8s %s\n" % (kind, name))
+    for path in gone_files:
+        p("    %s  -- FILE GONE\n" % path)
+
+
+def parents_of(commit, root=None):
+    line = run(["git", "rev-list", "-1", "--parents", commit], cwd=root).split()
+    return line[1:]
+
+
+def cmd_census(args):
+    root = repo_root()
+    treeish = args[0] if args else "HEAD"
+    c = census(treeish, root)
+    total = sum(len(v) for v in c.values())
+    for path in sorted(c):
+        for kind, name in sorted(c[path]):
+            print("%s\t%s\t%s" % (path, kind, name))
+    print("# %d symbols in %d files" % (total, len(c)), file=sys.stderr)
+    return 0
+
+
+def cmd_compare(args):
+    if len(args) != 2:
+        print("usage: merge-census-gate compare <before> <after>",
+              file=sys.stderr)
+        return 2
+    root = repo_root()
+    _, _, lost, gone = compare(args[0], args[1], root)
+    report_losses("symbols in %s and not in %s:" % (args[0], args[1]),
+                  lost, gone)
+    return 1 if (lost or gone) else 0
+
+
+def cmd_check(args):
+    """The merge-time verdict. `check` with no argument reads HEAD.
+
+    Called from .githooks/post-merge, HEAD is the merge that just landed;
+    called by hand on any merge commit it says the same thing about it.
+    A non-merge commit is not this gate's business and passes silently.
+    """
+    root = repo_root()
+    strict = "--strict" in args
+    args = [a for a in args if not a.startswith("--")]
+    commit = args[0] if args else "HEAD"
+
+    parents = parents_of(commit, root)
+    if len(parents) < 2:
+        return 0
+
+    sha = run(["git", "rev-parse", "--short", commit], cwd=root).strip()
+    subject = run(["git", "log", "-1", "--format=%s", commit], cwd=root).strip()
+    print("[merge-census] %s  %s" % (sha, subject))
+
+    if len(parents) > 2:
+        print("[merge-census] octopus merge: not covered, passing.")
+        return 0
+
+    base = run(["git", "merge-base", parents[0], parents[1]],
+               cwd=root).strip()
+
+    # First, and independent of any census: does this merge IMPORT a commit
+    # that undoes its own predecessor without saying so? The census can only
+    # see a revert that moved a NAME, and `fe4d8179` moved exactly one
+    # (`Scene.swift`'s `cdef`) out of seven files' worth. Asking the other
+    # gate directly about every commit the merge brings in does not depend
+    # on that luck.
+    merge_message = run(["git", "log", "-1", "--format=%B", commit],
+                        cwd=root)
+    imported = self_revert_suspects(parents, base, root, merge_message)
+
+    result_census = census(commit, root)
+    result = flatten(result_census)
+    pc = [census(p, root) for p in parents]
+    pf = [flatten(c) for c in pc]
+    bf = flatten(census(base, root))
+
+    # A symbol whose FILE the merge does not have is a file-level decision,
+    # reported once below rather than once per name.
+    live = set(result_census)
+
+    def lost_from(i):
+        return {s for s in pf[i] - result if s[0] in live}
+
+    other = {0: 1, 1: 0}
+    dropped_addition = []   # nobody removed it; the merge lost it
+    honoured_removal = []   # the other side removed it after the base
+    for i in (0, 1):
+        for s in sorted(lost_from(i)):
+            if s in bf and s not in pf[other[i]]:
+                honoured_removal.append((other[i], s))
+            else:
+                dropped_addition.append((i, s))
+
+    gone_files = sorted(set().union(*(set(c) for c in pc)) - live)
+
+    if dropped_addition:
+        for i in (0, 1):
+            mine = [s for j, s in dropped_addition if j == i]
+            if not mine:
+                continue
+            short = run(["git", "rev-parse", "--short", parents[i]],
+                        cwd=root).strip()
+            report_losses(
+                "DROPPED -- parent %d (%s) has these, NOBODY removed them, "
+                "and the merge does not:" % (i + 1, short), mine, [])
+
+    # The bucket where a revert hides, so it is not printed as a bare list.
+    # Each name is attributed to the commit that removed it, and that commit
+    # is put to the self-revert gate: a removal inside a commit that undoes
+    # its own predecessor without saying so is the shape that cost this
+    # repository the CDEF attribution, and it is refusable where the bucket
+    # as a whole is not.
+    suspects = attribute_removals(honoured_removal, parents, base, root,
+                                  merge_message)
+
+    if gone_files:
+        report_losses("files a parent had and the merge does not:",
+                      [], gone_files)
+
+    print()
+    print("[merge-census] %d dropped, %d removed-by-a-side, %d files gone, "
+          "%d imported self-reverts"
+          % (len(dropped_addition), len(honoured_removal), len(gone_files),
+             len(imported)))
+
+    bad = False
+
+    if imported:
+        bad = True
+        print()
+        print("REFUSING. This merge imports %d commit(s) that undo their own"
+              % len(imported))
+        print("branch's predecessor in a message that never says so (above).")
+        print("Merging one propagates the revert into the integration line,")
+        print("where the next reader has no branch history to notice it in.")
+
+    if dropped_addition:
+        bad = True
+        print()
+        print("REFUSING on the DROPPED list. Neither side deleted these and")
+        print("they are gone, so the resolution lost them. That is the")
+        print("keep-both truncation this repository has paid for twice: the")
+        print("shared trailing context sits OUTSIDE the conflict hunk, so a")
+        print("resolution that keeps both sides of the hunk still loses it.")
+
+    if suspects:
+        bad = True
+        print()
+        print("REFUSING on a removal made by a commit that reverts its own")
+        print("branch's predecessor without saying so (above). The merge is")
+        print("propagating that revert into the integration line.")
+
+    if honoured_removal and not suspects:
+        print()
+        print("The removed-by-a-side list is NOT refused and cannot be: a")
+        print("deliberate deletion and a revert are the same bytes at merge")
+        print("time. Each name above is attributed to the commit that removed")
+        print("it, which is the part a reader can judge -- `fe4d8179` removed")
+        print("seven files' worth in a commit whose subject was about")
+        print("`hello.machine`.")
+        if strict:
+            print("--strict: refusing on it too.")
+            bad = True
+
+    return 1 if bad else 0
+
+
+def load_self_revert(root):
+    """`tools/self-revert-gate` as a module, not a subprocess.
+
+    It has no `.py` on it, like every other tool here, so it is loaded by
+    path. In-process matters: the sibling memoises its per-commit diffs,
+    and one subprocess per commit throws that cache away between every
+    one -- which turned a merge check into a two-minute wait, and a gate
+    people wait two minutes for is a gate people turn off.
+    """
+    # Beside THIS file first. `root` is whatever repository is being
+    # examined, and that is frequently not the one these tools live in --
+    # a fixture repo in TMPDIR, or a clone being inspected from outside.
+    # The sibling gate is part of this gate, not of the tree under test.
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path in (os.path.join(here, "self-revert-gate"),
+                 os.path.join(root, "tools", "self-revert-gate")):
+        if os.path.exists(path):
+            break
+    else:
+        return None
+    spec = importlib.util.spec_from_loader(
+        "now_self_revert_gate",
+        importlib.machinery.SourceFileLoader("now_self_revert_gate", path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def self_revert_suspects(parents, base, root, merge_message=""):
+    """Commits this merge IMPORTS that `tools/self-revert-gate` flags.
+
+    `parents[0]..parents[n]` -- what the merge adds to the line it lands
+    on -- and not `base..parents[0]`, which is history that already landed.
+    Re-refusing that would make every subsequent merge in an arc red for a
+    commit no one on this merge can now change, which is how a gate gets
+    switched off rather than obeyed.
+    """
+    mod = load_self_revert(root)
+    if mod is None:
+        print("[merge-census] tools/self-revert-gate missing; the "
+              "imported-commit half of this gate DID NOT RUN.")
+        return []
+
+    suspects = []
+    for p in parents[1:]:
+        rng = "%s..%s" % (parents[0], p)
+        for c in run(["git", "rev-list", "--no-merges", rng],
+                     cwd=root).split():
+            found = mod.findings(c, root)
+            if not found:
+                continue
+            # The same escape the sibling gate offers, at the merge's own
+            # level: a merge that NAMES the revert it is carrying has said
+            # what it is doing, and that is all this gate ever asks for.
+            # Round 7's real merge of `claude/019-asset-packs` names
+            # `fe4d8179` in its body and resolves all seven files by hand,
+            # and a gate that still refused it would be flagging the branch
+            # rather than the defect -- red on every merge of that lane
+            # forever, which is a gate people route around.
+            if mod.mentions(merge_message, c):
+                continue
+            suspects.append(c)
+            print()
+            print("IMPORTED SELF-REVERT:")
+            buf = []
+            mod.describe(c, found, root, quiet=False, emit=buf.append)
+            for line in buf:
+                print("    %s" % line)
+    return suspects
+
+
+def attribute_removals(honoured, parents, base, root, merge_message=""):
+    """Which commit removed each name, and is that commit a self-revert?
+
+    `git log -S` over the range that side owns answers the first question
+    exactly, and it is the answer that makes this bucket readable: 80 bare
+    names is a list nobody reads, and 80 names under six commit subjects is
+    six judgements.
+    """
+    if not honoured:
+        return []
+
+    per_commit = {}
+    for side, (path, kind, name) in honoured:
+        # The range goes BEFORE `--`, and getting that wrong is not a
+        # failure you see: `git log -S x -- <path> <range>` reads the range
+        # as a second PATHSPEC, matches nothing, silently falls back to
+        # HEAD's whole history, and answers with the commit that ADDED the
+        # symbol instead of the one that removed it. It named `8bb266b5`
+        # ("a button family is not a push button") as the remover of the
+        # very key that commit introduced.
+        rng = "%s..%s" % (base, parents[side])
+        try:
+            log = run(["git", "log", "-S", name, "--format=%H", rng,
+                       "--", path], cwd=root)
+        except subprocess.CalledProcessError:
+            log = ""
+        sha = log.split("\n")[0].strip() if log.strip() else "?"
+        per_commit.setdefault(sha, []).append((path, kind, name))
+
+    mod = load_self_revert(root)
+    suspects = []
+    print("\nremoved by a side, attributed to the commit that did it:")
+    for sha, items in sorted(per_commit.items(),
+                             key=lambda kv: -len(kv[1])):
+        if sha == "?":
+            subject = "(could not attribute)"
+            short = "?"
+        else:
+            subject = run(["git", "log", "-1", "--format=%s", sha],
+                          cwd=root).strip()
+            short = run(["git", "rev-parse", "--short", sha],
+                        cwd=root).strip()
+        verdict = ""
+        found = mod.findings(sha, root) if (sha != "?" and mod) else []
+        # The merge's own message excuses it here exactly as it does in
+        # self_revert_suspects. Two places that ask the same question have
+        # to answer it the same way, or a merge passes one and is refused
+        # by the other for the same commit.
+        if found and mod.mentions(merge_message, sha):
+            found = []
+        if found:
+            verdict = "   <-- SELF-REVERT"
+            suspects.append(sha)
+        print("    %s  %-58s (%d)%s"
+              % (short, subject[:58], len(items), verdict))
+        for path, kind, name in sorted(items):
+            print("        %-8s %-28s %s" % (kind, name, path))
+        if found:
+            buf = []
+            mod.describe(sha, found, root, quiet=True, emit=buf.append)
+            for line in buf:
+                print("        | %s" % line)
+    return suspects
+
+
+def cmd_pending(args):
+    """The merge that has NOT been committed yet -- what a hook can refuse.
+
+    `.githooks/pre-merge-commit` runs while the index holds the resolution
+    and `MERGE_HEAD` holds the other parent, so the merge commit git is
+    about to write can be built here exactly: `write-tree` for the content,
+    both parents, and `MERGE_MSG` for the message. Then this is the same
+    `check` as any other, on the same shape of object, rather than a
+    second implementation that could disagree with it.
+    """
+    root = repo_root()
+    merge_head = os.path.join(root, ".git", "MERGE_HEAD")
+    if not os.path.exists(merge_head):
+        gitdir = run(["git", "rev-parse", "--git-dir"], cwd=root).strip()
+        merge_head = os.path.join(root, gitdir, "MERGE_HEAD")
+    if not os.path.exists(merge_head):
+        return 0                       # not a merge; nothing to say
+    others = open(merge_head).read().split()
+
+    msg_path = os.path.join(os.path.dirname(merge_head), "MERGE_MSG")
+    message = open(msg_path).read() if os.path.exists(msg_path) else ""
+
+    tree = run(["git", "write-tree"], cwd=root).strip()
+    head = run(["git", "rev-parse", "HEAD"], cwd=root).strip()
+    cmd = ["git", "commit-tree", tree, "-p", head]
+    for o in others:
+        cmd += ["-p", o]
+    cmd += ["-m", message or "pending merge"]
+    pending = run(cmd, cwd=root).strip()
+    return cmd_check([pending] + args)
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__)
+        return 2
+    cmds = {
+        "census": cmd_census,
+        "compare": cmd_compare,
+        "check": cmd_check,
+        "pending": cmd_pending,
+    }
+    fn = cmds.get(argv[1])
+    if fn is None:
+        print("unknown subcommand: %s" % argv[1], file=sys.stderr)
+        print(__doc__)
+        return 2
+    return fn(argv[2:])
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

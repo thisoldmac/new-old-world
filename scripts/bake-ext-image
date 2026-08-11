@@ -1,0 +1,460 @@
+#!/usr/bin/env bash
+# Bake the current resident into a Mirror stage image — YOUR OWN by
+# default, the shared oracle only when you say so out loud.
+#
+#     scripts/bake-ext-image                     # PRIVATE. Your own image.
+#     scripts/bake-ext-image --shared            # installs over the ORACLE
+#     scripts/bake-ext-image --name plane-abi    # name your private image
+#     NOW_WIRE_PORT=5311 scripts/bake-ext-image  # pick your own ports
+#
+# WHICH MODE YOU WANT, in one line each:
+#
+#   --throwaway (the default) is for IN-FLIGHT LANE WORK. You are changing
+#   ext/ and you want a machine with your resident on it. Nobody else has
+#   any business reading your image, so it goes to
+#   ~/Lab/Assets/os91-qemu/agent-stage/<name>.qcow2 with a
+#   .provenance.json sidecar, and ext/stage-receipts.json IS NOT TOUCHED —
+#   a receipt there is a claim about the SHARED file and yours is not it.
+#
+#   --shared is for LANDING. The resident work is finished and the oracle
+#   every other session clones must now contain it. It is a deliberate,
+#   announced act because the last bake wins: between your bake and your
+#   commit another lane can replace the file your receipt describes, and
+#   between your bake and someone else's sweep you have changed the base
+#   under them. Say so in the channel before you run it.
+#
+# The default used to be --shared, and there was no other mode at all. Six
+# lanes ran against clones on 2026-08-06 while one was in ext/; a bake
+# mid-arc would have replaced the base under all of them, and the only
+# reason it did not is that nobody happened to run one. That is not a
+# safety property, it is luck, and the throwaway mode is what removes the
+# collision class rather than warning about it.
+#
+# From a worktree OUTSIDE the TimBotTu tree (agents often work in
+# /private/tmp, because a deep worktree path overflows the 104-byte UNIX
+# socket cap), two things do not come for free: `.env.lab` is gitignored
+# and must be copied in, and `NOW_LAB_ROOT` must name the TimBotTu clone —
+# spin-up-ppc finds the emulator instruments by walking UP, and there is
+# nothing above /private/tmp. Both fail loudly rather than baking nothing.
+#
+# THE ORACLE IS A FILE ON DISK: ~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2
+# is what every Mirror sweep clones, so the resident code under test is
+# whatever was baked into THAT image — not whatever this checkout last
+# compiled. On 2026-08-06 the image was three days old while six extension
+# commits had landed that day; each session staged a fresh build into a
+# throwaway clone and threw the clone away, which changes nothing about the
+# shared image. This script is the other half of that loop, and
+# tools/ext-bake-gate is what stops a resident commit landing without it.
+#
+# THE FIVE RULES IT ENCODES:
+#
+#   1. NEVER TOUCH THE BASE IN PLACE. scripts/spin-up-ppc clones it and
+#      boots the clone; the new stage image is that clone, promoted only
+#      after it has proven itself.
+#   2. THE GUEST IS THE ORACLE, NOT THE EXIT CODE. `mirror` is asked over
+#      the wire and its answer is parsed: lifecycle active, the expected
+#      capability word, and a buildFingerprint EQUAL to the one this
+#      checkout's build carries. A file arriving is not an INIT loading.
+#   3. FAIL WITH THE VM UP. An unverified image is never installed and the
+#      machine is left running so a person can look at it. The old image
+#      is untouched on every failure path.
+#   4. GUEST-CLEAN SHUTDOWN, NEVER QMP `quit`. A quit is a power cut: it
+#      sets the unclean-volume bit and the next boot spends minutes in
+#      Disk First Aid — and the flush that carries the resident into the
+#      qcow2 may not have happened at all.
+#   5. THE OLD IMAGE IS KEPT. .bak-YYYYMMDD beside it, never overwritten.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NOW="$(cd "$HERE/.." && pwd)"
+
+ASSETS="${NOW_STAGE_ASSETS:-$HOME/Lab/Assets/os91-qemu}"
+STAGE="${NOW_STAGE_IMAGE:-$ASSETS/now-mirror-stage.qcow2}"
+RUN="${NOW_SPIN_RUN:-/private/tmp/nowvm-bake-$$}"
+WIRE="${NOW_WIRE_PORT:-5311}"
+
+# --- which image are we installing over? ---------------------------------
+MODE=throwaway
+NAME=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --shared)    MODE=shared ;;
+        --throwaway|--private) MODE=throwaway ;;
+        --name)      NAME="$2"; shift ;;
+        --name=*)    NAME="${1#--name=}" ;;
+        -h|--help)   sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *)           echo "unknown argument: $1 (see --help)" >&2; exit 64 ;;
+    esac
+    shift
+done
+
+BRANCH="$(git -C "$NOW" rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
+if [ -z "$NAME" ]; then
+    # The branch is the honest name for a lane's image: whoever finds the
+    # file can tell whose it is and what it was for without asking. A
+    # deploy named for what it was MEANT to be rather than what it is cost
+    # an evening once (AGENTS.md > Deploying); the same rule applies to an
+    # image, which lives longer than a deploy and is cloned by others.
+    NAME="$(printf '%s' "$BRANCH" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-')"
+fi
+AGENT_DIR="${NOW_STAGE_AGENT_DIR:-$ASSETS/agent-stage}"
+if [ "$MODE" = shared ]; then
+    TARGET="$STAGE"
+else
+    TARGET="$AGENT_DIR/now-stage-$NAME.qcow2"
+    mkdir -p "$AGENT_DIR"
+fi
+# The base to START from is the shared oracle either way: a private bake is
+# "the oracle, plus my resident", not a machine built from nothing.
+BASE_IMAGE="${NOW_STAGE_BASE_IMAGE:-$STAGE}"
+# The capability word the resident must publish, DERIVED from the contract
+# rather than typed here: every kNowPeekTableCap* bit in
+# contract/peek_table.h, OR'd. A bake that comes back with a smaller word —
+# a plane that failed to arm — is then a failure rather than a green run
+# with a quiet regression in it, and a branch that adds a plane (63 -> 127,
+# the resident transport) does not have to remember to edit this script.
+WANT_CAPS="${NOW_EXT_CAPABILITIES:-}"
+if [ -z "$WANT_CAPS" ]; then
+    WANT_CAPS="$(python3 - "$NOW/contract/peek_table.h" <<'PY'
+import re, sys
+bits = 0
+for shift in re.findall(r"kNowPeekTableCap\w+\s*=\s*1u?\s*<<\s*(\d+)",
+                        open(sys.argv[1]).read()):
+    bits |= 1 << int(shift)
+print(bits)
+PY
+)"
+fi
+echo "   expected capability word: $WANT_CAPS (from contract/peek_table.h)"
+
+[ -f "$BASE_IMAGE" ] || { echo "no base image at $BASE_IMAGE (set NOW_STAGE_IMAGE)" >&2; exit 1; }
+
+# The third clone site, asking the same question as the other two through
+# the same file. A bake is the one caller for which a STALE base is not a
+# problem to be stopped — re-baking is what fixes it — so this reports and
+# never refuses on staleness: --stages-resident is true by definition here,
+# since staging this checkout's resident is the whole operation.
+# It still matters what the starting bytes were: an image whose volume is
+# dirty bakes a dirty volume into every clone that follows, and that is
+# exactly how three bakes in one night installed images the Mac greets with
+# Disk First Aid.
+"$NOW/tools/base-image" fit "$BASE_IMAGE" --purpose bake --stages-resident \
+    || exit $?
+
+echo
+if [ "$MODE" = shared ]; then
+    cat >&2 <<BANNER
+########################################################################
+#  --shared: THIS WILL REPLACE THE ORACLE EVERY OTHER SESSION CLONES.  #
+#                                                                      #
+#  $TARGET
+#                                                                      #
+#  Every sweep started after this finishes tests YOUR resident. Say so  #
+#  in the channel first. If you only need a machine with your own ext   #
+#  on it, stop now and run it without --shared — that is the default    #
+#  and it touches nothing anybody else reads.                           #
+########################################################################
+BANNER
+    # The last bake wins, so a bake while other machines are up changes
+    # the base under a run in progress. QEMU on this Mac is not proof of
+    # that, but it is the cheapest question there is, and the answer is
+    # the one a person needs before deciding.
+    others="$(pgrep -fl 'qemu-system-ppc' 2>/dev/null | grep -v "bake-$$" || true)"
+    if [ -n "$others" ] && [ -z "${NOW_STAGE_SHARED_FORCE:-}" ]; then
+        echo "  QEMU is already running on this Mac:" >&2
+        printf '    %s\n' "$others" >&2
+        echo "  Another session may be mid-sweep against the image you are about" >&2
+        echo "  to replace. Ask, then re-run with NOW_STAGE_SHARED_FORCE=1." >&2
+        exit 75
+    fi
+else
+    echo "== bake: PRIVATE. Nothing shared is touched. =="
+    echo "   target      $TARGET"
+    echo "   from base   $BASE_IMAGE"
+    echo "   ext/stage-receipts.json will NOT be written: a receipt there is a"
+    echo "   claim about the shared oracle, and this is not it."
+fi
+echo
+"$NOW/tools/image-provenance" "$BASE_IMAGE" --label "bake base ($MODE)" || true
+
+OUT="${TMPDIR:-/tmp}/now-guest-builds/$(printf '%s' "$NOW" | shasum | cut -c1-12)"
+IDENTITY="$OUT/ext/now_ext_identity.r"
+
+echo "== bake: build the guests, so the image gets THIS checkout's resident =="
+"$NOW/scripts/build-guests"
+
+[ -f "$IDENTITY" ] || {
+    echo "no build identity at $IDENTITY — scripts/build-guests did not run the" >&2
+    echo "extension target, so there is nothing to compare the guest's answer to." >&2
+    exit 1
+}
+# The generated Rez carries the raw source hash followed by the resident
+# build fingerprint, 40 hex characters each. This is the LOCAL build's
+# identity; rule 2 compares it to what the guest says about itself.
+IDENT_HEX="$(tr -d '\r\n ' < "$IDENTITY" | sed -n 's/.*\$"\([0-9a-f]*\)".*/\1/p')"
+WANT_SOURCE="${IDENT_HEX:0:40}"
+WANT_BUILD="${IDENT_HEX:40:40}"
+[ "${#WANT_BUILD}" = 40 ] || { echo "could not read a fingerprint from $IDENTITY" >&2; exit 1; }
+echo "   local build fingerprint: $WANT_BUILD"
+
+echo
+echo "== bake: clone the base, stage, cold boot, and let the guest speak =="
+rm -rf "$RUN"
+# NOW_SPIN_PURPOSE, so the inner run asks the base-image question as a
+# BAKE rather than as ordinary work. Without it a bake from a private
+# base would be told, correctly but uselessly, that its base is not the
+# designated one for a sweep — and a gate that reports the normal case as
+# a finding is one nobody reads by the end of the week.
+NOW_SPIN_BASE="$BASE_IMAGE" NOW_SPIN_RUN="$RUN" NOW_WIRE_PORT="$WIRE" \
+    NOW_SPIN_PURPOSE=bake \
+    "$NOW/scripts/spin-up-ppc"
+
+ANCHOR="$(cut -d' ' -f1 "$RUN/ports")"
+QMP="$RUN/qmp.sock"
+DISK="$RUN/session.qcow2"
+
+echo
+echo "== bake: THE GATE — ask the guest what resident it is running =="
+MIRROR_JSON="$RUN/mirror.json"
+if ! python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait 180 --retries 3 \
+        --retry-delay 6 mirror > "$RUN/mirror.txt" 2>&1; then
+    cat "$RUN/mirror.txt"
+    echo "the guest did not answer \`mirror\`; VM left running at $QMP" >&2
+    exit 1
+fi
+cat "$RUN/mirror.txt"
+
+# `if !` rather than `cmd <<'PY' || { … }`: with the brace form the heredoc
+# body starts INSIDE the block, bash swallows the failure branch as script
+# text, and the whole file dies with "unexpected end of file" — 200 lines
+# and one boot later. Watched 2026-08-06.
+if ! python3 - "$RUN/mirror.txt" "$MIRROR_JSON" "$WANT_BUILD" "$WANT_SOURCE" "$WANT_CAPS" <<'PY'
+import json, sys
+raw, out, want_build, want_source, want_caps = sys.argv[1:6]
+found = None
+for line in open(raw):
+    # askguest prints the wire verbatim with a direction marker: "-> " for
+    # what it asked, "<- " for what the guest said. Reading only lines that
+    # START with "{" found nothing in a reply that was plainly there, and
+    # the script then said "the resident is NOT this build" about a guest
+    # that had just identified itself correctly. Watched 2026-08-06: a
+    # parser bug wearing the failure message of a real defect.
+    line = line.strip()
+    if line[:3] in ("-> ", "<- "):
+        line = line[3:]
+    if not line.startswith("{"):
+        continue
+    try:
+        msg = json.loads(line)
+    except ValueError:
+        continue
+    ext = msg.get("output", {}).get("mirror", {}).get("extension")
+    if ext:
+        found = ext
+if found is None:
+    sys.exit("no mirror.extension in the guest's reply")
+problems = []
+if found.get("lifecycle") != "active":
+    problems.append(f"lifecycle is {found.get('lifecycle')!r}, not 'active'"
+                    f" ({found.get('reason', 'no reason given')})")
+if str(found.get("capabilities")) != want_caps:
+    problems.append(f"capabilities {found.get('capabilities')} != {want_caps}"
+                    " — a plane failed to arm, or this is another session's VM")
+if found.get("buildFingerprint") != want_build:
+    problems.append(f"buildFingerprint {found.get('buildFingerprint')} != "
+                    f"{want_build} (the local build) — the INIT that loaded is"
+                    " not the one just staged")
+if found.get("sourceManifest") != want_source:
+    problems.append(f"sourceManifest {found.get('sourceManifest')} != {want_source}")
+if problems:
+    print("the guest's own account of the resident does not match this build:")
+    for p in problems:
+        print(f"  - {p}")
+    sys.exit(1)
+json.dump(found, open(out, "w"), indent=2)
+print(f"  resident VERIFIED: active, capabilities {found['capabilities']}, "
+      f"fingerprint {found['buildFingerprint'][:12]}")
+PY
+then
+    echo "the resident in the image is NOT this build; nothing installed, VM left running." >&2
+    exit 1
+fi
+
+echo
+echo "== bake: THE SECOND GATE — does the machine SURVIVE being used? =="
+# Rule 2 above asks WHICH resident is in the image. It cannot ask whether
+# the thing is usable, and on 2026-08-07 those came apart: a human clicked
+# Run Census in the Workshop and the guest died — the whole UI, because the
+# Workshop is the only window — and then the Finder crashed. The resident
+# was correct throughout. `mirror` would have answered `active` right up to
+# the moment the application stopped existing.
+#
+# THIS IS WHERE THE CHECK BELONGS, and the argument is one line: a guest is
+# already booted here, so the census costs seconds, where a stage in
+# scripts/test-all would cost every lane a two-to-three-minute boot on every
+# run forever. It also makes one sentence literal — the image cannot be
+# baked with a build that kills the Macintosh it is baked from.
+#
+# It is a REFUSAL, not a warning: nothing is installed and the VM is left up,
+# exactly like every other failure path here (rule 3).
+if ! python3 "$NOW/tools/census-survives.py" --port "$WIRE" --anchor "$ANCHOR" \
+        --wait 120 --qmp "$QMP" --build-dir "$OUT" --evidence-dir "$RUN"; then
+    echo "the census killed this guest; nothing installed, VM left running at $QMP." >&2
+    exit 1
+fi
+
+echo
+echo "== bake: quit the applications and let the guest shut ITSELF down =="
+# --wire makes the Finder's own Special > Shut Down the primary route,
+# with the staged applet as the fallback. That order is not a preference:
+# the applet's ShutDwnPower is the path that produced three oracles whose
+# volume was still marked mounted, and the Finder's is the one measured to
+# power the machine off for real. If neither goes, we stop here with the
+# VM intact rather than reaching for `quit` — see rule 4.
+python3 "$NOW/tools/shutdown-guest.py" "$QMP" --port "$ANCHOR" \
+    --wire "$WIRE" --timeout "${NOW_SHUTDOWN_WAIT:-180}" || {
+        echo "clean shutdown FAILED; VM left running at $QMP, nothing installed." >&2
+        echo "  Do not fall back to a QMP quit: the volume would be dirty and the" >&2
+        echo "  resident's writes may never have reached the qcow2." >&2
+        exit 1
+    }
+SHUTDOWN=guest-clean
+SHUTDOWN_PATH="${NOW_SHUTDOWN_PATH:-finder-menuact-then-applet}"
+
+echo
+echo "== bake: qemu-img check — the CONTAINER, and only the container =="
+# Kept, but demoted. It validates the qcow2 wrapper and knows nothing at
+# all about the Macintosh filesystem inside it. Three bakes on 2026-08-06
+# passed this and were installed as the oracle with the volume still
+# marked mounted, so every clone opened with Disk First Aid. The receipts
+# said "qemuImgCheck: clean" and that was TRUE — it was simply an answer
+# to a different question. A check adjacent to the question is not the
+# question.
+CHECK="$RUN/qemu-img-check.txt"
+if ! qemu-img check "$DISK" > "$CHECK" 2>&1; then
+    cat "$CHECK"
+    echo "qemu-img check FAILED; nothing installed." >&2
+    exit 1
+fi
+cat "$CHECK"
+grep -q "No errors were found" "$CHECK" || {
+    echo "qemu-img check did not say 'No errors were found'; nothing installed." >&2
+    exit 1
+}
+
+echo
+echo "== bake: is the VOLUME cleanly unmounted? — the actual question =="
+# The Mac wrote the answer down itself: HFS's "volume unmounted" attribute
+# bit, which is the very flag the startup check reads before offering Disk
+# First Aid. Ask the volume rather than the container.
+if ! python3 "$NOW/tools/volclean.py" "$DISK"; then
+    echo "the volume is DIRTY; nothing installed, candidate left at $DISK." >&2
+    echo "  The guest reported a clean shutdown and the container checks out," >&2
+    echo "  so the shutdown STARTED and did not finish unmounting. Do not" >&2
+    echo "  install this: every clone of it would open in Disk First Aid." >&2
+    exit 1
+fi
+VOLUME_CLEAN=clean
+
+echo
+echo "== bake: preserve the old image, install the new one =="
+if [ -e "$TARGET" ]; then
+    BAK="$TARGET.bak-$(date +%Y%m%d)"
+    n=1
+    while [ -e "$BAK" ]; do n=$((n + 1)); BAK="$TARGET.bak-$(date +%Y%m%d)-$n"; done
+    cp -c "$TARGET" "$BAK"       # APFS clone: instant, and costs no space
+else
+    BAK=""                        # first private bake: there is nothing to keep
+fi
+cp -c "$DISK" "$TARGET.new"
+mv "$TARGET.new" "$TARGET"
+# The stale sha cache is invalidated by (size, mtime), and `mv` gives the
+# new file its own — but a sidecar left over from the PREVIOUS image at
+# this path would describe bytes that are gone, which is the exact failure
+# mode this whole arc is about. Remove it before writing a fresh one.
+rm -f "$TARGET.provenance.json" "$TARGET.sha256"
+SHA="$(shasum -a 256 "$TARGET" | cut -d' ' -f1)"
+BYTES="$(stat -f %z "$TARGET")"
+echo "   $TARGET"
+echo "   sha256 $SHA"
+[ -n "$BAK" ] && echo "   previous image kept as $(basename "$BAK")"
+
+echo
+echo "== bake: the receipt =="
+RECEIPT="$RUN/receipt.json"
+python3 - "$RECEIPT" "$NOW" "$TARGET" "$SHA" "$BYTES" "$BAK" "$SHUTDOWN" \
+        "$MIRROR_JSON" "$WANT_BUILD" "$WANT_SOURCE" "$VOLUME_CLEAN" \
+        "$SHUTDOWN_PATH" "$MODE" "$NAME" "$BASE_IMAGE" <<'PY'
+import json, subprocess, sys, time, os
+(out, now, image, sha, size, bak, shutdown, mirror_json,
+ build, source, volume_clean, shutdown_path, mode, name, base) = sys.argv[1:16]
+def git(*a):
+    return subprocess.run(["git", "-C", now, *a], capture_output=True,
+                          text=True).stdout.strip()
+ext = json.load(open(mirror_json))
+digest = subprocess.run([f"{now}/tools/ext-bake-gate", "digest", "--worktree"],
+                        capture_output=True, text=True, check=True).stdout.strip()
+json.dump({
+    "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    "extDigest": digest,
+    "extBuildFingerprint": build,
+    "sourceManifest": source,
+    "residentLifecycle": ext.get("lifecycle"),
+    "residentCapabilities": ext.get("capabilities"),
+    "image": image.replace(os.path.expanduser("~"), "~"),
+    "imageSha256": sha,
+    "imageBytes": int(size),
+    "previousImage": os.path.basename(bak) if bak else None,
+    # WHICH FILE THIS IS A CLAIM ABOUT. A receipt used to be implicitly
+    # about the shared oracle because that was the only thing this script
+    # could write. It is now the difference between "the file every
+    # session clones contains this resident" and "one lane's private image
+    # does", and those must never be read as each other — so it is a field,
+    # and tools/ext-bake-gate refuses a `throwaway` receipt in the tracked
+    # file rather than trusting nobody will paste one in.
+    "scope": mode,
+    "imageName": name,
+    "baseImage": base.replace(os.path.expanduser("~"), "~"),
+    "qemuImgCheck": "clean",
+    # The container check and the FILESYSTEM check are separate fields on
+    # purpose: the first cannot stand in for the second, and three
+    # receipts on 2026-08-06 read as proof of a clean volume because
+    # nothing on them distinguished the two.
+    "volumeClean": volume_clean,
+    "shutdown": shutdown,
+    "shutdownPath": shutdown_path,
+    "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+    "commit": git("rev-parse", "HEAD"),
+}, open(out, "w"), indent=2)
+PY
+if [ "$MODE" = shared ]; then
+    "$NOW/tools/ext-bake-gate" record "$RECEIPT"
+    git -C "$NOW" add -- ext/stage-receipts.json
+    echo
+    echo "baked, verified and INSTALLED OVER THE SHARED ORACLE."
+    echo "Commit the receipt with the work:"
+    echo "    git -C $NOW commit -- ext/stage-receipts.json ..."
+    echo
+    echo "Two things are now true and only one of them is in the receipt:"
+    echo "  * the file on disk contains this resident AS OF NOW;"
+    echo "  * the next --shared bake by anybody replaces it, and your receipt"
+    echo "    cannot know that. tools/image-provenance --oracle is what asks."
+else
+    # The private image accounts for ITSELF, beside itself. Deliberately
+    # not in ext/stage-receipts.json: that file is a claim about the shared
+    # oracle, and a lane's image appearing there would be read as one.
+    cp "$RECEIPT" "$TARGET.provenance.json"
+    echo
+    echo "baked and verified into YOUR OWN image. Nothing shared was touched."
+    echo "   $TARGET"
+    echo "   sha256 $SHA"
+    echo "   provenance sidecar: $(basename "$TARGET").provenance.json"
+    echo
+    echo "Boot it:"
+    echo "    NOW_SPIN_BASE=\"$TARGET\" NOW_SPIN_RUN=/private/tmp/nowvm-\$\$ \\"
+    echo "      NOW_ANCHOR_PORT=<yours> NOW_WIRE_PORT=<yours> scripts/spin-up-ppc"
+    echo
+    echo "When this resident must become what everyone else clones — and that"
+    echo "is a decision, announced, not a step — re-run with --shared."
+    echo "Throw it away when the lane ends:  rm -f $TARGET*"
+fi

@@ -1,0 +1,1363 @@
+#!/usr/bin/env python3
+"""Build the host-side Platinum asset pack straight off a guest disk image.
+
+No VM, no wire, no guest. The route — and the two steps in it that read
+as dead ends — is written up in docs/asset-extraction-offline.md:
+
+  1. qemu-img converts the qcow2 to raw. That is a FILE CONVERTER, not the
+     emulator; nothing boots and the source image is only ever read.
+  2. Block 0 is an Apple Partition Map; take the Apple_HFS entry.
+  3. That partition is an HFS *wrapper* (signature BD). Modern macOS
+     dropped HFS Standard, so `hdiutil` refuses it and the route looks
+     impossible. The real HFS+ volume is EMBEDDED inside; the MDB says
+     where. Carve it to its own file and macOS mounts it normally.
+  4. Resource forks are then ordinary files at <path>/..namedfork/rsrc.
+
+The parsers are shared with the archived live-pull extractor
+(tools/asset-pack); this script only replaces the transport,
+so the two routes cannot disagree about what an icl8 means.
+
+    tools/extract-assets-offline                       # default image + new pack
+    tools/extract-assets-offline --image X.qcow2       # another image
+    tools/extract-assets-offline --reuse-work          # skip convert+carve
+    tools/extract-assets-offline --theme-report        # census the theme file
+    tools/extract-assets-offline --accent-ramps        # print the 21 clut ramps
+
+RULES, not preferences. These are Apple's bitmaps. The pack stays in a
+private external store, never publishes, never ships as an artifact. The source
+image is opened READ-ONLY and every step operates on the converted COPY;
+nothing is ever written into a guest System Folder.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import shutil
+import struct
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, ".."))
+PARSERS = os.path.join(REPO, "tools", "asset-pack")
+sys.path.insert(0, PARSERS)
+
+# Loaded after argument parsing so `--help` remains useful on a machine that
+# has not installed the optional extraction dependencies.
+Image = None
+cursors = None
+fonts = None
+icons = None
+patterns = None
+resfork = None
+
+DEFAULT_IMAGE = os.path.expanduser(
+    "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2")
+ASSET_STORE_ENV = "NOW_MIRROR_ASSET_STORE"
+DEFAULT_STORE = os.path.expanduser(os.environ.get(
+    ASSET_STORE_ENV, "~/Lab/Assets/now-mirror-assets"))
+DEFAULT_WORK = "/private/tmp/now-assets-work"
+# The accent ramps are numbers, not art, so they are generated as SOURCE
+# rather than dropped in the pack beside the bitmaps: 168 integers the
+# renderer needs at static-init, with no bundle lookup and no parse that
+# could fail silently into a fallback nobody notices.
+DEFAULT_SWIFT_OUT = os.path.join(
+    REPO, "now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumAccentRamps.swift")
+
+SYSTEM_FILE = "System Folder/System"
+THEME_FILE = "System Folder/Appearance/Theme Files/Apple platinum"
+FONTS_DIR = "System Folder/Fonts"
+
+# The font suitcases worth opening. Charcoal is here because it is the Mac
+# OS 8/9 SYSTEM FONT and its absence is visible on screen — see
+# extract_fonts(), which records what it found rather than what we hoped.
+FACES = ("Chicago", "Charcoal", "Geneva")
+STYLE_SUFFIX = {0: "", 1: "-bold", 2: "-italic", 3: "-bolditalic"}
+# The strikes FontBook.swift names outright. A pack without these draws its
+# procedural fallback face, which is the failure this refuses to ship.
+# `charcoal-12` joined on 2026-08-07: it is the SYSTEM font, so its absence
+# was not a fallback face in one panel but Chicago standing in for every
+# menu, window title, button and group box on the screen.
+REQUIRED_SHEETS = ("chicago-12", "geneva-9", "geneva-10", "geneva-12",
+                   "charcoal-12")
+
+# The generic Finder icons the renderer asks for by name. Resource ids are
+# the System file's own; see IconAtlas.swift, which names the same five.
+NAMED_ICONS = {
+    "folder": -3999,
+    "application": -3968,
+    "document": -4000,
+    "system-folder": -3982,
+    "disk": -3998,
+}
+
+# Roots swept for application/control-panel bundles. Mounting the whole
+# volume makes every app reachable at once — the live route had to pull
+# each one over the wire.
+APP_SWEEP_ROOTS = [
+    "Applications (Mac OS 9)",
+    "System Folder/Control Panels",
+    "System Folder/Extensions",
+    "System Folder/Apple Menu Items",
+    "System Folder/Contextual Menu Items",
+    "System Folder/Control Strip Modules",
+    "System Folder/Finder",
+    "System Folder/Panels",
+]
+# Noise: our own builds, the trash, and the two multi-hundred-MB files
+# that are not resource forks at all.
+SWEEP_SKIP_NAMES = {"Trash", "VM Storage", "Desktop DB", "Desktop DF",
+                    "Cleanup At Startup", "TheFindByContentFolder"}
+MAX_FORK_BYTES = 12 << 20
+
+
+# --- image plumbing ------------------------------------------------------
+
+def load_extractors() -> None:
+    global Image, cursors, fonts, icons, patterns, resfork
+    try:
+        from PIL import Image as pillow_image
+        import cursors as cursor_parser
+        import fonts as font_parser
+        import icons as icon_parser
+        import patterns as pattern_parser
+        import resfork as resource_fork_parser
+    except ModuleNotFoundError as exc:
+        raise SystemExit(
+            f"missing extraction dependency: {exc.name}; install Pillow "
+            "and the documented tool requirements") from exc
+    Image = pillow_image
+    cursors = cursor_parser
+    fonts = font_parser
+    icons = icon_parser
+    patterns = pattern_parser
+    resfork = resource_fork_parser
+
+def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, check=True, capture_output=True, text=True, **kw)
+
+
+def convert_to_raw(image: str, work: str, reuse: bool) -> str:
+    raw = os.path.join(work, "probe.raw")
+    if reuse and os.path.exists(raw):
+        print(f"  reusing {raw}")
+        return raw
+    if image.endswith(".raw") or image.endswith(".img"):
+        return image                       # already raw; read it in place
+    t = time.time()
+    print(f"  qemu-img convert {os.path.basename(image)} -> probe.raw")
+    run(["qemu-img", "convert", "-f", "qcow2", "-O", "raw", image, raw])
+    print(f"    {os.path.getsize(raw)} B in {time.time() - t:.0f}s")
+    return raw
+
+
+def find_hfs_partition(raw: str) -> int:
+    """Byte offset of the Apple_HFS partition, from the Apple Partition Map."""
+    with open(raw, "rb") as fh:
+        if fh.read(2) != b"ER":
+            raise SystemExit(f"{raw}: no Apple Partition Map (block 0 is not 'ER')")
+        for i in range(1, 64):
+            fh.seek(i * 512)
+            entry = fh.read(512)
+            if entry[:2] != b"PM":
+                break
+            ptype = entry[48:80].split(b"\0")[0].decode("mac_roman")
+            if ptype == "Apple_HFS":
+                start = struct.unpack_from(">I", entry, 8)[0]
+                return start * 512
+    raise SystemExit(f"{raw}: no Apple_HFS partition in the map")
+
+
+def embedded_hfsplus(raw: str, part: int) -> tuple[int, int]:
+    """(offset, length) of the HFS+ volume embedded in the HFS wrapper.
+
+    The wrapper's whole purpose is to be bootable by a system that only
+    knows HFS Standard; its three visible files include Apple's own joke,
+    `Where_have_all_my_files_gone?`. Everything real is in the embedded
+    volume, located by the wrapper's Master Directory Block.
+    """
+    with open(raw, "rb") as fh:
+        fh.seek(part + 1024)
+        mdb = fh.read(162)
+        if mdb[:2] == b"H+":
+            return part, os.path.getsize(raw) - part     # not wrapped at all
+        if mdb[:2] != b"BD":
+            raise SystemExit(f"partition signature {mdb[:2]!r} is neither BD nor H+")
+        if mdb[124:126] != b"H+":
+            raise SystemExit("HFS wrapper with no embedded HFS+ volume")
+        al_blk_siz = struct.unpack_from(">I", mdb, 20)[0]     # drAlBlkSiz
+        al_bl_st = struct.unpack_from(">H", mdb, 28)[0]       # drAlBlSt
+        start_blk, blk_count = struct.unpack_from(">HH", mdb, 126)
+        off = part + al_bl_st * 512 + start_blk * al_blk_siz
+        fh.seek(off + 1024)
+        if fh.read(2) != b"H+":
+            raise SystemExit(f"computed embedded offset {off:#x} has no H+ signature")
+        length = min(blk_count * al_blk_siz, os.path.getsize(raw) - off)
+        return off, length
+
+
+def carve(raw: str, off: int, length: int, work: str, reuse: bool) -> str:
+    out = os.path.join(work, "hfsplus.img")
+    if reuse and os.path.exists(out):
+        print(f"  reusing {out}")
+        return out
+    t = time.time()
+    print(f"  carving embedded HFS+ at {off:#x} ({length} B)")
+    with open(raw, "rb") as src, open(out, "wb") as dst:
+        src.seek(off)
+        remaining = length
+        while remaining > 0:
+            chunk = src.read(min(1 << 22, remaining))
+            if not chunk:
+                break
+            dst.write(chunk)
+            remaining -= len(chunk)
+    print(f"    {os.path.getsize(out)} B in {time.time() - t:.0f}s")
+    return out
+
+
+def mount(img: str, mnt: str) -> None:
+    os.makedirs(mnt, exist_ok=True)
+    if os.path.ismount(mnt):
+        return
+    run(["hdiutil", "attach", "-readonly", "-nobrowse", "-mountpoint", mnt, img])
+
+
+def unmount(mnt: str) -> None:
+    if os.path.ismount(mnt):
+        subprocess.run(["hdiutil", "detach", mnt], capture_output=True, text=True)
+
+
+def rsrc(path: str) -> bytes:
+    """A file's resource fork, or b'' — macOS exposes it as a named fork."""
+    fork = os.path.join(path, "..namedfork", "rsrc")
+    try:
+        if os.path.getsize(fork) == 0:
+            return b""
+        with open(fork, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return b""
+
+
+# --- extraction ----------------------------------------------------------
+
+def safe(text: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_." else "_" for c in text)
+
+
+def ostype_key(raw: bytes) -> str:
+    """A filesystem-safe key for an OSType (matches iconpack.ostype_key)."""
+    if all(32 < b < 127 and chr(b) not in "/\\:" for b in raw):
+        return raw.decode("ascii")
+    return "x" + raw.hex()
+
+
+def wipe_generated(d: str, keep: set[str]) -> None:
+    """Idempotence: a rerun must not leave last run's files behind."""
+    if not os.path.isdir(d):
+        return
+    for name in os.listdir(d):
+        if name in keep or name.startswith("."):
+            continue
+        p = os.path.join(d, name)
+        if os.path.isfile(p):
+            os.remove(p)
+
+
+def extract_system_icons(fork: resfork.ResourceFork, out: str,
+                         prov: list) -> dict:
+    """Every icl8/ics8 in the System file, composited with its mask.
+
+    Both sizes are emitted for the named generics, because a list-view row
+    is 16x16 and scaling a 32x32 icl8 into it is visibly not what the
+    machine draws.
+    """
+    d = os.path.join(out, "icons")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    by_id_dim: dict[tuple[int, int], object] = {}
+    count = 0
+    for desc in icons.extract_icons(fork):
+        base = safe(desc["name"]) + "_" if desc["name"] else ""
+        name = f"{base}{desc['color_type']}_{desc['id']}_{desc['dim']}"
+        desc["image"].save(os.path.join(d, f"{name}.png"))
+        by_id_dim[(desc["id"], desc["dim"])] = desc["image"]
+        prov.append({"asset": f"icons/{name}.png", "source": SYSTEM_FILE,
+                     "type": desc["color_type"], "id": desc["id"],
+                     "mask": desc["mask_type"]})
+        count += 1
+
+    named = {}
+    for label, rid in NAMED_ICONS.items():
+        for dim, suffix in ((32, ""), (16, "-16")):
+            img = by_id_dim.get((rid, dim))
+            if img is None:
+                continue
+            img.save(os.path.join(d, f"{label}{suffix}.png"))
+            named[f"{label}{suffix}"] = rid
+            prov.append({"asset": f"icons/{label}{suffix}.png",
+                         "source": SYSTEM_FILE,
+                         "type": "icl8" if dim == 32 else "ics8", "id": rid})
+    missing = [k for k in NAMED_ICONS if k not in named]
+    if missing:
+        raise SystemExit(f"generic icons missing from the System file: {missing} "
+                         "— the renderer names these; refusing a half pack")
+    return {"count": count, "named": named}
+
+
+def extract_cursors(fork: resfork.ResourceFork, out: str, prov: list) -> dict:
+    d = os.path.join(out, "cursors")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    hotspots = {}
+    for desc in cursors.extract_cursors(fork):
+        base = safe(desc["name"]) + "_" if desc["name"] else ""
+        name = f"{base}CURS_{desc['id']}"
+        desc["image"].save(os.path.join(d, f"{name}.png"))
+        hotspots[name] = {"x": desc["hotspot"][0], "y": desc["hotspot"][1]}
+        prov.append({"asset": f"cursors/{name}.png", "source": SYSTEM_FILE,
+                     "type": "CURS", "id": desc["id"]})
+    with open(os.path.join(d, "hotspots.json"), "w") as fh:
+        json.dump(hotspots, fh, indent=1, sort_keys=True)
+    return {"count": len(hotspots)}
+
+
+def extract_patterns(fork: resfork.ResourceFork, out: str, prov: list) -> dict:
+    d = os.path.join(out, "patterns")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    result = patterns.extract_patterns(fork)
+    summary = {"ppat": [], "PAT": [], "desktop_ppat_id": None}
+    for p in result["ppat"]:
+        if "image" not in p:
+            summary["ppat"].append({"id": p["id"], "error": p.get("error")})
+            continue
+        is_desktop = (p.get("name") or "").strip().lower() == "mac os default"
+        fname = "desktop.png" if is_desktop else f"ppat_{p['id']}.png"
+        p["image"].save(os.path.join(d, fname))
+        if is_desktop:
+            summary["desktop_ppat_id"] = p["id"]
+        summary["ppat"].append({"id": p["id"], "name": p["name"],
+                                "w": p["w"], "h": p["h"], "file": fname})
+        prov.append({"asset": f"patterns/{fname}", "source": SYSTEM_FILE,
+                     "type": "ppat", "id": p["id"]})
+    for p in result["PAT"]:
+        fname = f"pat_{p['id']}.png"
+        p["image"].save(os.path.join(d, fname))
+        summary["PAT"].append({"id": p["id"], "file": fname})
+        prov.append({"asset": f"patterns/{fname}", "source": SYSTEM_FILE,
+                     "type": "PAT ", "id": p["id"]})
+    if summary["desktop_ppat_id"] is None:
+        raise SystemExit("no 'Mac OS Default' ppat — the desktop pattern the "
+                         "renderer fills with would be lost")
+    return summary
+
+
+# --- what the machine's desktop ACTUALLY is ------------------------------
+#
+# 'ppat' 16 in the System file is a SHIPPED DEFAULT, not the setting. Under
+# Appearance (8.5+) the desktop is chosen in a control panel that writes
+# neither the System file nor a theme file, and the two answers genuinely
+# differ: on now-mirror-stage.qcow2, System 'ppat' 16 is the 128x128 purple
+# Mac face while the running guest's desktop is the 800x600 JPEG "Indigo
+# Foam" — verified pixel-for-pixel against a QMP screendump (p95 delta 3
+# over the visible desktop strip, docs/research/mirror/desktop-state.md).
+# So the renderer tiling 'ppat' 16 is a confident wrong answer twice over:
+# wrong art, and tiled where the machine does not tile.
+#
+# Two files carry the truth, and neither was being read:
+#   - the SELECTION: 'alis' 128 + 'dkp≈' 0 in Preferences/Desktop Pictures
+#     Prefs. The alias names the picture and its absolute path; the 'dkp≈'
+#     blob's OSType at +12 says what kind of thing was chosen.
+#   - the PATTERN LIBRARY: 44 NAMED 'ppat's inside the Appearance control
+#     panel. The System file holds three, none of them the ones a person
+#     picks, which is why a name off the guest could never have resolved.
+
+APPEARANCE_CP = "System Folder/Control Panels/Appearance"
+DESKTOP_PREFS = "System Folder/Preferences/Desktop Pictures Prefs"
+
+
+def extract_appearance_patterns(mnt: str, out: str, prov: list) -> dict:
+    """The desktop patterns a person can actually choose, BY NAME.
+
+    Keyed by name rather than resource id because the name is the only
+    identity the running machine can hand over: Appearance's
+    kThemeDesktopPatternNameTag is a Str255, and the control panel's list
+    is these names. An id would be an identity only this file knows.
+    """
+    d = os.path.join(out, "patterns", "appearance")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    raw = rsrc(os.path.join(mnt, APPEARANCE_CP))
+    if not raw:
+        return {"count": 0, "error": f"no resource fork at {APPEARANCE_CP}"}
+    fork = resfork.ResourceFork(raw)
+    listed, failed = [], []
+    for p in patterns.extract_patterns(fork)["ppat"]:
+        if "image" not in p:
+            failed.append({"id": p["id"], "name": p["name"],
+                           "error": p.get("error")})
+            continue
+        if not p["name"]:
+            # An unnamed one cannot be addressed by the identity the guest
+            # can send, so it is not written: art nothing can ask for is
+            # weight in the pack and a temptation to guess from.
+            continue
+        fname = f"{safe(p['name'])}.png"
+        p["image"].save(os.path.join(d, fname))
+        listed.append({"name": p["name"], "id": p["id"],
+                       "w": p["w"], "h": p["h"], "file": fname})
+        prov.append({"asset": f"patterns/appearance/{fname}",
+                     "source": APPEARANCE_CP, "type": "ppat", "id": p["id"]})
+    return {"count": len(listed), "patterns": sorted(listed,
+                                                     key=lambda x: x["name"]),
+            "failed": failed}
+
+
+def parse_alias(blob: bytes) -> dict:
+    """The readable half of an AliasRecord: names, type, absolute path.
+
+    The 150-byte header is fixed; the variable-length extras that follow
+    it are (type:SInt16, length:UInt16, data) until type == -1. Only three
+    are read here — parent folder name (0), absolute path (2) — because
+    those are the ones that let a file be found again, and a field read
+    without a use is a field nobody notices going wrong.
+
+    The rest of the record, and the 'dkp≈' blob beside it, contain live
+    heap POINTERS from whichever process last wrote them. That is not
+    corruption and it is not ours to interpret; it is why nothing here
+    parses past what it can name.
+    """
+    if len(blob) < 150:
+        return {"error": f"alias too short ({len(blob)} B)"}
+
+    def pstr(off: int, cap: int) -> str:
+        n = min(blob[off], cap)
+        return blob[off + 1:off + 1 + n].decode("mac_roman")
+
+    out = {
+        "volume": pstr(10, 27),
+        "name": pstr(50, 63),
+        "file_type": ostype_key(blob[122:126]),
+        "creator": ostype_key(blob[126:130]),
+        "parent": None,
+        "path": None,
+    }
+    off = 150
+    while off + 4 <= len(blob):
+        kind, length = struct.unpack_from(">hH", blob, off)
+        if kind == -1 or off + 4 + length > len(blob):
+            break
+        body = blob[off + 4:off + 4 + length]
+        if kind == 0:
+            out["parent"] = body.decode("mac_roman")
+        elif kind == 2:
+            out["path"] = body.decode("mac_roman")
+        off += 4 + length + (length & 1)
+    return out
+
+
+def desktop_state(mnt: str, out: str, prov: list) -> dict:
+    """What THIS image's desktop is set to, and the art to draw it with.
+
+    Returns an identity the renderer can act on, or says plainly that it
+    could not resolve one. It never falls back to 'ppat' 16: an
+    unresolvable desktop is the marked unknown's job, and a plausible
+    wrong purple is the thing this whole function exists to stop.
+
+    UNVERIFIED, and deliberately not guessed at: what these files hold
+    when a PATTERN rather than a picture is chosen. Only the picture case
+    has been seen. The pattern case is reported as `kind: "unknown"` with
+    the OSType that was found, so the next person sees the real evidence
+    instead of an assumption baked into a manifest.
+    """
+    d = os.path.join(out, "patterns")
+    os.makedirs(d, exist_ok=True)
+    state: dict = {
+        "source": DESKTOP_PREFS,
+        "kind": "unresolved",
+        "name": None,
+        "file": None,
+        "confidence": None,
+    }
+    path = os.path.join(mnt, DESKTOP_PREFS)
+    raw = rsrc(path) if os.path.exists(path) else b""
+    if not raw:
+        state["confidence"] = (
+            f"no {DESKTOP_PREFS} on this image — nothing here says what the "
+            "desktop is set to; the renderer must draw its marked unknown")
+        return state
+    fork = resfork.ResourceFork(raw)
+    dkp = fork.of_type("dkp≈")
+    if dkp and len(dkp[0].data) >= 16:
+        state["dkp_type"] = ostype_key(dkp[0].data[12:16])
+    aliases = fork.of_type("alis")
+    if not aliases:
+        state["confidence"] = (
+            "the prefs file has no 'alis' — a pattern, or a picture chosen "
+            "some way this has not seen. Unresolved on purpose")
+        return state
+    alias = parse_alias(aliases[0].data)
+    state["alias"] = alias
+    state["name"] = alias.get("name")
+
+    # Volume-relative: the alias's path is "Volume:a:b:c" and the mount IS
+    # that volume, so the first component is dropped rather than matched —
+    # an image restored under another volume name is still this desktop.
+    src = None
+    if alias.get("path") and ":" in alias["path"]:
+        rel = alias["path"].split(":", 1)[1].replace(":", "/")
+        cand = os.path.join(mnt, rel)
+        if os.path.isfile(cand):
+            src = cand
+            state["guest_path"] = alias["path"]
+    if src is None:
+        state["kind"] = "unresolved"
+        state["confidence"] = (
+            f"the prefs name {alias.get('name')!r} at "
+            f"{alias.get('path')!r}, which is not on this volume")
+        return state
+
+    if alias.get("file_type") not in ("JPEG", "PICT", "GIFf", "TIFF", "8BPS"):
+        state["kind"] = "unknown"
+        state["confidence"] = (
+            f"selected item is type {alias.get('file_type')!r}, which this "
+            "extractor does not claim to understand")
+        return state
+    try:
+        img = Image.open(src).convert("RGB")
+    except Exception as exc:                               # noqa: BLE001
+        state["kind"] = "unresolved"
+        state["confidence"] = f"{alias.get('file_type')} would not decode: {exc}"
+        return state
+    fname = "desktop-current.png"
+    img.save(os.path.join(d, fname))
+    with open(src, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
+    state.update({
+        "kind": "picture",
+        "file": f"patterns/{fname}",
+        "w": img.width, "h": img.height,
+        "format": alias.get("file_type"),
+        "source_sha256": digest,
+        # NOT read: the alignment (tile / centre / scale / fill). It lives
+        # in Appearance's kThemeDesktopPictureAlignmentTag on a running
+        # machine and somewhere in the unattributed half of 'dkp≈' here.
+        # Until something reads it, the only honest way to draw this is
+        # 1:1 at the origin when it is exactly screen-sized.
+        "alignment": None,
+        "confidence": (
+            "read from this image's own preferences; true for a guest "
+            "booted from it and not changed since. GetTheme on a running "
+            "guest (kThemeDesktopPicture/PatternNameTag) is the only thing "
+            "that can close that gap"),
+    })
+    prov.append({"asset": f"patterns/{fname}", "source": DESKTOP_PREFS,
+                 "type": alias.get("file_type"), "id": 0})
+    return state
+
+
+def extract_pictures(fork: resfork.ResourceFork, out: str, prov: list) -> dict:
+    """PICTs, written as PICT FILES (512-byte null header + the resource).
+
+    Deliberately NOT converted to PNG. QuickDraw picture decoding was
+    removed from macOS, and writing a PICT interpreter to get at 42
+    startup-screen-shaped images is a large job for art the renderer does
+    not draw. They are carried in their own format, with their frame size
+    recorded, so a later consumer can decide; claiming a PNG we cannot
+    produce would be worse than saying so here.
+    """
+    d = os.path.join(out, "pictures")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    listed = []
+    for res in fork.of_type("PICT"):
+        if len(res.data) < 10:
+            continue
+        top, left, bottom, right = struct.unpack_from(">hhhh", res.data, 2)
+        base = safe(res.name) + "_" if res.name else ""
+        fname = f"{base}PICT_{res.id}.pict"
+        with open(os.path.join(d, fname), "wb") as fh:
+            fh.write(b"\0" * 512)
+            fh.write(res.data)
+        listed.append({"id": res.id, "name": res.name, "file": fname,
+                       "w": right - left, "h": bottom - top,
+                       "bytes": len(res.data)})
+        prov.append({"asset": f"pictures/{fname}", "source": SYSTEM_FILE,
+                     "type": "PICT", "id": res.id})
+    return {"count": len(listed), "format": "PICT (not PNG: no decoder)",
+            "pictures": listed}
+
+
+def extract_fonts(mnt: str, out: str, prov: list) -> dict:
+    """The Fonts folder's bitmap strikes, as the sheets the renderer reads.
+
+    The offline route extracted NO fonts until 2026-08-07, which made the
+    documented recovery procedure ("run the extractor") produce a pack the
+    renderer could not draw text from: `FontBook` asks for `chicago-12`
+    and `geneva-9/10/12` by name and got nil, silently falling back to a
+    face with different metrics. The strikes live in the Fonts folder's
+    suitcases, NOT in the System file — the System file's own four NFNTs
+    are a Geneva/Monaco rump, without Chicago 12's real strike.
+
+    Each `NFNT` becomes `fonts/<face>-<size>[-style].png` plus its metrics
+    JSON, exactly as the live-pull route writes them (the sheet packer is
+    the same `fonts.render_strike`, so the two routes cannot disagree
+    about a glyph box), and each `sfnt` is carried out verbatim as a
+    `.ttf` — an 'sfnt' resource IS the TrueType file image.
+
+    CHARCOAL HAS NO STRIKE TO EXTRACT: on this image its suitcase holds one
+    `sfnt` and a `FOND` whose association table has a single size-0
+    (scalable) row, so Mac OS rasterises the system font from TrueType at
+    run time. Until 2026-08-07 that was recorded as a note and left there,
+    and the consequence was not a missing font but a WRONG one — `font 0`
+    means "the system font", the pack had no Charcoal, and the renderer
+    answered Chicago for every menu, window title, button and group-box
+    label on screen. Chicago is wider, so runs the guest had already
+    measured in Charcoal overran the boxes it drew for them.
+
+    So a face with no strike is now RASTERISED from its own `sfnt`, at every
+    ppem its `hdmx` table carries device metrics for, and at no other size —
+    see `fonts.render_truetype_strike`. A size with no `hdmx` row keeps
+    substituting and the manifest names it.
+    """
+    d = os.path.join(out, "fonts")
+    ttf_dir = os.path.join(d, "ttf")
+    os.makedirs(ttf_dir, exist_ok=True)
+    wipe_generated(d, keep=set())
+    wipe_generated(ttf_dir, keep=set())
+    summary: dict = {"sheets": {}, "ttf": {}, "notes": {}}
+
+    for face in FACES:
+        path = os.path.join(mnt, FONTS_DIR, face)
+        raw = rsrc(path)
+        if not raw:
+            summary["notes"][face] = f"no resource fork at {FONTS_DIR}/{face}"
+            continue
+        fork = resfork.ResourceFork(raw)
+        rel = f"{FONTS_DIR}/{face}"
+
+        sfnts = fork.of_type("sfnt")
+        if sfnts:
+            ttf = fonts.sfnt_to_ttf(sfnts[0].data)
+            with open(os.path.join(ttf_dir, f"{face}.ttf"), "wb") as fh:
+                fh.write(ttf)
+            summary["ttf"][face] = {"bytes": len(ttf), "id": sfnts[0].id}
+            prov.append({"asset": f"fonts/ttf/{face}.ttf", "source": rel,
+                         "type": "sfnt", "id": sfnts[0].id})
+
+        # The FOND association table is what says which point size a strike
+        # is; an NFNT does not carry its own size.
+        size_by_id: dict[int, tuple[int, int]] = {}
+        fond = fork.of_type("FOND")
+        if fond:
+            _, assoc = fonts.parse_fond(fond[0].data)
+            for a in assoc:
+                size_by_id[a.font_id] = (a.size, a.style)
+
+        strikes = fork.of_type("NFNT")
+        if not strikes:
+            if face not in summary["ttf"]:
+                summary["notes"][face] = (
+                    "no NFNT bitmap strike and no sfnt either "
+                    f"({fork.census()}); nothing to lift and nothing to "
+                    "rasterise")
+                continue
+            ttf = fonts.sfnt_to_ttf(fork.of_type("sfnt")[0].data)
+            sizes = fonts.hdmx_sizes(ttf)
+            for ppem in sizes:
+                label = f"{face.lower()}-{ppem}"
+                sheet, metrics, notes = fonts.render_truetype_strike(ttf, ppem)
+                metrics["face"] = face
+                metrics["pointSize"] = ppem
+                metrics["style"] = 0
+                sheet.save(os.path.join(d, f"{label}.png"))
+                with open(os.path.join(d, f"{label}.json"), "w") as fh:
+                    json.dump(metrics, fh, indent=1, sort_keys=True)
+                summary["sheets"][label] = {
+                    "glyphs": len(metrics["glyphs"]), "size": ppem,
+                    "style": 0, "source": "sfnt+hdmx",
+                    "ascent": metrics["ascent"],
+                    "descent": metrics["descent"],
+                    "grewToFitInk": notes["grewToFitInk"]}
+                for ext in ("png", "json"):
+                    prov.append({"asset": f"fonts/{label}.{ext}",
+                                 "source": rel, "type": "sfnt+hdmx",
+                                 "id": sfnts[0].id, "ppem": ppem})
+            summary["notes"][face] = (
+                "TrueType-only face: no NFNT bitmap strike in the suitcase "
+                f"({fork.census()}). Mac OS rasterises it from the sfnt at "
+                f"run time and so does this — {len(sizes)} strikes at the "
+                f"ppem sizes 'hdmx' carries device metrics for "
+                f"({sizes[0]}-{sizes[-1]}); no other size is answerable and "
+                "none is guessed")
+            continue
+        for res in strikes:
+            size, style = size_by_id.get(res.id, (0, 0))
+            label = f"{face.lower()}-{size}{STYLE_SUFFIX.get(style, '')}"
+            strike = fonts.parse_nfnt(res.data)
+            sheet, metrics = fonts.render_strike(strike)
+            metrics["face"] = face
+            metrics["pointSize"] = size
+            metrics["style"] = style
+            sheet.save(os.path.join(d, f"{label}.png"))
+            with open(os.path.join(d, f"{label}.json"), "w") as fh:
+                json.dump(metrics, fh, indent=1, sort_keys=True)
+            summary["sheets"][label] = {
+                "glyphs": len(metrics["glyphs"]), "size": size,
+                "style": style, "nfnt": res.id,
+                "ascent": strike.ascent, "descent": strike.descent}
+            for ext in ("png", "json"):
+                prov.append({"asset": f"fonts/{label}.{ext}", "source": rel,
+                             "type": "NFNT", "id": res.id})
+
+    missing = [s for s in REQUIRED_SHEETS if s not in summary["sheets"]]
+    if missing:
+        raise SystemExit(f"font strikes missing: {missing} — FontBook names "
+                         "these; refusing a pack whose text is a fallback")
+    return summary
+
+
+def parse_bundle(fork: resfork.ResourceFork):
+    """(creator, {fileType: iconResID}) from BNDL/FREF, or None.
+
+    Same walk as tools/asset-pack/iconpack.py — kept here rather
+    than imported because that module runs its harness at import time.
+    """
+    bndls = fork.of_type("BNDL")
+    if not bndls:
+        return None
+    d = bndls[0].data
+    if len(d) < 8:
+        return None
+    creator = d[0:4]
+    count_m1 = struct.unpack_from(">h", d, 6)[0]
+    off = 8
+    icn_local_to_res: dict[int, int] = {}
+    fref_local_to_res: dict[int, int] = {}
+    for _ in range(count_m1 + 1):
+        typ = d[off:off + 4]
+        cnt_m1 = struct.unpack_from(">h", d, off + 4)[0]
+        off += 6
+        table = {}
+        for _ in range(cnt_m1 + 1):
+            lid, rid = struct.unpack_from(">hh", d, off)
+            off += 4
+            table[lid] = rid
+        if typ in (b"ICN#", b"icl8"):
+            icn_local_to_res.update(table)
+        elif typ == b"FREF":
+            fref_local_to_res.update(table)
+    type_to_res: dict[bytes, int] = {}
+    for _local, fref_res in fref_local_to_res.items():
+        fref = fork.get("FREF", fref_res)
+        if not fref or len(fref.data) < 6:
+            continue
+        ftype = fref.data[0:4]
+        icon_local = struct.unpack_from(">h", fref.data, 4)[0]
+        res = icn_local_to_res.get(icon_local)
+        if res is not None:
+            type_to_res[ftype] = res
+    return creator, type_to_res
+
+
+def sweep_bundles(mnt: str) -> list[str]:
+    """Every file under the app roots that could carry a BNDL.
+
+    Sorted, because two files can declare the same (creator, type) and the
+    first writer wins — an unsorted walk would make the pack depend on
+    directory order, and a rerun on another machine would differ for no
+    reason a reader could see.
+    """
+    found = []
+    for root in APP_SWEEP_ROOTS:
+        start = os.path.join(mnt, root)
+        if os.path.isfile(start):
+            found.append(start)
+            continue
+        for dirpath, dirnames, filenames in os.walk(start):
+            dirnames[:] = sorted(d for d in dirnames
+                                 if d not in SWEEP_SKIP_NAMES)
+            for name in sorted(filenames):
+                if name in SWEEP_SKIP_NAMES or name.startswith("."):
+                    continue
+                found.append(os.path.join(dirpath, name))
+    return found
+
+
+def extract_appicons(mnt: str, out: str, prov: list, verbose: bool) -> dict:
+    """Per-application icons keyed by (creator, fileType), from each app's
+    own resource fork. The creator comes from the app's own BNDL, so no
+    Finder metadata is needed and nothing depends on a running guest."""
+    d = os.path.join(out, "appicons")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    manifest: dict[str, dict] = {}
+    scanned = skipped = 0
+    for path in sweep_bundles(mnt):
+        try:
+            if os.path.getsize(os.path.join(path, "..namedfork", "rsrc")) > MAX_FORK_BYTES:
+                continue
+        except OSError:
+            continue
+        raw = rsrc(path)
+        if not raw:
+            continue
+        scanned += 1
+        try:
+            fork = resfork.ResourceFork(raw)
+            parsed = parse_bundle(fork)
+        except Exception:
+            skipped += 1
+            continue
+        if not parsed:
+            continue
+        creator, type_to_res = parsed
+        ckey = ostype_key(creator)
+        rel = os.path.relpath(path, mnt)
+        wrote = 0
+        for ftype, res_id in sorted(type_to_res.items()):
+            icl8 = fork.get("icl8", res_id)
+            ics8 = fork.get("ics8", res_id)
+            tkey = ostype_key(ftype)
+            for res, mask_type, dim, suffix in (
+                    (icl8, "ICN#", 32, ""), (ics8, "ics#", 16, "-16")):
+                if not res or len(res.data) < dim * dim:
+                    continue
+                mask = fork.get(mask_type, res_id)
+                img = icons.render_icon(res.data,
+                                        mask.data if mask else None, dim)
+                fname = f"{ckey}__{tkey}{suffix}.png"
+                # First writer wins: an app's own bundle beats a later file
+                # that happens to redeclare the same creator/type pair.
+                if os.path.exists(os.path.join(d, fname)):
+                    continue
+                img.save(os.path.join(d, fname))
+                manifest[f"{ckey}/{tkey}{suffix}"] = {
+                    "asset": f"appicons/{fname}", "creator": ckey,
+                    "type": tkey, "dim": dim, "source": rel, "resId": res_id,
+                }
+                prov.append({"asset": f"appicons/{fname}", "source": rel,
+                             "type": "icl8" if dim == 32 else "ics8",
+                             "id": res_id})
+                wrote += 1
+        if verbose and wrote:
+            print(f"    {rel}: creator {ckey}, {wrote} icons")
+    with open(os.path.join(d, "manifest.json"), "w") as fh:
+        json.dump({"pack": "appicons",
+                   "note": "Apple app icons by (creator,type); private repo only",
+                   "icons": manifest}, fh, indent=1, sort_keys=True)
+    creators = {v["creator"] for v in manifest.values()}
+    return {"count": len(manifest), "creators": len(creators),
+            "forks_scanned": scanned, "forks_unparsable": skipped}
+
+
+def theme_report(mnt: str) -> dict:
+    """What is actually inside the Platinum theme file.
+
+    mirror-assets.md says Platinum chrome is drawn procedurally and there
+    is no art to lift. This opens the file rather than assuming either
+    way; the census is recorded so the claim is evidenced, not repeated.
+    """
+    path = os.path.join(mnt, THEME_FILE)
+    raw = rsrc(path)
+    if not raw:
+        return {"error": f"no resource fork at {THEME_FILE}"}
+    fork = resfork.ResourceFork(raw)
+    census = fork.census()
+    pictures = []
+    for res in fork.of_type("PICT"):
+        top, left, bottom, right = struct.unpack_from(">hhhh", res.data, 2)
+        pictures.append({"id": res.id, "w": right - left, "h": bottom - top,
+                         "bytes": len(res.data)})
+    scenes = [{"id": r.id, "name": r.name, "bytes": len(r.data)}
+              for r in fork.of_type("scen")]
+    cluts = [{"id": r.id, "name": r.name, "bytes": len(r.data)}
+             for r in fork.of_type("clut")]
+    return {"fork_bytes": len(raw), "census": census,
+            "pictures": pictures, "scenes": scenes, "cluts": cluts}
+
+
+# --- the accent ramps ----------------------------------------------------
+
+def parse_clut(data: bytes) -> list[dict]:
+    """A `clut` resource as a list of {value, r, g, b}, 16 bits per channel.
+
+    The layout is NOT guessed. `clut` is a resource image of QuickDraw's
+    ColorTable, documented in Inside Macintosh: Imaging With QuickDraw,
+    "Color Table" (and declared in Universal Interfaces Quickdraw.h):
+
+        ctSeed    SInt32   4 B
+        ctFlags   UInt16   2 B   (0x0000 pixmap, 0x8000 device)
+        ctSize    SInt16   2 B   number of entries MINUS ONE
+        ctTable   ColorSpec[ctSize + 1]
+                  value   UInt16  2 B
+                  rgb     RGBColor { red, green, blue: UInt16 } 6 B
+
+    which is 8 + 8n bytes. That arithmetic is the check, not a comment:
+    the theme file's ramps are 72 B (n = 8) and its `Black & White` is
+    8 B (ctSize = -1, no entries), exactly as the formula predicts, so a
+    misread layout could not produce both numbers.
+    """
+    if len(data) < 8:
+        raise ValueError(f"clut too short: {len(data)} B")
+    _seed, _flags, size = struct.unpack_from(">iHh", data, 0)
+    n = size + 1
+    if n < 0:
+        raise ValueError(f"clut ctSize {size} is below -1")
+    want = 8 + 8 * n
+    if len(data) != want:
+        raise ValueError(f"clut ctSize {size} implies {want} B, resource is "
+                         f"{len(data)} B — layout mismatch, refusing to guess")
+    entries = []
+    for i in range(n):
+        value, r, g, b = struct.unpack_from(">HHHH", data, 8 + 8 * i)
+        entries.append({"value": value, "r": r, "g": g, "b": b})
+    return entries
+
+
+def eight_bit(v: int) -> int:
+    """16-bit QuickDraw channel -> 8-bit, the way QuickDraw itself does it.
+
+    The high byte. NOT a divide by 257: Apple's own tables carry 0xFFFF,
+    0xEEEE, 0x8888 … — each channel is a byte doubled — so taking the high
+    byte is exact and lossless for every value in this file.
+    """
+    return (v >> 8) & 0xFF
+
+
+def extract_accent_ramps(mnt: str) -> dict:
+    """Every `clut` in the Platinum theme file, as numbers.
+
+    These are the named accent ramps the Appearance Manager tints
+    highlights and selections with. There is no bitmap here — this is
+    specification, and it is the half of the theme file that IS liftable
+    (docs/asset-extraction-offline.md).
+    """
+    path = os.path.join(mnt, THEME_FILE)
+    raw = rsrc(path)
+    if not raw:
+        raise SystemExit(f"no resource fork at {THEME_FILE}")
+    fork = resfork.ResourceFork(raw)
+    ramps = []
+    for res in sorted(fork.of_type("clut"), key=lambda r: r.id):
+        entries = parse_clut(res.data)
+        ramps.append({
+            "id": res.id,
+            "name": res.name,
+            "bytes": len(res.data),
+            "entries": entries,
+            "rgb8": [[eight_bit(e["r"]), eight_bit(e["g"]), eight_bit(e["b"])]
+                     for e in entries],
+        })
+    return {
+        "source": THEME_FILE,
+        "fork_bytes": len(raw),
+        "count": len(ramps),
+        "ramps": ramps,
+    }
+
+
+DEFAULT_SCENE = "Mac OS Default"
+
+
+def parse_scene(data: bytes) -> dict:
+    """A `scen` resource's items, as {tag: bytes}.
+
+    `scen` is a FLATTENED COLLECTION (Collection Manager), not a struct:
+    a header of 16-byte entries — id:UInt32, attributes:UInt32 (0x40000000
+    throughout this file), offset:UInt32, tag:OSType — followed by the
+    data area, in which each item is a UInt32 size immediately before the
+    bytes its entry's offset points at.
+
+    That reading is not asserted from a document, it is CHECKED: the size
+    word in front of every item is consistent across all fourteen scenes
+    and every string it delimits is a well-formed Pascal string. The
+    header walk stops on the first entry whose attributes are not
+    0x40000000 rather than trusting a count, because the leading word is
+    a version and mis-taking it for a count is exactly how this parse
+    went wrong the first time.
+    """
+    items: dict[str, bytes] = {}
+    off = 0
+    while off + 16 <= len(data):
+        _cid, attrs, val = struct.unpack_from(">III", data, off)
+        if attrs != 0x40000000:
+            break
+        tag = data[off + 12:off + 16].decode("mac_roman")
+        items[tag] = val
+        off += 16
+    hdr = off
+    out: dict[str, bytes] = {}
+    for tag, val in items.items():
+        a = hdr + val
+        if a < 4 or a + 4 > len(data):
+            continue
+        size = struct.unpack_from(">I", data, a - 4)[0]
+        if a + size > len(data):
+            continue
+        out[tag] = data[a:a + size]
+    return out
+
+
+def pstring(blob: bytes) -> str | None:
+    if len(blob) >= 1 and blob[0] == len(blob) - 1:
+        return blob[1:].decode("mac_roman")
+    return None
+
+
+def default_scene_accent(mnt: str, ramp_names: set[str]) -> dict:
+    """Which ramp the SHIPPED DEFAULT theme uses, read out of its own scene.
+
+    Two independent slots in `scen` 2000 "Mac OS Default" answer this:
+
+    - one item holds a Pascal string that is always one of the twenty-one
+      clut names — in all fourteen scenes, without exception. That is the
+      accent ramp. Its tag reads as `vfnt`, which cannot be what Apple
+      meant it for; the slot is identified here by the invariant it
+      satisfies, not by a name we would be guessing at.
+    - `hcol` holds the Appearance control panel's HIGHLIGHT COLOUR name
+      ("Purple", "Bondi", "Gray"…) and `lgsf` its literal RGBColor. Those
+      names are the control panel's own list and are NOT ramp names, so
+      the highlight is a separate setting that merely happens to coincide
+      with a ramp step for some themes.
+
+    For the default theme they DO coincide, which is the corroboration:
+    the accent is Lavender and the highlight RGB is Lavender's second
+    step exactly. Two slots written independently agreeing is worth more
+    than either alone.
+    """
+    path = os.path.join(mnt, THEME_FILE)
+    fork = resfork.ResourceFork(rsrc(path))
+    scene = next((r for r in fork.of_type("scen") if r.name == DEFAULT_SCENE),
+                 None)
+    if scene is None:
+        raise SystemExit(f"no `scen` named {DEFAULT_SCENE!r} in {THEME_FILE}")
+    items = parse_scene(scene.data)
+    accent = None
+    for tag, blob in items.items():
+        s = pstring(blob)
+        if s in ramp_names and tag not in ("hcol", "patn", "coll"):
+            accent = {"tag": tag, "name": s}
+    hl = items.get("lgsf")
+    highlight = None
+    if hl and len(hl) == 6:
+        r, g, b = struct.unpack(">HHH", hl)
+        highlight = [eight_bit(r), eight_bit(g), eight_bit(b)]
+    return {"scene": DEFAULT_SCENE, "scene_id": scene.id, "accent": accent,
+            "highlight_name": pstring(items.get("hcol", b"")),
+            "highlight_rgb8": highlight}
+
+
+def active_theme_hint(mnt: str, ramps: dict) -> dict:
+    """What the IMAGE can say about which ramp is in force — no more.
+
+    The theme file NAMES twenty-one ramps and its default scene says which
+    one that theme uses. It does NOT say what AppearanceLib resolves at
+    run time on a machine somebody has since touched — that is a
+    preference. So the offline answer is the SHIPPED DEFAULT plus the one
+    piece of evidence about whether it was ever overridden: the presence
+    of an Appearance preferences file. `GetThemeAccentColors` on a running
+    guest is the only thing that can close it, and that is plan 016 P2.
+    """
+    names = {r["name"] for r in ramps["ramps"]}
+    scene = default_scene_accent(mnt, names)
+    prefs_dir = os.path.join(mnt, "System Folder", "Preferences")
+    overrides = sorted(n for n in os.listdir(prefs_dir)
+                       if "appearance" in n.lower()) if os.path.isdir(prefs_dir) else []
+    return {
+        "shipped_default": scene,
+        "appearance_prefs_present": bool(overrides),
+        "appearance_prefs": overrides,
+        "resolved": scene["accent"]["name"] if scene["accent"] else None,
+        "confidence": ("shipped default, never overridden on this image"
+                       if not overrides else
+                       "an Appearance preferences file exists — the machine "
+                       "may have been changed; ask a running guest"),
+        "seam": ("PlatinumAccent.active — plan 016 P2's query applet "
+                 "(GetThemeAccentColors) replaces this with the running "
+                 "machine's answer"),
+    }
+
+
+def swift_ident(name: str) -> str:
+    parts = [p for p in name.replace("&", " and ").split() if p]
+    head = parts[0].lower()
+    return head + "".join(p[:1].upper() + p[1:].lower() for p in parts[1:])
+
+
+def write_accent_ramps_swift(ramps: dict, path: str, image: str) -> None:
+    """Emit the ramps as SOURCE, not as a pack file.
+
+    They are numbers — 21 names and 160 RGB triples — and the renderer
+    wants them at static-init with no bundle lookup and no decode that
+    could fail quietly into a fallback nobody would ever notice on
+    screen. A JSON file in Resources/ would put a colour the machine
+    measured behind an optional.
+    """
+    active = ramps["active"]
+    lines = [
+        "// GENERATED by tools/extract-assets-offline --- do not edit by hand.",
+        "//",
+        "// The Appearance theme's named accent ramps, read as NUMBERS out of",
+        f"// `{ramps['source']}` on a guest disk image.",
+        "// The theme file carries no chrome bitmaps (docs/asset-extraction-",
+        "// offline.md); these `clut` resources are the half of it that IS",
+        "// liftable, and they are specification rather than art: the exact",
+        "// eight-step tables the Appearance Manager tints with.",
+        "//",
+        f"// Source image: {image}",
+        f"// Extracted:    {datetime.date.today().isoformat()}",
+        f"// Ramps:        {ramps['count']} `clut` resources, {ramps['fork_bytes']} B fork",
+        "//",
+        "// Apple's colour tables. Private repo only, as the bitmaps are.",
+        "",
+        "import Foundation",
+        "",
+        "/// One named accent ramp: eight steps, light to dark, ending in black.",
+        "public struct AccentRamp: Sendable, Equatable {",
+        "    public let name: String",
+        "    /// Resource id of the `clut` this came from, so a value can be",
+        "    /// traced back to the byte range it was read out of.",
+        "    public let clutID: Int",
+        "    /// 0xRRGGBB, light to dark. Empty for `Black & White`, which is a",
+        "    /// real ramp with no entries rather than a missing one.",
+        "    public let steps: [UInt32]",
+        "",
+        "    public var isEmpty: Bool { steps.isEmpty }",
+        "}",
+        "",
+        "public enum PlatinumAccent {",
+        f"    public static let sourceFile = \"{ramps['source']}\"",
+        f"    public static let sourceImage = \"{image}\"",
+        f"    public static let extracted = \"{datetime.date.today().isoformat()}\"",
+        "",
+    ]
+    for r in ramps["ramps"]:
+        steps = ", ".join(f"0x{c[0]:02X}{c[1]:02X}{c[2]:02X}" for c in r["rgb8"])
+        lines.append(f"    public static let {swift_ident(r['name'])} = AccentRamp(")
+        lines.append(f"        name: \"{r['name']}\", clutID: {r['id']},")
+        lines.append(f"        steps: [{steps}])")
+    lines.append("")
+    lines.append("    public static let all: [AccentRamp] = [")
+    for r in ramps["ramps"]:
+        lines.append(f"        {swift_ident(r['name'])},")
+    lines.append("    ]")
+    lines.append("")
+    lines.append("    public static func named(_ name: String) -> AccentRamp? {")
+    lines.append("        all.first { $0.name == name }")
+    lines.append("    }")
+    lines.append("")
+    sd = active["shipped_default"]
+    accent = sd["accent"]["name"] if sd["accent"] else None
+    lines += [
+        "    /// The ramp in force.",
+        "    ///",
+        f"    /// Read offline, from the `{sd['scene']}` scene (`scen`",
+        f"    /// {sd['scene_id']}) in the theme file itself — the shipped default,",
+        "    /// which names its accent in one slot and its highlight colour in",
+        f"    /// another (\"{sd['highlight_name']}\", RGB "
+        f"0x{sd['highlight_rgb8'][0]:02X}{sd['highlight_rgb8'][1]:02X}"
+        f"{sd['highlight_rgb8'][2]:02X}). Those two agree: the highlight is this",
+        "    /// ramp's second step, exactly.",
+        "    ///",
+        f"    /// {active['confidence']}.",
+        "    ///",
+        "    /// THE SEAM: this is what the theme file SAYS, not what a running",
+        "    /// AppearanceLib answers. `GetThemeAccentColors` on the guest is the",
+        "    /// only thing that can close that gap, and it is plan 016 P2's query",
+        "    /// applet. When it lands, this constant is what it replaces.",
+        f"    public static let active = {swift_ident(accent)}",
+        "",
+        "    /// The highlight colour the default scene writes literally, as its",
+        "    /// own RGBColor rather than as a ramp index. Text and list-row",
+        "    /// selection are filled with THIS.",
+        f"    public static let activeHighlight: UInt32 = 0x{sd['highlight_rgb8'][0]:02X}"
+        f"{sd['highlight_rgb8'][1]:02X}{sd['highlight_rgb8'][2]:02X}",
+        "}",
+        "",
+    ]
+    with open(path, "w") as fh:
+        fh.write("\n".join(lines))
+    print(f"accent ramps -> {os.path.relpath(path, REPO)} "
+          f"({ramps['count']} ramps, active {accent})")
+
+
+# --- main ----------------------------------------------------------------
+
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--image", default=DEFAULT_IMAGE,
+                    help="guest disk image, qcow2 or raw (READ-ONLY)")
+    ap.add_argument("--out", help="explicit Resources directory; otherwise "
+                                  "create a new pack in --store")
+    ap.add_argument("--store", default=DEFAULT_STORE,
+                    help=f"asset-pack store (default: ${ASSET_STORE_ENV} or "
+                         "~/Lab/Assets/now-mirror-assets)")
+    ap.add_argument("--pack-id",
+                    help="directory name under --store (default: generated "
+                         "pack-YYYY-MM-DD-HHMMSS)")
+    ap.add_argument("--print-destination", action="store_true",
+                    help="print the resolved Resources destination and stop")
+    ap.add_argument("--work", default=DEFAULT_WORK,
+                    help="scratch for the converted copy and the mount")
+    ap.add_argument("--reuse-work", action="store_true",
+                    help="reuse an existing probe.raw / hfsplus.img")
+    ap.add_argument("--keep-work", action="store_true",
+                    help="leave the converted copy mounted and on disk")
+    ap.add_argument("--theme-report", action="store_true",
+                    help="census the Platinum theme file and stop")
+    ap.add_argument("--desktop-report", action="store_true",
+                    help="say what this image's desktop is SET to and stop "
+                         "(art goes to --work, not the pack)")
+    ap.add_argument("--accent-ramps", action="store_true",
+                    help="print the theme file's 21 accent clut ramps and stop")
+    ap.add_argument("--swift-out", default=DEFAULT_SWIFT_OUT,
+                    help="generated Swift source for the accent ramps")
+    ap.add_argument("-v", "--verbose", action="store_true")
+    args = ap.parse_args()
+
+    if args.out is None:
+        pack_id = args.pack_id or datetime.datetime.now().strftime(
+            "pack-%Y-%m-%d-%H%M%S")
+        if not pack_id.startswith("pack-") or os.path.basename(pack_id) != pack_id:
+            raise SystemExit("--pack-id must be one directory name beginning pack-")
+        args.out = os.path.join(os.path.expanduser(args.store), pack_id,
+                                "Resources")
+    elif args.pack_id:
+        raise SystemExit("--pack-id cannot be combined with explicit --out")
+
+    if args.print_destination:
+        print(args.out)
+        return
+
+    load_extractors()
+
+    if not os.path.exists(args.image):
+        raise SystemExit(f"no such image: {args.image}")
+    os.makedirs(args.work, exist_ok=True)
+    mnt = os.path.join(args.work, "mnt")
+
+    print(f"image {args.image} (read-only)")
+    raw = convert_to_raw(args.image, args.work, args.reuse_work)
+    part = find_hfs_partition(raw)
+    print(f"  Apple_HFS partition at {part:#x}")
+    off, length = embedded_hfsplus(raw, part)
+    if off != part:
+        print(f"  HFS wrapper -> embedded HFS+ at {off:#x}")
+    img = carve(raw, off, length, args.work, args.reuse_work)
+    mount(img, mnt)
+    print(f"  mounted read-only at {mnt}")
+
+    try:
+        theme = theme_report(mnt)
+        if args.theme_report:
+            print(json.dumps(theme, indent=1, sort_keys=True))
+            return
+
+        if args.desktop_report:
+            report = desktop_state(mnt, args.work, [])
+            report["library"] = extract_appearance_patterns(
+                mnt, args.work, [])
+            print(json.dumps(report, indent=1, sort_keys=True))
+            return
+
+        ramps = extract_accent_ramps(mnt)
+        ramps["active"] = active_theme_hint(mnt, ramps)
+        if args.accent_ramps:
+            print(json.dumps(ramps, indent=1, sort_keys=True))
+            return
+        write_accent_ramps_swift(ramps, args.swift_out,
+                                 os.path.basename(args.image))
+
+        sysfork = resfork.load(os.path.join(mnt, SYSTEM_FILE,
+                                            "..namedfork", "rsrc"))
+        os.makedirs(args.out, exist_ok=True)
+        prov: list = []
+        print("extracting")
+        icons_sum = extract_system_icons(sysfork, args.out, prov)
+        cursors_sum = extract_cursors(sysfork, args.out, prov)
+        patterns_sum = extract_patterns(sysfork, args.out, prov)
+        # After extract_patterns: it wipes patterns/ to stay idempotent.
+        patterns_sum["appearance"] = extract_appearance_patterns(
+            mnt, args.out, prov)
+        desktop_sum = desktop_state(mnt, args.out, prov)
+        pictures_sum = extract_pictures(sysfork, args.out, prov)
+        fonts_sum = extract_fonts(mnt, args.out, prov)
+        apps_sum = extract_appicons(mnt, args.out, prov, args.verbose)
+
+        manifest = {
+            "pack": os.path.basename(os.path.dirname(args.out)),
+            "version": "0.2.0",
+            "route": "offline (disk image, no VM) — tools/extract-assets-offline",
+            "source_image": os.path.basename(args.image),
+            "extracted": datetime.date.today().isoformat(),
+            "clut": "generated system 8-bit CLUT (tools/asset-pack/clut.py)",
+            "icons": icons_sum,
+            "cursors": cursors_sum,
+            "patterns": patterns_sum,
+            # SEPARATE from `patterns` on purpose: patterns is a library of
+            # art, this is a SETTING. Reading the first as the second is
+            # the defect this key exists to close.
+            "desktop": desktop_sum,
+            "pictures": pictures_sum,
+            "fonts": fonts_sum,
+            "appicons": apps_sum,
+            "theme_file": {
+                "path": THEME_FILE,
+                "chrome_bitmaps": False,
+                "finding": ("no window frames, title bars, scroll bars or "
+                            "buttons — the PICTs are Appearance control-panel "
+                            "previews, the cluts are the named accent ramps"),
+                "census": theme.get("census"),
+            },
+            "provenance": sorted(prov, key=lambda p: p["asset"]),
+            "copyright": ("Apple bitmap data — private repo only. Never "
+                          "publish, never ship as an artifact."),
+        }
+        with open(os.path.join(args.out, "manifest.json"), "w") as fh:
+            json.dump(manifest, fh, indent=1, sort_keys=True)
+
+        print(f"pack -> {args.out}")
+        print(f"  icons:    {icons_sum['count']} ({len(icons_sum['named'])} named generics)")
+        print(f"  cursors:  {cursors_sum['count']}")
+        print(f"  patterns: {len(patterns_sum['ppat'])} ppat + "
+              f"{len(patterns_sum['PAT'])} PAT (desktop id "
+              f"{patterns_sum['desktop_ppat_id']}) + "
+              f"{patterns_sum['appearance'].get('count', 0)} named "
+              "Appearance patterns")
+        print(f"  desktop:  {desktop_sum['kind']} "
+              f"{desktop_sum.get('name')!r}"
+              + (f" {desktop_sum['w']}x{desktop_sum['h']}"
+                 if desktop_sum.get("w") else "")
+              + f" — {desktop_sum['confidence']}")
+        print(f"  pictures: {pictures_sum['count']} PICT (unconverted)")
+        lifted = sum(1 for s in fonts_sum["sheets"].values()
+                     if s.get("source") != "sfnt+hdmx")
+        raster = len(fonts_sum["sheets"]) - lifted
+        print(f"  fonts:    {lifted} NFNT sheets lifted, "
+              f"{raster} rasterised from sfnt+hdmx, "
+              f"{len(fonts_sum['ttf'])} TTF"
+              + (f" (rasterised, no NFNT: "
+                 f"{', '.join(sorted(fonts_sum['notes']))})"
+                 if fonts_sum["notes"] else ""))
+        print(f"  appicons: {apps_sum['count']} for {apps_sum['creators']} creators "
+              f"({apps_sum['forks_scanned']} forks scanned)")
+        print(f"  provenance rows: {len(prov)}")
+    finally:
+        if not args.keep_work:
+            unmount(mnt)
+            if not args.reuse_work:
+                shutil.rmtree(args.work, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    main()

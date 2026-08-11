@@ -1,0 +1,449 @@
+{
+  "receipts": [
+    {
+      "at": "2026-08-06T01:10:11-0400",
+      "branch": "claude/ext-commit-gate",
+      "commit": "3a2d434551007831b96f6e996c28404593296ce4",
+      "correctedOn": "2026-08-06",
+      "correction": "THIS RECEIPT DID NOT CERTIFY WHAT IT APPEARED TO. It records `shutdown: guest-clean` and `qemuImgCheck: clean`, and both statements are true \u2014 but neither answers whether the Macintosh volume inside the image was cleanly unmounted. `qemu-img check` validates the qcow2 container and cannot see the filesystem inside it; a guest-clean shutdown means the sequence STARTED, and the Shutdown Manager quits applications before it flushes and unmounts volumes, so the anchor worker fell silent while the volume was still being written. The image this receipt names (kept as now-mirror-stage.qcow2.bak-20260806-pre-transport) was measured by tools/volclean.py on 2026-08-06 and its HFS 'volume unmounted' attribute bit is CLEAR: every clone of it opened with \"Your computer did not shut down properly\" and Disk First Aid. Three bakes that day installed such an image. The general lesson, which is worth more than the fix: a check adjacent to the question reads exactly like an answer to it. The `volumeClean` field and tools/volclean.py exist so this cannot be claimed on the wrong evidence again.",
+      "extBuildFingerprint": "bb95520ae51365c053f56d57d86bb10af09629c3",
+      "extDigest": "4cb1e7e3c0c48aa02ad984af097e2ccd3932a048",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 629866496,
+      "imageSha256": "46a51dcd0337baf3918a1fec6f2987bacbdf174d3dc28ffee61e04430bd5850c",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260806-2",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 63,
+      "residentLifecycle": "active",
+      "shutdown": "guest-clean",
+      "sourceManifest": "41675da7f7c4007c45e3f173923888299321ded0",
+      "volumeClean": "dirty"
+    },
+    {
+      "at": "2026-08-06T01:19:02-0400",
+      "branch": "claude/mirror-thread-content",
+      "commit": "50eb855a22f978fdba1d04d9d85350df52ee2c22",
+      "correctedOn": "2026-08-06",
+      "correction": "THIS RECEIPT DID NOT CERTIFY WHAT IT APPEARED TO. It records `shutdown: guest-clean` and `qemuImgCheck: clean`, and both statements are true \u2014 but neither answers whether the Macintosh volume inside the image was cleanly unmounted. `qemu-img check` validates the qcow2 container and cannot see the filesystem inside it; a guest-clean shutdown means the sequence STARTED, and the Shutdown Manager quits applications before it flushes and unmounts volumes, so the anchor worker fell silent while the volume was still being written. The image this receipt names (kept as now-mirror-stage.qcow2 (the oracle, as installed)) was measured by tools/volclean.py on 2026-08-06 and its HFS 'volume unmounted' attribute bit is CLEAR: every clone of it opened with \"Your computer did not shut down properly\" and Disk First Aid. Three bakes that day installed such an image. The general lesson, which is worth more than the fix: a check adjacent to the question reads exactly like an answer to it. The `volumeClean` field and tools/volclean.py exist so this cannot be claimed on the wrong evidence again.",
+      "extBuildFingerprint": "97fb3f546ea169b1bf7d95242eb3c8e89eef9dac",
+      "extDigest": "169303d7fe31aea44f909154775a0d99b8a5c524",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 632815616,
+      "imageSha256": "0785871ab82aa3dd620d5142db0edf09f7706558c9985292bcfa64175cc31be9",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260806-3",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 127,
+      "residentLifecycle": "active",
+      "shutdown": "guest-clean",
+      "sourceManifest": "72f0accfe49f6931a784b91a7b32919b2a27bf5c",
+      "volumeClean": "dirty"
+    },
+    {
+      "at": "2026-08-06T22:58:03-0400",
+      "branch": "claude/018-image-discipline",
+      "certifies": "provenance only \u2014 no guest was asked what resident is in this image, so this is NOT a bake and does not satisfy the commit gate.",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 623443968,
+      "imageCtime": "2026-08-06T01:58:11-0400",
+      "imageMtime": "2026-08-03T20:20:50-0400",
+      "imageSha256": "c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70",
+      "kind": "image-note",
+      "reason": "Not baked: restored BY HAND at 01:58 on 2026-08-06 after three bakes that night installed images whose HFS volume was still marked mounted. These bytes are the 3 August image docs/open-issues.md calls 'the corrected local oracle' (sha c466baa9\u2026, volclean-verified, 'once again the installed oracle') \u2014 so its resident PREDATES the six extension commits that landed on 6 August. A note, not a bake: nobody has asked a guest what is in it."
+    },
+    {
+      "at": "2026-08-07T13:50:42-0400",
+      "branch": "claude/019-integration-6",
+      "extDigest": "72c1b4dd3caabb666e7d44f2bb506bed1baa7086",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_content.c",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_act.c",
+        "ext/src/now_ext_core_logic.c",
+        "ext/src/now_ext_core_logic.h",
+        "ext/src/now_liveness.c"
+      ],
+      "reason": "Round-6 integration merge of claude/019-ext-rests-when-unused. The bake is OWED and scheduled in this same session's phase 5, after the guest prune frees the Mac (scripts/bake-ext-image --shared refuses while other guests run). Baking before the merge would have baked a pre-merge resident; the peek table's U11/U13 append collision was resolved here (P7 drag + P8 cursor keep their offsets, the rest-state trio re-sequenced to the tail) and the static asserts + peek_table native test pass against the merged header."
+    },
+    {
+      "at": "2026-08-07T15:57:55-0400",
+      "branch": "claude/019-cursor-follows-act",
+      "extDigest": "6ffd9d3c5777b3090697154d8f9f2ff3e7a27e00",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_act.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Baked and driven as a PRIVATE image (agent-stage/now-stage-cursor-follows-act.qcow2, sha256 e4dc794d9d61, ext fingerprint 1292d1c57887) - the mode the script documents for in-flight lane work. The shared oracle is deliberately untouched: other lanes are cloning it right now, the last bake wins, and replacing the base under them mid-arc is the exact collision --throwaway exists to remove. Bake --shared at the merge, as an announced act."
+    },
+    {
+      "at": "2026-08-07T16:16:54-0400",
+      "branch": "claude/019-drag-break-4",
+      "extDigest": "4393b610c1ad14697e7231c9ced3244ce7f06070",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_act.c",
+        "ext/src/now_ext_drag.c"
+      ],
+      "reason": "Unverified checkpoint banked against session loss, not a landing. The resident change (now_drag_begin_to's destination seed) has not been driven on any guest yet; baking the shared oracle from source nothing has run would install a resident whose only evidence is that it compiles. This lane stages into its own throwaway clone first and bakes before it asks to land."
+    },
+    {
+      "at": "2026-08-07T16:26:42-0400",
+      "branch": "claude/019-drag-break-4",
+      "extDigest": "8cf3e0e258a189c8681cad9b880de4a7751355ce",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_act.c"
+      ],
+      "reason": "Still not driven on a guest. This lane stages into its own throwaway clone and bakes before it asks to land; baking the shared oracle from source nothing has run would install a resident whose only evidence is that it compiles."
+    },
+    {
+      "at": "2026-08-07T17:05:17-0400",
+      "branch": "claude/019-integration-8",
+      "extDigest": "8c3642ac01d45a77b03ae7b4868e8e3b08d9c068",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_act.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Round 8 integration merge of claude/019-cursor-follows-act on top of claude/019-drag-break-4. Both lanes changed the resident (now_ext_act.c shared between them, plus now_ext_drag.c and now_ext_cursor.c) and both deferred their own bake with a typed reason; this merge is the first tree that holds them together, so the source it would bake from is one neither lane has driven. The --shared bake is RESERVED FOR MICHELLE and named as such in docs/plans/2026-08-07-023-recovery.md: bake-ext-image --shared refuses while any QEMU runs, the guard counts hers, and the last bake wins over every other lane still cloning the oracle. Separately the installed oracle already matches NO receipt on this branch (on-disk c466baa9, the hand-restored 3-August image) and its volumeClean is 'dirty', so nothing cloned from it is attributable today regardless of this merge. Integration does not have the standing to resolve either. peek_table.h is comment-only on this merge and peek_table_test passes; no struct size moved."
+    },
+    {
+      "at": "2026-08-08T03:50:23-0400",
+      "branch": "claude/026-logging-build",
+      "extDigest": "096ad3a3c2882fb1447aac797fbe5207f700d045",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c"
+      ],
+      "reason": "Metal debug build for Michelle, mid-session at 03:50. The fix is the crash she is reproducing on the PowerBook right now and she needs the INIT to test it; a bake refuses while her VM and host app are running, and the shared oracle is hers to replace. Bake before this lands."
+    },
+    {
+      "at": "2026-08-08T04:06:32-0400",
+      "branch": "claude/026-logging-build",
+      "extDigest": "6497f54aba63460faf8e83d25965c650e0e50299",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c"
+      ],
+      "reason": "Second iteration of the metal crash fix, handed to Michelle mid-session at 04:00. Bake before landing."
+    },
+    {
+      "at": "2026-08-08T04:17:07-0400",
+      "branch": "claude/026-logging-build",
+      "extDigest": "5893f4f6a8e44bab7e3c3461da726fe59c46f2c5",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c"
+      ],
+      "reason": "Third iteration of the metal crash fix, 04:10. Bake before landing."
+    },
+    {
+      "at": "2026-08-08T21:43:19-0400",
+      "branch": "codex/mirror-session-teardown",
+      "extDigest": "ef1d5fdcdd49346e45755c3425cf76e9dd7d1ce0",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_act.c"
+      ],
+      "reason": "checkpoint only; host gate and PowerBook metal verification remain before landing"
+    },
+    {
+      "at": "2026-08-08T23:34:28-0400",
+      "branch": "codex/mirror-session-teardown",
+      "extDigest": "a55431e159895a3aca000066ed0f134753c58482",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c",
+        "ext/src/now_content_logic.c",
+        "ext/src/now_content_qdext.S"
+      ],
+      "reason": "Metal safety fix requires a clean-boot PB1400c run before promoting this resident into the shared emulator oracle"
+    },
+    {
+      "at": "2026-08-09T04:17:11-0400",
+      "branch": "codex/mirror-session-teardown",
+      "extDigest": "ea618145ab361de575dea54f83c7a80e066c4354",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c"
+      ],
+      "reason": "Archive-only source comment; final resident bake follows the full green gate and MCP reconciliation"
+    },
+    {
+      "at": "2026-08-09T04:31:59-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/mirror-session-teardown",
+      "commit": "573dc086cf921564037e9f280a0a2d21f3bdcd09",
+      "extBuildFingerprint": "18203af3657f83c877159cb1eea250d5b29f3be9",
+      "extDigest": "ea618145ab361de575dea54f83c7a80e066c4354",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 627310592,
+      "imageName": "codex-mirror-session-teardown",
+      "imageSha256": "46da2706697cb7be2a7fe987fd9c87bcff515788dd4eb1491c167fbae5ef584a",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260809",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "f0ce0fa3ea3351a41622f05a0df234a58b059048",
+      "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-09T14:25:48-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/mirror-session-teardown",
+      "commit": "858cfb515721cf0b9cfd3d383541dc7950df50fc",
+      "extBuildFingerprint": "18203af3657f83c877159cb1eea250d5b29f3be9",
+      "extDigest": "ea618145ab361de575dea54f83c7a80e066c4354",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 630587392,
+      "imageName": "codex-mirror-session-teardown",
+      "imageSha256": "f48398203008b0ae220d9109e662054106e98864de860c1dc2a9fbfbc8a4c345",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260809-2",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "f0ce0fa3ea3351a41622f05a0df234a58b059048",
+      "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-09T18:53:41-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/mirror-latency-state-plan",
+      "commit": "a1df31e3b6eda7f483c7df9a4dd3db4869263ade",
+      "extBuildFingerprint": "18203af3657f83c877159cb1eea250d5b29f3be9",
+      "extDigest": "ea618145ab361de575dea54f83c7a80e066c4354",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 633798656,
+      "imageName": "codex-mirror-latency-state-plan",
+      "imageSha256": "b82a9100f71b1f294ecd0640bf142009103495c8489ed6dd90cc71fd4c71455b",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260809-4",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "f0ce0fa3ea3351a41622f05a0df234a58b059048",
+      "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-09T19:19:14-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/mirror-latency-state-plan",
+      "commit": "5cab376f3233fed788bfb354199ce315d2181e59",
+      "extBuildFingerprint": "085c4ebf8457083acf4eb7da9c14ab31b40fc615",
+      "extDigest": "d55fc4074c6b4dfb6dc2a9f48835c57193f99569",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 637075456,
+      "imageName": "codex-mirror-latency-state-plan",
+      "imageSha256": "58e2750dce34f879eff4dcc84aa592afd8d2b701604b54e1ee46fee197dd6674",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260809-5",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "28ef6c07ee6d0b2978378551367b1393f406ed6f",
+      "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-10T03:20:20-0400",
+      "branch": "codex/host-owned-updater",
+      "extDigest": "c727a4562b75bc4532f6b9c05dacd168f5afff49",
+      "kind": "deferral",
+      "paths": [
+        "contract/resident_version.h",
+        "ext/CMakeLists.txt"
+      ],
+      "reason": "Shared oracle bake blocked on 2026-08-10 by active QEMU guests PIDs 75829 and 77338; do not force while other sessions may be measuring. Bake resident 1.2 when the machine is free before landing on main."
+    },
+    {
+      "at": "2026-08-10T04:48:27-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/host-owned-updater",
+      "commit": "85c938368543be2d7f46c25066599f24d2732bea",
+      "extBuildFingerprint": "085c4ebf8457083acf4eb7da9c14ab31b40fc615",
+      "extDigest": "c727a4562b75bc4532f6b9c05dacd168f5afff49",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 640483328,
+      "imageName": "codex-host-owned-updater",
+      "imageSha256": "e760bb6cc964dfc00c628df5ef7ca4747e699870c380c4053a01bf65a8a9e56e",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260810",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "28ef6c07ee6d0b2978378551367b1393f406ed6f",
+      "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-10T13:52:29-0400",
+      "branch": "codex/host-owned-updater",
+      "extDigest": "4c260599419ba56b11bd42abc73d4cf637091b78",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "contract/resident_version.h",
+        "ext/CMakeLists.txt",
+        "ext/cmake/build_identity.cmake"
+      ],
+      "reason": "Two foreign VMs are active; shared bake is deferred until the machine is free before main eligibility."
+    },
+    {
+      "at": "2026-08-10T14:50:00-0400",
+      "branch": "codex/host-owned-updater",
+      "extDigest": "5f724a7550217154d268a25c7323cb02ce415549",
+      "kind": "deferral",
+      "paths": [
+        "ext/cmake/build_identity.cmake"
+      ],
+      "reason": "Checkpoint the NWid identity encoding fix before the required shared bake."
+    },
+    {
+      "at": "2026-08-10T14:52:32-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/host-owned-updater",
+      "commit": "8fe5baff2a4fdfe727b4e68cc3c5b86bf08a450b",
+      "extBuildFingerprint": "c725b32b77634fb8d1702b0a54f17fc2ce70e48f",
+      "extDigest": "5f724a7550217154d268a25c7323cb02ce415549",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 643956736,
+      "imageName": "codex-host-owned-updater",
+      "imageSha256": "ccbff00f4ed1c18eed879b94798df191ea8dae15a83f2ffb0e465cd53126add4",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260810-2",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "fae73d4d5c7150b7105e0f0350446cf5111ee248",
+      "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-10T16:46:07-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/mcp-release-bake",
+      "commit": "0b37a68ff81e8776f3da40603f1fc5cfd4706e95",
+      "extBuildFingerprint": "c725b32b77634fb8d1702b0a54f17fc2ce70e48f",
+      "extDigest": "5f724a7550217154d268a25c7323cb02ce415549",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 647364608,
+      "imageName": "codex-mcp-release-bake",
+      "imageSha256": "9b99e9582b879f03fddbd543311bbe0b4c61a6242b7799dbfcaef5bb4fc824f8",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260810-3",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "fae73d4d5c7150b7105e0f0350446cf5111ee248",
+      "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-10T17:09:49-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "codex/web-proxy",
+      "commit": "62c080c4d8d570f69e5d4acf59cea5fc2285b8ed",
+      "extBuildFingerprint": "c725b32b77634fb8d1702b0a54f17fc2ce70e48f",
+      "extDigest": "5f724a7550217154d268a25c7323cb02ce415549",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 650838016,
+      "imageName": "codex-web-proxy",
+      "imageSha256": "72aeaaf5fc0cacb4bf0cb69abb3439abf99fe31e1a4c51472b603e49e0c15714",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260810-4",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 511,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "fae73d4d5c7150b7105e0f0350446cf5111ee248",
+      "volumeClean": "clean"
+    },
+    {
+      "at": "2026-08-10T19:37:28-0400",
+      "branch": "codex/public-reconditioning",
+      "extDigest": "6c9ba90e5d58b861b3c6fe0e81a9f7582ddb2a63",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_semantic_logic.c"
+      ],
+      "reason": "Reconditioning checkpoint: analyzer-driven resident null hardening is cross-built and native-tested; private cold-boot bake remains required before landing."
+    },
+    {
+      "at": "2026-08-10T20:04:11-0400",
+      "branch": "codex/public-reconditioning",
+      "extDigest": "3a8083b0582152e1bdfca29e6b3d880eebd1b7da",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_act.c"
+      ],
+      "reason": "Public reconditioning checkpoint: ext change is comment-only path sanitization; C target builds, native sanitizer tests, docs gate, focused host tests, and lane-port gates pass. Shared bake remains a pre-landing requirement."
+    },
+    {
+      "at": "2026-08-10T21:11:43-0400",
+      "branch": "codex/public-reconditioning",
+      "extDigest": "a930c9a29ff37b4569d1035e9efd716911e25af1",
+      "kind": "deferral",
+      "paths": [
+        "ext/CMakeLists.txt",
+        "ext/src/now_content.c",
+        "ext/src/now_event.c",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_drag.c",
+        "ext/src/now_ext_install.c",
+        "ext/src/now_ext_install.h",
+        "ext/src/now_liveness.c"
+      ],
+      "reason": "W1 checkpoint: transactional construction cross-builds and its injected rollback guard passes; a private stage bake and cold boot are the remaining platform proof before closure."
+    },
+    {
+      "at": "2026-08-10T21:16:03-0400",
+      "branch": "codex/public-reconditioning",
+      "extDigest": "8babca830a3db05851782a4b3e1a53f48fa60e33",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_content.c",
+        "ext/src/now_liveness.c"
+      ],
+      "reason": "W1 evidence checkpoint also corrects two resident comments; rebuild/private cold bake follows this exact source revision before closure."
+    },
+    {
+      "at": "2026-08-10T22:51:50-0400",
+      "branch": "codex/public-reconditioning",
+      "extDigest": "6536d69b7a060a0692936d30b16915c83f4218da",
+      "kind": "deferral",
+      "paths": [
+        "ext/CMakeLists.txt"
+      ],
+      "reason": "RC manifest plumbing was privately cold-baked and verified; shared bake is deferred until release-candidate landing."
+    }
+  ]
+}

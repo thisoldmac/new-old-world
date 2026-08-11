@@ -1,0 +1,105 @@
+#!/bin/sh
+# Two refusals, both of which AGENTS.md states as rules and neither of
+# which anything in THIS repository enforced until now.
+#
+# Enable once per clone:  tools/setup-hooks
+#   (sets core.hooksPath -> .githooks; it is a repo-local git config, so
+#    every worktree off this checkout inherits it and no agent has to be
+#    told about it in a brief.)
+#
+#   1. main-guardrail — no direct commit on `main`. The checkout is
+#      shared; work happens on a branch and lands by merge/ff.
+#      Deliberate main commit: TBT_ALLOW_MAIN=1 git commit ...
+#      (This file was named by AGENTS.md long before it existed here: the
+#      guard lived only in the PARENT TimBotTu checkout, so a `now`
+#      worktree had documentation for enforcement it did not have.)
+#
+#   2. ext-bake-gate — no commit that changes the resident until the
+#      stage image contains it, cleanly shut down. tools/ext-bake-gate
+#      carries the reasoning and the failure text.
+#      Deliberate deferral: TBT_DEFER_EXT_BAKE=1 with a written reason.
+#
+#   3. derived-doc-gate — NOT ARMED. See the block at the foot of this
+#      file and .githooks/pre-merge-commit.
+#
+#   3. product-version-gate — checked copies agree on every commit. Branch
+#      scratch builds may retain the release version; the reference-
+#      transaction hook requires a strict advance when product code lands on
+#      main.
+#
+# Merges are NOT exempt from pre-commit, and the previous version of this
+# comment said they were. Git runs pre-merge-commit for a merge that
+# auto-resolves; a CONFLICTED merge, resolved by hand, is committed by
+# `git commit` and runs THIS hook with MERGE_HEAD present. That is the
+# path every keep-both defect in this repository took, so anything that
+# refuses a merge has to sit in both hooks.
+
+if [ -z "${TBT_ALLOW_MAIN:-}" ]; then
+    branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
+    if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+        echo "" >&2
+        echo "[main-guardrail] refusing to commit directly on '$branch'." >&2
+        echo "  Branch first, then commit there and merge/ff into main:" >&2
+        echo "    git checkout -b claude/<slug>         # off the parent branch" >&2
+        echo "  Deliberate main commit: TBT_ALLOW_MAIN=1 git commit ..." >&2
+        echo "" >&2
+        exit 1
+    fi
+fi
+
+root=$(git rev-parse --show-toplevel)
+if [ -x "$root/tools/ext-bake-gate" ]; then
+    "$root/tools/ext-bake-gate" check || exit 1
+fi
+if [ -x "$root/tools/product-version-gate" ]; then
+    "$root/tools/product-version-gate" check || exit 1
+fi
+
+# Public documentation is a product surface. Run its complete gate when a
+# commit changes the site, the wire authority, or either live module registry.
+# This includes ordinary commits and conflicted merges completed by `git
+# commit`; the auto-merge path is paired in pre-merge-commit below.
+docs_changed=$(git diff --cached --name-only --diff-filter=ACMR | \
+    grep -E '^(docs/|mkdocs\.yml$|README\.md$|CONTRIBUTING\.md$|AGENTS\.md$|contract/asyncapi\.yaml$|now-host/Sources/Host/ModuleRegistry\.swift$|now-guest-ppc/src/workshop/workshop_module\.h$|now-guest-68k/src/commands/commands68\.c$|scripts/docs-|scripts/test-docs$|tools/docs-)' || true)
+if [ -n "$docs_changed" ]; then
+    "$root/tools/docs-commit-gate" || exit 1
+fi
+
+# ---------------------------------------------------------------------
+# derived-doc-gate — BUILT, TESTED, AND DELIBERATELY NOT ARMED.
+#
+# It refuses a merge commit that touches a derived document whose
+# derivation was not re-run (tools/derived-doc-gate carries the reasoning;
+# tools/derived-doc-gate-selftest is the mutation evidence). It is inert
+# until NOW_DERIVED_DOC_GATE=1 is in the environment.
+#
+# WHY IT SHIPS UNARMED. Arming a gate into a live fleet is a change to
+# every branch at once, made by somebody who is not on any of them. On the
+# night this was written there were forty-odd live lane branches, one of
+# them still running, and `.githooks` did not exist on `main` at all — so
+# nothing here was armed for anyone and arming it would have been a
+# unilateral change to work in flight.
+#
+# HOW TO ARM IT, when the fleet is quiet and .githooks is on main:
+#   1. tools/gate-impact-sweep --all-matching 'claude/'  with
+#      NOW_GATE_UNDER_TEST=tools/derived-doc-gate — no branch may be
+#      STRANDED. (Run 2026-08-07; the result is in the commit that added
+#      this block.)
+#   2. Delete the NOW_DERIVED_DOC_GATE test on the next two lines, and the
+#      matching one in .githooks/pre-merge-commit. That is the whole
+#      arming step; nothing else changes.
+#   3. tools/setup-hooks in each clone, as before.
+if [ -n "${NOW_DERIVED_DOC_GATE:-}" ] && [ -x "$root/tools/derived-doc-gate" ]; then
+    "$root/tools/derived-doc-gate" check || exit 1
+fi
+
+# merge-census-gate — the pre-merge-commit half of the pair, here for the
+# CONFLICTED merge: git commits that one through `git commit`, so this hook
+# runs with MERGE_HEAD present and the other never fires. `pending` is a
+# no-op when there is no MERGE_HEAD, so an ordinary commit pays nothing.
+# Unarmed for the same reason as the block above; see .githooks/pre-merge-commit.
+if [ -n "${NOW_MERGE_CENSUS_GATE:-}" ] && [ -x "$root/tools/merge-census-gate" ]; then
+    "$root/tools/merge-census-gate" pending || exit 1
+fi
+
+exit 0

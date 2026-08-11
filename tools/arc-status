@@ -1,0 +1,459 @@
+#!/usr/bin/env bash
+# Where the arc actually stands — DERIVED, never remembered.
+#
+# This exists because a coordinating session that has fanned out a dozen
+# lanes cannot hold their state in its head, and the failure mode is not
+# forgetting a lane — it is CONFIDENTLY MISREPORTING one. On 2026-08-07
+# the coordinator told Michelle a slice was dispatched when only its task
+# had been created, and separately reported an integration branch as
+# having merged nothing when it had merged nothing YET. Both were honest
+# and both were wrong, and both were one command away from being right.
+#
+# So: run this at every merge, before every handoff, and any time you are
+# about to tell a person what is done. Its output is evidence; your
+# recollection is not.
+#
+# Usage:  tools/arc-status [integration-branch]     (default: the newest
+#                                                    claude/*integration*)
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+INT="${1:-}"
+if [ -z "$INT" ]; then
+    INT="$(git for-each-ref --sort=-committerdate --format='%(refname:short)' \
+             'refs/heads/claude/*integration*' | head -1)"
+fi
+[ -n "$INT" ] || { echo "no integration branch found; pass one" >&2; exit 64; }
+
+# The lane set, enumerated ONCE. Five loops used to each write the same
+# glob, which is five places for a naming convention to change and four
+# of them to be missed.
+LANE_GLOB='claude/0[12][0-9]-*'
+lanes=$(git branch --list "$LANE_GLOB" --format='%(refname:short)')
+
+# SELF-CHECK: A STALE COPY OF THIS SCRIPT MUST REFUSE, NOT ANSWER.
+#
+# This tool is not on `main` and not on most branches, so the way a lane
+# gets it is by fetching it out of some pinned branch that happens to
+# carry it — and the standing arc-trigger check has for weeks named
+# `claude/019-integration-5`, whose copy globs `claude/01[0-9]-*` in five
+# separate places. Run that copy today and it enumerates the 019 lanes,
+# omits every 02x lane in silence, and prints a table headed "work that
+# exists" that is a true sentence about a smaller set than the reader
+# thinks. Nothing in the output says so. Measured 2026-08-08: of the 49
+# branches carrying this file, 40 carry the narrow glob.
+#
+# That is this project's most-repeated defect shape — an instrument whose
+# NORMAL mode of operation is the one condition under which the defect
+# cannot appear. A widened glob sees a narrow one's blind spot; a narrow
+# glob cannot see its own. So correcting the pinned branch name in the
+# docs is necessary and is not sufficient: the next arc rolls to 03x and
+# every copy pinned today goes quietly wrong again, including this one.
+#
+# The fix is a guard that makes staleness a REFUSAL. The arc number is
+# DERIVED — from the branch names present, by a scan that deliberately
+# does not use $LANE_GLOB, because a check written in terms of the thing
+# under test cannot fail. If the newest arc in the repository is not one
+# this glob can match, we do not know what we are looking at and we say
+# so instead of printing a confident partial answer.
+#
+# Scoped to the NEWEST arc on purpose. A glob that excludes arcs 001-011
+# is a scope decision; a glob that has fallen behind the arc actually
+# running is a defect. Older gaps are reported and do not refuse.
+arc_nums () {   # stdin: branch names -> the 3-digit arc numbers in them
+    sed -n 's,^claude/\([0-9][0-9][0-9]\)-.*,\1,p' | sort -u
+}
+all_arcs=$(git branch --format='%(refname:short)' | arc_nums)
+seen_arcs=$(printf '%s\n' $lanes | arc_nums)
+newest_arc=$(printf '%s\n' "$all_arcs" | sort -n | tail -1)
+if [ -n "$newest_arc" ] && ! printf '%s\n' "$seen_arcs" | grep -qx "$newest_arc"; then
+    cat >&2 <<REFUSE
+=== REFUSING TO RUN — this copy of arc-status is STALE
+
+    Its lane glob is   $LANE_GLOB
+    The newest arc is  $newest_arc   (derived from the branch names present)
+
+    That glob cannot match a single claude/$newest_arc-* branch, so every
+    table below would omit the arc that is actually running and would
+    say nothing about having done so. A partial answer from this tool is
+    worse than no answer: it is quoted to people as the derived truth.
+
+    You are almost certainly running a copy fetched from a branch pinned
+    in a brief. Fetch one that carries the widened glob instead:
+
+        git show <a branch with claude/$newest_arc-* work>:tools/arc-status
+
+    The widening commit is ed5da741 ("fix(arc-status): the arc rolled
+    past 019 and the trigger did not"); any branch with that as an
+    ancestor is current. Do not edit the glob by hand in a fetched copy
+    — fix it where it lives, or the next lane repeats this.
+REFUSE
+    exit 65
+fi
+missed=$(printf '%s\n' "$all_arcs" | grep -vxF -f <(printf '%s\n' "$seen_arcs") || true)
+[ -n "$missed" ] && \
+    echo "note: lane glob $LANE_GLOB does not match arc(s): $(echo $missed) (older arcs; not refusing)"
+
+# THE LANE THIS ONE SHARES THE MOST HISTORY WITH, and how much — printed
+# as "N commits (M shared with X)" so that nobody adds the column up.
+#
+# `merge-base $b $INT` is the fork point from the INTEGRATION branch, so
+# a lane cut from ANOTHER LANE counts that lane's commits as its own: on
+# 2026-08-07 a branch with one commit of its own read as seventeen, and
+# the arc's unlanded total counted those seventeen twice.
+#
+# Deliberately NOT expressed as "M of these are somebody else's". That
+# needs a direction, and there is no reliable way to derive one: a parent
+# lane whose tip has moved past the fork point is no longer an ancestor
+# of its own child, so "ancestor" answers backwards half the time and
+# "every other lane" cancels a parent's work against its children and
+# attributes it to nobody. Both were tried here. "Shared with" is
+# symmetric, is true from either end, and is the fact a person deciding
+# what to merge actually needs.
+shared_with () {
+    best=0; who=""
+    for o in $lanes; do
+        [ "$o" = "$1" ] && continue
+        mb=$(git merge-base "$o" "$1" 2>/dev/null) || continue
+        n=$(git rev-list --count "$mb" --not "$INT" 2>/dev/null || echo 0)
+        if [ "${n:-0}" -gt "$best" ]; then best=$n; who=$o; fi
+    done
+    [ "$best" -gt 0 ] && printf '%s %s' "$best" "${who#claude/}"
+    true
+}
+
+echo "=== integration branch: $INT"
+echo "    head: $(git log -1 --format='%h %s' "$INT")"
+echo
+
+echo "=== LANDED (merged into $INT)"
+landed=0
+for b in $lanes; do
+    [ "$b" = "$INT" ] && continue
+    if git merge-base --is-ancestor "$b" "$INT" 2>/dev/null; then
+        printf '    %s\n' "${b#claude/}"
+        landed=$((landed + 1))
+    fi
+done
+[ "$landed" -gt 0 ] || echo "    (none)"
+echo
+
+# EVERY unlanded lane, and the second column is the one that was lying.
+#
+# `merge-base $b $INT` is the fork point from the INTEGRATION branch, so
+# a lane cut from ANOTHER LANE counts that lane's commits as its own — a
+# branch with nothing on it at all reads as twelve commits of work. The
+# lane's OWN count subtracts every other lane, which is the number a
+# person deciding what to merge actually wants; both are printed,
+# because the first is still what a merge would bring across.
+echo "=== NOT LANDED — work that exists and is not in $INT"
+echo "    (branches matching $LANE_GLOB; see the last line for the rest)"
+notlanded=0
+for b in $lanes; do
+    [ "$b" = "$INT" ] && continue
+    git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+    n=$(git rev-list --count "$(git merge-base "$b" "$INT")..$b" 2>/dev/null || echo '?')
+    count="$n commits"
+    sh=$(shared_with "$b")
+    [ -n "$sh" ] && count="$n commits (${sh% *} shared with ${sh#* })"
+    # A dirty worktree means an agent is probably still typing into it.
+    state="idle"
+    wt=$(git worktree list --porcelain | awk -v br="refs/heads/$b" '
+        /^worktree /{w=$2} $0=="branch "br{print w}')
+    if [ -n "$wt" ] && [ -d "$wt" ]; then
+        d=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        [ "$d" != "0" ] && state="IN FLIGHT ($d files dirty)"
+    fi
+    printf '    %-30s %-48s %s\n' "${b#claude/}" "$count" "$state"
+    notlanded=$((notlanded + 1))
+done
+[ "$notlanded" -gt 0 ] || echo "    (none — everything is in)"
+
+# THE GLOB'S SCOPE, SAID OUT LOUD. Every table above enumerates one
+# naming convention, and a table that silently omits `codex/`, `thread/`,
+# `fork/` and every `claude/<slug>` branch while its heading says "work
+# that exists" is the same defect as measuring the corpus in the wrong
+# tree: a true sentence about a smaller set than the reader thinks.
+outside=0
+for b in $(git branch --format='%(refname:short)'); do
+    [ "$b" = "$INT" ] && continue
+    case "$b" in $LANE_GLOB|main) continue ;; esac
+    git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+    outside=$((outside + 1))
+done
+[ "$outside" -gt 0 ] && \
+    echo "    (plus $outside unlanded branch(es) outside that glob, not counted anywhere above)"
+echo
+
+echo "=== CONFLICTS each unlanded branch would hit against $INT"
+for b in $lanes; do
+    [ "$b" = "$INT" ] && continue
+    git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+    c=$(git merge-tree --write-tree --name-only "$INT" "$b" 2>/dev/null \
+          | grep -c '^CONFLICT' || true)
+    [ "${c:-0}" -gt 0 ] && printf '    %-30s %s conflicts\n' "${b#claude/}" "$c"
+done
+echo
+
+echo "=== MAIN"
+ahead=$(git rev-list --count "$INT"..main 2>/dev/null || echo '?')
+behind=$(git rev-list --count main.."$INT" 2>/dev/null || echo '?')
+echo "    main is $ahead commits $INT does not have"
+echo "    $INT is $behind commits ahead of main"
+mc=$(git merge-tree --write-tree --name-only main "$INT" 2>/dev/null | grep -c '^CONFLICT' || true)
+echo "    merging main would hit ${mc:-0} conflicts"
+echo
+
+echo "=== MACHINE"
+# pgrep exits 1 when nothing matches, and under `set -e` that killed this
+# script exactly when the machine was idle — which is when you run it to
+# find out what to do next. The tool that reports the state failed in one
+# state. `|| true` on the pipeline, not on the count.
+# BOTH architectures. This counted `qemu-system-ppc` only, so a bench
+# running 68K guests reported an idle machine — the same shape as the
+# corpus block below: a true count of a smaller set than the label says.
+vms=$( (pgrep -f 'qemu-system-(ppc|m68k)' || true) 2>/dev/null | wc -l | tr -d ' ')
+hosts=$( (pgrep -f 'New Old World' || true) 2>/dev/null | wc -l | tr -d ' ')
+echo "    $vms guest VM(s), $hosts host app(s) running"
+# `du -sh` on multi-gigabyte run dirs, to print a COUNT — the awk summed
+# strings like "1.2G" into a variable nothing read. Count the dirs.
+runs=$( (ls -d /private/tmp/nowvm-*/ 2>/dev/null || true) | wc -l | tr -d ' ')
+[ "${runs:-0}" -gt 0 ] && echo "    $runs run dir(s)"
+true
+echo
+
+conf="$root/docs/arc-triggers.conf"
+if [ -f "$conf" ]; then
+    cfg () { grep -E "^$1=" "$conf" | tail -1 | cut -d= -f2-; }
+    cfgall () { grep -E "^$1=" "$conf" | cut -d= -f2-; }
+
+    idle=0; maxconf=0; ext_touched=0; found_touched=""
+    # Every commit on any lane and not in $INT, counted ONCE.
+    unl_commits=$(git rev-list --count $lanes --not "$INT" 2>/dev/null \
+                    || echo 0)
+    for b in $lanes; do
+        [ "$b" = "$INT" ] && continue
+        git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+        mb=$(git merge-base "$b" "$INT")
+        # NOT summed per lane. Lanes cut from lanes share history, so
+        # adding the columns counted the same commits several times and
+        # the MERGE_UNLANDED_COMMITS threshold fired early on work that
+        # did not exist. The union is computed once, below.
+        wt=$(git worktree list --porcelain | awk -v br="refs/heads/$b" '
+            /^worktree /{w=$2} $0=="branch "br{print w}')
+        dirty=0
+        [ -n "$wt" ] && [ -d "$wt" ] && \
+            dirty=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        [ "${dirty:-0}" = "0" ] && idle=$((idle + 1))
+        c=$(git merge-tree --write-tree --name-only "$INT" "$b" 2>/dev/null \
+              | grep -c '^CONFLICT' || true)
+        [ "${c:-0}" -gt "$maxconf" ] && maxconf=$c
+        files=$(git diff --name-only "$mb..$b" 2>/dev/null || true)
+        while IFS= read -r p; do
+            [ -z "$p" ] && continue
+            if printf '%s\n' "$files" | grep -q "^$p"; then
+                found_touched="$found_touched ${b#claude/}:$p"
+                case "$p" in ext/|contract/peek_table.h) ext_touched=1;; esac
+            fi
+        done <<EOF
+$(cfgall FOUNDATION)
+EOF
+    done
+
+    echo "=== VERDICT — computed from docs/arc-triggers.conf, not judgement"
+    fired=0
+    t=$(cfg MERGE_IDLE_LANES);      [ "$idle" -ge "${t:-99}" ] && \
+        { echo "    MERGE: $idle idle unlanded lanes (>= $t)"; fired=1; }
+    t=$(cfg MERGE_UNLANDED_COMMITS);[ "$unl_commits" -ge "${t:-9999}" ] && \
+        { echo "    MERGE: $unl_commits unlanded commits (>= $t)"; fired=1; }
+    t=$(cfg MERGE_LANE_CONFLICTS);  [ "$maxconf" -ge "${t:-99}" ] && \
+        { echo "    MERGE: a lane would hit $maxconf conflicts (>= $t)"; fired=1; }
+    [ "$(cfg MERGE_ON_MAIN_AHEAD)" = "1" ] && [ "${ahead:-0}" != "0" ] && \
+        { echo "    MERGE: main has $ahead commits we do not"; fired=1; }
+    [ "$(cfg MERGE_ON_EXT_TOUCHED)" = "1" ] && [ "$ext_touched" = "1" ] && \
+        { echo "    MERGE: an unlanded lane touched ext/ or peek_table.h — a bake is owed"; fired=1; }
+    if [ -n "$found_touched" ]; then
+        echo "    MERGE: unlanded lanes touch foundation paths:"
+        for f in $found_touched; do echo "           $f"; done
+        fired=1
+    fi
+    [ "$fired" = "0" ] && echo "    merge: no trigger fired"
+
+    missing=""
+    for g in $(cfgall SWEEP_GATE); do
+        git rev-parse --verify "$g" >/dev/null 2>&1 || { missing="$missing $g(absent)"; continue; }
+        git merge-base --is-ancestor "$g" "$INT" 2>/dev/null || missing="$missing ${g#claude/}"
+    done
+    if [ -z "$missing" ]; then
+        echo "    SWEEP: every gate branch is landed — sweep after one merge-test-drive round"
+    else
+        echo "    sweep: BLOCKED on$missing"
+    fi
+    echo
+fi
+
+echo "=== KNOWLEDGE — work that is not written down did not happen"
+undoc=0
+for b in $lanes; do
+    [ "$b" = "$INT" ] && continue
+    git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+    mb=$(git merge-base "$b" "$INT")
+    d=$(git diff --name-only "$mb..$b" -- docs/ 2>/dev/null | wc -l | tr -d ' ')
+    c=$(git diff --name-only "$mb..$b" 2>/dev/null | grep -cE '\.(swift|c|h|py)$' || true)
+    if [ "${c:-0}" -gt 0 ] && [ "${d:-0}" -eq 0 ]; then
+        printf '    *** %-26s %s code files, NO docs ***\n' "${b#claude/}" "$c"
+        undoc=$((undoc + 1))
+    fi
+done
+[ "$undoc" -eq 0 ] && echo "    every unlanded lane touched docs/"
+
+# The corpus outlives this repository; in-repo docs do not. A finding that
+# is only in docs/ is a finding the next project pays for again.
+#
+# THIS BLOCK USED TO MEASURE THE WRONG TREE. It ran `ls -t` over the
+# corpus WORKING DIRECTORY, which is the parent checkout, which sits on
+# `main` — so on 2026-08-07 it reported "nothing graduated to the corpus
+# in 21h" while 26 findings sat on `claude/018-findings` across 7
+# commits, written and committed and simply not landed. A real worry with
+# a wrong shape, and the same class of defect as an instrument that
+# cannot see the thing it was built to photograph.
+#
+# The warning stays, because the worry is legitimate and this arc has
+# genuinely let findings sit unlanded. What changed is what it looks at:
+# the commits on EVERY ref, not the files one checkout happens to be
+# showing. And the unlanded case gets its own line, because "written" and
+# "landed" are different states with different repairs, and a tool that
+# collapses them will keep telling somebody to write what they have
+# already written.
+corpus="${TBT_CORPUS:-$(dirname "$root")/data/findings}"
+croot=$(git -C "$corpus" rev-parse --show-toplevel 2>/dev/null || true)
+if [ -d "$corpus" ] && [ -n "$croot" ]; then
+    rel=${corpus#"$croot"/}
+    # The corpus repo's trunk, asked rather than assumed: this script
+    # runs against the parent repository, not this one, and a hard-coded
+    # `main` is exactly the kind of remembered fact it exists to replace.
+    trunk=main
+    git -C "$croot" rev-parse --verify -q main >/dev/null 2>&1 || \
+        trunk=$(git -C "$croot" symbolic-ref --short HEAD 2>/dev/null \
+                || echo HEAD)
+
+    # WRITTEN — the newest findings commit anywhere in that repository.
+    newest=$(git -C "$croot" log --all --date-order -1 \
+               --format='%ct|%h|%s' -- "$rel" 2>/dev/null || true)
+    if [ -n "$newest" ]; then
+        ts=${newest%%|*}
+        rest=${newest#*|}
+        age=$(( ( $(date +%s) - ts ) / 3600 ))
+        echo "    newest corpus commit (any branch), ${age}h ago:"
+        echo "      ${rest%%|*} ${rest#*|}"
+        [ "$age" -gt 12 ] && \
+            echo "    *** nothing WRITTEN to the corpus in ${age}h — durable lessons are evaporating ***"
+    else
+        echo "    corpus: no findings commit on any branch"
+    fi
+
+    # LANDED — findings that exist on a branch and not on the trunk. The
+    # counts are printed rather than summarised because a remembered
+    # total is how this goes wrong: the 2026-08-07 handoff said "235
+    # findings", which is neither the 243 on the branch nor the 217 on
+    # main, and no reader could tell which it meant to be.
+    #
+    # WHAT COUNTS AS A FINDING: `$rel/*.md`, minus `README.md`, which is
+    # the directory's own preamble and not a lesson. The count is stated
+    # in the line itself because `tools/data check` reports 273 where the
+    # `.md` file count is 274, and a reader comparing the two numbers
+    # deserves to be told which one this is rather than left to guess.
+    finding_paths () {   # ref -> its finding files, one path per line
+        git -C "$croot" ls-tree -r --name-only "$1" -- "$rel" 2>/dev/null \
+          | grep '\.md$' | grep -v '/README\.md$' || true
+    }
+    ontrunk=$(finding_paths "$trunk" | wc -l | tr -d ' ')
+    echo "    ${ontrunk:-0} finding(s) on $trunk (*.md, README excluded)"
+
+    # DISTINCT FILES ABSENT FROM THE TRUNK — never a sum of per-branch
+    # additions.
+    #
+    # This loop used to run `--diff-filter=A $trunk...$cb` per branch and
+    # add the answers up, which is wrong twice over. A finding carried on
+    # eight branches was counted eight times; and because the three-dot
+    # diff measures against each branch's own merge base, a finding that
+    # had ALREADY LANDED still read as an addition on every branch that
+    # ever held it. On 2026-08-07 that combination survived a landing
+    # untouched: 57 findings went onto `main`, `main` moved 216 -> 273,
+    # this line went on saying "87 across 35" and went on naming the very
+    # branch whose 26 had just landed. The true remainder was 15.
+    #
+    # The commits half of this script learned the same lesson earlier
+    # (see `shared_with`) and this half was left summing. So: take each
+    # branch's finding files as a SET, union them, subtract the trunk's
+    # set. Set arithmetic cannot double-count and cannot be fooled by a
+    # stale merge base.
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    finding_paths "$trunk" | sort -u > "$tmp/trunk"
+    i=0; : > "$tmp/index"; : > "$tmp/absent"
+    for cb in $(git -C "$croot" branch --format='%(refname:short)'); do
+        [ "$cb" = "$trunk" ] && continue
+        git -C "$croot" merge-base --is-ancestor "$cb" "$trunk" \
+            2>/dev/null && continue
+        i=$((i + 1))
+        finding_paths "$cb" | sort -u | comm -23 - "$tmp/trunk" > "$tmp/b$i"
+        [ -s "$tmp/b$i" ] || { rm -f "$tmp/b$i"; continue; }
+        printf '%s %s\n' "$i" "$cb" >> "$tmp/index"
+        cat "$tmp/b$i" >> "$tmp/absent"
+    done
+    unl_files=$(sort -u "$tmp/absent" | wc -l | tr -d ' ')
+    unl_branches=$(wc -l < "$tmp/index" | tr -d ' ')
+    if [ "$unl_branches" -gt 0 ]; then
+        echo "    *** $unl_files finding(s) written and NOT on $trunk, across $unl_branches branch(es) ***"
+        # The per-branch column is UNIQUE-AT-RISK: findings on that branch
+        # and on no other branch and not on the trunk. That is the answer
+        # to "what is lost if this branch is deleted", which is the only
+        # question a per-branch breakdown is asked. A per-branch total
+        # would restate the double-count the line above just removed.
+        sort "$tmp/absent" | uniq -u > "$tmp/once"
+        while read -r n cb; do
+            u=$(comm -12 "$tmp/b$n" "$tmp/once" | wc -l | tr -d ' ')
+            printf '%s %s %s\n' "$u" "$(wc -l < "$tmp/b$n" | tr -d ' ')" "$cb"
+        done < "$tmp/index" | sort -rn | head -5 | while read -r u n cb; do
+            [ "$u" -gt 0 ] || continue
+            c=$(git -C "$croot" rev-list --count "$trunk..$cb" \
+                  2>/dev/null || echo '?')
+            echo "        $u unique to $cb, $n not on $trunk ($c commit(s))"
+        done
+        # A branch whose every unlanded finding also lives elsewhere is
+        # safe to delete, and saying so is the point of the column.
+        [ -s "$tmp/once" ] || \
+            echo "        (none unique — every one of these is on more than one branch)"
+        [ "$unl_branches" -gt 5 ] && \
+            echo "        … and $((unl_branches - 5)) more branch(es)"
+    fi
+
+    untracked=$(git -C "$corpus" status --porcelain -- . 2>/dev/null \
+                  | grep -c '^??' || true)
+    [ "${untracked:-0}" -gt 0 ] && \
+        echo "    *** $untracked corpus finding(s) UNTRACKED — one checkout from oblivion ***"
+elif [ -d "$corpus" ]; then
+    echo "    *** corpus at $corpus is not in a git repository — "
+    echo "        nothing here can say whether a finding is landed ***"
+fi
+echo
+
+echo "=== GATE FRESHNESS — a green you did not watch is not a green"
+echo "    build-guests will SKIP silently without .env.lab:"
+if [ -f "$(git rev-parse --git-common-dir)/../.env.lab" ] || [ -f .env.lab ]; then
+    echo "      .env.lab present — cross-builds should genuinely run"
+else
+    echo "      *** .env.lab MISSING — every guest build is a skip reading as ok ***"
+fi
+echo "    commit hooks:"
+hp=$(git config core.hooksPath || echo '(unset)')
+if [ "$hp" = "(unset)" ]; then
+    echo "      hooksPath unset — default .git/hooks"
+elif [ -d "$hp" ]; then
+    echo "      armed at $hp"
+else
+    echo "      *** hooksPath points at $hp which DOES NOT EXIST — gates are dead ***"
+fi

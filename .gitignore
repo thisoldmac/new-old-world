@@ -1,0 +1,68 @@
+.DS_Store
+.build/
+
+# Lab configuration: addresses, credentials and toolchain paths that
+# describe one desk. Start from .env.lab.example; see docs/lab-setup.md.
+.env.lab
+
+# Scratch docs: session notes, investigation logs, working plans. docs/
+# is published and deliberate; docs/local/ is neither, and keeping them
+# in one directory is how the published half stops being deliberate.
+# Its README is the exception, because the rule has to be readable.
+docs/local/*
+!docs/local/README.md
+
+# Agent worktrees, at any depth. A checkout under here is a working copy
+# of some branch, not repository content — and one that is tracked goes
+# stale silently: five of them reached the index inside the vendored
+# Mirror subproject and each answered `Platinum.contentTop` with 22 where
+# the live tree says 20, so a grep for that constant found six answers and
+# five were wrong. No gate reads a vendored worktree, so nothing catches
+# the drift; the cure is to not track them at all.
+.claude/worktrees/
+
+build-*/
+xcuserdata/
+*.xcodeproj/project.xcworkspace/
+*.xcworkspace/
+
+
+# scripts/q800-68k's session directory: a cloned 1 GB disk image, a build
+# tree and screendumps. Disposable by construction, and the disk alone
+# would dwarf the repository.
+.q800/
+
+# Emulator session scratch: a cloned disk image, the QMP socket, the pid and
+# port files a spin-up writes. Same reasoning as .q800 — the clone alone is
+# hundreds of megabytes. mirror/ ignores its own run/ separately, because a
+# vendored project keeps its own rules.
+run/
+
+# Python bytecode from the asset generators in assets/.
+__pycache__/
+.docs-venv/
+
+# The extracted Platinum asset pack: Apple's own icons, cursors, patterns
+# and NFNT strikes, pulled off a local OS 9 image. It is a DEPENDENCY of
+# proper rendering, not repository content — 1,154 files and 5 MB of
+# somebody else's bitmaps, which reached git as a side effect of wiring
+# the pack up rather than as a decision.
+#
+# It is regenerable, which is what makes this workable: run
+# tools/extract-assets-offline against your own image and it lands right
+# here. MirrorKitUI's `AssetPack` resolves it at run time and says so
+# loudly when it cannot, so an absent pack degrades honestly instead of
+# drawing generic art as though it were the guest's own.
+# docs/asset-pack.md is the whole story.
+mirror/host/MirrorKit/Sources/MirrorKitUI/Resources/
+
+# xcodebuild default output when the app is built from the command line
+# rather than Xcode, which uses DerivedData.
+now-host/build/
+
+# iconutil build intermediate; appicon.py regenerates it each run.
+assets/icons/macos/NewOldWorld.iconset/
+
+# Module cache xcodebuild drops beside the project on command-line builds.
+now-host/NewOldWorld.xcodeproj/-Xcc/
+tools/gwprobe-out/

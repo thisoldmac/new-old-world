@@ -1,0 +1,51 @@
+---
+page_id: install-ppc-how-to
+title: Install the PowerPC guest
+description: Transfer the canonical MacBinary PowerPC guest to Mac OS 8.6–9.2.2 without losing its forks or identity.
+doc_type: how-to
+audience: user
+lifecycle: current
+feature_ids: [classic.powerpc]
+authority: [docs/naming.md, docs/onboarding.md, AGENTS.md]
+source_dependencies: [now-guest-ppc/CMakeLists.txt, now-guest-ppc/tools/name_macbinary.py, docs/naming.md, docs/onboarding.md]
+media_ids: [setup-ppc-install]
+last_verified: 2026-08-09
+---
+
+# Install the PowerPC guest
+
+## Goal
+
+Install the canonical **New Old World** guest with its Macintosh metadata and
+product identity intact.
+
+## Steps
+
+1. Confirm the target is PowerPC Mac OS 8.6–9.2.2 with CarbonLib 1.6. If it
+   is absent, obtain CarbonLib 1.6.1 from
+   [Macintosh Repository](https://www.macintoshrepository.org/17069-carbonlib).
+   It is not stored in this Git repository or its GitHub source releases.
+2. Transfer `New Old World.bin` with a tool that decodes MacBinary on the
+   classic side.
+3. Confirm the resulting application is named exactly **New Old World**.
+4. Launch it and open the Workshop's **Connection** page.
+
+A separately hosted convenience package may combine the built New Old World
+binaries with CarbonLib for classic-Mac installation. Until that package has a
+stable external URL and a published checksum, use the linked CarbonLib source
+and the GitHub-built binaries separately; do not infer a download from a
+planned filename.
+
+![The decoded New Old World application on a PowerPC classic Mac](../../assets/screenshots/getting-started/ppc-install.svg){ .now-placeholder }
+
+## Expected result
+
+The Workshop opens with its navigation rail. The exact product name matters:
+preferences and optional Extension-backed features use it as part of their
+identity.
+
+## Recovery
+
+If the transferred file is a document, has no icon, or will not launch, the
+MacBinary was probably not decoded. Re-transfer the `.bin`; do not rename a
+data-fork-only file and assume its resource fork returned.

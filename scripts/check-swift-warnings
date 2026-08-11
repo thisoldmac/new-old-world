@@ -1,0 +1,33 @@
+#!/bin/sh
+# Refuse compiler warnings owned by one Swift source tree. Toolchain and SDK
+# diagnostics outside that tree remain visible in the build log, but they do
+# not spend this repository's warning budget.
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "usage: $0 /absolute/source/root /path/to/build.log" >&2
+    exit 64
+fi
+
+source_root=${1%/}
+log=$2
+
+case "$source_root" in
+    /*) ;;
+    *) echo "source root must be absolute" >&2; exit 64 ;;
+esac
+
+if [ ! -f "$log" ]; then
+    echo "Swift warning log not found: $log" >&2
+    exit 66
+fi
+
+warnings=$(awk -v root="$source_root/" '
+    index($0, root) && index($0, "warning:") { print }
+' "$log")
+
+if [ -n "$warnings" ]; then
+    echo "project-owned Swift compiler warnings are not allowed:" >&2
+    printf '%s\n' "$warnings" >&2
+    exit 1
+fi

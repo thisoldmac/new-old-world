@@ -1,0 +1,601 @@
+{
+ "note": "Every fixture in git, with its sha256 and how it identifies the machine it came off. Derived - run tools/fixture-store manifest --apply, do not hand-edit. provenanceIsWeak marks a fixture that names a capture shape but no build or VM. See docs/fixture-bulk.md.",
+ "fixtures": [
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/now-finder-desktop-roster.json",
+   "sha256": "1e9e58bf08a4cf658d975b0610d84ae9fe9e3878337f575fb1b7863205a7ed82",
+   "bytes": 2834,
+   "ops": null,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-dtop",
+    "run": "dtcapture desktop-items-read-fix",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine.",
+    "what": "the guest's verbatim replies to the four AppleScripts NOWMirrorSource.readIcons sends for the desktop container, taken in the same connection as now-scene-desktop-bare.json. NOW-DTOP-9c41 is a folder made on that VM's desktop so a render could be attributed to this machine and no other."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-019-date-and-time.json",
+   "sha256": "f51ee143eaa3cadc1fe984f41d71c31f787f25bfd0c4653004251b175fb1150d",
+   "bytes": 58946,
+   "ops": null,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786068495.0,
+    "version": 2,
+    "build": "caf2b0e157b9",
+    "vm": "019-pair-capture",
+    "run": "019 integration pair, target date-and-time",
+    "guest": "Power Mac G4 / OS 9 emulated",
+    "note": "the guest screendump taken in the same connection is 019-integration/date-and-time-guest.png; the panel face measurement in PanelFaceRenderTests was counted off it"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-desktop-bare.json",
+   "sha256": "ce5e55bc003db96cf2a7520a87b7db232a43478e74c7a6de157974c48c0989d5",
+   "bytes": 38081,
+   "ops": null,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-dtop",
+    "run": "dtcapture desktop-items-read-fix",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine.",
+    "what": "one structural scene, NOW hidden so the desktop is bare. It carries no desktopItems key at all - that is the guest being honest, not a failure, and it is exactly the scene that used to erase the roster."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-ir-v1.json",
+   "sha256": "dc5a09eddb4c17d6ff24a47e95fe078a8fecfb922bc155a0e759f5a2d546086e",
+   "bytes": 17084,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1785706312.0,
+    "version": 1
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-self-front-visible.json",
+   "sha256": "c45365fcdb83aabd46f07b1f1e29ab598c829e5775c4078ae13fae287299b88a",
+   "bytes": 37814,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1785982116.0,
+    "version": 2
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-self-hidden-but-front.json",
+   "sha256": "3bb7eeee5a9328ac2c12b7c309dafdcc59ff8269964ebf99f048e53331b4f63c",
+   "bytes": 69713,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1785982121.0,
+    "version": 2
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-sweep-date-and-time.json",
+   "sha256": "2cf4a84d7fca2dd43e8c238ffb7293f99c1402366a4e2a38c4e4d128365793e7",
+   "bytes": 56969,
+   "ops": null,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep date-and-time \u2014 the SCENE the drain of the same name was captured against",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "what": "a whole live scene WITH its controls and dialog items, which is what the coverage harness's canned scene deliberately lacks. Committed 2026-08-06 because a renderer defect that only appears when a window has DITL rows was invisible to every gate."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-sweep18a-finder-icon.json",
+   "sha256": "f288c1221cc56877366b2cfc27928e4d9519c96d688b0d11410a416842fac27a",
+   "bytes": 86604,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786049334.0,
+    "version": 2
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-sweepb-memory.json",
+   "sha256": "8b75a76bef0e46f56bb2de9b5ad0c6c4496f99d3a95e5021181f05e523ef0798",
+   "bytes": 88624,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786072575.0,
+    "version": 2
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-blitsrc-control.json",
+   "sha256": "ce001825c14fa0d749d430d22b89c3f2ee5baeaea48fd8e405eff8e4a050b859",
+   "bytes": 4144,
+   "ops": 20,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "9d3e081ecc09",
+    "vm": "nowvm-kc99",
+    "run": "gwprobe control-join-3",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-blitsrc-finder-buttons.json",
+   "sha256": "7f094981bc854554bb2977898dd764c82859077bad191b80308211b212d87cbd",
+   "bytes": 80676,
+   "ops": 495,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "9d3e081ecc09",
+    "vm": "nowvm-kd02",
+    "run": "gwprobe finder-buttons",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-blitsrc-finder-list.json",
+   "sha256": "207e00cda51a50943d742b9e327bdfb4369037fcfcdb6a85435c363090ab94e4",
+   "bytes": 72966,
+   "ops": 441,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "9d3e081ecc09",
+    "vm": "nowvm-kd02",
+    "run": "gwprobe finder-list",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-blitsrc-finder.json",
+   "sha256": "a203051dd2681ba4b4d8868fedbf7b79e00b5ebbe6c2117d32f72d8295495d8e",
+   "bytes": 31362,
+   "ops": 188,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "9d3e081ecc09",
+    "vm": "nowvm-kd01",
+    "run": "gwprobe finder-join-7",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-cp-datetime-hooked.json",
+   "sha256": "b84f772f2f26f2a1d6902808963a5645a9472445e4ae69114fb6d876893c1cdb",
+   "bytes": 289094,
+   "ops": 1738,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-kg02",
+    "run": "panel-recapture cp-datetime2 (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-cp-datetime.json",
+   "sha256": "a0383d3e06d977233cea71bf27740491df73cd6ed61c4550c00c0f5dd66e272f",
+   "bytes": 50737,
+   "ops": 300,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "9d3e081ecc09",
+    "vm": "nowvm-kd02",
+    "run": "gwprobe cp-datetime",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-cp-memory.json",
+   "sha256": "020fc30062b1d59aeee8522ba283966ed72b8254f459979b50cb20621c43077e",
+   "bytes": 51278,
+   "ops": 300,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "9d3e081ecc09",
+    "vm": "nowvm-kd02",
+    "run": "gwprobe cp-memory",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-now-window.json",
+   "sha256": "6c038e26f1a4ef44f224a81f66e6e2001195d8f65e738537d1cebfac846db78a",
+   "bytes": 43151,
+   "ops": 247,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "9d3e081ecc09",
+    "vm": "nowvm-kd02",
+    "run": "gwprobe now-window",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sherlock-hooked.json",
+   "sha256": "bc8e4c461f24db124062c08a216aab8cab382f2d30d840288b8564639b24adce",
+   "bytes": 79350,
+   "ops": 480,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "2a8e72e1aa72",
+    "vm": "nowvm-ke04",
+    "run": "e3-sherlock continuous drain",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sherlock-live.json",
+   "sha256": "f24389219957e315a7005c23abaa1572c83abffc07a8fc30c734702cad355050",
+   "bytes": 178941,
+   "ops": 1096,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-kg02",
+    "run": "panel-recapture sherlock2 (record mode, guarded)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sherlock.json",
+   "sha256": "16ff1bf163c1739ad77962dfd90b16b0cdb8eece770d30d806167407fefe0c62",
+   "bytes": 15447,
+   "ops": 93,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "9d3e081ecc09",
+    "vm": "nowvm-kd03",
+    "run": "gwprobe sherlock",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-appearance.json",
+   "sha256": "9130ec1d5fa0687765ed2c61a4606077f09d580a8848195e50a625abad53154a",
+   "bytes": 745354,
+   "ops": 4567,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep appearance (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-date-and-time.json",
+   "sha256": "df9cc39495f15e0390dc5a74f7404f34c2faa5b7c0d81fc175902f1cdde89b36",
+   "bytes": 1057769,
+   "ops": 6339,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep date-and-time (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-finder-selected.json",
+   "sha256": "8a20305f3933d73fe240cbc380b5ea75f66ddcedb483b29ed3a24acc6637539b",
+   "bytes": 128381,
+   "ops": 780,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw2",
+    "run": "fidelity-sweep finder-selected (record mode). Reveal selects System Folder, then a reflowing resize forces the icon-view composite to REBUILD - a front/back cycle does not, and yields 0 text ops. The guest screendump shows the selection; this capture does not.",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-finder.json",
+   "sha256": "bc32e6a93ff280e793e55621f934c6f4463f7a3fc024055a820966eb7a30748c",
+   "bytes": 26141,
+   "ops": 151,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep finder (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-general-controls.json",
+   "sha256": "f78d1e34936b1bc211cbb93e178b60ba5254b0a5870dbd70bb947bf5f3201f9a",
+   "bytes": 709586,
+   "ops": 4291,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep general-controls (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-key-caps.json",
+   "sha256": "75c73f7116b4b62a6b3e7778d448cf51d4fe537e854c69687c52e0485435ef6e",
+   "bytes": 852322,
+   "ops": 5285,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw2",
+    "run": "fidelity-sweep key-caps (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-memory.json",
+   "sha256": "ca588adb349603a834c6c73e168910e8700925247a4ba46d5a834518d079cd5c",
+   "bytes": 794950,
+   "ops": 4761,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep memory (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-note-pad.json",
+   "sha256": "3f559beac988efa68b9704a959ac8b4dedfe1a2f8861b61aa93a5fb70db00257",
+   "bytes": 48778,
+   "ops": 295,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep note-pad (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-scrapbook.json",
+   "sha256": "2cb0c8c3f554a6f35cb9ca1a8141a857b3306d0e1a73f66e7707d08db6b28885",
+   "bytes": 103542,
+   "ops": 586,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep scrapbook (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-sherlock-2.json",
+   "sha256": "02853db36d935c55163da4daaf8b57ba62a59bc738f13c632f0ea97f4a396ef4",
+   "bytes": 169916,
+   "ops": 1046,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw2",
+    "run": "fidelity-sweep sherlock-2 (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-sound-1pass.json",
+   "sha256": "0dff077152f846b7d5db858dd6c1fd119beb475151964a79ac1e37182fb62b60",
+   "bytes": 338673,
+   "ops": 2055,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep sound --repaints 1 (record mode). The CONTROL for the flattened-epoch finding: same window, same build, one repaint pass instead of three.",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-sound.json",
+   "sha256": "38032fcb8c15dfeeabaad903f301f851695522bf2f60b498886061218531067c",
+   "bytes": 578588,
+   "ops": 3509,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep sound (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep-stickies.json",
+   "sha256": "2c29792b6d4b617c8be8b4d337b863128d52b251426261d4bd871df0ef8a714e",
+   "bytes": 11184,
+   "ops": 67,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep stickies (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweep18a-finder-icon.json",
+   "sha256": "9fe6baf6d7f3ef78fafb18a763b732ca1ebc389f501d8642a43489c4b3d317ab",
+   "bytes": 37568,
+   "ops": 226,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "59dce8562ad4",
+    "vm": "nowvm-sw18a",
+    "run": "fidelity-sweep finder (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweepb-memory.json",
+   "sha256": "74312a35e28c3360fdeaac9520f835b177b7edef69f6131f9071d01c8ac1e196",
+   "bytes": 792208,
+   "ops": 4744,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "7e8d5e35bc36",
+    "vm": "nowvm-swb",
+    "run": "fidelity-sweep memory (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-07",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/scene-delta-baseline.json",
+   "sha256": "bb23c82b07565991537834c5973cd6bc449a71c070de00ab1936ee99ca72375d",
+   "bytes": 1517,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786000100.0,
+    "version": 2
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/scene-delta-next-delta.json",
+   "sha256": "4463d006f5853f96b23c54062e8c390ee95cf9601836938d6896f293989a72a4",
+   "bytes": 961,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786000130.0,
+    "version": 2
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/scene-delta-next-whole.json",
+   "sha256": "1a5893e404ecdb1fc627705ee88e82a3c622e34fa1a81d00a1fef9dfa3ef59be",
+   "bytes": 1517,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786000130.0,
+    "version": 2
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/scene-ie-error-alert.json",
+   "sha256": "a529d0747502cad96cc9a21ff1753a8fb7a7b2b25fec7d12ab4486fd78380649",
+   "bytes": 53387,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786034248.0,
+    "version": 2
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/scene-mail-internet-alert.json",
+   "sha256": "bdc3134d6323cd4b7a0836f32d987a4a967d09a499854023d963374f191e71d9",
+   "bytes": 45487,
+   "ops": null,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "e715b0a6a5d7",
+    "capturedAt": 1786116545.0,
+    "note": "Mail's Internet-setup alert, raised by opening the desktop 'Mail' alias. Captured beside a QMP screendump; the machine draws its three buttons at screen y 201-221, which is the window rect's t + 20 + the items' local t.",
+    "source": "peek",
+    "version": 2,
+    "vm": "session-private clone of now-mirror-stage.qcow2, emulated mac99/OS 9.1, lane block 230 (anchor 13840 / wire 13841)"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/scene-plane-held.json",
+   "sha256": "17042672aa8f081b7489aa7f31542f70d4d19fd720dad8f560ab105ee4be4fe9",
+   "bytes": 42329,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786018170.0,
+    "version": 2
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/scene-plane-lapsed.json",
+   "sha256": "aeb38d02d6fc899b5826b6a04b6b210903e2f0901b47519b8b3ab9297baf1b3d",
+   "bytes": 19955,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786018184.0,
+    "version": 2
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/scene-quit-modal.json",
+   "sha256": "8ab7f6b678cddc30edf4a5b25c5e5d011e4158cd37505a530a621bb80050f407",
+   "bytes": 42333,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786017689.0,
+    "version": 2
+   }
+  }
+ ]
+}

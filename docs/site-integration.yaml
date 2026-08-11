@@ -1,0 +1,22 @@
+version: 1
+base_path: /docs/
+global_nav_label: Docs
+required_ci_check: Documentation
+repository_owner: mishyjari
+canonical_origin: null
+website_repository: https://github.com/mishyjari/newoldworld-web
+security_contact: mailto:github@shelbel.net
+security_expires: null
+release_requirements:
+  - canonical_origin
+  - website_repository
+  - security_contact
+  - security_expires
+notes:
+  - The selected GitHub owner is mishyjari and the public security contact is github@shelbel.net.
+  - The public website is a separate repository and owns the main-site deployment.
+  - The selected documentation target is https://docs.newoldworldmac.com/, independently deployed from this application repository with GitHub Pages after the repository becomes public.
+  - The website owns one stable link to the documentation; a docs update does not rebuild or redeploy its Azure Container App image.
+  - Until Pages and DNS are activated, the current standalone preview remains at /docs/, base_path remains /docs/, and canonical_origin remains unset.
+  - Activation changes base_path to /, verifies and configures the custom domain, adds the Pages deployment workflow, and sets canonical_origin in one reviewed change.
+  - NOW_DOCS_RELEASE=1 still refuses until the canonical origin and future security expiry are supplied.

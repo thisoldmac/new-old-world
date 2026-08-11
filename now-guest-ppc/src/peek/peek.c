@@ -1,0 +1,557 @@
+#include "peek.h"
+
+#include "commands.h"
+/* The Mirror's own account of itself. Every call below is edge-triggered
+   and task time; see mirror_log.h for why that boundary is the design. */
+#include "mirror_log.h"
+#include "resident_version.h"
+
+#include <Files.h>
+#include <Folders.h>
+#include <Gestalt.h>
+
+#include <stdio.h>
+#include <string.h>
+
+
+/* The application's probe of the NOW Extension (docs/resident-
+   components.md). The extension registers Gestalt selector 'NWex' at
+   boot and answers with its shared table's address; this reads it,
+   validates it against the contract compiled into both sides
+   (peek_table.h), and reports one of four states an installer needs.
+
+   Cost rule: Gestalt is a cheap trap, called every time. Scanning the
+   Extensions folder (to tell "installed, needs restart" from "not
+   installed" when Gestalt is silent) is file I/O, so it runs AT MOST
+   ONCE and caches - an INIT's presence cannot change without a reboot,
+   and the idle path must read no files (guest-ui-start-here.md). */
+
+#define NOW_EXT_FILE_TYPE NOW_PEEK_4CC('I', 'N', 'I', 'T')
+#define NOW_EXT_CREATOR NOW_PEEK_4CC('N', 'O', 'W', 'x')
+
+enum { kNowPeekOwnerLeaseTicks = 600 };
+
+static int g_file_checked;
+static Boolean g_file_present;
+static NowPeekLeaseSet g_leases;
+static int g_leases_ready;
+static NowPeekU32 g_session_nonce_hi;
+static NowPeekU32 g_session_nonce_lo;
+static NowPeekU32 g_session_epoch;
+static NowPeekU32 g_published_caps;
+
+/* Is a file of type INIT and creator 'NOWx' sitting in the Extensions
+   folder? Identity is by type/creator, not by name, so a build deployed
+   under any filename still counts. */
+static Boolean scan_extensions_folder(void)
+{
+    CInfoPBRec pb;
+    Str63 name;
+    short vref;
+    long dirid;
+    short index;
+
+    if (FindFolder(kOnSystemDisk, kExtensionFolderType, kDontCreateFolder,
+                   &vref, &dirid) != noErr) {
+        return false;
+    }
+    for (index = 1;; ++index) {
+        memset(&pb, 0, sizeof pb);
+        pb.hFileInfo.ioNamePtr = name;
+        pb.hFileInfo.ioVRefNum = vref;
+        pb.hFileInfo.ioDirID = dirid;
+        pb.hFileInfo.ioFDirIndex = index;
+        if (PBGetCatInfoSync(&pb) != noErr) {
+            break;                    /* past the last item */
+        }
+        if ((pb.hFileInfo.ioFlAttrib & ioDirMask) != 0) {
+            continue;                 /* a folder, not an extension */
+        }
+        if ((NowPeekU32)pb.hFileInfo.ioFlFndrInfo.fdType == NOW_EXT_FILE_TYPE
+            && (NowPeekU32)pb.hFileInfo.ioFlFndrInfo.fdCreator
+                   == NOW_EXT_CREATOR) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static Boolean extension_file_present(void)
+{
+    if (!g_file_checked) {
+        g_file_present = scan_extensions_folder();
+        g_file_checked = 1;
+    }
+    return g_file_present;
+}
+
+/* The validated table, or NULL. Shared by the status probe and the
+   arm/read paths so the acceptance rule lives in one place. */
+static NowPeekTable *raw_table(void)
+{
+    long response = 0;
+
+    if (Gestalt((OSType)kNowPeekGestaltSelector, &response) != noErr
+        || response == 0) {
+        return NULL;
+    }
+    {
+        NowPeekTable *table = (NowPeekTable *)response;
+
+        if (table->magic != (NowPeekU32)kNowPeekTableMagic
+            || table->ext_major != kNowPeekExtMajor
+            || table->length < (NowPeekU32)offsetof(NowPeekTable, anchors)) {
+            return NULL;              /* answered, but not one we trust */
+        }
+        return table;
+    }
+}
+
+static Boolean current_app_identity(ProcessSerialNumber *psn_out)
+{
+    ProcessSerialNumber psn;
+    ProcessInfoRec info;
+    Str31 name;
+
+    if (GetCurrentProcess(&psn) != noErr) {
+        return false;
+    }
+    memset(&info, 0, sizeof info);
+    info.processInfoLength = sizeof info;
+    info.processName = name;
+    name[0] = 0;
+    if (GetProcessInformation(&psn, &info) != noErr
+        || (NowPeekU32)info.processSignature
+               != (NowPeekU32)kNowPeekCanonicalAppCreator
+        || !EqualString(name, (ConstStr255Param)"\pNew Old World",
+                        false, false)) {
+        return false;
+    }
+    if (psn_out != NULL) {
+        *psn_out = psn;
+    }
+    return true;
+}
+
+static int writer_region_ready(const NowPeekTable *table)
+{
+    unsigned long need = (unsigned long)offsetof(NowPeekTable, writer)
+        + (unsigned long)sizeof table->writer;
+
+    return table != NULL && table->length >= need
+        && table->writer_format == kNowPeekWriterFormatV1
+        && table->writer_length == sizeof table->writer;
+}
+
+static int writer_current(const NowPeekTable *table, NowPeekU32 now)
+{
+    return writer_region_ready(table)
+        && (table->writer.session_nonce_hi != 0
+            || table->writer.session_nonce_lo != 0)
+        && table->writer.app_creator == kNowPeekCanonicalAppCreator
+        && table->writer.app_name == kNowPeekCanonicalAppName
+        && table->writer.heartbeat_ticks != 0
+        && now - table->writer.heartbeat_ticks
+               <= (NowPeekU32)kNowPeekWriterLeaseTicks;
+}
+
+static int maintain_writer(NowPeekTable *table, NowPeekU32 now)
+{
+    ProcessSerialNumber psn;
+    NowPeekWriterLease *writer;
+
+    if (!writer_region_ready(table)) {
+        now_mirror_log_writer(kMirrorWriterNoRegion, 0);
+        return 0;
+    }
+    if (!current_app_identity(&psn)) {
+        /* Dev-named app: read-only NWex. This branch is why mirror_log.c
+           exists — it arms nothing while the resident goes on reporting
+           active with full capabilities, and until now it said so
+           nowhere at all (AGENTS.md, "no writer"). */
+        now_mirror_log_writer(kMirrorWriterNotCanonical, 0);
+        return 0;
+    }
+    writer = &table->writer;
+    if (g_session_nonce_hi != 0 || g_session_nonce_lo != 0) {
+        if (writer->session_nonce_hi == g_session_nonce_hi
+            && writer->session_nonce_lo == g_session_nonce_lo
+            && writer->owner_epoch == g_session_epoch) {
+            writer->heartbeat_ticks = now;        /* renew, publish last */
+            now_mirror_log_writer(kMirrorWriterOwned,
+                                  (unsigned long)g_session_epoch);
+            return 1;                 /* resident independently gates use */
+        }
+    }
+    if (writer_current(table, now)) {
+        now_mirror_log_writer(kMirrorWriterOtherSession, 0);
+        return 0;                    /* another current session owns it */
+    }
+
+    g_session_nonce_hi = (NowPeekU32)psn.highLongOfPSN ^ table->boot_ticks;
+    g_session_nonce_lo = (NowPeekU32)psn.lowLongOfPSN ^ now ^ 0x4E576578UL;
+    if (g_session_nonce_hi == 0 && g_session_nonce_lo == 0) {
+        g_session_nonce_lo = 1;
+    }
+    g_session_epoch = writer->owner_epoch + 1;
+    if (g_session_epoch == 0) {
+        g_session_epoch = 1;
+    }
+    writer->heartbeat_ticks = 0;     /* invalidate before replacement */
+    writer->session_nonce_hi = g_session_nonce_hi;
+    writer->session_nonce_lo = g_session_nonce_lo;
+    writer->psn_high = (NowPeekU32)psn.highLongOfPSN;
+    writer->psn_low = (NowPeekU32)psn.lowLongOfPSN;
+    writer->app_creator = (NowPeekU32)kNowPeekCanonicalAppCreator;
+    writer->app_name = (NowPeekU32)kNowPeekCanonicalAppName;
+    writer->owner_epoch = g_session_epoch;
+    writer->heartbeat_ticks = now;   /* commit */
+    now_peek_leases_begin_session(&g_leases, g_session_epoch);
+    g_leases_ready = 1;
+    g_published_caps = 0;
+    now_mirror_log_writer(kMirrorWriterOwned, (unsigned long)g_session_epoch);
+    return 1;                        /* resident may settle echo next pass */
+}
+
+/* Which owner last moved a lease. The union is what reaches the table,
+   so the change is the event — but "who asked" is the question the log
+   could not answer at all, and it is known only here. */
+static int g_last_actor = (int)kNowPeekOwnerCount;
+
+static void publish_claims_to(NowPeekTable *table, NowPeekU32 now)
+{
+    NowPeekU32 wanted = now_peek_leases_union(&g_leases, now);
+
+    if (wanted != g_published_caps || table->arm_request != wanted) {
+        now_mirror_log_request(g_last_actor, (unsigned long)g_published_caps,
+                               (unsigned long)wanted);
+        table->arm_request = wanted;
+        g_published_caps = wanted;
+    }
+}
+
+static void publish_claims(void)
+{
+    NowPeekTable *table = raw_table();
+    NowPeekU32 now = (NowPeekU32)TickCount();
+
+    if (table == NULL || !maintain_writer(table, now)) {
+        return;
+    }
+    publish_claims_to(table, now);
+}
+
+void now_peek_idle(void)
+{
+    /* now_peek_table() is already the renew-and-republish path; calling
+       it for its side effect keeps one implementation of the writer
+       protocol. Cost when the extension is absent: one Gestalt trap. */
+    (void)now_peek_table();
+}
+
+const NowPeekTable *now_peek_table(void)
+{
+    NowPeekTable *table = raw_table();
+
+    if (table != NULL) {
+        NowPeekU32 now = (NowPeekU32)TickCount();
+
+        if (maintain_writer(table, now) && g_leases_ready) {
+            publish_claims_to(table, now);
+        }
+    } else {
+        now_mirror_log_writer(kMirrorWriterNoResident, 0);
+    }
+    return table;
+}
+
+void now_peek_claim(NowPeekOwner owner, unsigned long caps)
+{
+    if ((int)owner < 0 || (int)owner >= (int)kNowPeekOwnerCount) {
+        return;
+    }
+    now_peek_claim_until(owner, caps,
+                         (unsigned long)TickCount()
+                             + kNowPeekOwnerLeaseTicks);
+}
+
+void now_peek_claim_until(NowPeekOwner owner, unsigned long caps,
+                          unsigned long expiry_ticks)
+{
+    NowPeekU32 now = (NowPeekU32)TickCount();
+    NowPeekTable *table = raw_table();
+
+    if (table != NULL) {
+        (void)maintain_writer(table, now);
+    } else {
+        now_mirror_log_writer(kMirrorWriterNoResident, 0);
+    }
+    g_last_actor = (int)owner;
+    if (!g_leases_ready) {
+        now_peek_leases_init(&g_leases, g_session_epoch);
+        g_leases_ready = 1;
+    }
+    now_peek_leases_claim(&g_leases, owner, (NowPeekU32)caps, now,
+                          (NowPeekU32)expiry_ticks);
+    publish_claims();
+}
+
+int now_peek_settle(unsigned long caps, unsigned long max_ticks)
+{
+    unsigned long deadline = (unsigned long)TickCount() + max_ticks;
+
+    if (caps == 0) {
+        return 1;
+    }
+    for (;;) {
+        EventRecord ev;
+        const NowPeekTable *table = now_peek_table();  /* republishes */
+
+        /* Each exit below is a DIFFERENT reason a plane did not arm, and
+           telling them apart from the outside was impossible: all four
+           are the same bare 0 to the caller, and none of them reached the
+           log at all. That is what made six crash mechanisms
+           unfalsifiable on 2026-08-07. */
+        if (table == NULL) {
+            now_mirror_log_settle(caps, 0, "no resident");
+            return 0;                 /* no resident: nothing to wait for */
+        }
+        if ((table->arm_active & (NowPeekU32)caps) == (NowPeekU32)caps) {
+            now_mirror_log_settle(caps, 1, NULL);
+            return 1;
+        }
+        if ((table->arm_request & (NowPeekU32)caps) != (NowPeekU32)caps) {
+            /* Our claim is not even published - this build does not own
+               the writer (a dev-named binary) or the resident has taken
+               the request away. Waiting for an echo of a request nobody
+               made is how a bounded wait becomes a stall on every call. */
+            now_mirror_log_settle(caps, 0, "request not published");
+            return 0;
+        }
+        if ((unsigned long)TickCount() >= deadline) {
+            now_mirror_log_settle(caps, 0, "resident never echoed in time");
+            return 0;
+        }
+        /* Give up the processor without dequeuing anything - mask zero,
+           the same yield the act plane uses. It costs no events and it
+           is enough: the resident's echo rides the GNE patch, so OUR own
+           call through it is usually the pass that arms. */
+        (void)WaitNextEvent(0, &ev, 1L, NULL);
+    }
+}
+
+void now_peek_release(NowPeekOwner owner, unsigned long caps)
+{
+    if ((int)owner < 0 || (int)owner >= (int)kNowPeekOwnerCount) {
+        return;
+    }
+    g_last_actor = (int)owner;
+    now_peek_leases_release(&g_leases, owner, (NowPeekU32)caps);
+    publish_claims();
+}
+
+unsigned long now_peek_session_epoch(void)
+{
+    return (unsigned long)g_session_epoch;
+}
+
+void now_peek_disconnect(void)
+{
+    now_mirror_log_disconnect((unsigned long)g_published_caps);
+    now_peek_leases_disconnect(&g_leases);
+    publish_claims();
+}
+
+/* P6, the liveness endpoint - WHERE the resident should dial, and the
+   only thing in this table only the application can know.
+   -------------------------------------------------------------------
+   The resident has no preferences, no file access at interrupt time and
+   no way to ask a person anything, so without this the liveness channel
+   cannot exist at all. The host's address came from a preference a human
+   set and has already been dialled successfully by the time this is
+   called, which is why it is published on `hello` rather than on connect
+   intent: an address that has not answered is not one to hand a resident
+   that cannot report a failure.
+
+   `endpoint_epoch` is the commit word and is written LAST, the same rule
+   the writer lease follows. Everything else is written before it, so a
+   resident that reads a nonzero epoch has the whole record. */
+static int endpoint_region_ready(const NowPeekTable *table)
+{
+    unsigned long need = (unsigned long)offsetof(NowPeekTable, endpoint_os)
+        + (unsigned long)sizeof table->endpoint_os;
+
+    return table != NULL && table->length >= need;
+}
+
+/* A C string into a fixed-width Pascal one, truncated rather than
+   refused: a machine with a 40-character name should still get a
+   liveness channel, and the host folds the name to a fingerprint. */
+static void set_pascal(unsigned char *dst, unsigned long cap,
+                       const char *src)
+{
+    unsigned long n = 0;
+
+    while (src[n] != '\0' && n + 1 < cap && n < 255) {
+        dst[n + 1] = (unsigned char)src[n];
+        ++n;
+    }
+    dst[0] = (unsigned char)n;
+}
+
+void now_peek_publish_endpoint(unsigned long host_ipv4, unsigned short port)
+{
+    NowPeekTable *table = raw_table();
+    NowPeekU32 now = (NowPeekU32)TickCount();
+    char name[64];
+    char sysver[kNowIdentityVersionCap];
+
+    if (table == NULL || !endpoint_region_ready(table)
+        || !maintain_writer(table, now)) {
+        return;
+    }
+    /* The SAME name the wire's own hello carries. That is not tidiness:
+       the host associates a resident channel with its application by
+       fingerprinting name and OS, so a resident inventing its own name
+       would be a channel vouching for nobody. */
+    now_machine_name(name, sizeof name);
+    table->endpoint.host_ipv4 = (NowPeekU32)host_ipv4;
+    table->endpoint.host_port = (NowPeekU32)port;
+    set_pascal(table->endpoint.guest_name,
+               sizeof table->endpoint.guest_name, name);
+    /* THE CONDITION THE OLD COMMENT SET HAS COME TRUE. This was the
+       literal "9", beside a note saying that if send_hello()'s matching
+       literal ever became computed, this must read the same source. On
+       2026-08-07 it did - hello.os is gestaltSystemVersion now - so this
+       reads now_system_version() and the two are one source again.
+
+       This is not tidiness, and leaving it would not have been a smaller
+       version of the same thing. The resident's own hello fills its `os`
+       from this field (ext/src/now_liveness_net.c :: build_hello), and
+       the host associates a resident channel with its application by
+       FINGERPRINTING name and OS together (Session.swift ::
+       machineFingerprint). An application saying "9.1.0" beside a
+       resident still saying "9" is two different machines as far as that
+       fingerprint is concerned - the channel would have gone on
+       connecting and silently vouched for nobody, which is the failure
+       the guest_name line above is already worded against.
+
+       A version computed in one place and hardcoded in another is
+       strictly worse than both being hardcoded: they can now disagree,
+       and nothing says which is right. */
+    now_system_version(sysver, sizeof sysver);
+    set_pascal(table->endpoint_os, sizeof table->endpoint_os, sysver);
+    table->endpoint_length = (NowPeekU16)sizeof table->endpoint;
+    table->endpoint_format = kNowPeekLivenessFormatV2;
+    table->endpoint.endpoint_epoch += 1;      /* commit, and LAST */
+    if (table->endpoint.endpoint_epoch == 0) {
+        table->endpoint.endpoint_epoch = 1;   /* 0 means stay off the wire */
+    }
+}
+
+void now_peek_withdraw_endpoint(void)
+{
+    NowPeekTable *table = raw_table();
+    NowPeekU32 now = (NowPeekU32)TickCount();
+
+    if (table == NULL || !endpoint_region_ready(table)
+        || !maintain_writer(table, now)) {
+        return;
+    }
+    /* Zero is an INSTRUCTION, not an absence: an application that has
+       never connected and one that has stopped consenting must look the
+       same to the resident, and neither is an old address worth
+       retrying. The address itself is left alone - the epoch is what is
+       read, and clearing bytes a reader may be mid-copy of would buy
+       nothing. */
+    table->endpoint.endpoint_epoch = 0;
+}
+
+int now_peek_build_identity(NowPeekBuildIdentity *out)
+{
+    const NowPeekTable *table = now_peek_table();
+    unsigned long need;
+
+    if (table == NULL || out == NULL) {
+        return 0;
+    }
+    need = (unsigned long)offsetof(NowPeekTable, identity)
+        + (unsigned long)sizeof table->identity;
+    if (table->length < need
+        || table->identity_format != kNowPeekIdentityFormatV1
+        || table->identity_length != sizeof table->identity) {
+        return 0;
+    }
+    BlockMoveData((Ptr)&table->identity, (Ptr)out, (Size)sizeof *out);
+    return 1;
+}
+
+int now_peek_build_matches(
+    const NowPeekU32 expected[kNowPeekIdentityWordCount])
+{
+    NowPeekBuildIdentity identity;
+
+    return expected != NULL && now_peek_build_identity(&identity)
+        && memcmp(identity.build_fingerprint, expected,
+                  sizeof identity.build_fingerprint) == 0;
+}
+
+NowPeekState now_peek_status(unsigned long *caps)
+{
+    const NowPeekTable *table = now_peek_table();
+    long response = 0;
+
+    if (caps != NULL) {
+        *caps = 0;
+    }
+    if (table != NULL) {
+        if (caps != NULL) {
+            *caps = table->caps;
+        }
+        return kNowPeekActive;
+    }
+    /* Gestalt answering but the table rejected is a version we will not
+       partially believe; Gestalt silent means nothing is loaded. */
+    if (Gestalt((OSType)kNowPeekGestaltSelector, &response) == noErr
+        && response != 0) {
+        return kNowPeekWrongVersion;
+    }
+    /* The file being present means installed-but-not-rebooted (INITs
+       load at boot only); absent means simply not installed. */
+    return extension_file_present() ? kNowPeekNeedsRestart
+                                    : kNowPeekNotInstalled;
+}
+
+void now_peek_status_line(char *out, long cap)
+{
+    unsigned long ignored;
+
+    switch (now_peek_status(&ignored)) {
+    case kNowPeekActive: {
+        const NowPeekTable *table = now_peek_table();
+        if (table != NULL
+            && (table->ext_major != NOW_RESIDENT_VERSION_MAJOR
+                || table->ext_minor != NOW_RESIDENT_VERSION_MINOR)) {
+            snprintf(out, (size_t)cap,
+                     "NOW Extension %u.%u active; app expects %d.%d",
+                     (unsigned)table->ext_major,
+                     (unsigned)table->ext_minor,
+                     NOW_RESIDENT_VERSION_MAJOR,
+                     NOW_RESIDENT_VERSION_MINOR);
+        } else {
+            snprintf(out, (size_t)cap, "NOW Extension active");
+        }
+        break;
+    }
+    case kNowPeekWrongVersion:
+        snprintf(out, (size_t)cap, "NOW Extension needs updating");
+        break;
+    case kNowPeekNeedsRestart:
+        snprintf(out, (size_t)cap,
+                 "NOW Extension installed - restart to activate");
+        break;
+    default:
+        snprintf(out, (size_t)cap, "NOW Extension not installed");
+        break;
+    }
+}

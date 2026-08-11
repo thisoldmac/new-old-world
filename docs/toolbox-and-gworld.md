@@ -1,0 +1,392 @@
+# The Toolbox and GWorld, measured
+
+**Emulator: QEMU mac99, Mac OS 9.1, 2026-08-06.** Nothing here has run
+on physical hardware. Every claim carries how it was established:
+
+- **static** — read out of a file on the guest's disk, no machine running
+- **measured** — observed by a program running on the guest, this rig
+- **doc** — asserted by documentation or prior art; evidence, not a
+  measurement of this machine
+
+This is the reference. The durable claims also live in the parent's
+corpus as findings — `gworld-offscreen-ports-are-hookable`,
+`memtop-is-not-the-address-space-ceiling`,
+`quickdraw-bottlenecks-are-native-ppc-routine-descriptors` — and what to
+build on them is [plan 013](plans/2026-08-06-013-feat-composing-interiors-host-side-plan.md).
+The supporting investigation plan, ledger, and prior-art survey are published
+under `docs/research/mirror/toolbox-re/`; they preserve provenance and the
+questions the shorter reference deliberately compresses.
+
+## 1. Getting at the corpus
+
+**The guest filesystem mounts read-only on the host** (static). No VM,
+no time limit:
+
+```
+qemu-img convert -O raw base.qcow2 disk.raw
+# parse the Apple Partition Map at block 1; HFS partition here at 1544
+dd if=disk.raw of=hfs.img bs=512 skip=1544 count=8387044
+hdiutil attach -readonly hfs.img
+```
+
+**The Toolbox is not statically readable from the ROM** (static). On
+this New World machine `System Folder:Mac OS ROM` is 2,448,470 bytes of
+CHRP boot script wrapping a compressed body. The only valid PEF inside
+(`0x2055c4`, arch `pwpc`, 3 sections) is a small embedded driver
+importing DriverServicesLib / NameRegistryLib / PowerMgrLib. Toolbox
+*code* exists decompressed only in RAM, so code-level questions belong
+to the live lane. **Applications, however, are ordinary PEFs**, and
+their import tables are a rich static source (`tools/pef.py`).
+
+## 2. Structure layouts
+
+`offsetof` from the extension's own dialect — 68K, Retro68, Universal
+Interfaces 3.4 — printed by a program compiled in it, then the same
+fields read off a live port (measured).
+
+| Type | Size |
+|---|---|
+| `GrafPort` | 108 |
+| `CGrafPort` | 108 |
+| `BitMap` | 14 |
+| `PixMap` | 50 |
+| `GDevice` | 62 |
+| `QDProcs` | 52 |
+| `CQDProcs` | 80 |
+
+**`GrafPort` and `CGrafPort` are the same size and different shapes**,
+which is the whole reason a discriminator check must precede any write:
+
+| Offset | `GrafPort` | `CGrafPort` |
+|---|---|---|
+| 0 | `device` | `device` |
+| 2 | `portBits` (BitMap, inline) | `portPixMap` (**handle**) |
+| 6 | *(inside portBits)* | `portVersion` — **the discriminator** |
+| 8 | | `grafVars` |
+| 12 | | `chExtra` |
+| 14 | | `pnLocHFrac` |
+| 16 | `portRect` | `portRect` |
+| 24 | `visRgn` | `visRgn` |
+| 28 | `clipRgn` | `clipRgn` |
+| 104 | `grafProcs` | `grafProcs` |
+
+`portVersion & 0xC000 == 0xC000` identifies a colour port (measured on a
+live window). A fresh window's `grafProcs` is NULL (measured).
+
+`PixMap`: `baseAddr@0`, `rowBytes@4`, `bounds@6`. `rowBytes`' high bit
+(0x8000) marks "this BitMap is really a PixMap"; the low 14 bits are the
+row stride.
+
+## 3. GWorlds
+
+- **A `GWorldPtr` IS its `CGrafPtr`** — same address, no private wrapper
+  record (measured).
+- **The port is a relocatable block.** `RecoverHandle` on the port
+  itself returns a handle, confirming Inside Macintosh's "an
+  always-locked handle in the application heap" on this machine
+  (measured).
+- **`useTempMem` moves only the pixels.** The port stays in the
+  application heap; `baseAddr` lands outside both heaps (measured:
+  `0x1f8059a4` against an app heap around `0x1ea5xxxx`). A port-hunting
+  sweep of the application zone is therefore looking in the right place
+  even for a temp-memory world.
+- **`baseAddr` MOVES under `LockPixels`** — every flavour tested (device
+  depth, 8, 32, `useTempMem`, `keepLocal`, `pixelsPurgeable`,
+  `noNewDevice`). **A pixmap's `baseAddr` is not an identity.**
+- **A disposed world's address is reused** by the very next `NewGWorld`
+  of the same size (measured: `0x1ea59e00` twice running). An observer
+  polling for offscreen ports cannot tell one repaint's world from the
+  next by address, and a stale row pointing at a disposed world will
+  come to point at a live different one.
+
+## 4. Dispatch
+
+- **A window port and an offscreen port dispatch identically.** Hooking
+  `grafProcs` on each and drawing the same string fired the text hook
+  once on both (measured, side by side in one program). The content
+  plane's mechanism is not window-specific.
+- **`StdText` does NOT nest through `StdBits`** on this machine. With no
+  re-entrancy guard installed, a `DrawString` produced `text=1, bits=0`
+  on both port kinds (measured). `ext/src/now_content.c` justifies its
+  guard with "StdText blits each glyph through StdBits"; **that
+  rationale does not reproduce here.**
+- **A GWorld→window `CopyBits` passes the port's own dereferenced
+  `portPixMap`** as its source (measured). The join the probe wants
+  exists.
+
+## 5. The Finder — ANSWERED
+
+**The labels in a Finder icon view are recoverable as semantic text.**
+Measured 2026-08-06 by hooking the Finder's offscreen port from a
+resident and holding the hook across a reflowing resize:
+
+| Port | What it emitted |
+|---|---|
+| window `0x00ac7af0` | 4 `bits`, 3 `rect` — the opaque composite |
+| **offscreen `0x1f472e60`** | **8 `text`**, 24 `rect`, 11 `rgn`, 8 `bits` |
+
+The text records carry the real filenames at their true pens:
+
+    '10 items, 3.21 GB available'  pen [135,14]
+    'Documents'                    pen [280,67]
+    'TimBotTu'                     pen [282,131]
+    'TBT'                          pen [40,195]
+    'TBT-paced-dev'                pen [140,195]
+    'TBT-sndbuf-dev'               pen [265,195]
+
+This **supersedes the dead-end verdict** of the corpus finding
+`finder-window-icons-are-offscreen-blits` for the OFFSCREEN port. That
+finding remains exactly right about the window port — which is all
+anyone had looked at.
+
+**The method matters as much as the result**: arm, wait for the chase to
+hook the offscreen port, then force a repaint **without re-arming**.
+Re-arming bumps the generation and unhooks the world, which is why every
+earlier attempt saw an empty offscreen port.
+
+**Lifetime, observed.** Across three resizes the hooked row went stale
+once and `lastMatch` moved `0x1f472e60` → `0x1f472ee0`: the Finder does
+replace its offscreen world, consistent with importing `NewGWorld` and
+`DisposeGWorld` and no `UpdateGWorld`. A hook must be re-established per
+world — but a world lives long enough to be found and read.
+
+**What is still opaque.** Icons arrive as `bits` with no identity while
+their labels arrive as text, so a composite decomposes into content that
+is already semantic and images that need identity from elsewhere
+(`PlotIconSuite`/`IconRef` interception).
+
+## 5a. The Finder, statically
+
+- **It uses GWorlds** (static, from its own PEF import table): it
+  imports `NewGWorld`, `DisposeGWorld`, `SetGWorld`, `GetGWorld`,
+  `GetGWorldPixMap`, `GetGWorldDevice`, `LockPixels`, `UnlockPixels`,
+  `CopyBits` from InterfaceLib.
+- **It imports no `UpdateGWorld`.** It has no way to resize an offscreen
+  world in place, so a world is created and destroyed rather than kept
+  and updated.
+- **Its window icon views composite offscreen and arrive as one blit**
+  (measured): a 404×218 content window emits one `bits` op, `src == dst`,
+  zero text, zero per-icon ops.
+- **Icons go through `PlotIconSuite` / `PlotIcon` / `PlotIconRef`** with
+  IconServicesLib linked (static). Icon *identity* in a composite is an
+  IconSuite or IconRef — the interception surface for host-side
+  composition, since a `bits` op carries geometry and never pixels.
+
+## 5b. Which applications composite offscreen
+
+Derived statically from PEF import tables — nothing was launched. Full
+table in `app-offscreen-table.txt`.
+
+| Application | GWorlds? | Notes |
+|---|---|---|
+| Finder | **yes** | + `PlotIconSuite`/`PlotIconRef`; no `UpdateGWorld` |
+| Sherlock 2 | **yes** | also imports `SetStdCProcs` — installs its own bottlenecks |
+| Graphing Calculator | **yes** | the ONLY one importing `UpdateGWorld`; also `SetStdCProcs` |
+| Appearance cdev | **yes** | no own bottlenecks, so hookable |
+| Network Browser | no | no `NewGWorld`, no `CopyBits` |
+| Dock | no | `PlotIconRef` only |
+| Date & Time cdev | no | `PlotIconSuite` only |
+| Energy Saver, AppleTalk cdevs | no | draw straight to their windows |
+
+Two patterns worth more than the table:
+
+- **Create-and-destroy is the era's norm.** Only Graphing Calculator can
+  resize an offscreen world in place; everyone else must dispose and
+  recreate, so any hook on such a world has to be re-established. The
+  Finder is not unusual here.
+- **A static import is a capability, not a behaviour.** I predicted from
+  this table that Sherlock 2 and Graphing Calculator would be
+  unhookable, since they import `SetStdCProcs` and the content plane
+  refuses a port whose `grafProcs` is already set. **Graphing Calculator
+  hooked fine** — `hits 1`, `offscreenPorts 1`, `skippedPorts 0`, no
+  refusal at all. Importing `SetStdCProcs` says the binary *can* install
+  bottlenecks somewhere, not that the port you want has them. The table
+  is strong evidence for YES and no evidence for NO.
+- **The applications that do NOT composite are already fully visible** to
+  a plain window-port hook — their content needs no chase at all.
+
+## 6. Memory: the two facts that invalidate naive tooling
+
+**`MemTop` is not the top of addressable memory** (measured).
+`LMGetMemTop` reads `0x00e225f0` — about 14.8 MB — and the SYSTEM zone
+lies below it (`0x2834`–`0x00d0b9f0`). An APPLICATION zone sits at
+`0x1e93e4d4`–`0x1e97be90`, around 512 MB. MemTop bounds the low/system
+region only.
+
+Anything that uses MemTop as a RAM ceiling therefore rejects every
+application-heap pointer in existence. This is not hypothetical: a
+range check added to this project's probe to stop it crashing the
+Finder did exactly that, and silently disabled the instrument through
+three subsequent fixes that each looked correct in isolation. **Bound
+reads by the zones** (`ApplicationZone()`, `SystemZone()`) — they are
+mapped by construction and are the memory you are walking anyway.
+
+**`LockPixels` relocates the PixMap record, not merely its pixels**
+(measured). The control reported its own pixmap deref at `0x1e957660`,
+inside its app zone; the blit it makes under `LockPixels` reports
+`0x1ea53eee`, above `bkLim` and outside that zone. Consequences:
+
+- a source pointer taken from a blit is a snapshot of a moved block;
+- `RecoverHandle` on it fails, because that searches the *current* zone
+  and the record is no longer in one;
+- `baseAddr` taken at draw time will not equal `baseAddr` read later.
+
+**What survives relocation is shape** — the pixmap's `bounds` and
+`rowBytes`, and the owning port's `portRect` agreeing with them.
+
+## 7. The rule this arc paid the most for
+
+**A dereferenced handle is a snapshot, not an identity.**
+
+Resident code that observes at draw time and acts at the next
+event-loop pass must carry **handles** across that gap. A `PixMap`
+record is relocatable; the pointer a blit hands you may have moved by
+the time you use it, and a late `RecoverHandle` on a moved pointer
+cannot recover it.
+
+This was not deduced. A purpose-built control
+(`tools/guest-gworld/src/loop.c`) holds one GWorld for its whole life
+and blits it into its own window on a cadence. The chase sighted that
+blit **869 times at exactly the right rect**, chased it, and found
+nothing — with the target guaranteed alive. That is what proved the
+instrument wrong rather than the application.
+
+## 8. If you had to build your own
+
+The arc's brief was "enough to build our own Toolbox if we have to".
+What this file gives you, and what it does not:
+
+**You could reimplement the port model.** `GrafPort`/`CGrafPort` are
+pinned byte for byte, the discriminator is identified, `PixMap`,
+`BitMap`, `GDevice`, `QDProcs`/`CQDProcs` and `Zone` are laid out, and
+the offsets were produced by `offsetof` in the real headers with BOTH
+Retro68 toolchains — PPC and 68K byte-for-byte identical, so no packing
+drift between guests.
+
+**You could reimplement the bottleneck dispatch.** Ten families, the
+`SetStdCProcs` table, and the measured facts that an offscreen port and
+a window port dispatch identically, that `StdText` does NOT nest through
+`StdBits`, and (from prior art) that `CopyBits` consults `bitsProc` only
+when the destination is the current port.
+
+**You could reimplement GWorld allocation and lifetime** — what
+`NewGWorld` builds, that the port IS the CGrafPtr and is a locked
+relocatable block, what each flag changes, that `LockPixels` relocates
+the record, that disposal frees an address the next allocation reuses,
+and that create-and-destroy is the era's norm because almost nothing
+imports `UpdateGWorld`.
+
+**QuickDraw's own code is now REACHABLE**, which was the last frontier
+this arc named and then crossed. `SetStdCProcs` returns routine
+descriptors (`0xAAFE`, version 7, `ISA = kPowerPCISA`); the
+RoutineRecord holds a transition vector at descriptor+20; the vector's
+first word is the PowerPC entry point:
+
+| Proc | Descriptor | TVector | Code |
+|---|---|---|---|
+| `StdText` | `0x000d5a3c` | `0x005825a8` | `0x3f9967c0` |
+| `StdBits` | `0x000d49f0` | `0x0058ab38` | `0x3f8a9b00` |
+| `StdRect` | `0x000454a0` | `0x0058afc0` | — |
+
+Dumped from inside the guest and disassembled as PowerPC BE, these are
+clean function bodies — `mflr`/`stmw`/`stwu` prologues, TOC-relative
+globals, real control flow. **So the ROM being compressed on disk does
+not hide QuickDraw**: it is readable at instruction level from a running
+guest, one routine descriptor at a time.
+
+A first result from actually reading it: **`StdText` maintains its own
+recursion-depth counter** — loads a TOC global, reads a byte, writes
+back `+1`, and restores it on the empty-text early-out path.
+
+What remains genuinely untouched is breadth: region algebra, colour
+matching, the blitter's inner loops. Those are now a matter of reading
+more of the same, not of finding a way in.
+
+## 8b. E0: the targets link InterfaceLib, so the glue path applies
+
+Read statically from each application's own PEF import table
+(`tools/pef.py --imports`, which now reports WHICH library a symbol
+resolves against, not merely which libraries are imported):
+
+| Binary | `NewGWorld` resolves against |
+|---|---|
+| Finder | InterfaceLib |
+| Sherlock 2 | InterfaceLib (also `DisposeGWorld`, `SetGWorld`, `GetGWorld`, `SetStdCProcs`, `CopyBits`) |
+| Appearance | InterfaceLib (also `CopyBits`) |
+| **New Old World (ours)** | **CarbonLib** |
+
+So the CarbonLib hole is ours alone: every application this arc wants to
+instrument calls QuickDraw through InterfaceLib, whose glue is
+documented to read the trap dispatch table at call time. That is the
+precondition plan 014's trap patch rests on, and it is now measured
+rather than assumed for the two applications that beat the chase.
+
+## 8c. Enumerating the worlds that already exist (2026-08-07, measured)
+
+There is no public registry of GWorlds, and a resident that only patches
+`NewGWorld` sees none of the ones that predate it. A **linear sweep of
+the armed process's application zone** finds them, and the signature that
+works is built entirely out of §6's lesson:
+
+| Test | Why it survives relocation |
+|---|---|
+| `portVersion & 0xC000 == 0xC000` | a bit, not a pointer |
+| `portPixMap` nonzero and even | a handle is never odd |
+| pixmap `rowBytes & 0x8000` | QuickDraw's own PixMap flag |
+| **`portRect == pixmap bounds`** | shape; the GWorld invariant |
+| stride ≥ one row at 1 bpp | shape |
+
+**The fourth test is the one that does the work**, and it also excludes
+every window port in the machine without a list walk: a window's
+`portRect` is LOCAL while its `portPixMap` is the SCREEN's, whose bounds
+are global and the size of the display. The two disagree, so a window
+never matches. (A full-screen window at the origin is the one case where
+they could agree, so WindowList membership is still checked — after the
+match, where it costs nothing.)
+
+Nothing in the signature is a `baseAddr`, a dereferenced pointer or a
+late-recovered handle, because §6 measured all three to be snapshots of a
+block `LockPixels` has moved.
+
+**The one non-shape is a liveness gate.** Everything above can be
+satisfied by the bytes a freed block happens to still hold, and hooking
+WRITES four bytes into it. §3 measured that a GWorld's port is an
+always-locked relocatable block — `RecoverHandle` on the port itself
+returns a handle — so a live world recovers and dead bytes do not.
+Measured cost of the gate: one refusal per sweep, no coverage lost.
+
+**What a sweep costs, measured on this rig** (68K resident, PowerPC
+application's heap, QEMU mac99):
+
+| Heap | span | blocks dereferenced | worlds found | time |
+|---|--:|--:|--:|--:|
+| Finder | 955 KiB | 99 | 2 | **68.9 ms** |
+| Monitors | 997 KiB | 209 | 3 | **186.5 ms** |
+
+Roughly 70–190 µs per KiB, the spread being how many blocks get past the
+cheap first filter. So a whole-heap enumeration is a tenth of a second
+for a typical application and is affordable **once**, at arm — and is not
+affordable per repaint, which is the measured reason the sight-then-chase
+route below stays an experiment.
+
+## 9. What is still open
+
+- Whether the fix (recovering the handle at sight time) makes the
+  control pass. **Until it does, no null from any application is
+  evidence about that application.**
+- Whether the Finder's composite survives its repaint at all — the
+  transient hypothesis. The static evidence (no `UpdateGWorld`) points
+  at create-and-destroy, but it has not been observed.
+- ~~Whether a 68K trap patch on a QuickDraw call is seen by a native
+  PowerPC caller. The spike proves 68K-installed `grafProcs` fire for a
+  68K program; it does not establish what happens when the *caller* is
+  native.~~ **ANSWERED 2026-08-06 (measured): yes.** The resident patches
+  `_QDExtensions` (`$AB1D`) as a ToolTrap with a 68K shim
+  (`ext/src/now_content_qdext.S`), and it fired for Sherlock 2 — which
+  the table above records as resolving `NewGWorld` against InterfaceLib,
+  i.e. a native CFM caller — 77 births and 77 disposals with 0 missed.
+  The InterfaceLib glue reading the trap dispatch table at call time,
+  which section 8 above establishes as the precondition, is what makes
+  this work. Emulator only.
+- The route from an `IconSuite`/`IconRef` to a resource ID that a host
+  could compose from.

@@ -1,0 +1,151 @@
+#!/bin/sh
+# The host gate: the SwiftPM suites AND the Xcode app target.
+#
+# Both are needed because they disagree. SwiftPM builds the package;
+# xcodebuild builds the thing a human launches, and for a day the two
+# diverged — an unguarded `import NOWAgentIntegration` broke the app while
+# `swift test` reported 459 passing. A suite that cannot see a broken app
+# build is not covering the app.
+#
+# Scratch lives outside the repository (AGENTS.md > Testing). Pass a
+# directory to keep it; otherwise a temporary one is made and removed.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+signing=${NOW_HOST_SIGNING:-unsigned}
+release_team=B93A9CG7F9
+
+case "$signing" in
+    unsigned|release) ;;
+    *)
+        echo "NOW_HOST_SIGNING must be unsigned or release (got $signing)" >&2
+        exit 64
+        ;;
+esac
+
+if [ "$#" -gt 1 ]; then
+    echo "usage: $0 [/absolute/scratch/directory]" >&2
+    exit 64
+fi
+
+keep_scratch=yes
+if [ "$#" -eq 1 ]; then
+    case "$1" in
+        /*) scratch_root=$1 ;;
+        *) echo "scratch directory must be absolute" >&2; exit 64 ;;
+    esac
+    case "$scratch_root/" in
+        "$repo_root"/*)
+            echo "scratch directory must live outside the source repository" >&2
+            exit 64
+            ;;
+    esac
+else
+    scratch_root=$(mktemp -d "${TMPDIR:-/tmp}/now-test-host.XXXXXX")
+    keep_scratch=no
+fi
+
+cleanup() {
+    [ "$keep_scratch" = yes ] || rm -rf "$scratch_root"
+}
+trap cleanup EXIT INT TERM
+
+mkdir -p "$scratch_root"
+
+run_swift_step() {
+    log=$1
+    shift
+    if ! "$@" > "$log" 2>&1; then
+        cat "$log" >&2
+        return 1
+    fi
+    cat "$log"
+    "$script_dir/check-swift-warnings" "$repo_root/now-host" "$log"
+}
+
+# See scripts/test-mirrorkit for the reasoning: the Platinum asset pack is
+# a runtime dependency, tests needing its bytes skip by name without one,
+# and a machine that HAS the pack must not let those skips stand.
+if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
+    pack=${NOW_MIRROR_ASSETS:-}
+    if [ -z "$pack" ]; then
+        pack=$(ls -d "$HOME"/Lab/Assets/now-mirror-assets/pack-*/Resources \
+               2>/dev/null | sort -r | head -1)
+    fi
+    if [ -n "$pack" ] && [ -f "$pack/manifest.json" ]; then
+        NOW_REQUIRE_ASSET_PACK=1
+        export NOW_REQUIRE_ASSET_PACK
+        echo "==> asset pack found ($pack) — pack gates ENFORCED"
+    else
+        echo "==> asset pack absent — pack gates will SKIP by name"
+        echo "    (tools/extract-assets-offline; docs/asset-pack.md)"
+    fi
+fi
+
+# The fixture directory's shape, before anything reads it. Both of these
+# cost under a second and both guard a drift that is invisible in review:
+# a capture written by the old `json.dump(indent=1)` path puts 60,000
+# lines of whitespace into a diff, and a capture whose provenance block
+# was lost is a claim about an unidentified machine.
+echo "==> fixture format and manifest"
+"$repo_root/tools/fixture-store" compact --check >/dev/null
+"$repo_root/tools/fixture-store" manifest --check
+
+echo "==> swift test"
+run_swift_step "$scratch_root/swift-test.log" \
+    swift test --package-path "$repo_root/now-host" \
+    --scratch-path "$scratch_root/swift"
+
+# And again with NO pack — the build is cached, so this costs the test
+# run only. A suite that passes only on a machine which happens to have
+# the dependency says nothing about a fresh clone, and that is the same
+# hole as a gate nothing invokes. It has already earned its keep once:
+# it caught a render assertion whose sample point only meant what it
+# meant with the pack's own font metrics.
+echo "==> swift test again with NOW_MIRROR_ASSETS=none (honest degradation)"
+run_swift_step "$scratch_root/swift-test-no-assets.log" \
+    env NOW_MIRROR_ASSETS=none NOW_REQUIRE_ASSET_PACK= \
+    swift test --package-path "$repo_root/now-host" \
+    --scratch-path "$scratch_root/swift"
+
+# Debug and Release differ in whole-module optimisation, which has caught
+# errors the other configuration accepts. Both, or the gate has a hole.
+for configuration in Debug Release; do
+    echo "==> xcodebuild $configuration"
+    if [ "$signing" = release ]; then
+        xcodebuild \
+            -project "$repo_root/now-host/NewOldWorld.xcodeproj" \
+            -scheme "New Old World" \
+            -configuration "$configuration" \
+            -derivedDataPath "$scratch_root/xcode-$configuration" \
+            DEVELOPMENT_TEAM="$release_team" \
+            build \
+            > "$scratch_root/xcodebuild-$configuration.log" 2>&1
+    else
+        xcodebuild \
+            -project "$repo_root/now-host/NewOldWorld.xcodeproj" \
+            -scheme "New Old World" \
+            -configuration "$configuration" \
+            -derivedDataPath "$scratch_root/xcode-$configuration" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build \
+            > "$scratch_root/xcodebuild-$configuration.log" 2>&1
+    fi || {
+            echo "xcodebuild $configuration FAILED:" >&2
+            grep -E "error:" "$scratch_root/xcodebuild-$configuration.log" >&2 \
+                || tail -40 "$scratch_root/xcodebuild-$configuration.log" >&2
+            exit 1
+    }
+    "$script_dir/check-swift-warnings" \
+        "$repo_root/now-host" "$scratch_root/xcodebuild-$configuration.log"
+    if [ "$signing" = release ]; then
+        "$script_dir/verify-host-signature" \
+            "$scratch_root/xcode-$configuration/Build/Products/$configuration/New Old World.app"
+    else
+        echo "==> unsigned $configuration app compiled; release signature not claimed"
+    fi
+done
+
+echo "==> host gate passed"

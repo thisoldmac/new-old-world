@@ -1,0 +1,9 @@
+{
+  "schema": "ckproject.open-receipt/1",
+  "projectID": "0123456789abcdef0123456789abcdef",
+  "applicationCreator": "O9ID",
+  "event": "odoc",
+  "document": "Project.ckp",
+  "state": "accepted",
+  "acceptance": "appleevent-handler-reply"
+}

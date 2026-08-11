@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+#
+# q800-68k — boot NOW-68K on the Quadra 800 emulator, dialling this Mac.
+#
+# The PowerBook 180c is the real target and this is not it: a 68040 under
+# Mac OS 8.1 with 128 MB is a different machine from a 68030 under System
+# 7.1 with 4 MB, and nothing about timing, memory pressure or MacTCP's
+# behaviour under load carries over. What DOES carry over is whether the
+# code is correct — whether a 4 MB file arrives byte for byte, whether the
+# File Manager calls are the right ones, whether the frame reader stays in
+# sync. That is worth having before anyone walks to the PowerBook, because
+# every one of those failures costs an FTP round trip and a reboot there.
+#
+# Read a green run here as "emulator-verified" and never as
+# "metal-verified" (AGENTS.md: verification is a status, not an adjective).
+#
+# How it hangs together:
+#   * the guest DIALS OUT, so nothing here forwards a port inward. Under
+#     QEMU's user-mode networking this Mac is 10.0.2.2, which is exactly
+#     the address NOW-68K's own set_defaults already uses.
+#   * the app and a dev settings file naming host/port/autoconnect go into
+#     System Folder:Startup Items, so the guest is dialling within a few
+#     seconds of the boot chime with nobody double-clicking anything.
+#   * the disk is a session-private clone (clone_disk); the shared base
+#     is never written. Parent AGENTS.md, "Operating the VM".
+#
+#     scripts/q800-68k            # build, inject, boot, wait for the dial
+#     scripts/q800-68k --port N   # dial a listener on another port
+#     scripts/q800-68k --stop     # QMP quit (never pkill — see below)
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Where the emulator, its ROM and its disk live is a property of one desk,
+# so none of it is defaulted here: a path baked into this file is wrong for
+# everyone else while looking authoritative. Put them in .env.lab (see
+# docs/lab-setup.md); an explicit environment variable still wins.
+if [ -f "$REPO/.env.lab" ]; then
+    set -a; . "$REPO/.env.lab"; set +a
+fi
+
+need () {
+    # A value this script cannot invent. Naming the missing key beats
+    # booting something unexpected off a stale default.
+    if [ -z "${2:-}" ]; then
+        echo "q800-68k: no $1 ($3)." >&2
+        echo "  Set it in .env.lab or the environment - see docs/lab-setup.md." >&2
+        exit 1
+    fi
+    printf '%s\n' "$2"
+}
+
+QEMU="$(need NOW_Q800_QEMU "${NOW_Q800_QEMU:-}" "path to qemu-system-m68k")"
+ROM="$(need NOW_Q800_ROM "${NOW_Q800_ROM:-}" "the Quadra 800 ROM")"
+BASE="$(need NOW_Q800_IMG "${NOW_Q800_IMG:-}" "the base disk image")"
+HFS="$(need NOW_HFSUTILS "${NOW_HFSUTILS:-}" "hfsutils, to inject into the image")"
+# The toolchain FILE, not its directory. One key, one meaning: this
+# script used to take the directory and append the rest itself while
+# deploy-68k took the file, so a single .env.lab value could not satisfy
+# both. State a limit once, where every reader of it agrees (AGENTS.md).
+TOOLCHAIN="$(need NOW68K_TOOLCHAIN "${NOW68K_TOOLCHAIN:-}" "the Retro68 68K toolchain FILE")"
+
+# --- two helpers this used to source from a sibling repository ----------
+# Inlined so the script stands on its own: a public checkout cannot source
+# a private one, and the dependency was invisible until it failed.
+
+# Make a session-private, disposable copy of a base disk image. An APFS
+# clonefile (cp -c) is instant and costs no extra space until the clone
+# diverges; across volumes it falls back to a full copy, so it is always
+# correct, just slower. The clone is byte-identical and standalone, and
+# any qcow2 internal snapshots survive, so `-loadvm TAG` works on it.
+# This is the ONE place "never boot the shared base" is implemented.
+clone_disk () {
+    local src="$1" dst="$2"
+    [ -f "$src" ] || { echo "error: base image not found: $src" >&2; return 1; }
+    rm -f "$dst"
+    cp -c "$src" "$dst" || return 1
+    printf '%s\n' "$dst"
+}
+
+# Start a command in its OWN session (setsid) with output to LOG, echoing
+# the pid. nohup+disown alone is not enough: the child stays in the
+# launcher's process group, so a caller timeout delivered to that group
+# kills a booting guest along with its launcher (watched 2026-07-17, a
+# 2-minute timeout killed a q800 mid-boot). macOS has no setsid(1), so the
+# new session is entered via python3; exec keeps the pid, so the echoed
+# pid IS the final process.
+spawn_detached () {
+    local log="$1"; shift
+    nohup python3 -c '
+import os, sys
+try:
+    os.setsid()
+except OSError:
+    pass  # already a session leader; detached enough
+os.execvp(sys.argv[1], sys.argv[1:])
+' "$@" >"$log" 2>&1 &
+    local pid=$!
+    disown "$pid" 2>/dev/null || true
+    printf '%s\n' "$pid"
+}
+
+RUN="$REPO/.q800"
+PORT=5250
+BUILD=1
+case "${1:-}" in
+    --stop)
+        # QMP `quit`, never pkill/SIGKILL: a hard kill trips the macOS
+        # crash health-check dialog that then needs dismissing by hand
+        # (AGENTS.md).
+        #
+        # Reports what actually happened. It used to `|| true` the nc and
+        # print "stopped" unconditionally, which is how a VM whose socket
+        # had been unlinked by a later launch went on running for an hour
+        # while every teardown claimed success. A stop that cannot reach
+        # its VM has to say so, because the alternative is an orphan
+        # nobody is looking for.
+        if [ ! -S "$RUN/qmp.sock" ]; then
+            echo "q800-68k: no qmp socket at $RUN/qmp.sock" >&2
+            if pgrep -f "qemu-system-m68k.*$RUN/session.img" >/dev/null; then
+                echo "q800-68k: a VM on this session's disk IS still running;" >&2
+                echo "  its socket is gone, so QMP cannot reach it. Send it" >&2
+                echo "  SIGTERM (which QEMU handles cleanly - not SIGKILL):" >&2
+                echo "  kill -TERM \$(pgrep -f \"qemu-system-m68k.*$RUN/session.img\")" >&2
+                exit 1
+            fi
+            echo "q800-68k: nothing running"
+            exit 0
+        fi
+        printf '{"execute":"qmp_capabilities"}\n{"execute":"quit"}\n' \
+            | nc -U "$RUN/qmp.sock" >/dev/null 2>&1 || true
+        echo "q800-68k: stopped"
+        exit 0 ;;
+    --no-build) BUILD=0; shift ;;
+esac
+[ "${1:-}" = "--port" ] && { PORT="$2"; shift 2; }
+
+mkdir -p "$RUN"
+
+# --- 1. build -------------------------------------------------------------
+if [ "$BUILD" = 1 ]; then
+    echo "==> building NOW-68K"
+    # Force the build stamp current before anything is measured: CMake
+    # touches it at the END of a build, so it can read minutes early
+    # (AGENTS.md, "check the build stamp before believing a test result").
+    touch "$REPO/now-guest-68k/src/core/wire68.c"
+    cmake -S "$REPO/now-guest-68k" -B "$RUN/build" -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
+        >/dev/null
+    cmake --build "$RUN/build" >/dev/null
+fi
+APP="$RUN/build/now-guest-68k.bin"
+[ -f "$APP" ] || { echo "error: no build at $APP" >&2; exit 1; }
+
+# --- 2. a disposable disk with the app and its settings on it -------------
+DISK="$RUN/session.img"
+rm -f "$DISK"
+# SAY WHICH IMAGE THIS IS, AND WHETHER ITS VOLUME IS CLEAN, before the
+# clone. This was the OTHER file no gate ever looked at: ext-bake-gate
+# asks `volumeClean` of the baked oracle, spin-up-ppc's base got the same
+# question on 2026-08-07, and this one — a shared 68K base named only by
+# .env.lab — had nobody asking it at all. A dirty base here costs a
+# System 7 disk-check pass on every clone, and the guest dials out on its
+# own, so the delay looks exactly like a wire that would not come up.
+# A warning, not a refusal: it is a slower boot, not a wrong result.
+"$REPO/tools/image-provenance" "$BASE" --label "q800-68k base" || true
+# And the fitness question, asked through the one place that answers it for
+# every clone site (tools/base-image). Purpose 68k has NO designated base —
+# there is exactly one, named by .env.lab — so what it can check is the file
+# itself. It says so rather than staying quiet, because a check that skips a
+# question silently is how os91-runner.qcow2 went dirty for nineteen days.
+# --stages-resident is honest here: this script builds and stages THIS
+# checkout's 68K guest onto the clone.
+"$REPO/tools/base-image" fit "$BASE" --purpose 68k --stages-resident || exit $?
+clone_disk "$BASE" "$DISK" >/dev/null
+
+# NOW-68K has no preferences; the dev settings file is how a build under
+# test learns where to dial without someone typing an address into the
+# window (n68_devsettings.h). CR line endings: this is read by a classic
+# Mac, and the parser accepts either, but authoring it correctly keeps the
+# file readable in TeachText if anyone opens it there.
+printf 'host = 10.0.2.2\rport = %s\rautoconnect = on\rretry = on\rretry-interval = 3\r' \
+    "$PORT" > "$RUN/_devsettings.txt"
+
+"$HFS/hmount" "$DISK" >/dev/null
+"$HFS/hcd" "System Folder" >/dev/null
+"$HFS/hcd" "Startup Items" >/dev/null
+# -m: MacBinary, so both forks and the Finder type/creator survive. A
+# resource fork lost here produces an application the Finder will not
+# launch, with no error that names the cause.
+"$HFS/hcopy" -m "$APP" ":"
+"$HFS/hcopy" -t "$RUN/_devsettings.txt" ":NOW-68K Dev Settings"
+"$HFS/humount" >/dev/null
+echo "==> injected NOW-68K + dev settings (host 10.0.2.2:$PORT)"
+
+# --- 3. boot --------------------------------------------------------------
+rm -f "$RUN/qmp.sock"
+# spawn_detached takes the LOG PATH as its first argument and opens it
+# for writing itself; it does not read a shell redirect. Passing "$QEMU"
+# first — as this script did once — makes the emulator binary the log
+# file, and `>` truncates it to nothing before the exec that was supposed
+# to run it. It cost a QEMU relink to notice. The log path goes first.
+spawn_detached "$RUN/qemu.log" "$QEMU" \
+    -M q800 -m 128 -bios "$ROM" \
+    -device scsi-hd,scsi-id=0,drive=hd0 \
+    -drive file="$DISK",format=raw,if=none,id=hd0 \
+    -nic user,model=dp83932 \
+    -display none \
+    -qmp unix:"$RUN/qmp.sock",server,nowait \
+    > "$RUN/qemu.pid"
+echo "==> booting (headless); qmp at $RUN/qmp.sock"
+
+# The image was not shut down cleanly, so the Finder puts up a modal
+# BEFORE Startup Items run, and until it is dismissed the guest never
+# launches at all.
+#
+# Sent REPEATEDLY rather than once at a fixed delay. A single timed
+# Return is a guess about how long this boot takes, and boot time varies
+# with what else the host is doing: the first run here dismissed it at
+# 12s and the second missed it entirely, leaving the dialog up and the
+# whole test run reading "no guest dialled in" — a symptom that points
+# nowhere near a modal nobody can see on a headless VM. Extra Returns
+# after it is gone land on the Finder and do nothing.
+echo "==> waiting out the boot, dismissing the improper-shutdown modal"
+for _ in $(seq 1 12); do
+    sleep 5
+    printf '{"execute":"qmp_capabilities"}\n{"execute":"send-key","arguments":{"keys":[{"type":"qcode","data":"ret"}]}}\n' \
+        | nc -U "$RUN/qmp.sock" >/dev/null 2>&1 || true
+done
+echo "==> NOW-68K should be dialling 10.0.2.2:$PORT now"
+echo "    (it retries every 3s, so start the listener whenever)"

@@ -1,0 +1,552 @@
+#!/usr/bin/env python3
+"""The commit gate for DERIVED documents: a merge may not keep two honest
+re-derivations and call the result a fact.
+
+    tools/derived-doc-gate list            # every file that declares itself derived
+    tools/derived-doc-gate show <file>     # its derivations, as runnable commands
+    tools/derived-doc-gate check           # what the hooks run
+    tools/derived-doc-gate rederive [f...] # re-run, rewrite the block, log the result
+    tools/derived-doc-gate selftest        # build the 2026-08-05 defect and watch it refuse
+
+WHY THIS EXISTS. `docs/contract-coverage.md` and `docs/mcp-coverage.md`
+are derived: they carry the greps and awks that produce them from the
+guests' own dispatch tables, the contract's registries and the host
+projection catalog. AGENTS.md already says "derive it, do not remember
+it" and "re-derive at the MERGE, not only at the edit". Nothing checked
+it, and on 2026-08-05 that cost three separate lies in one night:
+
+  * Two lanes each honestly re-derived the verb counts hours apart —
+    40 declared / 37 PPC on one branch, 38 / 35 on the other. Both were
+    CORRECT WHEN WRITTEN, because each counted a tree missing the other's
+    landed verbs. The merge kept one of them and produced a number
+    neither author wrote and neither would have signed.
+  * `mcp-coverage.md`'s "unnoticed rows, named together" prose list — a
+    sentence that restates a column of the table above it — rotted three
+    times the same night. Once it became TWO lists, one naming `desktop`
+    and one naming `cycle`, neither naming both. Once a lane's honest
+    rewrite dropped rows. A gate that read the table and not the prose
+    would have passed every one of the three.
+  * Every integration round found the counts wrong on arrival, and round
+    3's were IDENTICAL to round 2's — which the lane flagged as itself
+    worth recording, because a derived table unmoved by 99 commits looks
+    exactly like a derivation nobody ran.
+
+WHAT IT CHECKS, and the third one is the one that had to be learned.
+
+  1. Each derivation still produces what the document records. The block
+     holds the sha256 of the command's stdout, so a count that moved and
+     a document that did not is refused by name.
+  2. The commands still SUCCEED. A derivation may be a consistency
+     command that exits non-zero — the prose-versus-table check is one —
+     so "the awk broke" and "the answer changed" are different failures
+     with different text.
+  3. The SOURCES have not moved since the last re-derivation, even when
+     every derived answer is unchanged. Counts are blind to a change of
+     shape: two lanes on 2026-08-05 added new ARGUMENTS to existing verbs
+     and every count held. A gate built only on (1) reads green through
+     exactly that, so the block records a digest of the source files as
+     well, and a merge that moved them owes a re-derivation whether or
+     not the numbers move. When they do not, `rederive` writes
+     "unchanged" and the commit sha into the log — a confirmation is
+     worth its line, and silence is not evidence.
+  4. A command marked `published` must still appear in the document's own
+     prose. AGENTS.md: "Prose that restates a table is a second place to
+     be wrong. Where a list appears twice, either gate the pair or delete
+     one." Both files publish their greps for a reader; this gates the
+     pair rather than asking the reader to trust two copies.
+
+WHERE IT BITES, and deliberately not everywhere. It REFUSES a merge
+commit and only a merge commit — the failure class above is a merge
+failure, and every instance of it was. On an ordinary commit it prints
+what is stale and exits 0, because a gate that refuses an in-flight lane
+at 2am converts this repository's most expensive risk (work lost
+uncommitted) into a certainty for a reason its author usually cannot act
+on. tools/gate-impact-sweep exists to check that claim rather than assert
+it.
+
+WHAT IT CANNOT CHECK, said plainly. It cannot tell a re-derivation from a
+convincing hand edit: `rederive` rewrites the block from real command
+output, but nothing stops a person typing a hash. It also cannot know
+that a derivation asks the right question — a command that greps the
+wrong file will hash consistently forever. What it removes is the failure
+where everybody did the right thing and the merge produced a lie anyway.
+
+THE LIST OF DERIVED FILES IS NOT KEPT HERE. Each file declares itself,
+next to the commands that produce it, in a `derived-doc` block; this tool
+finds them by scanning the tracked tree. A hand-kept enumeration of
+which files are hand-kept enumerations is the failure class this
+repository keeps paying for.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import re
+import subprocess
+import sys
+import time
+
+MARKER = "<!-- derived-doc v1"
+END = "-->"
+
+
+# ---------------------------------------------------------------- helpers
+
+def run(*args: str, cwd: str | None = None) -> str:
+    return subprocess.run(args, capture_output=True, text=True, check=True,
+                          cwd=cwd).stdout
+
+
+def repo_root() -> str:
+    return (os.environ.get("TBT_GATE_ROOT")
+            or run("git", "rev-parse", "--show-toplevel").strip())
+
+
+def sha256(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def normalise(cmd: str) -> str:
+    """Whitespace- and continuation-insensitive form, for comparing a
+    command in the block against the same command printed in the prose."""
+    return " ".join(cmd.replace("\\\n", " ").split())
+
+
+# ---------------------------------------------------------------- the block
+
+class Derivation:
+    def __init__(self, did: str, command: str, sha: str | None,
+                 lines: str | None, published: bool):
+        self.id = did
+        self.command = command
+        self.sha = sha
+        self.lines = lines
+        self.published = published
+
+
+class Block:
+    """One `derived-doc` declaration, parsed out of a markdown file.
+
+    The format is line-based on purpose: it is read by a hook that must
+    not depend on a YAML library, and written next to the commands it
+    describes so that the file which is derived is the file that says so.
+
+        <!-- derived-doc v1
+        sources: now-guest-ppc/src/core/wire.c contract/asyncapi.yaml
+        sources-sha1: <hex>
+        derive <id> sha256=<hex> lines=<n> [published]
+            <shell, one or more indented lines>
+        equal: <id> <id>          # two derivations must agree exactly
+        rederived: <iso> <commit> <what moved, or "unchanged">
+        -->
+    """
+
+    def __init__(self, path: str, raw: list[str], start: int, stop: int):
+        self.path = path            # repo-relative
+        self.start = start          # index of the MARKER line
+        self.stop = stop            # index of the END line
+        self.raw = raw
+        self.sources: list[str] = []
+        self.sources_sha1: str | None = None
+        self.derivations: list[Derivation] = []
+        self.equalities: list[tuple[str, str]] = []
+        self.log: list[str] = []
+        self._parse()
+
+    def _parse(self) -> None:
+        pending: Derivation | None = None
+        body: list[str] = []
+        for line in self.raw:
+            if line.startswith(("    ", "\t")) and pending is not None:
+                body.append(line.strip())
+                continue
+            if pending is not None:
+                pending.command = "\n".join(body)
+                self.derivations.append(pending)
+                pending, body = None, []
+            key, _, rest = line.partition(":")
+            rest = rest.strip()
+            if line.startswith("derive "):
+                parts = line.split()
+                did = parts[1]
+                attrs = dict(p.split("=", 1) for p in parts[2:] if "=" in p)
+                pending = Derivation(did, "", attrs.get("sha256"),
+                                     attrs.get("lines"),
+                                     "published" in parts[2:])
+            elif key == "sources":
+                self.sources = rest.split()
+            elif key == "sources-sha1":
+                self.sources_sha1 = rest
+            elif key == "equal":
+                a, b = rest.split()
+                self.equalities.append((a, b))
+            elif key == "rederived":
+                self.log.append(rest)
+        if pending is not None:
+            pending.command = "\n".join(body)
+            self.derivations.append(pending)
+
+    # -- evaluation ------------------------------------------------------
+
+    def source_digest(self, root: str) -> str:
+        lines = []
+        for rel in sorted(self.sources):
+            full = os.path.join(root, rel)
+            if not os.path.exists(full):
+                lines.append(f"{rel} MISSING")
+                continue
+            blob = run("git", "-C", root, "hash-object", "--", full).strip()
+            lines.append(f"{rel} {blob}")
+        return hashlib.sha1("\n".join(lines).encode()).hexdigest()
+
+    def evaluate(self, root: str) -> tuple[dict[str, str], list[str]]:
+        """Run every derivation. Returns (id -> stdout, hard failures)."""
+        out: dict[str, str] = {}
+        broken: list[str] = []
+        for d in self.derivations:
+            proc = subprocess.run(["bash", "-o", "pipefail", "-c", d.command],
+                                  capture_output=True, text=True, cwd=root)
+            if proc.returncode != 0:
+                broken.append(
+                    f"derivation {d.id!r} FAILED to run (exit "
+                    f"{proc.returncode}) — this is the command breaking, not "
+                    f"the answer changing:\n"
+                    + "\n".join("      " + s for s in
+                                (proc.stderr or proc.stdout).strip()
+                                .splitlines()[:8]))
+                continue
+            out[d.id] = proc.stdout
+        return out, broken
+
+    def problems(self, root: str) -> list[str]:
+        out, problems = self.evaluate(root)
+
+        want_src = self.source_digest(root)
+        if self.sources_sha1 != want_src:
+            problems.append(
+                "the SOURCES moved since the last re-derivation:\n"
+                f"      recorded  {self.sources_sha1}\n"
+                f"      this tree {want_src}\n"
+                "      (checked separately from the answers on purpose: a "
+                "count is blind to a\n"
+                "       change of shape — two lanes added new ARGUMENTS to "
+                "existing verbs on\n"
+                "       2026-08-05 and every count held.)")
+
+        for d in self.derivations:
+            if d.id not in out:
+                continue
+            got = sha256(out[d.id])
+            if got != d.sha:
+                n_now = len([x for x in out[d.id].splitlines() if x.strip()])
+                problems.append(
+                    f"derivation {d.id!r} no longer produces what this file "
+                    f"records:\n"
+                    f"      recorded  {d.sha[:16] if d.sha else '(none)'}…  "
+                    f"lines={d.lines}\n"
+                    f"      this tree {got[:16]}…  lines={n_now}")
+            if d.published:
+                # The document MINUS this block: the block's own copy of the
+                # command would otherwise satisfy the check that a second
+                # copy still exists, which is the check answering itself.
+                doc = self.raw_document(root)
+                body = "\n".join(doc[:self.start] + doc[self.stop + 1:])
+                if normalise(d.command) not in normalise(body):
+                    problems.append(
+                        f"derivation {d.id!r} is marked `published` and its "
+                        f"command no longer appears\n"
+                        f"      in this document's own prose. Where a "
+                        f"command appears twice, the second copy\n"
+                        f"      is a second place to be wrong; gate the pair "
+                        f"or delete one (AGENTS.md).")
+
+        for a, b in self.equalities:
+            if a in out and b in out and out[a] != out[b]:
+                # Line-based, not token-based: a derivation may carry a
+                # header line ("name-lists: 2") whose whole value is the
+                # difference, and splitting on whitespace would report the
+                # count without the thing it counts.
+                la, lb = set(out[a].splitlines()), set(out[b].splitlines())
+                only_a = sorted(la - lb)
+                only_b = sorted(lb - la)
+                problems.append(
+                    f"{a!r} and {b!r} must agree and do not — this is the "
+                    f"prose-restates-a-table case:\n"
+                    f"      only in {a}: {only_a or '(nothing)'}\n"
+                    f"      only in {b}: {only_b or '(nothing)'}")
+        return problems
+
+    def raw_document(self, root: str) -> list[str]:
+        with open(os.path.join(root, self.path)) as fh:
+            return fh.read().splitlines()
+
+    # -- rewriting -------------------------------------------------------
+
+    def rewrite(self, root: str, note: str) -> list[str]:
+        out, broken = self.evaluate(root)
+        if broken:
+            raise SystemExit("[derived-doc-gate] cannot re-derive "
+                             f"{self.path}:\n  " + "\n  ".join(broken))
+        moved = []
+        new: list[str] = [self.raw[0]]
+        pending_id: str | None = None
+        for line in self.raw[1:]:
+            if line.startswith(("    ", "\t")) and pending_id is not None:
+                new.append(line)
+                continue
+            pending_id = None
+            if line.startswith("derive "):
+                parts = line.split()
+                did = parts[1]
+                d = next(x for x in self.derivations if x.id == did)
+                text = out[did]
+                n = len([x for x in text.splitlines() if x.strip()])
+                got = sha256(text)
+                if got != d.sha:
+                    moved.append(f"{did} {d.lines}->{n}")
+                flags = " published" if d.published else ""
+                new.append(f"derive {did} sha256={got} lines={n}{flags}")
+                pending_id = did
+                continue
+            if line.startswith("sources-sha1:"):
+                want = self.source_digest(root)
+                if want != self.sources_sha1:
+                    moved.append("sources")
+                new.append(f"sources-sha1: {want}")
+                continue
+            new.append(line)
+        head = run("git", "-C", root, "rev-parse", "--short", "HEAD").strip()
+        summary = ", ".join(moved) if moved else "unchanged"
+        stamp = f"rederived: {iso(time.time())} {head} {summary}"
+        if note:
+            stamp += f" ({note})"
+        new.insert(len(new), stamp)
+        doc = self.raw_document(root)
+        doc[self.start:self.stop] = new
+        with open(os.path.join(root, self.path), "w") as fh:
+            fh.write("\n".join(doc) + "\n")
+        return moved
+
+
+def iso(ts: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(ts))
+
+
+# ---------------------------------------------------------------- discovery
+
+def declared(root: str) -> list[Block]:
+    """Every tracked file carrying a `derived-doc` block. There is no
+    manifest: the file that is derived is the file that says so."""
+    try:
+        listing = run("git", "-C", root, "grep", "-l", "--fixed-strings",
+                      MARKER, "--", ".")
+    except subprocess.CalledProcessError:
+        listing = ""
+    blocks = []
+    for rel in sorted(set(listing.split())):
+        full = os.path.join(root, rel)
+        # A derived document is a document: `.md` only, and the marker must
+        # be at column 0 and outside a fenced block. Both restrictions were
+        # earned by tools/gate-impact-sweep, which found this gate refusing
+        # its OWN branch — its selftest carries the marker inside a Python
+        # string as fixture text, and discovery had happily adopted it as a
+        # declaration whose derivations then "failed to run". A gate that
+        # cannot be written about without arming itself is not usable.
+        if not rel.endswith(".md"):
+            continue
+        if not os.path.exists(full):
+            continue
+        with open(full) as fh:
+            lines = fh.read().splitlines()
+        start = None
+        found = 0
+        fenced = False
+        for i, line in enumerate(lines):
+            if line.startswith("```"):
+                fenced = not fenced
+            if fenced:
+                continue
+            if line.startswith(MARKER):
+                start = i
+            elif start is not None and line.strip() == END:
+                blocks.append(Block(rel, lines[start:i], start, i))
+                start, found = None, found + 1
+        # One block per file, because `rederive` rewrites by line index and
+        # a second block below the first would move under it. Said as a
+        # refusal rather than left to corrupt a document quietly.
+        if found > 1:
+            raise SystemExit(f"[derived-doc-gate] {rel} declares {found} "
+                             f"derived-doc blocks; exactly one is supported.")
+    return blocks
+
+
+# ---------------------------------------------------------------- the check
+
+def staged(root: str) -> set[str]:
+    # --no-renames on purpose. With rename detection a moved source file
+    # appears only under its NEW name, so a document derived from the old
+    # one is not "touched" and the gate never looks at it — while its
+    # derivation is now grepping a path that does not exist. Watched: a
+    # `git mv guest.c guest_renamed.c` passed silently until this flag.
+    out = run("git", "-C", root, "diff", "--cached", "--name-only",
+              "--no-renames")
+    return set(out.split())
+
+
+def is_merge(root: str) -> bool:
+    if os.environ.get("NOW_DERIVED_DOC_FORCE_MERGE"):
+        return True
+    git_dir = run("git", "-C", root, "rev-parse", "--git-dir").strip()
+    if not os.path.isabs(git_dir):
+        git_dir = os.path.join(root, git_dir)
+    return os.path.exists(os.path.join(git_dir, "MERGE_HEAD"))
+
+
+def check(root: str) -> int:
+    touched = staged(root)
+    merge = is_merge(root)
+    hits = []
+    for block in declared(root):
+        relevant = block.path in touched or any(s in touched
+                                                for s in block.sources)
+        if not relevant:
+            continue
+        problems = block.problems(root)
+        if problems:
+            hits.append((block, problems))
+
+    if not hits:
+        return 0
+
+    stream = sys.stderr if merge else sys.stdout
+    if merge:
+        print("", file=stream)
+        print("[derived-doc-gate] refusing this MERGE: it touches a derived "
+              "document whose", file=stream)
+        print("derivation was not re-run.", file=stream)
+    else:
+        print("[derived-doc-gate] NOT refusing (this is not a merge), but "
+              "these are stale:")
+    for block, problems in hits:
+        print(f"  {block.path}", file=stream)
+        for p in problems:
+            print(f"    - {p}", file=stream)
+    print("", file=stream)
+    print("  Re-derive, which is one command and runs the file's own "
+          "commands:", file=stream)
+    print("      tools/derived-doc-gate rederive", file=stream)
+    print("  Then read what moved before committing it. The point is not the "
+          "hash.", file=stream)
+    if merge:
+        print("", file=stream)
+        print("  WHY: on 2026-08-05 two lanes each HONESTLY re-derived the "
+              "coverage counts", file=stream)
+        print("  hours apart — 40/37 on one branch, 38/35 on the other, both "
+              "correct when", file=stream)
+        print("  written because each counted a tree missing the other's "
+              "landed verbs. The", file=stream)
+        print("  merge kept one and produced a number neither author wrote. "
+              "The same night,", file=stream)
+        print("  a prose list restating a table became TWO lists, one naming "
+              "`desktop` and", file=stream)
+        print("  one naming `cycle`, neither naming both. Nobody did anything "
+              "careless and", file=stream)
+        print("  the merge produced a lie anyway.", file=stream)
+        print("", file=stream)
+        return 1
+    return 0
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_list(root: str) -> int:
+    for block in declared(root):
+        ids = ", ".join(d.id for d in block.derivations)
+        print(f"{block.path}")
+        print(f"    {len(block.sources)} sources, derivations: {ids}")
+        if block.log:
+            print(f"    last: {block.log[-1]}")
+    return 0
+
+
+def cmd_show(root: str, want: str | None) -> int:
+    for block in declared(root):
+        if want and block.path != want:
+            continue
+        print(f"# {block.path}")
+        for d in block.derivations:
+            print(f"\n## {d.id}  (lines={d.lines}"
+                  + (", published" if d.published else "") + ")")
+            print(d.command)
+        print()
+    return 0
+
+
+def cmd_check_all(root: str) -> int:
+    """Strict CI form: evaluate every declared document, independent of the
+    staged diff. The hook's ordinary-commit leniency is deliberate; a clean
+    CI tree has no staged paths, so it needs this separate whole-corpus mode
+    or a stale declaration can look green merely because nothing is staged."""
+    hits = []
+    for block in declared(root):
+        problems = block.problems(root)
+        if problems:
+            hits.append((block, problems))
+    if not hits:
+        print(f"[derived-doc-gate] all {len(declared(root))} declared documents are current")
+        return 0
+    print("[derived-doc-gate] strict check failed:", file=sys.stderr)
+    for block, problems in hits:
+        print(f"  {block.path}", file=sys.stderr)
+        for problem in problems:
+            print(f"    - {problem}", file=sys.stderr)
+    print("  Repair: tools/derived-doc-gate rederive", file=sys.stderr)
+    return 1
+
+
+def cmd_rederive(root: str, paths: list[str], note: str) -> int:
+    any_moved = False
+    for block in declared(root):
+        if paths and block.path not in paths:
+            continue
+        moved = block.rewrite(root, note)
+        any_moved = any_moved or bool(moved)
+        if moved:
+            print(f"[derived-doc-gate] {block.path}: {', '.join(moved)}")
+        else:
+            # A confirmation is worth its line. A derived table unmoved by
+            # 99 commits looks exactly like a derivation nobody ran, so the
+            # re-run says so, in the file, with the sha it ran at.
+            print(f"[derived-doc-gate] {block.path}: unchanged, re-derived "
+                  f"at {run('git', '-C', root, 'rev-parse', '--short', 'HEAD').strip()}")
+    if not any_moved:
+        print("  Nothing moved. That is a result and it is now recorded.")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    cmd = argv[1] if len(argv) > 1 else "check"
+    root = repo_root()
+    if cmd == "check":
+        return check(root)
+    if cmd == "check-all":
+        return cmd_check_all(root)
+    if cmd == "list":
+        return cmd_list(root)
+    if cmd == "show":
+        return cmd_show(root, argv[2] if len(argv) > 2 else None)
+    if cmd == "rederive":
+        note = os.environ.get("NOW_DERIVED_DOC_NOTE", "")
+        return cmd_rederive(root, [a for a in argv[2:]], note)
+    if cmd == "selftest":
+        print("[derived-doc-gate] the mutation evidence is a separate, "
+              "runnable script:\n    tools/derived-doc-gate-selftest",
+              file=sys.stderr)
+        return 64
+    print(__doc__, file=sys.stderr)
+    return 64
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

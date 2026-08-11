@@ -1,0 +1,150 @@
+{
+ "bytes": null,
+ "capturedAt": 1000000000.0,
+ "latencyMs": null,
+ "result": {
+  "menus": [],
+  "processes": [
+   {
+    "front": false,
+    "name": "Control Strip Extension",
+    "serialHi": 0,
+    "serialLo": 29491201,
+    "signature": "sdev"
+   },
+   {
+    "front": false,
+    "name": "DVD AutoLauncher",
+    "serialHi": 0,
+    "serialLo": 29622273,
+    "signature": "dval"
+   },
+   {
+    "front": false,
+    "name": "FBC Indexing Scheduler",
+    "serialHi": 0,
+    "serialLo": 29687809,
+    "signature": "fbcb"
+   },
+   {
+    "front": false,
+    "name": "Folder Actions",
+    "serialHi": 0,
+    "serialLo": 29753345,
+    "signature": "ssrv"
+   },
+   {
+    "front": true,
+    "name": "Finder",
+    "serialHi": 0,
+    "serialLo": 29884417,
+    "signature": "MACS"
+   },
+   {
+    "front": false,
+    "name": "tbt-runner",
+    "serialHi": 0,
+    "serialLo": 31588353,
+    "signature": "????"
+   },
+   {
+    "front": false,
+    "name": "tbt-worker",
+    "serialHi": 0,
+    "serialLo": 32178179,
+    "signature": "????"
+   },
+   {
+    "front": false,
+    "name": "tbt-worker",
+    "serialHi": 0,
+    "serialLo": 32964609,
+    "signature": "????"
+   }
+  ],
+  "truncated": false,
+  "windows": [
+   {
+    "bounds": {
+     "bottom": 600,
+     "left": 0,
+     "right": 800,
+     "top": 0
+    },
+    "controls": [
+     {
+      "bounds": {
+       "bottom": 0,
+       "left": 20216,
+       "right": 0,
+       "top": 0
+      },
+      "title": "tbt-worker",
+      "value": 0
+     }
+    ],
+    "front": true,
+    "handle": 525221824,
+    "kind": 8,
+    "title": "N>P\u0000\ufffd\ufffdp\u0000\u0000Qd\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+    "visible": true
+   },
+   {
+    "bounds": {
+     "bottom": 600,
+     "left": 0,
+     "right": 800,
+     "top": 0
+    },
+    "controls": [
+     {
+      "bounds": {
+       "bottom": 0,
+       "left": 20216,
+       "right": 0,
+       "top": 0
+      },
+      "title": "tbt-worker",
+      "value": 0
+     }
+    ],
+    "front": false,
+    "handle": 521082224,
+    "kind": 8,
+    "title": "\n9L\u001f\u000f&p\u0000\u0000Qd\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+    "visible": true
+   },
+   {
+    "bounds": {
+     "bottom": 600,
+     "left": 0,
+     "right": 800,
+     "top": 0
+    },
+    "controls": [
+     {
+      "bounds": {
+       "bottom": 0,
+       "left": 20216,
+       "right": 0,
+       "top": 0
+      },
+      "title": "tbt-worker",
+      "value": 0
+     }
+    ],
+    "front": false,
+    "handle": 521936560,
+    "kind": 8,
+    "title": "\u001c\"\ufffd\u001f\u001c1p\u0000\u0000Qd\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+    "visible": true
+   }
+  ]
+ },
+ "screen": {
+  "h": 600,
+  "w": 800
+ },
+ "seq": 1,
+ "source": "observe"
+}

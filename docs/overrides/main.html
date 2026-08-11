@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  {% if page and page.meta and page.meta.page_id %}
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": {{ page.title | tojson }},
+        "description": {{ page.meta.description | tojson }},
+        "dateModified": {{ page.meta.last_verified | string | tojson }},
+        "inLanguage": "en",
+        "isPartOf": {
+          "@type": "SoftwareApplication",
+          "name": "New Old World",
+          "applicationCategory": "UtilitiesApplication"
+        }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Documentation",
+            "item": {{ config.site_url | tojson }}
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": {{ page.title | tojson }},
+            "item": {{ page.canonical_url | tojson }}
+          }
+        ]
+      }
+    </script>
+    {% if page.meta.page_id == "docs-home" %}
+      <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          "name": "New Old World",
+          "applicationCategory": "UtilitiesApplication",
+          "operatingSystem": "macOS, Mac OS 8.6-9.2.2, System 7.1"
+        }
+      </script>
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  {% if page and page.meta and page.meta.feature_ids %}
+    {% set availability = namespace(show=false) %}
+    {% for feature_id in page.meta.feature_ids %}
+      {% if config.extra.feature_catalog.active.features[feature_id].state != "included" %}
+        {% set availability.show = true %}
+      {% endif %}
+    {% endfor %}
+    {% if availability.show %}
+      <aside class="now-release-banner" aria-label="Release availability">
+        <strong>{{ config.extra.feature_catalog.active.title }} availability</strong>
+        <ul>
+          {% for feature_id in page.meta.feature_ids %}
+            {% set feature = config.extra.feature_catalog.active.features[feature_id] %}
+            {% if feature.state != "included" %}
+              <li>
+                <span class="now-release-state now-release-state--{{ feature.state }}">{{ feature.state }}</span>
+                <strong>{{ feature.title }}</strong>: {{ feature.note }}
+                {% if feature.flag_key %}
+                  Planned flag: <code>{{ feature.flag_key }}</code>; runtime binding is not implemented yet.
+                {% endif %}
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      </aside>
+    {% endif %}
+  {% endif %}
+  {{ super() }}
+{% endblock %}

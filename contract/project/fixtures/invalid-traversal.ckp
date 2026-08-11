@@ -1,0 +1,10 @@
+CKPROJECT 1
+id=0123456789abcdef0123456789abcdef
+name=Escaped Project
+target=application
+configuration=debug
+toolchain=mpw-golden@3.6
+product=Build/Escaped Project
+type=APPL
+creator=ESCP
+file=../Outside.c

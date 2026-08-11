@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Mutation tests for development identity and immutable release tags."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+BUILD = "b" * 64
+
+
+def run(*args: str, cwd: Path, check: bool = False):
+    result = subprocess.run(args, cwd=cwd, text=True, capture_output=True)
+    if check and result.returncode:
+        raise AssertionError(result.stdout + result.stderr)
+    return result
+
+
+def invoke(repo: Path, channel: str = "development",
+           candidate_number: int | None = None):
+    command = [
+        str(repo / "tools/write-update-manifest.py"),
+        "--artifact", "New Old World.bin", "--component", "application",
+        "--version-header", "contract/product_version.h",
+        "--version-major", "NOW_PRODUCT_VERSION_MAJOR",
+        "--version-minor", "NOW_PRODUCT_VERSION_MINOR",
+        "--version-patch", "NOW_PRODUCT_VERSION_PATCH",
+        "--lifecycle-define", "NOW_PRODUCT_LIFECYCLE",
+        "--lifecycle-number-define", "NOW_PRODUCT_LIFECYCLE_NUMBER",
+        "--identity-header", "identity.h", "--identity-define", "NOW_BUILD_ID",
+        "--channel", channel, "--repo-root", str(repo),
+    ]
+    if candidate_number is not None:
+        command.extend(("--candidate-number", str(candidate_number)))
+    return run(*command, cwd=repo)
+
+
+def main() -> int:
+    with tempfile.TemporaryDirectory(prefix="now-update-manifest-") as tmp:
+        repo = Path(tmp)
+        (repo / "tools").mkdir()
+        (repo / "contract").mkdir()
+        shutil.copy(ROOT / "tools/write-update-manifest.py",
+                    repo / "tools/write-update-manifest.py")
+        os.chmod(repo / "tools/write-update-manifest.py", 0o755)
+        (repo / "contract/product_version.h").write_text(
+            "#define NOW_PRODUCT_VERSION_MAJOR 1\n"
+            "#define NOW_PRODUCT_VERSION_MINOR 2\n"
+            "#define NOW_PRODUCT_VERSION_PATCH 3\n"
+            '#define NOW_PRODUCT_LIFECYCLE "prealpha"\n'
+            "#define NOW_PRODUCT_LIFECYCLE_NUMBER 4\n")
+        (repo / "identity.h").write_text(f'#define NOW_BUILD_ID "{BUILD}"\n')
+        artifact = repo / "New Old World.bin"
+        artifact.write_bytes(b"release bytes")
+        digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        run("git", "init", "-q", "-b", "main", cwd=repo, check=True)
+        run("git", "config", "user.email", "release@example.invalid",
+            cwd=repo, check=True)
+        run("git", "config", "user.name", "Release Gate", cwd=repo,
+            check=True)
+        run("git", "add", "tools", "contract", "identity.h", cwd=repo,
+            check=True)
+        run("git", "commit", "-qm", "release source", cwd=repo, check=True)
+
+        development = invoke(repo)
+        if development.returncode:
+            raise AssertionError(development.stdout + development.stderr)
+        manifest = json.loads(
+            (repo / "New Old World.bin.now-update.json").read_text())
+        if manifest["build"] != BUILD or manifest["sha256"] != digest:
+            raise AssertionError("development sidecar lost exact identities")
+        if (manifest["displayVersion"] != "1.2.3-prealpha.4"
+                or manifest["lifecycle"] != "prealpha"
+                or manifest["lifecycleNumber"] != 4):
+            raise AssertionError("development sidecar lost product lifecycle")
+
+        no_tag = invoke(repo, "release")
+        if no_tag.returncode == 0 or "annotated tag" not in no_tag.stderr:
+            raise AssertionError("an untagged release publication passed")
+        annotation = ("NOW release 1.2.3\n\nNOW-Component: application\n"
+                      f"NOW-Build: {BUILD}\nNOW-SHA256: {digest}\n")
+        no_candidate_number = invoke(repo, "candidate")
+        if (no_candidate_number.returncode == 0
+                or "positive --candidate-number" not in no_candidate_number.stderr):
+            raise AssertionError("an unnumbered release candidate passed")
+        run("git", "tag", "-a", "now-product-v1.2.3-prealpha.4-rc.1", "-m", annotation,
+            cwd=repo, check=True)
+        candidate = invoke(repo, "candidate", 1)
+        if candidate.returncode:
+            raise AssertionError(candidate.stdout + candidate.stderr)
+        candidate_manifest = json.loads(
+            (repo / "New Old World.bin.now-update.json").read_text())
+        if (candidate_manifest["channel"] != "candidate"
+                or candidate_manifest["releaseCandidate"] != 1):
+            raise AssertionError("candidate sidecar lost its numbered channel")
+        run("git", "tag", "-a", "now-product-v1.2.3-prealpha.4", "-m", annotation,
+            cwd=repo, check=True)
+        release = invoke(repo, "release")
+        if release.returncode:
+            raise AssertionError(release.stdout + release.stderr)
+
+        artifact.write_bytes(b"different release bytes")
+        collision = invoke(repo, "release")
+        if collision.returncode == 0 or "does not pin this artifact" not in collision.stderr:
+            raise AssertionError("same release tag accepted different bytes")
+
+    print("update manifest: 6 release identity mutations passed")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except AssertionError as exc:
+        print(f"FAILED: {exc}")
+        raise SystemExit(1)

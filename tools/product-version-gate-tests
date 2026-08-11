@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Mutation tests for tools/product-version-gate and its main-ref hook."""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def command(*args: str, cwd: Path, check: bool = False):
+    result = subprocess.run(args, cwd=cwd, text=True, capture_output=True)
+    if check and result.returncode:
+        raise AssertionError(result.stdout + result.stderr)
+    return result
+
+
+def write_version(repo: Path, version: tuple[int, int, int],
+                  lifecycle: tuple[str, int] | None = ("prealpha", 1)) -> None:
+    major, minor, patch = version
+    text = f"{major}.{minor}.{patch}"
+    authority = (
+        "#define NOW_PRODUCT_VERSION_MAJOR " + str(major) + "\n"
+        "#define NOW_PRODUCT_VERSION_MINOR " + str(minor) + "\n"
+        "#define NOW_PRODUCT_VERSION_PATCH " + str(patch) + "\n"
+        f'#define NOW_PRODUCT_VERSION "{text}"\n')
+    display = text
+    stage = "release"
+    lifecycle_number = 0
+    if lifecycle is not None:
+        lifecycle_name, lifecycle_number = lifecycle
+        display = (text if lifecycle_name == "release"
+                   else f"{text}-{lifecycle_name}.{lifecycle_number}")
+        authority += (
+            f'#define NOW_PRODUCT_LIFECYCLE "{lifecycle_name}"\n'
+            f"#define NOW_PRODUCT_LIFECYCLE_NUMBER {lifecycle_number}\n"
+            f'#define NOW_PRODUCT_DISPLAY_VERSION "{display}"\n')
+        stage = {
+            "prealpha": "development", "alpha": "alpha",
+            "beta": "beta", "release": "release",
+        }[lifecycle_name]
+    (repo / "contract/product_version.h").write_text(authority)
+    swift = f'enum ProductIdentity {{ static let version = "{text}"'
+    if lifecycle is not None:
+        swift += (f'; static let lifecycle = "{lifecycle[0]}"'
+                  f"; static let lifecycleNumber = {lifecycle_number}"
+                  f'; static let displayVersion = "{display}"')
+    (repo / "now-host/Sources/Host/ProductIdentity.swift").write_text(
+        swift + " }\n")
+    (repo / "now-host/NewOldWorld.xcodeproj/project.pbxproj").write_text(
+        f"MARKETING_VERSION = {text};\nMARKETING_VERSION = {text};\n")
+    plist = (
+        "<key>CFBundleShortVersionString</key>\n"
+        f"<string>{text}</string>\n")
+    if lifecycle is not None:
+        plist += (
+            f"<key>NOWProductLifecycle</key><string>{lifecycle[0]}</string>\n"
+            f"<key>NOWProductLifecycleNumber</key><integer>{lifecycle_number}</integer>\n"
+            f"<key>NOWProductDisplayVersion</key><string>{display}</string>\n")
+    (repo / "scripts/HostInfo.plist.in").write_text(plist)
+    packed = (minor << 4) | patch
+    (repo / "now-guest-ppc/resources/app.r").write_text(
+        "resource 'vers' (1) {\n"
+        f"  0x{major:02X}, 0x{packed:02X}, {stage}, 0x{lifecycle_number:02X}, verUS,\n"
+        f'  "{display}", "{display}, New Old World"\n}};\n')
+    guest = (
+        '#include "product_version.h"\n'
+        "#define PRODUCT_VERSION_MAJOR NOW_PRODUCT_VERSION_MAJOR\n"
+        "#define PRODUCT_VERSION_MINOR NOW_PRODUCT_VERSION_MINOR\n"
+        "#define PRODUCT_VERSION_PATCH NOW_PRODUCT_VERSION_PATCH\n"
+        "#define PRODUCT_VERSION NOW_PRODUCT_VERSION\n")
+    if lifecycle is not None:
+        guest += (
+            "#define PRODUCT_LIFECYCLE NOW_PRODUCT_LIFECYCLE\n"
+            "#define PRODUCT_LIFECYCLE_NUMBER NOW_PRODUCT_LIFECYCLE_NUMBER\n"
+            "#define PRODUCT_DISPLAY_VERSION NOW_PRODUCT_DISPLAY_VERSION\n")
+    (repo / "now-guest-ppc/src/core/product_identity.h").write_text(guest)
+
+
+def make_repo(path: Path) -> Path:
+    for directory in (
+        "contract", "now-host/Sources/Host",
+        "now-host/NewOldWorld.xcodeproj", "now-guest-ppc/resources",
+        "now-guest-ppc/src/core", "scripts", "tools", ".githooks",
+    ):
+        (path / directory).mkdir(parents=True, exist_ok=True)
+    # Model the real adoption boundary: old main has only the resident hook.
+    # The candidate worktree must use its own newer hook to guard the first
+    # product-gate landing; a hook stored only in the candidate cannot make an
+    # older main checkout magically call it.
+    (path / ".githooks/reference-transaction").write_text(
+        "#!/bin/sh\n[ \"${1:-}\" = prepared ] || exit 0\n"
+        "while read old new ref; do\n"
+        "  [ \"$ref\" != refs/heads/main ] || "
+        "tools/ext-bake-gate main-ref-check \"$old\" \"$new\" || exit $?\n"
+        "done\n")
+    os.chmod(path / ".githooks/reference-transaction", 0o755)
+    (path / "tools/ext-bake-gate").write_text("#!/bin/sh\nexit 0\n")
+    os.chmod(path / "tools/ext-bake-gate", 0o755)
+    write_version(path, (0, 1, 0), None)
+    (path / "now-host/Sources/Host/Feature.swift").write_text("let value = 1\n")
+    command("git", "init", "-q", "-b", "main", cwd=path, check=True)
+    command("git", "config", "user.email", "gate@example.invalid",
+            cwd=path, check=True)
+    command("git", "config", "user.name", "Version Gate",
+            cwd=path, check=True)
+    command("git", "add", ".", cwd=path, check=True)
+    command("git", "commit", "-qm", "base 0.1.0", cwd=path, check=True)
+    command("git", "checkout", "-qb", "lane", cwd=path, check=True)
+    shutil.copy(ROOT / "tools/product-version-gate",
+                path / "tools/product-version-gate")
+    shutil.copy(ROOT / ".githooks/reference-transaction",
+                path / ".githooks/reference-transaction")
+    write_version(path, (0, 1, 0), ("prealpha", 1))
+    os.chmod(path / "tools/product-version-gate", 0o755)
+    os.chmod(path / ".githooks/reference-transaction", 0o755)
+    command("git", "add", "tools/product-version-gate",
+            ".githooks/reference-transaction", cwd=path, check=True)
+    command("git", "commit", "-qm", "adopt product main gate", cwd=path,
+            check=True)
+    return path
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
+
+
+def main() -> int:
+    with tempfile.TemporaryDirectory(prefix="now-product-version-") as tmp:
+        repo = make_repo(Path(tmp))
+        base = command("git", "rev-parse", "main", cwd=repo,
+                       check=True).stdout.strip()
+
+        # Scratch builds keep their semantic version and remain committable.
+        (repo / "now-host/Sources/Host/Feature.swift").write_text("let value = 2\n")
+        command("git", "add", ".", cwd=repo, check=True)
+        coherent = command("tools/product-version-gate", "check", cwd=repo)
+        require(coherent.returncode == 0, coherent.stdout + coherent.stderr)
+        command("git", "commit", "-qm", "scratch build", cwd=repo, check=True)
+
+        # The candidate worktree owns the first guarded landing even though
+        # old main's committed hook does not know this gate exists yet.
+        command("git", "config", "core.hooksPath", ".githooks", cwd=repo,
+                check=True)
+        first = command("git", "branch", "-f", "main", "lane", cwd=repo)
+        require(first.returncode == 0, first.stdout + first.stderr)
+
+        # A sibling started from the old base, then integrates the first lane.
+        # It can land serially at the same release version: its build ID, not a
+        # branch-assigned number, is the collision-free development identity.
+        command("git", "checkout", "-qb", "lane-b", base, cwd=repo,
+                check=True)
+        (repo / "now-host/Sources/Host/FeatureB.swift").write_text(
+            "let secondValue = 2\n")
+        command("git", "add", "now-host/Sources/Host/FeatureB.swift", cwd=repo,
+                check=True)
+        command("git", "commit", "-qm", "second scratch build", cwd=repo,
+                check=True)
+        command("git", "merge", "--no-edit", "main", cwd=repo, check=True)
+        second = command("git", "branch", "-f", "main", "lane-b", cwd=repo)
+        require(second.returncode == 0, second.stdout + second.stderr)
+
+        # A bump with one stale copy is still not a release identity.
+        write_version(repo, (0, 2, 0))
+        (repo / "scripts/HostInfo.plist.in").write_text(
+            "<key>CFBundleShortVersionString</key>\n<string>0.1.0</string>\n")
+        command("git", "add", ".", cwd=repo, check=True)
+        mismatch = command("tools/product-version-gate", "check", cwd=repo)
+        require(mismatch.returncode != 0, "stale plist copy passed")
+        require("HostInfo.plist.in does not state 0.2.0" in mismatch.stderr,
+                mismatch.stdout + mismatch.stderr)
+
+        # Restore every checked copy, commit, and prove the main ref can move.
+        write_version(repo, (0, 2, 0))
+        command("git", "add", ".", cwd=repo, check=True)
+        command("git", "commit", "-qm", "release 0.2.0", cwd=repo,
+                check=True)
+        good = command("git", "branch", "-f", "main", "lane-b", cwd=repo)
+        require(good.returncode == 0, good.stdout + good.stderr)
+
+        # Maturity may advance at the same numeric compatibility version but
+        # cannot move backwards after it lands.
+        write_version(repo, (0, 2, 0), ("alpha", 1))
+        command("git", "add", ".", cwd=repo, check=True)
+        command("git", "commit", "-qm", "advance to alpha", cwd=repo,
+                check=True)
+        advanced = command("git", "branch", "-f", "main", "lane-b",
+                           cwd=repo)
+        require(advanced.returncode == 0, advanced.stdout + advanced.stderr)
+        write_version(repo, (0, 2, 0), ("prealpha", 2))
+        command("git", "add", ".", cwd=repo, check=True)
+        command("git", "commit", "-qm", "bad lifecycle rollback", cwd=repo,
+                check=True)
+        lifecycle_rollback = command(
+            "git", "branch", "-f", "main", "lane-b", cwd=repo)
+        require(lifecycle_rollback.returncode != 0,
+                "lifecycle rollback passed")
+        require("lifecycle rolled back" in lifecycle_rollback.stderr,
+                lifecycle_rollback.stdout + lifecycle_rollback.stderr)
+
+        command("git", "reset", "--hard", "main", cwd=repo, check=True)
+
+        # Version rollback is a product change even without another feature.
+        released = command("git", "rev-parse", "main", cwd=repo,
+                           check=True).stdout.strip()
+        command("git", "checkout", "-qb", "rollback", cwd=repo, check=True)
+        write_version(repo, (0, 1, 0))
+        command("git", "add", ".", cwd=repo, check=True)
+        command("git", "commit", "-qm", "bad rollback", cwd=repo, check=True)
+        rollback = command("git", "branch", "-f", "main", "rollback",
+                           cwd=repo)
+        require(rollback.returncode != 0, "version rollback passed")
+        require("rolled back: 0.2.0 -> 0.1.0" in rollback.stderr,
+                rollback.stdout + rollback.stderr)
+        require(command("git", "rev-parse", "main", cwd=repo,
+                        check=True).stdout.strip() == released,
+                "a refused rollback moved main")
+
+    print("product-version gate: 6 collision/coherence mutations passed")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except AssertionError as exc:
+        print(f"FAILED: {exc}", file=sys.stderr)
+        raise SystemExit(1)

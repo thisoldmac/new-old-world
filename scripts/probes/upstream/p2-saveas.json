@@ -1,0 +1,193 @@
+{
+  "agent": {
+    "agent": "mirror",
+    "version": "0.1a",
+    "gitRev": "2deb4ef2",
+    "build": "f1d81f34b688 2026-07-31T21:19:14Z",
+    "machineType": "406",
+    "oracle": true,
+    "oracleStatus": "ok",
+    "oracleVersion": 4,
+    "portal": {
+      "present": true,
+      "enabled": true
+    },
+    "scenePlanes": [
+      "observe",
+      "axtree"
+    ],
+    "actionPlanes": [
+      "activate",
+      "click",
+      "key",
+      "axdo"
+    ]
+  },
+  "results": [
+    {
+      "case": "saveas",
+      "n": 8,
+      "dropped": 0,
+      "retitled": 8,
+      "onDisk": 8,
+      "trials": [
+        {
+          "valid": true,
+          "name": "PORTALAA",
+          "titles": [
+            "PORTALAA",
+            "PORTALE",
+            "PORTALD",
+            "PORTALC",
+            "PORTALB",
+            "PORTALA",
+            "untitled"
+          ],
+          "retitled": true,
+          "onDisk": true,
+          "where": "Macintosh HD:Desktop Folder:"
+        },
+        {
+          "valid": true,
+          "name": "PORTALBA",
+          "titles": [
+            "PORTALBA",
+            "PORTALAA",
+            "PORTALE",
+            "PORTALD",
+            "PORTALC",
+            "PORTALB",
+            "PORTALA",
+            "untitled"
+          ],
+          "retitled": true,
+          "onDisk": true,
+          "where": "Macintosh HD:Desktop Folder:"
+        },
+        {
+          "valid": true,
+          "name": "PORTALCA",
+          "titles": [
+            "PORTALCA",
+            "PORTALBA",
+            "PORTALAA",
+            "PORTALE",
+            "PORTALD",
+            "PORTALC",
+            "PORTALB",
+            "PORTALA",
+            "untitled"
+          ],
+          "retitled": true,
+          "onDisk": true,
+          "where": "Macintosh HD:Desktop Folder:"
+        },
+        {
+          "valid": true,
+          "name": "PORTALDA",
+          "titles": [
+            "PORTALDA",
+            "PORTALCA",
+            "PORTALBA",
+            "PORTALAA",
+            "PORTALE",
+            "PORTALD",
+            "PORTALC",
+            "PORTALB",
+            "PORTALA",
+            "untitled"
+          ],
+          "retitled": true,
+          "onDisk": true,
+          "where": "Macintosh HD:Desktop Folder:"
+        },
+        {
+          "valid": true,
+          "name": "PORTALEA",
+          "titles": [
+            "PORTALEA",
+            "PORTALDA",
+            "PORTALCA",
+            "PORTALBA",
+            "PORTALAA",
+            "PORTALE",
+            "PORTALD",
+            "PORTALC",
+            "PORTALB",
+            "PORTALA",
+            "untitled"
+          ],
+          "retitled": true,
+          "onDisk": true,
+          "where": "Macintosh HD:Desktop Folder:"
+        },
+        {
+          "valid": true,
+          "name": "PORTALFA",
+          "titles": [
+            "PORTALFA",
+            "PORTALEA",
+            "PORTALDA",
+            "PORTALCA",
+            "PORTALBA",
+            "PORTALAA",
+            "PORTALE",
+            "PORTALD",
+            "PORTALC",
+            "PORTALB",
+            "PORTALA",
+            "untitled"
+          ],
+          "retitled": true,
+          "onDisk": true,
+          "where": "Macintosh HD:Desktop Folder:"
+        },
+        {
+          "valid": true,
+          "name": "PORTALGA",
+          "titles": [
+            "PORTALGA",
+            "PORTALFA",
+            "PORTALEA",
+            "PORTALDA",
+            "PORTALCA",
+            "PORTALBA",
+            "PORTALAA",
+            "PORTALE",
+            "PORTALD",
+            "PORTALC",
+            "PORTALB",
+            "PORTALA",
+            "untitled"
+          ],
+          "retitled": true,
+          "onDisk": true,
+          "where": "Macintosh HD:Desktop Folder:"
+        },
+        {
+          "valid": true,
+          "name": "PORTALHA",
+          "titles": [
+            "PORTALHA",
+            "PORTALGA",
+            "PORTALFA",
+            "PORTALEA",
+            "PORTALDA",
+            "PORTALCA",
+            "PORTALBA",
+            "PORTALAA",
+            "PORTALE",
+            "PORTALD",
+            "PORTALC",
+            "PORTALB",
+            "PORTALA",
+            "untitled"
+          ],
+          "retitled": true,
+          "onDisk": true,
+          "where": "Macintosh HD:Desktop Folder:"
+        }
+      ]
+    }
+  ]
+}

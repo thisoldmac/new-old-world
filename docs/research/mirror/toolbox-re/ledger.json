@@ -1,0 +1,351 @@
+{
+  "schema": "now-toolbox-re/v1",
+  "started": "2026-08-06T03:31:21-0400",
+  "started_epoch": 1786001481.568342,
+  "deadline_epoch": 1786032081.568332,
+  "deadline": "2026-08-06T12:01:21-0400",
+  "rows": [
+    {
+      "phase": "P0",
+      "claim": "The guest filesystem mounts read-only on the host: qemu-img convert to raw, parse the Apple Partition Map (HFS at block 1544), dd the partition out, hdiutil attach -readonly. Full static corpus with no VM running and no time limit.",
+      "provenance": "static",
+      "evidence": "/private/tmp/tbcorpus",
+      "at": "2026-08-06T03:38:31-0400"
+    },
+    {
+      "phase": "P0",
+      "claim": "The Mac OS ROM (2448470 bytes) is a CHRP boot script wrapping a compressed body; the only valid PEF in it (0x2055c4, arch pwpc) is a small embedded driver importing DriverServicesLib/NameRegistryLib/PowerMgrLib. The Toolbox code is NOT statically readable from the ROM file - it exists decompressed only in RAM, so Toolbox CODE must come from the live lane.",
+      "provenance": "static",
+      "evidence": "/private/tmp/tbcorpus/MacOSROM.data",
+      "at": "2026-08-06T03:38:31-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "THE FINDER USES GWORLDS, established statically from its own PEF import table: it imports NewGWorld, DisposeGWorld, SetGWorld, GetGWorld, GetGWorldPixMap, GetGWorldDevice, LockPixels, UnlockPixels and CopyBits from InterfaceLib. No inference, no emulator - the binary says so.",
+      "provenance": "static",
+      "evidence": "/private/tmp/tbcorpus/finder-imports.txt",
+      "at": "2026-08-06T03:38:31-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "The Finder imports NO UpdateGWorld. It has NewGWorld and DisposeGWorld and no way to resize one in place, so an offscreen world is created and destroyed rather than kept and updated - direct support for the TRANSIENT hypothesis that explains every null in the probe arc.",
+      "provenance": "static",
+      "evidence": "/private/tmp/tbcorpus/finder-imports.txt",
+      "at": "2026-08-06T03:38:31-0400"
+    },
+    {
+      "phase": "P5",
+      "claim": "The Finder plots icons through PlotIconSuite/PlotIcon/PlotIconRef and links IconServicesLib (22 symbols) plus GetIconSuite/NewIconSuite/DisposeIconSuite - so icon identity in a composite is an IconSuite/IconRef, and that is the interception surface for host-side composition.",
+      "provenance": "static",
+      "evidence": "/private/tmp/tbcorpus/finder-imports.txt",
+      "at": "2026-08-06T03:38:31-0400"
+    },
+    {
+      "phase": "P1",
+      "claim": "Layouts, from offsetof in the extension's own dialect (68K Retro68/UI 3.4): GrafPort and CGrafPort are both 108 bytes; BitMap 14; PixMap 50; GDevice 62; QDProcs 52; CQDProcs 80. CGrafPort: device@0 portPixMap@2 portVersion@6 grafVars@8 chExtra@12 pnLocHFrac@14 portRect@16 visRgn@24 clipRgn@28 grafProcs@104. GrafPort shares device@0/portRect@16/visRgn@24/clipRgn@28/grafProcs@104 but has portBits@2 where the colour port has portPixMap - which is exactly why the 0xC000 test at portVersion@6 must precede any grafProcs write.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:21-0400"
+    },
+    {
+      "phase": "P1",
+      "claim": "Verified live on a real window port, not only compiled: portVersion carries the 0xC000 discriminator, portPixMap and grafProcs read correctly at the compiled offsets, and a fresh window's grafProcs is NULL.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "A GWorldPtr IS its CGrafPtr - same address, no private wrapper record - and the port is a RELOCATABLE block: RecoverHandle on the port itself returns a handle. Inside Macintosh's 'an always-locked handle in the application heap' is confirmed on this machine.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "THE CHASE'S KEY IS NOT STABLE: a GWorld pixmap's baseAddr MOVES under LockPixels, on every flavour tested (device depth, 8, 32, useTempMem, keepLocal, pixelsPurgeable, noNewDevice). The probe matched a candidate port by comparing the blit's reported baseAddr against the port's pixmap baseAddr read LATER - so it was comparing a locked-time value with an unlocked-time one. This alone would make the chase fail on a GWorld that is behaving perfectly.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "Lifetime: a disposed GWorld's address is REUSED by the very next NewGWorld of the same size (0x1ea59e00 twice running). An observer polling for offscreen ports cannot tell one repaint's world from the next by address, and a stale row pointing at a disposed world will silently come to point at a live different one.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "useTempMem puts the PIXELS outside both heaps (baseAddr 0x1f8059a4 against an app heap around 0x1ea5xxxx) while the PORT stays in the application heap - so a port-hunting sweep of the app zone is looking in the right place even for a temp-memory world.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "A window port and an offscreen GWorld port dispatch IDENTICALLY: text hooks fired 1 and 1. The content plane's mechanism is not window-specific, which is the premise the whole probe rests on, now measured on both port kinds side by side in one program.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "StdText does NOT nest through StdBits on this machine - with NO re-entrancy guard installed, a DrawString produced text=1 bits=0 on both a window and an offscreen port. ext/src/now_content.c justifies its guard by 'StdText blits each glyph through StdBits'; that rationale does not reproduce here. The guard may be protecting a different case, or none.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:23-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "A GWorld->window CopyBits reports a source pixmap record that IS the GWorld port's own dereferenced portPixMap - so the probe's chase is looking for a real relationship, and the join it wants does exist.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:23-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "THE CHASE'S REAL DEFECT, caught by a purpose-built control (tools/guest-gworld/src/loop.c: one GWorld held for the process's whole life, blitted into its own window on a cadence). The chase sighted the right blit 869 times - sightRect [0,0,200,180], exactly the control's GWorld - chased it, and found nothing. With the target GUARANTEED alive, that is not lifetime and not the Finder: it is the instrument. The cause is that the probe stashes a DEREFERENCED pixmap pointer at draw time and uses it at the next event-loop pass, but a PixMap record is a relocatable block - the deref is a snapshot, not an identity. Every comparison downstream was against a pointer that may have moved.",
+      "provenance": "measured",
+      "evidence": "gwprobe-out/CONTROL-loop/summary.json",
+      "at": "2026-08-06T03:50:39-0400"
+    },
+    {
+      "phase": "P1",
+      "claim": "General rule this arc paid for: on classic Mac OS a dereferenced handle is only valid until the next thing that can move memory. Resident code that observes at draw time and acts at event-loop time must carry HANDLES across that gap, never master pointers - and RecoverHandle called later on a stale pointer cannot recover what has moved.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:50:39-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "LockPixels RELOCATES THE PIXMAP RECORD ITSELF, not just its pixels, and moves it OUT of the application zone. Ground truth from the control reporting on itself: before locking, its pixmap deref is 0x1e957660, inside its app zone 0x1e93dd14-0x1e97b6d0. The blit the probe sights during LockPixels reports 0x1ea53eee - a different address, above bkLim, outside the zone. That is why RecoverHandle (which searches the CURRENT zone) fails on it, and why pointer identity between sight time and scan time can never hold.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/loop-identity.txt",
+      "at": "2026-08-06T03:58:14-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "What IS stable across the lock: the pixmap's bounds and rowBytes, and the owning port's portRect. The chase must match on SHAPE, not on any pointer or baseAddr - all three of the keys tried so far (handle identity, deref identity, baseAddr) are invalidated by relocation under LockPixels.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/loop-identity.txt",
+      "at": "2026-08-06T03:58:14-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "From prior art (Apple's released 1984 QuickDraw source, corroborated by Executor): CopyBits calls bitsProc ONLY when the destination is the current port; otherwise it bypasses grafProcs entirely. Our blits satisfy that - the window is the current port - which is why sighting works even while the chase does not.",
+      "provenance": "doc",
+      "evidence": "docs/research/mirror/toolbox-re/prior-art.md",
+      "at": "2026-08-06T03:58:14-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "PlotIconSuite CHANGES PATH depending on whether it is being watched: Icon Utilities uses CopyMask - invisible to grafProcs - UNLESS the port has grafProcs or picSave set, in which case it renders as two CopyBits. The spike's 'PlotIconSuite emitted a blit' was therefore self-fulfilling, and an UNHOOKED application's icon drawing is invisible to a passive observer. This is an observer-changes-the-system result of the same family as instrument-feeds-the-clock.",
+      "provenance": "doc",
+      "evidence": "docs/research/mirror/toolbox-re/prior-art.md",
+      "at": "2026-08-06T03:58:14-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "StdText does NOT blit glyphs through bitsProc - text runs through a separate character generator that never reads grafProcs, converging with CopyBits only at the private _StretchBits. Prior art and this rig's own measurement agree, so ext/src/now_content.c's stated justification for its re-entrancy guard is wrong and the guard should be re-argued or removed.",
+      "provenance": "doc",
+      "evidence": "docs/research/mirror/toolbox-re/prior-art.md",
+      "at": "2026-08-06T03:58:15-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "QuickDraw has been native PowerPC since 1994 - the opposite of the arc's working premise - but native routines still sit behind routine descriptors, so trap-table interception is not thereby excluded. Measured locally: the PPC guest emits no A-traps (pure CFM imports) while the 68K guest emits raw traps, so interception depends on what the import library does. OPEN RISK: our guest links CarbonLib, and both libInterfaceLib.a and libCarbonLib.a export CopyBits, so link order decides - answerable statically from a built PEF.",
+      "provenance": "doc",
+      "evidence": "docs/research/mirror/toolbox-re/prior-art.md",
+      "at": "2026-08-06T03:58:15-0400"
+    },
+    {
+      "phase": "P1",
+      "claim": "MemTop IS NOT THE TOP OF ADDRESSABLE MEMORY on this machine, and assuming it is silently disables anything that uses it as a ceiling. Measured: LMGetMemTop = 0x00e225f0 (~14.8 MB) and the system zone lies below it (0x2834-0x00d0b9f0), but an APPLICATION zone sits at 0x1e93e4d4-0x1e97be90, around 512 MB. MemTop bounds the low/system region only.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/loop-identity.txt",
+      "at": "2026-08-06T04:04:10-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "THE CHASE'S FINAL DEFECT, and it was self-inflicted: the range check added to stop the scan crashing the Finder bounds every pointer read to [0x1000, MemTop]. Since application heaps live ~500 MB above MemTop, that guard has rejected EVERY candidate deref since it landed - which is why baseCandidates stayed 0 through the handle fix, the identity fix and the shape fix alike. A safety guard written on a wrong assumption about the address space silently disabled the instrument it was protecting.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/loop-identity.txt",
+      "at": "2026-08-06T04:04:10-0400"
+    },
+    {
+      "phase": "P6",
+      "claim": "REFERENCE.md drafted and kept current as findings land: corpus access, structure layouts with offsets, the GWorld surface, dispatch, the Finder's use of GWorlds, the two memory facts that invalidate naive tooling (MemTop is not the address-space ceiling; LockPixels relocates the record), and an explicit open-questions section.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/REFERENCE.md",
+      "at": "2026-08-06T04:05:21-0400"
+    },
+    {
+      "phase": "P6",
+      "claim": "prior-art.md landed from the documentation lane: ~2270 lines with per-claim provenance, confidence, and ASSERTS-vs-DEMONSTRATES, an offsetof table cross-compiled with BOTH Retro68 toolchains (PPC and 68K byte-for-byte identical, so no packing drift between guests), source conflicts reported rather than resolved, and 20 tiered questions for the live lane.",
+      "provenance": "doc",
+      "evidence": "docs/research/mirror/toolbox-re/prior-art.md",
+      "at": "2026-08-06T04:05:21-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "THE CHASE WORKS. Control run with zone-bounded reads: hits 1, offscreenPorts 1, lastMatch 0x1ea59fc0 - EXACTLY the port address the control independently reported for itself, candRect [0,0,200,180] matching its GWorld. A resident can find and hook another process's offscreen port. Every null before this was the instrument; from here a null is evidence.",
+      "provenance": "measured",
+      "evidence": "gwprobe-out/CONTROL-zonefix/summary.json",
+      "at": "2026-08-06T04:07:56-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "OUTCOME 1, MEASURED: the drawing that BUILDS a composite is visible inside a foreign process's offscreen GWorld. With the chase working, the counters read total 17606 - text 6588, line 1098, rect 7686, bits 2234 - while the only text being drawn on the machine is the control's six strings per rebuild INTO its GWorld (6588/6 = 1098 rebuilds, matching 1098 line ops exactly, one LineTo per rebuild). Text ops, with their strings and pens, are recoverable from an offscreen port that a resident found and hooked from outside. The brief's outcome 1 is achievable in principle.",
+      "provenance": "measured",
+      "evidence": "gwprobe-out/CONTROL-offscreen-ops/summary.json",
+      "at": "2026-08-06T04:10:04-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "The probe is no longer the limiting factor for the Finder question. The instrument is proven end to end on a control (sight, chase, hook, record), so the Finder's remaining nulls are now evidence about the Finder rather than about the tooling - and the static finding that it imports NewGWorld/DisposeGWorld but NO UpdateGWorld remains the leading explanation to test.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/ledger.json",
+      "at": "2026-08-06T04:10:04-0400"
+    },
+    {
+      "phase": "P6",
+      "claim": "Ring pressure is a real cost of this mode and must be stated: the control redrawing at loop cadence overran the 64 KiB ring within one settle - writeCursor 900946, lostBytes 835410, overrun true. A composite-heavy application will lose records unless the drain keeps up or the arm is short. This is the honest cost the brief asked to be reported.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/ledger.json",
+      "at": "2026-08-06T04:10:04-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "OUTCOME 1 WITH THE RECORDS THEMSELVES, not just counters. One drain, two ports cleanly separated: the WINDOW port 0x1e82c5e0 emitted 612 bits and nothing else - the opaque composite - while the OFFSCREEN port 0x1e82c7a0 emitted 60 text, 70 rect and 10 line ops. The text records carry the real string 'offscreen row' at its true pen ([14,24], [14,52], [14,80], [14,108], [14,136], [14,164] - the six rows, repeating per rebuild). A host can compose that with real strikes and no pixels on the wire.",
+      "provenance": "measured",
+      "evidence": "gwprobe-out/OUTCOME1/summary.json",
+      "at": "2026-08-06T04:11:41-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "THE FINDER ANSWERS OUTCOME 1. Holding the hook across a reflowing resize (resize, never re-arm - re-arming bumps the generation and unhooks), the Finder's offscreen port 0x1f472e60 yielded 8 text, 24 rect, 11 rgn and 8 bits ops while its WINDOW port emitted only 4 opaque blits. The text records carry real icon labels at true pens: 'Documents' [280,67], 'TimBotTu' [282,131], 'TBT' [40,195], 'TBT-paced-dev' [140,195], 'TBT-sndbuf-dev' [265,195], plus the header '10 items, 3.21 GB available' [135,14]. Window icon-view labels ARE recoverable as semantic text - composable host-side with no pixels on the wire. This supersedes the dead-end verdict of finder-window-icons-are-offscreen-blits for the OFFSCREEN port; that finding remains correct about the window port.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/ledger.json",
+      "at": "2026-08-06T04:18:23-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "Lifetime, observed: across three resizes the hooked row went staleRows 1 and lastMatch moved 0x1f472e60 -> 0x1f472ee0. The Finder DOES replace its offscreen world - consistent with importing NewGWorld/DisposeGWorld and no UpdateGWorld - so a hook must be re-established per world. It is not one world for the window's life, but it does survive long enough to be found and read.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/ledger.json",
+      "at": "2026-08-06T04:18:24-0400"
+    },
+    {
+      "phase": "P5",
+      "claim": "Icons themselves still arrive as bits (8 from the offscreen port) with no identity, while their LABELS arrive as text. So a composite decomposes into: labels and primitives that are already semantic, and icon images that need identity from elsewhere - PlotIconSuite/IconRef interception, per the static import evidence. That is the remaining piece for full host-side composition.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/ledger.json",
+      "at": "2026-08-06T04:18:24-0400"
+    },
+    {
+      "phase": "P0",
+      "claim": "tools/pef.py reads any classic PEF's sections, imported libraries IN LINK ORDER, per-library symbol ranges and exports. That is how the Finder's GWorld use and this link-order question were both settled without an emulator - a general-purpose static instrument for this platform, kept with the work.",
+      "provenance": "static",
+      "evidence": "tools/pef.py",
+      "at": "2026-08-06T04:23:45-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "The CarbonLib-vs-InterfaceLib link-order risk is CLOSED statically from our own built PEF: 'New Old World' imports from CarbonLib (285 + 51 symbols) and Apple;Carbon;Networking only - InterfaceLib is not in its import list at all - and CopyBits, NewGWorld, SetGWorld, LockPixels and GetGWorldPixMap all resolve to CarbonLib. No ambiguity to resolve for this binary. It imports NEITHER PlotIconSuite NOR SetStdCProcs, so the bottleneck machinery is entirely the 68K extension's and the PPC application never installs grafProcs itself.",
+      "provenance": "static",
+      "evidence": "tools/pef.py",
+      "at": "2026-08-06T04:23:56-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "THE SPREAD, ANSWERED STATICALLY from PEF import tables - which applications composite offscreen, without launching any of them. USE GWORLDS: Finder, Sherlock 2, Graphing Calculator, Appearance control panel. DO NOT: Network Browser, Dock, Date & Time cdev, Energy Saver cdev, AppleTalk cdev (no NewGWorld, no CopyBits at all - they draw straight to their windows, so their content is already visible to a plain window-port hook). SimpleText has no PEF (68K), consistent with its text being directly visible in the arc's own control run.",
+      "provenance": "static",
+      "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
+      "at": "2026-08-06T04:24:54-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "ONLY Graphing Calculator imports UpdateGWorld. The Finder, Sherlock 2 and Appearance all import NewGWorld+DisposeGWorld WITHOUT it, so they cannot resize an offscreen world in place and must destroy and recreate - which is why a hook on such a world has to be re-established and why the Finder's hooked row went stale across resizes. Create-and-destroy is the era's NORM, not a Finder quirk.",
+      "provenance": "static",
+      "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
+      "at": "2026-08-06T04:24:54-0400"
+    },
+    {
+      "phase": "P5",
+      "claim": "Sherlock 2 and Appearance import SetStdCProcs - they install their own QuickDraw bottlenecks. The content plane REFUSES a port whose grafProcs is already non-NULL (now_content.c, skipped_ports), so those two applications are unhookable by this plane BY DESIGN, and that refusal is now a measured limitation rather than a theoretical one.",
+      "provenance": "static",
+      "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
+      "at": "2026-08-06T04:24:54-0400"
+    },
+    {
+      "phase": "P5",
+      "claim": "CORRECTION to the previous row, which I got wrong reading my own table: the applications importing SetStdCProcs are Sherlock 2 and GRAPHING CALCULATOR, not Appearance. Appearance does NOT import it. So the unhookable-by-design set (own bottlenecks installed, which the content plane refuses via skipped_ports) is {Sherlock 2, Graphing Calculator}; Appearance uses GWorlds and should be hookable.",
+      "provenance": "static",
+      "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
+      "at": "2026-08-06T04:26:00-0400"
+    },
+    {
+      "phase": "P5",
+      "claim": "PREDICTION FALSIFIED, and the lesson generalises. I predicted Graphing Calculator would be unhookable because it imports SetStdCProcs. It hooked fine: hits 1, offscreenPorts 1, lastMatch 0x1e8a2d00, and skippedPorts 0 - no port was refused at all. A static import is a CAPABILITY, not a behaviour: importing SetStdCProcs says the binary can install bottlenecks somewhere, not that the port we tried to hook has non-NULL grafProcs. The import table's power to say YES (this app makes GWorlds) does not extend to saying NO about runtime state.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
+      "at": "2026-08-06T04:29:05-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "Graphing Calculator's WINDOW port draws primitives directly - 11 bits, 4 rrect, 28 line, 1 rgn - so it is a HYBRID: it owns a GWorld and also draws straight to its window. The offscreen port was hooked but emitted nothing during the sampled window, consistent with a composite built before the hook went in (the same ordering that hid the Finder's content until the hook was held across a repaint).",
+      "provenance": "measured",
+      "evidence": "spread-gcalc.json",
+      "at": "2026-08-06T04:29:05-0400"
+    },
+    {
+      "phase": "P6",
+      "claim": "Reimplementation assessment, stated honestly in REFERENCE section 8: the PORT MODEL, the BOTTLENECK DISPATCH and GWORLD ALLOCATION/LIFETIME are all documented to reimplementation grade with measured offsets and behaviours. QuickDraw's actual drawing - rasterisation, region algebra, colour matching, text imaging - is NOT: the ROM body is compressed and its code exists only decompressed in RAM, so that frontier needs the live lane plus a disassembler rather than a file on disk.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/REFERENCE.md",
+      "at": "2026-08-06T04:29:25-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "QUICKDRAW'S BOTTLENECKS ARE NATIVE POWERPC, measured from inside the machine rather than inferred. SetStdCProcs hands back addresses whose bytes begin 0xAAFE - the Mixed Mode magic - so every standard proc is a ROUTINE DESCRIPTOR, and decoding the RoutineRecord gives ISA=0x01 (kPowerPCISA) for all of them: StdText procInfo 0x00003f80 proc 0x005825a8; StdBits procInfo 0x00000efc proc 0x0058ab38; StdRect procInfo 0x00000340 proc 0x0058afc0. Version 7, flags 0x0004. This confirms the documentation lane's claim on THIS machine and explains why a 68K extension can install 68K UPPs into grafProcs at all: Mixed Mode brokers the transition in both directions, which is the same mechanism behind the project's carbon-upp-is-not-a-cast-on-cfm finding.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy2-report.txt",
+      "at": "2026-08-06T04:31:59-0400"
+    },
+    {
+      "phase": "P0",
+      "claim": "The guest reading its own memory beats QMP for anything context-dependent. memsave at StdText's address returned zeros and a repeating fill because it translates through whatever CPU context the machine stopped in; the same address read by a program ON the guest gave the routine descriptor immediately. QMP is for pixels and for physical/low memory; logical addresses belong to the guest.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy2-report.txt",
+      "at": "2026-08-06T04:31:59-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "QUICKDRAW'S ACTUAL CODE, REACHED AND DISASSEMBLED. A routine descriptor's RoutineRecord holds a transition vector at descriptor+20; for StdText that is 0x005825a8 -> {code 0x3f9967c0, TOC 0x00581c68} and for StdBits 0x0058ab38 -> {0x3f8a9b00, 0x0058aa7c}. Dumped from the guest and disassembled with capstone as PowerPC BE: clean PPC prologues (mflr/stmw/stwu), TOC-relative globals, real bodies. QuickDraw's implementation is reachable and readable at instruction level from inside a running guest, without decompressing the ROM file.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy3-report.txt",
+      "at": "2026-08-06T04:33:33-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "StdText KEEPS ITS OWN RECURSION DEPTH COUNTER: it loads a global via the TOC (lwz r31,-0xa8(r2)), reads a byte (lbz r9,0(r31)), stores it on the stack, writes back r9+1, and on the early-out path (byteCount <= 0, via extsh./bgt) restores the original byte before returning. QuickDraw tracks its own nesting - which is directly relevant to the content plane's re-entrancy guard, whose stated justification (StdText blitting glyphs through StdBits) this arc has already shown does not hold here.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy3-report.txt",
+      "at": "2026-08-06T04:33:33-0400"
+    }
+  ],
+  "blockers": [
+    {
+      "phase": "P4",
+      "why": "The broad spread (list view, control panel, double-buffered app) is incomplete: after a long session the scene walk stops returning Finder windows with addresses - the anchor binding goes stale - so phases cannot find their target. Verified by screendump that the windows ARE open. Needs a fresh VM per phase rather than chaining phases on one boot.",
+      "at": "2026-08-06T04:22:37-0400"
+    }
+  ],
+  "handoff": {
+    "text": "MORNING STATE, 2026-08-06 ~08:50. THE ARC SUCCEEDED and its headline is a reversal: a resident CAN find and hook another process's offscreen GWorld from outside and read the drawing that builds a composite. On the Finder, its icon-view LABELS come back as text ops at true pens ('Documents' [280,67], 'TimBotTu' [282,131], 'TBT' [40,195], header '10 items, 3.21 GB available' [135,14]) while the window port emits only opaque blits. docs/mirror-knowledge.md's 'No - dead end' row is corrected, docs/open-issues.md moved to ANSWERED, and the durable claim is the corpus finding gworld-offscreen-ports-are-hookable (tools/data check passes).\n\nTHREE DEFECTS had to be cleared and each hid the next: small blits stealing the chase slot (largest-wins); a dereferenced pixmap pointer carried across the draw-time/event-loop gap when LockPixels relocates the RECORD out of the app zone (match on SHAPE); and the one that masked both fixes - a read guard bounded to [0x1000, MemTop] where MemTop is ~14.8 MB and app heaps sit ~512 MB above it, so it rejected every candidate it ever examined.\n\nTOOLBOX FACTS BANKED (docs/local/toolbox-re/REFERENCE.md, ledger.json has 40+ rows with provenance): structure layouts by offsetof and verified live; GWorldPtr IS the CGrafPtr and the port is a locked relocatable block; useTempMem moves only pixels; a disposed world's address is reused; window and offscreen ports dispatch identically; StdText does NOT nest through StdBits; the standard procs are NATIVE POWERPC behind Mixed Mode routine descriptors (ISA=kPowerPCISA), and their PPC code was dumped and disassembled (StdText 0x3f9967c0, StdBits 0x3f8a9b00) - so the compressed ROM does NOT hide QuickDraw from a running guest. A static PEF table (tools/pef.py) says which OS 9 apps composite offscreen at all.\n\nNEXT, in order: (1) icon IDENTITY - labels are semantic but icons are still identity-less bits; PlotIconSuite/IconRef interception is the missing piece for full host-side composition, and prior-art.md warns PlotIconSuite changes path when grafProcs is set, so design the experiment around that. (2) The live spread is thin - Finder icon view is done, list view and a control panel are not; the scene walk goes stale over a long session so use a FRESH VM PER PHASE. (3) Ring pressure: a composite-heavy app overran the 64 KiB ring in one settle (lostBytes 835410). (4) The probe must not ship armed - it is still an experiment on branch claude/gworld-probe-grounding-3dcbd4, ext-bake deliberately deferred.\n\nRIG NOTES: the guest FS mounts read-only on the host (REFERENCE section 1) - best static route, no VM. QMP memsave translates through whatever CPU context the machine stopped in and read GARBAGE twice; read logical addresses FROM the guest instead. Control applets: tools/guest-gworld/src/{now_gworld,anatomy,loop}.c.",
+    "at": "2026-08-06T04:34:05-0400"
+  },
+  "done": true,
+  "fruitless_blocks": 5
+}
