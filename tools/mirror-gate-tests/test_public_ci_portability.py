@@ -74,7 +74,7 @@ class PublicCIPortabilityTests(unittest.TestCase):
             "@preconcurrency import AVFoundation\n"))
 
     def test_deferred_socket_stress_still_runs_in_the_host_gate(self):
-        """MUTATION: defer the stress case without its isolated invocation."""
+        """MUTATION: defer the case or let it inherit the test MainActor."""
         script = (ROOT / "scripts" / "test-host").read_text()
         test = (ROOT / "now-host" / "Tests" / "HostTests"
                 / "AgentIntegrationSocketTests.swift").read_text()
@@ -84,7 +84,10 @@ class PublicCIPortabilityTests(unittest.TestCase):
         self.assertIn(flag, test)
         self.assertEqual(script.count(flag + "=1"), 2)
         self.assertEqual(script.count("\n    " + case + "\n"), 1)
-        self.assertIn("Task.detached { [endpoint] in", test)
+        self.assertIn(
+            "nonisolated func "
+            "testConcurrentHealthCallsReceiveIndependentReplies()", test)
+        self.assertIn("let server = try await MainActor.run {", test)
         self.assertIn(
             "AgentIntegrationLocalClient(endpoint: endpoint)", test)
         self.assertEqual(test.count(

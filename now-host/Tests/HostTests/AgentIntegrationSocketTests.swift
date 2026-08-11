@@ -21,7 +21,7 @@ final class AgentIntegrationSocketTests: XCTestCase {
     private static let filler =
         AgentIntegrationLocalResult.sessionHealth(.hostUnavailable)
 
-    private func temporaryEndpoint() throws
+    nonisolated private func temporaryEndpoint() throws
         -> (AgentIntegrationEndpoint, URL) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -281,7 +281,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
             descriptors[0], geteuid() &+ 1))
     }
 
-    func testConcurrentHealthCallsReceiveIndependentReplies() async throws {
+    nonisolated func testConcurrentHealthCallsReceiveIndependentReplies()
+        async throws {
         if ProcessInfo.processInfo.environment[
             "NOW_DEFER_CONCURRENT_SOCKET_TEST"] == "1" {
             throw XCTSkip(
@@ -289,54 +290,53 @@ final class AgentIntegrationSocketTests: XCTestCase {
         }
         let (endpoint, root) = try temporaryEndpoint()
         defer { try? FileManager.default.removeItem(at: root) }
-        let listener = GuestListener(
-            identity: .init(version: "0.1-test", name: "Test Host"),
-            updateProvider: UpdateProvider(snapshot: .empty))
-        let adapter = AgentIntegrationHostAdapter(listener: listener)
-        let server = try AgentIntegrationLocalServer(
-            endpoint: endpoint,
-            handler: { request in
-                switch request.operation {
-                case .sessionHealth:
-                    return .sessionHealth(adapter.sessionHealth())
-                case .sessionCapabilities:
-                    return .sessionCapabilities(
-                        await adapter.sessionCapabilities(
-                            probeCostly: request.probeCostly ?? false))
-                case .listProcesses:
-                    return .processList(await adapter.processList())
-                default:
-                    return Self.filler   /* see the class note */
-                }
-            })
+        let server = try await MainActor.run {
+            let listener = GuestListener(
+                identity: .init(version: "0.1-test", name: "Test Host"),
+                updateProvider: UpdateProvider(snapshot: .empty))
+            let adapter = AgentIntegrationHostAdapter(listener: listener)
+            return try AgentIntegrationLocalServer(
+                endpoint: endpoint,
+                handler: { request in
+                    switch request.operation {
+                    case .sessionHealth:
+                        return .sessionHealth(adapter.sessionHealth())
+                    case .sessionCapabilities:
+                        return .sessionCapabilities(
+                            await adapter.sessionCapabilities(
+                                probeCostly: request.probeCostly ?? false))
+                    case .listProcesses:
+                        return .processList(await adapter.processList())
+                    default:
+                        return Self.filler   /* see the class note */
+                    }
+                })
+        }
         try server.start()
         defer { server.stop() }
 
-        /* Swift 6.1 can keep a task-group body inherited from this test
-           class on MainActor while it awaits the clients, starving the
-           server handlers that must run on that same actor. Orchestrate
-           the clients off-actor; awaiting the detached task releases the
-           actor for the shipping handler and keeps the real two-second
-           receive budget under test. */
-        let outcomes = try await Task.detached { [endpoint] in
-            let client = try AgentIntegrationLocalClient(endpoint: endpoint)
-            return await withTaskGroup(
-                of: ConcurrentHealthOutcome.self
-            ) { group in
-                for _ in 0..<8 {
-                    group.addTask {
-                        do {
-                            return .success(try await client.sessionHealth())
-                        } catch {
-                            return .failure(String(reflecting: error))
-                        }
+        /* This method is nonisolated by construction. A nested detached task
+           was not enough on Swift 6.1: XCTest retained the class's MainActor
+           executor while the clients waited, starving the server handlers
+           that need that actor. Keep only fixture construction on MainActor;
+           the client group itself must have no actor to inherit. */
+        let client = try AgentIntegrationLocalClient(endpoint: endpoint)
+        let outcomes = await withTaskGroup(
+            of: ConcurrentHealthOutcome.self
+        ) { group in
+            for _ in 0..<8 {
+                group.addTask {
+                    do {
+                        return .success(try await client.sessionHealth())
+                    } catch {
+                        return .failure(String(reflecting: error))
                     }
                 }
-                var values: [ConcurrentHealthOutcome] = []
-                for await value in group { values.append(value) }
-                return values
             }
-        }.value
+            var values: [ConcurrentHealthOutcome] = []
+            for await value in group { values.append(value) }
+            return values
+        }
 
         let failures = outcomes.compactMap { outcome -> String? in
             guard case .failure(let reason) = outcome else { return nil }
