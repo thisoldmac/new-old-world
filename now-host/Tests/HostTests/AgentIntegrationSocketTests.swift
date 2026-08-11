@@ -281,6 +281,11 @@ final class AgentIntegrationSocketTests: XCTestCase {
     }
 
     func testConcurrentHealthCallsReceiveIndependentReplies() async throws {
+        if ProcessInfo.processInfo.environment[
+            "NOW_DEFER_CONCURRENT_SOCKET_TEST"] == "1" {
+            throw XCTSkip(
+                "scripts/test-host runs this MainActor stress case alone")
+        }
         let (endpoint, root) = try temporaryEndpoint()
         defer { try? FileManager.default.removeItem(at: root) }
         let listener = GuestListener(
@@ -310,14 +315,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
         ) { group in
             for _ in 0..<8 {
                 group.addTask {
-                    // This case proves that concurrent sockets keep their
-                    // replies separate. It injects its own deadline so a
-                    // test sharing a CI runner with the full host suite does
-                    // not also redefine the shipping two-second default.
                     try await AgentIntegrationLocalClient(
-                        endpoint: endpoint,
-                        readOnlyReceiveTimeout: 60,
-                        launchReceiveTimeout: 35).sessionHealth()
+                        endpoint: endpoint).sessionHealth()
                 }
             }
             var values: [AgentIntegrationSessionHealthResult] = []

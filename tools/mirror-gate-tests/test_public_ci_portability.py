@@ -73,6 +73,18 @@ class PublicCIPortabilityTests(unittest.TestCase):
         self.assertTrue(source.startswith(
             "@preconcurrency import AVFoundation\n"))
 
+    def test_deferred_socket_stress_still_runs_in_the_host_gate(self):
+        """MUTATION: defer the stress case without its isolated invocation."""
+        script = (ROOT / "scripts" / "test-host").read_text()
+        test = (ROOT / "now-host" / "Tests" / "HostTests"
+                / "AgentIntegrationSocketTests.swift").read_text()
+        flag = "NOW_DEFER_CONCURRENT_SOCKET_TEST"
+        case = ("AgentIntegrationSocketTests."
+                "testConcurrentHealthCallsReceiveIndependentReplies")
+        self.assertIn(flag, test)
+        self.assertEqual(script.count(flag + "=1"), 2)
+        self.assertEqual(script.count("\n    " + case + "\n"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,6 +94,7 @@ echo "==> fixture format and manifest"
 
 echo "==> swift test"
 run_swift_step "$scratch_root/swift-test.log" \
+    env NOW_DEFER_CONCURRENT_SOCKET_TEST=1 \
     swift test --package-path "$repo_root/now-host" \
     --scratch-path "$scratch_root/swift"
 
@@ -106,8 +107,21 @@ run_swift_step "$scratch_root/swift-test.log" \
 echo "==> swift test again with NOW_MIRROR_ASSETS=none (honest degradation)"
 run_swift_step "$scratch_root/swift-test-no-assets.log" \
     env NOW_MIRROR_ASSETS=none NOW_REQUIRE_ASSET_PACK= \
+    NOW_DEFER_CONCURRENT_SOCKET_TEST=1 \
     swift test --package-path "$repo_root/now-host" \
     --scratch-path "$scratch_root/swift"
+
+# This stress case's server handler is deliberately MainActor-isolated, like
+# the shipping host. Running it alongside two thousand other tests made the
+# CI runner starve that actor past even a 60-second experimental timeout.
+# Run it alone, still inside the gate and with the real two-second client
+# default, so it measures reply isolation rather than unrelated suite load.
+echo "==> concurrent local-socket test (isolated from full-suite actor load)"
+run_swift_step "$scratch_root/swift-test-concurrent-socket.log" \
+    swift test --package-path "$repo_root/now-host" \
+    --scratch-path "$scratch_root/swift" \
+    --filter \
+    AgentIntegrationSocketTests.testConcurrentHealthCallsReceiveIndependentReplies
 
 # Debug and Release differ in whole-module optimisation, which has caught
 # errors the other configuration accepts. Both, or the gate has a hole.
