@@ -187,21 +187,40 @@ grep -E '^codekitten_artifact_sha256=[0-9a-f]{64}$' \
 
 run_harness seal "os86-carbon16-now020" >/dev/null
 [ -f "$VM/Snapshots/os86-carbon16-now020.hfv" ]
+[ -f "$VM/Snapshots/os86-carbon16-now020.transfer.hfv" ]
+[ -f "$VM/Snapshots/os86-carbon16-now020.prefs" ]
+[ -f "$VM/Snapshots/os86-carbon16-now020.rom" ]
+[ -f "$VM/Snapshots/os86-carbon16-now020.apps.rig" ]
 [ -f "$VM/Snapshots/os86-carbon16-now020.rig" ]
 grep -F "profile_version=os86-carbon16-now020" \
     "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
 grep -F "installed_apps_NOW_SHEEPSHAVER_APPS_V1" \
     "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
+grep -F "versioned_transfer_disk_sha256=" \
+    "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
 duplicate_output="$(run_harness seal "os86-carbon16-now020" 2>&1 || true)"
 printf '%s\n' "$duplicate_output" \
     | grep -F "versioned image already exists" >/dev/null
+
+# Ordinary staging and preference changes must not invalidate an already
+# sealed oracle. These are the exact mutations the original implementation
+# accidentally made every historical version depend on.
+printf 'later transfer bytes' > "$VM/CarbonLib 1.6 Transfer.hfv"
+printf 'later prefs bytes' > "$VM/prefs"
+printf 'later ROM bytes' > "$VM/Mac OS ROM"
+printf 'later apps receipt' > "$VM/Installed Apps.rig"
 
 clone="$TMP/oracle-run.sheepvm"
 run_harness clone "os86-carbon16-now020" "$clone" >/dev/null
 [ -f "$clone/prefs" ]
 [ -f "$clone/Mac OS ROM" ]
 cmp "$VM/Snapshots/os86-carbon16-now020.hfv" "$clone/Mac OS 8.6.hfv"
-cmp "$VM/CarbonLib 1.6 Transfer.hfv" "$clone/CarbonLib 1.6 Transfer.hfv"
+cmp "$VM/Snapshots/os86-carbon16-now020.transfer.hfv" \
+    "$clone/CarbonLib 1.6 Transfer.hfv"
+cmp "$VM/Snapshots/os86-carbon16-now020.prefs" "$clone/prefs"
+cmp "$VM/Snapshots/os86-carbon16-now020.rom" "$clone/Mac OS ROM"
+cmp "$VM/Snapshots/os86-carbon16-now020.apps.rig" \
+    "$clone/Installed Apps.rig"
 cmp "$VM/Snapshots/os86-carbon16-now020.rig" "$clone/Oracle Parent.rig"
 [ -d "$clone/Shared" ]
 [ -d "$clone/Snapshots" ]
@@ -215,11 +234,11 @@ printf '%s\n' "$bad_clone" \
     | grep -F "sealed boot image does not match its rig receipt" >/dev/null
 
 printf 'boot disk bytes' > "$VM/Snapshots/os86-carbon16-now020.hfv"
-printf 'tampered prefs' >> "$VM/prefs"
+printf 'tampered prefs' >> "$VM/Snapshots/os86-carbon16-now020.prefs"
 bad_prefs="$(run_harness clone "os86-carbon16-now020" \
     "$TMP/tampered-prefs.sheepvm" 2>&1 || true)"
 printf '%s\n' "$bad_prefs" \
-    | grep -F "profile preferences does not match the sealed rig receipt" >/dev/null
+    | grep -F "sealed profile preferences does not match its rig receipt" >/dev/null
 
 invalid_output="$(run_harness seal "../escape" 2>&1 || true)"
 printf '%s\n' "$invalid_output" \
@@ -245,4 +264,4 @@ NOW_CODEKITTEN_SOURCE="$desk_lane" \
 grep -F "codekitten_revision=$(git -C "$desk_lane" rev-parse HEAD)" \
     "$VM/Installed Apps.rig" >/dev/null
 
-echo "sheepshaver-86: 22 harness behaviors passed"
+echo "sheepshaver-86: 24 harness behaviors passed"

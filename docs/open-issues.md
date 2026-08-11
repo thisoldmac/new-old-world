@@ -4,7 +4,7 @@ search:
 ---
 # Open issues
 
-## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle has one reference calibration but not six accepted target pairs (2026-08-11, `codex/sheepshaver-86-tooling`)
+## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle has one of six accepted target pairs (2026-08-11, `codex/sheepshaver-86-tooling`)
 
 The repository now has one visual-oracle loop shared by SheepShaver and QEMU:
 sealed-image clone verification, disposable `.sheepvm` runs, masked
@@ -41,14 +41,34 @@ items while the source capture still has both. The original capture beginning
 masks exchanged red and blue; V2 capture receipts now make that defect a hard
 refusal.
 
-That is **tested tooling plus one bounded reference comparison**, not an
-accepted corpus. The six declared Mac OS 8.6
-cases—resting Finder desktop, front icon-view window, inactive Finder window,
-list selection, File menu and Apple menu—still need state proofs and paired
-target/render captures from a disposable clone of the sealed profile. No case
-has validated input actions yet, so the tool refuses `--apply-case-input`
-rather than treating guessed screen coordinates as a state contract. Close
-this row only when all six receipts name the sealed parent, state proof, source
+The resting Finder desktop is now the first accepted pair. The sealed
+`os86-carbon16-now020-codekitten-5d404f7-rgbv2` rig freezes and hashes all five
+inputs—boot and transfer disks, preferences, ROM and installed-app manifest—so
+later staging cannot rewrite an old experiment. Its validated action sequence
+reached masked framebuffer SHA-256 `6071bd241484d30c7eb1253d28791aaf7cb508a0bb992cab4d1de73cd9487841`
+on two fresh clones; the accepted target file is
+`6867dd8c0c8d09d1efb598c904238a9906f257b63958081e6d44623223aca60a`.
+The state proof covers Finder frontmost, no open menu, no selection and no
+modal; the tool validates its schema, exact case/profile/digest, observer,
+timezone and one evidenced assertion per requirement before writing success.
+`state-template` produces the deliberately unobserved form from a reference
+receipt so nobody has to copy hashes or requirement text by hand.
+
+The paired semantic scene carries all eight visible desktop items. The current
+production render differs by 35/13,500 unmasked menu pixels (0.259%),
+10,940/416,000 main-desktop pixels (2.630%), 8,760/22,080 Control Strip pixels
+(39.674%), and 1,233/25,920 bottom-desktop pixels (4.757%). Separate regions
+make the largest ownership gap explicit: Control Strip is not represented in
+the scene contract. The first renderer correction is also measured—the default
+volume face is a 32×10 glyph low in its 32×32 Finder cell, not a tall drive
+filling most of it. That correction removes 2,163 changed main-desktop pixels.
+
+This is **tested tooling plus one accepted pair**, not an accepted corpus. The
+other five declared cases—front icon-view window, inactive Finder window, list
+selection, File menu and Apple menu—still need validated input actions, state
+proofs and paired target/render captures from disposable clones. The tool
+continues to refuse `--apply-case-input` for an empty sequence. Close this row
+only when all six receipts name the sealed parent, state proof, source
 revision, visual profile, accepted consecutive hashes, and per-region result.
 
 ## BROKEN: CodeKitten does not launch on supported Mac OS 8.6 plus CarbonLib 1.6 (2026-08-11, `codex/codekitten-os86-support`)

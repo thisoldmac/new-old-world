@@ -6,7 +6,7 @@ doc_type: explanation
 audience: developer
 lifecycle: experimental
 authority: [docs/mirror-drive-loop.md, docs/mirror-knowledge.md]
-source_dependencies: [docs/mirror-drive-loop.md, docs/mirror-knowledge.md, contract/asyncapi.yaml, tools/mirror-oracle, tools/mirror_oracle, tools/mirror_oracle_data, tools/extract-assets-offline, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumMenuBar.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/MirrorStateProjectionService.swift, now-host/Sources/Host/MirrorDriveService.swift, now-host/Sources/Host/MirrorWorkClocks.swift, now-guest-ppc/src/mirror, now-guest-ppc/src/peek]
+source_dependencies: [docs/mirror-drive-loop.md, docs/mirror-knowledge.md, docs/asset-pack.md, contract/asyncapi.yaml, tools/mirror-oracle, tools/mirror_oracle, tools/mirror_oracle_data, tools/extract-assets-offline, tools/asset-pack, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumMenuBar.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/MirrorStateProjectionService.swift, now-host/Sources/Host/MirrorDriveService.swift, now-host/Sources/Host/MirrorWorkClocks.swift, now-guest-ppc/src/mirror, now-guest-ppc/src/peek]
 media_ids: []
 last_verified: 2026-08-11
 ---
@@ -54,6 +54,15 @@ oracle, not an alternative model. `mirror-render` exposes the production
 output with SheepShaver or QEMU pixels by named regions. It never promotes a
 whole-screen similarity score into a fidelity claim.
 
+Asset acquisition is one domain with three adapters: stopped-volume resource
+fork extraction, future read-only extraction from the connected guest, and
+bounded visual-oracle derivation. They converge on the same external,
+versioned pack/manifest/provenance contract; MirrorKit only consumes that
+contract. The connected adapter therefore extends the existing pack domain and
+shared parsers rather than becoming a new renderer or pixel protocol. Its
+implementation remains tracked by plans 017 and 021. No adapter sends
+framebuffer pixels through NOW's semantic wire.
+
 Visual versioning is explicit at the tooling boundary. The initial
 `platinum.macos-8.6.default` profile records system, theme, screen/depth,
 calibration source, and asset policy. It does not claim that Mac OS 8.6 and 9.1
@@ -68,7 +77,7 @@ baseline live in `PlatinumMenuBar`; Apple and Finder-owned bitmap marks stay in
 the external versioned asset pack. A profile-declared derivation copies those
 crops from an attributed native framebuffer without adding guest pixels to the
 semantic wire protocol or repository. With the OS 8.6 font/icon pack and those
-two chrome crops, the current reference-only comparison differs in 35 of
+two chrome crops, the current comparison differs in 35 of
 13,500 unmasked menu pixels, all within Charcoal “View”. The remaining bearing
 delta is kept visible: a trial use of FOND fractional family widths worsened
 other already-exact titles and was rejected. The extractor preserves that
@@ -81,9 +90,11 @@ profile's unobscured proof regions equals the origin-zero tiled asset; a
 one-pixel mismatch refuses the derived pack. The current color-correct native
 capture proves 69,160 of 69,160 background pixels. Mirror resolves a guest
 naming that pattern through the manifest to the sanitized `desktop.png` asset
-and records machine provenance. This is a bounded background proof, not an
-accepted Finder-desktop scene—the capture still contains a transfer window and
-desktop items absent from the semantic calibration scene.
+and records machine provenance. The resting Finder-desktop case now also has a
+state-proven target, deterministic replay on a second sealed clone, and a
+semantic scene containing its eight visible items. Control Strip remains a
+separately scored, unmodeled system-chrome region rather than pixels smuggled
+into the semantic scene.
 
 The scheduler, invalidation, and generation behavior is tested locally. The
 2,000 ms ambient-wait target on the PowerBook 1400c is not metal-verified.

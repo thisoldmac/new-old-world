@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import json
 from pathlib import Path
 import struct
@@ -20,6 +21,7 @@ from mirror_oracle.images import (Image, compare as compare_images, load,
                                   masked_digest, transparent_crop, write_png)  # noqa: E402
 from mirror_oracle.model import OracleCase, VisualProfile, list_cases, list_profiles, resolve_regions  # noqa: E402
 from mirror_oracle.runner import compare, render_scene, stable_capture  # noqa: E402
+from mirror_oracle.state import STATE_SCHEMA, state_proof_template  # noqa: E402
 
 
 def assert_raises(expected, function, contains: str):
@@ -208,6 +210,65 @@ def main() -> None:
         assert capture_receipt["evidenceStatus"] == "reference-only"
         assert (stable_dir / "capture.json").is_file()
 
+        template = state_proof_template(
+            stable_dir / "capture.json", masked_case, fixture_profile())
+        assert template["maskedFramebufferSha256"] == masked_digest(
+            base, [(3, 0, 4, 1)])
+        assert template["observer"] == ""
+        assert template["assertions"] == [{
+            "requirement": "fixture state",
+            "verdict": "unobserved",
+            "evidence": "",
+        }]
+
+        proof_path = root / "state-proof.json"
+        proof_path.write_text(json.dumps({
+            "schema": STATE_SCHEMA,
+            "case": "test",
+            "profile": "test",
+            "observer": "fixture observer",
+            "observedAt": "2026-08-11T12:00:00Z",
+            "maskedFramebufferSha256": masked_digest(
+                base, [(3, 0, 4, 1)]),
+            "assertions": [{
+                "requirement": "fixture state",
+                "verdict": "observed",
+                "evidence": "the fixture declares its one visible state",
+            }],
+        }) + "\n")
+        proved_dir = root / "state-proved"
+        proved = stable_capture(
+            FakeBackend([base, clock_changed]), masked_case,
+            fixture_profile(), proved_dir, settle_seconds=0,
+            state_proof=proof_path,
+        )
+        assert proved["evidenceStatus"] == "state-proof-validated"
+        assert proved["stateProof"]["observer"] == "fixture observer"
+        assert len(proved["stateProof"]["assertions"]) == 1
+
+        wrong_digest = json.loads(proof_path.read_text())
+        wrong_digest["maskedFramebufferSha256"] = "0" * 64
+        wrong_digest_path = root / "wrong-digest-proof.json"
+        wrong_digest_path.write_text(json.dumps(wrong_digest))
+        refused_proof_dir = root / "refused-proof"
+        assert_raises(ValueError, lambda: stable_capture(
+            FakeBackend([base, clock_changed]), masked_case,
+            fixture_profile(), refused_proof_dir, settle_seconds=0,
+            state_proof=wrong_digest_path,
+        ), "different masked framebuffer")
+        assert not (refused_proof_dir / "capture.json").exists()
+        assert (refused_proof_dir / "capture-failure.json").is_file()
+
+        missing_assertion = json.loads(proof_path.read_text())
+        missing_assertion["assertions"] = []
+        missing_assertion_path = root / "missing-assertion-proof.json"
+        missing_assertion_path.write_text(json.dumps(missing_assertion))
+        assert_raises(ValueError, lambda: stable_capture(
+            FakeBackend([base, clock_changed]), masked_case,
+            fixture_profile(), root / "missing-assertion", settle_seconds=0,
+            state_proof=missing_assertion_path,
+        ), "assertions do not match requiredState")
+
         unstable_dir = root / "unstable"
         alternating = FakeBackend([base, changed(base, 0, 0, (1, 1, 1)), base])
         assert_raises(RuntimeError, lambda: stable_capture(
@@ -255,14 +316,27 @@ def main() -> None:
         chrome_profile = replace(fixture_profile(), raw=profile_raw)
         chrome_guest = root / "chrome-guest.png"
         write_png(changed(base, 1, 0, (50, 60, 70)), chrome_guest)
+        chrome_capture_receipt = root / "chrome-capture.json"
+        chrome_capture_receipt.write_text(json.dumps({
+            "kind": "capture",
+            "case": {"id": "test"},
+            "profile": {"id": chrome_profile.id},
+            "acceptedCapture": {
+                "path": str(chrome_guest),
+                "sha256": hashlib.sha256(chrome_guest.read_bytes()).hexdigest(),
+            },
+            "evidenceStatus": "reference-only",
+        }))
         derived_assets = root / "derived-assets"
         asset_receipt = extract_chrome(chrome_profile, chrome_guest,
+                                       chrome_capture_receipt,
                                        base_assets, derived_assets)
         assert (derived_assets / "kept.txt").read_text() == "immutable base\n"
         extracted = load(derived_assets / "chrome" / "apple-menu.png")
         assert extracted.pixel(0, 0)[3] == 0
         assert extracted.pixel(1, 0) == (50, 60, 70, 255)
         assert asset_receipt["baseAssets"]["manifestSha256"]
+        assert asset_receipt["captureReceipt"]["evidenceStatus"] == "reference-only"
         derived_manifest = json.loads(
             (derived_assets / "manifest.json").read_text())
         assert derived_manifest["oracleChrome"]
@@ -280,9 +354,17 @@ def main() -> None:
             fixture_profile(), raw=mismatched_profile_raw)
         refused_assets = root / "refused-assets"
         assert_raises(ValueError, lambda: extract_chrome(
-            mismatched_profile, chrome_guest, base_assets, refused_assets,
+            mismatched_profile, chrome_guest, chrome_capture_receipt,
+            base_assets, refused_assets,
         ), "desktopPattern does not match")
         assert not refused_assets.exists()
+
+        wrong_capture = root / "wrong-chrome-guest.png"
+        write_png(base, wrong_capture)
+        assert_raises(ValueError, lambda: extract_chrome(
+            chrome_profile, wrong_capture, chrome_capture_receipt,
+            base_assets, root / "wrong-capture-assets",
+        ), "does not match the capture receipt")
 
         scene_path = root / "scene.json"
         scene_path.write_text("{}")
@@ -324,7 +406,7 @@ def main() -> None:
         assert "profile platinum.macos-8.6.default" in listing
         assert "case finder-file-menu-open" in listing
 
-    print("mirror-oracle: 24 capture, image, profile, asset, and diff behaviors passed")
+    print("mirror-oracle: 30 capture, state, image, profile, asset, and diff behaviors passed")
 
 
 if __name__ == "__main__":

@@ -58,6 +58,29 @@ route.
 Anyone with their own image can produce their own pack; nobody has to
 be given Apple's bitmaps to build or run this.
 
+## One asset domain, three acquisition adapters
+
+The pack contract is the domain boundary. Acquisition route is provenance,
+not a different kind of asset or a licence to invent a second manifest:
+
+| Adapter | Source | Current state |
+|---|---|---|
+| **Stopped-volume** | Read-only HFS/HFS+ image and resource forks through `tools/extract-assets-offline` | Implemented; fastest deterministic bulk/reference route. |
+| **Connected guest** | Read-only fork-bearing `file.*` pulls from the machine NOW is connected to | Pull transport and the earlier wire extraction are proven; product integration remains the work in [plan 017](plans/2026-08-06-017-feat-assets-from-the-connected-guest-plan.md) and [plan 021](plans/2026-08-07-021-feat-asset-packs-plan.md). |
+| **Visual oracle derivation** | Receipt-bound SheepShaver/QEMU framebuffer regions declared by an explicit visual profile | Implemented for bounded, static marks and framebuffer proof; it is not a general screenshot-atlas path. |
+
+All three publish into the same external versioned pack shape and obey the
+same rules: immutable source identities, per-asset provenance, atomic
+`manifest.json` publication last, private/non-shipping Apple bytes, and loud
+absence. The connected route should add a machine/session acquisition receipt,
+not a second runtime cache format; its progressive system/fonts/appearance/
+applications domains remain the cost model already designed in plan 021.
+
+The renderer is a consumer, not a fourth acquisition route. MirrorKit composes
+semantic scenes locally from pack assets plus procedural furniture. Native
+framebuffers never enter the NOW semantic protocol, and a pixel comparison is
+evidence about a render rather than data used by that render.
+
 ## Where the renderer looks
 
 `MirrorKitUI/AssetPack.swift` resolves the pack once, at run time, in

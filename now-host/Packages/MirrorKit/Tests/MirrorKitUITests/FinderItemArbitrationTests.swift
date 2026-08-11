@@ -183,6 +183,19 @@ final class FinderItemArbitrationTests: XCTestCase {
             "an oversized report must not claim the window")
     }
 
+    /// The state-proven OS 8.6 Finder target draws a default volume from
+    /// y=47 through y=56 in an icon box beginning at y=27. The name begins at
+    /// y=60. Pinning the internal face keeps the fallback from growing back
+    /// into the full cell and pushing the label down by twelve pixels.
+    ///
+    /// **Watched to fail against**: restoring the old 2/7/4/12 insets.
+    func testDefaultDiskFaceUsesTheMeasuredFinderGeometry() {
+        XCTAssertEqual(
+            SceneRenderer.diskBodyRect(
+                CGRect(x: 736, y: 27, width: 32, height: 32)),
+            CGRect(x: 736, y: 47, width: 32, height: 10))
+    }
+
     /// A list row's NAME is a column the machine wrote, level with the row
     /// icon rather than under it. Ours is centred underneath, so drawing it
     /// there is a second name in the wrong place.

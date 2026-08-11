@@ -78,6 +78,39 @@ def _relative_asset(value: Any, label: str) -> Path:
     return path
 
 
+def _capture_provenance(profile: VisualProfile, guest: Path,
+                        receipt_path: Path) -> dict[str, Any]:
+    try:
+        receipt = json.loads(receipt_path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(
+            f"cannot read capture receipt {receipt_path}: {error}"
+        ) from error
+    if not isinstance(receipt, dict) or receipt.get("kind") != "capture":
+        raise ValueError("chrome extraction requires a mirror-oracle capture receipt")
+    receipt_profile = receipt.get("profile")
+    if not isinstance(receipt_profile, dict) \
+            or receipt_profile.get("id") != profile.id:
+        raise ValueError("capture receipt profile does not match chrome profile")
+    accepted = receipt.get("acceptedCapture")
+    if not isinstance(accepted, dict):
+        raise ValueError("capture receipt has no accepted capture")
+    expected = accepted.get("sha256")
+    actual = _sha256(guest)
+    if expected != actual:
+        raise ValueError(
+            "chrome source does not match the capture receipt: "
+            f"receipt {expected}, file {actual}"
+        )
+    return {
+        "path": str(receipt_path),
+        "sha256": _sha256(receipt_path),
+        "case": receipt.get("case", {}).get("id")
+            if isinstance(receipt.get("case"), dict) else None,
+        "evidenceStatus": receipt.get("evidenceStatus"),
+    }
+
+
 def _prove_desktop_pattern(profile: VisualProfile, source, output: Path,
                            specification: Any) -> dict[str, Any]:
     label = "desktopPattern"
@@ -134,7 +167,8 @@ def _prove_desktop_pattern(profile: VisualProfile, source, output: Path,
     }
 
 
-def extract_chrome(profile: VisualProfile, guest: Path, base_assets: Path,
+def extract_chrome(profile: VisualProfile, guest: Path,
+                   capture_receipt: Path, base_assets: Path,
                    output: Path) -> dict[str, Any]:
     """Clone a complete pack and add profile-specific oracle chrome.
 
@@ -158,6 +192,9 @@ def extract_chrome(profile: VisualProfile, guest: Path, base_assets: Path,
     if not isinstance(app_icons, dict):
         raise ValueError("profile chromeAssets.applicationMenuIcons must be an object")
     source = load(guest)
+    capture_provenance = _capture_provenance(
+        profile, guest, capture_receipt,
+    )
     if (source.width, source.height) != (profile.width, profile.height):
         raise ValueError(
             f"oracle capture is {source.width}x{source.height}; profile requires "
@@ -193,6 +230,7 @@ def extract_chrome(profile: VisualProfile, guest: Path, base_assets: Path,
             "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "profile": profile.id,
             "sourceCapture": {"path": str(guest), "sha256": _sha256(guest)},
+            "captureReceipt": capture_provenance,
             "baseAssets": {
                 "path": str(base_assets), "manifestSha256": _sha256(source_manifest),
             },

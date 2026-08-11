@@ -6,7 +6,7 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [AGENTS.md, docs/guest-ui-start-here.md]
-source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, tools/mirror-oracle, tools/mirror_oracle, tools/mirror_oracle_data, tools/extract-assets-offline, tools/macbinary-identity.py, tools/sheepshaver-86-tests, tools/sheepshaver-package-tests, tools/mirror-oracle-tests.py, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumMenuBar.swift, docs/lab-setup.md, now-guest-ppc]
+source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, scripts/test-mirrorkit, tools/mirror-oracle, tools/mirror_oracle, tools/mirror_oracle_data, tools/extract-assets-offline, tools/asset-pack, tools/macbinary-identity.py, tools/sheepshaver-86-tests, tools/sheepshaver-package-tests, tools/mirror-oracle-tests.py, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumMenuBar.swift, docs/asset-pack.md, docs/lab-setup.md, now-guest-ppc]
 media_ids: []
 last_verified: 2026-08-11
 ---
@@ -103,9 +103,9 @@ scripts/sheepshaver-86 capture "path/to/evidence/frame.bmp"
 scripts/sheepshaver-86 input "move 200 120" "down 0" "up 0"
 scripts/sheepshaver-86 snapshot "Mac OS 8.6 + CarbonLib 1.6"
 scripts/sheepshaver-86 rig
-scripts/sheepshaver-86 seal "os86-carbon16-now020-codekitten-5d404f7"
+scripts/sheepshaver-86 seal "os86-carbon16-now020-codekitten-5d404f7-rgbv2"
 scripts/sheepshaver-86 clone \
-  "os86-carbon16-now020-codekitten-5d404f7" \
+  "os86-carbon16-now020-codekitten-5d404f7-rgbv2" \
   "/absolute/path/to/finder-run.sheepvm"
 ```
 
@@ -120,21 +120,25 @@ preferences, ROM, boot disk, and transfer disk. If
 `NOW_SHEEPSHAVER_SOURCE` is configured, it includes the exact macemu revision.
 Attach that output to captures rather than reconstructing the rig from memory.
 
-`clone` makes an isolated run profile from a named sealed image. It verifies
-the image against the sealed receipt before copying, uses copy-on-write clones
-where the filesystem supports them, gives the run its own boot and transfer
-images, and records the source receipt as `Oracle Parent.rig`. Run visual
-experiments in that clone rather than changing the sealed profile. The command
-refuses a relative destination, an existing destination, a live source image,
-or source image, preferences, ROM, transfer disk, or installed-app manifest
-whose bytes no longer match its receipt.
+`clone` makes an isolated run profile from a named sealed rig. A current seal
+freezes the boot disk, transfer disk, preferences, ROM and installed-app
+manifest beside the receipt, with one SHA-256 for each. `clone` verifies and
+copies those versioned inputs, uses copy-on-write clones where the filesystem
+supports them, and records the source receipt as `Oracle Parent.rig`. Later
+staging or preference changes in the live profile therefore cannot invalidate
+or silently alter an older oracle. Legacy receipts remain cloneable only while
+their mutable inputs still match the hashes they originally recorded. Run
+visual experiments in a clone rather than changing the sealed profile. The
+command refuses a relative destination, an existing destination, a live source
+image, or any sealed input whose bytes no longer match its receipt.
 
 `install-apps` writes both MacBinary applications into the configured
 Applications folder while the guest is stopped. It refuses a live boot disk,
 preserves both forks, and lists the resulting Finder identities before
-unmounting. `seal` creates a copy-on-write, immutable-named boot image and a
-matching `.rig` receipt; it refuses to replace either. A named snapshot without
-its receipt is not a versioned oracle.
+unmounting. `seal` creates the complete immutable-named input set and matching
+`.rig` receipt transactionally; failure removes partial sidecars, and an
+existing member is never replaced. A named boot snapshot without those frozen
+companions and its receipt is not a current versioned oracle.
 
 Before the boot disk is opened, the installer verifies the MacBinary header
 CRC, fork lengths, and internal Finder identity. NOW must be `New Old
@@ -266,11 +270,21 @@ capture or compare:
 ```sh
 tools/mirror-oracle list
 tools/mirror-oracle prepare \
-  os86-carbon16-now020-codekitten-5d404f7 \
+  os86-carbon16-now020-codekitten-5d404f7-rgbv2 \
   /absolute/path/to/finder-run.sheepvm
 
 tools/mirror-oracle capture finder-desktop \
   --vm /absolute/path/to/finder-run.sheepvm \
+  --apply-case-input \
+  --out /absolute/path/to/evidence/finder-desktop-reference
+
+tools/mirror-oracle state-template finder-desktop \
+  --capture-receipt /absolute/path/to/evidence/finder-desktop-reference/capture.json \
+  --out /absolute/path/to/observed-state.json
+
+tools/mirror-oracle capture finder-desktop \
+  --vm /absolute/path/to/finder-run.sheepvm \
+  --apply-case-input \
   --state-proof /absolute/path/to/observed-state.json \
   --out /absolute/path/to/evidence/finder-desktop
 
@@ -292,6 +306,7 @@ tools/extract-assets-offline \
 
 tools/mirror-oracle extract-chrome platinum.macos-8.6.default \
   --guest /absolute/path/to/stable-guest.bmp \
+  --capture-receipt /absolute/path/to/capture.json \
   --base-assets /absolute/path/to/os86-base/Resources \
   --out /absolute/path/to/os86-oracle/Resources
 ```
@@ -299,9 +314,12 @@ tools/mirror-oracle extract-chrome platinum.macos-8.6.default \
 The first command recognizes a raw HFS/HFS+ `.hfv` as well as an APM qcow2
 disk. The second clones the whole base pack, writes transparent crops declared
 by the visual profile, and publishes `manifest.json` only after the derived
-pack and its provenance receipt are complete. It never edits the sealed base
-pack. The BMP decoder must ignore its zero alpha plane: SheepShaver's native
-32-bit framebuffer stores visible RGB with every alpha byte zero.
+pack and its provenance receipt are complete. It refuses a framebuffer whose
+SHA-256 or profile does not match the capture receipt, and carries that
+receipt's identity and evidence status into `chrome/provenance.json`; a loose
+BMP is not an asset source. It never edits the sealed base pack. The BMP
+decoder must ignore its zero alpha plane: SheepShaver's native 32-bit
+framebuffer stores visible RGB with every alpha byte zero.
 
 A capture is accepted only after two consecutive native framebuffer reads have
 the same SHA-256 after case-declared volatile masks are applied. All attempts
@@ -309,9 +327,16 @@ remain in `samples/`; success writes `capture.json`, and a refusal writes
 `capture-failure.json`. The receipt includes the case, visual profile, NOW
 revision, backend doctor output, run-profile identities, exact input actions,
 and optional state-proof identity. A capture without `--state-proof` is
-explicitly `reference-only`; one with a proof is `state-proof-attached`, not
-silently promoted to verified. A required-state sentence is not proof that the
-machine was in that state.
+explicitly `reference-only`. `state-template` copies the accepted masked
+framebuffer digest and every required-state sentence into an intentionally
+incomplete observation form; it does not mark anything observed. After an
+observer inspects the original-size framebuffer, fills every assertion and
+reruns the capture, the tool accepts only an exact schema/case/profile/digest
+match, timezone-bearing observation time, named observer, and one `observed`
+assertion with evidence for every required state. Success is
+`state-proof-validated`; an invalid proof writes `capture-failure.json` and no
+success receipt. A required-state sentence or attached file alone is not proof
+that the machine was in that state.
 
 Comparisons are exact and region-specific. They write `comparison.json`, a
 same-scale `pair.png`, and a red-pixel `diff.png`; a mismatch exits nonzero
@@ -321,15 +346,18 @@ from the same scene JSON rendered by MirrorKit.
 
 The first profile is `platinum.macos-8.6.default`, with six Finder/menu-bar
 cases: resting desktop, front icon-view window, inactive Finder window, list
-selection, File menu, and Apple menu. Their `inputActions` remain empty until
-each coordinate sequence is validated against the sealed profile. This makes
-setup manual today but prevents an unmeasured coordinate from silently
-becoming the durable state contract. If case input is later enabled, cleanup is
-armed before the first transition and releases every mouse button and common
-modifier even when capture fails. The SheepShaver backend sends one action per
-renderer receipt: the guest must receive the harness's settlement interval
-between a menu-title press, a drag, and a release. Batching those transitions
-dispatches them all but lets the cooperative event loop miss the gesture.
+selection, File menu, and Apple menu. `finder-desktop` now carries the first
+validated coordinate sequence: repeated clicks in a safe Finder-background
+location close the baseline's persisted window stack, then a blank-desktop
+click removes selection. Two fresh clones reached the same masked digest. The
+other five cases remain empty until each sequence is validated against the
+sealed profile; `--apply-case-input` refuses them rather than turning a guessed
+coordinate into a durable state contract. Cleanup is armed before the first
+transition and releases every mouse button and common modifier even when
+capture fails. The SheepShaver backend sends one action per renderer receipt:
+the guest must receive the harness's settlement interval between a menu-title
+press, a drag, and a release. Batching those transitions dispatches them all
+but lets the cooperative event loop miss the gesture.
 
 The QEMU backend remains available with `--backend qemu --qmp-socket ...` for
 the full-stack and Mac OS 9.1+ lanes. QEMU input is intentionally refused here;
@@ -337,7 +365,7 @@ drive QEMU through its existing semantic harness. A future visual version gets
 another profile and evidence-backed deltas rather than conditionals scattered
 through the comparison code.
 
-The first color-correct reference-only calibration uses the stable 800×600
+The first color-correct reference-only calibration used the stable 800×600
 Finder capture whose SHA-256 is
 `cdddab6c4e1de1d43b57580f2c2ccd2e2c0a54d8898ca91910b91e893e2bc09a`.
 It is not an accepted resting-desktop case: a transfer window remained open
@@ -350,6 +378,23 @@ exactly against the extracted, origin-zero `Mac OS Default` tile. This proves
 the background asset and tiling rule, not the resting-desktop case: the source
 still contains a transfer window and Finder icons while the calibration scene
 intentionally contains no semantic windows or desktop items.
+
+The first accepted case supersedes that limitation for the resting desktop.
+Its original target BMP SHA-256 is
+`6867dd8c0c8d09d1efb598c904238a9906f257b63958081e6d44623223aca60a`;
+its masked framebuffer SHA-256 is
+`6071bd241484d30c7eb1253d28791aaf7cb508a0bb992cab4d1de73cd9487841`.
+A second fresh clone, with a different clock and therefore a different file
+hash, reached the same masked digest after the case input. The receipt is
+`state-proof-validated` for Finder frontmost, no open menu, no selected desktop
+item and no modal. A semantic calibration scene now contains the eight visible
+desktop items. Region splitting keeps the unmodeled Control Strip from hiding
+the rest of the desktop: the current production render differs by 35/13,500
+unmasked menu pixels (0.259%), 10,940/416,000 main-desktop pixels (2.630%),
+8,760/22,080 Control Strip pixels (39.674%), and 1,233/25,920 bottom-desktop
+pixels (4.757%). The volume fallback now uses the measured 32×10 drive face
+near the bottom of its semantic 32×32 Finder cell, removing 2,163 wrong
+main-desktop pixels from the prior render without changing hit geometry.
 
 The earlier stable BMP beginning `db968889...` is invalid as color evidence.
 Its source build saved an SDL intermediate surface with masks that did not

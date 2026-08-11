@@ -339,6 +339,11 @@ oracle_input () {
     die "oracle input timed out; the configured SheepShaver app lacks the oracle input seam or is not presenting frames"
 }
 
+clone_file () {
+    local source="$1" target="$2"
+    cp -c "$source" "$target" 2>/dev/null || cp "$source" "$target"
+}
+
 snapshot () {
     [ "$#" -eq 1 ] || die "usage: scripts/sheepshaver-86 snapshot NAME"
     local name="$1"
@@ -352,7 +357,7 @@ snapshot () {
     [ ! -e "$destination" ] || die "snapshot already exists: $destination"
     # APFS clonefile makes a cheap copy-on-write baseline; cp remains correct
     # but slower if the profile lives on a filesystem without clone support.
-    cp -c "$BOOT_DISK" "$destination" 2>/dev/null || cp "$BOOT_DISK" "$destination"
+    clone_file "$BOOT_DISK" "$destination"
     echo "sheepshaver-86: snapshot created: $destination"
 }
 
@@ -402,23 +407,55 @@ seal () {
     mkdir -p "$VM/Snapshots"
     local image="$VM/Snapshots/$version.hfv"
     local receipt="$VM/Snapshots/$version.rig"
+    local transfer_image="$VM/Snapshots/$version.transfer.hfv"
+    local prefs_image="$VM/Snapshots/$version.prefs"
+    local rom_image="$VM/Snapshots/$version.rom"
+    local apps_image="$VM/Snapshots/$version.apps.rig"
     [ ! -e "$image" ] || die "versioned image already exists: $image"
     [ ! -e "$receipt" ] || die "versioned receipt already exists: $receipt"
+    [ ! -e "$transfer_image" ] \
+        || die "versioned transfer disk already exists: $transfer_image"
+    [ ! -e "$prefs_image" ] \
+        || die "versioned preferences already exist: $prefs_image"
+    [ ! -e "$rom_image" ] || die "versioned ROM already exists: $rom_image"
+    [ ! -e "$apps_image" ] \
+        || die "versioned installed-apps manifest already exists: $apps_image"
 
     local pending
     pending="$(mktemp "$VM/Snapshots/.rig.XXXXXX")"
-    trap 'rm -f "$pending"' EXIT
+    cleanup_seal () {
+        rm -f "$pending" "$image" "$transfer_image" "$prefs_image" \
+            "$rom_image" "$apps_image"
+    }
+    trap cleanup_seal EXIT
     rig > "$pending"
-    snapshot "$version" >/dev/null
+    clone_file "$BOOT_DISK" "$image"
+    clone_file "$TRANSFER" "$transfer_image"
+    clone_file "$VM/prefs" "$prefs_image"
+    clone_file "$VM/Mac OS ROM" "$rom_image"
+    if [ -f "$VM/Installed Apps.rig" ]; then
+        clone_file "$VM/Installed Apps.rig" "$apps_image"
+    fi
     {
         echo "profile_version=$version"
         echo "versioned_image=$image"
         echo "versioned_image_sha256=$(shasum -a 256 "$image" | awk '{print $1}')"
+        echo "versioned_transfer_disk=$transfer_image"
+        echo "versioned_transfer_disk_sha256=$(shasum -a 256 "$transfer_image" | awk '{print $1}')"
+        echo "versioned_prefs=$prefs_image"
+        echo "versioned_prefs_sha256=$(shasum -a 256 "$prefs_image" | awk '{print $1}')"
+        echo "versioned_rom=$rom_image"
+        echo "versioned_rom_sha256=$(shasum -a 256 "$rom_image" | awk '{print $1}')"
+        if [ -f "$apps_image" ]; then
+            echo "versioned_installed_apps_manifest=$apps_image"
+            echo "versioned_installed_apps_manifest_sha256=$(shasum -a 256 "$apps_image" | awk '{print $1}')"
+        fi
     } >> "$pending"
     mv "$pending" "$receipt"
     trap - EXIT
     echo "sheepshaver-86: sealed $version"
     echo "  image: $image"
+    echo "  transfer: $transfer_image"
     echo "  receipt: $receipt"
 }
 
@@ -464,12 +501,42 @@ clone_profile () {
         [ "$actual" = "$expected" ] \
             || die "$label does not match the sealed rig receipt: $path"
     }
-    verify_sealed_input prefs_sha256 "$VM/prefs" "profile preferences"
-    verify_sealed_input rom_sha256 "$VM/Mac OS ROM" "ROM file"
-    verify_sealed_input transfer_disk_sha256 "$TRANSFER" "transfer disk"
-    if grep -q '^installed_apps_manifest_sha256=' "$source_receipt"; then
-        verify_sealed_input installed_apps_manifest_sha256 \
-            "$VM/Installed Apps.rig" "installed-apps manifest"
+    sealed_input () {
+        local versioned_key="$1" versioned_path="$2" legacy_key="$3"
+        local legacy_path="$4" label="$5" expected actual
+        expected="$(sed -n "s/^${versioned_key}_sha256=//p" "$source_receipt")"
+        if [ -n "$expected" ]; then
+            grep -Fx "${versioned_key}=$versioned_path" "$source_receipt" >/dev/null \
+                || die "sealed rig names an unexpected $label path: $source_receipt"
+            require_file "$versioned_path" "sealed $label"
+            actual="$(shasum -a 256 "$versioned_path" | awk '{print $1}')"
+            [ "$actual" = "$expected" ] \
+                || die "sealed $label does not match its rig receipt: $versioned_path"
+            printf '%s\n' "$versioned_path"
+            return
+        fi
+        verify_sealed_input "$legacy_key" "$legacy_path" "$label"
+        printf '%s\n' "$legacy_path"
+    }
+
+    local prefs_source rom_source transfer_source apps_source=""
+    prefs_source="$(sealed_input versioned_prefs \
+        "$VM/Snapshots/$version.prefs" prefs_sha256 "$VM/prefs" \
+        "profile preferences")"
+    rom_source="$(sealed_input versioned_rom \
+        "$VM/Snapshots/$version.rom" rom_sha256 "$VM/Mac OS ROM" \
+        "ROM file")"
+    transfer_source="$(sealed_input versioned_transfer_disk \
+        "$VM/Snapshots/$version.transfer.hfv" transfer_disk_sha256 \
+        "$TRANSFER" "transfer disk")"
+    if grep -q '^versioned_installed_apps_manifest_sha256=' "$source_receipt"; then
+        apps_source="$(sealed_input versioned_installed_apps_manifest \
+            "$VM/Snapshots/$version.apps.rig" installed_apps_manifest_sha256 \
+            "$VM/Installed Apps.rig" "installed-apps manifest")"
+    elif grep -q '^installed_apps_manifest_sha256=' "$source_receipt"; then
+        apps_source="$(sealed_input versioned_installed_apps_manifest \
+            "$VM/Snapshots/$version.apps.rig" installed_apps_manifest_sha256 \
+            "$VM/Installed Apps.rig" "installed-apps manifest")"
     fi
 
     local temporary
@@ -479,17 +546,13 @@ clone_profile () {
     }
     trap cleanup_clone EXIT
 
-    clone_file () {
-        local source="$1" target="$2"
-        cp -c "$source" "$target" 2>/dev/null || cp "$source" "$target"
-    }
-    clone_file "$VM/prefs" "$temporary/prefs"
-    clone_file "$VM/Mac OS ROM" "$temporary/Mac OS ROM"
+    clone_file "$prefs_source" "$temporary/prefs"
+    clone_file "$rom_source" "$temporary/Mac OS ROM"
     clone_file "$source_image" "$temporary/Mac OS 8.6.hfv"
-    clone_file "$TRANSFER" "$temporary/CarbonLib 1.6 Transfer.hfv"
+    clone_file "$transfer_source" "$temporary/CarbonLib 1.6 Transfer.hfv"
     clone_file "$source_receipt" "$temporary/Oracle Parent.rig"
-    if [ -f "$VM/Installed Apps.rig" ]; then
-        clone_file "$VM/Installed Apps.rig" "$temporary/Installed Apps.rig"
+    if [ -n "$apps_source" ]; then
+        clone_file "$apps_source" "$temporary/Installed Apps.rig"
     fi
     mkdir -p "$temporary/Shared" "$temporary/Snapshots"
     if [ -d "$VM/Shared" ]; then

@@ -44,6 +44,12 @@ if ! command -v swift >/dev/null 2>&1; then
     echo "    Install the Xcode command line tools to run it."
     exit 0
 fi
+if rg -l '^(import Testing|[[:space:]]*@Test([[:space:](]|$))' \
+        "$package/Tests" >/dev/null 2>&1; then
+    echo "==> FAIL: MirrorKit gate disables Swift Testing, but a Swift Testing test exists." >&2
+    echo "    Split the runners and require both statuses before adding that test." >&2
+    exit 65
+fi
 
 keep_scratch=yes
 if [ "$#" -eq 1 ]; then
@@ -109,8 +115,13 @@ run_swift_step "$scratch_root/swift-build.log" \
     swift build --package-path "$package" --scratch-path "$scratch_root/swift"
 
 echo "==> swift test (MirrorKitTests, MirrorKitUITests)"
+# Every test in this package is XCTest. Swift 6's dual runner can print an
+# XCTest failure, run an empty Swift Testing target afterwards, and return
+# success for a filtered invocation. Disable that unused runner so the shell
+# status belongs to the suite that actually ran.
 run_swift_step "$scratch_root/swift-test.log" \
-    swift test --package-path "$package" --scratch-path "$scratch_root/swift"
+    swift test --disable-swift-testing \
+    --package-path "$package" --scratch-path "$scratch_root/swift"
 
 # And again with NO pack. A suite that only passes on a machine which
 # happens to have the dependency is the silent-skip defect rebuilt: a
@@ -119,6 +130,7 @@ run_swift_step "$scratch_root/swift-test.log" \
 echo "==> swift test again with NOW_MIRROR_ASSETS=none (honest degradation)"
 run_swift_step "$scratch_root/swift-test-no-assets.log" \
     env NOW_MIRROR_ASSETS=none NOW_REQUIRE_ASSET_PACK= \
-    swift test --package-path "$package" --scratch-path "$scratch_root/swift"
+    swift test --disable-swift-testing \
+    --package-path "$package" --scratch-path "$scratch_root/swift"
 
 echo "==> MirrorKit gate passed"

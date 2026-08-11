@@ -494,9 +494,13 @@ public struct SceneRenderer {
                                     item: MirrorKit.Scene.DesktopItem) {
         let folderTint = Color(hex: 0x9DB0C6)
         if item.kind == "disk" {
-            // A beige hard-drive: a rounded box with a face plate + slot.
-            let body = CGRect(x: box.minX + 2, y: box.minY + 7,
-                              width: box.width - 4, height: box.height - 12)
+            // The 8.6 Finder's volume glyph occupies the bottom 10 pixels of
+            // its 32-pixel icon box. The large transparent crown is real: it
+            // puts the name immediately below the small horizontal drive.
+            // Measured from the state-proven finder-desktop oracle case;
+            // stretching this into most of the box was the largest error in
+            // all three default volume cells.
+            let body = Self.diskBodyRect(box)
             ctx.fill(Path(roundedRect: body, cornerRadius: 2),
                      with: .color(Color(hex: 0xE8E4D8)))
             ctx.stroke(Path(roundedRect: body, cornerRadius: 2),
@@ -2265,6 +2269,14 @@ public struct SceneRenderer {
         }
         return CGSize(width: min(CGFloat(w), Self.iconSize),
                       height: min(CGFloat(h), Self.iconSize))
+    }
+
+    /// Measured OS 8.6 default-volume face inside a 32×32 Finder icon box.
+    /// Kept as geometry so the fallback can be mutation-tested without a
+    /// private Apple bitmap pack.
+    static func diskBodyRect(_ box: CGRect) -> CGRect {
+        CGRect(x: box.minX, y: box.maxY - 12,
+               width: box.width, height: 10)
     }
 
     /// Whether the roster draws a centred name UNDER `item` — true in the

@@ -16,6 +16,7 @@ from . import SCHEMA_VERSION
 from .images import compare as compare_images
 from .images import load, masked_digest, pair, write_png
 from .model import OracleCase, VisualProfile, resolve_masks, resolve_regions
+from .state import validate_state_proof
 
 
 def _utc_now() -> str:
@@ -62,6 +63,7 @@ def stable_capture(backend, case: OracleCase, profile: VisualProfile, output: Pa
     started = _utc_now()
     input_applied = False
     failure: Exception | None = None
+    proof = None
     try:
         if apply_input:
             if not case.input_actions:
@@ -103,6 +105,11 @@ def stable_capture(backend, case: OracleCase, profile: VisualProfile, output: Pa
                 f"framebuffer did not stabilize for {consecutive} consecutive reads "
                 f"within {max_attempts} attempts"
             )
+        if state_proof is not None:
+            proof = validate_state_proof(
+                state_proof, case, profile,
+                attempts[-1]["maskedFramebufferSha256"],
+            )
     except Exception as error:  # retain an attributable failed attempt
         failure = error
     finally:
@@ -133,9 +140,6 @@ def stable_capture(backend, case: OracleCase, profile: VisualProfile, output: Pa
         })
         raise failure
 
-    proof = None
-    if state_proof is not None:
-        proof = {"path": str(state_proof), "sha256": _sha256(state_proof)}
     receipt = {
         "schema": SCHEMA_VERSION,
         "kind": "capture",
@@ -148,7 +152,7 @@ def stable_capture(backend, case: OracleCase, profile: VisualProfile, output: Pa
         "backendProvenance": backend.provenance(),
         "requiredState": case.required_state,
         "stateProof": proof,
-        "evidenceStatus": "state-proof-attached" if proof else "reference-only",
+        "evidenceStatus": "state-proof-validated" if proof else "reference-only",
         "inputActionsApplied": case.input_actions if input_applied else [],
         "stability": {
             "requiredConsecutiveFrames": consecutive,

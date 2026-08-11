@@ -163,9 +163,12 @@ the extractor does not substitute a plausible desktop.
 The 8.6 visual-oracle profile can promote one desktop independently of that
 missing preference file. It declares the extracted `patterns/desktop.png`
 tile, its origin, and bounded framebuffer proof regions. `mirror-oracle
-extract-chrome` compares every proof pixel to the repeated tile and publishes
-`manifest.desktop` only on exact agreement; one changed pixel refuses the
-derived pack. The first color-correct capture proves 69,160 pixels exactly.
+extract-chrome` first requires a matching mirror-oracle capture receipt, then
+compares every proof pixel to the repeated tile and publishes
+`manifest.desktop` only on exact agreement; a loose or changed BMP and one
+changed proof pixel both refuse the derived pack. The receipt identity and its
+evidence status travel into the pack's provenance. The first color-correct
+capture proves 69,160 pixels exactly.
 This establishes the default background bytes and tiling rule without claiming
 that the full Finder scene or the unobserved preference state was accepted.
 

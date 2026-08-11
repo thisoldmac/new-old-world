@@ -8,10 +8,24 @@
     "No desktop item is selected",
     "No modal window is present"
   ],
-  "inputActions": [],
+  "inputActions": [
+    "move 18 35", "down 0", "up 0",
+    "move 18 35", "down 0", "up 0",
+    "move 18 35", "down 0", "up 0",
+    "move 18 35", "down 0", "up 0",
+    "move 18 35", "down 0", "up 0",
+    "move 18 35", "down 0", "up 0",
+    "move 18 35", "down 0", "up 0",
+    "move 18 35", "down 0", "up 0",
+    "move 18 35", "down 0", "up 0",
+    "move 18 35", "down 0", "up 0",
+    "move 400 550", "down 0", "up 0"
+  ],
   "regions": [
     {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 20]},
-    {"name": "desktop", "source": "screen", "rect": [0, 20, 800, 600]}
+    {"name": "desktop-main", "source": "screen", "rect": [0, 20, 800, 540]},
+    {"name": "control-strip", "source": "screen", "rect": [0, 540, 368, 600]},
+    {"name": "desktop-bottom", "source": "screen", "rect": [368, 540, 800, 600]}
   ],
   "masks": [
     {"name": "clock", "rect": [585, 0, 710, 20], "reason": "time is volatile"}
