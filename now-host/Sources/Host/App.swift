@@ -75,13 +75,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
            background `open`, a script restarting the app while they work
            elsewhere — should stay where it was put. */
         openMainWindow()
+        /* Local Network is an app capability used by the guest link and
+           optional modules. Ask at the app boundary, before starting any
+           configured network service; Continuity may verify its own direct
+           UDP path but must never own this permission. */
+        state.localNetworkAccess.request()
         let preferences = MCPTransportPreferences(defaults: defaults)
         if preferences.stdioEnabled { startMCPStdio() }
         if preferences.httpEnabled { startMCPHTTP() }
-        /* Local Network is an app capability used by the guest link and
-           optional modules. Ask at the app boundary; Continuity may verify
-           its own direct UDP path but must never own this permission. */
-        state.localNetworkAccess.request()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

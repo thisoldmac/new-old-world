@@ -17,12 +17,12 @@ enum LocalNetworkDirectAccessEvidence: Equatable {
 /// It does not own or solicit macOS privacy UI. Keeping the interface out of
 /// this seam is deliberate: Network.framework follows the route to the guest,
 /// so Ethernet and Wi-Fi may coexist and either may become the viable path.
-protocol LocalNetworkDirectAccessConnection: AnyObject {
-    var stateUpdateHandler: ((NWConnection.State) -> Void)? { get set }
+protocol LocalNetworkDirectAccessConnection: AnyObject, Sendable {
+    var stateUpdateHandler: (@Sendable (NWConnection.State) -> Void)? { get set }
     var pathDescription: String { get }
     func start(queue: DispatchQueue)
     func sendVerification(_ content: Data,
-                          completion: @escaping (NWError?) -> Void)
+                          completion: @escaping @Sendable (NWError?) -> Void)
     func cancel()
 }
 
@@ -30,13 +30,13 @@ protocol LocalNetworkDirectAccessConnection: AnyObject {
 /// privacy UI. Its state is deliberately not authorization evidence: the
 /// guest-targeted connection below remains the only proof that unicast LAN
 /// traffic is admitted.
-protocol LocalNetworkPermissionPrompt: AnyObject {
-    var eventHandler: ((String) -> Void)? { get set }
+protocol LocalNetworkPermissionPrompt: AnyObject, Sendable {
+    var eventHandler: (@Sendable (String) -> Void)? { get set }
     func start(queue: DispatchQueue)
     func cancel()
 }
 
-private final class SystemLocalNetworkDirectAccessConnection:
+private final class SystemLocalNetworkDirectAccessConnection: @unchecked Sendable,
     LocalNetworkDirectAccessConnection {
     private let connection: NWConnection
 
@@ -47,7 +47,7 @@ private final class SystemLocalNetworkDirectAccessConnection:
             using: .udp)
     }
 
-    var stateUpdateHandler: ((NWConnection.State) -> Void)? {
+    var stateUpdateHandler: (@Sendable (NWConnection.State) -> Void)? {
         get { connection.stateUpdateHandler }
         set { connection.stateUpdateHandler = newValue }
     }
@@ -59,18 +59,18 @@ private final class SystemLocalNetworkDirectAccessConnection:
 
     func start(queue: DispatchQueue) { connection.start(queue: queue) }
     func sendVerification(_ content: Data,
-                          completion: @escaping (NWError?) -> Void) {
+                          completion: @escaping @Sendable (NWError?) -> Void) {
         connection.send(content: content,
                         completion: .contentProcessed(completion))
     }
     func cancel() { connection.cancel() }
 }
 
-private final class SystemLocalNetworkPermissionPrompt:
+private final class SystemLocalNetworkPermissionPrompt: @unchecked Sendable,
     LocalNetworkPermissionPrompt {
     static let serviceType = "_newoldworld._tcp"
 
-    var eventHandler: ((String) -> Void)?
+    var eventHandler: (@Sendable (String) -> Void)?
     private let listener: NWListener
     private let browser: NWBrowser
 

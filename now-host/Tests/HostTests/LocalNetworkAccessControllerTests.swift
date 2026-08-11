@@ -2,9 +2,9 @@ import Network
 import XCTest
 @testable import Host
 
-final class FakeLocalNetworkDirectAccessConnection:
+final class FakeLocalNetworkDirectAccessConnection: @unchecked Sendable,
     LocalNetworkDirectAccessConnection {
-    var stateUpdateHandler: ((NWConnection.State) -> Void)?
+    var stateUpdateHandler: (@Sendable (NWConnection.State) -> Void)?
     var pathDescription = "unsatisfied, interface: en7, ipv4"
     private(set) var started = false
     private(set) var cancelled = false
@@ -16,7 +16,7 @@ final class FakeLocalNetworkDirectAccessConnection:
         calls.append("start")
     }
     func sendVerification(_ content: Data,
-                          completion: @escaping (NWError?) -> Void) {
+                          completion: @escaping @Sendable (NWError?) -> Void) {
         verifications.append(content)
         calls.append("send")
     }
@@ -27,8 +27,9 @@ final class FakeLocalNetworkDirectAccessConnection:
     func emit(_ state: NWConnection.State) { stateUpdateHandler?(state) }
 }
 
-final class FakeLocalNetworkPermissionPrompt: LocalNetworkPermissionPrompt {
-    var eventHandler: ((String) -> Void)?
+final class FakeLocalNetworkPermissionPrompt: @unchecked Sendable,
+    LocalNetworkPermissionPrompt {
+    var eventHandler: (@Sendable (String) -> Void)?
     private(set) var started = false
     private(set) var cancelled = false
 
@@ -244,10 +245,12 @@ final class LocalNetworkAccessControllerTests: XCTestCase {
         let app = try GateSource.hostSwift("now-host/Sources/Host/App.swift")
         let request = try XCTUnwrap(
             app.range(of: "state.localNetworkAccess.request()"))
-        let services = try XCTUnwrap(app.range(
-            of: "startAgentIntegrationServer()",
-            range: request.upperBound..<app.endIndex))
+        let stdio = try XCTUnwrap(app.range(
+            of: "if preferences.stdioEnabled { startMCPStdio() }"))
+        let http = try XCTUnwrap(app.range(
+            of: "if preferences.httpEnabled { startMCPHTTP() }"))
 
-        XCTAssertLessThan(request.lowerBound, services.lowerBound)
+        XCTAssertLessThan(request.lowerBound, stdio.lowerBound)
+        XCTAssertLessThan(request.lowerBound, http.lowerBound)
     }
 }
