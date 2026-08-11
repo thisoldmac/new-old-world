@@ -12,14 +12,14 @@ import SwiftUI
 /// made here, once, and call sites stay unconditional.
 ///
 /// **Two switches, and they are independent.** One asks whether the machine
-/// *can* draw glass — `#available(macOS 26, *)`, a fact about the OS the
-/// person is running, decided by the compiler and the loader. The other asks
-/// whether the person *wants* to see it — Reduce Transparency or Increase
-/// Contrast, a preference that can flip while the app is running. Neither
-/// implies the other: a macOS 26 machine with Reduce Transparency on must not
-/// get glass, and a Ventura machine with every accessibility setting off
-/// still cannot have it. Collapsing them into one flag loses whichever case
-/// the flag was not named after.
+/// *can* draw glass — a compiler new enough to contain the API and
+/// `#available(macOS 26, *)`, a fact about the OS the person is running. The
+/// other asks whether the person *wants* to see it — Reduce Transparency or
+/// Increase Contrast, a preference that can flip while the app is running.
+/// Neither implies the other: a macOS 26 machine with Reduce Transparency
+/// on must not get glass, and a Ventura machine with every accessibility
+/// setting off still cannot have it. Collapsing them into one flag loses
+/// whichever case the flag was not named after.
 ///
 /// **Glass is for chrome that floats over content**, not for every surface.
 /// A module's own body is not chrome; restyling those is not what this file
@@ -78,6 +78,7 @@ private struct NowGlassPanel: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius,
                                      style: .continuous)
+        #if compiler(>=6.2)
         if #available(macOS 26, *),
            !GlassSuppressed.value(reduceTransparency: reduce,
                                   contrast: contrast) {
@@ -87,6 +88,11 @@ private struct NowGlassPanel: ViewModifier {
             // only its material does.
             content.background(.regularMaterial, in: shape)
         }
+#else
+        // Xcode 16's SDK does not declare glassEffect, so runtime
+        // availability alone cannot make this branch compile there.
+        content.background(.regularMaterial, in: shape)
+#endif
     }
 }
 
@@ -103,6 +109,7 @@ private struct NowGlassBar: ViewModifier {
 
            Both arms are backgrounds, never nothing: this modifier's callers
            are safe-area insets with rows scrolling under them. */
+#if compiler(>=6.2)
         if #available(macOS 26, *),
            !GlassSuppressed.value(reduceTransparency: reduce,
                                   contrast: contrast) {
@@ -110,6 +117,9 @@ private struct NowGlassBar: ViewModifier {
         } else {
             content.background(.bar)
         }
+#else
+        content.background(.bar)
+#endif
     }
 }
 
@@ -124,6 +134,7 @@ private struct NowGlassButton: ViewModifier {
            label would change the control's hit target as well as its look —
            neither an old OS nor an accessibility setting may make a button
            harder to click. */
+#if compiler(>=6.2)
         if #available(macOS 26, *),
            !GlassSuppressed.value(reduceTransparency: reduce,
                                   contrast: contrast) {
@@ -131,5 +142,8 @@ private struct NowGlassButton: ViewModifier {
         } else {
             content.buttonStyle(.bordered)
         }
+#else
+        content.buttonStyle(.bordered)
+#endif
     }
 }

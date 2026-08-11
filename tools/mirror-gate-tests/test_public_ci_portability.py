@@ -40,6 +40,32 @@ class PublicCIPortabilityTests(unittest.TestCase):
         for row in rows:
             self.assertRegex(row, r"^[0-9]+ (deliberate|planned|unnoticed)$")
 
+    def test_new_sdk_glass_has_an_xcode_16_fallback(self):
+        """MUTATION: expose any glass API outside its compiler fence."""
+        source = (ROOT / "now-host" / "Sources" / "Host"
+                  / "GlassStyle.swift").read_text()
+        implementation = source[source.index("private struct NowGlassPanel"):]
+        sections = implementation.split("#if compiler(>=6.2)")[1:]
+        self.assertEqual(len(sections), 3)
+        guarded = [section.partition("#else")[0] for section in sections]
+        self.assertTrue(all("#else" in section for section in sections))
+        self.assertIn("glassEffect", guarded[0])
+        self.assertIn("glassEffect", guarded[1])
+        self.assertIn("buttonStyle(.glass)", guarded[2])
+        fallbacks = [section.partition("#else")[2].partition("#endif")[0]
+                     for section in sections]
+        self.assertTrue(all("content.glassEffect" not in fallback
+                            for fallback in fallbacks))
+        self.assertTrue(all("content.buttonStyle(.glass)" not in fallback
+                            for fallback in fallbacks))
+
+    def test_data_mutation_buffers_name_the_raw_overload(self):
+        """MUTATION: remove the types and Xcode 16 sees two overloads."""
+        source = (ROOT / "now-host" / "Sources" / "Host"
+                  / "ClassicDither.swift").read_text()
+        annotation = "(out: UnsafeMutableRawBufferPointer) -> Void in"
+        self.assertEqual(source.count(annotation), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
