@@ -10,6 +10,9 @@ source_dependencies: [scripts/spin-up-ppc, scripts/q800-68k, tools/lane-ports, t
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Emulator and metal verification
 
 ## Reserve the lane

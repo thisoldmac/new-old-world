@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Renders — what a working semantic mirror looks like
 
 **Date:** 2026-07-31 · **Status:** recorded evidence, nine of them

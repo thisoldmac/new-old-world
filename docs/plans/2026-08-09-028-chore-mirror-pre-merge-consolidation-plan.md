@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror pre-merge consolidation
 
 **Status:** Implemented through merge-ready source and exact-revision shared

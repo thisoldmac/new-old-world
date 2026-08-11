@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW ↔ TBT-classic capability parity — slice plan
 
 **Date:** 2026-07-29 · **Status:** BUILT and TESTED, not metal-verified (updated 2026-07-31) · **Namespace:** `claude/`

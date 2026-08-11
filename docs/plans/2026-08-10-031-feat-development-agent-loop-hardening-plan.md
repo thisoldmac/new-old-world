@@ -7,6 +7,8 @@ search:
   exclude: true
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Development agent-loop hardening plan
 
 ## Objective

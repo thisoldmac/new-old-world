@@ -10,6 +10,9 @@ source_dependencies: [docs/adding-a-workshop-module.md, docs/module-manifest.yam
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Add a module
 
 ## Choose the product surfaces

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW MCP: document opening and Standard File rows
 
 This review follows F-010 from the 2026-08-09 MCP barrage. It separates two

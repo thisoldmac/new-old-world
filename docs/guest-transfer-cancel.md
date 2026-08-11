@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # A person at the guest cannot stop a download they started
 
 Status: investigation + implementation notes. 2026-07-31.

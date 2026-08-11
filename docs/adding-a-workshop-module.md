@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Adding a Workshop module
 
 The guest is **one window**. Everything a person can do lives on a page

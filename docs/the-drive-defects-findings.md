@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The drive defects — what was found, group by group
 
 **2026-08-07/08, lane `claude/025-drive-defects`.** The plan is

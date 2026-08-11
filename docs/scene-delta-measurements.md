@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # What scene deltas cost, measured
 
 **Date:** 2026-08-06 · **Class:** emulator, reproduced; **not metal-verified**

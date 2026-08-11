@@ -11,6 +11,8 @@ media_ids: []
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Route a change through its owners
 
 ## Identify the behavior and owner

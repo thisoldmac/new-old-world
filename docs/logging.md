@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Logging
 
 Design of record. What a log is here, where it lives, what belongs in

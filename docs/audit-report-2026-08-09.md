@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Audit Report — NOW MCP — 2026-08-09
 
 ## Scope

@@ -11,6 +11,8 @@ media_ids: []
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Two Macs, one contract
 
 NOW is not a modern application remotely painting a classic-looking client.

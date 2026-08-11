@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The drive defects — what Michelle found, and how to close it
 
 **2026-08-07.** Michelle drove the round-9 and round-10 stacks and

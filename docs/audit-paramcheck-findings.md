@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Audit lane: wiring the unknown-parameter guard (2026-08-01)
 
 Assigned lane: wire `MirrorKit.ParamCheck` (`now-host/Sources/MirrorKit/ParamCheck.swift`)

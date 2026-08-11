@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The road from *tested* to *verified*
 
 **Date:** 2026-07-31, **revised 2026-08-01** · **Status:** phases 1 and 2

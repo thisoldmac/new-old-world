@@ -12,6 +12,8 @@ media_ids: [setup-68k-install]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Install NOW-68K
 
 This page is retained for contributors and future pre-Carbon work. The current

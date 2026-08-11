@@ -11,6 +11,8 @@ media_ids: []
 last_verified: 2026-08-10
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Current limitations
 
 - **Trusted network only.** The classic wire is plaintext and unauthenticated;

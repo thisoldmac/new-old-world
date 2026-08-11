@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Working conventions for New Old World
 
 Read this before writing code or docs here. It applies to **everyone —
@@ -431,6 +433,13 @@ dependencies, lifecycle, media IDs, and a verification date. Run
 `scripts/test-docs` before landing documentation or a source change named by
 those pages. `tools/docs-gate-selftest` is the mutation evidence for that
 gate.
+
+Every tracked Markdown file also carries exactly one
+`now-doc-provenance` comment. `generated` is a presence marker and is removed
+only by a human rewrite; `reviewed=true` records a separate human review.
+Generated projections and `derived-doc` pages must retain `generated`.
+`tools/docs-provenance` is the grammar and corpus gate; published pages render
+the state, while repository records and `docs/local/` scratch do not.
 
 Module documentation is derived from the live host registry and PowerPC
 Workshop enum through `docs/module-manifest.yaml`. A new module updates the

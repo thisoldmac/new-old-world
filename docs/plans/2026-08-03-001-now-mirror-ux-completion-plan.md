@@ -8,6 +8,8 @@ product_contract_source: ce-plan-bootstrap
 execution: code
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW Mirror UX Completion - Plan
 
 ## Summary

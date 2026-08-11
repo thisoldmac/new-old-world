@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Commissioning a lane
 
 [arc-coordination.md](arc-coordination.md) is the coordinator's side —

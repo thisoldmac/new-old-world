@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Reading the guest's assets straight off the disk image
 
 **Date:** 2026-08-06 · **Status:** measured here, on this Mac, against

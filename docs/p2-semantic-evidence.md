@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # P2 semantic-assist evidence and bounds
 
 This is the R11 review gate for the resident semantic-assist plane. It is an

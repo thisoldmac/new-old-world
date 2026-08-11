@@ -12,6 +12,8 @@ media_ids: [settings-host, settings-ppc]
 last_verified: 2026-08-10
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Connections and preferences
 
 ## What it does

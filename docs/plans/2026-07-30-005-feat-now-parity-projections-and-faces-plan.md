@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW parity, part two — the twelve projections, then two new faces
 
 **Date:** 2026-07-30 · **Status:** BUILT and TESTED, not metal-verified (updated 2026-07-31) · **Namespace:** `claude/`

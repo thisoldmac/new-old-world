@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-06
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Assets from the connected guest — Plan
 
 Successor to the offline extraction route

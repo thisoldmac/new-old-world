@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Raising the unknown-creator modal, on demand
 
 [Plan 018](plans/2026-08-06-018-feat-stable-honest-render-plan.md) lists

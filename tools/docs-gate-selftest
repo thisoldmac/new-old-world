@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parent.parent
 def run_gate(test_root: Path, site_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["NOW_DOCS_GATE_ROOT"] = str(test_root)
+    manifest = test_root / ".tracked-markdown"
+    if manifest.exists():
+        env["NOW_DOCS_GATE_TRACKED_MARKDOWN_MANIFEST"] = str(manifest)
     command = [sys.executable, str(ROOT / "tools/docs-gate")]
     if site_dir:
         command.extend(["--site-dir", str(site_dir)])
@@ -72,6 +75,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--site-dir")
     args = parser.parse_args()
+    provenance_selftest = subprocess.run(
+        (str(ROOT / "tools/docs-provenance"), "selftest"),
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    if provenance_selftest.returncode:
+        raise RuntimeError(
+            "provenance selftest failed:\n"
+            + provenance_selftest.stdout + provenance_selftest.stderr
+        )
+    print("[docs-gate-selftest] provenance apply rollback: refused by name")
     with tempfile.TemporaryDirectory(prefix="now-docs-gate-") as raw:
         test_root = Path(raw)
         shutil.copytree(ROOT / "docs", test_root / "docs")
@@ -88,9 +103,56 @@ def main() -> int:
         ):
             (test_root / name).symlink_to(ROOT / name, target_is_directory=(ROOT / name).is_dir())
 
+        tracked = subprocess.run(
+            ("git", "-C", str(ROOT), "ls-files", "--", "*.md"),
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.splitlines()
+        for rel in tracked:
+            target = test_root / rel
+            if target.exists():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / rel, target)
+        (test_root / ".tracked-markdown").write_text("\n".join(tracked) + "\n")
+
         baseline = run_gate(test_root)
         if baseline.returncode:
             raise RuntimeError("baseline gate failed:\n" + baseline.stdout + baseline.stderr)
+
+        marker = "<!-- now-doc-provenance: generated reviewed=false -->"
+        expect_mutation(
+            test_root, "missing provenance", test_root / "README.md",
+            marker + "\n\n", "", "missing now-doc-provenance marker",
+        )
+        expect_mutation(
+            test_root, "duplicate provenance", test_root / "README.md",
+            marker, marker + "\n" + marker,
+            "has 2 now-doc-provenance markers; exactly one is required",
+        )
+        expect_mutation(
+            test_root, "malformed provenance", test_root / "README.md",
+            marker, "<!-- now-doc-provenance: generated reviewed=pending -->",
+            "has malformed now-doc-provenance marker",
+        )
+        expect_mutation(
+            test_root, "contradictory provenance", test_root / "README.md",
+            marker, "<!-- now-doc-provenance: generated=false reviewed=false -->",
+            "generated is a presence marker; generated=false is contradictory",
+        )
+        expect_mutation(
+            test_root, "generated projection provenance",
+            test_root / "docs/generated/asyncapi.md", marker,
+            "<!-- now-doc-provenance: reviewed=false -->",
+            "generated projection or derived document must retain generated",
+        )
+        expect_mutation(
+            test_root, "derived document provenance",
+            test_root / "docs/user-guide/reference/requirements.md", marker,
+            "<!-- now-doc-provenance: reviewed=false -->",
+            "generated projection or derived document must retain generated",
+        )
 
         expect_mutation(
             test_root, "navigation coverage", test_root / "mkdocs.yml",
@@ -310,6 +372,11 @@ def main() -> int:
                 test_root, "rendered release banner", extension,
                 'class="now-release-banner"', 'class="now-release-banner-missing"',
                 "rendered feature page has 0 release banners", rendered,
+            )
+            expect_mutation(
+                test_root, "rendered provenance", index,
+                'data-reviewed="false"', 'data-reviewed="true"',
+                "rendered provenance is", rendered,
             )
             files = rendered / "user-guide/reference/modules/files/index.html"
             expect_mutation(

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The fidelity sweep — standing specification
 
 **Version 3, 2026-08-07.** Version 1 lived inside plan 018 and asked one

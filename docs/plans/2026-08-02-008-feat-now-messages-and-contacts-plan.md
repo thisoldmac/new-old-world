@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Messages and Contacts: a 1993 Macintosh that texts
 
 **Date:** 2026-08-02 · **Status:** plan only, nothing built ·

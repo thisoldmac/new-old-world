@@ -10,6 +10,9 @@ source_dependencies: [contract/asyncapi.yaml, docs/architecture.md, now-host/Sou
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # System context
 
 The classic Mac initiates one TCP connection to the native macOS host. Control JSON and bulk bytes share that connection through a small binary frame header. The host can accept several guests, but drives one selected guest at a time.

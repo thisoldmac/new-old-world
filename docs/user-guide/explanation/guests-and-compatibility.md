@@ -12,6 +12,8 @@ media_ids: []
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Guests and compatibility
 
 The two guests are siblings, not ports.

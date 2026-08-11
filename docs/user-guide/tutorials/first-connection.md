@@ -11,6 +11,8 @@ media_ids: [setup-artifacts, setup-host-listener, setup-guest-connection, setup-
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Connect your first classic Mac
 
 This tutorial gets one modern Mac and one classic Mac to the first named

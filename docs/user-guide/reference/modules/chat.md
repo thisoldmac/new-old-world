@@ -12,6 +12,8 @@ media_ids: [chat-host, chat-ppc, chat-detail]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Chat module
 
 ## What it does

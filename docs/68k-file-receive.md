@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Receiving a file on NOW-68K
 
 How a host push lands on a 68K Macintosh, and the File Manager defect

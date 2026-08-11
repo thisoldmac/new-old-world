@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The visibility census, and what Mac OS 9's Finder will not tell us
 
 **Status:** the census is repaired and returns every row the Finder can

@@ -4,6 +4,8 @@ type: feat
 date: 2026-07-24
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW MCP V0.5 Guest Files Command Roadmap
 
 ## Goal Capsule

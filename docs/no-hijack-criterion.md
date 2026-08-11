@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The no-hijack criterion, and the case upstream never needed
 
 > ## 2026-08-06: PART OF THIS DOCUMENT'S SAFETY ARGUMENT HAS BEEN SPENT

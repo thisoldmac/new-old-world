@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-06
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # A stable render with honest gaps — Plan
 
 Successor to [015](2026-08-06-015-feat-live-composition-plan.md) (live

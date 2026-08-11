@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # How the planes compose into one picture
 
 **Date:** 2026-08-07 · **Status:** the rule the renderer follows. Rewritten

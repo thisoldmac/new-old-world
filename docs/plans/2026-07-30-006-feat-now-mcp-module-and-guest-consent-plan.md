@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The MCP module, and the machine's own answer
 
 **Date:** 2026-07-30 · **Status:** BUILT and TESTED, not metal-verified (updated 2026-07-31) · **Namespace:** `claude/`

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror high-water checkpoint — 2026-08-04
 
 This document freezes the last directly driven Mirror sweep before work moves

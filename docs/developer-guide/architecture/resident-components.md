@@ -11,6 +11,9 @@ media_ids: []
 last_verified: 2026-08-09
 feature_ids: [resident.extension]
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Resident components
 
 The NOW Extension performs only work that must run in a foreign application context. The PowerPC application is the sole reader of foreign memory and exposes the result to the rest of the product. The extension is optional: the application must report an unavailable plane honestly and keep non-resident features usable.
@@ -43,7 +46,7 @@ deferral may permit a branch checkpoint but never the landing.
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: d15929f765c54bd6fbda613ed684ef5ef726b9c2
+sources-sha1: 23e5586dd18f16e46682a14395d0dddd3ae5e451
 derive resident-contract sha256=c9c8ffa94f6c2db0af0a8b407badbd9af9e80265cae227b57b68270df462ed0a lines=11
     scripts/docs-source-group resident
 rederived: pending
@@ -90,4 +93,5 @@ rederived: 2026-08-10T22:33:05-0400 e9bf9632 sources
 rederived: 2026-08-10T22:47:48-0400 431e7308 unchanged
 rederived: 2026-08-11T00:25:04-0400 bbab04b9 unchanged
 rederived: 2026-08-11T00:33:21-0400 4b24cc1f unchanged
+rederived: 2026-08-11T19:45:15-0400 065da692 sources
 -->

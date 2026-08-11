@@ -10,6 +10,9 @@ source_dependencies: [README.md, contract/asyncapi.yaml, scripts/test-all, docs/
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Developer guide
 
 This guide is for developers digging into the code: understanding why a

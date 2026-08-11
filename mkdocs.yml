@@ -38,6 +38,7 @@ plugins:
   - search
 
 hooks:
+  - docs/hooks/provenance.py
   - docs/hooks/release_features.py
 
 markdown_extensions:

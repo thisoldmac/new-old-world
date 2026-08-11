@@ -2,6 +2,9 @@
 search:
   exclude: true
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Projects and Development
 
 NOW has a headless project and build lane for classic Macintosh software. It

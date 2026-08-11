@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Who serves what
 
 Two guests speak this contract and they serve different amounts of it.
@@ -1443,4 +1445,5 @@ rederived: 2026-08-10T22:33:05-0400 e9bf9632 unchanged
 rederived: 2026-08-10T22:47:48-0400 431e7308 unchanged
 rederived: 2026-08-11T00:25:04-0400 bbab04b9 unchanged
 rederived: 2026-08-11T00:33:21-0400 4b24cc1f unchanged
+rederived: 2026-08-11T19:45:15-0400 065da692 unchanged
 -->

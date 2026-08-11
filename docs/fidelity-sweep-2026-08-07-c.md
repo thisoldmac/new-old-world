@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Fidelity sweep C, 2026-08-07 — the first sweep that DID rather than looked
 
 **Status: SURVEY, run alone, no human co-drive.** The first sweep under

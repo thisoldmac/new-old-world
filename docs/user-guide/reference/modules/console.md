@@ -12,6 +12,8 @@ media_ids: [console-host, console-ppc]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Console module
 
 ## What it does

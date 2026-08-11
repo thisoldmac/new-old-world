@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Charcoal: rasterising the system font the guest has no bitmaps for
 
 **Date:** 2026-08-07 · **Status:** implemented; measured against the

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The New Old World icon pack
 
 The application icon — the compact Mac with the Finder face on its screen —

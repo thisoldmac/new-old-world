@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # QEMU memory oracle
 
 The QEMU memory oracle is a development microscope for questions such as

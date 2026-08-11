@@ -12,6 +12,8 @@ last_verified: 2026-08-09
 feature_ids: [resident.extension]
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Core features
 
 Start with the normal PowerPC application. It connects, transfers files,

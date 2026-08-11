@@ -10,6 +10,9 @@ source_dependencies: [RELEASING.md, docs/site-integration.yaml, docs/assets/scre
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Release documentation
 
 Start with [the repository release procedure](../../../RELEASING.md). A green

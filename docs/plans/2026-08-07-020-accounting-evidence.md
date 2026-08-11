@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Slice-by-slice verification against the tree — raw findings
 
 **2026-08-07. Five verification sub-agents, dispatched by the coordinator,

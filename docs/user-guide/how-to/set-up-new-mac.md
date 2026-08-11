@@ -12,6 +12,8 @@ last_verified: 2026-08-09
 feature_ids: [classic.powerpc, resident.extension]
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Set up a new PowerPC Mac
 
 Use **Set Up a New Mac** when the classic Mac has a web browser and Disk Copy

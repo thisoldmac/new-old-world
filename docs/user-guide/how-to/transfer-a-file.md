@@ -11,6 +11,8 @@ media_ids: [setup-transfer, files-detail]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Transfer a file
 
 ## Goal

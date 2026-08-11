@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # CodeKitten Project Contract 1
 
 `Project.ckp` is the portable description of a classic Macintosh software

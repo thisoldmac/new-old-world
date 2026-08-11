@@ -12,6 +12,8 @@ media_ids: [hardware-host, hardware-ppc]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Hardware module
 
 ## What it does

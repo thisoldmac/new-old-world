@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The remote console
 
 **Status:** implemented on both guests and the host, 2026-07-28.

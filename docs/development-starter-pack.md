@@ -4,6 +4,8 @@ type: reference
 status: experimental
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Development starter pack
 
 The starter pack is a portable, operator-supplied HFS image carried by the

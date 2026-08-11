@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Releasing New Old World
 
 New Old World uses release candidates. A green development branch is not a

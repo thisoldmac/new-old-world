@@ -12,6 +12,8 @@ media_ids: [mcp-host, mcp-ppc]
 last_verified: 2026-08-10
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # MCP module
 
 ## What it does
@@ -83,7 +85,7 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 02e2be10101b7ce85dc56522c8e88fee2ac955e2
+sources-sha1: 465022ada8b65cdca54e5f113b3e3253f3a84295
 derive mcp-catalog sha256=dadedb438a578e94422eb5eec7337288e94e19899e6592ebaaf6d86c080258dc lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -122,4 +124,5 @@ rederived: 2026-08-10T22:33:06-0400 e9bf9632 sources
 rederived: 2026-08-10T22:47:49-0400 431e7308 sources
 rederived: 2026-08-11T00:25:05-0400 bbab04b9 sources
 rederived: 2026-08-11T00:33:22-0400 4b24cc1f sources
+rederived: 2026-08-11T19:45:16-0400 065da692 sources
 -->

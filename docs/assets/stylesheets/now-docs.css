@@ -25,6 +25,14 @@
   border: 1px solid var(--md-default-fg-color--lighter);
 }
 
+.now-doc-provenance {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  color: var(--md-default-fg-color--light);
+  font-size: 0.72rem;
+  margin-block: 0 1rem;
+  padding-block: 0 0.45rem;
+}
+
 .now-release-banner {
   border: 1px solid var(--md-default-fg-color--lighter);
   border-left: 0.3rem solid var(--md-accent-fg-color);

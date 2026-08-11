@@ -2,6 +2,9 @@
 search:
   exclude: true
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Plans
 
 **A plan is a snapshot of intent, not a description of the system.**

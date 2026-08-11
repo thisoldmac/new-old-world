@@ -12,6 +12,8 @@ media_ids: [networking-host, networking-ppc]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Networking module
 
 ## What it does

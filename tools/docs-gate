@@ -20,6 +20,10 @@ import xml.etree.ElementTree as ET
 import yaml
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "docs/hooks"))
+from provenance import ProvenanceError, parse as parse_provenance  # noqa: E402
+
+
 ALLOWED_DOC_TYPES = {"tutorial", "how-to", "reference", "explanation"}
 ALLOWED_AUDIENCES = {"user", "developer", "operator", "agent"}
 ALLOWED_LIFECYCLES = {"current", "experimental", "reference", "historical"}
@@ -173,6 +177,7 @@ class SiteHTML(HTMLParser):
         self.tables = 0
         self.mermaid = 0
         self.release_banners = 0
+        self.provenance: list[tuple[str, str]] = []
         self.json_ld: list[str] = []
         self._json = False
 
@@ -203,6 +208,11 @@ class SiteHTML(HTMLParser):
             self.mermaid += 1
         elif "now-release-banner" in (values.get("class") or "").split():
             self.release_banners += 1
+        elif "now-doc-provenance" in (values.get("class") or "").split():
+            self.provenance.append((
+                values.get("data-generated") or "",
+                values.get("data-reviewed") or "",
+            ))
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "script":
@@ -272,6 +282,17 @@ def check(root: Path, site_dir: Path | None) -> int:
     errors: list[str] = []
     notices: list[str] = []
     docs = root / "docs"
+    provenance_gate = subprocess.run(
+        [sys.executable, str(root / "tools/docs-provenance"), "check", "--root", str(root)],
+        cwd=root,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+    )
+    if provenance_gate.returncode:
+        errors.append((provenance_gate.stderr or provenance_gate.stdout).strip())
+    else:
+        notices.append(provenance_gate.stdout.strip())
     config = load_yaml(root / "mkdocs.yml", docs_loader=True)
     theme_features = config.get("theme", {}).get("features", [])
     if "navigation.instant" not in theme_features:
@@ -799,6 +820,26 @@ def check(root: Path, site_dir: Path | None) -> int:
                 required_types.add("SoftwareApplication")
             if not required_types.issubset(json_types):
                 errors.append(f"{path}: JSON-LD types are {sorted(json_types)}, need {sorted(required_types)}")
+
+        for source in published:
+            rendered = rendered_markdown_path(site_dir, docs, source)
+            if not rendered.exists():
+                continue
+            try:
+                expected = parse_provenance(source.read_text())
+            except ProvenanceError:
+                continue
+            parser = SiteHTML()
+            parser.feed(rendered.read_text())
+            expected_attrs = [(
+                "true" if expected.generated else "false",
+                "true" if expected.reviewed else "false",
+            )]
+            if parser.provenance != expected_attrs:
+                errors.append(
+                    f"{rendered}: rendered provenance is {parser.provenance}; "
+                    f"need {expected_attrs} from {source.relative_to(root)}"
+                )
 
         for source in curated:
             for raw in LINK_RE.findall(source.read_text()):

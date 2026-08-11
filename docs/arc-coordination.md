@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Running a fanned-out arc without lying about it
 
 ## Where this is going

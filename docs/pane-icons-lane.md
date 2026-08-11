@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The Mirror pane: icons and windows you can click
 
 Branch `audit/pane-icons`, 2026-08-01. Closes the audit's rows **2** (desktop

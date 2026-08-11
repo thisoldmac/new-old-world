@@ -12,6 +12,8 @@ media_ids: [diagnostics-host, diagnostics-ppc]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Diagnostics module
 
 ## What it does

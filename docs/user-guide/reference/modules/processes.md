@@ -12,6 +12,8 @@ media_ids: [processes-host, processes-ppc]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Processes module
 
 ## What it does

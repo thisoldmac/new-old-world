@@ -2,6 +2,9 @@
 search:
   exclude: true
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Has Mirror already solved this?
 
 **Read this before starting any work on perceiving or driving the

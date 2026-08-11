@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Census metal spike
 
 **One question:** can this Carbon app reach the census probes that are

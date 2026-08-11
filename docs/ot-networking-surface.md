@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # What Open Transport will tell us, and what it will not
 
 **Date:** 2026-07-31 · **Status:** survey done; rungs 1–2 **BUILT and TESTED,

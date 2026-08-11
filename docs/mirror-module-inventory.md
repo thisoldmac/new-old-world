@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Everything the Mirror module shows and does
 
 This exists because a layout was designed without it. Three embedded-Mirror

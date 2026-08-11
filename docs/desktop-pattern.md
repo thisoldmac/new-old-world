@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The desktop, asked of the machine
 
 **Date:** 2026-08-07 · **Status:** emulator-verified · [plan 018](plans/2026-08-06-018-feat-stable-honest-render-plan.md) slice 5

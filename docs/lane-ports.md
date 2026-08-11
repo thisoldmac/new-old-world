@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Every lane's own ports
 
 A **lane** is one agent or human working in one git worktree. On a busy

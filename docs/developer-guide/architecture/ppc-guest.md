@@ -10,6 +10,9 @@ source_dependencies: [now-guest-ppc/src/main.c, now-guest-ppc/src/workshop/works
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # PowerPC guest architecture
 
 The reference guest is C compiled with Retro68's retrocarbon environment for CarbonLib 1.6 on Mac OS 8.6–9.2.2. It uses a cooperative `WaitNextEvent` loop. Network progress therefore depends on returning to, or explicitly pumping, that loop.

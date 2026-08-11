@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-05
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # A Mirror that survives being driven - Plan
 
 Continues [010, Closing the headless Mirror](2026-08-05-010-feat-closing-the-headless-mirror-plan.md),

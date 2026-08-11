@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 ## Change
 
 Domain: `contract | host | guest-ppc | guest-68k | resident | docs | tooling | release | cross-cutting`

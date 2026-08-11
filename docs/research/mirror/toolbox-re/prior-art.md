@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Prior art: GWorlds, QuickDraw bottlenecks, and dispatch
 
 **Provenance of this whole file: `doc` — evidence, not measurement.**

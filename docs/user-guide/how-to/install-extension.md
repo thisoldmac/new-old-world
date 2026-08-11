@@ -12,6 +12,8 @@ last_verified: 2026-08-09
 feature_ids: [resident.extension]
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Install the NOW Extension
 
 ## Goal

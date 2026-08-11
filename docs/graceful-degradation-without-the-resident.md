@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # What the Mirror should be without the resident
 
 **Michelle, 2026-08-08.** A design, not a plan for now — she was explicit

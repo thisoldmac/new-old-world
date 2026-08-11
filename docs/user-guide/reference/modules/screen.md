@@ -12,6 +12,8 @@ media_ids: [screen-host, screen-ppc, screen-detail]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Screen module
 
 ## What it does

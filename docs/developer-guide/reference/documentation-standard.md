@@ -10,6 +10,9 @@ source_dependencies: [mkdocs.yml, tools/docs-gate, docs/requirements.txt, contra
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Documentation standard
 
 | Concern | Standard or convention | NOW integration |

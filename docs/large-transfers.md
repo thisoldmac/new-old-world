@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Large transfers — diagnosis and the survivability work
 
 A 12 MB push to the PowerBook 1400c ran at ~250 KB/s to about 1.7 MB,

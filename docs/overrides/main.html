@@ -53,6 +53,18 @@
 {% endblock %}
 
 {% block content %}
+  {% if page and page.meta and page.meta.now_doc_provenance %}
+    {% set provenance = page.meta.now_doc_provenance %}
+    <aside
+      class="now-doc-provenance"
+      aria-label="Documentation provenance"
+      data-generated="{{ 'true' if provenance.generated else 'false' }}"
+      data-reviewed="{{ 'true' if provenance.reviewed else 'false' }}">
+      <strong>Documentation provenance:</strong>
+      {% if provenance.generated %}generated source{% else %}human rewrite{% endif %};
+      {% if provenance.reviewed %}human reviewed{% else %}human review pending{% endif %}.
+    </aside>
+  {% endif %}
   {% if page and page.meta and page.meta.feature_ids %}
     {% set availability = namespace(show=false) %}
     {% for feature_id in page.meta.feature_ids %}

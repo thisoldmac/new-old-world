@@ -10,6 +10,9 @@ source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sourc
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # macOS host architecture
 
 The host is a Swift application using SwiftUI for composition and AppKit where native behavior requires it. `ModuleRegistry.standard` is the module inventory. `HostRootView` renders navigation, while feature models and views own their state.

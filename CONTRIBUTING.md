@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Contributing to New Old World
 
 This project talks to hardware most people do not have. That shapes what
@@ -126,6 +128,10 @@ policy's mutation evidence.
   source dependencies and media slots in front matter. Run
   `tools/derived-doc-gate rederive <page>` for every changed derived page,
   then `scripts/test-docs`.
+- **Keep provenance explicit.** Every tracked Markdown file has exactly one
+  `now-doc-provenance` comment. Remove `generated` only after a human rewrite;
+  change `reviewed=false` to `reviewed=true` only after human review. Run
+  `tools/docs-provenance check` before the documentation gate.
 - **Say what you did not verify.** A PR that names its own gaps is worth
   more than one that implies coverage it does not have.
 

@@ -10,6 +10,9 @@ source_dependencies: [scripts/test-all, scripts/test-native, scripts/test-mirror
 media_ids: []
 last_verified: 2026-08-10
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Build and test
 
 ## Run the full gate
@@ -72,7 +75,7 @@ Mutate the exact condition the guard claims to detect, prove the mutation built,
 
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
-sources-sha1: f8099a8e005ade1d427229b509b2f5c47b2c002a
+sources-sha1: 27cd293dbdd3a54767a0f7c8f1d0d6ff596650c1
 derive test-stages sha256=f78dc22859b46a2e58f5cfceec0ceaf149bf5b1e89be24a1705af22181842aa5 lines=8
     scripts/docs-source-group build
 rederived: pending
@@ -123,4 +126,5 @@ rederived: 2026-08-10T22:47:48-0400 431e7308 sources
 rederived: 2026-08-11T00:25:05-0400 bbab04b9 sources
 rederived: 2026-08-11T00:33:21-0400 4b24cc1f unchanged
 rederived: 2026-08-11T19:26:24-0400 955069d1 sources
+rederived: 2026-08-11T19:45:15-0400 065da692 sources
 -->

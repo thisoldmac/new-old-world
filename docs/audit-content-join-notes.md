@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The content join: what the guest emits, what the host decodes, what joins
 
 Lane `audit/content-join`, 2026-08-01. Acceptance row 1 of the upstream

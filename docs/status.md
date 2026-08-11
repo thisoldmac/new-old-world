@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Status: what works and what does not
 
 ## 2026-08-10 — NOW Web Direct is tested; classic-browser behavior is unverified

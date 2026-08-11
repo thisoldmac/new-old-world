@@ -10,6 +10,9 @@ source_dependencies: [AGENTS.md, scripts/test-all, docs/68k-metal-runbook.md]
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Verification levels
 
 ```mermaid

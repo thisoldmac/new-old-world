@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-07
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Asset packs — Plan
 
 An **asset pack** is the art of one machine running one system, extracted

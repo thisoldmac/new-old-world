@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Folding Mirror into NOW
 
 **Date:** 2026-07-31 · **Status:** M1–M5 built, M6 half built — all **TESTED,
