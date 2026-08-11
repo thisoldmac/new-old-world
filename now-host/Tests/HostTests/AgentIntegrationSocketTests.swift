@@ -318,22 +318,36 @@ final class AgentIntegrationSocketTests: XCTestCase {
            the clients off-actor; awaiting the detached task releases the
            actor for the shipping handler and keeps the real two-second
            receive budget under test. */
-        let results = try await Task.detached { [endpoint] in
+        let outcomes = try await Task.detached { [endpoint] in
             let client = try AgentIntegrationLocalClient(endpoint: endpoint)
-            return try await withThrowingTaskGroup(
-                of: AgentIntegrationSessionHealthResult.self
+            return await withTaskGroup(
+                of: ConcurrentHealthOutcome.self
             ) { group in
                 for _ in 0..<8 {
                     group.addTask {
-                        try await client.sessionHealth()
+                        do {
+                            return .success(try await client.sessionHealth())
+                        } catch {
+                            return .failure(String(reflecting: error))
+                        }
                     }
                 }
-                var values: [AgentIntegrationSessionHealthResult] = []
-                for try await value in group { values.append(value) }
+                var values: [ConcurrentHealthOutcome] = []
+                for await value in group { values.append(value) }
                 return values
             }
         }.value
 
+        let failures = outcomes.compactMap { outcome -> String? in
+            guard case .failure(let reason) = outcome else { return nil }
+            return reason
+        }
+        let results: [AgentIntegrationSessionHealthResult] =
+            outcomes.compactMap {
+                guard case .success(let result) = $0 else { return nil }
+                return result
+            }
+        XCTAssertEqual(failures, [], failures.joined(separator: "\n"))
         XCTAssertEqual(results.count, 8)
         XCTAssertTrue(results.allSatisfy {
             guard case .available(let health) = $0 else { return false }
@@ -1096,6 +1110,11 @@ final class AgentIntegrationSocketTests: XCTestCase {
                 "\(operation) refusal must name the operation it refused")
         }
     }
+}
+
+private enum ConcurrentHealthOutcome: Sendable {
+    case success(AgentIntegrationSessionHealthResult)
+    case failure(String)
 }
 
 private actor InvocationFlag {
