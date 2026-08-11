@@ -40,7 +40,7 @@ if [ -z "${TBT_ALLOW_MAIN:-}" ]; then
         echo "" >&2
         echo "[main-guardrail] refusing to commit directly on '$branch'." >&2
         echo "  Branch first, then commit there and merge/ff into main:" >&2
-        echo "    git checkout -b claude/<slug>         # off the parent branch" >&2
+        echo "    git checkout -b feat/<kebab-slug>     # off the parent branch" >&2
         echo "  Deliberate main commit: TBT_ALLOW_MAIN=1 git commit ..." >&2
         echo "" >&2
         exit 1
@@ -48,6 +48,9 @@ if [ -z "${TBT_ALLOW_MAIN:-}" ]; then
 fi
 
 root=$(git rev-parse --show-toplevel)
+if [ -x "$root/tools/git-policy" ]; then
+    "$root/tools/git-policy" check-current --repo "$root" || exit 1
+fi
 if [ -x "$root/tools/ext-bake-gate" ]; then
     "$root/tools/ext-bake-gate" check || exit 1
 fi

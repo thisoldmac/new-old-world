@@ -97,11 +97,20 @@ coverage in a directory listing and proves nothing.
 
 ## Pull requests
 
-Working branches use a domained suffix: `dev/<domain>/<slug>`. An automation
-namespace may precede it, such as `codex/dev/host/swift-ownership`. The domain
-vocabulary and the separate `release/vX.Y.Z` qualification branches are in
-[RELEASING.md](RELEASING.md). `main` is candidate-ready integration, not a
+Working branches use creator-neutral Conventional Git names such as
+`feat/file-resume`, `docs/provenance-tags`, or
+`refactor/module-atomicity`. The allowed types and the separate
+`release/vX.Y.Z` qualification branches are in
+[RELEASING.md](RELEASING.md). Put the technical domain in the pull request
+and, when useful, the Conventional Commit scope; do not put the contributor or
+automation name in the branch. `main` is candidate-ready integration, not a
 scratch branch and not a release merely because it is green.
+
+Pull-request and squash titles use `type(scope): concise outcome`, with the
+scope optional. Existing branches whose merge base predates this policy are
+grandfathered so work in flight can land; branches created or rebased after
+adoption must use the current grammar. Run `tools/git-policy selftest` for the
+policy's mutation evidence.
 
 - **Small and reviewable beats finished and enormous.** A change that
   does one thing, with its test and its doc update, lands. A branch that

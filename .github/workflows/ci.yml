@@ -35,6 +35,31 @@ permissions:
   contents: read
 
 jobs:
+  git-policy:
+    name: Git policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Prove policy mutations are refused
+        run: tools/git-policy selftest
+      - name: Validate branch and pull-request title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -eu
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            tools/git-policy check-branch "$GITHUB_HEAD_REF" \
+              --head "$PR_HEAD" --base-ref "$PR_BASE"
+            tools/git-policy check-title "$PR_TITLE"
+          elif [ "$GITHUB_REF_TYPE" = "branch" ]; then
+            tools/git-policy check-branch "$GITHUB_REF_NAME" \
+              --head "$GITHUB_SHA" --base-ref origin/main
+          fi
+
   documentation:
     name: Documentation
     runs-on: ubuntu-latest

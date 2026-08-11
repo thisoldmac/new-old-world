@@ -8,20 +8,26 @@ candidate.
 
 - `main` is the protected, candidate-ready integration branch. It accepts pull
   requests only and should always satisfy the repository gates.
-- Working branches end in `dev/<domain>/<slug>`. Automation may prepend its
-  owner namespace, for example `codex/dev/host/swift-ownership`. Domains are
-  `contract`, `host`, `guest-ppc`, `guest-68k`, `resident`, `docs`, `tooling`,
-  `release`, or `cross-cutting`.
+- Working branches are creator-neutral `<type>/<kebab-slug>` names. Types are
+  `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`, `perf`,
+  and `revert`. Contributor and automation names are not prefixes. Technical
+  domain remains pull-request metadata and may be an optional Conventional
+  Commit scope: `feat(guest-ppc): add bounded transfer resume`.
+- The policy transition grandfathers a nonconforming branch only when its
+  merge base predates `tools/git-policy`. Rebasing or creating work after that
+  boundary adopts the current grammar. Dependabot is an explicit
+  service-managed exception.
 - `release/vX.Y.Z` is cut from a green `main` for qualification. After the cut,
   it accepts only reviewed fixes, release metadata, documentation, and
   packaging changes. Product work continues on `main`; a release fix is also
   merged forward when it applies there.
 
 On GitHub, protect `main` and `release/v*`: disallow direct and force pushes,
-require an up-to-date pull request, and require **Documentation**, **Native
-guest tests**, **Host suites and app builds**, and **No lab configuration in
-the tree**. GitHub configuration is part of repository commissioning; the
-files in this checkout cannot impose those settings themselves.
+require an up-to-date pull request, and require **Git policy**,
+**Documentation**, **Native guest tests**, **Host suites and app builds**, and
+**No lab configuration in the tree**. GitHub configuration is part of
+repository commissioning; the files in this checkout cannot impose those
+settings themselves.
 
 ## Candidate and final identities
 

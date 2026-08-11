@@ -361,7 +361,7 @@ agents branch in their own worktrees — so the shared checkout stays on
 `main`, at the head of the work.
 
 - **Work on a branch, never on `main`.** Before your first edit, cut one
-  — `git checkout -b <ns>/<slug>`, forked off the parent branch you are
+  — `git checkout -b <type>/<kebab-slug>`, forked off the parent branch you are
   continuing, not off main. `main` receives finished work by
   fast-forward or merge; it is never where work is typed. This is
   enforced (`.githooks/pre-commit`, plus a PreToolUse hook on
@@ -374,9 +374,13 @@ agents branch in their own worktrees — so the shared checkout stays on
   [docs/rule-scopes.md](docs/rule-scopes.md).
   The enforcement is the floor, not the
   rule: don't reach for `TBT_ALLOW_MAIN=1` to get past a block you
-  should have avoided by branching. The namespaces in use are
-  `claude/`, `codex/`, `thread/` and `fork/` — pick the one that says
-  who is working.
+  should have avoided by branching. Branches describe the change, not
+  the person or automation making it: use `feat/`, `fix/`, `docs/`,
+  `refactor/`, `test/`, `build/`, `ci/`, `chore/`, `perf/`, or `revert/`.
+  Do not prepend `claude/`, `codex/`, `thread/`, `fork/`, or another
+  creator namespace. `release/vX.Y.Z` is reserved for qualification.
+  `tools/git-policy` enforces the grammar and grandfathers only work whose
+  merge base predates the policy.
 - **Commit early and often — a session can end without warning.** Commit
   a checkpoint as soon as you have something coherent, and again as you
   go. Do not save it all for the end, and above all do not wait for the

@@ -22,8 +22,10 @@ git -C "$root" config merge.nowreceipts.driver \
 
 echo "core.hooksPath = .githooks"
 echo "  pre-commit:       main-guardrail (TBT_ALLOW_MAIN=1 overrides)"
+echo "                    creator-neutral branch policy"
 echo "                    ext-bake-gate  (TBT_DEFER_EXT_BAKE=1 + reason defers)"
 echo "                    product-version copies must agree"
+echo "  commit-msg:       Conventional Commit title policy"
 echo "  pre-merge-commit: ext-bake-gate merge-check (aborts an incoherent merge)"
 echo "  reference-transaction: refuses main resident changes without a shared bake"
 echo "                         or product changes without a release-version advance"
