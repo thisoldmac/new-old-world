@@ -80,9 +80,12 @@ Configure `.env.lab`, then run:
 ```sh
 scripts/sheepshaver-86 doctor
 scripts/sheepshaver-86 stage "path/to/New Old World.bin"
+scripts/sheepshaver-86 install-apps \
+  "path/to/New Old World.bin" "path/to/CodeKitten.bin"
 scripts/sheepshaver-86 launch
 scripts/sheepshaver-86 snapshot "Mac OS 8.6 + CarbonLib 1.6"
 scripts/sheepshaver-86 rig
+scripts/sheepshaver-86 seal "os86-carbon16-now020-codekitten-af521a5"
 ```
 
 `stage` accepts a MacBinary artifact and passes it to `hcopy -m`, preserving
@@ -95,6 +98,29 @@ the NOW revision and SHA-256 identities for the emulator executable, profile
 preferences, ROM, boot disk, and transfer disk. If
 `NOW_SHEEPSHAVER_SOURCE` is configured, it includes the exact macemu revision.
 Attach that output to captures rather than reconstructing the rig from memory.
+
+`install-apps` writes both MacBinary applications into the configured
+Applications folder while the guest is stopped. It refuses a live boot disk,
+preserves both forks, and lists the resulting Finder identities before
+unmounting. `seal` creates a copy-on-write, immutable-named boot image and a
+matching `.rig` receipt; it refuses to replace either. A named snapshot without
+its receipt is not a versioned oracle.
+
+## Installed application set
+
+The 8.6 oracle carries two project applications for different reasons:
+
+- **New Old World** is the application under test. A visible Workshop after a
+  clean reboot is the positive CarbonLib and minimum-floor UI assertion.
+- **CodeKitten** is installed so the profile and transfer workflow preserve the
+  complete development stack and Finder registration. Its own current platform
+  authority requires Mac OS 9.1 or later with CarbonLib 1.6. Presence on this
+  disk does not make it supported or expected to remain running on 8.6; launch
+  compatibility belongs to `qemu-ppc` or metal on 9.1+.
+
+Record both MacBinary SHA-256 values and source revisions in the sealed-version
+receipt or companion evidence. Do not let a convenient old artifact silently
+become the oracle's CodeKitten.
 
 Do not run classic applications or installers from SheepShaver's Unix shared
 folder. The CarbonLib SMI wrapper reached the Finder through ExtFS but failed

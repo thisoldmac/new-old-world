@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROUTER="$REPO/scripts/emulator"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/now-emulator-router.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+LOG="$TMP/calls.log"
+
+for tool in spin-up-ppc sheepshaver-86 q800-68k; do
+    printf '#!/bin/sh\nprintf "%%s" "$(basename "$0")" >> "$NOW_TEST_LOG"\nfor arg in "$@"; do printf " <%%s>" "$arg" >> "$NOW_TEST_LOG"; done\nprintf "\\n" >> "$NOW_TEST_LOG"\n' > "$TMP/$tool"
+    chmod +x "$TMP/$tool"
+done
+
+run_router () {
+    NOW_EMULATOR_TOOL_ROOT="$TMP" NOW_TEST_LOG="$LOG" "$ROUTER" "$@"
+}
+
+matrix="$(run_router matrix)"
+printf '%s\n' "$matrix" | grep -F "Full-stack PPC/mac99 lane" >/dev/null
+printf '%s\n' "$matrix" | grep -F "Fast PPC Carbon UI lane" >/dev/null
+printf '%s\n' "$matrix" | grep -F "68K correctness lane" >/dev/null
+printf '%s\n' "$matrix" | grep -F "Metal remains" >/dev/null
+
+: > "$LOG"
+run_router qemu-ppc --help
+run_router sheepshaver-86 doctor
+run_router qemu-68k --port 5271
+expected="spin-up-ppc <--help>
+sheepshaver-86 <doctor>
+q800-68k <--port> <5271>"
+[ "$(cat "$LOG")" = "$expected" ] || {
+    echo "FAILED: emulator domains did not route one-to-one" >&2
+    cat "$LOG" >&2
+    exit 1
+}
+
+unknown="$(run_router basilisk-68k 2>&1 || true)"
+printf '%s\n' "$unknown" | grep -F "unknown domain: basilisk-68k" >/dev/null
+if printf '%s\n' "$unknown" | grep -F "Future" >/dev/null; then
+    echo "FAILED: an unimplemented future domain looked available" >&2
+    exit 1
+fi
+
+echo "emulator router: 5 domain behaviors passed"

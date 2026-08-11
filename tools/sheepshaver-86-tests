@@ -76,4 +76,48 @@ printf '%s\n' "$rig_output" | grep -F "NOW_SHEEPSHAVER_RIG_V1" >/dev/null
 printf '%s\n' "$rig_output" | grep -E '^rom_sha256=[0-9a-f]{64}$' >/dev/null
 printf '%s\n' "$rig_output" | grep -E '^boot_disk_sha256=[0-9a-f]{64}$' >/dev/null
 
-echo "sheepshaver-86: 7 harness behaviors passed"
+: > "$LOG"
+run_harness install-apps "$artifact" "$artifact" >/dev/null
+install_log="$(cat "$LOG")"
+printf '%s\n' "$install_log" \
+    | grep -F "hmount <$VM/Mac OS 8.6.hfv>" >/dev/null
+[ "$(printf '%s\n' "$install_log" | grep -c '^hcopy <-m>')" -eq 2 ] \
+    || { echo "FAILED: install-apps did not decode both MacBinary artifacts" >&2; exit 1; }
+printf '%s\n' "$install_log" \
+    | grep -F "hls <-la> <:Applications (Mac OS 9)>" >/dev/null
+[ -f "$VM/Installed Apps.rig" ]
+grep -F "NOW_SHEEPSHAVER_APPS_V1" "$VM/Installed Apps.rig" >/dev/null
+grep -E '^codekitten_artifact_sha256=[0-9a-f]{64}$' \
+    "$VM/Installed Apps.rig" >/dev/null
+
+run_harness seal "os86-carbon16-now020" >/dev/null
+[ -f "$VM/Snapshots/os86-carbon16-now020.hfv" ]
+[ -f "$VM/Snapshots/os86-carbon16-now020.rig" ]
+grep -F "profile_version=os86-carbon16-now020" \
+    "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
+grep -F "installed_apps_NOW_SHEEPSHAVER_APPS_V1" \
+    "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
+duplicate_output="$(run_harness seal "os86-carbon16-now020" 2>&1 || true)"
+printf '%s\n' "$duplicate_output" \
+    | grep -F "versioned image already exists" >/dev/null
+
+invalid_output="$(run_harness seal "../escape" 2>&1 || true)"
+printf '%s\n' "$invalid_output" \
+    | grep -F "version may contain only" >/dev/null
+
+desk_repo="$TMP/desk-repo"
+desk_lane="$TMP/desk-lane"
+mkdir -p "$desk_repo/scripts"
+cp "$HARNESS" "$desk_repo/scripts/sheepshaver-86"
+git init -q -b main "$desk_repo"
+git -C "$desk_repo" config user.email "sheepshaver-test@example.invalid"
+git -C "$desk_repo" config user.name "SheepShaver Test"
+git -C "$desk_repo" add scripts/sheepshaver-86
+git -C "$desk_repo" commit -qm "fixture"
+printf 'NOW_SHEEPSHAVER_APP="%s"\nNOW_SHEEPSHAVER_VM="%s"\nNOW_HFSUTILS="%s"\nNOW_SHEEPSHAVER_LSOF="%s"\n' \
+    "$APP" "$VM" "$HFS" "$TMP/lsof" > "$desk_repo/.env.lab"
+git -C "$desk_repo" worktree add -q -b lane "$desk_lane" main
+lane_doctor="$(NOW_TEST_LOG="$LOG" "$desk_lane/scripts/sheepshaver-86" doctor)"
+printf '%s\n' "$lane_doctor" | grep -F "Mac OS 8.6 profile: $VM" >/dev/null
+
+echo "sheepshaver-86: 13 harness behaviors passed"

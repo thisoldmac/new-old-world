@@ -70,8 +70,10 @@ build section of the [README](../README.md).
 | `NOW_SHEEPSHAVER_APP` | Absolute path to a locally built or installed `SheepShaver.app`. |
 | `NOW_SHEEPSHAVER_VM` | Absolute path to the isolated Mac OS 8.6 `.sheepvm` profile. |
 | `NOW_SHEEPSHAVER_SOURCE` | Optional macemu source checkout; `rig` records its revision when set. |
+| `NOW_CODEKITTEN_SOURCE` | Optional CodeKitten source checkout; `install-apps` records its revision. |
 | `NOW_SHEEPSHAVER_DISK` | Optional boot-disk override. Defaults to `Mac OS 8.6.hfv` inside the profile. |
 | `NOW_SHEEPSHAVER_TRANSFER` | Optional HFS transfer-disk override. Defaults to `CarbonLib 1.6 Transfer.hfv` inside the profile. |
+| `NOW_SHEEPSHAVER_APPS_DIR` | Optional application-folder override. Defaults to `Applications (Mac OS 9)` on the installed 8.6 volume. |
 
 The repository neither downloads nor redistributes SheepShaver, a ROM,
 Mac OS, or CarbonLib. `scripts/sheepshaver-86` operates developer-supplied
@@ -118,6 +120,10 @@ CarbonLib 1.6 UI-oracle profile. Start with `doctor`; use `stage` for
 MacBinary applications rather than launching them from the Unix shared
 folder. After a clean shutdown, `rig` emits exact source and disk identities
 for the evidence record.
+
+Use `scripts/emulator matrix` as the front door when choosing a lane. It routes
+to the existing QEMU PPC, SheepShaver 8.6, and QEMU 68K harnesses without
+pretending their evidence is interchangeable.
 
 ## Running a second copy of the host app
 

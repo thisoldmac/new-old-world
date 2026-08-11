@@ -9,14 +9,52 @@
 #     scripts/sheepshaver-86 doctor
 #     scripts/sheepshaver-86 launch
 #     scripts/sheepshaver-86 stage path/to/Application.bin
+#     scripts/sheepshaver-86 install-apps path/to/NOW.bin path/to/CodeKitten.bin
 #     scripts/sheepshaver-86 snapshot clean-name
 #     scripts/sheepshaver-86 rig
+#     scripts/sheepshaver-86 seal version-name
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [ -f "$REPO/.env.lab" ]; then
-    set -a; . "$REPO/.env.lab"; set +a
+ENV_LAB="$REPO/.env.lab"
+if [ ! -f "$ENV_LAB" ]; then
+    COMMON_DIR="$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || true)"
+    if [ -n "$COMMON_DIR" ]; then
+        case "$COMMON_DIR" in
+            /*) ;;
+            *) COMMON_DIR="$REPO/$COMMON_DIR" ;;
+        esac
+        MAIN_ENV="$(cd "$COMMON_DIR/.." 2>/dev/null && pwd)/.env.lab"
+        [ -f "$MAIN_ENV" ] && ENV_LAB="$MAIN_ENV"
+    fi
+fi
+load_env_lab () {
+    local app_set="${NOW_SHEEPSHAVER_APP+x}" app_value="${NOW_SHEEPSHAVER_APP:-}"
+    local vm_set="${NOW_SHEEPSHAVER_VM+x}" vm_value="${NOW_SHEEPSHAVER_VM:-}"
+    local hfs_set="${NOW_HFSUTILS+x}" hfs_value="${NOW_HFSUTILS:-}"
+    local transfer_set="${NOW_SHEEPSHAVER_TRANSFER+x}" transfer_value="${NOW_SHEEPSHAVER_TRANSFER:-}"
+    local disk_set="${NOW_SHEEPSHAVER_DISK+x}" disk_value="${NOW_SHEEPSHAVER_DISK:-}"
+    local apps_set="${NOW_SHEEPSHAVER_APPS_DIR+x}" apps_value="${NOW_SHEEPSHAVER_APPS_DIR:-}"
+    local open_set="${NOW_SHEEPSHAVER_OPEN+x}" open_value="${NOW_SHEEPSHAVER_OPEN:-}"
+    local lsof_set="${NOW_SHEEPSHAVER_LSOF+x}" lsof_value="${NOW_SHEEPSHAVER_LSOF:-}"
+    local source_set="${NOW_SHEEPSHAVER_SOURCE+x}" source_value="${NOW_SHEEPSHAVER_SOURCE:-}"
+    local kitten_set="${NOW_CODEKITTEN_SOURCE+x}" kitten_value="${NOW_CODEKITTEN_SOURCE:-}"
+
+    set -a; . "$ENV_LAB"; set +a
+    [ -z "$app_set" ] || export NOW_SHEEPSHAVER_APP="$app_value"
+    [ -z "$vm_set" ] || export NOW_SHEEPSHAVER_VM="$vm_value"
+    [ -z "$hfs_set" ] || export NOW_HFSUTILS="$hfs_value"
+    [ -z "$transfer_set" ] || export NOW_SHEEPSHAVER_TRANSFER="$transfer_value"
+    [ -z "$disk_set" ] || export NOW_SHEEPSHAVER_DISK="$disk_value"
+    [ -z "$apps_set" ] || export NOW_SHEEPSHAVER_APPS_DIR="$apps_value"
+    [ -z "$open_set" ] || export NOW_SHEEPSHAVER_OPEN="$open_value"
+    [ -z "$lsof_set" ] || export NOW_SHEEPSHAVER_LSOF="$lsof_value"
+    [ -z "$source_set" ] || export NOW_SHEEPSHAVER_SOURCE="$source_value"
+    [ -z "$kitten_set" ] || export NOW_CODEKITTEN_SOURCE="$kitten_value"
+}
+if [ -f "$ENV_LAB" ]; then
+    load_env_lab
 fi
 
 die () {
@@ -36,6 +74,7 @@ VM="$(need NOW_SHEEPSHAVER_VM "${NOW_SHEEPSHAVER_VM:-}" "path to the Mac OS 8.6 
 HFS="$(need NOW_HFSUTILS "${NOW_HFSUTILS:-}" "directory containing hfsutils")"
 TRANSFER="${NOW_SHEEPSHAVER_TRANSFER:-$VM/CarbonLib 1.6 Transfer.hfv}"
 BOOT_DISK="${NOW_SHEEPSHAVER_DISK:-$VM/Mac OS 8.6.hfv}"
+APPS_DIR="${NOW_SHEEPSHAVER_APPS_DIR:-Applications (Mac OS 9)}"
 OPEN_TOOL="${NOW_SHEEPSHAVER_OPEN:-open}"
 LSOF_TOOL="${NOW_SHEEPSHAVER_LSOF:-lsof}"
 
@@ -120,6 +159,63 @@ stage () {
     echo "sheepshaver-86: staged $(basename "$artifact") on $TRANSFER"
 }
 
+install_apps () {
+    [ "$#" -eq 2 ] \
+        || die "usage: scripts/sheepshaver-86 install-apps NOW.bin CODEKITTEN.bin"
+    local now_artifact="$1"
+    local codekitten_artifact="$2"
+    require_file "$now_artifact" "New Old World MacBinary"
+    require_file "$codekitten_artifact" "CodeKitten MacBinary"
+    if [ -n "${NOW_CODEKITTEN_SOURCE:-}" ]; then
+        [ -d "$NOW_CODEKITTEN_SOURCE/.git" ] \
+            || die "NOW_CODEKITTEN_SOURCE is not a git checkout: $NOW_CODEKITTEN_SOURCE"
+    fi
+    require_file "$BOOT_DISK" "Mac OS 8.6 boot disk"
+    require_stopped "$BOOT_DISK"
+
+    local mounted=0
+    cleanup_apps_mount () {
+        if [ "$mounted" -eq 1 ]; then
+            "$HFS/humount" >/dev/null || true
+        fi
+    }
+    trap cleanup_apps_mount EXIT
+
+    "$HFS/hmount" "$BOOT_DISK" >/dev/null
+    mounted=1
+    "$HFS/hls" ":$APPS_DIR" >/dev/null \
+        || die "application directory is absent from the boot disk: $APPS_DIR"
+    "$HFS/hcopy" -m "$now_artifact" ":$APPS_DIR:"
+    "$HFS/hcopy" -m "$codekitten_artifact" ":$APPS_DIR:"
+    "$HFS/hls" -la ":$APPS_DIR"
+    "$HFS/humount" >/dev/null
+    mounted=0
+    trap - EXIT
+
+    local apps_manifest="$VM/Installed Apps.rig"
+    local pending_manifest
+    pending_manifest="$(mktemp "$VM/.installed-apps.XXXXXX")"
+    trap 'rm -f "$pending_manifest"' EXIT
+    {
+        echo "NOW_SHEEPSHAVER_APPS_V1"
+        echo "installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "applications_dir=$APPS_DIR"
+        echo "now_revision=$(git -C "$REPO" rev-parse HEAD)"
+        echo "now_artifact=$now_artifact"
+        echo "now_artifact_sha256=$(shasum -a 256 "$now_artifact" | awk '{print $1}')"
+        echo "codekitten_artifact=$codekitten_artifact"
+        echo "codekitten_artifact_sha256=$(shasum -a 256 "$codekitten_artifact" | awk '{print $1}')"
+        if [ -n "${NOW_CODEKITTEN_SOURCE:-}" ]; then
+            echo "codekitten_source=$NOW_CODEKITTEN_SOURCE"
+            echo "codekitten_revision=$(git -C "$NOW_CODEKITTEN_SOURCE" rev-parse HEAD)"
+        fi
+    } > "$pending_manifest"
+    mv "$pending_manifest" "$apps_manifest"
+    trap - EXIT
+    echo "sheepshaver-86: installed NOW and CodeKitten in $APPS_DIR"
+    echo "  manifest: $apps_manifest"
+}
+
 snapshot () {
     [ "$#" -eq 1 ] || die "usage: scripts/sheepshaver-86 snapshot NAME"
     local name="$1"
@@ -158,13 +254,52 @@ rig () {
     echo "rom_sha256=$(shasum -a 256 "$VM/Mac OS ROM" | awk '{print $1}')"
     echo "boot_disk_sha256=$(shasum -a 256 "$BOOT_DISK" | awk '{print $1}')"
     echo "transfer_disk_sha256=$(shasum -a 256 "$TRANSFER" | awk '{print $1}')"
+    if [ -f "$VM/Installed Apps.rig" ]; then
+        echo "installed_apps_manifest=$VM/Installed Apps.rig"
+        echo "installed_apps_manifest_sha256=$(shasum -a 256 "$VM/Installed Apps.rig" | awk '{print $1}')"
+        sed 's/^/installed_apps_/' "$VM/Installed Apps.rig"
+    fi
+}
+
+seal () {
+    [ "$#" -eq 1 ] || die "usage: scripts/sheepshaver-86 seal VERSION"
+    local version="$1"
+    case "$version" in
+        ""|*[!A-Za-z0-9._+-]*)
+            die "version may contain only letters, digits, dot, underscore, plus, and hyphen" ;;
+    esac
+    require_stopped "$BOOT_DISK"
+    require_stopped "$TRANSFER"
+    mkdir -p "$VM/Snapshots"
+    local image="$VM/Snapshots/$version.hfv"
+    local receipt="$VM/Snapshots/$version.rig"
+    [ ! -e "$image" ] || die "versioned image already exists: $image"
+    [ ! -e "$receipt" ] || die "versioned receipt already exists: $receipt"
+
+    local pending
+    pending="$(mktemp "$VM/Snapshots/.rig.XXXXXX")"
+    trap 'rm -f "$pending"' EXIT
+    rig > "$pending"
+    snapshot "$version" >/dev/null
+    {
+        echo "profile_version=$version"
+        echo "versioned_image=$image"
+        echo "versioned_image_sha256=$(shasum -a 256 "$image" | awk '{print $1}')"
+    } >> "$pending"
+    mv "$pending" "$receipt"
+    trap - EXIT
+    echo "sheepshaver-86: sealed $version"
+    echo "  image: $image"
+    echo "  receipt: $receipt"
 }
 
 case "${1:-}" in
     doctor) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 doctor"; doctor ;;
     launch) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 launch"; launch ;;
     stage) shift; stage "$@" ;;
+    install-apps) shift; install_apps "$@" ;;
     snapshot) shift; snapshot "$@" ;;
     rig) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 rig"; rig ;;
-    *) die "usage: scripts/sheepshaver-86 {doctor|launch|stage APPLICATION.bin|snapshot NAME|rig}" ;;
+    seal) shift; seal "$@" ;;
+    *) die "usage: scripts/sheepshaver-86 {doctor|launch|stage APPLICATION.bin|install-apps NOW.bin CODEKITTEN.bin|snapshot NAME|rig|seal VERSION}" ;;
 esac
