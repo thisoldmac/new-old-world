@@ -133,12 +133,15 @@ struct PointerCaptureView: NSViewRepresentable {
             observers.append(center.addObserver(
                 forName: NSWindow.didResignKeyNotification,
                 object: window, queue: .main) { [weak self] _ in
-                    self?.cancelCapture()
+                    /* NotificationCenter does not express queue actor
+                       isolation in its closure type. The explicit .main
+                       delivery above is the runtime guarantee. */
+                    MainActor.assumeIsolated { self?.cancelCapture() }
                 })
             observers.append(center.addObserver(
                 forName: NSApplication.didResignActiveNotification,
                 object: nil, queue: .main) { [weak self] _ in
-                    self?.cancelCapture()
+                    MainActor.assumeIsolated { self?.cancelCapture() }
                 })
         }
 
