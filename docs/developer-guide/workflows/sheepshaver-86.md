@@ -6,7 +6,7 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [AGENTS.md, docs/guest-ui-start-here.md]
-source_dependencies: [scripts/sheepshaver-86, tools/sheepshaver-86-tests, .env.lab.example, now-guest-ppc]
+source_dependencies: [scripts/sheepshaver-86, tools/sheepshaver-86-tests, docs/lab-setup.md, now-guest-ppc]
 media_ids: []
 last_verified: 2026-08-11
 ---
@@ -82,12 +82,19 @@ scripts/sheepshaver-86 doctor
 scripts/sheepshaver-86 stage "path/to/New Old World.bin"
 scripts/sheepshaver-86 launch
 scripts/sheepshaver-86 snapshot "Mac OS 8.6 + CarbonLib 1.6"
+scripts/sheepshaver-86 rig
 ```
 
 `stage` accepts a MacBinary artifact and passes it to `hcopy -m`, preserving
 both forks plus Finder type and creator. It refuses while SheepShaver has the
 transfer image open. Never host-mount or host-write an HFS image concurrently
 with the guest.
+
+`rig` also requires a stopped guest. It emits a versioned record containing
+the NOW revision and SHA-256 identities for the emulator executable, profile
+preferences, ROM, boot disk, and transfer disk. If
+`NOW_SHEEPSHAVER_SOURCE` is configured, it includes the exact macemu revision.
+Attach that output to captures rather than reconstructing the rig from memory.
 
 Do not run classic applications or installers from SheepShaver's Unix shared
 folder. The CarbonLib SMI wrapper reached the Finder through ExtFS but failed
@@ -123,6 +130,32 @@ At 800 by 600, these interactions were repeatable during bring-up:
 Coordinates are profile-specific evidence, not a durable API. The harness
 should grow toward semantic guest-side controls or deterministic framebuffer
 recognition before unattended installation is treated as reliable.
+
+## The native automation seam
+
+Source inspection identifies a narrow path for the next harness layer; it does
+not require replacing SheepShaver's renderer:
+
+- `main_unix.cpp` recognizes a `.sheepvm` directory as a first-class launch
+  argument, changes into it, and reads that profile's preferences. The isolated
+  profile convention is native behavior, not a launcher accident.
+- `video_sdl2.cpp` already owns `guest_surface`, `host_surface`, and the exact
+  dirty rectangle immediately before `SDL_RenderPresent`. A capture hook there
+  can emit guest pixels before macOS window chrome, scaling, and the host cursor
+  contaminate the oracle image.
+- The same file drains SDL keyboard and mouse events into ADB calls. A local,
+  profile-scoped control socket can inject events at this boundary and preserve
+  the emulator's own key mapping.
+- The existing `--gui-connection` RPC is not that control plane. It connects the
+  emulator back to the settings UI and currently carries alerts and exit only.
+- `nogui` suppresses the settings front end; it does not make video headless.
+
+The smallest useful macemu-side experiment is therefore a loopback-only socket
+with three operations: report profile identity, capture the pre-presentation
+framebuffer, and enqueue one bounded input event. Keep it as a separately
+reviewable fork patch until its licensing and redistribution posture are chosen.
+The repository harness can then assert the profile and source revision before
+accepting captures, just as the QEMU lanes assert which guest answered.
 
 ## Evidence status
 

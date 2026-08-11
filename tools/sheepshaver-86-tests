@@ -71,4 +71,9 @@ printf 'boot disk bytes' > "$VM/Mac OS 8.6.hfv"
 run_harness snapshot "post-carbonlib" >/dev/null
 cmp "$VM/Mac OS 8.6.hfv" "$VM/Snapshots/post-carbonlib.hfv"
 
-echo "sheepshaver-86: 6 harness behaviors passed"
+rig_output="$(run_harness rig)"
+printf '%s\n' "$rig_output" | grep -F "NOW_SHEEPSHAVER_RIG_V1" >/dev/null
+printf '%s\n' "$rig_output" | grep -E '^rom_sha256=[0-9a-f]{64}$' >/dev/null
+printf '%s\n' "$rig_output" | grep -E '^boot_disk_sha256=[0-9a-f]{64}$' >/dev/null
+
+echo "sheepshaver-86: 7 harness behaviors passed"

@@ -10,6 +10,7 @@
 #     scripts/sheepshaver-86 launch
 #     scripts/sheepshaver-86 stage path/to/Application.bin
 #     scripts/sheepshaver-86 snapshot clean-name
+#     scripts/sheepshaver-86 rig
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -136,10 +137,34 @@ snapshot () {
     echo "sheepshaver-86: snapshot created: $destination"
 }
 
+rig () {
+    doctor >/dev/null
+    require_stopped "$BOOT_DISK"
+    require_stopped "$TRANSFER"
+
+    echo "NOW_SHEEPSHAVER_RIG_V1"
+    echo "observed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "now_revision=$(git -C "$REPO" rev-parse HEAD)"
+    if [ -n "${NOW_SHEEPSHAVER_SOURCE:-}" ]; then
+        [ -d "$NOW_SHEEPSHAVER_SOURCE/.git" ] \
+            || die "NOW_SHEEPSHAVER_SOURCE is not a git checkout: $NOW_SHEEPSHAVER_SOURCE"
+        echo "sheepshaver_source=$NOW_SHEEPSHAVER_SOURCE"
+        echo "sheepshaver_revision=$(git -C "$NOW_SHEEPSHAVER_SOURCE" rev-parse HEAD)"
+    fi
+    echo "sheepshaver_app=$APP"
+    echo "sheepshaver_executable_sha256=$(shasum -a 256 "$APP/Contents/MacOS/SheepShaver" | awk '{print $1}')"
+    echo "profile=$VM"
+    echo "prefs_sha256=$(shasum -a 256 "$VM/prefs" | awk '{print $1}')"
+    echo "rom_sha256=$(shasum -a 256 "$VM/Mac OS ROM" | awk '{print $1}')"
+    echo "boot_disk_sha256=$(shasum -a 256 "$BOOT_DISK" | awk '{print $1}')"
+    echo "transfer_disk_sha256=$(shasum -a 256 "$TRANSFER" | awk '{print $1}')"
+}
+
 case "${1:-}" in
     doctor) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 doctor"; doctor ;;
     launch) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 launch"; launch ;;
     stage) shift; stage "$@" ;;
     snapshot) shift; snapshot "$@" ;;
-    *) die "usage: scripts/sheepshaver-86 {doctor|launch|stage APPLICATION.bin|snapshot NAME}" ;;
+    rig) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 rig"; rig ;;
+    *) die "usage: scripts/sheepshaver-86 {doctor|launch|stage APPLICATION.bin|snapshot NAME|rig}" ;;
 esac
