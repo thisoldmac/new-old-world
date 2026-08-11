@@ -6,7 +6,7 @@ doc_type: explanation
 audience: developer
 lifecycle: experimental
 authority: [docs/mirror-drive-loop.md, docs/mirror-knowledge.md]
-source_dependencies: [docs/mirror-drive-loop.md, docs/mirror-knowledge.md, contract/asyncapi.yaml, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/MirrorStateProjectionService.swift, now-host/Sources/Host/MirrorDriveService.swift, now-host/Sources/Host/MirrorWorkClocks.swift, now-guest-ppc/src/mirror, now-guest-ppc/src/peek]
+source_dependencies: [docs/mirror-drive-loop.md, docs/mirror-knowledge.md, contract/asyncapi.yaml, tools/mirror-oracle, tools/mirror_oracle_data, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/MirrorStateProjectionService.swift, now-host/Sources/Host/MirrorDriveService.swift, now-host/Sources/Host/MirrorWorkClocks.swift, now-guest-ppc/src/mirror, now-guest-ppc/src/peek]
 media_ids: []
 last_verified: 2026-08-09
 ---
@@ -45,6 +45,22 @@ the fallback when hints are absent. The host publishes only a coherent,
 current generation set and refuses stale enrichment.
 
 Any measurement must prove the content plane armed in the stored artifact. An invocation log or an empty capture is not evidence that observation occurred.
+
+## Visual truth and profiles
+
+Mirror remains a semantic renderer; an emulator framebuffer is the visual
+oracle, not an alternative model. `mirror-render` exposes the production
+`RenderShot` path for evidence tooling, and `tools/mirror-oracle` compares that
+output with SheepShaver or QEMU pixels by named regions. It never promotes a
+whole-screen similarity score into a fidelity claim.
+
+Visual versioning is explicit at the tooling boundary. The initial
+`platinum.macos-8.6.default` profile records system, theme, screen/depth,
+calibration source, and asset policy. It does not claim that Mac OS 8.6 and 9.1
+are identical. A later 9.1, localized, alternate-theme, or 68K profile must
+name its own evidence-backed deltas. The host already knows the connected
+guest's system version; profile selection can move into runtime policy after
+the first corpus establishes which deltas actually matter.
 
 The scheduler, invalidation, and generation behavior is tested locally. The
 2,000 ms ambient-wait target on the PowerBook 1400c is not metal-verified.

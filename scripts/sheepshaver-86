@@ -447,6 +447,23 @@ clone_profile () {
     actual_sha="$(shasum -a 256 "$source_image" | awk '{print $1}')"
     [ "$actual_sha" = "$expected_sha" ] \
         || die "sealed boot image does not match its rig receipt: $source_image"
+    verify_sealed_input () {
+        local key="$1" path="$2" label="$3" expected actual
+        expected="$(sed -n "s/^${key}=//p" "$source_receipt")"
+        [ -n "$expected" ] \
+            || die "sealed rig has no $label identity: $source_receipt"
+        require_file "$path" "$label"
+        actual="$(shasum -a 256 "$path" | awk '{print $1}')"
+        [ "$actual" = "$expected" ] \
+            || die "$label does not match the sealed rig receipt: $path"
+    }
+    verify_sealed_input prefs_sha256 "$VM/prefs" "profile preferences"
+    verify_sealed_input rom_sha256 "$VM/Mac OS ROM" "ROM file"
+    verify_sealed_input transfer_disk_sha256 "$TRANSFER" "transfer disk"
+    if grep -q '^installed_apps_manifest_sha256=' "$source_receipt"; then
+        verify_sealed_input installed_apps_manifest_sha256 \
+            "$VM/Installed Apps.rig" "installed-apps manifest"
+    fi
 
     local temporary
     temporary="$(mktemp -d "$(dirname "$destination")/.now-sheepvm-clone.XXXXXX")"

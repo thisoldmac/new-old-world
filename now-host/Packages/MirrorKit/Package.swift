@@ -7,12 +7,17 @@ let package = Package(
     products: [
         .library(name: "MirrorKit", targets: ["MirrorKit"]),
         .library(name: "MirrorKitUI", targets: ["MirrorKitUI"]),
+        .executable(name: "mirror-render", targets: ["MirrorRenderCLI"]),
     ],
     targets: [
         .target(name: "MirrorKit"),
         // The Platinum asset pack is a runtime dependency selected by
         // AssetPack. Apple-owned bytes never become package resources.
         .target(name: "MirrorKitUI", dependencies: ["MirrorKit"]),
+        .executableTarget(
+            name: "MirrorRenderCLI",
+            dependencies: ["MirrorKit", "MirrorKitUI"]
+        ),
         .testTarget(
             name: "MirrorKitTests",
             dependencies: ["MirrorKit"],

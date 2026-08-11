@@ -123,6 +123,9 @@ echo "==> [2/8] release and staged-image discipline gates"
     || fail "emulator domain router gate"
 "$script_dir/../tools/sheepshaver-package-tests" \
     || fail "self-contained SheepShaver package gate"
+PYTHONPYCACHEPREFIX="${TMPDIR:-/tmp}/now-mirror-oracle-pycache" \
+    python3 "$script_dir/../tools/mirror-oracle-tests.py" \
+    || fail "Mirror visual-oracle tooling gate"
 python3 "$script_dir/../tools/macbinary-identity-tests.py" \
     || fail "MacBinary artifact identity gate"
 

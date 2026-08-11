@@ -1,0 +1,14 @@
+{
+  "id": "platinum.macos-8.6.default",
+  "systemVersion": "8.6",
+  "carbonLibVersion": "1.6",
+  "visualFamily": "platinum",
+  "theme": "default",
+  "screen": {"width": 800, "height": 600, "depth": 32},
+  "assetPolicy": "external-apple-assets-required-for-pixel-claims",
+  "calibration": "sheepshaver-native-framebuffer",
+  "notes": [
+    "This is the first explicit visual profile, not a claim that Mac OS 8.6 and 9.1 are identical.",
+    "Future profiles inherit only after an evidence-backed delta is recorded."
+  ]
+}

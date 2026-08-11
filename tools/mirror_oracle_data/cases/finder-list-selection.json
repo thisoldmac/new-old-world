@@ -1,0 +1,17 @@
+{
+  "id": "finder-list-selection",
+  "profile": "platinum.macos-8.6.default",
+  "title": "Front Finder list view with one selected row",
+  "requiredState": [
+    "Finder is frontmost",
+    "One Finder folder window is front and in list view",
+    "Exactly one visible row is selected",
+    "No menu is open"
+  ],
+  "inputActions": [],
+  "regions": [
+    {"name": "front-window", "source": "frontWindow", "inset": [0, 0, 0, 0]}
+  ],
+  "masks": [],
+  "render": {}
+}

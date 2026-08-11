@@ -196,6 +196,13 @@ bad_clone="$(run_harness clone "os86-carbon16-now020" \
 printf '%s\n' "$bad_clone" \
     | grep -F "sealed boot image does not match its rig receipt" >/dev/null
 
+printf 'boot disk bytes' > "$VM/Snapshots/os86-carbon16-now020.hfv"
+printf 'tampered prefs' >> "$VM/prefs"
+bad_prefs="$(run_harness clone "os86-carbon16-now020" \
+    "$TMP/tampered-prefs.sheepvm" 2>&1 || true)"
+printf '%s\n' "$bad_prefs" \
+    | grep -F "profile preferences does not match the sealed rig receipt" >/dev/null
+
 invalid_output="$(run_harness seal "../escape" 2>&1 || true)"
 printf '%s\n' "$invalid_output" \
     | grep -F "version may contain only" >/dev/null
@@ -220,4 +227,4 @@ NOW_CODEKITTEN_SOURCE="$desk_lane" \
 grep -F "codekitten_revision=$(git -C "$desk_lane" rev-parse HEAD)" \
     "$VM/Installed Apps.rig" >/dev/null
 
-echo "sheepshaver-86: 20 harness behaviors passed"
+echo "sheepshaver-86: 21 harness behaviors passed"

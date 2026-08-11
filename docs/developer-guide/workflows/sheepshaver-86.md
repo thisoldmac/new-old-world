@@ -6,7 +6,7 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [AGENTS.md, docs/guest-ui-start-here.md]
-source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, tools/macbinary-identity.py, tools/sheepshaver-86-tests, tools/sheepshaver-package-tests, docs/lab-setup.md, now-guest-ppc]
+source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, tools/mirror-oracle, tools/mirror_oracle, tools/mirror_oracle_data, tools/macbinary-identity.py, tools/sheepshaver-86-tests, tools/sheepshaver-package-tests, tools/mirror-oracle-tests.py, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, docs/lab-setup.md, now-guest-ppc]
 media_ids: []
 last_verified: 2026-08-11
 ---
@@ -104,6 +104,9 @@ scripts/sheepshaver-86 input "move 200 120" "down 0" "up 0"
 scripts/sheepshaver-86 snapshot "Mac OS 8.6 + CarbonLib 1.6"
 scripts/sheepshaver-86 rig
 scripts/sheepshaver-86 seal "os86-carbon16-now020-codekitten-5d404f7"
+scripts/sheepshaver-86 clone \
+  "os86-carbon16-now020-codekitten-5d404f7" \
+  "/absolute/path/to/finder-run.sheepvm"
 ```
 
 `stage` accepts a MacBinary artifact and passes it to `hcopy -m`, preserving
@@ -116,6 +119,15 @@ the NOW revision and SHA-256 identities for the emulator executable, profile
 preferences, ROM, boot disk, and transfer disk. If
 `NOW_SHEEPSHAVER_SOURCE` is configured, it includes the exact macemu revision.
 Attach that output to captures rather than reconstructing the rig from memory.
+
+`clone` makes an isolated run profile from a named sealed image. It verifies
+the image against the sealed receipt before copying, uses copy-on-write clones
+where the filesystem supports them, gives the run its own boot and transfer
+images, and records the source receipt as `Oracle Parent.rig`. Run visual
+experiments in that clone rather than changing the sealed profile. The command
+refuses a relative destination, an existing destination, a live source image,
+or source image, preferences, ROM, transfer disk, or installed-app manifest
+whose bytes no longer match its receipt.
 
 `install-apps` writes both MacBinary applications into the configured
 Applications folder while the guest is stopped. It refuses a live boot disk,
@@ -236,6 +248,66 @@ identity and longer-lived control. Keep that as a separately reviewable fork
 patch until its licensing and redistribution posture are chosen. The current
 capture/input patch is likewise not an upstream or product dependency; the
 sealed rig records its exact source and executable identities.
+
+## Mirror visual-oracle loop
+
+`tools/mirror-oracle` turns the native framebuffer seam into a repeatable
+reference loop. It consumes both existing renderers: SheepShaver produces the
+target's real pixels, and `mirror-render` calls MirrorKitUI's production
+`RenderShot`. There is no third UI implementation in the comparison tool.
+
+List the current profile and cases, prepare a disposable run profile, then
+capture or compare:
+
+```sh
+tools/mirror-oracle list
+tools/mirror-oracle prepare \
+  os86-carbon16-now020-codekitten-5d404f7 \
+  /absolute/path/to/finder-run.sheepvm
+
+tools/mirror-oracle capture finder-desktop \
+  --vm /absolute/path/to/finder-run.sheepvm \
+  --state-proof /absolute/path/to/observed-state.json \
+  --out /absolute/path/to/evidence/finder-desktop
+
+tools/mirror-oracle run finder-front-icon-view \
+  --vm /absolute/path/to/finder-run.sheepvm \
+  --state-proof /absolute/path/to/observed-state.json \
+  --scene /absolute/path/to/scene.json \
+  --out /absolute/path/to/evidence/finder-icon-view \
+  --report-only
+```
+
+A capture is accepted only after two consecutive native framebuffer reads have
+the same SHA-256 after case-declared volatile masks are applied. All attempts
+remain in `samples/`; success writes `capture.json`, and a refusal writes
+`capture-failure.json`. The receipt includes the case, visual profile, NOW
+revision, backend doctor output, run-profile identities, exact input actions,
+and optional state-proof identity. A capture without `--state-proof` is
+explicitly `reference-only`; one with a proof is `state-proof-attached`, not
+silently promoted to verified. A required-state sentence is not proof that the
+machine was in that state.
+
+Comparisons are exact and region-specific. They write `comparison.json`, a
+same-scale `pair.png`, and a red-pixel `diff.png`; a mismatch exits nonzero
+unless `run --report-only` was requested. Whole-screen similarity is not an
+acceptance measure. Cases that depend on window geometry resolve their region
+from the same scene JSON rendered by MirrorKit.
+
+The first profile is `platinum.macos-8.6.default`, with six Finder/menu-bar
+cases: resting desktop, front icon-view window, inactive Finder window, list
+selection, File menu, and Apple menu. Their `inputActions` remain empty until
+each coordinate sequence is validated against the sealed profile. This makes
+setup manual today but prevents an unmeasured coordinate from silently
+becoming the durable state contract. If case input is later enabled, cleanup is
+armed before the first transition and releases every mouse button and common
+modifier even when capture fails.
+
+The QEMU backend remains available with `--backend qemu --qmp-socket ...` for
+the full-stack and Mac OS 9.1+ lanes. QEMU input is intentionally refused here;
+drive QEMU through its existing semantic harness. A future visual version gets
+another profile and evidence-backed deltas rather than conditionals scattered
+through the comparison code.
 
 ## Evidence status
 

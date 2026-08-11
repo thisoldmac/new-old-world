@@ -4,6 +4,27 @@ search:
 ---
 # Open issues
 
+## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle corpus has tooling but not six accepted target pairs (2026-08-11, `codex/sheepshaver-86-tooling`)
+
+The repository now has one visual-oracle loop shared by SheepShaver and QEMU:
+sealed-image clone verification, disposable `.sheepvm` runs, masked
+consecutive-frame settlement, attributable success and failure receipts, an
+executable over MirrorKitUI's production `RenderShot`, and exact named-region
+diffs with pair and heatmap artifacts. Dependency-free mutation-shaped tests
+cover image formats, masking, instability refusal, input cleanup, dynamic
+window regions, receipts, QEMU input refusal and the command surface; the real
+Swift executable builds and renders an 800×600 scene fixture, whose
+self-comparison is exact.
+
+That is **tested tooling**, not a fidelity result. The six declared Mac OS 8.6
+cases—resting Finder desktop, front icon-view window, inactive Finder window,
+list selection, File menu and Apple menu—still need state proofs and paired
+target/render captures from a disposable clone of the sealed profile. No case
+has validated input actions yet, so the tool refuses `--apply-case-input`
+rather than treating guessed screen coordinates as a state contract. Close
+this row only when all six receipts name the sealed parent, state proof, source
+revision, visual profile, accepted consecutive hashes, and per-region result.
+
 ## BROKEN: CodeKitten does not launch on supported Mac OS 8.6 plus CarbonLib 1.6 (2026-08-11, `codex/codekitten-os86-support`)
 
 The dedicated SheepShaver minimum-floor oracle clean-booted Mac OS 8.6 after

@@ -1,0 +1,16 @@
+{
+  "id": "finder-inactive-window",
+  "profile": "platinum.macos-8.6.default",
+  "title": "Inactive Finder folder behind another application",
+  "requiredState": [
+    "A Finder folder window is visible but inactive",
+    "Another application is frontmost",
+    "No menu is open"
+  ],
+  "inputActions": [],
+  "regions": [
+    {"name": "inactive-finder-window", "source": "window", "app": "Finder", "front": false, "inset": [0, 0, 0, 0]}
+  ],
+  "masks": [],
+  "render": {}
+}

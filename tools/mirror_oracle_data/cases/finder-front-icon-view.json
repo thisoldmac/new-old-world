@@ -1,0 +1,20 @@
+{
+  "id": "finder-front-icon-view",
+  "profile": "platinum.macos-8.6.default",
+  "title": "Front Finder folder in icon view",
+  "requiredState": [
+    "Finder is frontmost",
+    "One Finder folder window is front and in icon view",
+    "No item is selected",
+    "No menu is open"
+  ],
+  "inputActions": [],
+  "regions": [
+    {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 21]},
+    {"name": "front-window", "source": "frontWindow", "inset": [0, 0, 0, 0]}
+  ],
+  "masks": [
+    {"name": "clock", "rect": [585, 0, 710, 21], "reason": "time is volatile"}
+  ],
+  "render": {}
+}
