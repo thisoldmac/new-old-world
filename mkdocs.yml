@@ -1,6 +1,6 @@
 site_name: New Old World
 site_description: User and developer documentation for New Old World
-site_url: !ENV [NOW_DOCS_SITE_URL, "https://example.invalid/docs/"]
+site_url: !ENV [NOW_DOCS_SITE_URL, "https://example.invalid/"]
 docs_dir: docs
 site_dir: build-docs/site
 use_directory_urls: true

@@ -709,14 +709,37 @@ def check(root: Path, site_dir: Path | None) -> int:
         errors.append(f"contract/asyncapi.yaml: dangling local $ref: {ref}")
 
     integration = load_yaml(docs / "site-integration.yaml")
-    if integration.get("base_path") != "/docs/":
-        errors.append("docs/site-integration.yaml: base_path must be /docs/")
+    if integration.get("base_path") != "/":
+        errors.append("docs/site-integration.yaml: base_path must be / for the docs subdomain")
     required_check = str(integration.get("required_ci_check") or "")
     workflow = (root / ".github/workflows/ci.yml").read_text()
     if not required_check or f"name: {required_check}" not in workflow:
         errors.append(f"CI workflow does not expose the recorded required check {required_check!r}")
     if "run: NOW_DOCS_PYTHON=python scripts/test-docs" not in workflow:
         errors.append("CI Documentation job does not run scripts/test-docs")
+    pages_workflow_path = root / ".github/workflows/pages.yml"
+    if not pages_workflow_path.exists():
+        errors.append("Pages deployment workflow is missing")
+    else:
+        pages_workflow = pages_workflow_path.read_text()
+        pages_requirements = {
+            'workflows: ["CI"]': "wait for the integrated CI workflow",
+            "types: [completed]": "wait for CI completion",
+            "branches: [main]": "follow main only",
+            "github.event.workflow_run.conclusion == 'success'": "require green CI",
+            "github.event.workflow_run.event == 'push'": "exclude pull request runs",
+            "github.event.workflow_run.head_branch == 'main'": "require integrated main",
+            "ref: ${{ github.event.workflow_run.head_sha }}": "checkout the verified revision",
+            "NOW_DOCS_RELEASE: \"1\"": "build release-mode documentation",
+            "NOW_DOCS_SITE_URL: https://docs.newoldworldmac.com/": "build canonical URLs",
+            "include-hidden-files: true": "publish RFC 9116 .well-known assets",
+            "pages: read": "grant Pages configuration read permission",
+            "pages: write": "grant Pages deployment permission",
+            "id-token: write": "grant Pages identity token permission",
+        }
+        for needle, purpose in pages_requirements.items():
+            if needle not in pages_workflow:
+                errors.append(f"Pages deployment workflow must {purpose}")
     test_all = (root / "scripts/test-all").read_text()
     stages = re.findall(r'echo "==> \[(\d+)/(\d+)\] ([^"]+)"', test_all)
     if not stages or stages[0][2] != "documentation gate":
