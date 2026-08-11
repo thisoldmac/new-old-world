@@ -1193,10 +1193,10 @@ derive ppc-inbound-types sha256=29ff3abf372ea8de2e8cd4b487efb7dcb7b9fa03d5e20959
 derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=765d546e05fadf2fd914b56f63b94c91e776e246e18062bccf8cdeafa3c608cb lines=3
+derive disposition-census sha256=c69239c1c5342f684edfff98bd177a24c438158feeaf4ca0cc7580876344bf7e lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
-        docs/mcp-coverage.md | sort | uniq -c
+        docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
 derive unnoticed-from-table sha256=f02459c7b08ea7eb3926b9c5867761042bb300ba3cb38b9ecb18caab24a99814 lines=14
     echo "name-lists: 1"
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {t=$2; gsub(/[ `]/,"",t); \
@@ -1273,4 +1273,5 @@ rederived: 2026-08-10T22:33:05-0400 e9bf9632 unchanged
 rederived: 2026-08-10T22:47:49-0400 431e7308 unchanged
 rederived: 2026-08-11T00:25:05-0400 bbab04b9 unchanged
 rederived: 2026-08-11T00:33:22-0400 4b24cc1f unchanged
+rederived: 2026-08-11T02:26:26-0400 b35fac0 disposition-census 3->3
 -->
