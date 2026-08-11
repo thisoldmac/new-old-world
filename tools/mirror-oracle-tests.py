@@ -14,7 +14,7 @@ import tempfile
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools"))
 
-from mirror_oracle.backends import QMPBackend  # noqa: E402
+from mirror_oracle.backends import QMPBackend, SheepShaverBackend  # noqa: E402
 from mirror_oracle.images import Image, compare as compare_images, load, masked_digest, write_png  # noqa: E402
 from mirror_oracle.model import OracleCase, VisualProfile, list_cases, list_profiles, resolve_regions  # noqa: E402
 from mirror_oracle.runner import compare, render_scene, stable_capture  # noqa: E402
@@ -104,6 +104,23 @@ def bmp_fixture() -> bytes:
     return bytes(header) + pixels
 
 
+def bitfield_bmp_fixture() -> bytes:
+    width, height = 2, 1
+    pixels = struct.pack("<II", 0xFFFF0000, 0xFF00FF00)
+    header = bytearray(138)
+    header[0:2] = b"BM"
+    struct.pack_into("<I", header, 2, len(header) + len(pixels))
+    struct.pack_into("<I", header, 10, 138)
+    struct.pack_into("<I", header, 14, 124)
+    struct.pack_into("<ii", header, 18, width, height)
+    struct.pack_into("<HH", header, 26, 1, 32)
+    struct.pack_into("<I", header, 30, 3)
+    struct.pack_into("<I", header, 34, len(pixels))
+    struct.pack_into("<IIII", header, 54,
+                     0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000)
+    return bytes(header) + pixels
+
+
 def main() -> None:
     profiles = list_profiles()
     cases = list_cases()
@@ -126,6 +143,12 @@ def main() -> None:
         decoded_bmp = load(bmp)
         assert decoded_bmp.pixel(0, 0)[:3] == (255, 0, 0)
         assert decoded_bmp.pixel(1, 0)[:3] == (0, 255, 0)
+
+        bitfield_bmp = root / "bitfield.bmp"
+        bitfield_bmp.write_bytes(bitfield_bmp_fixture())
+        decoded_bitfield = load(bitfield_bmp)
+        assert decoded_bitfield.pixel(0, 0) == (255, 0, 0, 255)
+        assert decoded_bitfield.pixel(1, 0) == (0, 255, 0, 255)
 
         ppm = root / "fixture.ppm"
         ppm.write_bytes(b"P6\n2 1\n255\n" + bytes((1, 2, 3, 4, 5, 6)))
@@ -218,12 +241,30 @@ def main() -> None:
         qemu = QMPBackend(REPO, root / "qmp.sock")
         assert_raises(ValueError, lambda: qemu.input(["move 1 1"]), "not implemented")
 
+        calls = []
+        def record_run(command, **kwargs):
+            calls.append((command, kwargs.get("env", {})))
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        sheep = SheepShaverBackend(REPO, root / "run.sheepvm", run=record_run)
+        sheep.input(["move 10 10", "down 0", "up 0"])
+        assert [call[0][-1] for call in calls] == ["move 10 10", "down 0", "up 0"]
+        assert all(call[0][-2] == "input" for call in calls)
+        calls.clear()
+        sheep.cleanup_input()
+        assert len(calls) == 1
+        assert calls[0][1]["NOW_SHEEPSHAVER_INPUT_SETTLE"] == "0"
+        assert calls[0][0][-8:] == [
+            "up 0", "up 1", "up 2", "keyup 55", "keyup 56",
+            "keyup 57", "keyup 58", "keyup 59",
+        ]
+
         listing = subprocess.run([str(REPO / "tools" / "mirror-oracle"), "list"],
                                  text=True, capture_output=True, check=True).stdout
         assert "profile platinum.macos-8.6.default" in listing
         assert "case finder-file-menu-open" in listing
 
-    print("mirror-oracle: 16 capture, image, profile, and diff behaviors passed")
+    print("mirror-oracle: 19 capture, image, profile, and diff behaviors passed")
 
 
 if __name__ == "__main__":

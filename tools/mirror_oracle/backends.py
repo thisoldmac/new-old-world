@@ -48,14 +48,23 @@ class SheepShaverBackend:
         self.run([str(self.harness), "sheepshaver-86", "capture", str(destination)], env=self._env())
 
     def input(self, actions: list[str]) -> None:
-        if actions:
-            self.run([str(self.harness), "sheepshaver-86", "input", *actions], env=self._env())
+        # The emulator dispatches every action in one request, then the harness
+        # settles once. The cooperative guest can therefore miss intermediate
+        # button/position states if a gesture is batched. One receipt per
+        # transition is the measured boundary: dispatch, guest settlement,
+        # then the next state.
+        for action in actions:
+            self.run([str(self.harness), "sheepshaver-86", "input", action], env=self._env())
 
     def cleanup_input(self) -> None:
-        self.input([
+        # Cleanup changes emulator ADB state rather than describing a gesture;
+        # batch every release and do not spend one settlement interval apiece.
+        env = self._env()
+        env["NOW_SHEEPSHAVER_INPUT_SETTLE"] = "0"
+        self.run([str(self.harness), "sheepshaver-86", "input",
             "up 0", "up 1", "up 2",
             "keyup 55", "keyup 56", "keyup 57", "keyup 58", "keyup 59",
-        ])
+        ], env=env)
 
     def provenance(self) -> dict:
         doctor = self.run([str(self.harness), "sheepshaver-86", "doctor"], env=self._env()).stdout

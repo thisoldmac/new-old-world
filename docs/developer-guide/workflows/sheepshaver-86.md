@@ -301,7 +301,10 @@ each coordinate sequence is validated against the sealed profile. This makes
 setup manual today but prevents an unmeasured coordinate from silently
 becoming the durable state contract. If case input is later enabled, cleanup is
 armed before the first transition and releases every mouse button and common
-modifier even when capture fails.
+modifier even when capture fails. The SheepShaver backend sends one action per
+renderer receipt: the guest must receive the harness's settlement interval
+between a menu-title press, a drag, and a release. Batching those transitions
+dispatches them all but lets the cooperative event loop miss the gesture.
 
 The QEMU backend remains available with `--backend qemu --qmp-socket ...` for
 the full-stack and Mac OS 9.1+ lanes. QEMU input is intentionally refused here;

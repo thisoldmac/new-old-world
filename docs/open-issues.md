@@ -14,7 +14,10 @@ diffs with pair and heatmap artifacts. Dependency-free mutation-shaped tests
 cover image formats, masking, instability refusal, input cleanup, dynamic
 window regions, receipts, QEMU input refusal and the command surface; the real
 Swift executable builds and renders an 800×600 scene fixture, whose
-self-comparison is exact.
+self-comparison is exact. A disposable clone of the sealed image also booted,
+produced three consecutive matching masked framebuffers with the sealed parent
+receipt in capture provenance, and shut down cleanly through separately
+settled native ADB transitions.
 
 That is **tested tooling**, not a fidelity result. The six declared Mac OS 8.6
 cases—resting Finder desktop, front icon-view window, inactive Finder window,

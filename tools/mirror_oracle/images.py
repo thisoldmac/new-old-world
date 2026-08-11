@@ -59,8 +59,10 @@ def _load_bmp(data: bytes) -> Image:
     compression = struct.unpack_from("<I", data, 30)[0]
     if width <= 0 or signed_height == 0 or planes != 1:
         raise ValueError("invalid BMP dimensions or planes")
-    if depth not in (24, 32) or compression != 0:
-        raise ValueError("only uncompressed 24-bit and 32-bit BMP are supported")
+    if depth not in (24, 32) or compression not in (0, 3):
+        raise ValueError("only uncompressed or bitfield 24-bit and 32-bit BMP are supported")
+    if compression == 3 and depth != 32:
+        raise ValueError("BMP bitfields are supported only at 32-bit depth")
     height = abs(signed_height)
     stride = ((width * depth + 31) // 32) * 4
     if pixel_offset + stride * height > len(data):
@@ -68,14 +70,35 @@ def _load_bmp(data: bytes) -> Image:
     top_down = signed_height < 0
     rgba = bytearray(width * height * 4)
     bytes_per_pixel = depth // 8
+    masks = None
+    if compression == 3:
+        if len(data) < 70:
+            raise ValueError("truncated BMP bitfield masks")
+        masks = struct.unpack_from("<IIII", data, 54)
+        if not all(masks[:3]):
+            raise ValueError("BMP RGB bitfield masks must be nonzero")
     for output_y in range(height):
         source_y = output_y if top_down else height - 1 - output_y
         row = pixel_offset + source_y * stride
         for x in range(width):
-            b, g, r = data[row + x * bytes_per_pixel : row + x * bytes_per_pixel + 3]
+            source = row + x * bytes_per_pixel
+            if masks is None:
+                b, g, r = data[source : source + 3]
+                a = 255
+            else:
+                value = struct.unpack_from("<I", data, source)[0]
+                r, g, b = (_masked_channel(value, mask) for mask in masks[:3])
+                a = _masked_channel(value, masks[3]) if masks[3] else 255
             target = (output_y * width + x) * 4
-            rgba[target : target + 4] = bytes((r, g, b, 255))
+            rgba[target : target + 4] = bytes((r, g, b, a))
     return Image(width, height, bytes(rgba))
+
+
+def _masked_channel(value: int, mask: int) -> int:
+    shift = (mask & -mask).bit_length() - 1
+    maximum = mask >> shift
+    raw = (value & mask) >> shift
+    return (raw * 255 + maximum // 2) // maximum
 
 
 def _png_chunks(data: bytes):
