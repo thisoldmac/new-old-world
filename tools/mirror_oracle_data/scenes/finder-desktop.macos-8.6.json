@@ -27,15 +27,16 @@
     {"name": "Macintosh HD", "kind": "disk", "x": 736, "y": 27, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
     {"name": "CarbonLib 1.6", "kind": "disk", "x": 736, "y": 91, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
     {"name": "Unix", "kind": "disk", "x": 736, "y": 155, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
-    {"name": "Browse the Internet", "kind": "application", "type": "APPL", "x": 736, "y": 220, "placed": true, "alias": true, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
-    {"name": "Get QuickTime Pro", "kind": "application", "type": "APPL", "x": 736, "y": 284, "placed": true, "alias": true, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
-    {"name": "Mail", "kind": "application", "type": "APPL", "x": 736, "y": 348, "placed": true, "alias": true, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
-    {"name": "Register with Apple", "kind": "application", "type": "APPL", "x": 736, "y": 412, "placed": true, "alias": true, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
+    {"name": "Browse the Internet", "kind": "application", "type": "adrp", "creator": "aplt", "x": 736, "y": 220, "placed": true, "alias": true, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
+    {"name": "Get QuickTime Pro", "kind": "file", "type": "MooV", "creator": "TVOD", "x": 736, "y": 284, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
+    {"name": "Mail", "kind": "application", "type": "adrp", "creator": "aplt", "x": 736, "y": 348, "placed": true, "alias": true, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
+    {"name": "Register with Apple", "kind": "application", "type": "adrp", "creator": "aplt", "x": 736, "y": 412, "placed": true, "alias": true, "invisible": false, "origin": "drawn", "w": 32, "h": 32},
     {"name": "Trash", "kind": "folder", "x": 736, "y": 540, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 32, "h": 32}
   ],
   "meta": {
     "errors": [
       "Menu positions and Finder-drawn desktop item bounds are transcribed from the state-proven 2026-08-11 SheepShaver capture; this is a visual calibration scene, not a guest semantic capture.",
+      "The four Desktop Folder items' type, creator and alias flags are read from FinderInfo on the sealed OS 8.6 volume; three alias files carry their own custom icon suites, while Get QuickTime Pro is a TVOD/MooV file rather than an alias.",
       "The classic Control Strip is present in the target framebuffer and not represented by the current scene contract."
     ]
   }

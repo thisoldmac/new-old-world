@@ -320,13 +320,16 @@ public struct SceneRenderer {
 
     /// Geneva (app/content) text, left-aligned at a baseline.
     private func appText(_ s: String, _ ctx: GraphicsContext, x: CGFloat,
-                         baselineY: CGFloat, color: Color, small: Bool = false) {
-        let font = small ? FontBook.small : FontBook.app
+                         baselineY: CGFloat, color: Color, small: Bool = false,
+                         italic: Bool = false) {
+        let font = italic ? FontBook.smallItalic
+            : (small ? FontBook.small : FontBook.app)
         if let f = font {
             f.draw(s, in: ctx, x: x, baselineY: baselineY, color: color)
         } else {
-            ctx.draw(ctx.resolve(Text(s).font(Platinum.appFont(small ? 10 : 12))
-                        .foregroundColor(color)),
+            let text = Text(s).font(Platinum.appFont(small ? 10 : 12))
+                .foregroundColor(color)
+            ctx.draw(ctx.resolve(italic ? text.italic() : text),
                      at: CGPoint(x: x, y: baselineY - 2), anchor: .bottomLeading)
         }
     }
@@ -392,6 +395,15 @@ public struct SceneRenderer {
     /// 32×32 icon sits at the top, the label centered beneath.
     static let iconSize: CGFloat = 32
 
+    /// Finder marks aliases by styling the label as well as badging the icon.
+    /// The pack carries Geneva 9 italic as its own NFNT strike, so choosing it
+    /// here preserves both glyph shapes and advances instead of host-shearing
+    /// the plain face.
+    static func desktopLabelFont(_ item: MirrorKit.Scene.DesktopItem)
+        -> BitmapFont? {
+        item.alias ? FontBook.smallItalic : FontBook.small
+    }
+
     private func drawDesktopIcons(_ ctx: GraphicsContext) {
         guard let items = scene.desktopItems else { return }
         for item in items where item.placed {
@@ -400,7 +412,8 @@ public struct SceneRenderer {
             // windows carry Finder's own selection in `FinderPresentation`;
             // desktop selection does not yet have a correlated snapshot.
             drawIcon(ctx, item, at: origin,
-                     selected: selectedDesktopItems.contains(item.name))
+                     selected: selectedDesktopItems.contains(item.name),
+                     container: "Desktop Folder")
         }
     }
 
@@ -410,7 +423,8 @@ public struct SceneRenderer {
                           _ item: MirrorKit.Scene.DesktopItem,
                           at origin: CGPoint,
                           selected: Bool = false,
-                          replayed: DisplayReplay.Coverage? = nil) {
+                          replayed: DisplayReplay.Coverage? = nil,
+                          container: String? = nil) {
         /* THE BOX THE FINDER DREW, not a constant 32. `bounds of` answers
            16×16 for a LIST-view row and the Finder stacks those rows at a
            19-point pitch, so a 32-point icon drawn at a row's top-left runs
@@ -423,7 +437,7 @@ public struct SceneRenderer {
            it, and the two must stay one number or a click lands where
            nothing was drawn. */
         let box = CGRect(origin: origin, size: Self.iconBoxSize(item))
-        drawGenericIcon(ctx, box, item: item)
+        drawGenericIcon(ctx, box, item: item, container: container)
 
         // Selection is an INVERSION, not a backing box. The Finder darkens the
         // icon itself and flips the label to white-on-black; a rectangle behind
@@ -436,9 +450,9 @@ public struct SceneRenderer {
             inv.fill(Path(box), with: .color(Platinum.g4))
         }
 
-        // Name label: Geneva 9 (the real Finder label font, per the finding),
-        // centered under the icon. Unselected it sits on a white patch; selected
-        // the patch goes black and the text white, as the Finder draws it.
+        // Name label: Geneva 9 (italic for aliases), centered under the icon.
+        // Unselected it sits on a white patch; selected the patch goes black
+        // and the text white, as the Finder draws it.
         /* A LIST ROW HAS NO LABEL OF OURS. Its name is a COLUMN the machine
            wrote, level with the row icon rather than under it; a centred
            patch there is a second name in the wrong place, over the first.
@@ -446,8 +460,9 @@ public struct SceneRenderer {
            a label height belongs in the hit box at all. */
         guard Self.itemDrawsItsOwnLabel(item) else { return }
         let label = item.name
-        let w = CGFloat(FontBook.small?.width(label) ?? label.count * 6)
-        let ascent = CGFloat(FontBook.small?.ascent ?? 9)
+        let labelFont = Self.desktopLabelFont(item)
+        let w = CGFloat(labelFont?.width(label) ?? label.count * 6)
+        let ascent = CGFloat(labelFont?.ascent ?? 9)
         let labelY = box.maxY + 1
         let patch = CGRect(x: box.midX - w / 2 - 2, y: labelY,
                            width: w + 4, height: ascent + 3)
@@ -472,15 +487,18 @@ public struct SceneRenderer {
         if !selected && replayed?.textCovers(patch) == true { return }
         ctx.fill(Path(patch), with: .color(selected ? Platinum.g6 : .white))
         appText(label, ctx, x: box.midX - w / 2, baselineY: labelY + ascent,
-                color: selected ? .white : Platinum.g6, small: true)
+                color: selected ? .white : Platinum.g6, small: true,
+                italic: item.alias)
     }
 
-    /// The item's icon: the real OS 9 generic bitmap (IconAtlas) when we have
-    /// one, else a procedural Platinum glyph — plus the alias badge.
+    /// The item's best resource-backed bitmap (IconAtlas) when we have one,
+    /// else a procedural Platinum glyph — plus the alias badge.
     private func drawGenericIcon(_ ctx: GraphicsContext, _ box: CGRect,
-                                 item: MirrorKit.Scene.DesktopItem) {
+                                 item: MirrorKit.Scene.DesktopItem,
+                                 container: String? = nil) {
         if let bitmap = IconAtlas.icon(for: item,
-                                       size: IconAtlas.Size.fitting(box)) {
+                                       size: IconAtlas.Size.fitting(box),
+                                       container: container) {
             ctx.draw(Image(decorative: bitmap, scale: 1)
                         .interpolation(.none), in: box)
             drawAliasBadge(ctx, box, item: item)

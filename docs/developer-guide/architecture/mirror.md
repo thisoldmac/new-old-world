@@ -63,6 +63,13 @@ shared parsers rather than becoming a new renderer or pixel protocol. Its
 implementation remains tracked by plans 017 and 021. No adapter sends
 framebuffer pixels through NOW's semantic wire.
 
+For file-owned Finder art, the common adapter payload is deliberately small:
+exact classic path, FinderInfo bytes, and resource-fork bytes. The current
+stopped-volume adapter and future connected adapter both end at the same
+bytes-only decoder and version-0.3.0 manifest contract. Live session choice,
+permission, and pull receipts stay above that boundary; asset interpretation
+stays below it.
+
 Visual versioning is explicit at the tooling boundary. The initial
 `platinum.macos-8.6.default` profile records system, theme, screen/depth,
 calibration source, and asset policy. It does not claim that Mac OS 8.6 and 9.1

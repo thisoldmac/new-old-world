@@ -56,12 +56,17 @@ receipt so nobody has to copy hashes or requirement text by hand.
 
 The paired semantic scene carries all eight visible desktop items. The current
 production render differs by 35/13,500 unmasked menu pixels (0.259%),
-10,940/416,000 main-desktop pixels (2.630%), 8,760/22,080 Control Strip pixels
+7,790/416,000 main-desktop pixels (1.873%), 8,760/22,080 Control Strip pixels
 (39.674%), and 1,233/25,920 bottom-desktop pixels (4.757%). Separate regions
 make the largest ownership gap explicit: Control Strip is not represented in
 the scene contract. The first renderer correction is also measured—the default
 volume face is a 32×10 glyph low in its 32×32 Finder cell, not a tall drive
 filling most of it. That correction removes 2,163 changed main-desktop pixels.
+The next correction is resource-backed rather than screenshot-backed: three
+desktop files' own custom icon suites, the exact `TVOD/MooV` application icon,
+and Geneva 9 italic alias labels remove a further 3,150. The remaining alias
+icon error is confined to Finder's 7×8-ish badge overlay; that overlay still
+needs an attributable resource or a separately proved procedural rule.
 
 This is **tested tooling plus one accepted pair**, not an accepted corpus. The
 other five declared cases—front icon-view window, inactive Finder window, list

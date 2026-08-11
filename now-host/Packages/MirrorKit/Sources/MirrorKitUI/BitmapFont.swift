@@ -27,6 +27,8 @@ public final class BitmapFont {
     /// nearest one, and this is how it finds out which it got.
     public let face: String
     public let pointSize: Int
+    /// QuickDraw style bits from the source strike (1 bold, 2 italic).
+    public let style: Int
 
     private let sheet: CGImage
     private let sheetW: CGFloat
@@ -56,6 +58,7 @@ public final class BitmapFont {
             ?? (ascent + descent + leading)
         self.face = (meta["face"] as? String) ?? face
         pointSize = (meta["pointSize"] as? Int) ?? 0
+        style = (meta["style"] as? Int) ?? 0
 
         var table: [Character: Glyph] = [:]
         for (key, value) in (meta["glyphs"] as? [String: [String: Int]] ?? [:]) {
@@ -261,6 +264,13 @@ public enum FontBook {
     /// Geneva 9 — the smallest UI text (shelf, generic labels). Falls back
     /// to Geneva 10 if the 9 strike isn't bundled.
     public static var small: BitmapFont? { font("geneva-9") ?? font("geneva-10") }
+    /// Finder's alias-label face on the OS 8.6 desktop. This is a distinct
+    /// NFNT strike, not a shear applied by the host renderer. An older pack
+    /// degrades to the plain strike, while `AssetPack` keeps that dependency
+    /// state visible beside the mirror.
+    public static var smallItalic: BitmapFont? {
+        font("geneva-9-italic") ?? small
+    }
 }
 
 /// The extracted default desktop pattern ('ppat' 16 "Mac OS Default"), tiled.

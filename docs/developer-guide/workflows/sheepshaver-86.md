@@ -390,11 +390,16 @@ hash, reached the same masked digest after the case input. The receipt is
 item and no modal. A semantic calibration scene now contains the eight visible
 desktop items. Region splitting keeps the unmodeled Control Strip from hiding
 the rest of the desktop: the current production render differs by 35/13,500
-unmasked menu pixels (0.259%), 10,940/416,000 main-desktop pixels (2.630%),
+unmasked menu pixels (0.259%), 7,790/416,000 main-desktop pixels (1.873%),
 8,760/22,080 Control Strip pixels (39.674%), and 1,233/25,920 bottom-desktop
 pixels (4.757%). The volume fallback now uses the measured 32×10 drive face
 near the bottom of its semantic 32×32 Finder cell, removing 2,163 wrong
-main-desktop pixels from the prior render without changing hit geometry.
+main-desktop pixels from the prior render without changing hit geometry. Pack
+format 0.3.0 then removed another 3,150 by extracting three file-owned custom
+icon suites, joining Get QuickTime through its exact `TVOD/MooV` identity, and
+drawing alias labels with the extracted Geneva 9 italic strike. Get QuickTime's
+32×32 icon is pixel-exact; the three alias icons now differ only in Finder's
+small overlaid alias badge region.
 
 The earlier stable BMP beginning `db968889...` is invalid as color evidence.
 Its source build saved an SDL intermediate surface with masks that did not

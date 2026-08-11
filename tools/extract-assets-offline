@@ -51,6 +51,7 @@ sys.path.insert(0, PARSERS)
 # has not installed the optional extraction dependencies.
 Image = None
 cursors = None
+fileicons = None
 fonts = None
 icons = None
 patterns = None
@@ -110,6 +111,7 @@ APP_SWEEP_ROOTS = [
     "System Folder/Finder",
     "System Folder/Panels",
 ]
+FILE_ICON_ROOTS = ["Desktop Folder"]
 # Noise: our own builds, the trash, and the two multi-hundred-MB files
 # that are not resource forks at all.
 SWEEP_SKIP_NAMES = {"Trash", "VM Storage", "Desktop DB", "Desktop DF",
@@ -120,10 +122,11 @@ MAX_FORK_BYTES = 12 << 20
 # --- image plumbing ------------------------------------------------------
 
 def load_extractors() -> None:
-    global Image, cursors, fonts, icons, patterns, resfork
+    global Image, cursors, fileicons, fonts, icons, patterns, resfork
     try:
         from PIL import Image as pillow_image
         import cursors as cursor_parser
+        import fileicons as file_icon_parser
         import fonts as font_parser
         import icons as icon_parser
         import patterns as pattern_parser
@@ -134,6 +137,7 @@ def load_extractors() -> None:
             "environment and install tools/asset-pack/requirements.txt") from exc
     Image = pillow_image
     cursors = cursor_parser
+    fileicons = file_icon_parser
     fonts = font_parser
     icons = icon_parser
     patterns = pattern_parser
@@ -889,6 +893,103 @@ def extract_appicons(mnt: str, out: str, prov: list, verbose: bool) -> dict:
             "forks_scanned": scanned, "forks_unparsable": skipped}
 
 
+def extract_fileicons(mnt: str, out: str, prov: list,
+                      verbose: bool) -> dict:
+    """Finder custom icons keyed by their exact volume-relative item path.
+
+    These are not application bundle icons.  The OS 8.6 desktop aliases for
+    Browse, Mail and Register carry their visible art in *their own* resource
+    forks, while their type/creator pair merely says ``adrp/aplt``.  Treating
+    those aliases as generic applications threw away the strongest art the
+    stopped volume could supply and left no reusable seam for a connected
+    guest to supply the same fork later.
+
+    Only files whose FinderInfo explicitly says ``fdHasCustomIcon`` enter this
+    adapter, and only when the shared parser finds one unambiguous large icon
+    suite.  Anything else stays absent rather than selecting a plausible
+    resource from a multi-icon application bundle.
+    """
+    d = os.path.join(out, "fileicons")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    manifest: dict[str, dict] = {}
+    scanned = skipped = assets = 0
+    for root in FILE_ICON_ROOTS:
+        start = os.path.join(mnt, root)
+        if not os.path.isdir(start):
+            continue
+        for name in sorted(os.listdir(start)):
+            path = os.path.join(start, name)
+            if not os.path.isfile(path) or name.startswith("."):
+                continue
+            try:
+                # CPython on macOS does not expose os.getxattr. `xattr -px`
+                # is a read-only adapter over the same named metadata fork;
+                # stripping whitespace turns its wrapped hex output back into
+                # the 32-byte FileInfo record.
+                encoded = run([
+                    "xattr", "-px", "com.apple.FinderInfo", path,
+                ]).stdout
+                info_raw = bytes.fromhex("".join(encoded.split()))
+            except (subprocess.CalledProcessError, ValueError):
+                continue
+            raw = rsrc(path)
+            if not raw:
+                skipped += 1
+                continue
+            scanned += 1
+            try:
+                decoded = fileicons.decode_custom_icon(info_raw, raw)
+            except Exception:
+                decoded = None
+            if decoded is None:
+                skipped += 1
+                continue
+            info = decoded["finder"]
+            suite = decoded["suite"]
+
+            hfs_path = f"{root}:{name}"
+            source = f"{root}/{name}"
+            digest = hashlib.sha256(hfs_path.encode("utf-8")).hexdigest()[:12]
+            stem = f"{safe(name) or 'item'}--{digest}"
+            row = {
+                "source": source,
+                "forkSha256": hashlib.sha256(raw).hexdigest(),
+                "type": ostype_key(info["type"]),
+                "creator": ostype_key(info["creator"]),
+                "finderFlags": info["flags"],
+                "resId": suite["id"],
+            }
+            for key, suffix in (("large", ""), ("small", "-16")):
+                descriptor = suite[key]
+                if descriptor is None:
+                    continue
+                fname = f"{stem}{suffix}.png"
+                descriptor["image"].save(os.path.join(d, fname))
+                row[key] = f"fileicons/{fname}"
+                prov.append({
+                    "asset": row[key], "source": source,
+                    "type": descriptor["color_type"],
+                    "id": descriptor["id"],
+                    "mask": descriptor["mask_type"],
+                    "sourceForkSha256": row["forkSha256"],
+                })
+                assets += 1
+            manifest[hfs_path] = row
+            if verbose:
+                print(f"    {source}: custom icon {suite['id']} -> {stem}")
+
+    with open(os.path.join(d, "manifest.json"), "w") as fh:
+        json.dump({
+            "pack": "fileicons",
+            "note": ("Finder custom icons by exact HFS path; private pack "
+                     "only; resource forks are acquisition-route agnostic"),
+            "items": manifest,
+        }, fh, indent=1, sort_keys=True)
+    return {"count": len(manifest), "assets": assets,
+            "forks_scanned": scanned, "forks_unusable": skipped}
+
+
 def theme_report(mnt: str) -> dict:
     """What is actually inside the Platinum theme file.
 
@@ -1207,8 +1308,11 @@ def write_accent_ramps_swift(ramps: dict, path: str, image: str) -> None:
         f"    public static let active = {swift_ident(accent)}",
         "",
         "    /// The highlight colour the default scene writes literally, as its",
-        "    /// own RGBColor rather than as a ramp index. Text and list-row",
-        "    /// selection are filled with THIS.",
+        "    /// own RGBColor rather than as a ramp index.",
+        "    ///",
+        "    /// IT IS NOT WHAT THE RUNNING MACHINE FILLS A SELECTION WITH.",
+        "    /// `Platinum.highlightFallbackRGB` is the measured runtime fallback,",
+        "    /// and `meta.theme.highlight` beats both when a scene carries it.",
         f"    public static let activeHighlight: UInt32 = 0x{sd['highlight_rgb8'][0]:02X}"
         f"{sd['highlight_rgb8'][1]:02X}{sd['highlight_rgb8'][2]:02X}",
         "}",
@@ -1324,11 +1428,17 @@ def main() -> None:
         pictures_sum = extract_pictures(sysfork, args.out, prov)
         fonts_sum = extract_fonts(mnt, args.out, prov)
         apps_sum = extract_appicons(mnt, args.out, prov, args.verbose)
+        files_sum = extract_fileicons(mnt, args.out, prov, args.verbose)
 
         manifest = {
             "pack": os.path.basename(os.path.dirname(args.out)),
-            "version": "0.2.0",
+            "version": "0.3.0",
             "route": "offline (disk image, no VM) — tools/extract-assets-offline",
+            "acquisition": {
+                "adapter": "stopped-volume",
+                "readOnly": True,
+                "source": os.path.basename(args.image),
+            },
             "source_image": os.path.basename(args.image),
             "extracted": datetime.date.today().isoformat(),
             "clut": "generated system 8-bit CLUT (tools/asset-pack/clut.py)",
@@ -1342,6 +1452,7 @@ def main() -> None:
             "pictures": pictures_sum,
             "fonts": fonts_sum,
             "appicons": apps_sum,
+            "fileicons": files_sum,
             "theme_file": {
                 "path": THEME_FILE,
                 "chrome_bitmaps": False,
@@ -1382,6 +1493,9 @@ def main() -> None:
                  if fonts_sum["notes"] else ""))
         print(f"  appicons: {apps_sum['count']} for {apps_sum['creators']} creators "
               f"({apps_sum['forks_scanned']} forks scanned)")
+        print(f"  fileicons:{files_sum['count']} Finder items / "
+              f"{files_sum['assets']} size-specific assets "
+              f"({files_sum['forks_scanned']} custom forks scanned)")
         print(f"  provenance rows: {len(prov)}")
     finally:
         if not args.keep_work:

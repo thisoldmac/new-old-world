@@ -63,6 +63,16 @@ be given Apple's bitmaps to build or run this.
 The pack contract is the domain boundary. Acquisition route is provenance,
 not a different kind of asset or a licence to invent a second manifest:
 
+```mermaid
+flowchart LR
+  O["Stopped HFS/HFS+ volume"] -->|"FinderInfo + fork bytes"| D["Shared asset decoders"]
+  L["Connected classic Mac"] -->|"FinderInfo + fork bytes"| D
+  V["Attributed framebuffer + profile"] -->|"bounded declared regions"| D
+  D --> P["Versioned private asset pack"]
+  P --> R["MirrorKit local renderer"]
+  S["Semantic scene"] --> R
+```
+
 | Adapter | Source | Current state |
 |---|---|---|
 | **Stopped-volume** | Read-only HFS/HFS+ image and resource forks through `tools/extract-assets-offline` | Implemented; fastest deterministic bulk/reference route. |
@@ -75,6 +85,15 @@ same rules: immutable source identities, per-asset provenance, atomic
 absence. The connected route should add a machine/session acquisition receipt,
 not a second runtime cache format; its progressive system/fonts/appearance/
 applications domains remain the cost model already designed in plan 021.
+
+Pack format 0.3.0 adds a typed top-level `acquisition` receipt and the
+`fileicons/manifest.json` exact-HFS-path index. The stopped-volume adapter
+publishes `adapter: stopped-volume`, `readOnly: true`, and its source image.
+The connected adapter will publish its machine/session and pull receipt in the
+same field. Both terminate at `tools/asset-pack/fileicons.py`'s bytes-only
+decoder: FinderInfo bytes plus resource-fork bytes in, attributed icon suite
+out. Connection permissions, session choice, and transfer are adapter concerns;
+icon selection and pack layout are not.
 
 The renderer is a consumer, not a fourth acquisition route. MirrorKit composes
 semantic scenes locally from pack assets plus procedural furniture. Native

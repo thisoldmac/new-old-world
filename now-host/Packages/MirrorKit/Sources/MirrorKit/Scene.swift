@@ -762,8 +762,10 @@ public struct Scene: Codable, Equatable, Sendable {
     /// One desktop icon. Position is the saved Finder `fdLocation` in GLOBAL
     /// screen coords; `placed` is false for {0,0} (Finder auto-arranges those
     /// at draw time — the real position isn't in the catalog, so we don't
-    /// invent one). `type`/`creator` key a future per-app icon; today the
-    /// renderer draws a generic glyph by kind/alias.
+    /// invent one). `type`/`creator` key the extracted application icon, while
+    /// `aliasTarget` identifies what an alias represents. A path-addressed
+    /// custom Finder icon may override both when the external pack carries the
+    /// item's own resource-fork art; only then does rendering fall back by kind.
     public struct DesktopItem: Codable, Equatable, Sendable {
         public var name: String
         /// `folder` | `disk` | `application` | `file`, reduced from the

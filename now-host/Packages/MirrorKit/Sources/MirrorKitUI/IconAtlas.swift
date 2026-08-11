@@ -14,13 +14,12 @@ import MirrorKit
 /// that honest rather than silent is ``AssetPack/bannerText``, which the
 /// UI shows so nobody mistakes a stand-in for the guest's own art.
 ///
-/// Two families. The *generic* Finder icons (folder / application /
-/// document / disk / System Folder) are the honest fallback wherever the
-/// mirror does not know which item it is looking at — icons arrive down
-/// the wire as bits with no identity, and resolving that is a separate
-/// problem (PlotIconSuite interception). The *per-application* icons are
-/// keyed by the creator+type the guest actually reported, so they are not
-/// a guess.
+/// Three families. A Finder item's own custom icon is keyed by exact classic
+/// path and extracted from that file's resource fork. Per-application icons
+/// are keyed by the creator+type the guest reported (or an alias's resolved
+/// target reported), so neither route guesses. Generic Finder icons (folder /
+/// application / document / System Folder) remain the honest fallback when
+/// neither identity is available.
 ///
 /// Provenance (platinum-pack System-file icl8, resource id):
 ///   folder = -3999 · application = -3968 · document = -4000
@@ -52,20 +51,35 @@ public enum IconAtlas {
 
     private static var cache: [String: CGImage?] = [:]
 
-    private static func image(_ name: String, subdir: String) -> CGImage? {
-        let key = "\(subdir)/\(name)"
-        if let cached = cache[key] { return cached }
+    private static let fileIconItems: [String: [String: Any]] = {
+        guard let root = AssetPack.root,
+              let data = try? Data(contentsOf: root
+                .appendingPathComponent("fileicons/manifest.json")),
+              let value = try? JSONSerialization.jsonObject(with: data),
+              let object = value as? [String: Any],
+              let items = object["items"] as? [String: [String: Any]]
+        else { return [:] }
+        return items
+    }()
+
+    private static func image(relativePath: String) -> CGImage? {
+        let components = relativePath.split(separator: "/")
+        guard !relativePath.hasPrefix("/"), !components.contains(".."),
+              let root = AssetPack.root else { return nil }
+        if let cached = cache[relativePath] { return cached }
+        let url = root.appendingPathComponent(relativePath)
         let img: CGImage? = {
-            guard let url = AssetPack.url(forResource: name,
-                                          withExtension: "png",
-                                          subdirectory: subdir),
-                  let data = try? Data(contentsOf: url),
+            guard let data = try? Data(contentsOf: url),
                   let src = CGImageSourceCreateWithData(data as CFData, nil)
             else { return nil }
             return CGImageSourceCreateImageAtIndex(src, 0, nil)
         }()
-        cache[key] = img
+        cache[relativePath] = img
         return img
+    }
+
+    private static func image(_ name: String, subdir: String) -> CGImage? {
+        image(relativePath: "\(subdir)/\(name).png")
     }
 
     /// A generic icon by name from the extracted pack (`application`,
@@ -91,34 +105,68 @@ public enum IconAtlas {
             ?? image("\(creator)__APPL", subdir: "appicons")
     }
 
-    /// The best icon for a desktop/window item: the item's real per-app icon
-    /// from the extracted appicons pack (keyed by creator+type) when we have
-    /// one, else a generic bitmap by kind. nil → caller draws the procedural
-    /// fallback.
-    public static func icon(for item: MirrorKit.Scene.DesktopItem,
-                            size: Size = .large) -> CGImage? {
-        // Real app icon by (creator, type). An alias (adrp) or an app show the
-        // owning app's icon (type APPL); a document shows its own type's icon.
-        if let creator = cleanOSType(item.creator) {
-            let type = (item.alias || item.type == "APPL")
-                ? "APPL" : cleanOSType(item.type)
-            if let type {
-                let key = "\(creator)__\(type)"
-                if let img = image(key + size.suffix, subdir: "appicons")
-                    ?? image(key, subdir: "appicons") {
-                    return img
-                }
-            }
+    /// One Finder-owned custom icon from the pack, by exact classic path.
+    /// The manifest—not a sanitized filename reconstruction—owns the join.
+    /// This is the same path identity a future connected acquisition adapter
+    /// will publish after pulling the item's resource fork.
+    static func fileIcon(path: String, size: Size = .large) -> CGImage? {
+        guard let row = fileIconItems[path] else { return nil }
+        let preferred = size == .small ? "small" : "large"
+        let fallback = size == .small ? "large" : "small"
+        guard let relative = row[preferred] as? String
+                ?? row[fallback] as? String else { return nil }
+        return image(relativePath: relative)
+    }
+
+    /// The creator/type resource key represented by an item. An alias's own
+    /// `adrp/aplt` identity describes the alias FILE, not what Finder draws;
+    /// use the semantically resolved target when one exists, and do not guess
+    /// when it does not. A non-alias uses its own catalog identity unchanged.
+    static func assetKey(for item: MirrorKit.Scene.DesktopItem) -> String? {
+        let creator: String?
+        let type: String?
+        if item.alias {
+            guard let target = item.aliasTarget else { return nil }
+            creator = target.creator
+            type = target.type
+        } else {
+            creator = item.creator
+            type = item.type
         }
+        guard let creator = cleanOSType(creator),
+              let type = cleanOSType(type) else { return nil }
+        return "\(creator)__\(type)"
+    }
+
+    /// The best icon for a desktop/window item: exact-path custom Finder art,
+    /// then creator+type application art, then a generic bitmap by represented
+    /// kind. nil → caller draws the procedural fallback.
+    public static func icon(for item: MirrorKit.Scene.DesktopItem,
+                            size: Size = .large,
+                            container: String? = nil) -> CGImage? {
+        if let container,
+           let img = fileIcon(path: "\(container):\(item.name)", size: size) {
+            return img
+        }
+        if let key = assetKey(for: item),
+           let img = image(key + size.suffix, subdir: "appicons")
+                ?? image(key, subdir: "appicons") {
+            return img
+        }
+
+        let representedKind = item.aliasTarget?.kind ?? item.kind
+        let representedType = item.aliasTarget?.type ?? item.type
         // Generic by kind.
-        if item.kind == "disk" { return nil }   // procedural hard-disk glyph
-        if item.kind == "folder" {
+        if representedKind == "disk" { return nil } // procedural hard disk
+        if representedKind == "folder" {
             switch item.name {
             case "System Folder": return namedIcon("system-folder", size: size)
             default: return namedIcon("folder", size: size)
             }
         }
-        if item.type == "APPL" { return namedIcon("application", size: size) }
+        if representedKind == "application" || representedType == "APPL" {
+            return namedIcon("application", size: size)
+        }
         return namedIcon("document", size: size)
     }
 

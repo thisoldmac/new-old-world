@@ -74,9 +74,82 @@ final class IconAtlasTests: XCTestCase {
         XCTAssertNil(IconAtlas.processIcon(signature: "a/b:"))
     }
 
-    /// Identity for a Finder ITEM stays unsolved (plan 015 G4). Until it is,
-    /// an item with no creator must land on the generic bitmap for its kind
-    /// — this pins the fallback so a later identity change is visible.
+    /// An alias file reports its own `adrp/aplt` identity, but Finder draws
+    /// what the resolved target represents. The target may be a document
+    /// type—not every alias is coerced to APPL. Watched to fail by restoring
+    /// the old `item.alias ? "APPL" : item.type` selection.
+    func testAnAliasUsesItsSemanticTargetsExactCreatorAndType() {
+        let target = MirrorKit.Scene.DesktopItem.AliasTarget(
+            name: "Get QuickTime Pro", kind: "file",
+            type: "MooV", creator: "TVOD")
+        let alias = MirrorKit.Scene.DesktopItem(
+            name: "QuickTime", kind: "application",
+            type: "adrp", creator: "aplt", x: 0, y: 0,
+            placed: true, alias: true, invisible: false,
+            aliasTarget: target)
+        XCTAssertEqual(IconAtlas.assetKey(for: alias), "TVOD__MooV")
+
+        var unresolved = alias
+        unresolved.aliasTarget = nil
+        XCTAssertNil(IconAtlas.assetKey(for: unresolved),
+                     "an alias file's own identity is not its visible art")
+    }
+
+    func testANonAliasDocumentKeepsItsOwnCreatorAndType() {
+        let movie = MirrorKit.Scene.DesktopItem(
+            name: "Get QuickTime Pro", kind: "file",
+            type: "MooV", creator: "TVOD", x: 0, y: 0,
+            placed: true, alias: false, invisible: false)
+        XCTAssertEqual(IconAtlas.assetKey(for: movie), "TVOD__MooV")
+    }
+
+    /// The OS 8.6 Desktop Folder aliases carry custom art in their own
+    /// resource forks. A present pack must retain that path-addressed suite;
+    /// otherwise the renderer silently falls back despite extraction having
+    /// read the strongest available source.
+    func testDesktopFileCustomIconSurvivesThePack() throws {
+        try skipUnlessAssetPack()
+        XCTAssertEqual(IconAtlas.fileIcon(
+            path: "Desktop Folder:Browse the Internet", size: .large)?.width,
+            32)
+        XCTAssertEqual(IconAtlas.fileIcon(
+            path: "Desktop Folder:Browse the Internet", size: .small)?.width,
+            16)
+
+        let item = MirrorKit.Scene.DesktopItem(
+            name: "Browse the Internet", kind: "application",
+            type: "adrp", creator: "aplt", x: 0, y: 0,
+            placed: true, alias: true, invisible: false)
+        let custom = try XCTUnwrap(IconAtlas.fileIcon(
+            path: "Desktop Folder:Browse the Internet", size: .large))
+        let selected = try XCTUnwrap(IconAtlas.icon(
+            for: item, size: .large, container: "Desktop Folder"))
+        XCTAssertTrue(selected === custom,
+                      "the desktop route ignored stronger file-owned art")
+    }
+
+    /// Watched to fail by routing aliases through `FontBook.small` again:
+    /// the target's three actual aliases use Geneva 9 italic while the
+    /// non-alias QuickTime document uses the plain strike.
+    func testAliasLabelsHaveTheExtractedItalicFinderStrike() throws {
+        try skipUnlessAssetPack()
+        let alias = MirrorKit.Scene.DesktopItem(
+            name: "Mail", kind: "application", type: "adrp", creator: "aplt",
+            x: 0, y: 0, placed: true, alias: true, invisible: false)
+        let plain = MirrorKit.Scene.DesktopItem(
+            name: "Get QuickTime Pro", kind: "file",
+            type: "MooV", creator: "TVOD", x: 0, y: 0,
+            placed: true, alias: false, invisible: false)
+        XCTAssertEqual(SceneRenderer.desktopLabelFont(alias)?.face.lowercased(),
+                       "geneva")
+        XCTAssertEqual(SceneRenderer.desktopLabelFont(alias)?.pointSize, 9)
+        XCTAssertEqual(SceneRenderer.desktopLabelFont(alias)?.style, 2)
+        XCTAssertEqual(SceneRenderer.desktopLabelFont(plain)?.style, 0)
+    }
+
+    /// An ordinary Finder item with no creator and no exact-path custom art
+    /// must land on the generic bitmap for its kind. This pins the honest
+    /// fallback even though target and file-owned identities are now usable.
     func testAnItemWithoutACreatorStaysGenericByKind() throws {
         try skipUnlessAssetPack()
         let folder = MirrorKit.Scene.DesktopItem(

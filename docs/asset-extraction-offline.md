@@ -99,7 +99,12 @@ four steps above, end to end. By default it writes a new timestamped
 resource parsers extracted from the former live-pull route now live at
 `tools/asset-pack/`; the archived orchestrator remains provenance only. Keeping
 one parser implementation means the two transports cannot disagree about what
-an `icl8` means.
+an `icl8` means. Finder-item extraction crosses an even narrower common seam:
+both adapters supply FinderInfo and resource-fork bytes to
+`fileicons.decode_custom_icon`. The stopped-volume adapter gets those bytes
+from `com.apple.FinderInfo` and `..namedfork/rsrc`; the future connected adapter
+will get them through the existing fork-bearing file transport. It does not get
+its own icon rules or manifest.
 
 ```
 tools/extract-assets-offline                 # default image, default pack
@@ -141,6 +146,7 @@ Measured on `now-mirror-stage.qcow2`, 2026-08-06:
 | Patterns (`ppat` / `PAT `) | 3 + 5 |
 | Pictures (`PICT`) | 42, carried unconverted |
 | Per-app icons by `(creator, type)` | **914**, 185 creators, from 186 bundles |
+| Finder custom icons by exact HFS path | Profile/volume dependent; each row carries FinderInfo, resource ID and source-fork SHA-256 |
 | Font strikes (`NFNT` sheets + metrics) | 9 — Chicago 12, Geneva 9/9-italic/10/12/14/18/20/24 |
 | TrueType faces (`sfnt`, carried verbatim) | 3 — Chicago, Charcoal, Geneva |
 | Strikes rasterised from a `sfnt` (no `NFNT` to lift) | 16 — Charcoal 9–24, one per `hdmx` row |
@@ -156,8 +162,9 @@ Measured on the stopped Mac OS 8.6 SheepShaver boot volume on 2026-08-11, the
 same command found 116 System icons, 40 cursors, 3 `ppat` plus 5 `PAT ` and 44
 Appearance patterns, 39 PICTs, 9 NFNT sheets, 16 Charcoal sheets rasterized
 from `sfnt` plus `hdmx`, 3 TrueType faces, and 512 application icons for 117
-creators across 384 resource forks. Its 822 provenance rows were written to a
-new private pack. The missing `Desktop Pictures Prefs` is recorded as unknown;
+creators across 384 resource forks. It also found three custom-icon desktop
+files (six size-specific assets) and wrote 828 provenance rows to a new private
+pack. The missing `Desktop Pictures Prefs` is recorded as unknown;
 the extractor does not substitute a plausible desktop.
 
 The 8.6 visual-oracle profile can promote one desktop independently of that
@@ -400,8 +407,8 @@ The three `sfnt`s are carried out verbatim as `fonts/ttf/<face>.ttf` (an
 
 ## The honest split for a host-side asset pack
 
-- **Extractable, real bitmaps**: icons (`icl8`/`ics8` + `ICN#`/`ics#`
-  masks), cursors (`CURS`), patterns (`ppat`, `PAT `), pictures
+- **Extractable, real bitmaps**: system/application/file-owned icons
+  (`icl8`/`ics8` + `ICN#`/`ics#` masks), cursors (`CURS`), patterns (`ppat`, `PAT `), pictures
   (`PICT`), and the font strikes (`NFNT`/`sfnt`, in the Fonts folder's
   suitcases rather than the System file).
 - **Extractable as numbers**: the theme file's 21 accent `clut`s.
@@ -417,6 +424,8 @@ and the Finder list rows in three; the icon-view cells are 32×32 and
 correctly did not move. Downsampled 32s had been rendering visibly soft
 against a machine that draws them crisp.
 
-Still generic, and deliberately: **which** icon belongs to which Finder
-item. Icons arrive as bits with no identity, and nothing in this pack
-changes that.
+Finder custom icons no longer lose their identity. The 8.6 Desktop Folder's
+Browse, Mail, and Register aliases carry `fdHasCustomIcon` plus their own icon
+suite; pack 0.3.0 indexes those suites by exact HFS path. Other items join to
+application art by creator/type (using an alias's resolved target), then fall
+back by represented kind. Unattributed blits remain deliberately unusable.

@@ -11,6 +11,11 @@ visual-oracle derivation are acquisition adapters for one asset-pack domain.
 They must share decoding and the versioned manifest/provenance contract rather
 than growing route-specific notions of an icon or font.
 
+`fileicons.py` makes the acquisition seam executable rather than documentary:
+`decode_custom_icon(finder_info_bytes, resource_fork_bytes)` accepts the same
+two classic-file payloads from either stopped-volume or connected acquisition.
+It alone owns `fdHasCustomIcon` and unambiguous-suite policy.
+
 The currently supported bulk workflow reads a disk image without booting it
 and writes a completed pack to the external asset store. Run:
 
