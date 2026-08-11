@@ -19,7 +19,10 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    # Feature branches are validated by their pull_request run. Running
+    # both events for the same commit doubled every macOS-minute charge
+    # without testing a different tree.
+    branches: [main]
     tags:
       - "now-product-v*"
       - "now-extension-v*"
