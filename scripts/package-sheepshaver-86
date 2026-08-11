@@ -26,6 +26,7 @@ OTOOL="${NOW_OTOOL:-otool}"
 INSTALL_NAME_TOOL="${NOW_INSTALL_NAME_TOOL:-install_name_tool}"
 PLUTIL="${NOW_PLUTIL:-plutil}"
 CODESIGN="${NOW_CODESIGN:-codesign}"
+STRINGS="${NOW_STRINGS:-strings}"
 
 "$DITTO" "$SOURCE" "$DESTINATION"
 DEST_EXE="$DESTINATION/Contents/MacOS/SheepShaver"
@@ -60,6 +61,27 @@ bundle_dependencies () {
 }
 
 bundle_dependencies "$DEST_EXE"
+
+# Homebrew's SDL2 may be sdl2-compat: a small compatibility dylib that opens
+# SDL3 with dlopen() rather than recording it in the Mach-O load commands.
+# `otool -L` therefore cannot discover the runtime edge. Keep the probe narrow
+# and bundle the exact loader-relative name sdl2-compat requests.
+for sdl2 in "$FRAMEWORKS"/libSDL2*.dylib; do
+    [ -f "$sdl2" ] || continue
+    if "$STRINGS" "$sdl2" | grep -Fq '@loader_path/libSDL3.dylib'; then
+        SDL3_SOURCE="${NOW_SDL3_DYLIB:-/opt/homebrew/opt/sdl3/lib/libSDL3.dylib}"
+        [ -f "$SDL3_SOURCE" ] \
+            || die "sdl2-compat requires runtime SDL3, but it is missing: $SDL3_SOURCE"
+        SDL3_BUNDLED="$FRAMEWORKS/libSDL3.dylib"
+        if [ ! -f "$SDL3_BUNDLED" ]; then
+            cp -pL "$SDL3_SOURCE" "$SDL3_BUNDLED"
+            chmod u+w "$SDL3_BUNDLED"
+            "$INSTALL_NAME_TOOL" -id '@rpath/libSDL3.dylib' "$SDL3_BUNDLED"
+            bundle_dependencies "$SDL3_BUNDLED"
+        fi
+        break
+    fi
+done
 "$PLUTIL" -replace CFBundleIdentifier \
     -string dev.newoldworld.sheepshaver86oracle \
     "$DESTINATION/Contents/Info.plist"

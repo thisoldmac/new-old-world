@@ -56,6 +56,19 @@ def main() -> int:
         assert result.returncode == 0, result.stderr
         assert "resource=13" in result.stdout
 
+        native = root / "native"
+        native.mkdir()
+        result = invoke(valid, "--install-to", str(native))
+        installed = native / "New Old World"
+        assert result.returncode == 0, result.stderr
+        assert installed.read_bytes() == b"PowerPC PEF"
+        assert Path(str(installed) + "/..namedfork/rsrc").read_bytes() \
+            == b"resource fork"
+        finder_info = bytes.fromhex(subprocess.check_output(
+            ["xattr", "-px", "com.apple.FinderInfo", str(installed)],
+            text=True).replace(" ", "").replace("\n", ""))
+        assert finder_info[:8] == b"APPLNOWo"
+
         wrong = invoke(valid, "--expect-creator", "O9ID")
         assert wrong.returncode == 1 and "expected creator" in wrong.stderr
 
@@ -71,7 +84,7 @@ def main() -> int:
         result = invoke(truncated)
         assert result.returncode == 1 and "truncated forks" in result.stderr
 
-    print("MacBinary identity: 4 envelope and product mutations passed")
+    print("MacBinary identity: 5 envelope, product, and native-fork behaviors passed")
     return 0
 
 

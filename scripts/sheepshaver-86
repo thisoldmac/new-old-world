@@ -10,6 +10,7 @@
 #     scripts/sheepshaver-86 launch
 #     scripts/sheepshaver-86 stage path/to/Application.bin
 #     scripts/sheepshaver-86 install-apps path/to/NOW.bin path/to/CodeKitten.bin
+#     scripts/sheepshaver-86 capture path/to/frame.bmp
 #     scripts/sheepshaver-86 snapshot clean-name
 #     scripts/sheepshaver-86 rig
 #     scripts/sheepshaver-86 seal version-name
@@ -74,9 +75,10 @@ VM="$(need NOW_SHEEPSHAVER_VM "${NOW_SHEEPSHAVER_VM:-}" "path to the Mac OS 8.6 
 HFS="$(need NOW_HFSUTILS "${NOW_HFSUTILS:-}" "directory containing hfsutils")"
 TRANSFER="${NOW_SHEEPSHAVER_TRANSFER:-$VM/CarbonLib 1.6 Transfer.hfv}"
 BOOT_DISK="${NOW_SHEEPSHAVER_DISK:-$VM/Mac OS 8.6.hfv}"
-APPS_DIR="${NOW_SHEEPSHAVER_APPS_DIR:-Applications (Mac OS 9)}"
+APPS_DIR="${NOW_SHEEPSHAVER_APPS_DIR:-Applications}"
 OPEN_TOOL="${NOW_SHEEPSHAVER_OPEN:-open}"
 LSOF_TOOL="${NOW_SHEEPSHAVER_LSOF:-lsof}"
+HDIUTIL_TOOL="${NOW_SHEEPSHAVER_HDIUTIL:-/usr/bin/hdiutil}"
 MACBINARY_TOOL="${NOW_MACBINARY_IDENTITY_TOOL:-$REPO/tools/macbinary-identity.py}"
 
 require_file () {
@@ -85,6 +87,11 @@ require_file () {
 
 require_tool () {
     [ -x "$1" ] || die "missing executable $2: $1"
+}
+
+require_git_checkout () {
+    git -C "$1" rev-parse --git-dir >/dev/null 2>&1 \
+        || die "$2 is not a git checkout: $1"
 }
 
 disk_is_open () {
@@ -112,6 +119,7 @@ doctor () {
     require_tool "$HFS/hcopy" "hcopy"
     require_tool "$HFS/hls" "hls"
     require_tool "$HFS/humount" "humount"
+    require_tool "$HDIUTIL_TOOL" "hdiutil"
 
     echo "SheepShaver app: $APP"
     echo "Mac OS 8.6 profile: $VM"
@@ -175,29 +183,39 @@ install_apps () {
     "$MACBINARY_TOOL" "$codekitten_artifact" --expect-name "codekitten" \
         --expect-type APPL --expect-creator O9ID >/dev/null
     if [ -n "${NOW_CODEKITTEN_SOURCE:-}" ]; then
-        [ -d "$NOW_CODEKITTEN_SOURCE/.git" ] \
-            || die "NOW_CODEKITTEN_SOURCE is not a git checkout: $NOW_CODEKITTEN_SOURCE"
+        require_git_checkout "$NOW_CODEKITTEN_SOURCE" NOW_CODEKITTEN_SOURCE
     fi
     require_file "$BOOT_DISK" "Mac OS 8.6 boot disk"
     require_stopped "$BOOT_DISK"
 
     local mounted=0
+    local mount_point
+    mount_point="$(mktemp -d "${TMPDIR:-/tmp}/now-sheepshaver-hfsplus.XXXXXX")"
     cleanup_apps_mount () {
         if [ "$mounted" -eq 1 ]; then
-            "$HFS/humount" >/dev/null || true
+            "$HDIUTIL_TOOL" detach "$mount_point" >/dev/null || true
         fi
+        rmdir "$mount_point" >/dev/null 2>&1 || true
     }
     trap cleanup_apps_mount EXIT
 
-    "$HFS/hmount" "$BOOT_DISK" >/dev/null
+    "$HDIUTIL_TOOL" attach -nobrowse \
+        -imagekey diskimage-class=CRawDiskImage \
+        -mountpoint "$mount_point" "$BOOT_DISK" >/dev/null
     mounted=1
-    "$HFS/hls" ":$APPS_DIR" >/dev/null \
+    [ -d "$mount_point/$APPS_DIR" ] \
         || die "application directory is absent from the boot disk: $APPS_DIR"
-    "$HFS/hcopy" -m "$now_artifact" ":$APPS_DIR:"
-    "$HFS/hcopy" -m "$codekitten_artifact" ":$APPS_DIR:"
-    "$HFS/hls" -la ":$APPS_DIR"
-    "$HFS/humount" >/dev/null
+    "$MACBINARY_TOOL" "$now_artifact" --expect-name "New Old World" \
+        --expect-type APPL --expect-creator NOWo \
+        --install-to "$mount_point/$APPS_DIR"
+    "$MACBINARY_TOOL" "$codekitten_artifact" --expect-name "codekitten" \
+        --expect-type APPL --expect-creator O9ID \
+        --install-to "$mount_point/$APPS_DIR"
+    ls -l "$mount_point/$APPS_DIR/New Old World" \
+        "$mount_point/$APPS_DIR/codekitten"
+    "$HDIUTIL_TOOL" detach "$mount_point" >/dev/null
     mounted=0
+    rmdir "$mount_point" >/dev/null 2>&1 || true
     trap - EXIT
 
     local apps_manifest="$VM/Installed Apps.rig"
@@ -222,6 +240,41 @@ install_apps () {
     trap - EXIT
     echo "sheepshaver-86: installed NOW and CodeKitten in $APPS_DIR"
     echo "  manifest: $apps_manifest"
+}
+
+capture () {
+    [ "$#" -eq 1 ] \
+        || die "usage: scripts/sheepshaver-86 capture DESTINATION.bmp"
+    local destination="$1"
+    case "$destination" in
+        *.bmp) ;;
+        *) die "capture destination must end in .bmp" ;;
+    esac
+    [ -d "$(dirname "$destination")" ] \
+        || die "capture destination directory is absent: $(dirname "$destination")"
+    [ ! -e "$destination" ] \
+        || die "capture destination already exists: $destination"
+    if ! disk_is_open "$BOOT_DISK"; then
+        die "the SheepShaver profile is not running"
+    fi
+
+    local request="$VM/.now-capture-request"
+    local response="$VM/.now-capture.bmp"
+    [ ! -e "$request" ] || die "a framebuffer capture is already pending"
+    rm -f "$response"
+    touch "$request"
+    local attempt
+    for attempt in $(seq 1 100); do
+        if [ -f "$response" ]; then
+            mv "$response" "$destination"
+            rm -f "$request"
+            echo "sheepshaver-86: captured guest framebuffer: $destination"
+            return
+        fi
+        sleep 0.05
+    done
+    rm -f "$request"
+    die "framebuffer capture timed out; the configured SheepShaver app lacks the oracle capture seam or is not presenting frames"
 }
 
 snapshot () {
@@ -250,8 +303,7 @@ rig () {
     echo "observed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "now_revision=$(git -C "$REPO" rev-parse HEAD)"
     if [ -n "${NOW_SHEEPSHAVER_SOURCE:-}" ]; then
-        [ -d "$NOW_SHEEPSHAVER_SOURCE/.git" ] \
-            || die "NOW_SHEEPSHAVER_SOURCE is not a git checkout: $NOW_SHEEPSHAVER_SOURCE"
+        require_git_checkout "$NOW_SHEEPSHAVER_SOURCE" NOW_SHEEPSHAVER_SOURCE
         echo "sheepshaver_source=$NOW_SHEEPSHAVER_SOURCE"
         echo "sheepshaver_revision=$(git -C "$NOW_SHEEPSHAVER_SOURCE" rev-parse HEAD)"
     fi
@@ -313,8 +365,9 @@ case "${1:-}" in
     launch) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 launch"; launch ;;
     stage) shift; stage "$@" ;;
     install-apps) shift; install_apps "$@" ;;
+    capture) shift; capture "$@" ;;
     snapshot) shift; snapshot "$@" ;;
     rig) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 rig"; rig ;;
     seal) shift; seal "$@" ;;
-    *) die "usage: scripts/sheepshaver-86 {doctor|launch|stage APPLICATION.bin|install-apps NOW.bin CODEKITTEN.bin|snapshot NAME|rig|seal VERSION}" ;;
+    *) die "usage: scripts/sheepshaver-86 {doctor|launch|stage APPLICATION.bin|install-apps NOW.bin CODEKITTEN.bin|capture DESTINATION.bmp|snapshot NAME|rig|seal VERSION}" ;;
 esac

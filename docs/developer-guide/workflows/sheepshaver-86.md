@@ -57,6 +57,11 @@ ad-hoc signs the result, and refuses a package whose final load commands still
 name Homebrew or `/usr/local`. It publishes atomically so a late failure cannot
 leave a partial app at the destination.
 
+Homebrew's SDL2 may be `sdl2-compat`, which opens SDL3 at runtime rather than
+recording it in Mach-O load commands. The packager detects that loader marker,
+bundles `libSDL3.dylib` explicitly, and refuses the package if the runtime SDL3
+is absent. An `otool -L`-only closure is not sufficient for this dependency.
+
 This makes the local oracle host app self-contained. It does not turn the ROM,
 Mac OS, CarbonLib, or the profile into redistributable inputs, and it does not
 settle whether a modified GPL emulator should become a shipped product
@@ -94,6 +99,7 @@ scripts/sheepshaver-86 stage "path/to/New Old World.bin"
 scripts/sheepshaver-86 install-apps \
   "path/to/New Old World.bin" "path/to/CodeKitten.bin"
 scripts/sheepshaver-86 launch
+scripts/sheepshaver-86 capture "path/to/evidence/frame.bmp"
 scripts/sheepshaver-86 snapshot "Mac OS 8.6 + CarbonLib 1.6"
 scripts/sheepshaver-86 rig
 scripts/sheepshaver-86 seal "os86-carbon16-now020-codekitten-747a81d"
@@ -177,18 +183,23 @@ Coordinates are profile-specific evidence, not a durable API. The harness
 should grow toward semantic guest-side controls or deterministic framebuffer
 recognition before unattended installation is treated as reliable.
 
-## The native automation seam
+## Native framebuffer capture
 
-Source inspection identifies a narrow path for the next harness layer; it does
-not require replacing SheepShaver's renderer:
+The versioned local macemu branch `codex/now-oracle-capture` adds one bounded
+profile-local request seam. `scripts/sheepshaver-86 capture` creates a sentinel
+in the active `.sheepvm`; the SDL renderer answers with a BMP of its native
+guest surface and removes the request. The harness times out rather than
+accepting a stale or absent frame. Captures therefore exclude macOS window
+chrome, scaling, and the host cursor.
+
+The seam deliberately does not replace SheepShaver's renderer:
 
 - `main_unix.cpp` recognizes a `.sheepvm` directory as a first-class launch
   argument, changes into it, and reads that profile's preferences. The isolated
   profile convention is native behavior, not a launcher accident.
 - `video_sdl2.cpp` already owns `guest_surface`, `host_surface`, and the exact
-  dirty rectangle immediately before `SDL_RenderPresent`. A capture hook there
-  can emit guest pixels before macOS window chrome, scaling, and the host cursor
-  contaminate the oracle image.
+  dirty rectangle immediately before `SDL_RenderPresent`; the hook reads that
+  existing surface only after an explicit profile-local request.
 - The same file drains SDL keyboard and mouse events into ADB calls. A local,
   profile-scoped control socket can inject events at this boundary and preserve
   the emulator's own key mapping.
@@ -196,12 +207,11 @@ not require replacing SheepShaver's renderer:
   emulator back to the settings UI and currently carries alerts and exit only.
 - `nogui` suppresses the settings front end; it does not make video headless.
 
-The smallest useful macemu-side experiment is therefore a loopback-only socket
-with three operations: report profile identity, capture the pre-presentation
-framebuffer, and enqueue one bounded input event. Keep it as a separately
-reviewable fork patch until its licensing and redistribution posture are chosen.
-The repository harness can then assert the profile and source revision before
-accepting captures, just as the QEMU lanes assert which guest answered.
+The remaining useful macemu-side experiment is a loopback-only socket for
+profile identity and bounded input events. Keep that as a separately reviewable
+fork patch until its licensing and redistribution posture are chosen. The
+current capture-only patch is likewise not an upstream or product dependency;
+the sealed rig records its exact source and executable identities.
 
 ## Evidence status
 

@@ -23,6 +23,24 @@ done
 printf '#!/bin/sh\nexit "${NOW_TEST_LSOF_RESULT:-1}"\n' > "$TMP/lsof"
 printf '#!/bin/sh\nprintf "open" >> "$NOW_TEST_LOG"\nfor arg in "$@"; do printf " <%%s>" "$arg" >> "$NOW_TEST_LOG"; done\nprintf "\\n" >> "$NOW_TEST_LOG"\n' > "$TMP/open"
 chmod +x "$TMP/lsof" "$TMP/open"
+cat > "$TMP/hdiutil" <<'SH'
+#!/bin/sh
+printf 'hdiutil' >> "$NOW_TEST_LOG"
+for arg in "$@"; do printf ' <%s>' "$arg" >> "$NOW_TEST_LOG"; done
+printf '\n' >> "$NOW_TEST_LOG"
+if [ "$1" = attach ]; then
+    shift
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = -mountpoint ]; then
+            shift
+            mkdir -p "$1/Applications"
+            break
+        fi
+        shift
+    done
+fi
+SH
+chmod +x "$TMP/hdiutil"
 
 run_harness () {
     NOW_SHEEPSHAVER_APP="$APP" \
@@ -30,6 +48,8 @@ run_harness () {
     NOW_HFSUTILS="$HFS" \
     NOW_SHEEPSHAVER_LSOF="$TMP/lsof" \
     NOW_SHEEPSHAVER_OPEN="$TMP/open" \
+    NOW_SHEEPSHAVER_HDIUTIL="$TMP/hdiutil" \
+    NOW_CODEKITTEN_SOURCE="${NOW_CODEKITTEN_SOURCE:-}" \
     NOW_TEST_LOG="$LOG" \
     "$HARNESS" "$@"
 }
@@ -92,6 +112,18 @@ fi
 run_harness launch >/dev/null
 grep -F "open <-n> <$APP> <--args> <$VM>" "$LOG" >/dev/null
 
+capture="$TMP/frame.bmp"
+(
+    while [ ! -f "$VM/.now-capture-request" ]; do sleep 0.01; done
+    printf 'BMfixture' > "$VM/.now-capture.bmp"
+    rm -f "$VM/.now-capture-request"
+) &
+capture_writer=$!
+NOW_TEST_LSOF_RESULT=0 run_harness capture "$capture" >/dev/null
+wait "$capture_writer"
+[ "$(cat "$capture")" = BMfixture ] \
+    || { echo "FAILED: capture did not publish the emulator response" >&2; exit 1; }
+
 printf 'boot disk bytes' > "$VM/Mac OS 8.6.hfv"
 run_harness snapshot "post-carbonlib" >/dev/null
 cmp "$VM/Mac OS 8.6.hfv" "$VM/Snapshots/post-carbonlib.hfv"
@@ -105,11 +137,8 @@ printf '%s\n' "$rig_output" | grep -E '^boot_disk_sha256=[0-9a-f]{64}$' >/dev/nu
 run_harness install-apps "$artifact" "$kitten_artifact" >/dev/null
 install_log="$(cat "$LOG")"
 printf '%s\n' "$install_log" \
-    | grep -F "hmount <$VM/Mac OS 8.6.hfv>" >/dev/null
-[ "$(printf '%s\n' "$install_log" | grep -c '^hcopy <-m>')" -eq 2 ] \
-    || { echo "FAILED: install-apps did not decode both MacBinary artifacts" >&2; exit 1; }
-printf '%s\n' "$install_log" \
-    | grep -F "hls <-la> <:Applications (Mac OS 9)>" >/dev/null
+    | grep -F "hdiutil <attach> <-nobrowse>" >/dev/null
+printf '%s\n' "$install_log" | grep -F "hdiutil <detach>" >/dev/null
 [ -f "$VM/Installed Apps.rig" ]
 grep -F "NOW_SHEEPSHAVER_APPS_V1" "$VM/Installed Apps.rig" >/dev/null
 grep -E '^codekitten_artifact_sha256=[0-9a-f]{64}$' \
@@ -145,4 +174,9 @@ git -C "$desk_repo" worktree add -q -b lane "$desk_lane" main
 lane_doctor="$(NOW_TEST_LOG="$LOG" "$desk_lane/scripts/sheepshaver-86" doctor)"
 printf '%s\n' "$lane_doctor" | grep -F "Mac OS 8.6 profile: $VM" >/dev/null
 
-echo "sheepshaver-86: 13 harness behaviors passed"
+NOW_CODEKITTEN_SOURCE="$desk_lane" \
+    run_harness install-apps "$artifact" "$kitten_artifact" >/dev/null
+grep -F "codekitten_revision=$(git -C "$desk_lane" rev-parse HEAD)" \
+    "$VM/Installed Apps.rig" >/dev/null
+
+echo "sheepshaver-86: 15 harness behaviors passed"
