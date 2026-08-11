@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Mutation tests for protected GitHub main and its local mirror."""
+
+from __future__ import annotations
+
+import copy
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def run(*args: str, cwd: Path, check: bool = True, input_text: str | None = None,
+        env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        args, cwd=cwd, text=True, capture_output=True, input=input_text, env=env)
+    if check and result.returncode:
+        raise AssertionError(result.stdout + result.stderr)
+    return result
+
+
+def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return run("git", *args, cwd=repo, check=check)
+
+
+def copy_executable(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    target.chmod(0o755)
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
+
+
+def main() -> int:
+    with tempfile.TemporaryDirectory(prefix="now-main-policy-") as temp:
+        repo = Path(temp) / "repo"
+        repo.mkdir()
+        git(repo, "init", "-q", "-b", "main")
+        git(repo, "config", "user.name", "NOW Policy Test")
+        git(repo, "config", "user.email", "now-policy@example.invalid")
+        git(repo, "config", "core.hooksPath", "/dev/null")
+
+        copy_executable(ROOT / "tools" / "main-ref-policy",
+                        repo / "tools" / "main-ref-policy")
+        copy_executable(ROOT / "tools" / "github-policy-check",
+                        repo / "tools" / "github-policy-check")
+        copy_executable(ROOT / ".githooks" / "reference-transaction",
+                        repo / ".githooks" / "reference-transaction")
+        copy_executable(ROOT / ".githooks" / "pre-push",
+                        repo / ".githooks" / "pre-push")
+        (repo / ".github").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / ".github" / "repository-policy.json",
+                     repo / ".github" / "repository-policy.json")
+        for name in ("ext-bake-gate", "product-version-gate"):
+            path = repo / "tools" / name
+            path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            path.chmod(0o755)
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        git(repo, "add", ".github", ".githooks", "tools", "base.txt")
+        git(repo, "commit", "-qm", "base")
+        base = git(repo, "rev-parse", "HEAD").stdout.strip()
+
+        git(repo, "remote", "add", "origin",
+            "https://github.com/thisoldmac/new-old-world.git")
+        for key, value in (
+                ("branch.main.remote", "origin"),
+                ("branch.main.merge", "refs/heads/main"),
+                ("pull.ff", "only"),
+                ("fetch.prune", "true"),
+                ("push.default", "simple"),
+                ("core.hooksPath", ".githooks")):
+            git(repo, "config", key, value)
+
+        git(repo, "checkout", "-qb", "feature")
+        (repo / "candidate.txt").write_text("candidate\n", encoding="utf-8")
+        git(repo, "add", "candidate.txt")
+        git(repo, "commit", "-qm", "candidate")
+        candidate = git(repo, "rev-parse", "HEAD").stdout.strip()
+        git(repo, "update-ref", "refs/remotes/origin/main", candidate)
+
+        accepted = git(repo, "branch", "-f", "main", candidate, check=False)
+        require(accepted.returncode == 0,
+                "exact fetched origin/main fast-forward was refused")
+        require(git(repo, "rev-parse", "main").stdout.strip() == candidate,
+                "accepted fast-forward did not move local main")
+
+        (repo / "unauthorized.txt").write_text("no PR\n", encoding="utf-8")
+        git(repo, "add", "unauthorized.txt")
+        git(repo, "commit", "-qm", "unauthorized")
+        unauthorized = git(repo, "rev-parse", "HEAD").stdout.strip()
+        refused = git(repo, "branch", "-f", "main", unauthorized, check=False)
+        require(refused.returncode != 0 and "not the fetched origin/main" in refused.stderr,
+                "non-GitHub main update was not refused by name")
+        require(git(repo, "rev-parse", "main").stdout.strip() == candidate,
+                "refused direct landing moved local main")
+
+        git(repo, "update-ref", "refs/remotes/origin/main", base)
+        rollback = git(repo, "branch", "-f", "main", base, check=False)
+        require(rollback.returncode != 0 and "fast-forward" in rollback.stderr,
+                "origin/main rollback mutation was not refused")
+
+        direct_line = f"refs/heads/feature {unauthorized} refs/heads/main {candidate}\n"
+        direct = run(str(repo / ".githooks" / "pre-push"), "origin",
+                     "https://github.com/thisoldmac/new-old-world.git",
+                     cwd=repo, check=False, input_text=direct_line)
+        require(direct.returncode != 0 and "refusing direct push" in direct.stderr,
+                "direct push mutation was not refused")
+        feature_line = (
+            f"refs/heads/feature {unauthorized} refs/heads/feature {candidate}\n")
+        feature_push = run(str(repo / ".githooks" / "pre-push"), "origin",
+                           "https://github.com/thisoldmac/new-old-world.git",
+                           cwd=repo, check=False, input_text=feature_line)
+        require(feature_push.returncode == 0,
+                "ordinary feature-branch push was refused")
+
+        git(repo, "checkout", "-q", "main")
+        env = dict(os.environ)
+        env["TBT_ALLOW_MAIN"] = "1"
+        main_commit = run(str(ROOT / ".githooks" / "pre-commit"), cwd=repo,
+                          check=False, env=env)
+        require(main_commit.returncode != 0 and "refusing to commit" in main_commit.stderr,
+                "obsolete TBT_ALLOW_MAIN escape still bypassed the guard")
+
+        retired = run(str(ROOT / "tools" / "land-main"), cwd=repo, check=False)
+        require(retired.returncode != 0 and "retired" in retired.stderr,
+                "old direct-landing tool did not fail closed")
+
+        policy = json.loads((repo / ".github" / "repository-policy.json").read_text())
+        actual_ruleset = copy.deepcopy(policy["ruleset"])
+        actual_repository = copy.deepcopy(policy["settings"])
+        ruleset_path = repo / "actual-ruleset.json"
+        repository_path = repo / "actual-repository.json"
+        ruleset_path.write_text(json.dumps(actual_ruleset), encoding="utf-8")
+        repository_path.write_text(json.dumps(actual_repository), encoding="utf-8")
+        matched = run(
+            str(repo / "tools" / "github-policy-check"),
+            "--ruleset-file", str(ruleset_path),
+            "--repository-file", str(repository_path), cwd=repo, check=False)
+        require(matched.returncode == 0, "matching GitHub policy was rejected")
+
+        actual_ruleset["rules"][-1]["parameters"]["required_status_checks"].pop()
+        ruleset_path.write_text(json.dumps(actual_ruleset), encoding="utf-8")
+        drift = run(
+            str(repo / "tools" / "github-policy-check"),
+            "--ruleset-file", str(ruleset_path),
+            "--repository-file", str(repository_path), cwd=repo, check=False)
+        require(drift.returncode != 0 and "required_status_checks" in drift.stderr,
+                "missing required check mutation was not detected")
+
+    print("main-policy: seven protected-main mutations refused; allowed paths passed")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except AssertionError as exc:
+        print(f"FAILED: {exc}")
+        raise SystemExit(1)

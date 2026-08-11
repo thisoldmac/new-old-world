@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""Keep local main a fast-forward mirror of GitHub's protected main."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+
+ROOT = Path(__file__).resolve().parent.parent
+POLICY = ROOT / ".github" / "repository-policy.json"
+ZERO = "0" * 40
+
+
+def git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(ROOT), *args], text=True, capture_output=True)
+
+
+def git_value(*args: str) -> str:
+    return git(*args).stdout.strip()
+
+
+def expected_repository() -> str:
+    return json.loads(POLICY.read_text(encoding="utf-8"))["repository"]
+
+
+def repository_from_url(url: str) -> str | None:
+    patterns = (
+        r"^https://github\.com/([^/]+/[^/]+?)(?:\.git)?$",
+        r"^git@github\.com:([^/]+/[^/]+?)(?:\.git)?$",
+        r"^ssh://git@github\.com/([^/]+/[^/]+?)(?:\.git)?$",
+    )
+    for pattern in patterns:
+        match = re.match(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+
+def remote_errors() -> list[str]:
+    url = git_value("remote", "get-url", "origin")
+    if not url:
+        return ["origin is missing"]
+    actual = repository_from_url(url)
+    expected = expected_repository()
+    if actual != expected:
+        return [f"origin names {actual or url!r}, expected {expected!r}"]
+    return []
+
+
+def config_errors() -> list[str]:
+    errors = remote_errors()
+    expected = {
+        "branch.main.remote": "origin",
+        "branch.main.merge": "refs/heads/main",
+        "pull.ff": "only",
+        "fetch.prune": "true",
+        "push.default": "simple",
+    }
+    for key, value in expected.items():
+        actual = git_value("config", "--get", key)
+        if actual != value:
+            errors.append(f"{key} is {actual or '(unset)'!r}, expected {value!r}")
+    main_oid = git_value("rev-parse", "--verify", "refs/heads/main")
+    origin_oid = git_value("rev-parse", "--verify", "refs/remotes/origin/main")
+    if main_oid and origin_oid:
+        counts = git_value(
+            "rev-list", "--left-right", "--count", "origin/main...main")
+        if counts:
+            behind, ahead = (int(value) for value in counts.split())
+            if ahead:
+                errors.append(
+                    f"local main is {ahead} commit(s) ahead of origin/main; "
+                    "it must remain a remote mirror")
+    return errors
+
+
+def report(errors: list[str], label: str) -> int:
+    if not errors:
+        print(f"[main-ref-policy] {label}: configured")
+        return 0
+    print(f"[main-ref-policy] {label}: REFUSED", file=sys.stderr)
+    for error in errors:
+        print(f"  - {error}", file=sys.stderr)
+    return 1
+
+
+def main_ref_check(old: str, new: str) -> int:
+    errors = remote_errors()
+    if git_value("config", "--get", "branch.main.remote") != "origin":
+        errors.append("local main does not track origin")
+    if git_value("config", "--get", "branch.main.merge") != "refs/heads/main":
+        errors.append("local main does not track refs/heads/main")
+
+    expected = git_value("rev-parse", "--verify", "refs/remotes/origin/main")
+    if not expected:
+        errors.append("refs/remotes/origin/main is missing; fetch it first")
+    elif new != expected:
+        errors.append(
+            f"candidate {new} is not the fetched origin/main {expected}; "
+            "merge through GitHub, then run tools/sync-main")
+
+    if new == ZERO:
+        errors.append("local main may not be deleted")
+    if old != ZERO and new != ZERO:
+        ancestor = git("merge-base", "--is-ancestor", old, new)
+        if ancestor.returncode:
+            errors.append("local main may advance only by fast-forward")
+
+    if errors:
+        print("[main-ref-policy] refusing refs/heads/main update", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 1
+    print(f"[main-ref-policy] local main may fast-forward to origin/main {new}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) == 2 and argv[1] == "remote-check":
+        return report(remote_errors(), "origin")
+    if len(argv) == 2 and argv[1] == "config-check":
+        return report(config_errors(), "public clone")
+    if len(argv) == 4 and argv[1] == "main-ref-check":
+        return main_ref_check(argv[2], argv[3])
+    print(
+        "usage: tools/main-ref-policy "
+        "{remote-check|config-check|main-ref-check <old> <new>}",
+        file=sys.stderr,
+    )
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

@@ -4,6 +4,25 @@ search:
 ---
 # Open issues
 
+## DEFERRED: release-branch protection and private-history fleet retirement (2026-08-11, `codex/dev/tooling/protected-main`)
+
+GitHub `main` now has an active, bypass-free ruleset requiring pull requests,
+resolved conversations, linear history and the four repository CI jobs. The
+committed policy and local mirror guards are carried by this branch. Two
+adjacent tasks are deliberately not folded into that change.
+
+No `release/v*` branch exists yet. Before the first one is cut, apply the same
+protection pattern to it and decide whether qualification concurrency justifies
+strict up-to-date checks or a merge queue. Required signed commits remain
+deferred until local human, agent and GitHub-generated commits all have a
+verified signing route.
+
+The pre-public private-history checkout remains an archive with its unrelated
+root and existing worktree fleet. The 2026-08-11 census found 93 worktree-local
+`core.hooksPath` overrides. They were not rewritten underneath active work.
+Inventory, reconcile and retire that fleet separately; it is not a prerequisite
+for the canonical public clone to enforce the current GitHub policy.
+
 ## UNVERIFIED: NOW Web Direct needs Classilla and MacWeb acceptance (2026-08-10, `codex/web-proxy`)
 
 The Direct implementation, host supervision, PowerPC Workshop page, semantic

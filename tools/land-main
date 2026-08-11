@@ -1,63 +1,6 @@
 #!/bin/sh
-# Advance local main from the candidate worktree after checking candidate code.
-# This is the bootstrap-safe route for a gate introduction: an older main
-# checkout cannot invoke a hook it does not contain, while this worktree can.
-set -eu
-
-root=$(git rev-parse --show-toplevel)
-branch=$(git symbolic-ref --quiet --short HEAD || true)
-if [ -z "$branch" ] || [ "$branch" = main ] || [ "$branch" = master ]; then
-    echo "[land-main] run from the finished feature branch, not main" >&2
-    exit 1
-fi
-if [ -n "$(git status --porcelain)" ]; then
-    echo "[land-main] candidate worktree is not clean" >&2
-    exit 1
-fi
-old=$(git rev-parse --verify refs/heads/main)
-new=$(git rev-parse HEAD)
-if ! git merge-base --is-ancestor "$old" "$new"; then
-    echo "[land-main] candidate has not integrated current main ($old)" >&2
-    exit 1
-fi
-
-"$root/tools/ext-bake-gate" main-ref-check "$old" "$new"
-"$root/tools/product-version-gate" main-ref-check "$old" "$new"
-"$root/tools/ext-bake-gate" merge-check
-"$root/tools/derived-doc-gate" check
-
-if [ "${1:-}" = --check ]; then
-    echo "[land-main] candidate $new is eligible to advance main from $old"
-    exit 0
-fi
-if [ "$#" -ne 0 ]; then
-    echo "usage: tools/land-main [--check]" >&2
-    exit 2
-fi
-
-# The shared checkout is supposed to keep main checked out. Git correctly
-# refuses `fetch HEAD:main` while that branch is checked out, so update that
-# clean worktree through an ordinary fast-forward when it exists. The explicit
-# candidate gates above are still the bootstrap boundary: the old main tree may
-# not contain a gate this candidate introduces. Untracked lab material is not
-# dirt for this purpose and an ordinary merge preserves it (or refuses if an
-# incoming tracked path would collide).
-main_worktree=$(
-    git worktree list --porcelain | awk '
-        /^worktree / { path = substr($0, 10) }
-        $0 == "branch refs/heads/main" { print path; exit }
-    '
-)
-if [ -n "$main_worktree" ]; then
-    if [ -n "$(git -C "$main_worktree" status --porcelain --untracked-files=no)" ]; then
-        echo "[land-main] main worktree has tracked changes: $main_worktree" >&2
-        exit 1
-    fi
-    git -C "$main_worktree" merge --ff-only "$new"
-    echo "[land-main] main worktree advanced to $new: $main_worktree"
-else
-    # Initiating from the candidate remains deliberate for a repository that
-    # has no main worktree: the candidate contains every gate just run above.
-    git fetch . "HEAD:main"
-    echo "[land-main] main ref advanced to $new (no main worktree present)"
-fi
+# Kept as a refusal so old scripts fail with the new workflow rather than
+# silently writing local main. GitHub is now the only landing boundary.
+echo "[land-main] retired: main accepts protected GitHub pull requests only." >&2
+echo "  Push the feature branch; after GitHub merges it, run tools/sync-main." >&2
+exit 1
