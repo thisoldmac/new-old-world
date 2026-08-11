@@ -114,8 +114,9 @@ run_swift_step "$scratch_root/swift-test-no-assets.log" \
 # This stress case's server handler is deliberately MainActor-isolated, like
 # the shipping host. Running it alongside two thousand other tests made the
 # CI runner starve that actor past even a 60-second experimental timeout.
-# Run it alone, still inside the gate and with the real two-second client
-# default, so it measures reply isolation rather than unrelated suite load.
+# Run it alone, still inside the gate; the test keeps its stress-only receive
+# budget separate from the single-client case that exercises the real
+# two-second default, so it measures reply isolation rather than runner load.
 echo "==> concurrent local-socket test (isolated from full-suite actor load)"
 run_swift_step "$scratch_root/swift-test-concurrent-socket.log" \
     swift test --package-path "$repo_root/now-host" \

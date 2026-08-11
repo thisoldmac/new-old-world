@@ -310,13 +310,22 @@ final class AgentIntegrationSocketTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
+        /* The single-client case above exercises the shipping two-second
+           health budget. This case exercises eight independent replies,
+           and GitHub's shared runner can take about five seconds to
+           schedule all eight detached clients after a full suite. Give
+           the stress harness its own ceiling so runner load is not
+           mistaken for a transport defect. */
+        let client = try AgentIntegrationLocalClient(
+            endpoint: endpoint,
+            readOnlyReceiveTimeout: 10,
+            launchReceiveTimeout: 35)
         let results = try await withThrowingTaskGroup(
             of: AgentIntegrationSessionHealthResult.self
         ) { group in
             for _ in 0..<8 {
                 group.addTask {
-                    try await AgentIntegrationLocalClient(
-                        endpoint: endpoint).sessionHealth()
+                    try await client.sessionHealth()
                 }
             }
             var values: [AgentIntegrationSessionHealthResult] = []
