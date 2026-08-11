@@ -310,28 +310,27 @@ final class AgentIntegrationSocketTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        /* The single-client case above exercises the shipping two-second
-           health budget. This case exercises eight independent replies,
-           and GitHub's shared runner can take about five seconds to
-           schedule all eight detached clients after a full suite. Give
-           the stress harness its own ceiling so runner load is not
-           mistaken for a transport defect. */
-        let client = try AgentIntegrationLocalClient(
-            endpoint: endpoint,
-            readOnlyReceiveTimeout: 10,
-            launchReceiveTimeout: 35)
-        let results = try await withThrowingTaskGroup(
-            of: AgentIntegrationSessionHealthResult.self
-        ) { group in
-            for _ in 0..<8 {
-                group.addTask {
-                    try await client.sessionHealth()
+        /* Swift 6.1 can keep a task-group body inherited from this test
+           class on MainActor while it awaits the clients, starving the
+           server handlers that must run on that same actor. Orchestrate
+           the clients off-actor; awaiting the detached task releases the
+           actor for the shipping handler and keeps the real two-second
+           receive budget under test. */
+        let results = try await Task.detached { [endpoint] in
+            let client = try AgentIntegrationLocalClient(endpoint: endpoint)
+            return try await withThrowingTaskGroup(
+                of: AgentIntegrationSessionHealthResult.self
+            ) { group in
+                for _ in 0..<8 {
+                    group.addTask {
+                        try await client.sessionHealth()
+                    }
                 }
+                var values: [AgentIntegrationSessionHealthResult] = []
+                for try await value in group { values.append(value) }
+                return values
             }
-            var values: [AgentIntegrationSessionHealthResult] = []
-            for try await value in group { values.append(value) }
-            return values
-        }
+        }.value
 
         XCTAssertEqual(results.count, 8)
         XCTAssertTrue(results.allSatisfy {

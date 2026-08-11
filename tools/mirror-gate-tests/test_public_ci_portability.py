@@ -84,6 +84,9 @@ class PublicCIPortabilityTests(unittest.TestCase):
         self.assertIn(flag, test)
         self.assertEqual(script.count(flag + "=1"), 2)
         self.assertEqual(script.count("\n    " + case + "\n"), 1)
+        self.assertIn("Task.detached { [endpoint] in", test)
+        self.assertIn(
+            "AgentIntegrationLocalClient(endpoint: endpoint)", test)
 
     def test_projection_registries_bridge_swift_diagnostics(self):
         """MUTATION: leave either Swift compiler with the wrong declaration."""
