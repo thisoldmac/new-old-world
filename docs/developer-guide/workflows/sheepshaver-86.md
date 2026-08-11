@@ -6,7 +6,7 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [AGENTS.md, docs/guest-ui-start-here.md]
-source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, tools/sheepshaver-86-tests, tools/sheepshaver-package-tests, docs/lab-setup.md, now-guest-ppc]
+source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, tools/macbinary-identity.py, tools/sheepshaver-86-tests, tools/sheepshaver-package-tests, docs/lab-setup.md, now-guest-ppc]
 media_ids: []
 last_verified: 2026-08-11
 ---
@@ -116,6 +116,11 @@ preserves both forks, and lists the resulting Finder identities before
 unmounting. `seal` creates a copy-on-write, immutable-named boot image and a
 matching `.rig` receipt; it refuses to replace either. A named snapshot without
 its receipt is not a versioned oracle.
+
+Before the boot disk is opened, the installer verifies the MacBinary header
+CRC, fork lengths, and internal Finder identity. NOW must be `New Old
+World/APPL/NOWo`; CodeKitten must be `codekitten/APPL/O9ID`. A plausible
+filename cannot substitute another build or a truncated fork envelope.
 
 ## Installed application set
 

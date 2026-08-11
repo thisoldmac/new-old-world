@@ -77,6 +77,7 @@ BOOT_DISK="${NOW_SHEEPSHAVER_DISK:-$VM/Mac OS 8.6.hfv}"
 APPS_DIR="${NOW_SHEEPSHAVER_APPS_DIR:-Applications (Mac OS 9)}"
 OPEN_TOOL="${NOW_SHEEPSHAVER_OPEN:-open}"
 LSOF_TOOL="${NOW_SHEEPSHAVER_LSOF:-lsof}"
+MACBINARY_TOOL="${NOW_MACBINARY_IDENTITY_TOOL:-$REPO/tools/macbinary-identity.py}"
 
 require_file () {
     [ -f "$1" ] || die "missing $2: $1"
@@ -135,6 +136,8 @@ stage () {
     [ "$#" -eq 1 ] || die "usage: scripts/sheepshaver-86 stage APPLICATION.bin"
     local artifact="$1"
     require_file "$artifact" "MacBinary artifact"
+    require_tool "$MACBINARY_TOOL" "MacBinary identity verifier"
+    "$MACBINARY_TOOL" "$artifact" >/dev/null
     require_file "$TRANSFER" "HFS transfer disk"
     require_stopped "$TRANSFER"
 
@@ -166,6 +169,11 @@ install_apps () {
     local codekitten_artifact="$2"
     require_file "$now_artifact" "New Old World MacBinary"
     require_file "$codekitten_artifact" "CodeKitten MacBinary"
+    require_tool "$MACBINARY_TOOL" "MacBinary identity verifier"
+    "$MACBINARY_TOOL" "$now_artifact" --expect-name "New Old World" \
+        --expect-type APPL --expect-creator NOWo >/dev/null
+    "$MACBINARY_TOOL" "$codekitten_artifact" --expect-name "codekitten" \
+        --expect-type APPL --expect-creator O9ID >/dev/null
     if [ -n "${NOW_CODEKITTEN_SOURCE:-}" ]; then
         [ -d "$NOW_CODEKITTEN_SOURCE/.git" ] \
             || die "NOW_CODEKITTEN_SOURCE is not a git checkout: $NOW_CODEKITTEN_SOURCE"

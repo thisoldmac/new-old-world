@@ -43,7 +43,32 @@ missing_output="$(NOW_SHEEPSHAVER_APP="$TMP/missing.app" \
 printf '%s\n' "$missing_output" | grep -F "missing executable SheepShaver" >/dev/null
 
 artifact="$TMP/New Old World.bin"
-printf 'MacBinary fixture' > "$artifact"
+kitten_artifact="$TMP/CodeKitten.bin"
+make_macbinary () {
+    python3 - "$1" "$2" "$3" <<'PY'
+import binascii
+import sys
+from pathlib import Path
+
+path, name, creator = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+data = b"PowerPC PEF fixture"
+resource = b"resource fixture"
+header = bytearray(128)
+encoded = name.encode("mac_roman")
+header[1] = len(encoded)
+header[2:2 + len(encoded)] = encoded
+header[65:69] = b"APPL"
+header[69:73] = creator.encode("mac_roman")
+header[83:87] = len(data).to_bytes(4, "big")
+header[87:91] = len(resource).to_bytes(4, "big")
+header[122:124] = bytes((130, 129))
+header[124:126] = binascii.crc_hqx(header[:124], 0).to_bytes(2, "big")
+pad = lambda value: value.ljust((len(value) + 127) & ~127, b"\0")
+path.write_bytes(bytes(header) + pad(data) + pad(resource))
+PY
+}
+make_macbinary "$artifact" "New Old World" "NOWo"
+make_macbinary "$kitten_artifact" "codekitten" "O9ID"
 : > "$LOG"
 run_harness stage "$artifact" >/dev/null
 expected="hmount <$VM/CarbonLib 1.6 Transfer.hfv>
@@ -77,7 +102,7 @@ printf '%s\n' "$rig_output" | grep -E '^rom_sha256=[0-9a-f]{64}$' >/dev/null
 printf '%s\n' "$rig_output" | grep -E '^boot_disk_sha256=[0-9a-f]{64}$' >/dev/null
 
 : > "$LOG"
-run_harness install-apps "$artifact" "$artifact" >/dev/null
+run_harness install-apps "$artifact" "$kitten_artifact" >/dev/null
 install_log="$(cat "$LOG")"
 printf '%s\n' "$install_log" \
     | grep -F "hmount <$VM/Mac OS 8.6.hfv>" >/dev/null
