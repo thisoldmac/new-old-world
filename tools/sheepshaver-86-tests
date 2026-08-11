@@ -178,6 +178,24 @@ duplicate_output="$(run_harness seal "os86-carbon16-now020" 2>&1 || true)"
 printf '%s\n' "$duplicate_output" \
     | grep -F "versioned image already exists" >/dev/null
 
+clone="$TMP/oracle-run.sheepvm"
+run_harness clone "os86-carbon16-now020" "$clone" >/dev/null
+[ -f "$clone/prefs" ]
+[ -f "$clone/Mac OS ROM" ]
+cmp "$VM/Snapshots/os86-carbon16-now020.hfv" "$clone/Mac OS 8.6.hfv"
+cmp "$VM/CarbonLib 1.6 Transfer.hfv" "$clone/CarbonLib 1.6 Transfer.hfv"
+cmp "$VM/Snapshots/os86-carbon16-now020.rig" "$clone/Oracle Parent.rig"
+[ -d "$clone/Shared" ]
+[ -d "$clone/Snapshots" ]
+duplicate_clone="$(run_harness clone "os86-carbon16-now020" "$clone" 2>&1 || true)"
+printf '%s\n' "$duplicate_clone" | grep -F "clone destination already exists" >/dev/null
+
+printf 'tampered' >> "$VM/Snapshots/os86-carbon16-now020.hfv"
+bad_clone="$(run_harness clone "os86-carbon16-now020" \
+    "$TMP/tampered.sheepvm" 2>&1 || true)"
+printf '%s\n' "$bad_clone" \
+    | grep -F "sealed boot image does not match its rig receipt" >/dev/null
+
 invalid_output="$(run_harness seal "../escape" 2>&1 || true)"
 printf '%s\n' "$invalid_output" \
     | grep -F "version may contain only" >/dev/null
@@ -202,4 +220,4 @@ NOW_CODEKITTEN_SOURCE="$desk_lane" \
 grep -F "codekitten_revision=$(git -C "$desk_lane" rev-parse HEAD)" \
     "$VM/Installed Apps.rig" >/dev/null
 
-echo "sheepshaver-86: 17 harness behaviors passed"
+echo "sheepshaver-86: 20 harness behaviors passed"
