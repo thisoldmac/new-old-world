@@ -66,6 +66,13 @@ class PublicCIPortabilityTests(unittest.TestCase):
         annotation = "(out: UnsafeMutableRawBufferPointer) -> Void in"
         self.assertEqual(source.count(annotation), 2)
 
+    def test_avfoundation_test_marks_the_legacy_sdk_boundary(self):
+        """MUTATION: drop preconcurrency and Xcode 16 rejects AVAssetTrack."""
+        source = (ROOT / "now-host" / "Tests" / "HostTests"
+                  / "StreamRecorderTests.swift").read_text()
+        self.assertTrue(source.startswith(
+            "@preconcurrency import AVFoundation\n"))
+
 
 if __name__ == "__main__":
     unittest.main()
