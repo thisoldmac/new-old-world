@@ -74,7 +74,7 @@ class PublicCIPortabilityTests(unittest.TestCase):
             "@preconcurrency import AVFoundation\n"))
 
     def test_deferred_socket_stress_still_runs_in_the_host_gate(self):
-        """MUTATION: defer the case or let it inherit the test MainActor."""
+        """MUTATION: defer it, inherit MainActor, or block Swift's pool."""
         script = (ROOT / "scripts" / "test-host").read_text()
         test = (ROOT / "now-host" / "Tests" / "HostTests"
                 / "AgentIntegrationSocketTests.swift").read_text()
@@ -92,6 +92,14 @@ class PublicCIPortabilityTests(unittest.TestCase):
             "AgentIntegrationLocalClient(endpoint: endpoint)", test)
         self.assertEqual(test.count(
             "updateProvider: UpdateProvider(snapshot: .empty)"), 2)
+
+        client = (
+            ROOT / "now-host" / "Sources" / "NOWAgentIntegration"
+            / "AgentIntegrationLocalClient.swift"
+        ).read_text()
+        self.assertIn("socketIOQueue", client)
+        self.assertIn("withCheckedThrowingContinuation", client)
+        self.assertNotIn("try await Task.detached", client)
 
     def test_projection_registries_bridge_swift_diagnostics(self):
         """MUTATION: leave either Swift compiler with the wrong declaration."""

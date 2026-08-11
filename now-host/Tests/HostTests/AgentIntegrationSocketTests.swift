@@ -315,11 +315,11 @@ final class AgentIntegrationSocketTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        /* This method is nonisolated by construction. A nested detached task
-           was not enough on Swift 6.1: XCTest retained the class's MainActor
-           executor while the clients waited, starving the server handlers
-           that need that actor. Keep only fixture construction on MainActor;
-           the client group itself must have no actor to inherit. */
+        /* This method is nonisolated by construction. Keep only fixture
+           construction on MainActor; the client group itself must have no
+           actor to inherit. The client bridges its blocking socket reads to
+           an explicit I/O queue, so eight calls cannot consume the Swift
+           executor needed by these shipping-shaped MainActor handlers. */
         let client = try AgentIntegrationLocalClient(endpoint: endpoint)
         let outcomes = await withTaskGroup(
             of: ConcurrentHealthOutcome.self
