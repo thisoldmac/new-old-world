@@ -13,5 +13,6 @@ cd "$root"
 "$python" "$root/tools/docs-gate" --site-dir "$site_dir"
 if [ -n "${NOW_DOCS_RELEASE:-}" ]; then
     "$python" "$root/tools/docs-release-assets" --site-dir "$site_dir"
+    "$python" "$root/tools/docs-release-assets" --site-dir "$site_dir" --check
 fi
 printf '%s\n' "Documentation site: $site_dir"
