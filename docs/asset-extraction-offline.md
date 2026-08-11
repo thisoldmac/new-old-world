@@ -160,6 +160,15 @@ creators across 384 resource forks. Its 822 provenance rows were written to a
 new private pack. The missing `Desktop Pictures Prefs` is recorded as unknown;
 the extractor does not substitute a plausible desktop.
 
+The 8.6 visual-oracle profile can promote one desktop independently of that
+missing preference file. It declares the extracted `patterns/desktop.png`
+tile, its origin, and bounded framebuffer proof regions. `mirror-oracle
+extract-chrome` compares every proof pixel to the repeated tile and publishes
+`manifest.desktop` only on exact agreement; one changed pixel refuses the
+derived pack. The first color-correct capture proves 69,160 pixels exactly.
+This establishes the default background bytes and tiling rule without claiming
+that the full Finder scene or the unobserved preference state was accepted.
+
 **`PICT` is carried, not converted.** QuickDraw picture decoding was
 removed from macOS and nothing here draws these 42 images, so writing a
 PICT interpreter to convert them would be a large job for art no

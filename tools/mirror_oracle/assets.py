@@ -69,6 +69,71 @@ def _extract_asset(source, specification: Any, label: str, output: Path) -> dict
     }
 
 
+def _relative_asset(value: Any, label: str) -> Path:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"profile {label}.asset must be a relative path")
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"profile {label}.asset must stay inside the asset pack")
+    return path
+
+
+def _prove_desktop_pattern(profile: VisualProfile, source, output: Path,
+                           specification: Any) -> dict[str, Any]:
+    label = "desktopPattern"
+    if not isinstance(specification, dict):
+        raise ValueError(f"profile {label} extraction contract must be an object")
+    name = specification.get("name")
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"profile {label}.name must be a non-empty string")
+    asset = _relative_asset(specification.get("asset"), label)
+    tile_path = output / asset
+    if not tile_path.is_file():
+        raise ValueError(f"profile {label}.asset is absent from the base pack: {asset}")
+    origin = specification.get("tileOrigin")
+    if not (isinstance(origin, list) and len(origin) == 2 and
+            all(isinstance(part, int) for part in origin)):
+        raise ValueError(f"profile {label}.tileOrigin must be two integers")
+    regions = specification.get("proofRegions")
+    if not isinstance(regions, list) or not regions:
+        raise ValueError(f"profile {label}.proofRegions must be non-empty")
+
+    tile = load(tile_path)
+    proved = 0
+    for index, value in enumerate(regions):
+        rect = _rect(value, f"{label}.proofRegions[{index}]")
+        left, top, right, bottom = rect
+        # Validate bounds before indexing so a bad profile names its own
+        # rectangle instead of leaking an image-array error.
+        if not (0 <= left < right <= source.width and
+                0 <= top < bottom <= source.height):
+            raise ValueError(
+                f"profile {label}.proofRegions[{index}] is outside "
+                f"{source.width}x{source.height}"
+            )
+        for y in range(top, bottom):
+            for x in range(left, right):
+                expected = tile.pixel(
+                    (x - origin[0]) % tile.width,
+                    (y - origin[1]) % tile.height,
+                )[:3]
+                actual = source.pixel(x, y)[:3]
+                if actual != expected:
+                    raise ValueError(
+                        f"profile {label} does not match {asset} at ({x},{y}): "
+                        f"capture {actual}, tile {expected}"
+                    )
+                proved += 1
+    return {
+        "name": name,
+        "asset": str(asset),
+        "tileOrigin": origin,
+        "proofRegions": regions,
+        "provedPixels": proved,
+        "verdict": "exact",
+    }
+
+
 def extract_chrome(profile: VisualProfile, guest: Path, base_assets: Path,
                    output: Path) -> dict[str, Any]:
     """Clone a complete pack and add profile-specific oracle chrome.
@@ -80,6 +145,9 @@ def extract_chrome(profile: VisualProfile, guest: Path, base_assets: Path,
     source_manifest = base_assets / "manifest.json"
     if not source_manifest.is_file():
         raise ValueError(f"base asset pack has no manifest.json: {base_assets}")
+    manifest = json.loads(source_manifest.read_text())
+    if not isinstance(manifest, dict):
+        raise ValueError("base asset-pack manifest must be an object")
     if output.exists():
         raise ValueError(f"asset-pack destination already exists: {output}")
     chrome = profile.raw.get("chromeAssets", {}).get("appleMenu", {})
@@ -116,6 +184,10 @@ def extract_chrome(profile: VisualProfile, guest: Path, base_assets: Path,
                 source, specification,
                 f"chromeAssets.applicationMenuIcons.{signature}", path,
             )
+        desktop_specification = profile.raw.get("desktopPattern")
+        desktop = (_prove_desktop_pattern(
+            profile, source, output, desktop_specification,
+        ) if desktop_specification is not None else None)
         receipt = {
             "schema": "now-mirror-oracle-assets/v1",
             "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -126,11 +198,24 @@ def extract_chrome(profile: VisualProfile, guest: Path, base_assets: Path,
             },
             "appleMenu": apple,
             "applicationMenuIcons": applications,
+            "desktopPattern": desktop,
         }
         _write_json(chrome_dir / "provenance.json", receipt)
-        manifest = json.loads(source_manifest.read_text())
         manifest["pack"] = output.parent.name if output.name == "Resources" else output.name
         manifest["oracleChrome"] = receipt
+        if desktop is not None:
+            manifest["desktop"] = {
+                "kind": "pattern",
+                "name": desktop["name"],
+                "file": desktop["asset"],
+                "tileOrigin": desktop["tileOrigin"],
+                "source": f"visual profile {profile.id}",
+                "confidence": (
+                    f"exactly matched {desktop['provedPixels']} native "
+                    "framebuffer pixels in profile-declared proof regions"
+                ),
+                "proof": desktop,
+            }
         _write_json(output / "manifest.json", manifest)
         return receipt
     except Exception:

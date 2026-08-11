@@ -265,20 +265,27 @@ capture () {
 
     local request="$VM/.now-capture-request"
     local response="$VM/.now-capture.bmp"
+    local receipt="$VM/.now-capture-response"
     [ ! -e "$request" ] || die "a framebuffer capture is already pending"
-    rm -f "$response"
+    rm -f "$response" "$receipt"
     touch "$request"
     local attempt
     for attempt in $(seq 1 100); do
-        if [ -f "$response" ]; then
+        if [ -f "$response" ] && [ -f "$receipt" ]; then
+            [ "$(cat "$receipt")" = "NOW_ORACLE_CAPTURE_NATIVE_RGB_V2" ] \
+                || die "framebuffer capture response has an unknown pixel contract: $(cat "$receipt")"
             mv "$response" "$destination"
-            rm -f "$request"
+            rm -f "$request" "$receipt"
             echo "sheepshaver-86: captured guest framebuffer: $destination"
             return
         fi
+        if [ -f "$response" ] && [ ! -e "$request" ]; then
+            rm -f "$response"
+            die "the running SheepShaver build returned an unversioned framebuffer; use a build with NOW_ORACLE_CAPTURE_NATIVE_RGB_V2"
+        fi
         sleep 0.05
     done
-    rm -f "$request"
+    rm -f "$request" "$response" "$receipt"
     die "framebuffer capture timed out; the configured SheepShaver app lacks the oracle capture seam or is not presenting frames"
 }
 

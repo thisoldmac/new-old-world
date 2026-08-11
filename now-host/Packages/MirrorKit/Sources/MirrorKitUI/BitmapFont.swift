@@ -327,6 +327,30 @@ public enum DesktopPattern {
         return CGImageSourceCreateImageAtIndex(src, 0, nil)
     }
 
+    /// Resolve a pattern by the identity the guest reports, through the
+    /// extractor's own manifest. Filenames are sanitized for the filesystem
+    /// (`Bossanova Bondi` → `Bossanova_Bondi.png`), so constructing a path
+    /// from the live name silently misses every name containing punctuation
+    /// or spaces.
+    private static func patternImage(named name: String) -> CGImage? {
+        guard let patterns = manifest?["patterns"] as? [String: Any] else {
+            return nil
+        }
+        if let ppats = patterns["ppat"] as? [[String: Any]],
+           let row = ppats.first(where: { $0["name"] as? String == name }),
+           let file = row["file"] as? String,
+           let art = image("patterns/\(file)") {
+            return art
+        }
+        if let appearance = patterns["appearance"] as? [String: Any],
+           let rows = appearance["patterns"] as? [[String: Any]],
+           let row = rows.first(where: { $0["name"] as? String == name }),
+           let file = row["file"] as? String {
+            return image("patterns/appearance/\(file)")
+        }
+        return nil
+    }
+
     /// Resolve the desktop for a screen of this size.
     ///
     /// The size test is the load-bearing part and it is not fussiness:
@@ -359,8 +383,9 @@ public enum DesktopPattern {
             }
             return .picture(art)
         case "pattern":
-            guard let name = desktop["name"] as? String,
-                  let art = image("patterns/appearance/\(name).png") else {
+            let direct = file.flatMap(image)
+            guard let art = direct ?? (desktop["name"] as? String).flatMap(
+                    patternImage(named:)) else {
                 return .unknown("this guest's pattern is not in the pack")
             }
             return .pattern(art)
@@ -477,7 +502,7 @@ public enum DesktopPattern {
                     why: "the guest reports a pattern and names none, and the "
                          + "pack does not hold a pattern either")
             }
-            guard let art = image("patterns/appearance/\(name).png") else {
+            guard let art = patternImage(named: name) else {
                 /* NOT a licence to draw the pack's own pattern. The machine
                    named this one; drawing a different one would be a
                    confident wrong answer with the machine on record

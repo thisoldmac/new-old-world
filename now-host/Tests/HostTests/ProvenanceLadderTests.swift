@@ -229,11 +229,10 @@ final class ProvenanceLadderTests: XCTestCase {
 /// one in the picture.**
 ///
 /// It used to be two guesses: tile `ppat` 16 across the screen, and fill a
-/// hard-coded purple when the pack had none. Lane C measured the first as
-/// wrong on the image we run — `ppat` 16 is a shipped DEFAULT, not a
-/// setting, and the guest's actual desktop is the 800×600 picture "Indigo
-/// Foam", drawn once at the origin (p50 delta 2 against sweep A's own
-/// screendump).
+/// hard-coded purple when the pack had none. The Mac OS 9.1 profile instead
+/// records the measured 800×600 picture "Indigo Foam". The Mac OS 8.6
+/// profile records `Mac OS Default` only after exact native-pixel proof of
+/// its extracted tile. Which rule applies belongs to the selected pack.
 @MainActor
 final class DesktopProvenanceTests: XCTestCase {
 
@@ -249,8 +248,16 @@ final class DesktopProvenanceTests: XCTestCase {
     /// `DesktopPattern.answer` makes an 800×600 picture answer `.picture`
     /// for a 1024×768 screen and this fails.
     func testAPictureThatIsNotTheScreenSizeIsAnUnknown() throws {
-        try XCTSkipIf(MirrorKitUI.AssetPack.root == nil,
-                      "no asset pack; nothing to resolve against")
+        guard let root = MirrorKitUI.AssetPack.root else {
+            throw XCTSkip("no asset pack; nothing to resolve against")
+        }
+        let data = try Data(contentsOf: root.appendingPathComponent(
+            "manifest.json"))
+        let manifest = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let desktop = try XCTUnwrap(manifest["desktop"] as? [String: Any])
+        try XCTSkipUnless(desktop["kind"] as? String == "picture",
+                          "selected pack declares a tiled desktop")
         let wrong = DesktopPattern.answer(
             screen: CGSize(width: 1024, height: 768))
         guard case .unknown = wrong else {
@@ -262,22 +269,29 @@ final class DesktopProvenanceTests: XCTestCase {
         }
     }
 
-    /// **And the right size resolves to the picture, or the pack cannot
-    /// say — never to a tiled default.**
+    /// **And the answer must agree with the pack's declared kind.**
     ///
-    /// Both outcomes are acceptable and one of them is not: whatever this
-    /// answers, it must never be a pattern the manifest did not name. That
-    /// is the deletion this test protects.
-    func testTheDesktopIsNeverAnUnnamedDefault() throws {
-        try XCTSkipIf(MirrorKitUI.AssetPack.root == nil,
-                      "no asset pack; nothing to resolve against")
-        switch DesktopPattern.answer(screen: CGSize(width: 800, height: 600)) {
-        case .picture, .unknown:
+    /// Mac OS 9.1's pack names a picture; the calibrated Mac OS 8.6 pack
+    /// names `Mac OS Default` after proving its tile against native pixels.
+    /// A pattern is therefore legitimate only when the selected manifest
+    /// says pattern — never merely because `ppat` 16 happens to exist.
+    func testTheDesktopMatchesThePacksDeclaredKind() throws {
+        guard let root = MirrorKitUI.AssetPack.root else {
+            throw XCTSkip("no asset pack; nothing to resolve against")
+        }
+        let data = try Data(contentsOf: root.appendingPathComponent(
+            "manifest.json"))
+        let manifest = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let desktop = try XCTUnwrap(manifest["desktop"] as? [String: Any])
+        let kind = desktop["kind"] as? String
+        switch (kind, DesktopPattern.answer(
+                    screen: CGSize(width: 800, height: 600))) {
+        case ("picture", .picture), ("pattern", .pattern),
+             ("unresolved", .unknown), (nil, .unknown):
             break
-        case .pattern:
-            // Legitimate only if the manifest actually says `pattern`.
-            XCTFail("resolved to a tiled pattern on a pack whose manifest "
-                    + "records a picture — this is the ppat 16 guess back")
+        default:
+            XCTFail("desktop answer does not agree with manifest kind \(kind ?? "absent")")
         }
     }
 }

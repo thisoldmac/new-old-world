@@ -117,6 +117,7 @@ capture="$TMP/frame.bmp"
 (
     while [ ! -f "$VM/.now-capture-request" ]; do sleep 0.01; done
     printf 'BMfixture' > "$VM/.now-capture.bmp"
+    printf 'NOW_ORACLE_CAPTURE_NATIVE_RGB_V2\n' > "$VM/.now-capture-response"
     rm -f "$VM/.now-capture-request"
 ) &
 capture_writer=$!
@@ -124,6 +125,23 @@ NOW_TEST_LSOF_RESULT=0 run_harness capture "$capture" >/dev/null
 wait "$capture_writer"
 [ "$(cat "$capture")" = BMfixture ] \
     || { echo "FAILED: capture did not publish the emulator response" >&2; exit 1; }
+
+legacy_capture="$TMP/legacy-frame.bmp"
+# Watched failing 2026-08-11 by deleting the launcher's unversioned-response
+# refusal: this fixture reached the timeout path and the named assertion failed.
+(
+    while [ ! -f "$VM/.now-capture-request" ]; do sleep 0.01; done
+    printf 'BMred-blue-swapped' > "$VM/.now-capture.bmp"
+    rm -f "$VM/.now-capture-request"
+) &
+legacy_writer=$!
+legacy_output="$(NOW_TEST_LSOF_RESULT=0 run_harness capture \
+    "$legacy_capture" 2>&1 || true)"
+wait "$legacy_writer"
+printf '%s\n' "$legacy_output" \
+    | grep -F "returned an unversioned framebuffer" >/dev/null
+[ ! -e "$legacy_capture" ] \
+    || { echo "FAILED: unversioned capture reached its destination" >&2; exit 1; }
 
 (
     while [ ! -f "$VM/.now-input-request" ]; do sleep 0.01; done
@@ -227,4 +245,4 @@ NOW_CODEKITTEN_SOURCE="$desk_lane" \
 grep -F "codekitten_revision=$(git -C "$desk_lane" rev-parse HEAD)" \
     "$VM/Installed Apps.rig" >/dev/null
 
-echo "sheepshaver-86: 21 harness behaviors passed"
+echo "sheepshaver-86: 22 harness behaviors passed"

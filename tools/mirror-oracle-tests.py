@@ -238,11 +238,19 @@ def main() -> None:
 
         base_assets = root / "base-assets"
         base_assets.mkdir()
-        (base_assets / "manifest.json").write_text('{"pack":"base"}\n')
+        (base_assets / "manifest.json").write_text(
+            '{"pack":"base","desktop":{"kind":"unresolved"}}\n')
         (base_assets / "kept.txt").write_text("immutable base\n")
+        (base_assets / "patterns").mkdir()
+        write_png(solid(1, 1, (20, 20, 20)),
+                  base_assets / "patterns" / "desktop.png")
         profile_raw = dict(fixture_profile().raw)
         profile_raw["chromeAssets"] = {
             "appleMenu": {"rect": [0, 0, 2, 2], "background": "#141414"}
+        }
+        profile_raw["desktopPattern"] = {
+            "name": "Mac OS Default", "asset": "patterns/desktop.png",
+            "tileOrigin": [0, 0], "proofRegions": [[0, 1, 4, 3]],
         }
         chrome_profile = replace(fixture_profile(), raw=profile_raw)
         chrome_guest = root / "chrome-guest.png"
@@ -255,8 +263,26 @@ def main() -> None:
         assert extracted.pixel(0, 0)[3] == 0
         assert extracted.pixel(1, 0) == (50, 60, 70, 255)
         assert asset_receipt["baseAssets"]["manifestSha256"]
-        assert json.loads((derived_assets / "manifest.json").read_text())["oracleChrome"]
-        assert json.loads((base_assets / "manifest.json").read_text()) == {"pack": "base"}
+        derived_manifest = json.loads(
+            (derived_assets / "manifest.json").read_text())
+        assert derived_manifest["oracleChrome"]
+        assert derived_manifest["desktop"]["kind"] == "pattern"
+        assert derived_manifest["desktop"]["file"] == "patterns/desktop.png"
+        assert asset_receipt["desktopPattern"]["provedPixels"] == 8
+        assert json.loads((base_assets / "manifest.json").read_text()) == {
+            "pack": "base", "desktop": {"kind": "unresolved"}}
+
+        mismatched_profile_raw = dict(profile_raw)
+        mismatched_profile_raw["desktopPattern"] = dict(
+            profile_raw["desktopPattern"])
+        mismatched_profile_raw["desktopPattern"]["proofRegions"] = [[0, 0, 4, 3]]
+        mismatched_profile = replace(
+            fixture_profile(), raw=mismatched_profile_raw)
+        refused_assets = root / "refused-assets"
+        assert_raises(ValueError, lambda: extract_chrome(
+            mismatched_profile, chrome_guest, base_assets, refused_assets,
+        ), "desktopPattern does not match")
+        assert not refused_assets.exists()
 
         scene_path = root / "scene.json"
         scene_path.write_text("{}")
@@ -298,7 +324,7 @@ def main() -> None:
         assert "profile platinum.macos-8.6.default" in listing
         assert "case finder-file-menu-open" in listing
 
-    print("mirror-oracle: 22 capture, image, profile, asset, and diff behaviors passed")
+    print("mirror-oracle: 24 capture, image, profile, asset, and diff behaviors passed")
 
 
 if __name__ == "__main__":

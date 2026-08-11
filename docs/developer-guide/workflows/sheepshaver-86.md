@@ -214,7 +214,11 @@ recognition before unattended installation is treated as reliable.
 The versioned local macemu branch `codex/now-oracle-capture` adds bounded,
 profile-local request seams. `scripts/sheepshaver-86 capture` creates a sentinel
 in the active `.sheepvm`; the SDL renderer answers with a BMP of its native
-guest surface and removes the request. `scripts/sheepshaver-86 input` publishes
+guest surface, writes the exact `NOW_ORACLE_CAPTURE_NATIVE_RGB_V2` response,
+then removes the request. The versioned response is part of the contract: the
+launcher refuses an older capture build that publishes a BMP without the RGB
+receipt, because the original implementation preserved framebuffer geometry
+but exchanged the red and blue channels. `scripts/sheepshaver-86 input` publishes
 validated native-pixel mouse actions or raw ADB key transitions atomically and
 requires the renderer's completion receipt. Both commands time out rather than
 accepting stale state. Captures exclude macOS window chrome, scaling, and the
@@ -333,17 +337,24 @@ drive QEMU through its existing semantic harness. A future visual version gets
 another profile and evidence-backed deltas rather than conditionals scattered
 through the comparison code.
 
-The first reference-only calibration used the stable 800×600 Finder capture
-whose SHA-256 is
-`db96888982a9706e424f58158e10fc7087ef120f796155cd4aa14948992060f6`.
+The first color-correct reference-only calibration uses the stable 800×600
+Finder capture whose SHA-256 is
+`cdddab6c4e1de1d43b57580f2c2ccd2e2c0a54d8898ca91910b91e893e2bc09a`.
 It is not an accepted resting-desktop case: a transfer window remained open
 and no state proof was attached. Its unobscured 20-row menu-bar region is still
 a valid named visual reference. Against a pack extracted from the same 8.6
 boot disk, the production renderer differs in 35 of 13,500 unmasked pixels
 (0.259%); all residual pixels are inside the word “View”. The desktop region
-is 100% mismatched and remains unclaimed because this disk has no readable
-`Desktop Pictures Prefs` and the calibration scene intentionally contains no
-semantic windows.
+that the profile declares as unobscured proves all 69,160 background pixels
+exactly against the extracted, origin-zero `Mac OS Default` tile. This proves
+the background asset and tiling rule, not the resting-desktop case: the source
+still contains a transfer window and Finder icons while the calibration scene
+intentionally contains no semantic windows or desktop items.
+
+The earlier stable BMP beginning `db968889...` is invalid as color evidence.
+Its source build saved an SDL intermediate surface with masks that did not
+describe the host bytes, exchanging red and blue. Any crop or comparison made
+from that capture must be regenerated from a V2-receipted framebuffer.
 
 ## Evidence status
 

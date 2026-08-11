@@ -7,6 +7,13 @@
   "screen": {"width": 800, "height": 600, "depth": 32},
   "assetPolicy": "external-apple-assets-required-for-pixel-claims",
   "calibration": "sheepshaver-native-framebuffer",
+  "desktopPattern": {
+    "name": "Mac OS Default",
+    "asset": "patterns/desktop.png",
+    "tileOrigin": [0, 0],
+    "proofRegions": [[424, 320, 690, 580]],
+    "source": "unobscured native framebuffer region; every RGB pixel must match the extracted ppat tile"
+  },
   "chromeAssets": {
     "appleMenu": {
       "rect": [17, 2, 30, 17],

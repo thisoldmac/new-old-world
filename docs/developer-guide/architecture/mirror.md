@@ -75,5 +75,15 @@ other already-exact titles and was rejected. The extractor preserves that
 table as data, but the renderer does not globally enable an unproven spacing
 mode.
 
+The same profile now declares its `Mac OS Default` desktop tile explicitly.
+Pack derivation promotes that declaration only after every RGB pixel in the
+profile's unobscured proof regions equals the origin-zero tiled asset; a
+one-pixel mismatch refuses the derived pack. The current color-correct native
+capture proves 69,160 of 69,160 background pixels. Mirror resolves a guest
+naming that pattern through the manifest to the sanitized `desktop.png` asset
+and records machine provenance. This is a bounded background proof, not an
+accepted Finder-desktop scene—the capture still contains a transfer window and
+desktop items absent from the semantic calibration scene.
+
 The scheduler, invalidation, and generation behavior is tested locally. The
 2,000 ms ambient-wait target on the PowerBook 1400c is not metal-verified.

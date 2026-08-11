@@ -24,17 +24,22 @@ correctly skipped because no `NOW_GUEST_LIVE` session was requested; the
 separate SheepShaver rung above is emulator-observed, not metal verification.
 
 One later disposable-clone framebuffer supplies a bounded visual calibration,
-not state acceptance: its stable BMP SHA-256 is
-`db96888982a9706e424f58158e10fc7087ef120f796155cd4aa14948992060f6`,
+not state acceptance: its color-correct BMP SHA-256 is
+`cdddab6c4e1de1d43b57580f2c2ccd2e2c0a54d8898ca91910b91e893e2bc09a`,
 but the capture is `reference-only` because a transfer window remained open
 and no state proof was attached. The unobscured menu-bar region is independently
 useful. A full OS 8.6 pack extracted read-only from the clone's `.hfv`, plus
 profile-declared Apple/Finder chrome crops from that BMP, brings the production
 renderer to 35 changed pixels out of 13,500 unmasked menu pixels (0.259%). All
 35 are confined to Charcoal “View”; the other menu titles, marks, divider and
-bezel are exact in this reference. The desktop is still 100% mismatched and is
-not a fidelity result: the semantic calibration scene has no windows and the
-source disk does not expose its chosen desktop picture setting.
+bezel are exact in this reference. The profile also proves the extracted
+`Mac OS Default` tile and its origin against 69,160 unobscured background
+pixels, with zero differences. That is a background fidelity result, not a
+full desktop result: the semantic calibration scene has no windows or desktop
+items while the source capture still has both. The original capture beginning
+`db968889...` and its derived color assets are invalidated because its SDL BMP
+masks exchanged red and blue; V2 capture receipts now make that defect a hard
+refusal.
 
 That is **tested tooling plus one bounded reference comparison**, not an
 accepted corpus. The six declared Mac OS 8.6
