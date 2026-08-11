@@ -121,6 +121,8 @@ echo "==> [2/8] release and staged-image discipline gates"
     || fail "SheepShaver 8.6 harness gate"
 "$script_dir/../tools/emulator-router-tests" \
     || fail "emulator domain router gate"
+"$script_dir/../tools/sheepshaver-package-tests" \
+    || fail "self-contained SheepShaver package gate"
 
 echo
 echo "==> [3/8] Web Bridge gate"

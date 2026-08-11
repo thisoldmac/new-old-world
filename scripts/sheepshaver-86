@@ -249,6 +249,13 @@ rig () {
     fi
     echo "sheepshaver_app=$APP"
     echo "sheepshaver_executable_sha256=$(shasum -a 256 "$APP/Contents/MacOS/SheepShaver" | awk '{print $1}')"
+    if [ -f "$APP/Contents/Resources/NOW-Oracle-Build.txt" ]; then
+        echo "sheepshaver_build_manifest_sha256=$(shasum -a 256 "$APP/Contents/Resources/NOW-Oracle-Build.txt" | awk '{print $1}')"
+    fi
+    for dylib in "$APP/Contents/Frameworks"/*.dylib; do
+        [ -f "$dylib" ] || continue
+        echo "sheepshaver_dylib_sha256=$(basename "$dylib") $(shasum -a 256 "$dylib" | awk '{print $1}')"
+    done
     echo "profile=$VM"
     echo "prefs_sha256=$(shasum -a 256 "$VM/prefs" | awk '{print $1}')"
     echo "rom_sha256=$(shasum -a 256 "$VM/Mac OS ROM" | awk '{print $1}')"

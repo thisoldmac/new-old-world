@@ -6,7 +6,7 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [AGENTS.md, docs/guest-ui-start-here.md]
-source_dependencies: [scripts/sheepshaver-86, tools/sheepshaver-86-tests, docs/lab-setup.md, now-guest-ppc]
+source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, tools/sheepshaver-86-tests, tools/sheepshaver-package-tests, docs/lab-setup.md, now-guest-ppc]
 media_ids: []
 last_verified: 2026-08-11
 ---
@@ -45,11 +45,22 @@ env CFLAGS=-std=gnu17 ./configure \
   --enable-sdl-video --enable-sdl-audio
 make -j8
 make SheepShaver_app
+scripts/package-sheepshaver-86 \
+  "path/to/SheepShaver.app" "path/to/SheepShaver-8.6-Oracle.app"
 ```
 
-That recipe produced a native arm64 app. Its Homebrew SDL compatibility and
-VDE dynamic libraries make this a lab build, not a self-contained shipping
-artifact.
+That recipe produces a native arm64 app initially linked to Homebrew's SDL
+compatibility and VDE libraries. `package-sheepshaver-86` copies the complete
+dependency closure into `Contents/Frameworks`, rewrites Mach-O load paths,
+embeds the SheepShaver license and source revision, fixes the bundle identifier,
+ad-hoc signs the result, and refuses a package whose final load commands still
+name Homebrew or `/usr/local`. It publishes atomically so a late failure cannot
+leave a partial app at the destination.
+
+This makes the local oracle host app self-contained. It does not turn the ROM,
+Mac OS, CarbonLib, or the profile into redistributable inputs, and it does not
+settle whether a modified GPL emulator should become a shipped product
+dependency. Those remain separate decisions.
 
 ## Profile contract
 
