@@ -36,7 +36,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let (endpoint, root) = try temporaryEndpoint()
         defer { try? FileManager.default.removeItem(at: root) }
         let listener = GuestListener(
-            identity: .init(version: "0.1-test", name: "Test Host"))
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            updateProvider: UpdateProvider(snapshot: .empty))
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
@@ -289,7 +290,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let (endpoint, root) = try temporaryEndpoint()
         defer { try? FileManager.default.removeItem(at: root) }
         let listener = GuestListener(
-            identity: .init(version: "0.1-test", name: "Test Host"))
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            updateProvider: UpdateProvider(snapshot: .empty))
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
