@@ -1,8 +1,9 @@
 # Reading the guest's assets straight off the disk image
 
-**Date:** 2026-08-06 · **Status:** measured here, on this Mac, against
-`~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2`. No VM was booted and no
-guest was running.
+**Date:** 2026-08-06, extended 2026-08-11 · **Status:** measured here, on this
+Mac, against `~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2` and a stopped
+SheepShaver Mac OS 8.6 `.hfv`. No VM was booted during extraction and no guest
+disk was written.
 
 [mirror-assets.md](mirror-assets.md) carries the inherited knowledge of
 WHAT the assets are and where they live in the System Folder; it names
@@ -108,6 +109,20 @@ tools/extract-assets-offline --reuse-work    # skip convert+carve on a rerun
 tools/extract-assets-offline --theme-report  # census the theme file, stop
 ```
 
+The only Python package dependency is Pillow. Keep it in a developer
+environment, not the product:
+
+```sh
+python3 -m venv /absolute/path/to/asset-pack-venv
+/absolute/path/to/asset-pack-venv/bin/pip install \
+  -r tools/asset-pack/requirements.txt
+```
+
+`qemu-img` is needed for qcow2 conversion; `hdiutil` is needed for the
+read-only HFS+ mount. A SheepShaver `.hfv` is already raw, and the extractor
+recognizes its HFS wrapper directly rather than expecting an Apple Partition
+Map.
+
 It is idempotent: each output directory is cleared before it is
 rewritten, and it refuses to finish if a generic icon the renderer names
 is missing rather than shipping a half pack.
@@ -136,6 +151,14 @@ a filesystem walk, so the sweep reaches Extensions, Apple Menu Items and
 Control Strip Modules as cheaply as the Applications folder, and both
 icon sizes come out of each bundle. The pack went from 186 app icons to
 914.
+
+Measured on the stopped Mac OS 8.6 SheepShaver boot volume on 2026-08-11, the
+same command found 116 System icons, 40 cursors, 3 `ppat` plus 5 `PAT ` and 44
+Appearance patterns, 39 PICTs, 9 NFNT sheets, 16 Charcoal sheets rasterized
+from `sfnt` plus `hdmx`, 3 TrueType faces, and 512 application icons for 117
+creators across 384 resource forks. Its 822 provenance rows were written to a
+new private pack. The missing `Desktop Pictures Prefs` is recorded as unknown;
+the extractor does not substitute a plausible desktop.
 
 **`PICT` is carried, not converted.** QuickDraw picture decoding was
 removed from macOS and nothing here draws these 42 images, so writing a

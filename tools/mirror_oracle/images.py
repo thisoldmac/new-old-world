@@ -235,6 +235,30 @@ def write_png(image: Image, path: Path) -> None:
     )
 
 
+def transparent_crop(image: Image, rect: Rect,
+                     background: tuple[int, int, int]) -> Image:
+    """Crop an oracle asset and make only the measured face transparent.
+
+    Exact equality is intentional. The source is a native framebuffer, not a
+    resampled host screenshot, so a fuzzy tolerance would erase legitimate
+    antialias and shadow pixels from the asset it claims to preserve.
+    """
+    left, top, right, bottom = _bounded(rect, image.width, image.height)
+    rgba = bytearray((right - left) * (bottom - top) * 4)
+    target = 0
+    for y in range(top, bottom):
+        for x in range(left, right):
+            pixel = image.pixel(x, y)
+            rgba[target : target + 3] = bytes(pixel[:3])
+            # Native framebuffer BMPs may carry an all-zero alpha plane even
+            # though every RGB pixel is visible. The oracle is opaque by
+            # definition; alpha here is derived from the measured face, not
+            # inherited from a transport field the screen does not use.
+            rgba[target + 3] = 0 if pixel[:3] == background else 255
+            target += 4
+    return Image(right - left, bottom - top, bytes(rgba))
+
+
 def masked_digest(image: Image, masks: list[Rect]) -> str:
     mask_rows: dict[int, list[tuple[int, int]]] = {}
     for rect in masks:

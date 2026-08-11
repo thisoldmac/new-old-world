@@ -6,7 +6,7 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [AGENTS.md, docs/guest-ui-start-here.md]
-source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, tools/mirror-oracle, tools/mirror_oracle, tools/mirror_oracle_data, tools/macbinary-identity.py, tools/sheepshaver-86-tests, tools/sheepshaver-package-tests, tools/mirror-oracle-tests.py, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, docs/lab-setup.md, now-guest-ppc]
+source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, tools/mirror-oracle, tools/mirror_oracle, tools/mirror_oracle_data, tools/extract-assets-offline, tools/macbinary-identity.py, tools/sheepshaver-86-tests, tools/sheepshaver-package-tests, tools/mirror-oracle-tests.py, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumMenuBar.swift, docs/lab-setup.md, now-guest-ppc]
 media_ids: []
 last_verified: 2026-08-11
 ---
@@ -278,6 +278,27 @@ tools/mirror-oracle run finder-front-icon-view \
   --report-only
 ```
 
+Build the private OS 8.6 asset pack directly from the stopped SheepShaver
+volume, then derive the capture-attributed menu-bar art into a new pack:
+
+```sh
+tools/extract-assets-offline \
+  --image /absolute/path/to/Mac\ OS\ 8.6.hfv \
+  --out /absolute/path/to/os86-base/Resources
+
+tools/mirror-oracle extract-chrome platinum.macos-8.6.default \
+  --guest /absolute/path/to/stable-guest.bmp \
+  --base-assets /absolute/path/to/os86-base/Resources \
+  --out /absolute/path/to/os86-oracle/Resources
+```
+
+The first command recognizes a raw HFS/HFS+ `.hfv` as well as an APM qcow2
+disk. The second clones the whole base pack, writes transparent crops declared
+by the visual profile, and publishes `manifest.json` only after the derived
+pack and its provenance receipt are complete. It never edits the sealed base
+pack. The BMP decoder must ignore its zero alpha plane: SheepShaver's native
+32-bit framebuffer stores visible RGB with every alpha byte zero.
+
 A capture is accepted only after two consecutive native framebuffer reads have
 the same SHA-256 after case-declared volatile masks are applied. All attempts
 remain in `samples/`; success writes `capture.json`, and a refusal writes
@@ -311,6 +332,18 @@ the full-stack and Mac OS 9.1+ lanes. QEMU input is intentionally refused here;
 drive QEMU through its existing semantic harness. A future visual version gets
 another profile and evidence-backed deltas rather than conditionals scattered
 through the comparison code.
+
+The first reference-only calibration used the stable 800×600 Finder capture
+whose SHA-256 is
+`db96888982a9706e424f58158e10fc7087ef120f796155cd4aa14948992060f6`.
+It is not an accepted resting-desktop case: a transfer window remained open
+and no state proof was attached. Its unobscured 20-row menu-bar region is still
+a valid named visual reference. Against a pack extracted from the same 8.6
+boot disk, the production renderer differs in 35 of 13,500 unmasked pixels
+(0.259%); all residual pixels are inside the word “View”. The desktop region
+is 100% mismatched and remains unclaimed because this disk has no readable
+`Desktop Pictures Prefs` and the calibration scene intentionally contains no
+semantic windows.
 
 ## Evidence status
 

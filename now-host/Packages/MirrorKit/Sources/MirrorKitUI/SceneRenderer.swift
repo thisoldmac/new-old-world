@@ -588,11 +588,7 @@ public struct SceneRenderer {
     // MARK: - Menu bar
 
     private func drawMenubar(_ ctx: GraphicsContext, _ bounds: CGRect) {
-        let bar = CGRect(x: 0, y: 0, width: bounds.width,
-                         height: Platinum.menubarHeight)
-        ctx.fill(Path(bar), with: .color(Platinum.g1))
-        ctx.fill(Path(CGRect(x: 0, y: bar.maxY, width: bar.width, height: 1)),
-                 with: .color(Platinum.g6))
+        PlatinumMenuBar.drawChrome(in: ctx, width: bounds.width)
 
         // Titles sit at the wire's MenuList lefts — guest-true layout.
         let menus = scene.menubar?.menus ?? []
@@ -637,6 +633,7 @@ public struct SceneRenderer {
         let front = HitTester.switchableApps(scene).first(where: { $0.front })
         let appWidth = CGFloat(HitTester.appMenuWidth(scene))
         let appLeft = bounds.width - appWidth
+        PlatinumMenuBar.drawApplicationDivider(in: ctx, appLeft: appLeft)
         let guestAppMenuOpen = openMenu.flatMap { index in
             menus.indices.contains(index) ? menus[index].id : nil
         } == ObjectResolver.applicationMenuID
@@ -659,7 +656,8 @@ public struct SceneRenderer {
             let small = IconAtlas.Size.small
             let signature = scene.processes?
                 .first(where: { $0.psn == front.psn })?.signature
-            if let img = IconAtlas.processIcon(signature: signature, size: small)
+            if let img = PlatinumMenuBar.applicationMenuIcon(signature: signature)
+                ?? IconAtlas.processIcon(signature: signature, size: small)
                 ?? IconAtlas.namedIcon("application", size: small) {
                 ctx.draw(Image(decorative: img, scale: 1)
                             .interpolation(.none), in: iconBox)
@@ -667,7 +665,9 @@ public struct SceneRenderer {
                 ctx.fill(Path(roundedRect: iconBox, cornerRadius: 2),
                          with: .color(Platinum.g3))
             }
-            appText(front.name, ctx, x: appLeft + 26, baselineY: 14,
+            // The application title is menu text: Charcoal/system, not the
+            // Geneva content face used by Finder rows and desktop labels.
+            sysText(front.name, ctx, x: appLeft + 26, baselineY: 14,
                     color: switcherOpen ? Platinum.g0 : Platinum.g6)
         }
         _ = drawRightAligned(ctx, Self.clockString(scene.capturedAt),
@@ -679,12 +679,27 @@ public struct SceneRenderer {
                                apple: Bool, left: CGFloat,
                                highlighted: Bool) {
         let color = highlighted ? Platinum.g0 : Platinum.g6
-        let mid = Platinum.menubarHeight / 2
-        // The Apple glyph isn't in the bitmap strike — draw it via Text.
+        // Charcoal's menu ink occupies guest rows 5...15. A geometric centre
+        // at 10 put every ordinary title one row low; the measured cap-band
+        // centre is 9.
+        let mid: CGFloat = 9
         if apple {
-            ctx.draw(ctx.resolve(Text(title).font(Platinum.systemFont(14))
-                        .foregroundColor(color)),
-                     at: CGPoint(x: left + 6, y: mid), anchor: .center)
+            if !highlighted, let image = PlatinumMenuBar.appleMenu {
+                ctx.draw(Image(decorative: image, scale: 1)
+                            .interpolation(.none),
+                         in: CGRect(x: left + 7, y: 2,
+                                    width: CGFloat(image.width),
+                                    height: CGFloat(image.height)))
+            } else if let chicago = FontBook.font("chicago-12") {
+                // Chicago carries U+F8FF as the exact classic Apple glyph.
+                // Centre its 11-pixel advance in the 13-pixel oracle slot.
+                chicago.draw("\u{F8FF}", in: ctx, x: left + 8,
+                             baselineY: 14, color: color)
+            } else {
+                ctx.draw(ctx.resolve(Text(title).font(Platinum.systemFont(14))
+                            .foregroundColor(color)),
+                         at: CGPoint(x: left + 14, y: mid), anchor: .center)
+            }
         } else {
             sysCentered(title, ctx, centerX: left + sysWidth(title) / 2,
                         centerY: mid, color: color)

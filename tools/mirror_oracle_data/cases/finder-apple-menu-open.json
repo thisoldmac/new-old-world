@@ -9,11 +9,11 @@
   ],
   "inputActions": [],
   "regions": [
-    {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 21]},
+    {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 20]},
     {"name": "apple-menu", "source": "screen", "rect": [0, 20, 300, 560]}
   ],
   "masks": [
-    {"name": "clock", "rect": [585, 0, 710, 21], "reason": "time is volatile"}
+    {"name": "clock", "rect": [585, 0, 710, 20], "reason": "time is volatile"}
   ],
   "render": {"openMenu": 0}
 }

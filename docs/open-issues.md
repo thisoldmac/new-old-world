@@ -4,7 +4,7 @@ search:
 ---
 # Open issues
 
-## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle corpus has tooling but not six accepted target pairs (2026-08-11, `codex/sheepshaver-86-tooling`)
+## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle has one reference calibration but not six accepted target pairs (2026-08-11, `codex/sheepshaver-86-tooling`)
 
 The repository now has one visual-oracle loop shared by SheepShaver and QEMU:
 sealed-image clone verification, disposable `.sheepvm` runs, masked
@@ -23,7 +23,21 @@ resident/rig target, and the host suites plus Debug/Release app builds. Stage 8
 correctly skipped because no `NOW_GUEST_LIVE` session was requested; the
 separate SheepShaver rung above is emulator-observed, not metal verification.
 
-That is **tested tooling**, not a fidelity result. The six declared Mac OS 8.6
+One later disposable-clone framebuffer supplies a bounded visual calibration,
+not state acceptance: its stable BMP SHA-256 is
+`db96888982a9706e424f58158e10fc7087ef120f796155cd4aa14948992060f6`,
+but the capture is `reference-only` because a transfer window remained open
+and no state proof was attached. The unobscured menu-bar region is independently
+useful. A full OS 8.6 pack extracted read-only from the clone's `.hfv`, plus
+profile-declared Apple/Finder chrome crops from that BMP, brings the production
+renderer to 35 changed pixels out of 13,500 unmasked menu pixels (0.259%). All
+35 are confined to Charcoal “View”; the other menu titles, marks, divider and
+bezel are exact in this reference. The desktop is still 100% mismatched and is
+not a fidelity result: the semantic calibration scene has no windows and the
+source disk does not expose its chosen desktop picture setting.
+
+That is **tested tooling plus one bounded reference comparison**, not an
+accepted corpus. The six declared Mac OS 8.6
 cases—resting Finder desktop, front icon-view window, inactive Finder window,
 list selection, File menu and Apple menu—still need state proofs and paired
 target/render captures from a disposable clone of the sealed profile. No case

@@ -15,7 +15,9 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools"))
 
 from mirror_oracle.backends import QMPBackend, SheepShaverBackend  # noqa: E402
-from mirror_oracle.images import Image, compare as compare_images, load, masked_digest, write_png  # noqa: E402
+from mirror_oracle.assets import extract_chrome  # noqa: E402
+from mirror_oracle.images import (Image, compare as compare_images, load,
+                                  masked_digest, transparent_crop, write_png)  # noqa: E402
 from mirror_oracle.model import OracleCase, VisualProfile, list_cases, list_profiles, resolve_regions  # noqa: E402
 from mirror_oracle.runner import compare, render_scene, stable_capture  # noqa: E402
 
@@ -138,6 +140,16 @@ def main() -> None:
         write_png(original, png)
         assert load(png) == original
 
+        chrome_source = changed(solid(3, 2, (221, 221, 221)), 1, 0,
+                                (12, 34, 56))
+        chrome = transparent_crop(chrome_source, (0, 0, 3, 2),
+                                  (221, 221, 221))
+        assert chrome.pixel(0, 0) == (221, 221, 221, 0)
+        assert chrome.pixel(1, 0) == (12, 34, 56, 255)
+        zero_alpha = Image(1, 1, bytes((9, 8, 7, 0)))
+        assert transparent_crop(zero_alpha, (0, 0, 1, 1),
+                                (221, 221, 221)).pixel(0, 0) == (9, 8, 7, 255)
+
         bmp = root / "fixture.bmp"
         bmp.write_bytes(bmp_fixture())
         decoded_bmp = load(bmp)
@@ -224,6 +236,28 @@ def main() -> None:
         assert (root / "comparison" / "pair.png").is_file()
         assert (root / "comparison" / "diff.png").is_file()
 
+        base_assets = root / "base-assets"
+        base_assets.mkdir()
+        (base_assets / "manifest.json").write_text('{"pack":"base"}\n')
+        (base_assets / "kept.txt").write_text("immutable base\n")
+        profile_raw = dict(fixture_profile().raw)
+        profile_raw["chromeAssets"] = {
+            "appleMenu": {"rect": [0, 0, 2, 2], "background": "#141414"}
+        }
+        chrome_profile = replace(fixture_profile(), raw=profile_raw)
+        chrome_guest = root / "chrome-guest.png"
+        write_png(changed(base, 1, 0, (50, 60, 70)), chrome_guest)
+        derived_assets = root / "derived-assets"
+        asset_receipt = extract_chrome(chrome_profile, chrome_guest,
+                                       base_assets, derived_assets)
+        assert (derived_assets / "kept.txt").read_text() == "immutable base\n"
+        extracted = load(derived_assets / "chrome" / "apple-menu.png")
+        assert extracted.pixel(0, 0)[3] == 0
+        assert extracted.pixel(1, 0) == (50, 60, 70, 255)
+        assert asset_receipt["baseAssets"]["manifestSha256"]
+        assert json.loads((derived_assets / "manifest.json").read_text())["oracleChrome"]
+        assert json.loads((base_assets / "manifest.json").read_text()) == {"pack": "base"}
+
         scene_path = root / "scene.json"
         scene_path.write_text("{}")
         render_output = root / "renderer-output.png"
@@ -264,7 +298,7 @@ def main() -> None:
         assert "profile platinum.macos-8.6.default" in listing
         assert "case finder-file-menu-open" in listing
 
-    print("mirror-oracle: 19 capture, image, profile, and diff behaviors passed")
+    print("mirror-oracle: 22 capture, image, profile, asset, and diff behaviors passed")
 
 
 if __name__ == "__main__":

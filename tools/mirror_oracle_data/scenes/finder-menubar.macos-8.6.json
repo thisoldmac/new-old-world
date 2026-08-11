@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "seq": 1,
+  "source": "oracle-case",
+  "capturedAt": 0,
+  "screen": {"w": 800, "h": 600},
+  "apps": [
+    {"psn": "0:1", "name": "Finder", "front": true, "error": null}
+  ],
+  "processes": [
+    {"psn": "0:1", "name": "Finder", "front": true, "signature": "MACS"}
+  ],
+  "menubar": {
+    "app": "Finder",
+    "menus": [
+      {"title": "", "apple": true, "left": 10, "id": 256, "items": []},
+      {"title": "File", "apple": false, "left": 43, "id": 257, "items": []},
+      {"title": "Edit", "apple": false, "left": 78, "id": 258, "items": []},
+      {"title": "View", "apple": false, "left": 116, "id": 259, "items": []},
+      {"title": "Special", "apple": false, "left": 159, "id": 260, "items": []},
+      {"title": "Help", "apple": false, "left": 218, "id": -16490, "items": []},
+      {"title": "", "apple": false, "left": 715, "id": -16489, "items": []}
+    ]
+  },
+  "windows": [],
+  "meta": {
+    "errors": [
+      "Menu positions are transcribed from the 2026-08-11 stable SheepShaver native framebuffer; this is a visual calibration scene, not a guest semantic capture."
+    ]
+  }
+}

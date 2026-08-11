@@ -13,6 +13,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools"))
 
 from mirror_oracle.backends import QMPBackend, SheepShaverBackend  # noqa: E402
+from mirror_oracle.assets import extract_chrome  # noqa: E402
 from mirror_oracle.model import list_cases, list_profiles, load_case, load_profile  # noqa: E402
 from mirror_oracle.runner import compare, render_scene, stable_capture  # noqa: E402
 
@@ -46,6 +47,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="tools/mirror-oracle")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list")
+    chrome_parser = sub.add_parser("extract-chrome")
+    chrome_parser.add_argument("profile")
+    chrome_parser.add_argument("--guest", required=True)
+    chrome_parser.add_argument("--base-assets", required=True)
+    chrome_parser.add_argument("--out", required=True)
     prepare = sub.add_parser("prepare")
     prepare.add_argument("version")
     prepare.add_argument("destination")
@@ -80,6 +86,13 @@ def main() -> int:
                 str(REPO / "scripts" / "emulator"), "sheepshaver-86", "clone",
                 args.version, str(Path(args.destination).resolve()),
             ], check=True)
+            return 0
+        if args.command == "extract-chrome":
+            receipt = extract_chrome(
+                load_profile(args.profile), Path(args.guest),
+                Path(args.base_assets), Path(args.out),
+            )
+            print(json.dumps(receipt, sort_keys=True))
             return 0
 
         case = load_case(args.case)

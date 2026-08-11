@@ -9,11 +9,11 @@
   ],
   "inputActions": [],
   "regions": [
-    {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 21]},
+    {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 20]},
     {"name": "file-menu", "source": "screen", "rect": [30, 20, 260, 430]}
   ],
   "masks": [
-    {"name": "clock", "rect": [585, 0, 710, 21], "reason": "time is volatile"}
+    {"name": "clock", "rect": [585, 0, 710, 20], "reason": "time is volatile"}
   ],
   "render": {"openMenu": 1}
 }

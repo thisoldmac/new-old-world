@@ -100,6 +100,7 @@ NAMED_ICONS = {
 # volume makes every app reachable at once — the live route had to pull
 # each one over the wire.
 APP_SWEEP_ROOTS = [
+    "Applications",
     "Applications (Mac OS 9)",
     "System Folder/Control Panels",
     "System Folder/Extensions",
@@ -129,8 +130,8 @@ def load_extractors() -> None:
         import resfork as resource_fork_parser
     except ModuleNotFoundError as exc:
         raise SystemExit(
-            f"missing extraction dependency: {exc.name}; install Pillow "
-            "and the documented tool requirements") from exc
+            f"missing extraction dependency: {exc.name}; create a Python "
+            "environment and install tools/asset-pack/requirements.txt") from exc
     Image = pillow_image
     cursors = cursor_parser
     fonts = font_parser
@@ -147,7 +148,7 @@ def convert_to_raw(image: str, work: str, reuse: bool) -> str:
     if reuse and os.path.exists(raw):
         print(f"  reusing {raw}")
         return raw
-    if image.endswith(".raw") or image.endswith(".img"):
+    if image.endswith((".raw", ".img", ".hfv")):
         return image                       # already raw; read it in place
     t = time.time()
     print(f"  qemu-img convert {os.path.basename(image)} -> probe.raw")
@@ -157,10 +158,22 @@ def convert_to_raw(image: str, work: str, reuse: bool) -> str:
 
 
 def find_hfs_partition(raw: str) -> int:
-    """Byte offset of the Apple_HFS partition, from the Apple Partition Map."""
+    """Byte offset of an APM Apple_HFS partition or a raw HFS/HFS+ volume.
+
+    QEMU bases carry an Apple Partition Map. SheepShaver `.hfv` files are the
+    volume itself, beginning with an HFS wrapper whose MDB is at byte 1024.
+    Accepting both lets one extractor own OS 8.6 and 9.1 assets instead of
+    forcing the visual profile to borrow fonts from the newer image.
+    """
     with open(raw, "rb") as fh:
         if fh.read(2) != b"ER":
-            raise SystemExit(f"{raw}: no Apple Partition Map (block 0 is not 'ER')")
+            fh.seek(1024)
+            signature = fh.read(2)
+            if signature in (b"BD", b"H+"):
+                return 0
+            raise SystemExit(
+                f"{raw}: neither an Apple Partition Map nor a raw HFS/HFS+ volume"
+            )
         for i in range(1, 64):
             fh.seek(i * 512)
             entry = fh.read(512)
@@ -656,8 +669,11 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
         # is; an NFNT does not carry its own size.
         size_by_id: dict[int, tuple[int, int]] = {}
         fond = fork.of_type("FOND")
+        fractional_widths: dict[int, int] = {}
         if fond:
             _, assoc = fonts.parse_fond(fond[0].data)
+            fractional_widths = fonts.parse_fond_fractional_widths(
+                fond[0].data, style=0)
             for a in assoc:
                 size_by_id[a.font_id] = (a.size, a.style)
 
@@ -674,6 +690,15 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
             for ppem in sizes:
                 label = f"{face.lower()}-{ppem}"
                 sheet, metrics, notes = fonts.render_truetype_strike(ttf, ppem)
+                if fractional_widths:
+                    for code, width_4_12 in fractional_widths.items():
+                        character = bytes([code]).decode("mac_roman")
+                        if character in metrics["glyphs"]:
+                            # Keep this integer in the artifact: consumers can
+                            # apply the guest's text-mode rounding without JSON
+                            # floating-point drift.
+                            metrics["glyphs"][character][
+                                "fondAdvance4096"] = width_4_12 * ppem
                 metrics["face"] = face
                 metrics["pointSize"] = ppem
                 metrics["style"] = 0
@@ -683,6 +708,9 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
                 summary["sheets"][label] = {
                     "glyphs": len(metrics["glyphs"]), "size": ppem,
                     "style": 0, "source": "sfnt+hdmx",
+                    "fondWidthSource": (
+                        "FOND-family-width-4.12" if fractional_widths
+                        else "absent"),
                     "ascent": metrics["ascent"],
                     "descent": metrics["descent"],
                     "grewToFitInk": notes["grewToFitInk"]}
@@ -696,7 +724,10 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
                 f"run time and so does this — {len(sizes)} strikes at the "
                 f"ppem sizes 'hdmx' carries device metrics for "
                 f"({sizes[0]}-{sizes[-1]}); no other size is answerable and "
-                "none is guessed")
+                "none is guessed. The pack also preserves the FOND "
+                "fractional family-width table where present for text modes "
+                "that use it; the renderer keeps hdmx as its measured menu "
+                "advance until a guest capture proves a broader switch")
             continue
         for res in strikes:
             size, style = size_by_id.get(res.id, (0, 0))

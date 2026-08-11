@@ -7,6 +7,20 @@
   "screen": {"width": 800, "height": 600, "depth": 32},
   "assetPolicy": "external-apple-assets-required-for-pixel-claims",
   "calibration": "sheepshaver-native-framebuffer",
+  "chromeAssets": {
+    "appleMenu": {
+      "rect": [17, 2, 30, 17],
+      "background": "#DDDDDD",
+      "source": "stable native framebuffer; exact face pixels become transparent"
+    },
+    "applicationMenuIcons": {
+      "MACS": {
+        "rect": [721, 2, 737, 18],
+        "background": "#DDDDDD",
+        "source": "Finder application-menu slot in the same stable native framebuffer"
+      }
+    }
+  },
   "notes": [
     "This is the first explicit visual profile, not a claim that Mac OS 8.6 and 9.1 are identical.",
     "Future profiles inherit only after an evidence-backed delta is recorded."
