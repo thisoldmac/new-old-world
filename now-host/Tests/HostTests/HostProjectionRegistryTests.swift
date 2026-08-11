@@ -9,6 +9,13 @@ import XCTest
 /// The second half is what makes the first safe to fan out across agents.
 final class HostProjectionRegistryTests: XCTestCase {
 
+    /// MUTATION: remove Sendable from either projection result type and this
+    /// stops compiling at the actor boundary the public CI runner exposed.
+    func testProjectionResultsDeclareTheirTransferContract() {
+        requireSendable(HostProjectionOutcome.self)
+        requireSendable(HostProjectionValue.self)
+    }
+
     // MARK: - Registration
 
     /// The `try!` behind `HostProjectionRegistry.hostFaces` traps, so this
@@ -209,6 +216,8 @@ final class HostProjectionRegistryTests: XCTestCase {
         }
     }
 }
+
+private func requireSendable<Value: Sendable>(_: Value.Type) {}
 
 /// A second claimant on a registered capability. It exists only to be
 /// refused; nothing registers it.

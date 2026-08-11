@@ -129,17 +129,25 @@ struct MirrorCycleClocks: Equatable {
     }
 
     var baselineLine: String {
-        BaselineLine.line("cycle", [
+        // Keep the buffer explicitly typed and assemble it in stages. Swift
+        // 6.1 on GitHub's macos-15 runner cannot type-check the equivalent
+        // five-array concatenation in reasonable time.
+        var fields: [(String, String)] = [
             ("walk", walk),
             ("outcome", outcome),
             ("idle_ms", Self.ms(idleBefore)),
             ("request_ms", Self.ms(request)),
             ("decode_ms", Self.ms(decode)),
-        ] + Self.bracketFields(own: ownWork, content: contentJoin) + [
+        ]
+        fields += Self.bracketFields(own: ownWork, content: contentJoin)
+        fields += [
             ("total_ms", Self.ms(total)),
             ("windows", windows.map(String.init) ?? "-"),
             ("elements", elements.map(String.init) ?? "-"),
-        ] + Self.timeoutField(guestTimeouts) + Self.phaseFields(phases))
+        ]
+        fields += Self.timeoutField(guestTimeouts)
+        fields += Self.phaseFields(phases)
+        return BaselineLine.line("cycle", fields)
     }
 
     /// **The phases go HERE and not on the ambient status line.**
