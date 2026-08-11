@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+#
+# sheepshaver-86 — operate the developer-owned Mac OS 8.6 Carbon UI oracle.
+#
+# This is a lab harness, not a product dependency. It never downloads or
+# redistributes SheepShaver, a ROM, Mac OS, or CarbonLib. Those inputs describe
+# one developer's desk and are named in .env.lab.
+#
+#     scripts/sheepshaver-86 doctor
+#     scripts/sheepshaver-86 launch
+#     scripts/sheepshaver-86 stage path/to/Application.bin
+#     scripts/sheepshaver-86 snapshot clean-name
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [ -f "$REPO/.env.lab" ]; then
+    set -a; . "$REPO/.env.lab"; set +a
+fi
+
+die () {
+    echo "sheepshaver-86: $*" >&2
+    exit 1
+}
+
+need () {
+    if [ -z "${2:-}" ]; then
+        die "no $1 ($3). Set it in .env.lab or the environment; see docs/lab-setup.md."
+    fi
+    printf '%s\n' "$2"
+}
+
+APP="$(need NOW_SHEEPSHAVER_APP "${NOW_SHEEPSHAVER_APP:-}" "path to SheepShaver.app")"
+VM="$(need NOW_SHEEPSHAVER_VM "${NOW_SHEEPSHAVER_VM:-}" "path to the Mac OS 8.6 .sheepvm profile")"
+HFS="$(need NOW_HFSUTILS "${NOW_HFSUTILS:-}" "directory containing hfsutils")"
+TRANSFER="${NOW_SHEEPSHAVER_TRANSFER:-$VM/CarbonLib 1.6 Transfer.hfv}"
+BOOT_DISK="${NOW_SHEEPSHAVER_DISK:-$VM/Mac OS 8.6.hfv}"
+OPEN_TOOL="${NOW_SHEEPSHAVER_OPEN:-open}"
+LSOF_TOOL="${NOW_SHEEPSHAVER_LSOF:-lsof}"
+
+require_file () {
+    [ -f "$1" ] || die "missing $2: $1"
+}
+
+require_tool () {
+    [ -x "$1" ] || die "missing executable $2: $1"
+}
+
+disk_is_open () {
+    "$LSOF_TOOL" -t -- "$1" >/dev/null 2>&1
+}
+
+require_stopped () {
+    local disk="$1"
+    if disk_is_open "$disk"; then
+        die "refusing to write an image SheepShaver has open: $disk. Shut the guest down cleanly first."
+    fi
+}
+
+doctor () {
+    case "$VM" in
+        *.sheepvm) ;;
+        *) die "NOW_SHEEPSHAVER_VM must name a .sheepvm profile: $VM" ;;
+    esac
+    require_tool "$APP/Contents/MacOS/SheepShaver" "SheepShaver"
+    require_file "$VM/prefs" "profile preferences"
+    require_file "$VM/Mac OS ROM" "New World ROM file"
+    require_file "$BOOT_DISK" "Mac OS 8.6 boot disk"
+    require_file "$TRANSFER" "HFS transfer disk"
+    require_tool "$HFS/hmount" "hmount"
+    require_tool "$HFS/hcopy" "hcopy"
+    require_tool "$HFS/hls" "hls"
+    require_tool "$HFS/humount" "humount"
+
+    echo "SheepShaver app: $APP"
+    echo "Mac OS 8.6 profile: $VM"
+    echo "Boot disk: $BOOT_DISK"
+    echo "HFS transfer disk: $TRANSFER"
+    if disk_is_open "$TRANSFER"; then
+        echo "Guest state: running (transfer disk is open)"
+    else
+        echo "Guest state: stopped (transfer disk is free)"
+    fi
+}
+
+launch () {
+    doctor
+    if disk_is_open "$BOOT_DISK" || disk_is_open "$TRANSFER"; then
+        die "this profile already appears to be running"
+    fi
+    "$OPEN_TOOL" -n "$APP" --args "$VM"
+}
+
+stage () {
+    [ "$#" -eq 1 ] || die "usage: scripts/sheepshaver-86 stage APPLICATION.bin"
+    local artifact="$1"
+    require_file "$artifact" "MacBinary artifact"
+    require_file "$TRANSFER" "HFS transfer disk"
+    require_stopped "$TRANSFER"
+
+    local mounted=0
+    cleanup_mount () {
+        if [ "$mounted" -eq 1 ]; then
+            "$HFS/humount" >/dev/null || true
+        fi
+    }
+    trap cleanup_mount EXIT
+
+    "$HFS/hmount" "$TRANSFER" >/dev/null
+    mounted=1
+    # -m decodes MacBinary so both forks and Finder type/creator survive.
+    # ExtFS is convenient for plain files but is not a valid execution or
+    # installer surface for classic applications (observed error -8812).
+    "$HFS/hcopy" -m "$artifact" :
+    "$HFS/hls" -la :
+    "$HFS/humount" >/dev/null
+    mounted=0
+    trap - EXIT
+    echo "sheepshaver-86: staged $(basename "$artifact") on $TRANSFER"
+}
+
+snapshot () {
+    [ "$#" -eq 1 ] || die "usage: scripts/sheepshaver-86 snapshot NAME"
+    local name="$1"
+    case "$name" in
+        ""|*/*|.|..) die "snapshot name must be one path component" ;;
+    esac
+    require_file "$BOOT_DISK" "Mac OS 8.6 boot disk"
+    require_stopped "$BOOT_DISK"
+    mkdir -p "$VM/Snapshots"
+    local destination="$VM/Snapshots/$name.hfv"
+    [ ! -e "$destination" ] || die "snapshot already exists: $destination"
+    # APFS clonefile makes a cheap copy-on-write baseline; cp remains correct
+    # but slower if the profile lives on a filesystem without clone support.
+    cp -c "$BOOT_DISK" "$destination" 2>/dev/null || cp "$BOOT_DISK" "$destination"
+    echo "sheepshaver-86: snapshot created: $destination"
+}
+
+case "${1:-}" in
+    doctor) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 doctor"; doctor ;;
+    launch) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 launch"; launch ;;
+    stage) shift; stage "$@" ;;
+    snapshot) shift; snapshot "$@" ;;
+    *) die "usage: scripts/sheepshaver-86 {doctor|launch|stage APPLICATION.bin|snapshot NAME}" ;;
+esac

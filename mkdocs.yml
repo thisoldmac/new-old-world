@@ -157,6 +157,7 @@ nav:
           - Change the contract: developer-guide/workflows/change-the-contract.md
           - Add a module: developer-guide/workflows/add-a-module.md
           - Emulator and metal: developer-guide/workflows/emulator-and-metal.md
+          - SheepShaver 8.6 UI oracle: developer-guide/workflows/sheepshaver-86.md
           - Documentation and gates: developer-guide/workflows/documentation-and-gates.md
           - Release documentation: developer-guide/workflows/release-documentation.md
       - Reference:

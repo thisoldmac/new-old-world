@@ -117,6 +117,8 @@ echo "==> [2/8] release and staged-image discipline gates"
 "$script_dir/../tools/land-main-tests" \
     || fail "checked-out main landing gate"
 "$script_dir/../tools/ci-policy-test" || fail "GitHub Actions policy gate"
+"$script_dir/../tools/sheepshaver-86-tests" \
+    || fail "SheepShaver 8.6 harness gate"
 
 echo
 echo "==> [3/8] Web Bridge gate"

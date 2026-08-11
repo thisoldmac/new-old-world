@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Mutation-shaped tests for the SheepShaver lab harness. No emulator boots.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HARNESS="$REPO/scripts/sheepshaver-86"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/now-sheepshaver-tests.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+
+APP="$TMP/SheepShaver.app"
+VM="$TMP/Mac OS 8.6.sheepvm"
+HFS="$TMP/hfsutils"
+LOG="$TMP/calls.log"
+mkdir -p "$APP/Contents/MacOS" "$VM/Snapshots" "$HFS"
+touch "$APP/Contents/MacOS/SheepShaver" "$VM/prefs" "$VM/Mac OS ROM" \
+      "$VM/Mac OS 8.6.hfv" "$VM/CarbonLib 1.6 Transfer.hfv"
+chmod +x "$APP/Contents/MacOS/SheepShaver"
+
+for tool in hmount hcopy hls humount; do
+    printf '#!/bin/sh\nprintf "%%s" "$(basename "$0")" >> "$NOW_TEST_LOG"\nfor arg in "$@"; do printf " <%%s>" "$arg" >> "$NOW_TEST_LOG"; done\nprintf "\\n" >> "$NOW_TEST_LOG"\n' > "$HFS/$tool"
+    chmod +x "$HFS/$tool"
+done
+printf '#!/bin/sh\nexit "${NOW_TEST_LSOF_RESULT:-1}"\n' > "$TMP/lsof"
+printf '#!/bin/sh\nprintf "open" >> "$NOW_TEST_LOG"\nfor arg in "$@"; do printf " <%%s>" "$arg" >> "$NOW_TEST_LOG"; done\nprintf "\\n" >> "$NOW_TEST_LOG"\n' > "$TMP/open"
+chmod +x "$TMP/lsof" "$TMP/open"
+
+run_harness () {
+    NOW_SHEEPSHAVER_APP="$APP" \
+    NOW_SHEEPSHAVER_VM="$VM" \
+    NOW_HFSUTILS="$HFS" \
+    NOW_SHEEPSHAVER_LSOF="$TMP/lsof" \
+    NOW_SHEEPSHAVER_OPEN="$TMP/open" \
+    NOW_TEST_LOG="$LOG" \
+    "$HARNESS" "$@"
+}
+
+doctor_output="$(run_harness doctor)"
+printf '%s\n' "$doctor_output" | grep -F "Guest state: stopped" >/dev/null
+
+missing_output="$(NOW_SHEEPSHAVER_APP="$TMP/missing.app" \
+    NOW_SHEEPSHAVER_VM="$VM" NOW_HFSUTILS="$HFS" \
+    NOW_SHEEPSHAVER_LSOF="$TMP/lsof" "$HARNESS" doctor 2>&1 || true)"
+printf '%s\n' "$missing_output" | grep -F "missing executable SheepShaver" >/dev/null
+
+artifact="$TMP/New Old World.bin"
+printf 'MacBinary fixture' > "$artifact"
+: > "$LOG"
+run_harness stage "$artifact" >/dev/null
+expected="hmount <$VM/CarbonLib 1.6 Transfer.hfv>
+hcopy <-m> <$artifact> <:>
+hls <-la> <:>
+humount"
+[ "$(cat "$LOG")" = "$expected" ] || {
+    echo "FAILED: stage did not preserve the HFS mount/copy/list/unmount sequence" >&2
+    cat "$LOG" >&2
+    exit 1
+}
+
+running_output="$(NOW_TEST_LSOF_RESULT=0 run_harness stage "$artifact" 2>&1 || true)"
+printf '%s\n' "$running_output" | grep -F "refusing to write an image SheepShaver has open" >/dev/null
+if printf '%s\n' "$running_output" | grep -F "staged" >/dev/null; then
+    echo "FAILED: running-guest mutation reached the write path" >&2
+    exit 1
+fi
+
+: > "$LOG"
+run_harness launch >/dev/null
+grep -F "open <-n> <$APP> <--args> <$VM>" "$LOG" >/dev/null
+
+printf 'boot disk bytes' > "$VM/Mac OS 8.6.hfv"
+run_harness snapshot "post-carbonlib" >/dev/null
+cmp "$VM/Mac OS 8.6.hfv" "$VM/Snapshots/post-carbonlib.hfv"
+
+echo "sheepshaver-86: 6 harness behaviors passed"

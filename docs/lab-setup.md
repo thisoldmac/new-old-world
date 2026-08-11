@@ -63,6 +63,21 @@ exactly like a hang.
 Both toolchain files are passed to `cmake` by `scripts/build-guests`; see the
 build section of the [README](../README.md).
 
+### SheepShaver Mac OS 8.6 oracle
+
+| Key | What it is |
+|---|---|
+| `NOW_SHEEPSHAVER_APP` | Absolute path to a locally built or installed `SheepShaver.app`. |
+| `NOW_SHEEPSHAVER_VM` | Absolute path to the isolated Mac OS 8.6 `.sheepvm` profile. |
+| `NOW_SHEEPSHAVER_DISK` | Optional boot-disk override. Defaults to `Mac OS 8.6.hfv` inside the profile. |
+| `NOW_SHEEPSHAVER_TRANSFER` | Optional HFS transfer-disk override. Defaults to `CarbonLib 1.6 Transfer.hfv` inside the profile. |
+
+The repository neither downloads nor redistributes SheepShaver, a ROM,
+Mac OS, or CarbonLib. `scripts/sheepshaver-86` operates developer-supplied
+inputs and refuses to alter a disk that the running emulator has open.
+See [SheepShaver 8.6 UI oracle](developer-guide/workflows/sheepshaver-86.md)
+for the reproducible profile and evidence procedure.
+
 ### Metal gates
 
 Only read when `NOW_METAL` is set. Unset, the metal suites skip; set,
@@ -96,6 +111,11 @@ The full procedure, and how to tell contention from a defect, is
 binary and disk image from the environment; run it with `--help` for the
 current list. Its session directory (`.q800/`) is a cloned disk image and
 a build tree, disposable by construction and gitignored.
+
+`scripts/sheepshaver-86` operates a persistent, isolated Mac OS 8.6 plus
+CarbonLib 1.6 UI-oracle profile. Start with `doctor`; use `stage` for
+MacBinary applications rather than launching them from the Unix shared
+folder.
 
 ## Running a second copy of the host app
 
