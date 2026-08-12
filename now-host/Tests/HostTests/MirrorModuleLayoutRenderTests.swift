@@ -90,6 +90,23 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
             }
         }
     }
+
+    func testContinuityModeRendersTheLayoutInsteadOfTheMirror() throws {
+        let rig = try makeRig()
+        rig.source.surfaceMode = .continuity
+        defer { rig.source.stop() }
+        let view = AnyView(
+            MirrorModuleView(model: rig.model, source: rig.source,
+                             run: rig.run,
+                             presentation: rig.presentation,
+                             window: rig.window,
+                             connectedMachineName: "Power Mac G4",
+                             timeline: rig.source.actTimeline,
+                             cycles: rig.source.cycleTimeline)
+                .frame(width: 900, height: 720))
+
+        _ = try render(view, candidate: "continuity", label: "wide")
+    }
 }
 
 // MARK: - Rendering, and refusing to render nothing
