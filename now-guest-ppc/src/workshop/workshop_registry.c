@@ -50,15 +50,6 @@ static const WorkshopModuleDefinition k_mirror_definition = {
     mirror_module_ops
 };
 
-static const WorkshopModuleDefinition k_development_definition = {
-    kWorkshopDevelopment, "development", "Development",
-    "Project roots, registered toolchains and headless build jobs on this Mac.",
-    "Development has not moved in yet.",
-    "Projects and toolchains", 144, kWorkshopModuleTierExperimental,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    development_module_ops
-};
-
 static const WorkshopModuleDefinition k_preferences_definition = {
     kWorkshopPreferences, "settings", "Preferences",
     "How this window behaves. Rearrange the rail by Option-dragging a "
@@ -103,7 +94,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopCloud: return cloud_module_definition();
     case kWorkshopChat: return chat_module_definition();
     case kWorkshopMirror: return &k_mirror_definition;
-    case kWorkshopDevelopment: return &k_development_definition;
+    case kWorkshopDevelopment: return development_module_definition();
     case kWorkshopWeb: return web_module_definition();
     case kWorkshopPreferences: return &k_preferences_definition;
     case kWorkshopLogs: return &k_logs_definition;

@@ -233,14 +233,6 @@ final class HostAppState: ObservableObject {
         return mirrorSource.scene?.screen.known
     }
 
-    private(set) lazy var development = DevelopmentModel(
-        store: try? ProjectStore(),
-        readEnvironment: { [agentIntegration] in
-            await agentIntegration.developmentEnvironment()
-        },
-        performDevelopment: { [agentIntegration] request in
-            await agentIntegration.development(request)
-        })
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
 
     private let defaults: UserDefaults

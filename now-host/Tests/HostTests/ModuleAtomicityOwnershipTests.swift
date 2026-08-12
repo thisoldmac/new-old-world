@@ -285,4 +285,31 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"web\""))
         XCTAssertTrue(definition.contains("web_module_ops"))
     }
+
+    func testDevelopmentDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = DevelopmentHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "development")
+        XCTAssertEqual(definition.descriptor.tier, .experimental)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testDevelopmentOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/development/development_module_definition.c")
+
+        XCTAssertFalse(state.contains("lazy var development"))
+        XCTAssertFalse(compatibility.contains("case \"development\""))
+        XCTAssertFalse(registry.contains("k_development_definition"))
+        XCTAssertTrue(registry.contains("development_module_definition()"))
+        XCTAssertTrue(definition.contains("\"development\""))
+        XCTAssertTrue(definition.contains("development_module_ops"))
+    }
 }

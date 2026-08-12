@@ -131,14 +131,7 @@ struct ModuleRegistry {
            no-preferences-window rule. */
         ChatHostModule.definition.descriptor,
         WebHostModule.definition.descriptor,
-        ModuleDescriptor(
-            id: "development",
-            title: "Development",
-            symbol: "hammer",
-            summary: "Projects, toolchains, builds and runs for "
-                + "\(MachineNaming.simpleReference)",
-            tier: .experimental
-        ),
+        DevelopmentHostModule.definition.descriptor,
         CensusHostModule.definition.descriptor,
         /* Immediately after Hardware, because it answers the same class of
            question by the other route: Hardware is what the machine IS, and

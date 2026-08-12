@@ -106,6 +106,7 @@ add_application(now-guest-ppc
     src/development/development_toolchain_mac.c
     src/development/development_layout.c
     src/development/development_module.c
+    src/development/development_module_definition.c
     src/web/web_model.c
     src/web/web_port_dialog.c
     src/web/web_module.c
