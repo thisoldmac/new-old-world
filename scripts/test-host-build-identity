@@ -43,11 +43,11 @@ for temporary in /tmp/now-continuity /private/tmp/now-continuity \
         exit 1
     fi
 done
-if "$handoff_path" /Users/example/Applications >/dev/null 2>&1; then
-    echo "Continuity handoff accepts a durable but noncanonical Applications path" >&2
+if "$handoff_path" "$HOME/Applications" >/dev/null 2>&1; then
+    echo "Continuity handoff accepts the disproven Applications path" >&2
     exit 1
 fi
-"$handoff_path" "$HOME/Applications" || {
+"$handoff_path" "$HOME/.now-continuity-build" || {
     echo "Continuity handoff rejects its canonical installed path" >&2
     exit 1
 }

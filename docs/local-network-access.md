@@ -58,9 +58,21 @@ repair it: Launch Services marked the otherwise valid record `in-temp-dir`,
 and `neagent` logged that it could not find `dev.newoldworld.now.continuity`,
 then cached zero executable UUIDs. With no UUID, macOS created neither a Local
 Network row nor a prompt. Xcode now builds the reviewed product name directly,
-and the signed Continuity build refuses a temporary output directory. Metal
-candidates replace `~/Applications/NOW Continuity.app`; a temp bundle is a
-build artifact, never a permission test.
+and the signed Continuity build refuses any output other than the installed
+candidate location. Metal candidates replace
+`~/.now-continuity-build/NOW Continuity.app`; another durable directory is
+still a different privacy test on the current macOS build.
+
+That final clause is measured, not a preference. The successful 2026-08-11
+17:43 metal run launched the candidate at `.now-continuity-build` and reached a
+satisfied direct path on `en7`. A later handoff rewrote the documented stable
+location to `~/Applications`, where the same Team ID and bundle identifier were
+found correctly by `UserEventAgent` but every real UDP path was rejected as
+`Local network prohibited`. Relaunching the untouched 17:43 binary from its
+original path at 19:40 connected to the current 0.2.0 guest and restored the
+working permission record. The build guard therefore pins the path that
+actually ran; it must not infer equivalence from a directory merely being
+non-temporary.
 
 `scripts/verify-host-signature` verifies the signed result rather than trusting
 build settings.
