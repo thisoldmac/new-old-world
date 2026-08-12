@@ -50,6 +50,78 @@ struct MCPStandardOutput {
     }
 }
 
+/// Identity of the executable this stdio companion started from.
+///
+/// The app is replaced in place during development while an MCP client keeps
+/// this process alive. The running image then refers to the unlinked vnode,
+/// while `Bundle.main.executableURL` names the newly installed build. Without
+/// this check an old companion decodes a new host with an old local contract
+/// and reports the actionable build split as `now-host-invalid-response`.
+struct MCPExecutableGeneration {
+    private struct Identity: Equatable {
+        let device: UInt64
+        let inode: UInt64
+        let size: UInt64
+        let modified: TimeInterval
+    }
+
+    private let path: String
+    private let startedAs: Identity
+
+    init?(executableURL: URL? = Bundle.main.executableURL) {
+        guard let executableURL,
+              let identity = Self.identity(at: executableURL.path) else {
+            return nil
+        }
+        path = executableURL.path
+        startedAs = identity
+    }
+
+    var isCurrent: Bool {
+        Self.identity(at: path) == startedAs
+    }
+
+    private static func identity(at path: String) -> Identity? {
+        guard let attributes = try? FileManager.default.attributesOfItem(
+                atPath: path),
+              let device = attributes[.systemNumber] as? NSNumber,
+              let inode = attributes[.systemFileNumber] as? NSNumber,
+              let size = attributes[.size] as? NSNumber,
+              let modified = attributes[.modificationDate] as? Date else {
+            return nil
+        }
+        return Identity(
+            device: device.uint64Value,
+            inode: inode.uint64Value,
+            size: size.uint64Value,
+            modified: modified.timeIntervalSinceReferenceDate)
+    }
+}
+
+enum MCPStaleCompanionResponse {
+    static func make(for request: Data) -> Data? {
+        guard let object = try? JSONSerialization.jsonObject(with: request)
+                as? [String: Any],
+              let id = object["id"] else {
+            return nil
+        }
+        let response: [String: Any] = [
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": [
+                "code": -32001,
+                "message": "The NOW MCP companion belongs to a replaced app build and is restarting. Retry this call.",
+                "data": [
+                    "code": "now-mcp-companion-stale",
+                    "reach": "notSent",
+                ],
+            ],
+        ]
+        return try? JSONSerialization.data(withJSONObject: response,
+                                           options: [.sortedKeys])
+    }
+}
+
 /// The client-launched MCP mode of the New Old World executable.
 ///
 /// This is deliberately not another product or server. An MCP client starts
@@ -62,6 +134,7 @@ enum MCPStdioTransport {
             client: SocketAgentIntegrationClient(),
             audit: LocalMCPAuditSink())
         let output = MCPStandardOutput()
+        let executableGeneration = MCPExecutableGeneration()
         var framer = BoundedMCPLineFramer()
 
         while true {
@@ -92,8 +165,23 @@ enum MCPStdioTransport {
                is the loop's own exit condition, unchanged. */
             let chunk = FileHandle.standardInput.availableData
             if chunk.isEmpty { break }
-            await handle(framer.append(chunk), server: server,
-                         output: output)
+            let events = framer.append(chunk)
+            if executableGeneration?.isCurrent == false {
+                /* The request is deliberately NOT sent to the host. Exit
+                   after a typed reply so the MCP supervisor starts the
+                   binary now present at the same stable app path. One retry
+                   then runs both halves from that build. */
+                for event in events {
+                    guard case .message(let request) = event else { continue }
+                    if let response = MCPStaleCompanionResponse.make(
+                        for: request) {
+                        output.write(response)
+                    }
+                    break
+                }
+                return
+            }
+            await handle(events, server: server, output: output)
         }
         await handle(framer.finish(), server: server, output: output)
     }
