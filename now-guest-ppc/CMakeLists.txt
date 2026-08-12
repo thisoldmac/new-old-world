@@ -65,6 +65,7 @@ add_application(now-guest-ppc
     src/preferences/preferences_module.c
     src/diagnostics/diag_layout.c
     src/diagnostics/diagnostics_module.c
+    src/diagnostics/diagnostics_module_definition.c
     src/network/net_facts.c
     src/network/net_layout.c
     src/network/net_probe.c

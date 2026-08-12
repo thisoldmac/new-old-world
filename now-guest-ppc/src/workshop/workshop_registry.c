@@ -20,16 +20,6 @@
 #include "software_module.h"
 #include "web_module.h"
 
-static const WorkshopModuleDefinition k_diagnostics_definition = {
-    kWorkshopDiagnostics, "diagnostics", "Diagnostics",
-    "What this Mac can measure about itself. Each one says what it "
-    "costs before it is spent.",
-    "Diagnostics has not moved in yet.",
-    "Measure this Mac", 138, kWorkshopModuleTierDebug,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    diagnostics_module_ops
-};
-
 static const WorkshopModuleDefinition k_preferences_definition = {
     kWorkshopPreferences, "settings", "Preferences",
     "How this window behaves. Rearrange the rail by Option-dragging a "
@@ -69,7 +59,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopHardware: return census_module_definition();
     case kWorkshopSoftware: return software_module_definition();
     case kWorkshopMCP: return mcp_module_definition();
-    case kWorkshopDiagnostics: return &k_diagnostics_definition;
+    case kWorkshopDiagnostics: return diagnostics_module_definition();
     case kWorkshopNetworking: return network_module_definition();
     case kWorkshopCloud: return cloud_module_definition();
     case kWorkshopChat: return chat_module_definition();

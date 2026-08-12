@@ -137,20 +137,10 @@ final class HostAppState: ObservableObject {
         existingMirrorRuntime?.guestScreenIfKnown
     }
 
-    private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
-
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"
-    /// The one subscription that re-points every guest-scoped model.
+    /// The one subscription that re-focuses every constructed module runtime.
     private var focusWatch: HostEventSubscription?
-
-    /// Every model that shows one machine's state. Listed once so a new
-    /// module cannot be wired into the connection and forgotten by the
-    /// switch — the two used to be separate assignments, and a module added
-    /// to one and not the other is precisely the defect this list closes.
-    private var guestScopedModels: [any GuestScopedModel] {
-        [diagnostics]
-    }
 
     private lazy var moduleRuntimes = HostModuleRuntimeStore(
         registry: moduleRegistry,
@@ -252,9 +242,6 @@ final class HostAppState: ObservableObject {
                DIFFED out of the roster here, which was a second thing that
                had to agree with the listener about who had gone. */
             case .guestDisconnected(let gone, _):
-                for model in self.guestScopedModels {
-                    model.guestLeft(gone)
-                }
                 self.moduleRuntimes.guestLeft(gone)
             default:
                 break
@@ -327,9 +314,6 @@ final class HostAppState: ObservableObject {
     private func repointModels() {
         let state = listener.state
         let connection = Self.guestState(from: state, key: listener.activeKey)
-        for model in guestScopedModels {
-            model.connection = connection
-        }
         moduleRuntimes.focus(on: connection)
         captureSmokeIfRequested(state)
         /* Re-attached at the 019 integration, when this body moved out of

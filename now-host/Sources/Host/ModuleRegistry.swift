@@ -131,17 +131,7 @@ struct ModuleRegistry {
            this is what the machine can MEASURE about itself. A person
            chasing a slow transfer or a wrong-looking screenshot reads them
            together. */
-        ModuleDescriptor(
-            id: "diagnostics",
-            title: "Diagnostics",
-            symbol: "stethoscope",
-            /* It measures the machine being driven, not this one. The old
-               summary said "this Mac's screen reads", which named the
-               wrong machine outright: nothing here reads this Mac. */
-            summary: "Measure \(MachineNaming.possessive(nil)) screen "
-                + "reads and file transfers",
-            tier: .debug
-        ),
+        DiagnosticsHostModule.definition.descriptor,
         /* Beside Diagnostics rather than beside Connections: this page
            is what the machine being driven says about its own networking,
            which is a measurement of that machine - the footer's

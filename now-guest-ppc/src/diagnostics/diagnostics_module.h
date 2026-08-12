@@ -4,5 +4,6 @@
 #include "workshop_module.h"
 
 const WorkshopModuleOps *diagnostics_module_ops(void);
+const WorkshopModuleDefinition *diagnostics_module_definition(void);
 
 #endif /* NOW_DIAGNOSTICS_MODULE_H */

@@ -407,4 +407,36 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"mcp\""))
         XCTAssertTrue(definition.contains("mcp_module_ops"))
     }
+
+    func testDiagnosticsDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = DiagnosticsHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "diagnostics")
+        XCTAssertEqual(definition.descriptor.tier, .debug)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testDiagnosticsOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let runtime = try GateSource.hostSwift(
+            "now-host/Sources/Host/DiagnosticsHostModule.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/diagnostics/diagnostics_module_definition.c")
+
+        XCTAssertFalse(state.contains("lazy var diagnostics"))
+        XCTAssertFalse(state.contains("guestScopedModels"))
+        XCTAssertFalse(compatibility.contains("case \"diagnostics\""))
+        XCTAssertTrue(runtime.contains("model.connection = connection"))
+        XCTAssertTrue(runtime.contains("model.guestLeft(key)"))
+        XCTAssertFalse(registry.contains("k_diagnostics_definition"))
+        XCTAssertTrue(registry.contains("diagnostics_module_definition()"))
+        XCTAssertTrue(definition.contains("\"diagnostics\""))
+        XCTAssertTrue(definition.contains("diagnostics_module_ops"))
+    }
 }

@@ -262,10 +262,11 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == MCPHostModule.definition.descriptor.id {
             return MCPHostModule.definition
         }
+        if descriptor.id == DiagnosticsHostModule.definition.descriptor.id {
+            return DiagnosticsHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
-            case "diagnostics":
-                return AnyView(DiagnosticsModuleView(model: state.diagnostics))
             case "logs":
                 return AnyView(LogsModuleView(model: state.logs,
                                               log: state.logs.log))
