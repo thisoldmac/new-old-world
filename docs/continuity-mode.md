@@ -863,6 +863,16 @@ event, enter the Cursor Device Manager, or log. Mouse-up, native takeover,
 lease expiry, disconnect, and disarm clear the source after first forcing the
 low-memory button state up. The hooks remain installed but idle until reboot.
 
+The first version of that candidate still installed the three hooks only from
+NOW's Continuity arm service. That repeats the exact process-context mistake the
+act plane measured in 2026-08-02: a Toolbox patch visible to NOW need not be the
+entry the Finder's tracking loop calls. The corrected candidate checks and
+installs the complete hook set from every active-source jGNE pass. The target
+therefore installs its own links on the pass that returns the synthetic
+mouseDown, before entering `DragGrayRgn` or `MenuSelect`. An already installed
+set is a no-op; a partial set fails closed rather than saving one of NOW's own
+shims as its incumbent and self-chaining forever.
+
 The exact active-source guard was watched failing when one hook's check was
 removed. Independent cold PMU/USB and CUDA/ADB runs of guest build
 `59e96d42f941…` and resident fingerprint `31b390c96132…` then passed click,
@@ -872,3 +882,25 @@ rejected datagrams or pending manager-up. CUDA additionally observed real
 held `guest-input` takeover; PMU retained its known lease-expiry fallback.
 This is Tested emulator evidence. Only the next attended PowerBook run can say
 whether active reassertion stops the ADB/PMU alternation.
+
+### Menu visibility: one synchronized path and one missing transport
+
+Mirror's pre-existing dropdown is host-local state. Before this slice a menu
+title pressed through Continuity opened the guest's real `MenuSelect` loop but
+left Mirror closed, while a semantic Mirror title click drew a dropdown without
+opening anything on the guest. A Continuity-authored menu gesture now projects
+that known host gesture into Mirror's existing dropdown: the projection opens
+on the consumed title press, switches as the held pointer crosses titles, and
+closes on selection, pointer exit, capture cancellation, or authority loss.
+This uses no new guest claim; it is the same host gesture shown in both places.
+
+A menu opened independently by the guest's trackpad is still not observable
+live. `MenuSelect` accepts no pump callback and starves NOW's cooperative TCP
+scene producer for the duration of tracking. The resident can observe work in
+that process, but it cannot perform Open Transport sends from the trap or Time
+Manager contexts without recreating the notifier/interrupt failures that wedged
+the guest. Full two-way menu visibility therefore needs a separately designed
+resident-to-host signal with a safe task-time transport owner, not another scene
+field whose producer cannot run. Semantic Mirror menu opening also remains
+host-local; choosing a row still dispatches the addressed guest command. Both
+are explicit open work rather than claims made by this candidate.

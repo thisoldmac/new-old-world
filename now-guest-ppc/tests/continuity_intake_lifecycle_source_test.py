@@ -51,6 +51,8 @@ cursor_button = body("long now_continuity_cursor_button(", CURSOR)
 cursor_move = body("long now_continuity_cursor_move(", CURSOR)
 tracking_install = body(
     "int now_ext_cursor_enable_continuity_tracking(", EXT_CURSOR)
+tracking_gne = body(
+    "void now_ext_cursor_gne(NowPeekTable *table)\n{", EXT_CURSOR)
 tracking_settle = body(
     "void now_ext_cursor_settle_continuity_tracking(", EXT_CURSOR)
 tracking_remember = body(
@@ -211,6 +213,22 @@ elif tracking_install.rindex("NGetTrapAddress") \
     failures.append("tracking install mutates a trap before all incumbents exist")
 if "kNowPeekRestCursorTrackingPatched" not in tracking_install:
     failures.append("the permanent tracking hooks are no longer observable")
+for trap in ("getmouse", "stilldown", "button"):
+    if f"{trap}_ours" not in tracking_install:
+        failures.append(
+            f"tracking install no longer detects its {trap} hook per context")
+if "if (getmouse_ours && stilldown_ours && button_ours)" not in tracking_install:
+    failures.append("tracking install no longer accepts an already-hooked context")
+if "if (getmouse_ours || stilldown_ours || button_ours)" not in tracking_install:
+    failures.append("tracking install no longer fails closed on a partial hook set")
+if "gNowCursorTrackingSourceActive" not in tracking_gne \
+        or "now_ext_cursor_enable_continuity_tracking()" not in tracking_gne:
+    failures.append(
+        "the target process no longer installs tracking hooks before its nested loop")
+elif tracking_gne.index("now_ext_cursor_enable_continuity_tracking()") \
+        > tracking_gne.index("if (!gTaskApplyOwed)"):
+    failures.append(
+        "target-context tracking install is incorrectly gated on redraw debt")
 if "now_ext_cursor_enable_continuity_tracking()" not in EXT_CONTINUITY:
     failures.append("a Continuity arm no longer lazily installs tracking hooks")
 if "now_ext_cursor_cancel_task_apply()" not in continuity_finish:

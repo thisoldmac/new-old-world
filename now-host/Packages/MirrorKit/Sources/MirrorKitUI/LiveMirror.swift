@@ -10,6 +10,10 @@ public protocol ContinuityInputDriver: AnyObject {
     var isActive: Bool { get }
     var requestedHz: Int { get set }
     var status: String { get }
+    /// True while the raw lane is deliberately keeping the guest Menu
+    /// Manager's tracking loop open. This is host-authored gesture state, not
+    /// a claim that an independently opened guest menu was observed.
+    var isMenuTracking: Bool { get }
 
     func pointerMoved(to point: MirrorKit.Point)
     func pointerLeft()
@@ -173,6 +177,10 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// mirror's.
     @State private var keyboardEngaged = false
     @State private var openMenu: Int?
+    /// Distinguishes a menu projected from a raw Continuity gesture from the
+    /// semantic Mirror's own local dropdown. Only the former is reconciled to
+    /// `isMenuTracking`; closing it must not dismiss an unrelated local menu.
+    @State private var continuityOwnsOpenMenu = false
     /// The row under the pointer in the open menu, 1-based. Menus are a
     /// selectable surface: this is what inverts, and what acts.
     @State private var hoveredItem: Int?
@@ -296,22 +304,36 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                     controller.continuityInputDriver?
                                         .pointerMoved(to: .init(
                                             x: guest.x, y: guest.y))
+                                    syncContinuityMenu(
+                                        scene, at: guest,
+                                        driver: controller.continuityInputDriver)
                                 },
                                 onExit: {
                                     controller.continuityInputDriver?
                                         .pointerLeft()
+                                    closeContinuityMenu()
                                 },
                                 onLeftDown: { point, mods in
                                     pointerMods = mods
                                     guard let guest = continuityGuestPoint(
                                         point, scene: scene, size: geo.size)
                                     else { return false }
-                                    return controller.continuityInputDriver?
-                                        .primaryDown(
-                                            at: .init(x: guest.x, y: guest.y),
-                                            inMenuBar:
-                                                guest.y < HitTester.menubarHeight)
-                                        ?? false
+                                    guard let driver =
+                                            controller.continuityInputDriver
+                                    else { return false }
+                                    let consumed = driver.primaryDown(
+                                        at: .init(x: guest.x, y: guest.y),
+                                        inMenuBar:
+                                            guest.y < HitTester.menubarHeight)
+                                    if consumed,
+                                       case .menuTitle(let index) =
+                                            HitTester.hitTest(
+                                                scene, x: guest.x, y: guest.y) {
+                                        openMenu = index
+                                        hoveredItem = nil
+                                        continuityOwnsOpenMenu = true
+                                    }
+                                    return consumed
                                 },
                                 onLeftDragged: { point, _ in
                                     guard let guest = continuityGuestPoint(
@@ -322,9 +344,16 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                             .cancel(reason: "guest screen unavailable")
                                         return true
                                     }
-                                    return controller.continuityInputDriver?
-                                        .primaryDragged(to: .init(
-                                            x: guest.x, y: guest.y)) ?? false
+                                    guard let driver =
+                                            controller.continuityInputDriver
+                                    else { return false }
+                                    let consumed = driver.primaryDragged(
+                                        to: .init(x: guest.x, y: guest.y))
+                                    if consumed {
+                                        syncContinuityMenu(
+                                            scene, at: guest, driver: driver)
+                                    }
+                                    return consumed
                                 },
                                 onLeftUp: { point, _ in
                                     guard let guest = continuityGuestPoint(
@@ -335,13 +364,21 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                             .cancel(reason: "guest screen unavailable")
                                         return true
                                     }
-                                    return controller.continuityInputDriver?
-                                        .primaryUp(at: .init(
-                                            x: guest.x, y: guest.y)) ?? false
+                                    guard let driver =
+                                            controller.continuityInputDriver
+                                    else { return false }
+                                    let consumed = driver.primaryUp(
+                                        at: .init(x: guest.x, y: guest.y))
+                                    if consumed {
+                                        syncContinuityMenu(
+                                            scene, at: guest, driver: driver)
+                                    }
+                                    return consumed
                                 },
                                 onCancel: {
                                     controller.continuityInputDriver?
                                         .cancel(reason: "host focus changed")
+                                    closeContinuityMenu()
                                 },
                                 onRightDown: { point, mods in
                                     if case .sharesWindow = keyboard {
@@ -382,6 +419,10 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         .onChange(of: observedScene.seq) { _ in
                             finderInterior.reconcile(with: observedScene)
                             reconcilePress(with: observedScene)
+                        }
+                        .onChange(of: controller.continuityInputDriver?
+                            .isMenuTracking ?? false) { tracking in
+                            if !tracking { closeContinuityMenu() }
                         }
                         .onContinuousHover { phase in
                             /* Visual hover is observation-only. SwiftUI can
@@ -526,6 +567,34 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         }
         let fit = FitTransform(logical: logical, view: size)
         return clampToEdge ? fit.toGuestClamped(p) : fit.toGuestIfInside(p)
+    }
+
+    /// Project the host-authored raw menu gesture into Mirror's existing
+    /// Platinum dropdown. The guest's real MenuSelect loop cannot publish a
+    /// scene while it is tracking, so the initiating host gesture is the only
+    /// live fact available here. Independently opened guest menus remain a
+    /// transport limitation rather than being guessed from cursor position.
+    private func syncContinuityMenu(
+        _ scene: MirrorKit.Scene, at point: (x: Int, y: Int),
+        driver: ContinuityInputDriver?
+    ) {
+        guard continuityOwnsOpenMenu else { return }
+        guard driver?.isMenuTracking == true else {
+            closeContinuityMenu()
+            return
+        }
+        guard point.y < HitTester.menubarHeight,
+              case .menuTitle(let index) = HitTester.hitTest(
+                  scene, x: point.x, y: point.y) else { return }
+        openMenu = index
+        hoveredItem = nil
+    }
+
+    private func closeContinuityMenu() {
+        guard continuityOwnsOpenMenu else { return }
+        continuityOwnsOpenMenu = false
+        openMenu = nil
+        hoveredItem = nil
     }
 
     /// What the capture view is told about focus. In `ownsWindow` this is

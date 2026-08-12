@@ -133,7 +133,6 @@ static CursorDevicePtr gDevice = NULL;
 static Point gLastPlaced;
 static unsigned long gForeignTicks = 0;
 static Boolean gBooted = false;
-static Boolean gContinuityTrackingInstalled = false;
 /* Has this resident ever actually moved the device? Until it has,
    gLastPlaced describes nothing and must not be compared against. */
 static Boolean gEverPlaced = false;
@@ -465,17 +464,28 @@ void now_ext_cursor_settle_continuity_tracking(void)
         LMSetMouseLocation(pt);
 }
 
-/* Install the three tracking-loop hooks lazily on the first Continuity arm.
-   They are permanent for this boot: another extension may subsequently chain
-   behind us, so removing our link later could strand its incumbent pointer. */
+/* Install the three tracking-loop hooks lazily in the CURRENT process context.
+
+   The act plane proved on metal that Toolbox trap dispatch can differ between
+   process contexts: installing a patch while NOW is running does not imply the
+   Finder's next MenuSelect/StillDown/GetMouse will see it. Continuity first
+   installs here from NOW's arm path, then now_ext_cursor_gne() repeats this
+   bounded check while the held source is active. The target process therefore
+   installs its own links on the jGNE pass that returns the synthetic mouseDown,
+   before it enters the nested tracking loop.
+
+   The links are permanent for this boot. Another extension may subsequently
+   chain behind us, so removing our link later could strand its incumbent
+   pointer. */
 int now_ext_cursor_enable_continuity_tracking(void)
 {
     void *getmouse;
     void *stilldown;
     void *button;
+    Boolean getmouse_ours;
+    Boolean stilldown_ours;
+    Boolean button_ours;
 
-    if (gContinuityTrackingInstalled)
-        return 1;
     if (gTable == NULL)
         return 0;
 
@@ -483,6 +493,17 @@ int now_ext_cursor_enable_continuity_tracking(void)
     stilldown = (void *)NGetTrapAddress(kNowStillDownTrap, ToolTrap);
     button = (void *)NGetTrapAddress(kNowButtonTrap, ToolTrap);
     if (getmouse == NULL || stilldown == NULL || button == NULL)
+        return 0;
+    getmouse_ours = getmouse == (void *)now_cursor_getmouse_patch;
+    stilldown_ours = stilldown == (void *)now_cursor_stilldown_patch;
+    button_ours = button == (void *)now_cursor_button_patch;
+    if (getmouse_ours && stilldown_ours && button_ours)
+        return 1;
+    /* A mixed set cannot be repaired safely: saving one of our own shims as an
+       incumbent would make that hook tail-chain to itself forever. Installation
+       snapshots all three before changing any, so this means foreign mutation
+       or a previously interrupted install and must fail closed. */
+    if (getmouse_ours || stilldown_ours || button_ours)
         return 0;
 
     gNowCursorOldGetMouse = getmouse;
@@ -494,7 +515,6 @@ int now_ext_cursor_enable_continuity_tracking(void)
                     kNowStillDownTrap, ToolTrap);
     NSetTrapAddress((UniversalProcPtr)now_cursor_button_patch,
                     kNowButtonTrap, ToolTrap);
-    gContinuityTrackingInstalled = true;
     gTable->rest_state |=
         (NowPeekU16)kNowPeekRestCursorTrackingPatched;
     return 1;
@@ -765,6 +785,11 @@ void now_ext_cursor_gne(NowPeekTable *table)
     long err = 0;
 
     (void)table;
+    /* The active source is published before the target dequeues mouseDown.
+       Install in that target's trap context on this very jGNE pass; an install
+       performed only by NOW cannot protect a Finder/Menu Manager tracking loop. */
+    if (gNowCursorTrackingSourceActive)
+        (void)now_ext_cursor_enable_continuity_tracking();
     if (!gTaskApplyOwed) {
         return;
     }
@@ -842,7 +867,6 @@ int now_ext_cursor_boot(NowPeekTable *table)
     gNowCursorTrackingSourceSeq = 0;
     gNowCursorTrackingSourceH = 0;
     gNowCursorTrackingSourceV = 0;
-    gContinuityTrackingInstalled = false;
     gNowCursorOldGetMouse = NULL;
     gNowCursorOldStillDown = NULL;
     gNowCursorOldButton = NULL;
@@ -934,7 +958,6 @@ void now_ext_cursor_rollback(NowPeekTable *table)
     gOwnedTrackingHistory.seq = 0;
     gOwnedTrackingHistory.next = 0;
     gOwnedTrackingHistory.used = 0;
-    gContinuityTrackingInstalled = false;
     gNowCursorOldGetMouse = NULL;
     gNowCursorOldStillDown = NULL;
     gNowCursorOldButton = NULL;

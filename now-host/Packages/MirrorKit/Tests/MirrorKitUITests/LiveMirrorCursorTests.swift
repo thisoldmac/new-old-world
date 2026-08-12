@@ -236,6 +236,39 @@ final class LiveMirrorCursorTests: XCTestCase {
                         + "edges when visual hover is observation-only")
     }
 
+    /// A raw menubar gesture drives the guest's real MenuSelect loop, while
+    /// Mirror draws its dropdown from the already observed menu rows. Every
+    /// raw pointer edge that can change that loop must reconcile the projection;
+    /// otherwise the guest closes while Mirror stays open (or vice versa).
+    func testRawMenuProjectionFollowsEveryContinuityPointerEdge() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources")
+        let live = try String(
+            contentsOf: sources.appendingPathComponent(
+                "MirrorKitUI/LiveMirror.swift"), encoding: .utf8)
+        let captureStart = try XCTUnwrap(
+            live.range(of: "PointerCaptureView(")).lowerBound
+        let captureEnd = try XCTUnwrap(
+            live.range(of: ".frame(maxWidth: .infinity",
+                       range: captureStart..<live.endIndex)).lowerBound
+        let capture = String(live[captureStart..<captureEnd])
+
+        XCTAssertTrue(capture.contains("continuityOwnsOpenMenu = true"),
+                      "a consumed raw menu-title press must own a projection")
+        XCTAssertEqual(capture.components(
+            separatedBy: "syncContinuityMenu(").count - 1, 3,
+            "move, drag and up must each reconcile the raw menu projection")
+        XCTAssertEqual(capture.components(
+            separatedBy: "closeContinuityMenu()").count - 1, 2,
+            "pointer exit and capture cancellation must dismiss the projection")
+        XCTAssertTrue(live.contains(
+            ".onChange(of: controller.continuityInputDriver?"))
+        XCTAssertTrue(live.contains(
+            "if !tracking { closeContinuityMenu() }"),
+            "a remote exit must close the projected menu without another pointer event")
+    }
+
     /// The pointer and the act must name the same object, which they do
     /// by both being handed the resolver's answer for the same point.
     /// Asserted over a real scene rather than over the source, because

@@ -100,7 +100,16 @@ def send_until_applied(udp, nonce_hi, nonce_lo, epoch, seq, h, v,
         ack = decode_ack(udp.recv(ACK.size))
         if (ack["nonceHi"], ack["nonceLo"], ack["epoch"]) != (
                 nonce_hi, nonce_lo, epoch):
-            raise RuntimeError(f"mismatched ack at {seq}: {ack}")
+            # UDP is ordered only per datagram flow, not per Continuity epoch.
+            # A terminal/late ACK from the preceding epoch can already be in
+            # this socket when the reliable lane arms the next one. The host
+            # ignores another lease's ACK; the instrument must do the same or
+            # a healthy guest becomes a false failure at the first new point.
+            attempts += 1
+            if time.time() >= deadline:
+                raise TimeoutError(
+                    f"position {seq} received only stale lease ACKs: {ack}")
+            continue
         if ack["exitReason"] != 0:
             raise RuntimeError(f"resident exited at {seq}: {ack}")
         position_done = ack["positionSequence"] >= seq

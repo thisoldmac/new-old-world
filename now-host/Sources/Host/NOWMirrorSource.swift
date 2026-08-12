@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import MirrorKit
 import MirrorKitUI
@@ -293,8 +294,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     private let listener: GuestListener
     private weak var localNetworkAccess: LocalNetworkAccessController?
-    private(set) lazy var continuity = MirrorContinuityController(
-        listener: listener, localNetworkAccess: localNetworkAccess)
+    let continuity: MirrorContinuityController
+    private var continuitySubscription: AnyCancellable?
     var continuityInputDriver: ContinuityInputDriver? { continuity }
     private let hostFinder: HostFinderSession
     private var lastGuestScene: MirrorKit.Scene?
@@ -444,6 +445,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
         self.localNetworkAccess = localNetworkAccess
+        self.continuity = MirrorContinuityController(
+            listener: listener, localNetworkAccess: localNetworkAccess)
         self.workScheduler = listener.workScheduler
         self.hostFinder = hostFinderDefaults.map {
             HostFinderSession(listener: listener, defaults: $0)
@@ -463,6 +466,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         self.finderRefreshOverride = finderRefreshOverride
         self.visibilityRefreshOverride = visibilityRefreshOverride
         self.lifecycleDidChange = lifecycleDidChange
+        self.continuitySubscription = continuity.objectWillChange.sink {
+            [weak self] _ in self?.objectWillChange.send()
+        }
         self.hostFinder.onChange = { [weak self] in
             guard let self, self.running,
                   let base = self.lastGuestScene else { return }

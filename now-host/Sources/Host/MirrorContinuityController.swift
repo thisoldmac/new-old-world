@@ -80,6 +80,7 @@ final class MirrorContinuityController: ObservableObject,
     }
 
     var isActive: Bool { phase == .active }
+    @Published private(set) var isMenuTracking = false
 
     private let listener: GuestListener
     private let defaults: UserDefaults
@@ -212,6 +213,7 @@ final class MirrorContinuityController: ObservableObject,
         primaryCycleDragged = false
         menuLatched = false
         menuReleaseArmed = false
+        isMenuTracking = inMenuBar
         sendState(inside: true, keepalive: false)
         scheduleButtonAckTimeout(generation: buttonGeneration, down: true)
     }
@@ -260,6 +262,7 @@ final class MirrorContinuityController: ObservableObject,
             menuLatched = true
             return true
         }
+        isMenuTracking = false
         deferredButtonPoint = point
         releasePending = true
         if pressAcknowledged { sendPrimaryRelease() }
@@ -887,6 +890,7 @@ final class MirrorContinuityController: ObservableObject,
         primaryCycleDragged = false
         menuLatched = false
         menuReleaseArmed = false
+        isMenuTracking = false
     }
 
     private func setEnabledWithoutTeardown(_ enabled: Bool) {

@@ -445,6 +445,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
 
         XCTAssertTrue(rig.controller.primaryDown(
             at: .init(x: 42, y: 10), inMenuBar: true))
+        XCTAssertTrue(rig.controller.isMenuTracking,
+                      "the raw press must immediately project the guest menu")
         try await waitUntil("menu press") {
             rig.udp.packets.contains {
                 $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
@@ -455,6 +457,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         })
         rig.udp.acknowledge(down)
         XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 42, y: 10)))
+        XCTAssertTrue(rig.controller.isMenuTracking,
+                      "the OS 8/9 click-open latch must keep the projection open")
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertFalse(rig.udp.packets.contains {
             $0.buttonGeneration != 0
@@ -464,6 +468,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
 
         XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 55, y: 48)))
         XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 55, y: 48)))
+        XCTAssertFalse(rig.controller.isMenuTracking,
+                       "the selection click closes guest and projected menus")
         try await waitUntil("menu selection release") {
             rig.udp.packets.contains {
                 $0.buttonGeneration != down.buttonGeneration
@@ -491,6 +497,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         rig.udp.acknowledge(down)
         XCTAssertTrue(rig.controller.primaryDragged(to: .init(x: 55, y: 48)))
         XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 55, y: 48)))
+        XCTAssertFalse(rig.controller.isMenuTracking,
+                       "click-drag-release must not retain a projected menu")
         try await waitUntil("menu drag release") {
             rig.udp.packets.contains {
                 $0.buttonGeneration != down.buttonGeneration

@@ -1314,6 +1314,25 @@ checks, and clean shutdown; CUDA also proved held physical takeover. Those
 rigs do not reproduce stationary PowerBook ADB republishing, so this remains
 Tested and not metal-verified.
 
+**Corrected 2026-08-12, target-context installation:** that candidate installed
+the three tracking hooks once from NOW's arm service even though this resident's
+act plane has already measured Toolbox trap dispatch differing by process
+context. Finder could therefore enter its tracking loop without any of the
+three reassertions. The active-source jGNE pass now installs the complete set in
+the target before returning its synthetic mouseDown; already-installed is a
+no-op and a partial set fails closed. The exact missing target-install mutation
+fails the native source guard. NOW-68K and NOW Extension cross-build;
+the focused host controller tests and 282-test MirrorKit gate pass. This is a
+new Tested candidate, not PowerBook evidence.
+
+The same slice synchronizes the menu state the host actually knows: a title
+press consumed by Continuity opens Mirror's dropdown, title crossing switches
+it, and selection/exit/cancel closes it. Independently opened guest menus and
+semantic Mirror-only menu opening remain unsynchronized. That is not a missing
+scene key: `MenuSelect` starves NOW's cooperative scene transport while the menu
+is open, and the resident may not send network traffic from its trap/interrupt
+contexts. A safe live guest-to-host menu signal is separate transport work.
+
 ## PRE-MERGE CONSOLIDATION: Mirror is NOW-owned; the standalone product is archived (2026-08-09, `codex/mirror-session-teardown`)
 
 The production semantic model and renderer now live at

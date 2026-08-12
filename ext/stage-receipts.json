@@ -520,6 +520,16 @@
         "ext/src/now_ext_cursor_tracking.S"
       ],
       "reason": "Recovered from exact session patches for the branch-private resident already tested and baked; shared promotion remains reserved for release-candidate landing."
+    },
+    {
+      "at": "2026-08-12T15:21:00-0400",
+      "branch": "feat/continuity-direct-pointer",
+      "extDigest": "07627fb6acd9273211af623ddaa5b17cac93d115",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Branch-private Continuity target-context hook build was cold-baked and passed PMU and CUDA fault rigs; shared oracle promotion remains deferred to release-candidate landing."
     }
   ]
 }
