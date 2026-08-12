@@ -7,7 +7,7 @@ search:
 
 # Open issues
 
-## UNVERIFIED: Mirror mode has a copy-on-drop file lane (2026-08-12, `feat/mirror-drag-drop`)
+## TESTED: Mirror mode has a copy-on-drop file lane (2026-08-12, `feat/mirror-drag-drop`)
 
 The host now turns a guest file dragged past the Mirror edge into a native
 file promise and accepts host file URLs released over the mirrored desktop,
@@ -19,11 +19,13 @@ host services. This version copies regular files only: no folder traversal,
 move, overwrite, NOW-68K, or Continuity screen-edge drop is implied.
 
 The resolver was watched failing when an exact Finder path was mutated to a
-window title, and the application-settlement guard was watched failing when
-`kAEOpenDocuments` was mutated. MirrorKit, the PPC and 68K cross-builds,
-contract/mapping tests, and the integrated Mirror/Continuity composition tests
-pass locally. The complete repository gate and real PowerBook drag remain
-unverified.
+window title, the application-settlement guard was watched failing when
+`kAEOpenDocuments` was mutated, and the app-UI reachability guard was watched
+failing when the Mirror call-site token was removed. The complete repository
+gate passes locally: 186 native tests, MirrorKit, every guest and resident
+cross-build, 2,225 host tests in asset mode (56 expected skips), honest-
+degradation mode, the isolated socket test, and unsigned Debug and Release app
+builds. A real PowerBook drag remains unverified.
 
 ## TESTED: Continuity now sits on the atomic module foundation (2026-08-12, `feat/continuity-direct-pointer`)
 
