@@ -11,6 +11,41 @@ It is off by default and its enable switch is session-only. The update rate is
 user-selectable at 15, 30, or 60 Hz; 30 Hz is the default, and the selection is
 remembered per stable guest identity.
 
+## Product direction: one input engine, several surfaces
+
+The movement slice began inside Mirror because that made ownership observable:
+the host pointer is either over the rendered guest screen or it is not. That is
+the proving surface, not the final product boundary. The same input and drag
+substrate is expected to support three related presentations:
+
+- **Mirror semantic mode** keeps Mirror's identity-addressed acts. Its optional
+  direct-pointer mode replaces those mouse events while active with guest
+  cursor movement, raw click-through, and raw held dragging.
+- **Continuity mode** owns a screen-edge handoff. The host pointer crosses onto
+  the physical guest display instead of remaining mirrored over a host view.
+- **Blended-window mode** promotes selected guest windows into the host
+  environment. Those windows can accept direct input and cross-machine drops
+  without requiring either a full guest screen or a Continuity cursor session.
+
+These are overlapping modes, not three implementations. Pointer ownership,
+ordered button state, forced release, drag transactions, exact guest drop-target
+resolution, file transfer, and guest-window identity belong to shared services.
+Mirror can therefore gain cursor/click/drag and host-to-guest Finder drops
+without pretending that full screen-edge Continuity has already shipped.
+
+The remaining product sequence is:
+
+1. direct primary click-through, bypassing Mirror click handling only while the
+   raw lane is active;
+2. held movement and reliable release for guest-native dragging;
+3. screen-edge pass-through and explicit host/guest handback;
+4. cross-machine file dragging, including exact Finder window/folder targets;
+5. dragging guest windows between the guest display, Mirror, and detached host
+   presentation.
+
+The destination chain and its existing pieces are recorded in
+[the surface-as-foundation plan](plans/2026-08-07-019-feat-the-surface-as-a-foundation-plan.md#the-destination-recorded-so-the-two-features-are-aimed).
+
 ## Ownership and transport
 
 The existing wire port is used in both protocol namespaces:
@@ -666,3 +701,24 @@ rate. The current observation does not establish that the requested rates
 reach the guest distinctly, nor does this bounded run establish long-duration
 stability, lease/TCP-loss recovery, repeated native takeover, reboot/disable,
 or removal behavior.
+
+A longer attended pass refined that observation: movement remained accurate
+and reliable, but froze for roughly 500 ms every few seconds before catching up
+to the newest absolute point. This is a responsiveness defect, not another
+machine wedge, and it is deliberately left unpatched while click and drag scope
+is settled.
+
+The live code gives the future investigation one narrow starting hypothesis.
+V3 applies a point only from `service_continuity()` inside `conn_service()`, in
+New Old World's cooperative task time. The main loop's ordinary idle
+`WaitNextEvent` sleep is six ticks, `conn_wants_fast_pump()` does not currently
+count an armed Continuity epoch as work, and the UDP notifier deliberately may
+only publish bounded state and acknowledgement debt. It cannot perform the
+Cursor Device call or re-enter Process Manager to wake the application. This
+can make different host send rates collapse onto the same guest service
+cadence, but it does not by itself account for a 500 ms tail. A later cadence
+pass should correlate existing service-pass timing with UDP acceptance and PPC
+apply timestamps before changing the sleep policy. The first bounded candidate
+to test is an armed-Continuity fast-pump state at one tick; it must measure CPU
+cost and fairness to other cooperative applications and must not move manager
+work back into the notifier, a Time Manager task, or global Event Manager code.

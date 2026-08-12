@@ -621,15 +621,22 @@ attended PowerBook 1400c run then produced accurate repeated movement without
 the immediate whole-system wedge seen in the six preceding routes. Repeated v0
 movement through resident 1.17's V3 PPC path is therefore metal-verified.
 Motion remained visibly jittery, however, and 15/30/60 Hz produced roughly the
-same perceived smoothness. Sustained stability, rate fidelity, teardown and
-recovery remain open, so quarantine is unchanged. Exact evidence and the next
-per-stage timing measurements are in [continuity-mode.md](continuity-mode.md).
+same perceived smoothness. A longer pass remained accurate and reliable but
+froze for about 500 ms every few seconds. V3 applies only from New Old World's
+cooperative `conn_service()` path; active Continuity is not currently part of
+the event loop's fast-pump predicate. That is a tracked scheduling hypothesis,
+not yet a root cause, and no low-level cadence patch is part of this slice.
+Sustained stability, rate fidelity, teardown and recovery remain open, so
+quarantine is unchanged. Exact evidence and the next per-stage timing
+measurements are in [continuity-mode.md](continuity-mode.md).
 
-The optional Continuity lane is implemented through v0.5b: hover movement,
-direct primary clicks, and sustained drags. Reliable TCP grants and revokes a
-nonce/epoch; fixed-state UDP uses the same numeric port in its own protocol
-namespace. The update rate is selectable at 15/30/60 Hz, default 30, and is
-remembered per stable guest identity. P9 owns a
+The optional Continuity lane currently exposes v0 movement only. Direct primary
+click bypass and sustained drag remain the v0.5a and v0.5b implementation
+stages; packet fields and emulator probes for button generations are substrate,
+not shipped behavior. Reliable TCP grants and revokes a nonce/epoch;
+fixed-state UDP uses the same numeric port in its own protocol namespace. The
+update rate is selectable at 15/30/60 Hz, default 30, and is remembered per
+stable guest identity. P9 owns a
 clamped dead-man and yields immediately to physical guest movement; delayed
 button bookkeeping is diagnostic until button-only takeover is proven;
 P7 drag and P9 Continuity arbitrate one resident input owner.

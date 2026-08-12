@@ -272,6 +272,35 @@ epoch cannot re-arm it; the person must explicitly enable Continuity again.
 - No second resident, driver, control panel, or QEMU-only input mechanism is
   introduced.
 
+### Roadmap amendment — Continuity grows beyond Mirror
+
+The boundaries above remain correct for the v0/v0.5 implementation slice; they
+are not the final product boundary. Metal v0 established Mirror as a useful
+proving surface, and the next roadmap distinguishes three presentations over
+one shared input/drag substrate:
+
+| Presentation | Pointer entry | Interaction | Window surface |
+| --- | --- | --- | --- |
+| Mirror semantic | inside Mirror | existing identity-addressed Mirror acts | full rendered guest screen |
+| Mirror direct-pointer | inside Mirror | guest cursor plus raw click and held drag; semantic mouse events bypassed only while active | full rendered guest screen |
+| Continuity | host screen edge | explicit pointer handoff to the physical guest and back | physical guest display |
+| Blended windows | detached guest window | direct input and cross-machine drop without a whole-screen cursor session | selected guest windows in the host environment |
+
+The remaining execution order is click pass-through, held dragging,
+screen-edge pass-through, cross-machine file drag with exact target-window and
+folder resolution, then moving guest windows between physical, mirrored, and
+detached presentations. File drag and window drag are different transactions:
+the first commits bytes and Macintosh metadata into an exact Finder
+destination; the second preserves one observed guest window's identity while
+its presentation crosses surfaces.
+
+Shared ownership is the important architectural constraint. Button ordering,
+dead-man release, physical-input takeover, drag lifecycle, target resolution,
+file promises/transfers, and guest-window identity cannot be reimplemented per
+presentation. Conversely, a user does not need to enable full Continuity just
+to drop a host file onto a Finder window visible in Mirror or to interact with
+a detached guest window.
+
 ---
 
 ## Planning Contract
