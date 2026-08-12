@@ -10,6 +10,8 @@ private struct Arguments {
     var hoveredItem: Int?
     var finderView: Scene.FinderPresentation.View?
     var finderSelectedName: String?
+    var finderMetadata: [String: Scene.FinderPresentation.ItemMetadata] = [:]
+    var appleMenuProfile: String?
 
     init(_ values: [String]) throws {
         var index = 0
@@ -39,12 +41,24 @@ private struct Arguments {
                 }
                 finderView = parsed
             case "--finder-selected-name": finderSelectedName = value
+            case "--finder-metadata-json":
+                guard let data = value.data(using: .utf8) else {
+                    throw ArgumentError("--finder-metadata-json must be UTF-8 JSON")
+                }
+                finderMetadata = try JSONDecoder().decode(
+                    [String: Scene.FinderPresentation.ItemMetadata].self,
+                    from: data)
+            case "--apple-menu-profile":
+                guard value == "macos-8.6" else {
+                    throw ArgumentError("--apple-menu-profile must be macos-8.6")
+                }
+                appleMenuProfile = value
             default: throw ArgumentError("unknown argument \(option)")
             }
             index += 2
         }
         guard scene != nil, output != nil else {
-            throw ArgumentError("usage: mirror-render --scene FILE --output FILE [--open-menu N] [--hovered-item N] [--finder-view VIEW] [--finder-selected-name NAME]")
+            throw ArgumentError("usage: mirror-render --scene FILE --output FILE [--open-menu N] [--hovered-item N] [--finder-view VIEW] [--finder-selected-name NAME] [--finder-metadata-json JSON] [--apple-menu-profile macos-8.6]")
         }
     }
 }
@@ -68,6 +82,13 @@ private struct MirrorRenderCLI {
             }
             let sceneData = try Data(contentsOf: sceneURL)
             var scene = try JSONDecoder().decode(Scene.self, from: sceneData)
+            if arguments.appleMenuProfile == "macos-8.6",
+               var menubar = scene.menubar,
+               let index = menubar.menus.firstIndex(where: \.apple) {
+                menubar.menus[index] = AppleMenuProfile.macOS86(
+                    menubar.menus[index])
+                scene.menubar = menubar
+            }
             if let finderView = arguments.finderView {
                 guard let index = scene.windows.firstIndex(where: {
                     $0.app == "Finder" && $0.front && $0.visible
@@ -76,7 +97,8 @@ private struct MirrorRenderCLI {
                 }
                 scene.windows[index].finder = .init(
                     path: "", view: finderView,
-                    selectedNames: arguments.finderSelectedName.map { [$0] } ?? [])
+                    selectedNames: arguments.finderSelectedName.map { [$0] } ?? [],
+                    itemMetadata: arguments.finderMetadata)
             } else if arguments.finderSelectedName != nil {
                 throw ArgumentError("--finder-selected-name requires --finder-view")
             }

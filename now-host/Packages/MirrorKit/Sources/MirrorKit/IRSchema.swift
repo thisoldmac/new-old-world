@@ -436,6 +436,11 @@ public enum IRSchema {
 
     public static let v2AdditionalProperties: Set<String> = [
         "Scene.MenuItem.submenu",
+        "Scene.MenuItem.icon",
+        "Scene.MenuItem.IconIdentity.creator",
+        "Scene.MenuItem.IconIdentity.type",
+        "Scene.MenuItem.IconIdentity.generic",
+        "Scene.MenuItem.IconIdentity.systemIconID",
         // See meta.theme in v2Additions.
         "Scene.Meta.theme",
         "Scene.Theme.dialogBackground", "Scene.Theme.alertBackground",
@@ -512,8 +517,12 @@ public enum IRSchema {
         "Scene.FinderPresentation.path",
         "Scene.FinderPresentation.view",
         "Scene.FinderPresentation.selectedNames",
+        "Scene.FinderPresentation.itemMetadata",
         "Scene.FinderPresentation.pages",
         "Scene.FinderPresentation.complete",
+        "Scene.FinderPresentation.ItemMetadata.dataBytes",
+        "Scene.FinderPresentation.ItemMetadata.rsrcBytes",
+        "Scene.FinderPresentation.ItemMetadata.modified",
         /* 2026-08-07. What an alias POINTS AT. Additive in the ordinary
            sense — absent when the producer did not ask, and a consumer
            that has never heard of it keeps the answer it had. It exists
@@ -603,7 +612,7 @@ public enum IRSchema {
             if let wrapped = mirror.children.first?.value {
                 collect(wrapped, into: &out)
             }
-        case .collection, .set, .tuple:
+        case .collection, .dictionary, .set, .tuple:
             for child in mirror.children { collect(child.value, into: &out) }
         case .struct, .class:
             let name = typeName(of: value)

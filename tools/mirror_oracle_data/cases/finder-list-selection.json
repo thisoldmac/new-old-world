@@ -19,5 +19,19 @@
     {"name": "front-window", "source": "frontWindow", "inset": [0, 0, 0, 0]}
   ],
   "masks": [],
-  "render": {"finderView": "name", "finderSelectedName": "Applications"}
+  "render": {
+    "finderView": "name",
+    "finderSelectedName": "Applications",
+    "finderMetadata": {
+      "Apple Extras": {"modified": 3869263860},
+      "Applications": {"modified": 3869316420},
+      "Assistants": {"modified": 3869263860},
+      "Installer Logs": {"modified": 3869263740},
+      "Internet": {"modified": 3869263860},
+      "Mac OS Read Me Files": {"modified": 3869263860},
+      "System Folder": {"modified": 3869298840},
+      "Utilities": {"modified": 3869263800},
+      "Web Pages": {"modified": 3869264040}
+    }
+  }
 }

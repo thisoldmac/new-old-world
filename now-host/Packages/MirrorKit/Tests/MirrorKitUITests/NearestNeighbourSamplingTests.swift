@@ -74,7 +74,9 @@ final class NearestNeighbourSamplingTests: XCTestCase {
         /* 9 → 10 on 2026-08-11: the cross-proved Finder alias transform
            joined the same local renderer and also explicitly requests
            nearest-neighbour sampling. */
-        XCTAssertEqual(total, 10,
+        /* 10 → 11 on 2026-08-11: Apple-menu rows now draw their explicit
+           profile-joined native `ics8` identity with `.none`. */
+        XCTAssertEqual(total, 11,
                        "the number of drawn bitmaps in MirrorKitUI changed. "
                        + "That is fine — check the new one asks for "
                        + "nearest-neighbour, then update this number so the "

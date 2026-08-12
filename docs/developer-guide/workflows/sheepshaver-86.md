@@ -456,3 +456,11 @@ Use the repository's verification vocabulary:
 Capture the source revision, profile/input hashes, staged artifact build ID,
 and a screenshot together. An attractive desktop without those identities is
 reference material, not attributable verification.
+
+The Finder breadth cases deliberately keep acquisition and rendering separate.
+The scene supplies menus, rows, item geometry and guest-owned action identity;
+case overlays may select a Finder view or attach attributable catalog metadata.
+For the 8.6 Apple menu, `appleMenuProfile: macos-8.6` invokes a host-only
+title-to-file-identity join, and the renderer loads native `ics8` art from the
+offline pack. Neither list metadata nor menu icon identity is encoded back into
+the guest scene, and no framebuffer pixels are used as production menu rows.

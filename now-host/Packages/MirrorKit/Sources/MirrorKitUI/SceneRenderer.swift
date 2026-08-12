@@ -879,6 +879,13 @@ public struct SceneRenderer {
                              at: CGPoint(x: frame.minX + 6, y: y + 8),
                              anchor: .center)
             }
+            if menu.apple,
+               let image = IconAtlas.menuIcon(item.icon, size: .small) {
+                ctx.draw(Image(decorative: image, scale: 1)
+                    .interpolation(.none),
+                    in: CGRect(x: frame.minX + 14, y: y,
+                               width: 16, height: 16))
+            }
             sysText(Self.menuItemTitle(item), clipped,
                     x: frame.minX + (menu.apple ? 38 : 14),
                     baselineY: y + 11,
@@ -1315,6 +1322,11 @@ public struct SceneRenderer {
                                 y: content.minY + CGFloat(item.y)),
                                view: FinderItems.presentationView(win),
                                selected: selected,
+                               metadata: win.finder?.itemMetadata[item.name],
+                               listColumns: Self.finderListColumns(win).map {
+                                   $0.offsetBy(dx: content.minX,
+                                               dy: content.minY)
+                               },
                                renameText: finderRename?.windowID == win.id
                                     && finderRename?.original == item.name
                                     ? finderRename?.text : nil,
@@ -1336,7 +1348,9 @@ public struct SceneRenderer {
     private func drawFinderItem(
         _ ctx: GraphicsContext, _ item: MirrorKit.Scene.DesktopItem,
         at origin: CGPoint, view: MirrorKit.Scene.FinderPresentation.View,
-        selected: Bool, renameText: String?,
+        selected: Bool,
+        metadata: MirrorKit.Scene.FinderPresentation.ItemMetadata?,
+        listColumns: [CGRect], renameText: String?,
         replayed: DisplayReplay.Coverage?
     ) {
         if view == .button {
@@ -1387,8 +1401,100 @@ public struct SceneRenderer {
         appText(item.name, ctx, x: label.minX + 2,
                 baselineY: label.minY + ascent,
                 color: selected ? .white : Platinum.g6, small: true)
+        if view == .name {
+            let baseline = box.minY + ascent
+            if listColumns.indices.contains(1),
+               let modified = Self.finderModifiedString(
+                    metadata?.modified, relativeTo: scene.capturedAt) {
+                appText(modified, ctx, x: listColumns[1].minX + 5,
+                        baselineY: baseline, color: Platinum.g6, small: true)
+            }
+            if listColumns.indices.contains(2),
+               let size = Self.finderSizeString(metadata) {
+                let x = listColumns[2].maxX - 5
+                    - CGFloat(FontBook.small?.width(size) ?? size.count * 6)
+                appText(size, ctx, x: x, baselineY: baseline,
+                        color: Platinum.g6, small: true)
+            }
+            if listColumns.indices.contains(3) {
+                let kind = Self.finderKindString(item)
+                appText(kind, ctx, x: listColumns[3].minX + 5,
+                        baselineY: baseline, color: Platinum.g6, small: true)
+            }
+        }
         if let renameText {
             drawRenameEditor(ctx, text: renameText, iconBox: box, beside: true)
+        }
+    }
+
+    /// The same semantic column header rectangles the host uses for sorting
+    /// also own their cells. There is no second guessed width table in the
+    /// renderer; a two-column 8.6 window simply draws the two facts it has.
+    private static func finderListColumns(
+        _ win: MirrorKit.Scene.Window
+    ) -> [CGRect] {
+        win.controls.compactMap { control -> CGRect? in
+            guard control.visible,
+                  control.semantic?.kind == "columnHeader",
+                  let r = control.rect else { return nil }
+            return CGRect(x: r.l, y: r.t,
+                          width: max(0, r.r - r.l),
+                          height: max(0, r.b - r.t))
+        }.sorted { $0.minX < $1.minX }
+    }
+
+    static func finderSizeString(
+        _ metadata: MirrorKit.Scene.FinderPresentation.ItemMetadata?
+    ) -> String? {
+        guard let metadata,
+              metadata.dataBytes != nil || metadata.rsrcBytes != nil else {
+            return nil
+        }
+        let bytes = max(0, metadata.dataBytes ?? 0)
+            + max(0, metadata.rsrcBytes ?? 0)
+        if bytes < 1_024 { return "\(bytes) bytes" }
+        let kb = (bytes + 1_023) / 1_024
+        return "\(kb) K"
+    }
+
+    static func finderModifiedString(_ macSeconds: Int?,
+                                     relativeTo capturedAt: Double) -> String? {
+        guard let macSeconds, macSeconds > 0 else { return nil }
+        let date = Date(timeIntervalSince1970:
+            Double(macSeconds) - 2_082_844_800)
+        let reference = Date(timeIntervalSince1970: capturedAt)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        if calendar.isDate(date, inSameDayAs: reference) {
+            formatter.dateFormat = "h:mm a"
+            return "Today, " + formatter.string(from: date)
+        }
+        let yesterday = calendar.date(byAdding: .day, value: -1,
+                                      to: reference)
+        if let yesterday, calendar.isDate(date, inSameDayAs: yesterday) {
+            formatter.dateFormat = "h:mm a"
+            return "Yesterday, " + formatter.string(from: date)
+        }
+        formatter.dateFormat = "M/d/yy, h:mm a"
+        return formatter.string(from: date)
+    }
+
+    private static func finderKindString(
+        _ item: MirrorKit.Scene.DesktopItem
+    ) -> String {
+        if item.kind == "folder" { return "folder" }
+        if item.kind == "application" || item.type == "APPL" {
+            return "application program"
+        }
+        switch item.type {
+        case "TEXT": return "SimpleText document"
+        case "PICT": return "Picture"
+        case "JPEG": return "PictureViewer document"
+        case "MooV": return "QuickTime movie"
+        default: return "document"
         }
     }
 

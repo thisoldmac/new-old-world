@@ -300,10 +300,13 @@ final class FinderItemArbitrationTests: XCTestCase {
                         in: CGRect(x: o.x + 40, y: o.y + 50,
                                    width: 48, height: 48)),
             100, "Buttons must own a raised well, not reuse icon view")
-        let label = CGRect(x: o.x + 20, y: o.y + 99,
-                           width: 88, height: 14)
-        XCTAssertFalse(darkPixels(png, in: label).isEmpty,
-                       "Buttons has a centred label below the raised well")
+        let label = CGRect(x: o.x, y: o.y + 90,
+                           width: 150, height: 35)
+        var unnamed = win
+        unnamed.items?[0].name = ""
+        let unnamedPNG = try RenderShot.png(scene: Self.scene([unnamed]))
+        XCTAssertGreaterThan(differences(png, unnamedPNG, in: label), 0,
+                             "Buttons has a centred label below the raised well")
     }
 
     func testListViewDrawsTheCountBarAndRuledFinderField() throws {
@@ -335,6 +338,69 @@ final class FinderItemArbitrationTests: XCTestCase {
             png, in: CGRect(x: o.x + 12, y: o.y + 47,
                             width: 8, height: 12)).isEmpty,
             "folder list rows carry disclosure triangles")
+    }
+
+    func testListViewDrawsCatalogMetadataInSemanticColumns() throws {
+        var win = Self.folder(
+            items: [Self.item("Read Me", x: 26, y: 44, w: 16, h: 16,
+                              kind: "file")],
+            controls: [
+                .init(ref: "name", role: "control", title: "Name",
+                      rect: Rect(l: 0, t: 23, r: 150, b: 43),
+                      enabled: true, visible: true,
+                      semantic: .init(knowledge: .known,
+                                      kind: "columnHeader")),
+                .init(ref: "date", role: "control", title: "Date Modified",
+                      rect: Rect(l: 150, t: 23, r: 235, b: 43),
+                      enabled: true, visible: true,
+                      semantic: .init(knowledge: .known,
+                                      kind: "columnHeader")),
+                .init(ref: "size", role: "control", title: "Size",
+                      rect: Rect(l: 235, t: 23, r: 275, b: 43),
+                      enabled: true, visible: true,
+                      semantic: .init(knowledge: .known,
+                                      kind: "columnHeader")),
+                .init(ref: "kind", role: "control", title: "Kind",
+                      rect: Rect(l: 275, t: 23, r: 304, b: 43),
+                      enabled: true, visible: true,
+                      semantic: .init(knowledge: .known,
+                                      kind: "columnHeader")),
+                .init(ref: "v", role: "scrollbar", title: "",
+                      rect: Rect(l: 304, t: 43, r: 320, b: 204),
+                      enabled: true, visible: true),
+                .init(ref: "h", role: "scrollbar", title: "",
+                      rect: Rect(l: 0, t: 204, r: 304, b: 220),
+                      enabled: true, visible: true),
+            ])
+        win.finder = .init(
+            path: "Macintosh HD:", view: .name,
+            itemMetadata: ["Read Me": .init(
+                dataBytes: 2_048, rsrcBytes: 0, modified: 2_082_844_800)])
+        var scene = Self.scene([win])
+        scene.capturedAt = 0
+
+        let png = try RenderShot.png(scene: scene)
+        let o = Self.contentOrigin
+        XCTAssertFalse(darkPixels(
+            png, in: CGRect(x: o.x + 153, y: o.y + 44,
+                            width: 78, height: 16)).isEmpty,
+            "the modification date must reach its declared column")
+        XCTAssertFalse(darkPixels(
+            png, in: CGRect(x: o.x + 238, y: o.y + 44,
+                            width: 34, height: 16)).isEmpty,
+            "the two-fork size must reach its declared column")
+        XCTAssertFalse(darkPixels(
+            png, in: CGRect(x: o.x + 278, y: o.y + 44,
+                            width: 24, height: 16)).isEmpty,
+            "the item kind must reach its declared column")
+    }
+
+    func testFinderMetadataFormattingUsesClassicEpochAndForkTotal() {
+        XCTAssertEqual(SceneRenderer.finderModifiedString(
+            2_082_844_800, relativeTo: 0), "Today, 12:00 AM")
+        XCTAssertEqual(SceneRenderer.finderSizeString(.init(
+            dataBytes: 1_024, rsrcBytes: 1_025)), "3 K")
+        XCTAssertNil(SceneRenderer.finderSizeString(.init()))
     }
 
     func testFinderSnapshotSelectionChangesTheSemanticRow() throws {

@@ -470,6 +470,29 @@ def main() -> None:
             "--finder-view", "button",
             "--finder-selected-name", "Applications",
         ]
+        metadata_case = fixture_case()
+        metadata_case.render.update({
+            "finderView": "name",
+            "finderMetadata": {"Read Me": {"modified": 3869307060}},
+        })
+        metadata_output = root / "renderer-metadata.png"
+        metadata_receipt = render_scene(
+            REPO, metadata_case, scene_path, metadata_output, run=fake_run)
+        assert metadata_receipt["command"][-2] == "--finder-metadata-json"
+        assert json.loads(metadata_receipt["command"][-1]) == {
+            "Read Me": {"modified": 3869307060},
+        }
+
+        apple_profile_case = replace(
+            fixture_case(), render={"openMenu": 0,
+                                    "appleMenuProfile": "macos-8.6"})
+        apple_profile_output = root / "apple-profile-output.png"
+        apple_profile_receipt = render_scene(
+            REPO, apple_profile_case, scene_path, apple_profile_output,
+            run=fake_run)
+        assert apple_profile_receipt["command"][-2:] == [
+            "--apple-menu-profile", "macos-8.6",
+        ]
 
         qemu = QMPBackend(REPO, root / "qmp.sock")
         assert_raises(ValueError, lambda: qemu.input(["move 1 1"]), "not implemented")
@@ -503,14 +526,18 @@ def main() -> None:
         assert apple_menu.input_actions[:-2] == desktop.input_actions
         assert file_menu.input_actions[-2:] == ["move 55 10", "down 0"]
         assert apple_menu.input_actions[-2:] == ["move 22 10", "down 0"]
+        assert apple_menu.render["appleMenuProfile"] == "macos-8.6"
         assert load_case("finder-buttons-view").input_actions[-4:] == [
             "move 130 10", "down 0", "move 145 42", "up 0",
         ]
         assert load_case("finder-front-icon-view").render == {
             "finderView": "icon",
         }
-        assert load_case("finder-list-selection").render == {
-            "finderView": "name", "finderSelectedName": "Applications",
+        list_case = load_case("finder-list-selection")
+        assert list_case.render["finderView"] == "name"
+        assert list_case.render["finderSelectedName"] == "Applications"
+        assert list_case.render["finderMetadata"]["Applications"] == {
+            "modified": 3869316420,
         }
         assert [load_case(case).render["openMenu"] for case in (
             "finder-file-menu-open", "finder-edit-menu-open",

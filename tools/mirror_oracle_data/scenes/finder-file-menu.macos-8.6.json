@@ -13,7 +13,33 @@
   "menubar": {
     "app": "Finder",
     "menus": [
-      {"title": "", "apple": true, "left": 10, "id": 256, "items": []},
+      {
+        "title": "", "apple": true, "left": 10, "id": 256,
+        "items": [
+          {"title": "About This Computer", "index": 1, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "-", "index": 2, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Apple FM Radio", "index": 3, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Apple System Profiler", "index": 4, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "AppleCD Audio Player", "index": 5, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Automated Tasks", "index": 6, "separator": false, "enabled": true, "mark": false, "cmd": "", "submenu": true},
+          {"title": "Calculator", "index": 7, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Chooser", "index": 8, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Control Panels", "index": 9, "separator": false, "enabled": true, "mark": false, "cmd": "", "submenu": true},
+          {"title": "Favorites", "index": 10, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Graphing Calculator", "index": 11, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Internet Access", "index": 12, "separator": false, "enabled": true, "mark": false, "cmd": "", "submenu": true},
+          {"title": "Key Caps", "index": 13, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Network Browser", "index": 14, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Note Pad", "index": 15, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Recent Applications", "index": 16, "separator": false, "enabled": true, "mark": false, "cmd": "", "submenu": true},
+          {"title": "Recent Documents", "index": 17, "separator": false, "enabled": true, "mark": false, "cmd": "", "submenu": true},
+          {"title": "Remote Access Status", "index": 18, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Scrapbook", "index": 19, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Sherlock", "index": 20, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "SimpleSound", "index": 21, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Stickies", "index": 22, "separator": false, "enabled": true, "mark": false, "cmd": ""}
+        ]
+      },
       {
         "title": "File", "apple": false, "left": 43, "id": 257,
         "items": [

@@ -1,5 +1,5 @@
 {
-  "version": 2, "seq": 1, "source": "oracle-case", "capturedAt": 0,
+  "version": 2, "seq": 1, "source": "oracle-case", "capturedAt": 1786482780,
   "screen": {"w": 800, "h": 600},
   "apps": [{"psn": "0:1", "name": "Finder", "front": true, "error": null}],
   "processes": [{"psn": "0:1", "name": "Finder", "front": true, "signature": "MACS"}],

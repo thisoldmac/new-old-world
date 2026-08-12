@@ -122,7 +122,14 @@ enum HostFinderDomain {
             finder: .init(path: window.path, view: window.view,
                           selectedNames: window.selectedNames,
                           pages: max(1, window.pages),
-                          complete: window.complete),
+                          complete: window.complete,
+                          itemMetadata: Dictionary(uniqueKeysWithValues:
+                            entries.map { entry in
+                                (entry.name, .init(
+                                    dataBytes: entry.dataBytes,
+                                    rsrcBytes: entry.rsrcBytes,
+                                    modified: entry.modified))
+                            })),
             display: nil)
     }
 
@@ -174,8 +181,9 @@ enum HostFinderDomain {
 
     static func finderMenubar(from base: Scene.Menubar?, window: Window? = nil)
         -> Scene.Menubar {
-        let apple = base?.menus.first(where: \.apple)
-            ?? .init(title: "", apple: true, left: 0, id: 1, items: [])
+        let apple = AppleMenuProfile.macOS86(
+            base?.menus.first(where: \.apple)
+                ?? .init(title: "", apple: true, left: 0, id: 1, items: []))
         let fileItems = [
             Scene.MenuItem(title: "New Folder", index: 1, cmd: "N"),
             .init(title: "Open", index: 2, enabled: false, cmd: "O"),

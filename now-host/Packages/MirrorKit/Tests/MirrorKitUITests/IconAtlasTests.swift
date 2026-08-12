@@ -66,6 +66,16 @@ final class IconAtlasTests: XCTestCase {
             IconAtlas.processIcon(signature: "fndf", size: .small)?.width, 16)
     }
 
+    func testAppleMenuIdentityLoadsNativeSmallArt() throws {
+        try skipUnlessAssetPack()
+        let calculator = Scene.MenuItem.IconIdentity(
+            creator: "calc", type: "dfil")
+        let about = Scene.MenuItem.IconIdentity(systemIconID: -16396)
+
+        XCTAssertEqual(IconAtlas.menuIcon(calculator)?.width, 16)
+        XCTAssertEqual(IconAtlas.menuIcon(about)?.width, 16)
+    }
+
     func testAnUnknownOrJunkSignatureFallsThroughRatherThanGuessing() {
         XCTAssertNil(IconAtlas.processIcon(signature: nil))
         XCTAssertNil(IconAtlas.processIcon(signature: ""))

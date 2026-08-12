@@ -16,5 +16,5 @@
   "masks": [
     {"name": "clock", "rect": [585, 0, 710, 20], "reason": "time is volatile"}
   ],
-  "render": {"openMenu": 0}
+  "render": {"openMenu": 0, "appleMenuProfile": "macos-8.6"}
 }

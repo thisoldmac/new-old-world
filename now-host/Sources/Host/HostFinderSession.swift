@@ -633,7 +633,9 @@ final class HostFinderSession {
             pages: 1, complete: true)
         local.verticalScroll = max(0, FinderItems.scrollPosition(guest).y)
         var projected = guest
-        projected.items = HostFinderDomain.projectedWindow(local, z: guest.z).items
+        let semantic = HostFinderDomain.projectedWindow(local, z: guest.z)
+        projected.items = semantic.items
+        projected.finder?.itemMetadata = semantic.finder?.itemMetadata ?? [:]
         projected.display = nil
         projected.displayEpoch = nil
         return projected

@@ -114,6 +114,30 @@ public enum IconAtlas {
             ?? image("\(creator)__APPL", subdir: "appicons")
     }
 
+    /// An Apple-menu row icon from an explicit host-side identity join.
+    /// Unlike `processIcon`, desk accessories and control-panel documents
+    /// need their real file type as well as their creator signature.
+    static func menuIcon(_ identity: MirrorKit.Scene.MenuItem.IconIdentity?,
+                         size: Size = .small) -> CGImage? {
+        guard let identity else { return nil }
+        if let id = identity.systemIconID,
+           let image = image(relativePath: "icons/ics8_\(id)_16.png")
+                ?? image(relativePath: "icons/icl8_\(id)_32.png") {
+            return image
+        }
+        if let creator = cleanOSType(identity.creator),
+           let type = cleanOSType(identity.type),
+           let image = image("\(creator)__\(type)" + size.suffix,
+                             subdir: "appicons")
+                ?? image("\(creator)__\(type)", subdir: "appicons") {
+            return image
+        }
+        if let generic = identity.generic {
+            return namedIcon(generic, size: size)
+        }
+        return nil
+    }
+
     /// One Finder-owned custom icon from the pack, by exact classic path.
     /// The manifest—not a sanitized filename reconstruction—owns the join.
     /// This is the same path identity a future connected acquisition adapter

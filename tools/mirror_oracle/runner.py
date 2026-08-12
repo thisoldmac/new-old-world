@@ -183,6 +183,13 @@ def render_scene(repo: Path, case: OracleCase, scene: Path, output: Path,
     if case.render.get("finderSelectedName") is not None:
         command += ["--finder-selected-name",
                     str(case.render["finderSelectedName"])]
+    if case.render.get("finderMetadata") is not None:
+        command += ["--finder-metadata-json",
+                    json.dumps(case.render["finderMetadata"],
+                               separators=(",", ":"), sort_keys=True)]
+    if case.render.get("appleMenuProfile") is not None:
+        command += ["--apple-menu-profile",
+                    str(case.render["appleMenuProfile"])]
     completed = run(command, text=True, capture_output=True, check=True)
     receipt = {
         "schema": SCHEMA_VERSION,

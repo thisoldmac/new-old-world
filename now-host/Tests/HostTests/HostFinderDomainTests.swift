@@ -84,6 +84,20 @@ final class HostFinderDomainTests: XCTestCase {
                        Array(repeating: "columnHeader", count: 4))
     }
 
+    func testCatalogMetadataSurvivesFinderProjection() {
+        var window = fixtureWindow()
+        window.entries[0].dataBytes = 1_024
+        window.entries[0].rsrcBytes = 257
+        window.entries[0].modified = 3_869_266_040
+
+        let metadata = HostFinderDomain.projectedWindow(window, z: 0)
+            .finder?.itemMetadata["Read Me"]
+
+        XCTAssertEqual(metadata?.dataBytes, 1_024)
+        XCTAssertEqual(metadata?.rsrcBytes, 257)
+        XCTAssertEqual(metadata?.modified, 3_869_266_040)
+    }
+
     private func fixtureWindow() -> HostFinderDomain.Window {
         .init(id: HostFinderDomain.windowID(1), path: "",
               rootLabel: "Macintosh HD:",

@@ -84,13 +84,28 @@ measured full rows, separators, enablement, shortcuts and submenu arrows rather
 than an OS-9-shaped approximation.
 
 The broad Finder rendering pass also adds the item-count strip, light-grey
-ruled list field and folder disclosure triangles. The current named gaps are
-the list's per-item modification-date values, the available-space half of the
-info string, exact per-folder custom icons, Apple-menu item icons/rows, and a
-clean inactive-window reference without a promo modal. None of the ten new
-captures has a validated state proof yet. Close this row only when all eleven
-receipts name the sealed parent, state proof, source revision, visual profile,
-accepted consecutive hashes, and per-region result.
+ruled list field, folder disclosure triangles, and semantic list metadata.
+The host joins `file.list`'s classic modification timestamp and both fork sizes
+onto the Finder presentation shelf; the shelf and its Apple-menu icon identity
+companion are both frozen as explicitly host-only and tests prove neither can
+encode onto the scene wire. List dates, sizes and kinds are drawn only when the
+corresponding semantic columns exist.
+
+The Apple case now carries the complete observed 22-row 8.6 surface, including
+the separator and six hierarchy rows. `AppleMenuProfile.macOS86` decorates only
+known titles with explicit creator/type, System-file resource ID, or generic
+folder identity. `IconAtlas` then resolves those identities against the
+repeatable offline pack's native 16×16 resources; unknown titles remain
+undecorated. The production render therefore composes the full menu locally
+rather than cropping menu pixels from the framebuffer.
+
+The current named gaps are the available-space half of the Finder info string,
+exact per-folder custom icons beyond the current extraction roots, exact
+catalog metadata for reference fixtures rather than measured transcription,
+and a clean inactive-window reference without a promo modal. None of the ten
+new captures has a validated state proof yet. Close this row only when all
+eleven receipts name the sealed parent, state proof, source revision, visual
+profile, accepted consecutive hashes, and per-region result.
 
 The first full-window mismatch baselines are now reproducible: Icons
 28,573/101,844 (28.06%), Buttons 43,564/101,844 (42.78%), List
