@@ -91,6 +91,62 @@ final class WindowContentRenderTests: XCTestCase {
             3)
     }
 
+    func testMacOS86FinderMenusUseMeasuredNativeFrames() {
+        let cases: [(Scene.Menu, CGRect)] = [
+            (.init(title: "File", apple: false, left: 43, id: 257,
+                   items: [
+                    .init(title: "Add To Favorites", index: 1),
+                    .init(title: "Find…", index: 2, enabled: true, cmd: "F"),
+                   ]),
+             CGRect(x: 37, y: 19, width: 154, height: 34)),
+            (.init(title: "View", apple: false, left: 115, id: 259,
+                   items: [
+                    .init(title: "Reset Column Positions", index: 1,
+                          enabled: false),
+                    .init(title: "Arrange", index: 2, submenu: true),
+                   ]),
+             CGRect(x: 109, y: 19, width: 179, height: 34)),
+            (.init(title: "Special", apple: false, left: 159, id: 260,
+                   items: [
+                    .init(title: "Empty Trash…", index: 1, enabled: false),
+                    .init(title: "Eject", index: 2, enabled: false, cmd: "E"),
+                   ]),
+             CGRect(x: 153, y: 19, width: 120, height: 34)),
+            (.init(title: "Help", apple: false, left: 218, id: -16490,
+                   items: [
+                    .init(title: "Show Balloons", index: 1),
+                    .init(title: "Mac OS Help", index: 2, cmd: "?"),
+                   ]),
+             CGRect(x: 212, y: 19, width: 140, height: 34)),
+        ]
+
+        for (menu, expected) in cases {
+            XCTAssertEqual(SceneRenderer.dropdownFrame(menu,
+                                                        screenWidth: 800),
+                           expected, menu.title)
+        }
+    }
+
+    func testMacOS86AppleMenuUsesItsMeasuredFrameAndRowPitch() {
+        let items = (1...22).map { index in
+            Scene.MenuItem(title: index == 18 ? "Remote Access Status" : "Row",
+                           index: index, separator: index == 2)
+        }
+        let menu = Scene.Menu(title: "", apple: true, left: 10, id: 256,
+                              items: items)
+        let frame = SceneRenderer.dropdownFrame(menu, screenWidth: 800)
+
+        XCTAssertEqual(frame, CGRect(x: 9, y: 19, width: 198, height: 384))
+        XCTAssertEqual(SceneRenderer.menuRowHeight(items[0], apple: true), 18)
+        XCTAssertEqual(SceneRenderer.menuRowHeight(items[1], apple: true), 4)
+        XCTAssertEqual(SceneRenderer.dropdownItem(menu, x: 30, y: 22)?.index,
+                       1)
+        XCTAssertEqual(SceneRenderer.dropdownItem(menu, x: 30, y: 41)?.index,
+                       2)
+        XCTAssertEqual(SceneRenderer.dropdownItem(menu, x: 30, y: 44)?.index,
+                       3)
+    }
+
     private func window(title: String, front: Bool, z: Int,
                         rect: Rect) -> Scene.Window {
         Scene.Window(id: "1.\(z)/\(title)#\(z)", app: title, psn: "1.\(z)",

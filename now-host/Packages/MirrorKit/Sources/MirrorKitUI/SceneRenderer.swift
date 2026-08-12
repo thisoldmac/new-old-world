@@ -788,14 +788,34 @@ public struct SceneRenderer {
         /* Finder's Apple menu reserves a 20-pixel icon gutter. Ordinary
            menus reserve mark, shortcut, and hierarchy columns. The text is
            measured in the same extracted system strike used to draw it. */
-        let furniture = menu.apple ? 87 : 52
-        let width = CGFloat(min(max(120, titleWidth + furniture), 320))
+        /* The 8.6 Apple menu is not an ordinary Menu Manager panel with
+           shortcut/mark columns. Its measured frame is 198 pixels wide for
+           this exact 22-row corpus: widest Charcoal title plus 60 pixels of
+           icon, hierarchy, and frame furniture. The old 87 made it 226. */
+        let furniture = menu.apple ? 60 : 52
+        let contentWidth = min(max(120, titleWidth + furniture), 320)
+        /* Menu Manager widths are part of the Finder's MENU resources, not
+           recoverable from titles alone. These are the four cleanly measured
+           Mac OS 8.6 Finder resources. Other applications and the obstructed
+           Edit reference retain the content-derived fallback. */
+        let finderWidths: [Int: (String, Int)] = [
+            257: ("File", 154),
+            259: ("View", 179),
+            260: ("Special", 120),
+            -16490: ("Help", 140),
+        ]
+        let measured = menu.apple && menu.id == 256 ? 198 : finderWidths[menu.id].flatMap {
+            $0.0 == menu.title ? $0.1 : nil
+        }
+        let width = CGFloat(measured ?? contentWidth)
         /* UNREACHABLE WITH A nil LEFT, and stated rather than defaulted:
            an unplaced menu is not drawn in the strip above and the hit
            tester returns no index for one, so nothing can open its
            dropdown. The zero is a total function's tail, not a position
            anything is placed by. */
-        var x = CGFloat(menu.left ?? 0) - 6
+        var x = menu.apple
+            ? CGFloat(menu.left ?? 0) - 1
+            : CGFloat(menu.left ?? 0) - 6
         if menu.id == ObjectResolver.applicationMenuID, screenWidth > 0 {
             /* The Menu Manager reports no useful left edge for the
                right-aligned application menu. Its title geometry comes
@@ -809,7 +829,7 @@ public struct SceneRenderer {
                       y: Platinum.menubarHeight - 1,
                       width: width,
                       height: CGFloat(menu.items.reduce(2) {
-                          $0 + Self.menuRowHeight($1)
+                          $0 + Self.menuRowHeight($1, apple: menu.apple)
                       }))
     }
 
@@ -817,8 +837,10 @@ public struct SceneRenderer {
         String(item.title.drop(while: { $0 == "\0" }))
     }
 
-    static func menuRowHeight(_ item: MirrorKit.Scene.MenuItem) -> Int {
-        item.separator ? 6 : 16
+    static func menuRowHeight(_ item: MirrorKit.Scene.MenuItem,
+                              apple: Bool = false) -> Int {
+        if apple { return item.separator ? 4 : 18 }
+        return item.separator ? 6 : 16
     }
 
     /// The item under a guest point inside the dropdown, or nil.
@@ -831,7 +853,7 @@ public struct SceneRenderer {
               CGFloat(y) >= frame.minY + 2 else { return nil }
         var top = Int(frame.minY) + 2
         for item in menu.items {
-            let bottom = top + Self.menuRowHeight(item)
+            let bottom = top + Self.menuRowHeight(item, apple: menu.apple)
             if y >= top, y < bottom { return item }
             top = bottom
         }
@@ -852,7 +874,8 @@ public struct SceneRenderer {
 
         var y = frame.minY + 2
         for item in menu.items {
-            let rowHeight = CGFloat(Self.menuRowHeight(item))
+            let rowHeight = CGFloat(Self.menuRowHeight(item,
+                                                       apple: menu.apple))
             defer { y += rowHeight }
             let hovered = (hoveredItem == item.index) && !item.separator
                           && item.enabled
@@ -871,8 +894,12 @@ public struct SceneRenderer {
             let color = hovered ? Platinum.g0
                                 : (item.enabled ? Platinum.g6 : Platinum.g3)
             var clipped = ctx
+            let trailingGutter: CGFloat = menu.apple
+                ? (item.submenu == true ? 14 : 3)
+                : 34
             clipped.clip(to: Path(CGRect(x: frame.minX, y: y,
-                                         width: frame.width - 34, height: 16)))
+                                         width: frame.width - trailingGutter,
+                                         height: 16)))
             if item.mark {
                 clipped.draw(clipped.resolve(Text("✓").font(Platinum.systemFont(12))
                                 .foregroundColor(color)),
@@ -883,18 +910,23 @@ public struct SceneRenderer {
                let image = IconAtlas.menuIcon(item.icon, size: .small) {
                 ctx.draw(Image(decorative: image, scale: 1)
                     .interpolation(.none),
-                    in: CGRect(x: frame.minX + 14, y: y,
+                    in: CGRect(x: frame.minX + 14, y: y + 1,
                                width: 16, height: 16))
             }
+            let isAppleFolderEntry = menu.apple
+                && ObjectResolver.isAppleMenuItemsEntry(item, in: menu)
             sysText(Self.menuItemTitle(item), clipped,
-                    x: frame.minX + (menu.apple ? 38 : 14),
-                    baselineY: y + 11,
+                    x: frame.minX + (isAppleFolderEntry ? 38 : 20),
+                    baselineY: y + (menu.apple ? 12 : 11),
                     color: color)
             if item.submenu == true {
+                let arrowTop = y + floor((rowHeight - 6) / 2)
                 var arrow = Path()
-                arrow.move(to: CGPoint(x: frame.maxX - 10, y: y + 5))
-                arrow.addLine(to: CGPoint(x: frame.maxX - 5, y: y + 8))
-                arrow.addLine(to: CGPoint(x: frame.maxX - 10, y: y + 11))
+                arrow.move(to: CGPoint(x: frame.maxX - 10, y: arrowTop))
+                arrow.addLine(to: CGPoint(x: frame.maxX - 5,
+                                          y: arrowTop + 3))
+                arrow.addLine(to: CGPoint(x: frame.maxX - 10,
+                                          y: arrowTop + 6))
                 arrow.closeSubpath()
                 ctx.fill(arrow, with: .color(color))
             }

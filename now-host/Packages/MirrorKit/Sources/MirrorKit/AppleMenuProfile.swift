@@ -28,7 +28,6 @@ public enum AppleMenuProfile {
     private static let folder = Scene.MenuItem.IconIdentity(generic: "folder")
 
     private static let macOS86Icons: [String: Scene.MenuItem.IconIdentity] = [
-        "About This Computer": .init(systemIconID: -16396),
         "Apple FM Radio": icon("fmtn", "APPL"),
         "Apple System Profiler": icon("prfc", "APPD"),
         "AppleCD Audio Player": icon("aucd", "APPL"),

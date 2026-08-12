@@ -11,7 +11,7 @@
   "inputActions": ["move 130 10", "down 0"],
   "regions": [
     {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 20]},
-    {"name": "view-menu", "source": "screen", "rect": [108, 18, 315, 250]}
+    {"name": "view-menu", "source": "screen", "rect": [109, 19, 288, 183]}
   ],
   "masks": [
     {"name": "clock", "rect": [585, 0, 710, 20], "reason": "time is volatile"}

@@ -380,8 +380,14 @@ of 94,300 compared pixels (11.36%).
 The shared core-menu scene now contains all measured rows, separators,
 enablement, shortcuts, checks and hierarchical arrows for File, Edit, View,
 Special and Help. Each case selects one menu through `render.openMenu`, so one
-scene exercises the same menu implementation as the live mirror. Apple-menu
-item icons and hierarchy are still a separate asset/semantics gap.
+scene exercises the same menu implementation as the live mirror. The clean
+native references now pin the complete outer frames for File (154 by 260),
+View (179 by 164), Special (120 by 110), Help (140 by 62), and Apple (198 by
+384), all beginning at y=19. Apple uses its measured 18-pixel rows and
+4-pixel separator, locally joins Apple Menu Items identities to extracted
+small icons, and leaves About This Computer iconless as the native 8.6 Finder
+does. Edit remains content-derived because its native capture was obstructed;
+it is not silently presented as measured.
 
 Cleanup is armed before the first transition and releases every mouse button
 and common modifier even when capture fails. The SheepShaver backend sends one

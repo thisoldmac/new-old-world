@@ -527,6 +527,8 @@ def main() -> None:
         assert file_menu.input_actions[-2:] == ["move 55 10", "down 0"]
         assert apple_menu.input_actions[-2:] == ["move 22 10", "down 0"]
         assert apple_menu.render["appleMenuProfile"] == "macos-8.6"
+        assert apple_menu.regions[1]["name"] == "apple-menu"
+        assert apple_menu.regions[1]["rect"] == [9, 19, 207, 403]
         assert load_case("finder-buttons-view").input_actions[-4:] == [
             "move 130 10", "down 0", "move 145 42", "up 0",
         ]

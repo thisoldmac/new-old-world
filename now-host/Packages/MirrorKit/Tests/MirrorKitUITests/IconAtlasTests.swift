@@ -70,10 +70,8 @@ final class IconAtlasTests: XCTestCase {
         try skipUnlessAssetPack()
         let calculator = Scene.MenuItem.IconIdentity(
             creator: "calc", type: "dfil")
-        let about = Scene.MenuItem.IconIdentity(systemIconID: -16396)
 
         XCTAssertEqual(IconAtlas.menuIcon(calculator)?.width, 16)
-        XCTAssertEqual(IconAtlas.menuIcon(about)?.width, 16)
     }
 
     func testAnUnknownOrJunkSignatureFallsThroughRatherThanGuessing() {

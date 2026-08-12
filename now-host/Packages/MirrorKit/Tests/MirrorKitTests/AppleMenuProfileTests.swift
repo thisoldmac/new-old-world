@@ -20,6 +20,13 @@ final class AppleMenuProfileTests: XCTestCase {
         XCTAssertEqual(projected.items[1].submenu, true)
     }
 
+    func testAboutRowHasNoInventedIconIdentity() {
+        let menu = Scene.Menu(title: "", apple: true, left: 10, id: 256,
+                              items: [.init(title: "About This Computer",
+                                            index: 1)])
+        XCTAssertNil(AppleMenuProfile.macOS86(menu).items[0].icon)
+    }
+
     func testProfileDoesNotDecorateOrdinaryMenus() {
         let menu = Scene.Menu(title: "File", apple: false, left: 43, id: 257,
                               items: [.init(title: "Calculator", index: 1)])

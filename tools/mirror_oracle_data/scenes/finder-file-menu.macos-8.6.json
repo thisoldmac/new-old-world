@@ -79,7 +79,7 @@
         ]
       },
       {
-        "title": "View", "apple": false, "left": 116, "id": 259,
+        "title": "View", "apple": false, "left": 115, "id": 259,
         "items": [
           {"title": "as Icons", "index": 1, "separator": false, "enabled": true, "mark": true, "cmd": ""},
           {"title": "as Buttons", "index": 2, "separator": false, "enabled": true, "mark": false, "cmd": ""},
