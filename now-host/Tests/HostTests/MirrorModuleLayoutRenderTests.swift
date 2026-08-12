@@ -95,6 +95,11 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
         let rig = try makeRig()
         rig.source.surfaceMode = .continuity
         defer { rig.source.stop() }
+        let outDir = URL(fileURLWithPath:
+            ProcessInfo.processInfo.environment["NOW_MIRROR_LAYOUT_OUT"]
+                ?? NSTemporaryDirectory())
+        try? FileManager.default.createDirectory(
+            at: outDir, withIntermediateDirectories: true)
         let view = AnyView(
             MirrorModuleView(model: rig.model, source: rig.source,
                              run: rig.run,
@@ -105,7 +110,9 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
                              cycles: rig.source.cycleTimeline)
                 .frame(width: 900, height: 720))
 
-        _ = try render(view, candidate: "continuity", label: "wide")
+        let image = try render(view, candidate: "continuity", label: "wide")
+        try write(image, to: outDir,
+                  named: "mirror-module-continuity-wide.png")
     }
 }
 

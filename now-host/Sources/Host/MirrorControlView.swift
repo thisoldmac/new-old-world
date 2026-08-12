@@ -34,13 +34,13 @@ struct MirrorToolbarView: View {
         HStack(spacing: 12) {
             identity
             Spacer(minLength: 8)
-            Picker("Surface", selection: $source.surfaceMode) {
+            HStack(spacing: 4) {
                 ForEach(MirrorSurfaceMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
+                    Button(mode.label) { source.surfaceMode = mode }
+                        .buttonStyle(ContinuityChoiceButtonStyle(
+                            selected: source.surfaceMode == mode))
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             .frame(width: 170)
             .help("Mirror shows and drives the remote screen. Continuity "
                   + "arranges it beside this Mac and passes the pointer "

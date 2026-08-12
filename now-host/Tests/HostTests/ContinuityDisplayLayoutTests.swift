@@ -22,6 +22,22 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertEqual(layout.sharedEdge?.overlap, 300 ... 900)
     }
 
+    func testDefaultGuestUsesAnExteriorEdgeWhenHostsAlreadyTouch() {
+        let builtIn = HostDisplayDescriptor(
+            id: 42, name: "Built-in Retina Display",
+            frame: CGRect(x: 1440, y: 0, width: 982, height: 638),
+            pixelSize: CGSize(width: 3024, height: 1964), isPrimary: false)
+
+        let layout = ContinuityDisplayLayout(
+            hostDisplays: [host, builtIn],
+            guestSize: CGSize(width: 800, height: 600), defaults: nil,
+            observeScreens: false)
+
+        XCTAssertEqual(layout.guestOrigin, CGPoint(x: 2422, y: 38))
+        XCTAssertEqual(layout.sharedEdge?.host.id, builtIn.id)
+        XCTAssertEqual(layout.sharedEdge?.guestSide, .left)
+    }
+
     func testScaleKeepsTheAttachedGuestEdgeFixed() {
         let layout = makeLayout()
 
