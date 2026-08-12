@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise movement-only P9 on a private mac99 clone.
+"""Exercise movement safety for Continuity V2 on a private mac99 clone.
 
 This is deliberately not a product client. It drives the same versioned TCP
 authority message and fixed-size UDP state datagrams as the host, records every
@@ -63,7 +63,7 @@ def next_unsolicited_exit(link, reason, timeout=20):
 
 def state_packet(nonce_hi, nonce_lo, epoch, seq, h, v, stamp):
     flags = 0x0001
-    return STATE.pack(0x4E574331, 1, flags, nonce_hi, nonce_lo, epoch,
+    return STATE.pack(0x4E574331, 2, flags, nonce_hi, nonce_lo, epoch,
                       seq, h, v, 0, 30, 0, stamp)
 
 
@@ -71,7 +71,7 @@ def decode_ack(raw):
     if len(raw) != ACK.size:
         raise ValueError(f"ack is {len(raw)} bytes, expected {ACK.size}")
     values = ACK.unpack(raw)
-    if values[0] != 0x4E574131 or values[1] != 1:
+    if values[0] != 0x4E574131 or values[1] != 2:
         raise ValueError(f"bad ack header {values[:2]}")
     return {
         "state": values[2], "nonceHi": values[3], "nonceLo": values[4],
@@ -105,7 +105,8 @@ def send_until_applied(udp, nonce_hi, nonce_lo, epoch, seq, h, v,
             raise RuntimeError(f"resident exited at {seq}: {ack}")
         position_done = ack["positionSequence"] >= seq
         if ack["buttonGeneration"] != 0:
-            raise RuntimeError(f"v0 applied a reserved button generation: {ack}")
+            raise RuntimeError(
+                f"movement-only epoch unexpectedly applied a button: {ack}")
         if position_done and ack["state"] == 2:
             return ack, attempts
         attempts += 1
@@ -139,7 +140,7 @@ def drain_acks(udp, nonce_hi, nonce_lo, epoch):
 
 
 def arm(link, ident, nonce_hi, nonce_lo, epoch):
-    link._send({"type": "continuity.arm", "version": 1, "id": ident,
+    link._send({"type": "continuity.arm", "version": 2, "id": ident,
                 "nonceHi": nonce_hi, "nonceLo": nonce_lo, "epoch": epoch,
                 "requestedHz": 30, "leaseTicks": 90})
     report = next_control(link, "continuity.report", ident)
@@ -149,7 +150,7 @@ def arm(link, ident, nonce_hi, nonce_lo, epoch):
 
 
 def disarm(link, ident, epoch):
-    link._send({"type": "continuity.disarm", "version": 1,
+    link._send({"type": "continuity.disarm", "version": 2,
                 "id": ident, "epoch": epoch, "reason": "disabled"})
     return next_control(link, "continuity.report", ident)
 
@@ -364,7 +365,7 @@ def main():
     q.screendump(os.path.join(args.artifacts, "after-trial.ppm"))
 
     receipt = {
-        "schema": "now-emulator-continuity-fault/v3",
+        "schema": "now-emulator-continuity-fault/v4",
         "via": args.via,
         "guestBuild": build,
         "residentCapabilities": caps,

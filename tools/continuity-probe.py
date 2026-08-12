@@ -2,7 +2,7 @@
 """Exercise one real guest's Continuity control and UDP lanes.
 
 The guest dials this instrument over NOW's ordinary framed TCP wire. The
-instrument grants one short movement-only epoch, sends one fixed-size UDP
+instrument grants one short movement-only V2 epoch, sends one fixed-size UDP
 state to the port the guest reports (never the requested port by assumption),
 requires a matching acknowledgement, and disarms before closing.
 
@@ -29,7 +29,7 @@ from wire_limits import (CHANNEL_CONTROL as CONTROL,  # noqa: E402
 
 STATE_MAGIC = 0x4E574331
 ACK_MAGIC = 0x4E574131
-CONTINUITY_VERSION = 1
+CONTINUITY_VERSION = 2
 STATE_INSIDE = 0x0001
 ACK_BYTES = 44
 
@@ -51,7 +51,7 @@ def decode_ack(payload):
         raise ValueError(f"ack is {len(payload)} bytes, expected {ACK_BYTES}")
     values = struct.unpack(">IHHIIIIIHHIII", payload)
     if values[0] != ACK_MAGIC or values[1] != CONTINUITY_VERSION:
-        raise ValueError("ack magic or version does not match Continuity v1")
+        raise ValueError("ack magic or version does not match Continuity v2")
     return {
         "state": values[2],
         "nonceHi": values[3],
@@ -154,7 +154,7 @@ def main():
     arm_id = 7001
     disarm_id = 7002
     lease = {"nonceHi": nonce_hi, "nonceLo": nonce_lo, "epoch": epoch}
-    guest.send({"type": "continuity.arm", "version": 1, "id": arm_id,
+    guest.send({"type": "continuity.arm", "version": 2, "id": arm_id,
                 **lease, "requestedHz": 15, "leaseTicks": 120})
     arm = receive_control(guest, arm_id, time.monotonic() + args.timeout)
     if arm.get("state") != "armed" or not arm.get("udpPort"):
@@ -170,7 +170,7 @@ def main():
         raise RuntimeError("guest did not accept the probe state: "
                            + json.dumps(ack))
 
-    guest.send({"type": "continuity.disarm", "version": 1,
+    guest.send({"type": "continuity.disarm", "version": 2,
                 "id": disarm_id, "epoch": epoch, "reason": "disabled"})
     disarm = receive_control(guest, disarm_id,
                              time.monotonic() + args.timeout)

@@ -27,6 +27,20 @@ int main(void)
     CHECK(!now_continuity_sequence_newer(0x80000000UL, 0));
     CHECK(!now_continuity_sequence_newer(0x80000001UL, 0));
 
+    CHECK(now_continuity_button_action(
+              0, 0, 1, kNowPeekContinuityPrimaryDown)
+          == kNowContinuityButtonPress);
+    CHECK(now_continuity_button_action(
+              1, 1, 2, 0) == kNowContinuityButtonRelease);
+    CHECK(now_continuity_button_action(
+              1, 1, 1, 0) == kNowContinuityButtonNothing);
+    CHECK(now_continuity_button_action(
+              0xFFFFFFFFUL, 0, 1, kNowPeekContinuityPrimaryDown)
+          == kNowContinuityButtonPress);
+    CHECK(now_continuity_button_action(
+              2, 0, 1, kNowPeekContinuityPrimaryDown)
+          == kNowContinuityButtonNothing);
+
     CHECK(now_continuity_exit_due(
         100, 90, 90, 1, 1, 11, 20, 0, 10, 20, 0)
         == kNowPeekContinuityExitGuestInput);

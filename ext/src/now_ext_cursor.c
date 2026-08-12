@@ -151,9 +151,17 @@ static Point gPhysicalReportedWhere;
 static Point gOwnedDeviceWhere;
 static Boolean gOwnedDeviceValid = false;
 enum { kOwnedHistoryCount = 8 };
-static Point gOwnedHistory[kOwnedHistoryCount];
-static unsigned gOwnedHistoryNext = 0;
-static unsigned gOwnedHistoryUsed = 0;
+typedef struct {
+    volatile unsigned short seq;
+    volatile Point point[kOwnedHistoryCount];
+    volatile unsigned short next;
+    volatile unsigned short used;
+} OwnedPointHistory;
+/* The PPC task and Continuity timer have separate single-writer histories.
+   A shared ring let the timer interrupt a task-time index update and made
+   native-input classification depend on a torn Point. */
+static OwnedPointHistory gOwnedDeviceHistory;
+static OwnedPointHistory gOwnedTrackingHistory;
 
 int now_ext_cursor_boot(NowPeekTable *table);
 void now_ext_cursor_rollback(NowPeekTable *table);
@@ -163,40 +171,70 @@ int now_ext_cursor_task_apply_state(NowPeekU32 *seq, NowPeekI32 *h,
 int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
 NowPeekCursorCell *now_ext_cursor_cell(NowPeekTable *table);
 
+static void remember_owned_history(OwnedPointHistory *history, Point pt)
+{
+    unsigned short next = history->next;
+    unsigned short used = history->used;
+
+    history->seq++;
+    history->point[next] = pt;
+    history->next = (unsigned short)((next + 1u) % kOwnedHistoryCount);
+    if (used < kOwnedHistoryCount)
+        history->used = (unsigned short)(used + 1u);
+    history->seq++;
+}
+
 static void remember_owned_device_point(Point pt)
 {
     gOwnedDeviceWhere = pt;
     gOwnedDeviceValid = gDevice != NULL;
     if (!gOwnedDeviceValid)
         return;
-    gOwnedHistory[gOwnedHistoryNext] = pt;
-    gOwnedHistoryNext = (gOwnedHistoryNext + 1u) % kOwnedHistoryCount;
-    if (gOwnedHistoryUsed < kOwnedHistoryCount)
-        gOwnedHistoryUsed++;
+    remember_owned_history(&gOwnedDeviceHistory, pt);
 }
 
-/* Continuity v0 owns only the low-memory point. Remember it separately from
-   the physical CursorDevice so the next native-input sample does not mistake
-   our own write for an ADB/USB report. The short history closes the race where
-   the timer advances the latest point while the sampler classifies the
-   preceding one. */
+/* Continuity's held tracking path owns only MouseLocation. Remember it
+   separately from the physical CursorDevice so the next native-input sample
+   does not mistake the system's propagation of our own write for an ADB/USB
+   report. The short history closes the race where the timer advances the
+   latest point while the sampler classifies the preceding one. */
 static void remember_owned_lowmem_point(Point pt)
 {
-    gOwnedHistory[gOwnedHistoryNext] = pt;
-    gOwnedHistoryNext = (gOwnedHistoryNext + 1u) % kOwnedHistoryCount;
-    if (gOwnedHistoryUsed < kOwnedHistoryCount)
-        gOwnedHistoryUsed++;
+    remember_owned_history(&gOwnedTrackingHistory, pt);
+}
+
+static Boolean owned_history_contains(const OwnedPointHistory *history,
+                                      Point pt)
+{
+    unsigned short before = history->seq;
+    unsigned short used;
+    unsigned short i;
+    Boolean matched = false;
+
+    /* Treat an in-flight write as host-owned for this one sample. A false
+       negative here revokes a valid drag; the next 16 ms tick can classify
+       the stable history without weakening physical-input takeover. */
+    if ((before & 1u) != 0)
+        return true;
+    used = history->used;
+    if (used > kOwnedHistoryCount)
+        return true;
+    for (i = 0; i < used; i++) {
+        if (history->point[i].h == pt.h
+                && history->point[i].v == pt.v) {
+            matched = true;
+            break;
+        }
+    }
+    if (before != history->seq || (history->seq & 1u) != 0)
+        return true;
+    return matched;
 }
 
 static Boolean is_recent_owned_device_point(Point pt)
 {
-    unsigned i;
-
-    for (i = 0; i < gOwnedHistoryUsed; i++) {
-        if (gOwnedHistory[i].h == pt.h && gOwnedHistory[i].v == pt.v)
-            return true;
-    }
-    return false;
+    return owned_history_contains(&gOwnedDeviceHistory, pt)
+        || owned_history_contains(&gOwnedTrackingHistory, pt);
 }
 
 static Boolean is_owned_or_pending_point(Point pt)
@@ -223,14 +261,14 @@ int now_ext_cursor_task_apply_state(NowPeekU32 *seq, NowPeekI32 *h,
     return before == gTaskApplySeq ? 1 : 0;
 }
 
-/* Sample native mouse motion only from RawMouse. Continuity v0
+/* Sample native mouse motion only from RawMouse. Continuity
    deliberately does not inspect or mutate the physical CursorDevice record:
    the PowerBook 1400 trackpad owns that ADB-backed object, and treating it as
    our synthetic device produced two whole-system metal wedges. This routine
    is bounded low-memory/resident-state work so the timer samples immediately
    before each placement; that prevents a host point from overwriting an ADB
    report before optimistic takeover sees it. Recent host-owned points are
-   excluded. Button state is diagnostic in v0. */
+   excluded. Button state is tracked separately from position history. */
 NowPeekU32 now_ext_cursor_physical_input_seq(void)
 {
     Point raw;
@@ -287,6 +325,29 @@ void now_ext_cursor_remember_continuity_point(NowPeekI32 h, NowPeekI32 v)
     pt.h = (short)h;
     pt.v = (short)v;
     remember_owned_device_point(pt);
+}
+
+/* Called from Continuity's Time Manager task immediately after its sole
+   position write. Resident memory only: this does not follow a CursorDevice,
+   call a manager, or mutate another mouse global. */
+void now_ext_cursor_remember_continuity_tracking_point(NowPeekI32 h,
+                                                       NowPeekI32 v)
+{
+    Point pt;
+
+    pt.h = (short)h;
+    pt.v = (short)v;
+    remember_owned_lowmem_point(pt);
+}
+
+/* MBState is shared with the physical driver. When Continuity deliberately
+   changes it, advance the sampler's expected value so the next sample does
+   not report our own transition as local takeover. A later ADB/USB change is
+   still different and therefore wins. */
+void now_ext_cursor_remember_continuity_button(unsigned down)
+{
+    gPhysicalButtons = down ? 1u : 0u;
+    gPhysicalButtonsValid = true;
 }
 
 /* Revoking authority also revokes an interrupt-published redraw debt. Without
@@ -362,7 +423,8 @@ static Boolean cursor_manager_present(void)
  * caller is holding the pointer for the duration of a gesture and must
  * never yield.
  *
- * INTERRUPT-SAFE: the drag and Continuity tasks call this every tick. The
+ * INTERRUPT-SAFE: the P7 drag task calls this every tick. Continuity has a
+ * narrower MouseLocation-only path in now_ext_continuity.c. The
  * interrupt branch returns after low-memory writes and a preallocated debt;
  * it neither dereferences Cursor Device records nor calls a manager. */
 int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
@@ -608,8 +670,12 @@ int now_ext_cursor_boot(NowPeekTable *table)
     gPhysicalReportedWhere.h = 0;
     gPhysicalReportedWhere.v = 0;
     gOwnedDeviceValid = false;
-    gOwnedHistoryNext = 0;
-    gOwnedHistoryUsed = 0;
+    gOwnedDeviceHistory.seq = 0;
+    gOwnedDeviceHistory.next = 0;
+    gOwnedDeviceHistory.used = 0;
+    gOwnedTrackingHistory.seq = 0;
+    gOwnedTrackingHistory.next = 0;
+    gOwnedTrackingHistory.used = 0;
 
     /* THE CELL IS REACHED DIRECTLY HERE, and only here.
        now_ext_cursor_cell() checks `magic`, and at boot MAGIC HAS NOT
@@ -687,6 +753,10 @@ void now_ext_cursor_rollback(NowPeekTable *table)
     gPhysicalValid = false;
     gPhysicalRawValid = false;
     gOwnedDeviceValid = false;
-    gOwnedHistoryNext = 0;
-    gOwnedHistoryUsed = 0;
+    gOwnedDeviceHistory.seq = 0;
+    gOwnedDeviceHistory.next = 0;
+    gOwnedDeviceHistory.used = 0;
+    gOwnedTrackingHistory.seq = 0;
+    gOwnedTrackingHistory.next = 0;
+    gOwnedTrackingHistory.used = 0;
 }

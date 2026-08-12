@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Pin Continuity V3's Apple-corrected PowerPC Cursor Device boundary.
+"""Pin Continuity V4's Apple-corrected PowerPC Cursor Device boundary.
 
 The sixth PowerBook wedge falsified the generic PPC -> resident 68K -> AADB
 route. Universal Interfaces explicitly requires CursorDevicesGlue for PowerPC
 because the original manager transition was wrong. The supplied glue cannot be
 strongly linked into this Carbon CFM app, so NOW reproduces its exact corrected
-trap transition for the five calls it uses. P9 may ask and commit in the
+trap transition for the seven calls it uses. P9 may ask and commit in the
 resident, but only the PPC application's ordinary pump may own or call the
 synthetic device through that bounded adapter.
 """
@@ -34,10 +34,13 @@ def function_body(source: str, signature: str, next_signature: str) -> str:
 
 resident_service = function_body(
     CONTINUITY, "void now_ext_continuity_service(",
-    "int now_ext_continuity_boot(")
+    "void now_ext_continuity_tick(")
 ppc_move = function_body(
     PPC_CURSOR, "long now_continuity_cursor_move(",
     "void now_continuity_cursor_shutdown(")
+ppc_button = function_body(
+    PPC_CURSOR, "long now_continuity_cursor_button(",
+    "long now_continuity_cursor_move(")
 ppc_ready = function_body(
     PPC_CURSOR, "int now_continuity_cursor_ready(",
     "void now_continuity_cursor_begin_epoch(")
@@ -84,6 +87,11 @@ check("now_cdm_set_buttons" in ppc_ready
       "PPC Cursor Device setup/cleanup is no longer failure-atomic")
 check("now_log_flush();" in ppc_move and "move begin" in ppc_move,
       "a stuck Cursor Device call again leaves no durable guest breadcrumb")
+check("now_cdm_button_down(gDevice)" in ppc_button
+      and "now_cdm_button_up(gDevice)" in ppc_button,
+      "PPC primary transitions no longer use the corrected synthetic device")
+check("now_log_flush();" in ppc_button and "button begin" in ppc_button,
+      "a stuck Cursor Device button call again leaves no durable breadcrumb")
 
 for token in ("libCursorDevicesGlue.a", "libInterfaceLib.a"):
     check(token not in PPC_CMAKE,
@@ -98,7 +106,8 @@ for token in ('"CallUniversalProc"', '"NGetTrapAddress"', "0xAADB",
               "kNowCDMProcInfoPointerShort = 0x0BE8",
               "kNowCDMProcInfoPointerLong = 0x0FE8",
               "kNowCDMProcInfoPointerLongLong = 0x3FE8",
-              "kNowCDMMoveTo = 1", "kNowCDMSetButtons = 7",
+              "kNowCDMMoveTo = 1", "kNowCDMButtonDown = 4",
+              "kNowCDMButtonUp = 5", "kNowCDMSetButtons = 7",
               "kNowCDMUnitsPerInch = 10", "kNowCDMNewDevice = 12",
               "kNowCDMDisposeDevice = 13"):
     check(token in PPC_TRANSITION,
@@ -117,13 +126,18 @@ for token in ("cell()", "now_peek_table", "now_log", "GetCurrentProcess",
 check('close_udp("application shutdown")' in INTAKE,
       "application shutdown no longer revokes and closes the UDP notifier")
 
-check("now_ext_continuity_tm.S" not in EXT_CMAKE,
-      "the failed Continuity Time Manager trampoline is linked again")
+check("now_ext_continuity_tm.S" in EXT_CMAKE,
+      "the direct-pointer release trampoline is not linked")
+check("gOwnedDeviceHistory" in CURSOR
+      and "gOwnedTrackingHistory" in CURSOR
+      and "owned_history_contains" in CURSOR,
+      "task-time and timer-owned point history again share an unsafe writer")
 check("now_ext_continuity_gne" not in CORE,
       "the global jGNE path again services Continuity")
-check("kNowPeekContinuityFormatV3" in CONTINUITY,
-      "the resident no longer advertises the handshake/glue contract")
+check("kNowPeekContinuityFormatV4" in CONTINUITY,
+      "the resident no longer advertises the direct-pointer contract")
 check("now_continuity_cursor_move" in SERVICE
+      and "now_continuity_cursor_button" in SERVICE
       and "apply_result_seq = request_seq" in SERVICE
       and "invoke_resident(cell)" in SERVICE,
       "the PPC request/call/result/commit handshake is incomplete")

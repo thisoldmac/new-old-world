@@ -5,6 +5,7 @@
    the PPC application's Apple CursorDevicesGlue call. */
 #include <LowMem.h>
 #include <MacTypes.h>
+#include <Timer.h>
 
 #include <string.h>
 
@@ -21,12 +22,24 @@ static volatile Boolean gPrimed;
 static volatile NowPeekU32 gNativeInputSeq;
 static volatile NowPeekU32 gNativeInputBaseline;
 
-/* v0 is movement only. These legacy counters stay in the accretive table and
-   therefore remain zero; clicks and their Event Manager vehicle belong to
-   v0.5a rather than being smuggled into the movement resident. */
+/* Cursor Device Manager calls belong to the PPC app. These counters retain
+   their accretive names, but report the request/result handshake and forced
+   release rather than Event Manager posts. */
 static volatile NowPeekU32 gForcedResets;
 static volatile NowPeekU32 gEventResetGeneration;
 static volatile NowPeekU32 gTasktimeCursorApplies;
+
+typedef struct {
+    TMTask task;                /* first: the Time Manager owns this */
+    NowPeekTable *table;
+} ContinuityButtonTask;
+
+static ContinuityButtonTask gButtonTask;
+static Boolean gButtonTaskInstalled;
+static volatile Boolean gButtonTaskRunning;
+
+extern void now_ext_continuity_tm_entry(void);
+void now_ext_continuity_tick(TMTaskPtr task);
 
 static NowPeekContinuityCell *continuity_cell(NowPeekTable *table)
 {
@@ -36,7 +49,7 @@ static NowPeekContinuityCell *continuity_cell(NowPeekTable *table)
                                      + sizeof(NowPeekContinuityCell)))
         return NULL;
     if (table->continuity_format
-            != (NowPeekU32)kNowPeekContinuityFormatV3)
+            != (NowPeekU32)kNowPeekContinuityFormatV4)
         return NULL;
     return &table->continuity;
 }
@@ -80,9 +93,6 @@ static void publish_tasktime_counters(NowPeekContinuityCell *cell)
 
     cell->tasktime_cursor_applies = gTasktimeCursorApplies;
     cell->forced_resets = gForcedResets;
-    cell->event_down_posts = 0;
-    cell->event_up_posts = 0;
-    cell->event_post_failures = 0;
     cell->event_reset_generation = gEventResetGeneration;
     now_ext_cursor_input_diagnostics(&input);
     cell->native_input_samples = input.samples;
@@ -98,12 +108,121 @@ static void publish_tasktime_counters(NowPeekContinuityCell *cell)
     cell->cursor_debt_cancels = input.debt_cancels;
 }
 
-static void force_reset(NowPeekContinuityCell *cell)
+static void release_button_lowmem(void)
 {
-    /* There is no button or global cursor-manager debt in v0. Revocation is
-       therefore bounded resident state only and cannot depend on Event
-       Manager, QuickDraw, or the foreground application's next event pass. */
+    LMSetMouseButtonState(0x80);
+    now_ext_cursor_remember_continuity_button(0u);
+}
+
+static void request_button(NowPeekContinuityCell *cell,
+                           NowPeekU32 generation, int down)
+{
+    if (generation == 0)
+        return;
+    /* Invalidate the old commit before changing its direction. Otherwise the
+       PPC reader can pair the preceding generation with this new direction
+       when a Time Manager release interrupts its snapshot. */
+    cell->event_request_generation = 0;
+    cell->event_request_down = down ? 1u : 0u;
+    cell->event_request_generation = generation; /* commit last */
+}
+
+static void release_button(NowPeekContinuityCell *cell,
+                           NowPeekU32 generation, NowPeekU32 reason)
+{
+    NowPeekU32 release_generation = generation;
+
+    if (!cell->button_down)
+        return;
+    /* MBState-up is first and unconditional. Everything after it is
+       telemetry or task-time event debt and cannot leave the Mac held. */
+    release_button_lowmem();
     cell->button_down = 0;
+    cell->pending_mouseup = 1;
+    if (release_generation == 0
+            || !now_continuity_sequence_newer(
+                release_generation, cell->applied_button_generation)) {
+        if (reason == (NowPeekU32)kNowPeekContinuityExitNone) {
+            /* A duplicate host up needs no second manager transition. */
+            cell->pending_mouseup = 0;
+            gButtonTaskRunning = false;
+            return;
+        }
+        /* A dead-man release has no host-authored generation of its own.
+           Give it a new commit value so a PPC reader can never combine the
+           old press generation with the new up direction. The epoch exits,
+           so this synthetic generation cannot collide with later input. */
+        release_generation = cell->applied_button_generation + 1u;
+        if (release_generation == 0)
+            release_generation = 1;
+    }
+    if (reason != (NowPeekU32)kNowPeekContinuityExitNone) {
+        cell->button_forced_releases++;
+        cell->button_release_reason = reason;
+    }
+    /* Do not acknowledge this generation until CursorDeviceButtonUp returns.
+       The low-memory release is already safe, but advancing the ACK here lets
+       the host start another press and overwrite this manager-up debt. */
+    request_button(cell, release_generation, 0);
+    gButtonTaskRunning = false;
+}
+
+static void process_event_result(NowPeekContinuityCell *cell,
+                                 NowPeekU32 ticks)
+{
+    NowPeekU32 generation = cell->event_request_generation;
+    int down = cell->event_request_down != 0;
+
+    if (generation == 0
+            || cell->event_result_generation != generation
+            || cell->event_result_down != cell->event_request_down)
+        return;
+    if (down) {
+        if (cell->button_down
+                || !now_continuity_sequence_newer(
+                    generation, cell->applied_button_generation))
+            return;
+        if (cell->event_result_err != noErr) {
+            cell->event_post_failures++;
+            cell->button_release_reason =
+                (NowPeekU32)kNowPeekContinuityExitUnavailable;
+            return;
+        }
+        /* CursorDeviceButtonDown already established the system's button
+           state. Teach the physical-input sampler that this transition was
+           ours before sampling position, then arm the interrupt-time escape
+           path. The resident never impersonates the ADB/PMU device on down. */
+        now_ext_cursor_remember_continuity_button(1u);
+        gNativeInputSeq = now_ext_cursor_physical_input_seq();
+        gNativeInputBaseline = gNativeInputSeq;
+        cell->button_down = 1;
+        cell->applied_button_generation = generation;
+        cell->event_down_posts++;
+        cell->button_release_reason =
+            (NowPeekU32)kNowPeekContinuityExitNone;
+        gButtonTaskRunning = true;
+        PrimeTime((QElemPtr)&gButtonTask.task,
+                  (long)kNowPeekContinuityTickMs);
+        trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceApplied,
+                    ticks, (NowPeekI32)generation, 1);
+    } else if (cell->pending_mouseup) {
+        if (cell->event_result_err == noErr) {
+            cell->event_up_posts++;
+            cell->applied_button_generation = generation;
+        } else {
+            cell->event_post_failures++;
+            cell->button_release_reason =
+                (NowPeekU32)kNowPeekContinuityExitUnavailable;
+        }
+        /* MBState is already up. A manager refusal exits the epoch rather
+           than retrying forever or acknowledging an unsettled transition. */
+        cell->pending_mouseup = 0;
+    }
+}
+
+static void force_reset(NowPeekContinuityCell *cell, NowPeekU32 reason)
+{
+    release_button(cell, cell->button_generation, reason);
     gForcedResets++;
     gEventResetGeneration++;
 }
@@ -111,7 +230,7 @@ static void force_reset(NowPeekContinuityCell *cell)
 static void finish_locked(NowPeekContinuityCell *cell, NowPeekU32 reason,
                           NowPeekU32 ticks)
 {
-    force_reset(cell);
+    force_reset(cell, reason);
     cell->state = (NowPeekU32)kNowPeekContinuityStateExited;
     cell->exit_reason = reason;
     cell->apply_ticks = ticks;
@@ -127,9 +246,8 @@ static void finish_locked(NowPeekContinuityCell *cell, NowPeekU32 reason,
 
 static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
 {
-    /* A new epoch is a release boundary even if the application failed to
-       disarm the preceding one. Reset first, then publish the new authority. */
-    force_reset(cell);
+    /* The caller has already proved there is no held button or owed up event.
+       Never erase those debts to make a new epoch look clean. */
     cell->state = (NowPeekU32)kNowPeekContinuityStateArmed;
     cell->exit_reason = (NowPeekU32)kNowPeekContinuityExitNone;
     cell->accepted_hz = now_continuity_accept_rate(cell->requested_hz);
@@ -138,6 +256,13 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
     cell->applied_position_seq = 0;
     cell->request_position_seq = 0;
     cell->applied_button_generation = 0;
+    cell->event_request_generation = 0;
+    cell->event_request_down = 0;
+    cell->event_result_generation = 0;
+    cell->event_result_down = 0;
+    cell->event_result_err = 0;
+    cell->pending_mouseup = 0;
+    cell->button_release_reason = 0;
     gNativeInputSeq = now_ext_cursor_physical_input_seq();
     gNativeInputBaseline = gNativeInputSeq;
     publish_tasktime_counters(cell);
@@ -179,10 +304,31 @@ void now_ext_continuity_service(void)
                 ticks, (NowPeekI32)cell->state,
                 (NowPeekI32)cell->packet_seq);
 
+    process_event_result(cell, ticks);
+    if (cell->button_release_reason
+            == (NowPeekU32)kNowPeekContinuityExitUnavailable) {
+        finish_locked(cell,
+                      (NowPeekU32)kNowPeekContinuityExitUnavailable, ticks);
+        service_return(cell);
+        return;
+    }
+    if (cell->button_release_reason
+            == (NowPeekU32)kNowPeekContinuityExitGuestInput
+            || cell->button_release_reason
+                == (NowPeekU32)kNowPeekContinuityExitLeaseExpired
+            || cell->button_release_reason
+                == (NowPeekU32)kNowPeekContinuityExitHostLeft) {
+        NowPeekU32 reason = cell->button_release_reason;
+        cell->button_release_reason = 0;
+        finish_locked(cell, reason, ticks);
+        service_return(cell);
+        return;
+    }
+
     /* Authority/reset wins over every stale datagram. The application calls
        this immediately after arm/disarm/disconnect as well as from every
-       ordinary and nested wire pump. v0 holds no button, so a starved app has
-       no interrupt-time state that must be released behind its back. */
+       ordinary and nested wire pump. A starved app cannot serve this branch,
+       so the held-button timer independently owns MBState-up and the lease. */
     if (cell->control_seq != cell->observed_control_seq) {
         cell->observed_control_seq = cell->control_seq;
         if (!cell->enabled || cell->epoch == 0) {
@@ -197,6 +343,12 @@ void now_ext_continuity_service(void)
             cell->exit_reason =
                 (NowPeekU32)kNowPeekContinuityExitUnavailable;
             publish_tasktime_counters(cell);
+            service_return(cell);
+            return;
+        }
+        if (cell->button_down || cell->pending_mouseup) {
+            finish_locked(cell,
+                          (NowPeekU32)kNowPeekContinuityExitDisarmed, ticks);
             service_return(cell);
             return;
         }
@@ -299,10 +451,113 @@ void now_ext_continuity_service(void)
                             (NowPeekU32)kNowPeekContinuityTraceRequest,
                             ticks, (NowPeekI32)position_seq, h);
             }
+            switch (now_continuity_button_action(
+                        cell->applied_button_generation,
+                        cell->button_down != 0,
+                        cell->button_generation, flags)) {
+                case kNowContinuityButtonPress:
+                    request_button(cell, cell->button_generation, 1);
+                    break;
+                case kNowContinuityButtonRelease:
+                    /* Task-time fast path. The timer performs this same
+                       release when a tracking loop has starved the app. */
+                    release_button(cell, cell->button_generation,
+                                   (NowPeekU32)kNowPeekContinuityExitNone);
+                    break;
+                default:
+                    break;
+            }
         }
     }
     publish_tasktime_counters(cell);
     service_return(cell);
+}
+
+/* Held-input vehicle. INTERRUPT TIME: MouseLocation, emergency MBState-up and
+   resident fields only. RawMouse and MTemp belong to the physical ADB/PMU
+   path; touching either from this unrelated timer caused the metal wedge this
+   split exists to prevent. There is no manager, Event Manager, QuickDraw,
+   Process Manager, allocation or logging here. */
+void now_ext_continuity_tick(TMTaskPtr task)
+{
+    ContinuityButtonTask *self = (ContinuityButtonTask *)task;
+    NowPeekContinuityCell *cell;
+    NowPeekU32 before;
+    NowPeekU32 ticks;
+    NowPeekU32 epoch;
+    NowPeekU32 position_seq;
+    NowPeekU32 button_generation;
+    NowPeekU32 flags;
+    NowPeekU32 arrival;
+    NowPeekI32 h;
+    NowPeekI32 v;
+
+    if (self == NULL || !gButtonTaskRunning)
+        return;
+    cell = continuity_cell(self->table);
+    if (cell == NULL || !cell->button_down) {
+        gButtonTaskRunning = false;
+        return;
+    }
+    ticks = (NowPeekU32)LMGetTicks();
+    cell->button_timer_ticks++;
+    if (now_ext_cursor_physical_input_seq() != gNativeInputBaseline) {
+        release_button(cell, cell->button_generation,
+                       (NowPeekU32)kNowPeekContinuityExitGuestInput);
+        return;
+    }
+
+    before = cell->packet_seq;
+    epoch = cell->packet_epoch;
+    position_seq = cell->position_seq;
+    h = cell->want_h;
+    v = cell->want_v;
+    button_generation = cell->button_generation;
+    flags = cell->flags;
+    arrival = cell->arrival_ticks;
+    if (before != cell->packet_seq) {
+        PrimeTime((QElemPtr)&gButtonTask.task,
+                  (long)kNowPeekContinuityTickMs);
+        return;
+    }
+    if (epoch != cell->epoch
+            || !(flags & kNowPeekContinuityInside)) {
+        release_button(cell, button_generation,
+                       (NowPeekU32)kNowPeekContinuityExitHostLeft);
+        return;
+    }
+    if ((NowPeekU32)(ticks - arrival)
+            > now_continuity_clamp_lease(cell->lease_ticks)) {
+        release_button(cell, button_generation,
+                       (NowPeekU32)kNowPeekContinuityExitLeaseExpired);
+        return;
+    }
+    if (now_continuity_sequence_newer(
+            position_seq, cell->request_position_seq)) {
+        Point pt;
+
+        pt.h = (short)h;
+        pt.v = (short)v;
+        /* Tracking loops read MouseLocation while the PPC wire pump is
+           starved. The final point remains requested below so task time can
+           reconcile the drawn Cursor Device once the release unwinds it. */
+        LMSetMouseLocation(pt);
+        now_ext_cursor_remember_continuity_tracking_point(h, v);
+        cell->request_h = h;
+        cell->request_v = v;
+        cell->request_position_seq = position_seq;
+        cell->at_h = h;
+        cell->at_v = v;
+    }
+    if (now_continuity_button_action(
+            cell->applied_button_generation, 1,
+            button_generation, flags) == kNowContinuityButtonRelease) {
+        release_button(cell, button_generation,
+                       (NowPeekU32)kNowPeekContinuityExitNone);
+        return;
+    }
+    PrimeTime((QElemPtr)&gButtonTask.task,
+              (long)kNowPeekContinuityTickMs);
 }
 
 int now_ext_continuity_boot(NowPeekTable *table)
@@ -314,7 +569,7 @@ int now_ext_continuity_boot(NowPeekTable *table)
     if (table->length < (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                      + sizeof(NowPeekContinuityCell)))
         return 0;
-    table->continuity_format = (NowPeekU32)kNowPeekContinuityFormatV3;
+    table->continuity_format = (NowPeekU32)kNowPeekContinuityFormatV4;
     cell = &table->continuity;
     cell->state = (NowPeekU32)kNowPeekContinuityStateInactive;
     cell->exit_reason = (NowPeekU32)kNowPeekContinuityExitNone;
@@ -330,6 +585,12 @@ int now_ext_continuity_boot(NowPeekTable *table)
             (NowPeekU32)kNowPeekContinuityExitUnavailable;
         return 1;                    /* optional capability, valid absence */
     }
+    gButtonTask.table = table;
+    gButtonTask.task.tmAddr = (TimerUPP)now_ext_continuity_tm_entry;
+    gButtonTask.task.tmWakeUp = 0;
+    gButtonTask.task.tmReserved = 0;
+    InsTime((QElemPtr)&gButtonTask.task);
+    gButtonTaskInstalled = true;
     gTable = table;
     cell->service_proc = (NowPeekU32)now_ext_continuity_service;
     gInstalled = true;
@@ -339,6 +600,14 @@ int now_ext_continuity_boot(NowPeekTable *table)
 
 void now_ext_continuity_rollback(NowPeekTable *table)
 {
+    if (table != NULL && table->continuity.button_down)
+        release_button_lowmem();
+    gButtonTaskRunning = false;
+    if (gButtonTaskInstalled) {
+        RmvTime((QElemPtr)&gButtonTask.task);
+        gButtonTaskInstalled = false;
+    }
+    gButtonTask.table = NULL;
     if (table != NULL
             && table->length
                 >= (NowPeekU32)(offsetof(NowPeekTable, continuity)

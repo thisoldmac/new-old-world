@@ -1,10 +1,10 @@
-/* Cooperative PPC -> resident 68K bridge for Continuity V2.
+/* Cooperative PPC -> resident 68K bridge for Continuity V4.
 
-   V3 keeps this no-argument bridge for resident arbitration and native-input
-   observation only. The resident publishes a point and returns; the PPC side
-   calls the bounded PPC transition from Apple's CursorDevicesGlue algorithm,
-   publishes the result, then enters the resident once more to commit it. No
-   resident entry reaches CDM.
+   V3 established this no-argument bridge for resident arbitration and
+   native-input observation. V4 carries point and primary-button requests over
+   the same table. The PPC side calls the bounded transitions from Apple's
+   CursorDevicesGlue algorithm, publishes each result, then enters the resident
+   once more to commit it. No resident entry reaches CDM.
 
    This uses the same dispatch shape already metal-proven by census_trap.c:
    a real kM68kISA|kOld68kRTA RoutineDescriptor, CallUniversalProc resolved
@@ -168,9 +168,12 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
 {
     NowPeekU32 status_seq;
     NowPeekU32 request_seq;
+    NowPeekU32 event_generation;
+    NowPeekU32 event_down;
     NowPeekI32 h;
     NowPeekI32 v;
     long err;
+    int published_result = 0;
 
     if (cell == NULL || gInvoking)
         return cell != NULL;
@@ -181,32 +184,56 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
     }
     drain_trace(cell);
     status_seq = cell->status_seq;
-    if ((status_seq & 1u) != 0
-            || !cell->enabled
-            || cell->state != (NowPeekU32)kNowPeekContinuityStateActive) {
+    if ((status_seq & 1u) != 0) {
         gInvoking = 0;
         return 1;
     }
     request_seq = cell->request_position_seq;
     h = cell->request_h;
     v = cell->request_v;
-    if (status_seq != cell->status_seq
-            || request_seq == 0
-            || !now_continuity_sequence_newer(request_seq,
-                                               cell->apply_result_seq)) {
+    event_generation = cell->event_request_generation;
+    event_down = cell->event_request_down;
+    if (status_seq != cell->status_seq) {
         gInvoking = 0;
         return 1;
     }
-    err = now_continuity_cursor_move((unsigned long)cell->epoch,
-                                     (unsigned long)request_seq,
-                                     (long)h, (long)v);
-    cell->apply_result_err = (NowPeekI32)err;
-    cell->apply_result_seq = request_seq;        /* publish result last */
-    if (!invoke_resident(cell)) {
-        gInvoking = 0;
-        return 0;
+
+    if (cell->enabled
+            && cell->state == (NowPeekU32)kNowPeekContinuityStateActive
+            && request_seq != 0
+            && now_continuity_sequence_newer(request_seq,
+                                               cell->apply_result_seq)) {
+        err = now_continuity_cursor_move((unsigned long)cell->epoch,
+                                         (unsigned long)request_seq,
+                                         (long)h, (long)v);
+        cell->apply_result_err = (NowPeekI32)err;
+        cell->apply_result_seq = request_seq;    /* publish result last */
+        published_result = 1;
     }
-    drain_trace(cell);
+
+    /* The same synthetic Cursor Device owns position and button transitions.
+       This corrected PPC transition is the input-device API; PostEvent and a
+       resident pretending to be the physical ADB driver are both excluded.
+       An up request survives an exited state because the resident's dead-man
+       may have lifted MBState first and the manager still needs reconciling. */
+    if (event_generation != 0
+            && (event_generation != cell->event_result_generation
+                || event_down != cell->event_result_down)) {
+        err = now_continuity_cursor_button(
+            (unsigned long)cell->epoch, (unsigned long)event_generation,
+            event_down != 0);
+        cell->event_result_down = event_down;
+        cell->event_result_err = (NowPeekI32)err;
+        cell->event_result_generation = event_generation; /* commit last */
+        published_result = 1;
+    }
+    if (published_result) {
+        if (!invoke_resident(cell)) {
+            gInvoking = 0;
+            return 0;
+        }
+        drain_trace(cell);
+    }
     gInvoking = 0;
     return 1;
 }

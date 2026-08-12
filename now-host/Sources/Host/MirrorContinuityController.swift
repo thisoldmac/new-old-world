@@ -67,6 +67,12 @@ final class MirrorContinuityController: ObservableObject,
     private var positionSequence: UInt32 = 0
     private var point = MirrorKit.Point(x: 0, y: 0)
     private var positionDirty = false
+    private var buttonGeneration: UInt32 = 0
+    private var buttonCycleActive = false
+    private var wireButtonDown = false
+    private var pressAcknowledged = false
+    private var releasePending = false
+    private var deferredButtonPoint: MirrorKit.Point?
     private var idleIntervals = 0
     private var udp: NWConnection?
     /* Network.framework may spend time preparing a physical interface while
@@ -77,6 +83,7 @@ final class MirrorContinuityController: ObservableObject,
         label: "dev.newoldworld.mirror.continuity.udp")
     private var timer: DispatchSourceTimer?
     private var armTimeout: Task<Void, Never>?
+    private var buttonAckTimeout: Task<Void, Never>?
     private var permissionRetry: Task<Void, Never>?
     private var waitingForLocalNetworkAccess = false
     private var permissionRetryCount = 0
@@ -85,6 +92,7 @@ final class MirrorContinuityController: ObservableObject,
     private var acceptedHz = 30
     private var sentDatagrams: UInt32 = 0
     private var validAcks: UInt32 = 0
+    private var lastAuditedButtonGeneration: UInt32 = 0
 
     init(listener: GuestListener,
          defaults: UserDefaults = ProductIdentity.defaults,
@@ -124,23 +132,49 @@ final class MirrorContinuityController: ObservableObject,
 
     @discardableResult
     func primaryDown(at point: MirrorKit.Point) -> Bool {
-        /* v0 is movement only. Returning false leaves Mirror's existing
-           semantic click path in charge; v0.5a will add a separately gated
-           button contract after movement has earned metal safety. */
-        _ = point
-        return false
+        guard phase == .active else { return false }
+        /* A second press cannot fall through to Mirror while the preceding
+           raw release is settling. Consuming it avoids mixing the semantic
+           and device planes; the next ordinary press works after its ACK. */
+        guard !buttonCycleActive else {
+            audit(.warn, "ignored primary down while release is settling")
+            return true
+        }
+        self.point = point
+        positionDirty = true
+        advancePositionIfNeeded()
+        buttonGeneration = nextNonzero(buttonGeneration)
+        buttonCycleActive = true
+        wireButtonDown = true
+        pressAcknowledged = false
+        releasePending = false
+        deferredButtonPoint = nil
+        sendState(inside: true, keepalive: false)
+        scheduleButtonAckTimeout(generation: buttonGeneration, down: true)
+        return true
     }
 
     @discardableResult
     func primaryDragged(to point: MirrorKit.Point) -> Bool {
-        _ = point
-        return false
+        guard phase == .active, buttonCycleActive else { return false }
+        if pressAcknowledged {
+            self.point = point
+            positionDirty = true
+        } else {
+            /* Keep the press point stable until the guest confirms its down
+               event. The newest held point is sent immediately afterwards. */
+            deferredButtonPoint = point
+        }
+        return true
     }
 
     @discardableResult
     func primaryUp(at point: MirrorKit.Point) -> Bool {
-        _ = point
-        return false
+        guard phase == .active, buttonCycleActive else { return false }
+        deferredButtonPoint = point
+        releasePending = true
+        if pressAcknowledged { sendPrimaryRelease() }
+        return true
     }
 
     func cancel(reason: String) {
@@ -216,12 +250,15 @@ final class MirrorContinuityController: ObservableObject,
             + "accepted=\(report.acceptedPackets ?? 0), "
             + "stale=\(report.stalePackets ?? 0), "
             + "malformed=\(report.malformedPackets ?? 0), "
-            + "appliedPosition=\(report.appliedPositionSequence ?? 0)")
+            + "appliedPosition=\(report.appliedPositionSequence ?? 0), "
+            + "appliedButton=\(report.appliedButtonGeneration ?? 0)")
         guard report.version == ContinuityContract.version else {
             guestEnded(reason: report.version == nil
-                ? "the guest is missing Continuity control version 1"
+                ? "the guest is missing Continuity control version "
+                    + "\(ContinuityContract.version)"
                 : "the guest reported Continuity control version "
-                    + "\(report.version!), expected 1")
+                    + "\(report.version!), expected "
+                    + "\(ContinuityContract.version)")
             return
         }
         if report.id == armID {
@@ -301,7 +338,8 @@ final class MirrorContinuityController: ObservableObject,
                     self.armTimeout?.cancel()
                     self.armTimeout = nil
                     self.phase = .active
-                    self.status = "pointer connected at \(self.acceptedHz) Hz"
+                    self.status = "direct pointer connected at "
+                        + "\(self.acceptedHz) Hz"
                     self.startTimer()
                     self.receiveAck()
                 case .failed(let error):
@@ -434,12 +472,13 @@ final class MirrorContinuityController: ObservableObject,
     private func encodedState(inside: Bool, keepalive: Bool) -> Data {
         var flags: ContinuityStateDatagram.Flags = []
         if inside { flags.insert(.inside) }
+        if wireButtonDown { flags.insert(.primaryDown) }
         if keepalive { flags.insert(.keepalive) }
         let packet = ContinuityStateDatagram(
             nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
             positionSequence: positionSequence,
             h: Int16(clamping: point.x), v: Int16(clamping: point.y),
-            buttonGeneration: 0, flags: flags,
+            buttonGeneration: buttonGeneration, flags: flags,
             requestedHz: UInt16(requestedHz),
             hostStamp: UInt32(truncatingIfNeeded:
                 Int(ProcessInfo.processInfo.systemUptime * 60)))
@@ -473,14 +512,19 @@ final class MirrorContinuityController: ObservableObject,
                         self.validAcks &+= 1
                         if self.validAcks == 1
                             || ack.exitReason != .none
-                            || ack.state == .inactive {
+                            || ack.state == .inactive
+                            || ack.buttonGeneration
+                                != self.lastAuditedButtonGeneration {
                             self.audit(.info, "UDP acknowledgement: "
                                 + "state=\(ack.state), "
                                 + "reason=\(ack.exitReason), "
                                 + "positionSequence=\(ack.positionSequence), "
+                                + "buttonGeneration=\(ack.buttonGeneration), "
                                 + "arrivalTicks=\(ack.arrivalTicks), "
                                 + "applyTicks=\(ack.applyTicks), "
                                 + "rejected=\(ack.rejectedPackets)")
+                            self.lastAuditedButtonGeneration =
+                                ack.buttonGeneration
                         }
                         self.apply(ack)
                     } catch {
@@ -494,8 +538,71 @@ final class MirrorContinuityController: ObservableObject,
     }
 
     private func apply(_ ack: ContinuityAckDatagram) {
+        applyButtonAcknowledgement(ack)
         if ack.exitReason != .none || ack.state == .inactive {
             guestEnded(reason: exitDescription(ack.exitReason))
+        }
+    }
+
+    private func applyButtonAcknowledgement(_ ack: ContinuityAckDatagram) {
+        guard buttonCycleActive,
+              ack.buttonGeneration == buttonGeneration else { return }
+        if wireButtonDown {
+            guard !pressAcknowledged else { return }
+            pressAcknowledged = true
+            buttonAckTimeout?.cancel()
+            buttonAckTimeout = nil
+            if releasePending {
+                sendPrimaryRelease()
+            } else if let deferredButtonPoint {
+                point = deferredButtonPoint
+                self.deferredButtonPoint = nil
+                positionDirty = true
+                advancePositionIfNeeded()
+                sendState(inside: true, keepalive: false)
+            }
+        } else {
+            buttonAckTimeout?.cancel()
+            buttonAckTimeout = nil
+            buttonCycleActive = false
+            releasePending = false
+            deferredButtonPoint = nil
+        }
+    }
+
+    private func sendPrimaryRelease() {
+        guard phase == .active, buttonCycleActive, wireButtonDown else {
+            return
+        }
+        if let deferredButtonPoint {
+            point = deferredButtonPoint
+        }
+        deferredButtonPoint = nil
+        positionDirty = true
+        advancePositionIfNeeded()
+        buttonGeneration = nextNonzero(buttonGeneration)
+        wireButtonDown = false
+        releasePending = false
+        buttonAckTimeout?.cancel()
+        buttonAckTimeout = nil
+        sendState(inside: true, keepalive: false)
+        scheduleButtonAckTimeout(generation: buttonGeneration, down: false)
+    }
+
+    private func scheduleButtonAckTimeout(generation: UInt32, down: Bool) {
+        buttonAckTimeout?.cancel()
+        buttonAckTimeout = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let self, !Task.isCancelled,
+                  self.phase == .active, self.buttonCycleActive,
+                  self.wireButtonDown == down,
+                  self.buttonGeneration == generation,
+                  !down || !self.pressAcknowledged else { return }
+            let transition = down ? "down" : "up"
+            self.audit(.error, "primary \(transition) was not acknowledged; "
+                + "ending epoch=\(self.epoch), generation=\(generation)")
+            self.relinquish(reason: "button \(transition) acknowledgement timed out",
+                            keepEnabled: true)
         }
     }
 
@@ -512,10 +619,20 @@ final class MirrorContinuityController: ObservableObject,
         let oldPhase = phase
         let oldSent = sentDatagrams
         let oldAcks = validAcks
+        if phase == .active, buttonCycleActive, wireButtonDown {
+            if let deferredButtonPoint { point = deferredButtonPoint }
+            positionDirty = true
+            advancePositionIfNeeded()
+            buttonGeneration = nextNonzero(buttonGeneration)
+            wireButtonDown = false
+            sendState(inside: false, keepalive: false)
+        }
         timer?.cancel()
         timer = nil
         armTimeout?.cancel()
         armTimeout = nil
+        buttonAckTimeout?.cancel()
+        buttonAckTimeout = nil
         permissionRetry?.cancel()
         permissionRetry = nil
         waitingForLocalNetworkAccess = false
@@ -528,6 +645,8 @@ final class MirrorContinuityController: ObservableObject,
         idleIntervals = 0
         sentDatagrams = 0
         validAcks = 0
+        lastAuditedButtonGeneration = 0
+        resetButtonState()
         if wasOwned {
             audit(.info, "ending locally: reason=\(reason), "
                 + "phase=\(oldPhase), epoch=\(oldEpoch), "
@@ -572,6 +691,8 @@ final class MirrorContinuityController: ObservableObject,
         timer = nil
         armTimeout?.cancel()
         armTimeout = nil
+        buttonAckTimeout?.cancel()
+        buttonAckTimeout = nil
         permissionRetry?.cancel()
         permissionRetry = nil
         waitingForLocalNetworkAccess = false
@@ -584,6 +705,16 @@ final class MirrorContinuityController: ObservableObject,
         idleIntervals = 0
         sentDatagrams = 0
         validAcks = 0
+        lastAuditedButtonGeneration = 0
+        resetButtonState()
+    }
+
+    private func resetButtonState() {
+        buttonCycleActive = false
+        wireButtonDown = false
+        pressAcknowledged = false
+        releasePending = false
+        deferredButtonPoint = nil
     }
 
     private func setEnabledWithoutTeardown(_ enabled: Bool) {

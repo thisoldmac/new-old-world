@@ -3,9 +3,9 @@
 Continuity is an optional input mode on top of Mirror. It does not replace
 Mirror's semantic scene or act planes. When enabled, moving the host pointer
 over the Mirror asks the PowerPC guest for temporary ownership of its pointer;
-after the guest accepts, v0 mirrors movement only. Primary clicks still use
-Mirror's semantic path. Direct click and drag delivery remain the separate
-v0.5a and v0.5b stages.
+after the guest accepts, direct-pointer mode mirrors movement and sends primary
+down, held movement, and primary up through one synthetic guest input device.
+Mirror's semantic click path is bypassed only while that raw lane is active.
 
 It is off by default and its enable switch is session-only. The update rate is
 user-selectable at 15, 30, or 60 Hz; 30 Hz is the default, and the selection is
@@ -33,14 +33,11 @@ resolution, file transfer, and guest-window identity belong to shared services.
 Mirror can therefore gain cursor/click/drag and host-to-guest Finder drops
 without pretending that full screen-edge Continuity has already shipped.
 
-The remaining product sequence is:
+The remaining product sequence after direct pointer is:
 
-1. direct primary click-through, bypassing Mirror click handling only while the
-   raw lane is active;
-2. held movement and reliable release for guest-native dragging;
-3. screen-edge pass-through and explicit host/guest handback;
-4. cross-machine file dragging, including exact Finder window/folder targets;
-5. dragging guest windows between the guest display, Mirror, and detached host
+1. screen-edge pass-through and explicit host/guest handback;
+2. cross-machine file dragging, including exact Finder window/folder targets;
+3. dragging guest windows between the guest display, Mirror, and detached host
    presentation.
 
 The destination chain and its existing pieces are recorded in
@@ -52,7 +49,7 @@ The existing wire port is used in both protocol namespaces:
 
 - TCP on port N carries `continuity.arm`, `continuity.report`, and
   `continuity.disarm`. The arm grants a random 64-bit nonce and a monotonically
-  changing epoch. All three messages carry control-contract version `1`; a
+  changing epoch. All three messages carry control-contract version `2`; a
   missing or different version is refused as `wrong-version`. UDP alone can
   never create authority.
 - UDP on port N carries fixed 40-byte latest-state datagrams and fixed 44-byte
@@ -65,13 +62,21 @@ preallocated decode, shared-cell publication, and publication of one pending
 reply address. It never sends. The ordinary task-time wire pump coalesces that
 debt to the latest acknowledgement and makes at most one `OTSndUData` attempt
 per pass. P9 in the NOW Extension owns arbitration and native-input takeover.
-Continuity V3 has the resident publish one requested point and return. The PPC
-application owns one synthetic absolute Cursor Device and applies that point
-through Apple's `CursorDevicesGlue`, then publishes the exact result for a
-second resident call to commit. The resident never owns a Cursor Device and
-never enters Cursor Device Manager after boot. Continuity also has no Time
-Manager task, global jGNE service, Event Manager call, QuickDraw call, or
-downstream mouse-global write.
+Continuity V4 has the resident publish requested position and button
+transitions and return. The PPC application owns one synthetic absolute Cursor
+Device and applies them through corrected transitions from Apple's
+`CursorDevicesGlue`, then publishes the exact results for a second resident
+call to commit. The resident never owns a Cursor Device and never enters Cursor
+Device Manager after boot.
+
+While a button is held, one resident Time Manager task copies only the latest
+point to `MouseLocation`, which is the value application tracking loops consume
+when the cooperative PPC application is starved. It never writes `RawMouse` or
+`MTemp`, never asserts button-down, and makes no Cursor Device, Event Manager,
+QuickDraw, Process Manager, allocation, network, or logging call. It may set
+`MBState` unconditionally up for lease expiry, host departure, or physical
+guest takeover; the PPC task later reconciles that emergency release through
+the same synthetic Cursor Device.
 It shares one input-owner arbiter with P7 drag, so the two resident vehicles
 cannot hold the mouse together.
 
@@ -94,9 +99,9 @@ applied.
 
 Leaving the Mirror, stopping it, losing host focus, switching guest, losing the
 TCP session, UDP failure, or lease expiry also releases ownership at the next
-cooperative service pass. v0 holds no button and does not suppress physical
-input, so a starved application cannot leave an Event Manager or cursor-global
-release debt behind it; it simply makes no further placements.
+cooperative service pass when no button is held. During a held gesture, the
+resident timer independently forces button-up within the lease even if the
+foreground application's tracking loop has starved the PPC wire pump.
 
 ## Versions
 
@@ -105,6 +110,10 @@ release debt behind it; it simply makes no further placements.
   Continuity arm is active.
 - **v0.5b:** motion continues while primary is held, using the same acknowledged
   edge stream, so guest tracking loops receive a real drag.
+
+All three slices are implemented and emulator-tested together as direct-pointer
+wire version 2 / resident table V4. Direct click and drag remain
+**not Metal-verified** until observed on the PowerBook 1400c.
 
 Secondary click, scroll, keyboard input, MCP, agent integration, the guest
 console, and NOW-68K are not Continuity surfaces.
@@ -119,6 +128,22 @@ jittery and changing 15/30/60 Hz did not produce a clearly different cadence.
 That is the first positive metal result for the corrected route; it proves the
 bounded v0 movement session that was observed, not sustained-motion stability
 or update-rate fidelity.
+
+On 2026-08-11 the V4 direct-pointer candidate passed independent private
+`mac99,via=pmu` (USB) and `mac99,via=cuda` (ADB) runs with guest build
+`40129a13127a…`, resident fingerprint `90e16cd29b67…`, and capabilities `1023`.
+Each run applied an acknowledged click, a 30-point held drag with an exact final
+point, a lease-expired held-button release, native motion after release, and a
+clean Finder shutdown on a clean private volume. CUDA additionally reported an
+actual `guest-input` takeover while held. PMU's held QMP stimulus was not
+observable in that run, so only its dead-man fallback is credited. A second
+CUDA pass completed 16 immediate click cycles / 32 ordered transitions on one
+epoch, ending at generation `32`, button up, with no pending manager release;
+it then repeated drag, lease, takeover, and wire-liveness checks. The receipts
+are `/private/tmp/nowdp2-pmu/direct-pointer/direct-pointer.json` and
+`/private/tmp/nowdp2-cuda/direct-pointer-burst/direct-pointer.json`. These are
+emulator functional and safety results; the PowerBook click/drag row is still
+open.
 
 Six earlier PowerBook 1400c runs wedged the machine after resident pointer
 placement. They separately ruled out

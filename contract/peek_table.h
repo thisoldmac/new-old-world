@@ -853,7 +853,7 @@ enum {
     /* No Toolbox beyond low-memory accessors may be called. */
     kNowCursorPlaceInterrupt = 1u << 1,
     /* The PowerPC NOW application, not the global jGNE filter, owns the
-       balanced task-time redraw for this placement. Continuity v0 uses this
+       balanced task-time redraw for this placement. Continuity uses this
        route so its resident never enters Cursor Device, QuickDraw, or Event
        Manager code on behalf of an arbitrary foreground process. */
     kNowCursorPlaceApplicationRedraw = 1u << 2
@@ -912,6 +912,11 @@ enum {
        resident now publishes a requested point, the app calls the official
        glue from cooperative task time, and the resident commits the result. */
     kNowPeekContinuityFormatV3 = 3,
+    /* V4 activates the primary-button generation already carried by the UDP
+       wire. Cursor Device Manager calls remain in the cooperative PPC
+       application; the resident owns only tracking-loop MouseLocation and an
+       unconditional MBState-up escape. */
+    kNowPeekContinuityFormatV4 = 4,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -1041,6 +1046,20 @@ typedef struct {
     NowPeekU32 service_reentries;
     NowPeekU32 trace_write_seq;
     NowPeekContinuityTraceEntry trace[kNowPeekContinuityTraceCapacity];
+    /* V4 button transition tail. The resident requests one task-time Cursor
+       Device transition and the PPC application commits its result. A timer
+       may make MBState up first; pending_mouseup keeps the later manager debt
+       explicit. The event_* names are retained because this table is
+       accretive; they do not mean Event Manager calls in V4. */
+    NowPeekU32 event_request_generation;
+    NowPeekU32 event_request_down;
+    NowPeekU32 event_result_generation;
+    NowPeekU32 event_result_down;
+    NowPeekI32 event_result_err;
+    NowPeekU32 pending_mouseup;
+    NowPeekU32 button_timer_ticks;
+    NowPeekU32 button_forced_releases;
+    NowPeekU32 button_release_reason;
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -1948,7 +1967,7 @@ _Static_assert(offsetof(NowPeekTable, gne_passes)
                "the filter pass counter follows the rest-state pair");
 _Static_assert(sizeof(NowPeekContinuityTraceEntry) == 20,
                "continuity trace ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 384,
+_Static_assert(sizeof(NowPeekContinuityCell) == 420,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -1962,6 +1981,12 @@ _Static_assert(offsetof(NowPeekContinuityCell, request_position_seq) == 204,
                "continuity V3 resident request offset");
 _Static_assert(offsetof(NowPeekContinuityCell, trace) == 224,
                "continuity V3 trace offset");
+_Static_assert(offsetof(NowPeekContinuityCell, event_request_generation) == 384,
+               "continuity V4 button request offset");
+_Static_assert(offsetof(NowPeekContinuityCell, pending_mouseup) == 404,
+               "continuity V4 release debt offset");
+_Static_assert(offsetof(NowPeekContinuityCell, button_release_reason) == 416,
+               "continuity V4 release reason offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

@@ -229,7 +229,7 @@ static void cursor_rows(InputRows *rows)
     row_addl(rows, "cursor last err", (long)c->last_err);
     if (t->length >= (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                   + sizeof(NowPeekContinuityCell))
-        && t->continuity_format == (NowPeekU32)kNowPeekContinuityFormatV3) {
+        && t->continuity_format == (NowPeekU32)kNowPeekContinuityFormatV4) {
         const NowPeekContinuityCell *continuity = &t->continuity;
 
         row_addl(rows, "native samples", (long)continuity->native_input_samples);
@@ -242,6 +242,15 @@ static void cursor_rows(InputRows *rows)
         row_addl(rows, "native buttons", (long)continuity->native_buttons);
         row_addl(rows, "cursor debt cancels",
                  (long)continuity->cursor_debt_cancels);
+        row_addl(rows, "button generation",
+                 (long)continuity->applied_button_generation);
+        row_addl(rows, "button down", (long)continuity->button_down);
+        row_addl(rows, "button timer ticks",
+                 (long)continuity->button_timer_ticks);
+        row_addl(rows, "button forced releases",
+                 (long)continuity->button_forced_releases);
+        row_addl(rows, "button pending up",
+                 (long)continuity->pending_mouseup);
     }
 }
 

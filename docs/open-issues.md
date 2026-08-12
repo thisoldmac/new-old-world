@@ -610,6 +610,30 @@ this, and a row over there means somebody did.
 
 ## BOUNDED METAL PASS AFTER SIX WEDGES; CADENCE JITTER OPEN; CAPABILITY QUARANTINED: Mirror Continuity mode (2026-08-09, `codex/continuity-mode-plan`)
 
+**2026-08-11 direct-pointer update:** wire version 2 and resident table V4 now
+implement direct primary down/up and held dragging on top of the metal-proven
+movement route. Mirror semantic clicks are bypassed only after the raw lane is
+active. Button generations are ordered and acknowledged; the host does not move
+past a press or send its release until down is acknowledged. The PPC application
+owns the synthetic Cursor Device and all Cursor Device Manager calls. A held
+gesture's resident timer writes only `MouseLocation` for tracking loops and may
+force `MBState` up; it never writes `RawMouse` or `MTemp`, never asserts down,
+and makes no manager, allocation, network, or logging call.
+
+Independent private PMU/USB and CUDA/ADB runs of guest build
+`40129a13127a…` and resident fingerprint `90e16cd29b67…` passed click, a
+30-point held drag, lease-expiry release, native return, post-exit wire liveness,
+clean Finder shutdown, and clean-volume inspection. CUDA/ADB additionally
+observed physical-input takeover while held; PMU's held QMP stimulus was not
+observable and is credited only for its dead-man fallback. A second CUDA pass
+completed 16 immediate click cycles / 32 ordered transitions on one epoch, then
+repeated the complete drag/release/takeover gate. Every safety exit ended button
+up with no pending release.
+This closes the emulator gates for v0.5a/v0.5b; direct click and drag remain
+unverified on the PowerBook 1400c and the capability remains quarantined for a
+bounded attended metal pass. The private receipts are named in
+[continuity-mode.md](continuity-mode.md). No shared image was modified.
+
 **2026-08-11 transport and metal update:** the first resident 1.17 host handoff armed
 over TCP but delivered no UDP packet to the guest: 70 host sends, zero guest
 accepted/stale/malformed packets, zero ACK attempts, and zero resident applies.
@@ -630,10 +654,8 @@ Sustained stability, rate fidelity, teardown and recovery remain open, so
 quarantine is unchanged. Exact evidence and the next per-stage timing
 measurements are in [continuity-mode.md](continuity-mode.md).
 
-The optional Continuity lane currently exposes v0 movement only. Direct primary
-click bypass and sustained drag remain the v0.5a and v0.5b implementation
-stages; packet fields and emulator probes for button generations are substrate,
-not shipped behavior. Reliable TCP grants and revokes a nonce/epoch;
+The optional Continuity lane previously exposed v0 movement only. Reliable TCP
+grants and revokes a nonce/epoch;
 fixed-state UDP uses the same numeric port in its own protocol namespace. The
 update rate is selectable at 15/30/60 Hz, default 30, and is remembered per
 stable guest identity. P9 owns a

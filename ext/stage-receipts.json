@@ -465,6 +465,21 @@
         "ext/src/now_ext_install.h"
       ],
       "reason": "Feature-branch integration checkpoint: focused Continuity and transactional INIT guards pass; full repository gates and an exact branch-private cold bake remain before release-candidate handoff."
+    },
+    {
+      "at": "2026-08-12T12:31:33-0400",
+      "branch": "codex/dev/cross-cutting/continuity-cursor-v0",
+      "extDigest": "28517d5cfcb7fa84b1347c67b84389fc83163ccd",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_tm.S",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h"
+      ],
+      "reason": "Recovered from exact session patches for the branch-private resident already metal-tested; shared oracle promotion remains deferred to release-candidate landing."
     }
   ]
 }

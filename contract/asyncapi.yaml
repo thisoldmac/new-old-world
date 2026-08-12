@@ -121,10 +121,11 @@
 #   that live arm. Reconnect, disarm, lease expiry and local guest input
 #   invalidate the epoch. Stale, replayed and malformed packets are counted
 #   and ignored.
-#   v0 state is absolute movement and coalescible: a later position supersedes
-#   an earlier one. The fixed packet reserves its button generation and primary
-#   flag for v0.5a, but a v0 sender writes zero and a v0 resident never mutates
-#   mouse-button or Event Manager state.
+#   Version 2 state is absolute and coalescible: a later position supersedes an
+#   earlier one. Primary-button transitions carry a monotonically-new
+#   generation. A host does not send the release until the press generation is
+#   acknowledged; while held, the resident consumes the newest point and owns
+#   the dead-man release even when the cooperative PPC application is starved.
 # - Control messages that expect an answer carry `id`; answers echo it.
 # - Bulk transfers are announced on control (`capture.begin`), stream on the
 #   bulk channel in chunks (default 8192 bytes, negotiable in hello), and
@@ -2110,7 +2111,7 @@ components:
       properties:
         type: { const: continuity.arm }
         version:
-          const: 1
+          const: 2
           description: >
             Continuity control-contract version. This matches the fixed-size
             UDP lane's version; a receiver refuses a missing or different
@@ -2142,7 +2143,7 @@ components:
       additionalProperties: false
       properties:
         type: { const: continuity.disarm }
-        version: { const: 1 }
+        version: { const: 2 }
         id: { type: integer }
         epoch: { type: integer, minimum: 1, maximum: 4294967295 }
         reason:
@@ -2153,7 +2154,7 @@ components:
       additionalProperties: false
       properties:
         type: { const: continuity.report }
-        version: { const: 1 }
+        version: { const: 2 }
         id:
           type: integer
           description: Echoed for an arm or disarm answer; absent for takeover.
@@ -2171,8 +2172,15 @@ components:
           { type: integer, minimum: 0, maximum: 4294967295 }
         appliedButtonGeneration:
           type: integer
-          const: 0
-          description: Reserved for v0.5a; movement-only v0 reports zero.
+          minimum: 0
+          maximum: 4294967295
+          description: >
+            Newest primary-button transition the guest applied. A press is
+            acknowledged only after the PPC application completed the
+            synthetic Cursor Device's ButtonDown transition. A release is
+            acknowledged only after MBState is up; the resident may do that
+            first as a dead-man escape, then reconcile CursorDeviceButtonUp at
+            the next safe task-time pass.
     MirrorInvalidate:
       type: object
       required: [type, generation, domains, quality]

@@ -12,5 +12,7 @@ OSErr now_cdm_dispose_device(CursorDevicePtr device);
 OSErr now_cdm_set_buttons(CursorDevicePtr device, short count);
 OSErr now_cdm_units_per_inch(CursorDevicePtr device, Fixed resolution);
 OSErr now_cdm_move_to(CursorDevicePtr device, long abs_x, long abs_y);
+OSErr now_cdm_button_down(CursorDevicePtr device);
+OSErr now_cdm_button_up(CursorDevicePtr device);
 
 #endif

@@ -6,7 +6,7 @@
    struct. The host is little-endian and the classic guest is big-endian,
    so sharing native layout here would only hide a protocol bug. */
 
-#define NOW_CONTINUITY_VERSION 1u
+#define NOW_CONTINUITY_VERSION 2u
 
 #define NOW_CONTINUITY_STATE_MAGIC 0x4E574331UL /* NWC1 */
 #define NOW_CONTINUITY_STATE_BYTES 40u
@@ -26,9 +26,9 @@
 #define NOW_CONTINUITY_STATE_HOST_STAMP_OFFSET 36u
 
 #define NOW_CONTINUITY_FLAG_INSIDE 0x0001u
-/* Reserved on the version-1 wire for v0.5a. A v0 sender writes zero and a v0
-   resident ignores both this bit and button_generation. Keeping the slots
-   preserves the fixed datagram while movement earns metal safety alone. */
+/* Version 2 activates the button state and generation fields that version 1
+   reserved. A transition is applied once, acknowledged by generation, and a
+   held button is released by the resident even when the PPC app is starved. */
 #define NOW_CONTINUITY_FLAG_PRIMARY_DOWN 0x0002u
 #define NOW_CONTINUITY_FLAG_KEEPALIVE 0x0004u
 #define NOW_CONTINUITY_KNOWN_FLAGS 0x0007u

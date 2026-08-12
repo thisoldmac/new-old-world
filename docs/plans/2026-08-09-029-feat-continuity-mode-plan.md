@@ -526,6 +526,11 @@ named picture limitation rather than being hidden by position counters.
 
 #### Phase 4 — v0.5a direct clicks
 
+**Status 2026-08-11:** implemented and Tested on independent PMU/USB and
+CUDA/ADB private mac99 rigs. CUDA also completed 16 immediate click cycles / 32
+settled transitions without retaining a manager-up debt. PowerBook observation
+remains open.
+
 1. Prove the authoritative physical-button signal on the emulator and
    PowerBook before enabling synthetic button ownership.
 2. Add ordered primary down/up generations, immediate edge sends,
@@ -542,6 +547,12 @@ its down edge, physical guest click revokes the epoch, and every cancellation
 path leaves `MBState` up.
 
 #### Phase 5 — v0.5b held movement
+
+**Status 2026-08-11:** implemented and Tested on independent PMU/USB and
+CUDA/ADB private mac99 rigs. Both completed a 30-point held drag, lease-expiry
+release, and physical-input takeover with button up and no pending release.
+Finder/control/TextEdit and host-loss behavior remain PowerBook acceptance rows,
+so this phase is not Metal-verified.
 
 1. Enable motion after an acknowledged down and maintain capture outside the
    guest rectangle until release.

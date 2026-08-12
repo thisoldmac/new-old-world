@@ -259,8 +259,13 @@ parallel availability lists.
   did not produce a clearly different cadence. This is bounded positive metal
   evidence, not sustained-motion or rate-fidelity qualification. There is no
   direct `main` landing: the feature branch targets a release-candidate branch,
-  where recovery and release packaging remain gates. Direct clicks and drags
-  remain v0.5a/v0.5b work.
+  where recovery and release packaging remain gates. Wire version 2 / resident
+  V4 now implement direct click and held drag with acknowledged button
+  generations. Private PMU/USB and CUDA/ADB runs passed click, a 30-point drag,
+  lease-expiry release, native return, and clean shutdown with no held or
+  pending button; CUDA/ADB also observed physical-input takeover and 16
+  immediate click cycles / 32 settled transitions. That is emulator-tested;
+  direct click and drag remain unverified on the PowerBook 1400c.
   [continuity-mode.md](continuity-mode.md) carries the boundary.
 
 - **Mirror human work has a session-wide priority boundary and attributable

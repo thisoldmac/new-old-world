@@ -37,6 +37,24 @@ int now_continuity_sequence_newer(NowPeekU32 candidate,
     return distance != 0 && distance < 0x80000000UL;
 }
 
+int now_continuity_button_action(NowPeekU32 applied_generation,
+                                 int button_down,
+                                 NowPeekU32 incoming_generation,
+                                 NowPeekU32 flags)
+{
+    int wants_down;
+
+    if (!now_continuity_sequence_newer(incoming_generation,
+                                       applied_generation))
+        return kNowContinuityButtonNothing;
+    wants_down = (flags & (NowPeekU32)kNowPeekContinuityPrimaryDown) != 0;
+    if (wants_down && !button_down)
+        return kNowContinuityButtonPress;
+    if (!wants_down && button_down)
+        return kNowContinuityButtonRelease;
+    return kNowContinuityButtonNothing;
+}
+
 NowPeekU32 now_continuity_exit_due(
     NowPeekU32 ticks, NowPeekU32 last_arrival, NowPeekU32 lease,
     int have_physical, int expected_valid,

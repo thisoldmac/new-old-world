@@ -289,7 +289,7 @@ private struct ContinuityControlCard: View {
     var body: some View {
         GroupBox("Continuity") {
             VStack(alignment: .leading, spacing: 8) {
-                Toggle("Move the guest pointer directly",
+                Toggle("Use the guest pointer directly",
                        isOn: $controller.isEnabled)
                     .disabled(!mirrorRunning)
                 VStack(alignment: .leading, spacing: 4) {
@@ -307,7 +307,7 @@ private struct ContinuityControlCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Optional and off by default. Clicks still use Mirror. Moving the physical guest mouse immediately returns control to that Mac.")
+                Text("Optional and off by default. Primary clicks and drags bypass Mirror while connected. Moving the physical guest mouse immediately returns control to that Mac.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

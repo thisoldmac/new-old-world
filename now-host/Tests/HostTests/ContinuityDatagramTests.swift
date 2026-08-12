@@ -13,7 +13,7 @@ final class ContinuityDatagramTests: XCTestCase {
 
         XCTAssertEqual(data.count, 40)
         XCTAssertEqual(Array(data.prefix(8)),
-                       [0x4E, 0x57, 0x43, 0x31, 0, 1, 0, 3])
+                       [0x4E, 0x57, 0x43, 0x31, 0, 2, 0, 3])
         XCTAssertEqual(Array(data[24..<28]), [0xFF, 0xFE, 0x01, 0x56])
         XCTAssertEqual(try ContinuityDatagramCodec.decodeState(data), packet)
     }

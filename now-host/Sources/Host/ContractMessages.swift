@@ -194,7 +194,7 @@ struct ContinuityReport: Codable, Equatable, Sendable {
     /* Optional only at the decoder boundary: an older guest's missing value
        must become an explicit wrong-version status, not an unreadable frame
        followed by the same five-second timeout as packet loss. Every message
-       this build emits includes version 1. */
+       this build emits includes ContinuityContract.version. */
     var version: Int?
     var id: Int?
     var epoch: UInt32

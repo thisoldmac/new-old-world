@@ -64,7 +64,7 @@ static NowPeekContinuityCell *cell(void)
     if (table == NULL
         || table->length < (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                         + sizeof(NowPeekContinuityCell))
-        || table->continuity_format != kNowPeekContinuityFormatV3
+        || table->continuity_format != kNowPeekContinuityFormatV4
         || !(table->caps & kNowPeekTableCapContinuity))
         return NULL;
     return &table->continuity;
@@ -552,6 +552,13 @@ int now_continuity_take_report(NowContinuityReport *out)
     now_log(kLogInfo, "mirror", "resident service calls=%lu applies=%lu",
             (unsigned long)shared->service_calls,
             (unsigned long)shared->tasktime_cursor_applies);
+    now_log(kLogInfo, "mirror",
+            "button generation=%lu down=%lu timer=%lu forced=%lu pending-up=%lu",
+            (unsigned long)shared->applied_button_generation,
+            (unsigned long)shared->button_down,
+            (unsigned long)shared->button_timer_ticks,
+            (unsigned long)shared->button_forced_releases,
+            (unsigned long)shared->pending_mouseup);
     now_log(gAckErrors == 0 ? kLogInfo : kLogWarn, "mirror",
             "UDP ack sent=%lu flow=%lu retry=%lu err=%lu go=%lu pending=%u",
             (unsigned long)gAckSends, (unsigned long)gAckFlowStops,

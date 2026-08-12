@@ -11,6 +11,11 @@ SPEC = spec_from_file_location("continuity_probe",
                               ROOT / "tools" / "continuity-probe.py")
 PROBE = module_from_spec(SPEC)
 SPEC.loader.exec_module(PROBE)
+DIRECT_SPEC = spec_from_file_location(
+    "emulator_direct_pointer",
+    ROOT / "tools" / "emulator-direct-pointer.py")
+DIRECT = module_from_spec(DIRECT_SPEC)
+DIRECT_SPEC.loader.exec_module(DIRECT)
 
 
 class ContinuityProbeCodecTests(unittest.TestCase):
@@ -20,12 +25,12 @@ class ContinuityProbeCodecTests(unittest.TestCase):
             h=0x1234, v=-2, requested_hz=30)
         self.assertEqual(len(packet), 40)
         self.assertEqual(packet[:36].hex(),
-            "4e57433100010001010203040506070811121314212223241234fffe"
+            "4e57433100020001010203040506070811121314212223241234fffe"
             "00000000001e0000")
 
     def test_ack_decoder_rejects_wrong_lease_bytes(self):
         payload = struct.pack(
-            ">IHHIIIIIHHIII", PROBE.ACK_MAGIC, 1, 2,
+            ">IHHIIIIIHHIII", PROBE.ACK_MAGIC, 2, 2,
             1, 2, 3, 4, 0, 15, 0, 10, 11, 0)
         ack = PROBE.decode_ack(payload)
         self.assertEqual(ack["state"], 2)
@@ -33,6 +38,14 @@ class ContinuityProbeCodecTests(unittest.TestCase):
         self.assertEqual(ack["applyTicks"], 11)
         with self.assertRaisesRegex(ValueError, "magic or version"):
             PROBE.decode_ack(bytes(44))
+
+    def test_direct_pointer_packet_carries_generation_and_down_state(self):
+        payload = DIRECT.encode_state(
+            1, 2, 3, 4, 320, 240, 9, True)
+        fields = DIRECT.STATE.unpack(payload)
+        self.assertEqual(fields[1], 2)
+        self.assertEqual(fields[2], DIRECT.INSIDE | DIRECT.PRIMARY_DOWN)
+        self.assertEqual(fields[9], 9)
 
 
 if __name__ == "__main__":

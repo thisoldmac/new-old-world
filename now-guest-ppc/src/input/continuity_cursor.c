@@ -25,6 +25,7 @@ enum {
 static CursorDevicePtr gDevice;
 static unsigned long gEpoch;
 static unsigned long gMoveCount;
+static unsigned long gButtonCount;
 
 static int checkpoint(unsigned long count)
 {
@@ -69,8 +70,30 @@ void now_continuity_cursor_begin_epoch(unsigned long epoch)
 {
     gEpoch = epoch;
     gMoveCount = 0;
+    gButtonCount = 0;
     now_log(kLogInfo, "mirror", "CDM PPC epoch=%lu begin", epoch);
     now_log_flush();
+}
+
+long now_continuity_cursor_button(unsigned long epoch,
+                                  unsigned long generation, int down)
+{
+    OSErr err;
+
+    if (gDevice == NULL || epoch == 0 || epoch != gEpoch
+            || generation == 0)
+        return paramErr;
+    gButtonCount++;
+    now_log(kLogInfo, "mirror",
+            "CDM PPC button begin epoch=%lu n=%lu generation=%lu down=%d",
+            epoch, gButtonCount, generation, down ? 1 : 0);
+    now_log_flush();
+    err = down ? now_cdm_button_down(gDevice)
+               : now_cdm_button_up(gDevice);
+    now_log(err == noErr ? kLogInfo : kLogError, "mirror",
+            "CDM PPC button return epoch=%lu n=%lu generation=%lu down=%d err=%d",
+            epoch, gButtonCount, generation, down ? 1 : 0, (int)err);
+    return (long)err;
 }
 
 long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
@@ -121,4 +144,5 @@ void now_continuity_cursor_shutdown(void)
     gDevice = NULL;
     gEpoch = 0;
     gMoveCount = 0;
+    gButtonCount = 0;
 }

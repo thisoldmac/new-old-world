@@ -1444,7 +1444,7 @@ enum Guest68KWire {
 
     // handle_continuity_unsupported() answers both arm and disarm. The same
     // envelope is used in each case; only the echoed id and epoch differ.
-    static let continuityRefusal = #"{"type":"continuity.report","version":1,"id":17,"#
+    static let continuityRefusal = #"{"type":"continuity.report","version":2,"id":17,"#
         + #""epoch":9,"state":"refused","reason":"unsupported"}"#
 
 

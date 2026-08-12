@@ -101,10 +101,12 @@ add_executable(NowExt
     # manager as TWOWORDINLINE traps this compiler ignores.
     src/now_ext_cursor.c
     src/now_ext_cursor_cdm.S
-    # P9 Continuity: the app owns UDP intake and cooperative scheduling. Its
-    # PPC wire pump enters the resident service through Mixed Mode; no P9
-    # Time Manager or global jGNE service remains.
+    # P9 Continuity: the app owns UDP intake and every Cursor Device Manager
+    # call. A held button adds one resident Time Manager vehicle whose complete
+    # surface is tracking-loop MouseLocation plus dead-man MBState-up; it
+    # cannot call managers or impersonate the physical ADB/PMU input path.
     src/now_ext_continuity.c
+    src/now_ext_continuity_tm.S
     src/now_content_qdext.S
     ../now-guest-shared/src/now_act_guard.c
     # P7's decisions, where the host cc can compile them and

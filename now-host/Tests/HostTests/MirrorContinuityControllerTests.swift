@@ -266,7 +266,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(
             rig.controller.status,
             "Continuity ended on the Mac: the guest is missing Continuity "
-                + "control version 1")
+                + "control version \(ContinuityContract.version)")
     }
 
     func testWrongControlVersionIsNamedInsteadOfTimingOut() async throws {
@@ -284,7 +284,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(
             rig.controller.status,
             "Continuity ended on the Mac: the guest reported Continuity "
-                + "control version 2, expected 1")
+                + "control version \(ContinuityContract.version + 1), "
+                + "expected \(ContinuityContract.version)")
     }
 
     func testUncorrelatedTerminalSnapshotCannotOutrunArmReply()
@@ -349,19 +350,126 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(latest.buttonGeneration, 0)
     }
 
-    func testV0ClicksFallThroughToMirrorAndNeverEnterUDP() async throws {
+    func testDirectClickWaitsForPressAckBeforeSendingRelease()
+        async throws {
         let rig = try await makeActiveRig()
         defer { rig.udp.stop() }
 
-        XCTAssertFalse(rig.controller.primaryDown(at: .init(x: 45, y: 55)))
-        XCTAssertFalse(rig.controller.primaryDragged(to: .init(x: 160, y: 170)))
-        XCTAssertFalse(rig.controller.primaryUp(at: .init(x: 180, y: 190)))
-        try await Task.sleep(nanoseconds: 100_000_000)
-        XCTAssertTrue(rig.udp.packets.allSatisfy {
-            !$0.flags.contains(.primaryDown) && $0.buttonGeneration == 0
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 45, y: 55)))
+        try await waitUntil("primary down") {
+            rig.udp.packets.contains {
+                $0.h == 45 && $0.v == 55
+                    && $0.flags.contains(.primaryDown)
+                    && $0.buttonGeneration != 0
+            }
+        }
+        let down = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
         })
-        XCTAssertFalse(rig.udp.packets.contains { $0.h == 180 && $0.v == 190 },
-                       "a v0 click must not mutate the pointer datagram")
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 46, y: 56)))
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(rig.udp.packets.contains {
+            $0.buttonGeneration != 0
+                && $0.buttonGeneration != down.buttonGeneration
+        }, "release must not outrun the press acknowledgement")
+
+        rig.udp.acknowledge(down)
+        try await waitUntil("primary release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != down.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+                    && $0.h == 46 && $0.v == 56
+            }
+        }
+        let up = try XCTUnwrap(rig.udp.packets.last {
+            $0.buttonGeneration != down.buttonGeneration
+                && !$0.flags.contains(.primaryDown)
+        })
+        rig.udp.acknowledge(up)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 50, y: 60)),
+                      "an acknowledged release opens the next click cycle")
+    }
+
+    func testDirectDragPinsToPressUntilAckThenStreamsAndReleases()
+        async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 40, y: 50)))
+        try await waitUntil("drag press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+            }
+        }
+        let down = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        })
+        XCTAssertTrue(rig.controller.primaryDragged(to: .init(x: 160, y: 170)))
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(rig.udp.packets.contains {
+            $0.buttonGeneration == down.buttonGeneration
+                && $0.h == 160 && $0.v == 170
+        })
+
+        rig.udp.acknowledge(down)
+        try await waitUntil("held drag movement") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration == down.buttonGeneration
+                    && $0.flags.contains(.primaryDown)
+                    && $0.h == 160 && $0.v == 170
+            }
+        }
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 180, y: 190)))
+        try await waitUntil("drag release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != down.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+                    && $0.h == 180 && $0.v == 190
+            }
+        }
+    }
+
+    func testUnacknowledgedReleaseEndsTheEpoch() async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 40, y: 50)))
+        try await waitUntil("release-timeout press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+            }
+        }
+        let down = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        })
+        rig.udp.acknowledge(down)
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 41, y: 51)))
+        try await waitUntil("release packet") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != down.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+            }
+        }
+        try await waitUntil("unacknowledged release teardown", timeout: 2) {
+            !rig.controller.isActive && rig.guest.received.contains {
+                if case .continuityDisarm(let disarm) = $0 {
+                    return disarm.epoch == rig.arm.epoch
+                }
+                return false
+            }
+        }
+        XCTAssertTrue(rig.controller.isEnabled,
+                      "a failed cycle leaves the optional mode available")
+        XCTAssertEqual(rig.controller.status,
+                       "move over the Mirror to reconnect")
+    }
+
+    func testClicksFallThroughUntilTheRawLaneIsActive() async throws {
+        let rig = try await makeArmingRig()
+        XCTAssertFalse(rig.controller.primaryDown(at: .init(x: 45, y: 55)))
+        XCTAssertFalse(rig.controller.primaryDragged(to: .init(x: 50, y: 60)))
+        XCTAssertFalse(rig.controller.primaryUp(at: .init(x: 50, y: 60)))
     }
 
     func testLeavingV0DisarmsImmediately() async throws {

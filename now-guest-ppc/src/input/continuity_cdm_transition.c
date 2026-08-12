@@ -9,7 +9,7 @@
    A Carbon CFM application cannot strongly import the former routines: they
    are CALL_NOT_IN_CARBON, and pulling Retro68's monolithic InterfaceLib import
    member makes NOW unload before main on Mac OS 9.1. This file reproduces the
-   latter, corrected route exactly for the five calls Continuity owns. Both
+   latter, corrected route exactly for the seven calls Continuity owns. Both
    transition functions are resolved at runtime, following the metal-proven
    census trap seam, so the PEF remains a Carbon application. */
 #include "continuity_cdm_transition.h"
@@ -29,6 +29,8 @@ enum {
     kNowCDMProcInfoPointerLongLong = 0x3FE8,
 
     kNowCDMMoveTo = 1,
+    kNowCDMButtonDown = 4,
+    kNowCDMButtonUp = 5,
     kNowCDMSetButtons = 7,
     kNowCDMUnitsPerInch = 10,
     kNowCDMNewDevice = 12,
@@ -120,4 +122,20 @@ OSErr now_cdm_move_to(CursorDevicePtr device, long abs_x, long abs_y)
         return unimpErr;
     return (OSErr)gCallUPP(gDispatch, kNowCDMProcInfoPointerLongLong,
                            kNowCDMMoveTo, device, abs_x, abs_y);
+}
+
+OSErr now_cdm_button_down(CursorDevicePtr device)
+{
+    if (!now_cdm_transition_ready())
+        return unimpErr;
+    return (OSErr)gCallUPP(gDispatch, kNowCDMProcInfoOnePointer,
+                           kNowCDMButtonDown, device);
+}
+
+OSErr now_cdm_button_up(CursorDevicePtr device)
+{
+    if (!now_cdm_transition_ready())
+        return unimpErr;
+    return (OSErr)gCallUPP(gDispatch, kNowCDMProcInfoOnePointer,
+                           kNowCDMButtonUp, device);
 }
