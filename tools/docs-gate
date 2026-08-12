@@ -348,6 +348,143 @@ def extract_ppc_pages(root: Path) -> list[str]:
     return re.findall(r"\b(kWorkshop[A-Za-z0-9]+)\b", block)
 
 
+def _c_initializer_fields(body: str) -> list[str]:
+    """Split one positional C initializer without splitting nested values."""
+    fields: list[str] = []
+    start = 0
+    depths = {"(": 0, "[": 0, "{": 0}
+    closing = {")": "(", "]": "[", "}": "{"}
+    string = False
+    escaped = False
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                string = False
+        elif char == '"':
+            string = True
+        elif char in depths:
+            depths[char] += 1
+        elif char in closing:
+            depths[closing[char]] -= 1
+        elif char == "," and not any(depths.values()):
+            fields.append(body[start:index].strip())
+            start = index + 1
+        index += 1
+    tail = body[start:].strip()
+    if tail:
+        fields.append(tail)
+    return fields
+
+
+def _c_struct_initializers(text: str, type_name: str) -> list[str]:
+    """Return balanced initializer bodies for declarations of type_name."""
+    bodies: list[str] = []
+    cursor = 0
+    marker = re.compile(rf"\b{re.escape(type_name)}\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{{")
+    while (match := marker.search(text, cursor)):
+        start = match.end()
+        depth = 1
+        string = False
+        escaped = False
+        index = start
+        while index < len(text) and depth:
+            char = text[index]
+            if string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    string = False
+            elif char == '"':
+                string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+            index += 1
+        if depth:
+            break
+        bodies.append(text[start:index - 1])
+        cursor = index
+    return bodies
+
+
+def extract_ppc_catalog(root: Path) -> tuple[dict[str, dict[str, object]], list[str]]:
+    source_root = root / "now-guest-ppc/src"
+    paths = [source_root / "workshop/workshop_registry.c"]
+    paths.extend(sorted(source_root.glob("*/*_module_definition.c")))
+    texts = {path: path.read_text() for path in paths if path.exists()}
+    joined = "\n".join(texts.values())
+    domain_arrays = {
+        name: re.findall(r'"([^"]+)"', body)
+        for name, body in re.findall(
+            r"\bconst\s+char\s*\*\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*\[\s*\]\s*=\s*\{(.*?)\}\s*;",
+            joined,
+            re.DOTALL,
+        )
+    }
+    feature_ids = dict(re.findall(
+        r"\{\s*(kNowProductFeature[A-Za-z0-9_]+)\s*,\s*\"([^\"]+)\"",
+        (source_root / "core/product_features.generated.c").read_text(),
+    ))
+    tier_ids = {
+        "kWorkshopModuleTierCore": "core",
+        "kWorkshopModuleTierExperimental": "experimental",
+        "kWorkshopModuleTierDebug": "debug",
+    }
+    catalog: dict[str, dict[str, object]] = {}
+    problems: list[str] = []
+    for path, text in texts.items():
+        for body in _c_struct_initializers(text, "WorkshopModuleDefinition"):
+            fields = _c_initializer_fields(body)
+            if len(fields) != 13:
+                problems.append(
+                    f"{path.relative_to(root)}: WorkshopModuleDefinition has "
+                    f"{len(fields)} fields, expected 13"
+                )
+                continue
+            page_id = fields[0]
+            stable_match = re.fullmatch(r'"([^"]+)"', fields[1])
+            tier = tier_ids.get(fields[7], f"<unresolved:{fields[7]}>")
+            domain_count = fields[9]
+            if fields[8] in {"NULL", "0"}:
+                domains: list[str] = []
+            else:
+                domains = domain_arrays.get(
+                    fields[8], [f"<unresolved:{fields[8]}>"]
+                )
+            if domain_count != str(len(domains)):
+                problems.append(
+                    f"{path.relative_to(root)}: {page_id} domain_count {domain_count} "
+                    f"does not match {len(domains)} declared domains"
+                )
+            if fields[10] == "false":
+                feature_id = None
+            elif fields[10] == "true":
+                feature_id = feature_ids.get(
+                    fields[11], f"<unresolved:{fields[11]}>"
+                )
+            else:
+                feature_id = f"<unresolved-admission:{fields[10]}>"
+            if page_id in catalog:
+                problems.append(f"PPC module definition is duplicated for {page_id}")
+                continue
+            catalog[page_id] = {
+                "id": stable_match.group(1) if stable_match else f"<unresolved:{fields[1]}>",
+                "tier": tier,
+                "domains": domains,
+                "feature_id": feature_id,
+            }
+    return catalog, problems
+
+
 def local_refs(value: object) -> list[str]:
     refs: list[str] = []
     if isinstance(value, dict):
@@ -892,6 +1029,31 @@ def check(root: Path, site_dir: Path | None) -> int:
     ppc_live = extract_ppc_pages(root)
     if set(ppc_declared) != set(ppc_live) or len(ppc_declared) != len(ppc_live):
         errors.append(f"module manifest PPC pages do not match live enum (manifest={ppc_declared}, live={ppc_live})")
+    ppc_catalog, ppc_catalog_problems = extract_ppc_catalog(root)
+    errors.extend(ppc_catalog_problems)
+    if set(ppc_catalog) != set(ppc_live) or len(ppc_catalog) != len(ppc_live):
+        errors.append(
+            "PPC module definitions do not match live enum "
+            f"(definitions={list(ppc_catalog)}, live={ppc_live})"
+        )
+    for row in module_rows:
+        if not isinstance(row, dict):
+            continue
+        for ppc_page in row.get("ppc_pages", []):
+            if ppc_page not in ppc_catalog:
+                continue
+            live = ppc_catalog[ppc_page]
+            if live["id"] != row.get("id"):
+                errors.append(
+                    f"PPC page {ppc_page}: definition id {live['id']!r} "
+                    f"does not match manifest module {row.get('id')!r}"
+                )
+            for field in ("tier", "domains", "feature_id"):
+                if row.get(field) != live[field]:
+                    errors.append(
+                        f"module {row.get('id')}: manifest {field} {row.get(field)!r} "
+                        f"does not match PPC page {ppc_page} {field} {live[field]!r}"
+                    )
     for row in module_rows:
         page = docs / row["page"]
         if not page.exists():

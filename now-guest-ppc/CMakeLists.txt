@@ -63,6 +63,7 @@ add_application(now-guest-ppc
     src/network/net_layout.c
     src/network/net_probe.c
     src/network/network_module.c
+    src/network/network_module_definition.c
     src/chat/chat_layout.c
     src/chat/chat_model.c
     src/chat/chat_module.c
@@ -151,6 +152,7 @@ add_application(now-guest-ppc
     src/processes/processes_layout.c
     src/processes/processes_module.c
     src/workshop/workshop_construct.c
+    src/workshop/workshop_registry.c
     src/workshop/workshop_layout.c
     src/workshop/workshop_sidebar.c
     src/workshop/workshop_window.c

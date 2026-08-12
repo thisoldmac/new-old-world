@@ -3,30 +3,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "census_module.h"
-#include "connection_module.h"
-#include "console_module.h"
 #include "control_kind.h"
-#include "diagnostics_module.h"
-#include "development_module.h"
-#include "network_module.h"
-#include "chat_module.h"
-#include "cloud_module.h"
-#include "files_module.h"
-#include "logs_module.h"
 #include "nowlog.h"
-#include "mcp_module.h"
-#include "mirror_module.h"
-#include "preferences_module.h"
-#include "processes_module.h"
-#include "screenshots_module.h"
-#include "software_module.h"
-#include "web_module.h"
 #include "prefs.h"
 #include "screen_bounds.h"
 #include "proc_actions.h"
 #include "workshop_layout.h"
 #include "workshop_construct.h"
+#include "workshop_registry.h"
 #include "workshop_sidebar.h"
 #include "wire.h"
 
@@ -38,80 +22,43 @@ static Boolean g_active;
    name actually changes. */
 static char g_shown_peer[40];
 
-/* Modules register here as they move in. A NULL slot draws the honest
-   placeholder instead, naming where the feature still lives. */
-static const WorkshopModuleOps *g_ops[kWorkshopModuleCount + 1];
-static Boolean g_created[kWorkshopModuleCount + 1];
+static WorkshopModuleInstance g_modules[kWorkshopModuleCount + 1];
 
-static const struct {
-    const char *title;
-    const char *blurb;
-    const char *pending;
-} k_module_info[kWorkshopModuleCount + 1] = {
-    { NULL, NULL, NULL },
-    { "Screenshots",
-      "Capture this Mac, send a still, or stream its screen.",
-      "Screenshots still lives in its own window (Windows menu)." },
-    { "Files",
-      "Browse the other Mac's share and choose what this Mac exposes.",
-      "Files still lives in File Sharing and the peer browser windows." },
-    { "Console",
-      "Commands run on this Mac. Only declared commands are available.",
-      "Console still lives in its own window (Windows menu)." },
-    { "Processes",
-      "Everything running on this Mac. Quit asks politely and never forces.",
-      "Processes has not moved in yet." },
-    { "Hardware",
-      "A passive census of this Mac. Probes run on request, never at idle.",
-      "Hardware census is not built into this window yet." },
-    { "Software",
-      "What is installed on this Mac, and starting it. Applications sweep "
-      "the disk; the rest read the System Folder.",
-      "Software has not moved in yet." },
-    { "MCP",
-      "Whether an agent may drive this Mac, and how far. The other Mac "
-      "runs the server and enforces the answer.",
-      "MCP has not moved in yet." },
-    { "Diagnostics",
-      "What this Mac can measure about itself. Each one says what it "
-      "costs before it is spent.",
-      "Diagnostics has not moved in yet." },
-    { "Networking",
-      "This Mac's link, its address, and the network hardware it has.",
-      "Networking has not moved in yet." },
-    { "iCloud",
-      "The other Mac's iCloud: its Drive, Photos and Contacts, served "
-      "one page at a time.",
-      "iCloud has not moved in yet." },
-    { "Chat",
-      "A model on the other Mac's harness, talking about THIS Mac. It "
-      "can look at what runs here, with the access MCP grants.",
-      "Chat has not moved in yet." },
-    { "Mirror",
-      "Mirror's own extensions and agent on this Mac. NOW reads them; it "
-      "installs nothing.",
-      "Mirror has not moved in yet." },
-    { "Development",
-      "Project roots, registered toolchains and headless build jobs on this Mac.",
-      "Development has not moved in yet." },
-    { "Web",
-      "Modern pages translated on the other Mac for a classic browser here.",
-      "Web has not moved in yet." },
-    { "Preferences",
-      "How this window behaves. Rearrange the rail by Option-dragging a "
-      "row; everything here is remembered between launches.",
-      "Preferences has not moved in yet." },
-    { "Logs",
-      "This launch's event log. Toggle whether it also reaches the disk.",
-      "Logs has not moved in yet." },
-    { "Connection",
-      "This Mac dials the other Mac and keeps one persistent connection.",
-      "Connection is still a dialog (Windows menu)." }
-};
+static WorkshopModuleInstance *module_instance(WorkshopModuleID page_id)
+{
+    if ((int)page_id < 1 || (int)page_id > kWorkshopModuleCount) {
+        return NULL;
+    }
+    return &g_modules[page_id];
+}
+
+static WorkshopModuleInstance *selected_instance(void)
+{
+    return module_instance(g_selected);
+}
+
+static const WorkshopModuleDefinition *selected_definition(void)
+{
+    WorkshopModuleInstance *instance = selected_instance();
+    return instance != NULL ? instance->definition : NULL;
+}
+
+static const char *selected_placeholder(void)
+{
+    WorkshopModuleInstance *instance = selected_instance();
+    if (instance == NULL || instance->definition == NULL) {
+        return "This Workshop module is unavailable.";
+    }
+    if (!instance->admitted && instance->unavailable_reason != NULL) {
+        return instance->unavailable_reason;
+    }
+    return instance->definition->pending;
+}
 
 static const WorkshopModuleOps *selected_ops(void)
 {
-    return g_ops[g_selected];
+    WorkshopModuleInstance *instance = selected_instance();
+    return instance != NULL ? instance->ops : NULL;
 }
 
 static void invalidate_pane(void)
@@ -181,7 +128,7 @@ static void on_sidebar_select(WorkshopModuleID module)
 }
 
 typedef struct ModuleConstruction {
-    WorkshopModuleID module;
+    WorkshopModuleInstance *instance;
 } ModuleConstruction;
 
 static unsigned long module_begin(void *opaque)
@@ -193,14 +140,14 @@ static unsigned long module_begin(void *opaque)
 static int module_create(void *opaque)
 {
     ModuleConstruction *construction = (ModuleConstruction *)opaque;
-    const WorkshopModuleOps *ops = g_ops[construction->module];
+    const WorkshopModuleOps *ops = construction->instance->ops;
     return ops->create(g_window, &g_lay.body) == noErr;
 }
 
 static void module_dispose(void *opaque)
 {
     ModuleConstruction *construction = (ModuleConstruction *)opaque;
-    const WorkshopModuleOps *ops = g_ops[construction->module];
+    const WorkshopModuleOps *ops = construction->instance->ops;
     if (ops->dispose != NULL) ops->dispose();
 }
 
@@ -212,21 +159,23 @@ static void module_rollback(void *opaque, unsigned long marker)
 
 static void ensure_module_created(WorkshopModuleID module)
 {
-    if (g_ops[module] != NULL && !g_created[module]
-        && g_ops[module]->create != NULL) {
+    WorkshopModuleInstance *instance = module_instance(module);
+
+    if (instance != NULL && instance->admitted && instance->ops != NULL
+        && !instance->created && instance->ops->create != NULL) {
         ModuleConstruction construction;
         NowWorkshopConstructOps transaction;
 
-        construction.module = module;
+        construction.instance = instance;
         transaction.context = &construction;
         transaction.begin = module_begin;
         transaction.create = module_create;
         transaction.dispose = module_dispose;
         transaction.rollback = module_rollback;
-        g_created[module] = now_workshop_construct(&transaction) != 0;
-        if (!g_created[module]) {
+        now_workshop_ensure_constructed(&instance->created, &transaction);
+        if (!instance->created) {
             now_log(kLogWarn, "app", "%s construction failed; rolled back",
-                    k_module_info[module].title);
+                    instance->definition->title);
         }
     }
 }
@@ -268,23 +217,11 @@ Boolean workshop_open(void)
         SelectWindow(g_window);
         return true;
     }
-    g_ops[kWorkshopScreenshots] = screenshots_module_ops();
-    g_ops[kWorkshopFiles] = files_module_ops();
-    g_ops[kWorkshopConsole] = console_module_ops();
-    g_ops[kWorkshopProcesses] = processes_module_ops();
-    g_ops[kWorkshopHardware] = census_module_ops();
-    g_ops[kWorkshopSoftware] = software_module_ops();
-    g_ops[kWorkshopMCP] = mcp_module_ops();
-    g_ops[kWorkshopDiagnostics] = diagnostics_module_ops();
-    g_ops[kWorkshopNetworking] = network_module_ops();
-    g_ops[kWorkshopCloud] = cloud_module_ops();
-    g_ops[kWorkshopChat] = chat_module_ops();
-    g_ops[kWorkshopMirror] = mirror_module_ops();
-    g_ops[kWorkshopDevelopment] = development_module_ops();
-    g_ops[kWorkshopWeb] = web_module_ops();
-    g_ops[kWorkshopPreferences] = preferences_module_ops();
-    g_ops[kWorkshopLogs] = logs_module_ops();
-    g_ops[kWorkshopConnection] = connection_module_ops();
+    if (!workshop_registry_prepare(g_modules, kWorkshopModuleCount + 1,
+                                   NULL, NULL)) {
+        now_log(kLogError, "app", "Workshop module registry is incomplete");
+        return false;
+    }
     now_prefs_load(&prefs);
     /* Before the first compute_layout, never after: the rail's density
        decides its row height, and therefore every rectangle in the
@@ -330,9 +267,13 @@ Boolean workshop_open(void)
         && prefs.workshop_module != (short)g_selected) {
         workshop_select_module((WorkshopModuleID)prefs.workshop_module);
     } else {
+        WorkshopModuleInstance *initial;
+
         ensure_module_created(g_selected);
-        if (g_created[g_selected] && g_ops[g_selected]->show != NULL) {
-            g_ops[g_selected]->show(true);
+        initial = selected_instance();
+        if (initial != NULL && initial->created && initial->ops != NULL
+            && initial->ops->show != NULL) {
+            initial->ops->show(true);
         }
         workshop_sidebar_set_selection(g_selected);
     }
@@ -360,10 +301,13 @@ void workshop_close(void)
         now_prefs_save(&prefs);
     }
     for (i = 1; i <= kWorkshopModuleCount; ++i) {
-        if (g_created[i] && g_ops[i] != NULL && g_ops[i]->dispose != NULL) {
-            g_ops[i]->dispose();
+        WorkshopModuleInstance *instance = &g_modules[i];
+
+        if (instance->created && instance->ops != NULL
+            && instance->ops->dispose != NULL) {
+            instance->ops->dispose();
         }
-        g_created[i] = false;
+        instance->created = 0;
     }
     now_control_dispose_window(g_window);          /* takes the controls with it */
     g_window = NULL;
@@ -382,6 +326,8 @@ WindowRef workshop_ref(void)
 
 void workshop_select_module(WorkshopModuleID module)
 {
+    WorkshopModuleInstance *old_instance;
+    WorkshopModuleInstance *new_instance;
     const WorkshopModuleOps *old_ops;
     RgnHandle saved_clip;
 
@@ -407,16 +353,18 @@ void workshop_select_module(WorkshopModuleID module)
         GetClip(saved_clip);
         ClipRect(&none);
     }
-    old_ops = selected_ops();
-    if (old_ops != NULL && g_created[g_selected]
+    old_instance = selected_instance();
+    old_ops = old_instance != NULL ? old_instance->ops : NULL;
+    if (old_instance != NULL && old_ops != NULL && old_instance->created
         && old_ops->show != NULL) {
         old_ops->show(false);
     }
     g_selected = module;
     ensure_module_created(module);
-    if (g_ops[module] != NULL && g_created[module]
-        && g_ops[module]->show != NULL) {
-        g_ops[module]->show(true);
+    new_instance = selected_instance();
+    if (new_instance != NULL && new_instance->ops != NULL
+        && new_instance->created && new_instance->ops->show != NULL) {
+        new_instance->ops->show(true);
     }
     if (saved_clip != NULL) {
         SetClip(saved_clip);
@@ -427,21 +375,25 @@ void workshop_select_module(WorkshopModuleID module)
 
 static void draw_header(void)
 {
+    const WorkshopModuleDefinition *definition = selected_definition();
     Str255 text;
     char peer[40];
     short right_edge = (short)(g_lay.header.right - 12);
 
+    if (definition == NULL) {
+        return;
+    }
     DrawThemePlacard(&g_lay.header,
                      g_active ? kThemeStateActive : kThemeStateInactive);
     workshop_sidebar_draw_toggle();
     UseThemeFont(kThemeEmphasizedSystemFont, smSystemScript);
     MoveTo(g_lay.header_text_left, (short)(g_lay.header.top + 16));
-    CopyCStringToPascal(k_module_info[g_selected].title, text);
+    CopyCStringToPascal(definition->title, text);
     DrawString(text);
 
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     MoveTo(g_lay.header_text_left, (short)(g_lay.header.top + 31));
-    CopyCStringToPascal(k_module_info[g_selected].blurb, text);
+    CopyCStringToPascal(definition->blurb, text);
     TruncString((short)(right_edge - g_lay.header_text_left - 90), text,
                 truncEnd);
     DrawString(text);
@@ -458,6 +410,7 @@ static void draw_header(void)
 
 static void draw_status(void)
 {
+    WorkshopModuleInstance *instance = selected_instance();
     Str255 text;
     char line[120];
     const WorkshopModuleOps *ops = selected_ops();
@@ -466,7 +419,8 @@ static void draw_status(void)
                      g_active ? kThemeStateActive : kThemeStateInactive);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     MoveTo((short)(g_lay.status.left + 10), (short)(g_lay.status.top + 15));
-    if (ops != NULL && g_created[g_selected] && ops->status_text != NULL) {
+    if (instance != NULL && ops != NULL && instance->created
+        && ops->status_text != NULL) {
         ops->status_text(line, sizeof line);
     } else {
         strcpy(line, "Nothing to report yet.");
@@ -479,21 +433,27 @@ static void draw_status(void)
 
 static void draw_placeholder_body(void)
 {
+    WorkshopModuleInstance *instance = selected_instance();
     Str255 text;
 
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     MoveTo((short)(g_lay.body.left + 16), (short)(g_lay.body.top + 28));
-    CopyCStringToPascal(k_module_info[g_selected].pending, text);
+    CopyCStringToPascal(selected_placeholder(), text);
     TruncString((short)(g_lay.body.right - g_lay.body.left - 32), text,
                 truncEnd);
     DrawString(text);
     MoveTo((short)(g_lay.body.left + 16), (short)(g_lay.body.top + 44));
-    CopyCStringToPascal("It moves into the Workshop in a later arc.", text);
+    CopyCStringToPascal(
+        instance != NULL && !instance->admitted
+            ? "The current product profile does not admit this module."
+            : "It moves into the Workshop in a later arc.",
+        text);
     DrawString(text);
 }
 
 void workshop_draw(void)
 {
+    WorkshopModuleInstance *instance = selected_instance();
     RgnHandle visible;
     const WorkshopModuleOps *ops = selected_ops();
 
@@ -544,7 +504,8 @@ void workshop_draw(void)
 
     /* Module text goes over the controls: group-box interiors are the
        module's canvas, so labels and values land after the frames. */
-    if (ops != NULL && g_created[g_selected] && ops->draw != NULL) {
+    if (instance != NULL && ops != NULL && instance->created
+        && ops->draw != NULL) {
         ops->draw();
     } else {
         draw_placeholder_body();
@@ -565,6 +526,7 @@ void workshop_draw(void)
 
 void workshop_click(const EventRecord *event)
 {
+    WorkshopModuleInstance *instance = selected_instance();
     Point local = event->where;
     const WorkshopModuleOps *ops = selected_ops();
 
@@ -578,7 +540,8 @@ void workshop_click(const EventRecord *event)
     if (workshop_sidebar_toggle_click(local)) {
         return;
     }
-    if (ops != NULL && g_created[g_selected] && ops->click != NULL
+    if (instance != NULL && ops != NULL && instance->created
+        && ops->click != NULL
         && ops->click(event, local)) {
         return;
     }
@@ -587,13 +550,15 @@ void workshop_click(const EventRecord *event)
 
 Boolean workshop_key(const EventRecord *event)
 {
+    WorkshopModuleInstance *instance = selected_instance();
     char c = (char)(event->message & charCodeMask);
     const WorkshopModuleOps *ops = selected_ops();
 
     if (g_window == NULL) {
         return false;
     }
-    if (ops != NULL && g_created[g_selected] && ops->key != NULL
+    if (instance != NULL && ops != NULL && instance->created
+        && ops->key != NULL
         && ops->key(event)) {
         return true;
     }
@@ -606,6 +571,7 @@ Boolean workshop_key(const EventRecord *event)
 
 void workshop_activate(Boolean active)
 {
+    WorkshopModuleInstance *instance = selected_instance();
     Rect content;
 
     if (g_window == NULL) {
@@ -613,9 +579,9 @@ void workshop_activate(Boolean active)
     }
     g_active = active;
     workshop_sidebar_activate(active);
-    if (g_created[g_selected] && g_ops[g_selected] != NULL
-        && g_ops[g_selected]->activate != NULL) {
-        g_ops[g_selected]->activate(active);
+    if (instance != NULL && instance->created && instance->ops != NULL
+        && instance->ops->activate != NULL) {
+        instance->ops->activate(active);
     }
     /* Placards and the grow icon change with activation. */
     SetPortWindowPort(g_window);
@@ -645,18 +611,25 @@ void workshop_idle(void)
         InvalWindowRect(g_window, &g_lay.header);
     }
     for (i = 1; i <= kWorkshopModuleCount; ++i) {
-        if (g_created[i] && g_ops[i] != NULL && g_ops[i]->idle != NULL) {
-            g_ops[i]->idle();
+        WorkshopModuleInstance *instance = &g_modules[i];
+
+        if (instance->created && instance->ops != NULL
+            && instance->ops->idle != NULL) {
+            instance->ops->idle();
         }
     }
     /* The status placard mirrors the selected module's line; repaint
        only on change, and only the placard. */
     ops = selected_ops();
-    if (ops != NULL && g_created[g_selected] && ops->status_text != NULL) {
-        ops->status_text(status, sizeof status);
-        if (strcmp(status, shown_status) != 0) {
-            strcpy(shown_status, status);
-            InvalWindowRect(g_window, &g_lay.status);
+    {
+        WorkshopModuleInstance *instance = selected_instance();
+        if (instance != NULL && ops != NULL && instance->created
+            && ops->status_text != NULL) {
+            ops->status_text(status, sizeof status);
+            if (strcmp(status, shown_status) != 0) {
+                strcpy(shown_status, status);
+                InvalWindowRect(g_window, &g_lay.status);
+            }
         }
     }
 }
@@ -672,8 +645,11 @@ void workshop_resized(void)
     compute_layout();
     workshop_sidebar_layout(&g_lay);
     for (i = 1; i <= kWorkshopModuleCount; ++i) {
-        if (g_created[i] && g_ops[i] != NULL && g_ops[i]->layout != NULL) {
-            g_ops[i]->layout(&g_lay.body);
+        WorkshopModuleInstance *instance = &g_modules[i];
+
+        if (instance->created && instance->ops != NULL
+            && instance->ops->layout != NULL) {
+            instance->ops->layout(&g_lay.body);
         }
     }
     SetPortWindowPort(g_window);
@@ -683,12 +659,14 @@ void workshop_resized(void)
 
 void workshop_describe_scene(const WorkshopSceneWriter *writer)
 {
+    WorkshopModuleInstance *instance = selected_instance();
+    const WorkshopModuleDefinition *definition = selected_definition();
     const WorkshopModuleOps *ops = selected_ops();
     Rect text;
     char line[120];
     char peer[40];
 
-    if (g_window == NULL) {
+    if (g_window == NULL || definition == NULL) {
         return;
     }
 
@@ -703,13 +681,13 @@ void workshop_describe_scene(const WorkshopSceneWriter *writer)
             (short)(g_lay.header.right - 12),
             (short)(g_lay.header.top + 19));
     workshop_scene_add(writer, kWorkshopSceneStaticText,
-                       k_module_info[g_selected].title, &text, true);
+                       definition->title, &text, true);
     SetRect(&text, (short)(g_lay.header.left + 12),
             (short)(g_lay.header.top + 19),
             (short)(g_lay.header.right - 102),
             (short)(g_lay.header.top + 35));
     workshop_scene_add(writer, kWorkshopSceneStaticText,
-                       k_module_info[g_selected].blurb, &text, true);
+                       definition->blurb, &text, true);
     if (conn_is_connected()) {
         conn_peer_label(peer, sizeof peer);
         SetRect(&text, (short)(g_lay.header.right - 132),
@@ -720,19 +698,20 @@ void workshop_describe_scene(const WorkshopSceneWriter *writer)
                            true);
     }
 
-    if (ops != NULL && g_created[g_selected]
+    if (instance != NULL && ops != NULL && instance->created
         && ops->describe_scene != NULL) {
         ops->describe_scene(writer);
-    } else if (ops == NULL || !g_created[g_selected]) {
+    } else if (instance == NULL || ops == NULL || !instance->created) {
         SetRect(&text, (short)(g_lay.body.left + 16),
                 (short)(g_lay.body.top + 16),
                 (short)(g_lay.body.right - 16),
                 (short)(g_lay.body.top + 34));
         workshop_scene_add(writer, kWorkshopSceneStaticText,
-                           k_module_info[g_selected].pending, &text, true);
+                           selected_placeholder(), &text, true);
     }
 
-    if (ops != NULL && g_created[g_selected] && ops->status_text != NULL) {
+    if (instance != NULL && ops != NULL && instance->created
+        && ops->status_text != NULL) {
         ops->status_text(line, sizeof line);
     } else {
         strcpy(line, "Nothing to report yet.");

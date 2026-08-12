@@ -273,8 +273,22 @@ def main() -> int:
         )
         expect_mutation(
             test_root, "PPC page without mapping", test_root / "now-guest-ppc/src/workshop/workshop_module.h",
-            "    kWorkshopPreferences,", "    kWorkshopUnmapped,\n    kWorkshopPreferences,",
+            "    kWorkshopPreferences = 15,",
+            "    kWorkshopUnmapped = 18,\n    kWorkshopPreferences = 15,",
             "do not match live enum",
+        )
+        expect_mutation(
+            test_root, "PPC definition without guide",
+            test_root / "now-guest-ppc/src/network/network_module_definition.c",
+            '        "networking",', '        "networking-unmapped",',
+            "does not match manifest module 'networking'",
+        )
+        expect_mutation(
+            test_root, "PPC module tier drift",
+            test_root / "now-guest-ppc/src/network/network_module_definition.c",
+            "        kWorkshopModuleTierCore,",
+            "        kWorkshopModuleTierDebug,",
+            "does not match PPC page kWorkshopNetworking tier 'debug'",
         )
         expect_mutation(
             test_root, "release profile coverage", test_root / "product/features.yaml",

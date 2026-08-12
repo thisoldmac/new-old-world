@@ -63,7 +63,7 @@ fi
 # This includes ordinary commits and conflicted merges completed by `git
 # commit`; the auto-merge path is paired in pre-merge-commit below.
 docs_changed=$(git diff --cached --name-only --diff-filter=ACMR | \
-    grep -E '^(docs/|mkdocs\.yml$|README\.md$|CONTRIBUTING\.md$|AGENTS\.md$|contract/asyncapi\.yaml$|now-host/Sources/Host/(ModuleRegistry|HostModuleDefinition|[^/]*HostModule)\.swift$|now-guest-ppc/src/workshop/workshop_module\.h$|now-guest-68k/src/commands/commands68\.c$|scripts/docs-|scripts/test-docs$|tools/docs-)' || true)
+    grep -E '^(docs/|mkdocs\.yml$|README\.md$|CONTRIBUTING\.md$|AGENTS\.md$|contract/asyncapi\.yaml$|now-host/Sources/Host/(ModuleRegistry|HostModuleDefinition|[^/]*HostModule)\.swift$|now-guest-ppc/src/workshop/workshop_(module\.h|registry\.[ch])$|now-guest-ppc/src/[^/]+/[^/]*_module_definition\.c$|now-guest-68k/src/commands/commands68\.c$|scripts/docs-|scripts/test-docs$|tools/docs-)' || true)
 if [ -n "$docs_changed" ]; then
     "$root/tools/docs-commit-gate" || exit 1
 fi

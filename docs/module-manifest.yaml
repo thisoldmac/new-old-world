@@ -1,6 +1,7 @@
 version: 2
 host_registry: now-host/Sources/Host/ModuleRegistry.swift
-ppc_registry: now-guest-ppc/src/workshop/workshop_module.h
+ppc_registry: now-guest-ppc/src/workshop/workshop_registry.c
+ppc_contract: now-guest-ppc/src/workshop/workshop_module.h
 ppc_wiring: now-guest-ppc/src/workshop/workshop_window.c
 guest_68k_registry: now-guest-68k/src/commands/commands68.c
 modules:

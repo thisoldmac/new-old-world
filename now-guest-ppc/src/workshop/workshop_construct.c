@@ -22,3 +22,16 @@ int now_workshop_construct(const NowWorkshopConstructOps *ops)
     ops->rollback(ops->context, marker);
     return 0;
 }
+
+int now_workshop_ensure_constructed(int *created,
+                                    const NowWorkshopConstructOps *ops)
+{
+    if (created == NULL) {
+        return 0;
+    }
+    if (*created) {
+        return 1;
+    }
+    *created = now_workshop_construct(ops);
+    return *created;
+}
