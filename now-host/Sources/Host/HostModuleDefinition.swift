@@ -227,6 +227,9 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == ChatHostModule.definition.descriptor.id {
             return ChatHostModule.definition
         }
+        if descriptor.id == WebHostModule.definition.descriptor.id {
+            return WebHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
             case "mirror":
@@ -238,8 +241,6 @@ enum LegacyHostModuleDefinitions {
                     connectedMachineName: state.connectedMachineName,
                     timeline: state.mirrorSource.actTimeline,
                     cycles: state.mirrorSource.cycleTimeline))
-            case "web":
-                return AnyView(WebModuleView(model: state.web))
             case "development":
                 return AnyView(DevelopmentModuleView(model: state.development))
             case "diagnostics":

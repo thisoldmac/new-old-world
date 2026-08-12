@@ -255,4 +255,34 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"chat\""))
         XCTAssertTrue(definition.contains("chat_module_ops"))
     }
+
+    func testWebDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = WebHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "web")
+        XCTAssertEqual(definition.descriptor.tier, .experimental)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testWebOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let runtime = try GateSource.hostSwift(
+            "now-host/Sources/Host/WebHostModule.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/web/web_module_definition.c")
+
+        XCTAssertFalse(state.contains("lazy var web"))
+        XCTAssertFalse(compatibility.contains("case \"web\""))
+        XCTAssertTrue(runtime.contains("model.stop()"))
+        XCTAssertFalse(registry.contains("k_web_definition"))
+        XCTAssertTrue(registry.contains("web_module_definition()"))
+        XCTAssertTrue(definition.contains("\"web\""))
+        XCTAssertTrue(definition.contains("web_module_ops"))
+    }
 }

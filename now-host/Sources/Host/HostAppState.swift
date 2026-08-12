@@ -241,7 +241,6 @@ final class HostAppState: ObservableObject {
         performDevelopment: { [agentIntegration] request in
             await agentIntegration.development(request)
         })
-    private(set) lazy var web = WebBridgeModel(defaults: defaults)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
 
     private let defaults: UserDefaults

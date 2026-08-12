@@ -130,14 +130,7 @@ struct ModuleRegistry {
            The provider configuration lives on this page too, per the
            no-preferences-window rule. */
         ChatHostModule.definition.descriptor,
-        ModuleDescriptor(
-            id: "web",
-            title: "Web",
-            symbol: "globe",
-            summary: "Translate modern pages for a browser on "
-                + "\(MachineNaming.simpleReference)",
-            tier: .experimental
-        ),
+        WebHostModule.definition.descriptor,
         ModuleDescriptor(
             id: "development",
             title: "Development",

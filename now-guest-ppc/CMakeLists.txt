@@ -109,6 +109,7 @@ add_application(now-guest-ppc
     src/web/web_model.c
     src/web/web_port_dialog.c
     src/web/web_module.c
+    src/web/web_module_definition.c
     src/mirror/mirror_show.c
     src/census/census_decode.c
     src/census/census_report.c

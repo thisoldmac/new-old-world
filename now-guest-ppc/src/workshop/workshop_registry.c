@@ -59,15 +59,6 @@ static const WorkshopModuleDefinition k_development_definition = {
     development_module_ops
 };
 
-static const WorkshopModuleDefinition k_web_definition = {
-    kWorkshopWeb, "web", "Web",
-    "Modern pages translated on the other Mac for a classic browser here.",
-    "Web has not moved in yet.",
-    "Classic browser gateway", 145, kWorkshopModuleTierExperimental,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    web_module_ops
-};
-
 static const WorkshopModuleDefinition k_preferences_definition = {
     kWorkshopPreferences, "settings", "Preferences",
     "How this window behaves. Rearrange the rail by Option-dragging a "
@@ -113,7 +104,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopChat: return chat_module_definition();
     case kWorkshopMirror: return &k_mirror_definition;
     case kWorkshopDevelopment: return &k_development_definition;
-    case kWorkshopWeb: return &k_web_definition;
+    case kWorkshopWeb: return web_module_definition();
     case kWorkshopPreferences: return &k_preferences_definition;
     case kWorkshopLogs: return &k_logs_definition;
     case kWorkshopConnection: return &k_connection_definition;
