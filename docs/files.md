@@ -84,6 +84,23 @@ non-control frames).
 `file.get` needs no accept — the requester is the receiver. The bulk
 plane's contract prose ("carries capture pixel data only") is amended.
 
+### Mirror copy-on-drop
+
+Mirror reuses this same symmetric family rather than inventing a second bulk
+transport. A human drag adds one closed routing identity:
+
+- `file.get.mirrorSource` names a regular file on the guest desktop or in an
+  observed Finder window, with the exact HFS folder path for the latter;
+- `file.offer.mirrorDrop` names the guest desktop, an exact Finder folder, a
+  live application process, or an application creator.
+
+The PPC receiver resolves that identity before accepting. Host conversion is
+the ordinary text/MacBinary conversion, transfer progress is the ordinary
+file event stream, and an application receives `kAEOpenDocuments` only after
+the copied file settles. No field asks the source to move, and no Mirror drop
+overwrites an existing item. This first lane transfers regular files only and
+is installed on `LiveMirrorView`, not on Continuity's screen-edge input path.
+
 ## Agent-approved artifact lane
 
 The optional host-side agent companion reuses this exact host-to-guest

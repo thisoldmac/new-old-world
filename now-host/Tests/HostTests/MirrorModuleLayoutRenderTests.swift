@@ -101,6 +101,7 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
                              run: rig.run,
                              presentation: rig.presentation,
                              window: rig.window,
+                             fileTransfer: rig.fileTransfer,
                              connectedMachineName: "Power Mac G4",
                              timeline: rig.source.actTimeline,
                              cycles: rig.source.cycleTimeline)

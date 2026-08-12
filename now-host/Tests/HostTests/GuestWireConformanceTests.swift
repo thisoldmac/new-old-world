@@ -552,6 +552,32 @@ final class GuestWireConformanceTests: XCTestCase {
             "rx->reserved_bytes = need;"))
     }
 
+    /// Mirror's semantic target is receiver-resolved, and an application is
+    /// notified only after the checked same-folder rename has succeeded.
+    /// This is a source-shaped guard because the classic File Manager and
+    /// Apple Event Manager cannot run in the native host suite; the guest
+    /// cross-build remains the compile half of the same boundary.
+    func testMirrorFileDropResolvesAndDeliversAfterSettlement() throws {
+        let drop = try GateSource.guestC(
+            "now-guest-ppc/src/files/files_drop.c")
+        let wire = try GateSource.guestC(
+            "now-guest-ppc/src/core/wire.c")
+
+        XCTAssertTrue(drop.contains("FindFolder(kOnSystemDisk, kDesktopFolderType"))
+        XCTAssertTrue(drop.contains("FSMakeFSSpec(0, 0, ppath, &spec)"))
+        XCTAssertTrue(drop.contains("now_files_downloads(&vref, &dir)"))
+        XCTAssertTrue(drop.contains("kAEOpenDocuments"))
+        XCTAssertTrue(wire.contains("now_json_next_object(value, object"),
+                      "nested Mirror keys must not collide with file.offer keys")
+
+        let settled = try XCTUnwrap(
+            wire.range(of: "rc = now_files_receive_finish(&g_put.rx);"))
+        let delivered = try XCTUnwrap(
+            wire.range(of: "now_files_mirror_deliver(&g_put.drop_target"))
+        XCTAssertLessThan(settled.lowerBound, delivered.lowerBound,
+                          "an application was notified before its file settled")
+    }
+
     /// Messages built up across several calls cannot be checked this
     /// way. Naming them keeps the gap visible instead of letting a green
     /// suite imply coverage it does not have.
