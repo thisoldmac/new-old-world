@@ -710,17 +710,20 @@ public struct Scene: Codable, Equatable, Sendable {
         public var view: View
         public var selectedNames: Set<String>
         public var itemMetadata: [String: ItemMetadata]
+        public var availableBytes: Int?
         public var pages: Int
         public var complete: Bool
 
         public init(path: String, view: View,
                     selectedNames: Set<String> = [], pages: Int = 1,
                     complete: Bool = true,
-                    itemMetadata: [String: ItemMetadata] = [:]) {
+                    itemMetadata: [String: ItemMetadata] = [:],
+                    availableBytes: Int? = nil) {
             self.path = path
             self.view = view
             self.selectedNames = selectedNames
             self.itemMetadata = itemMetadata
+            self.availableBytes = availableBytes
             self.pages = pages
             self.complete = complete
         }

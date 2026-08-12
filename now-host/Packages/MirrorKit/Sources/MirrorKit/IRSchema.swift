@@ -520,6 +520,7 @@ public enum IRSchema {
         "Scene.FinderPresentation.itemMetadata",
         "Scene.FinderPresentation.pages",
         "Scene.FinderPresentation.complete",
+        "Scene.FinderPresentation.availableBytes",
         "Scene.FinderPresentation.ItemMetadata.dataBytes",
         "Scene.FinderPresentation.ItemMetadata.rsrcBytes",
         "Scene.FinderPresentation.ItemMetadata.modified",

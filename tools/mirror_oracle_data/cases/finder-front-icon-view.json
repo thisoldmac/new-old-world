@@ -20,5 +20,5 @@
   "masks": [
     {"name": "clock", "rect": [585, 0, 710, 20], "reason": "time is volatile"}
   ],
-  "render": {"finderView": "icon"}
+  "render": {"finderView": "icon", "finderAvailableBytes": 1073637376}
 }

@@ -365,16 +365,19 @@ deliberately host-internal and excluded from encoded scene IR. This preserves
 the protocol boundary while making the same production `RenderShot` path
 repeatable. The list renderer now draws the Finder-owned item-count strip,
 light-grey ruled row field and folder disclosure triangles locally from the
-semantic roster. Modification-date cells and the available-space half of the
-info string remain named semantic gaps rather than invented text.
+semantic roster. It also draws native-style modification dates and the shared
+count-and-available string. Available capacity is optional semantic metadata
+from `file.listing.freeBytes`; it is rendered host-side in every Finder view
+and omitted honestly when a responder cannot report it.
 
 The first broad comparisons are deliberately mismatch baselines rather than
 acceptance claims. Against the measured full-window regions, Icons currently
 differs in 28,573 of 101,844 pixels (28.06%), Buttons in 43,564 (42.78%), and
-List in 69,640 (68.38%). Much of the residual is structural—the incomplete
-info text, list value cells, exact custom folder art, selection fill, and some
-frame/scrollbar geometry—so these numbers are a queue for later narrowing, not
-a score to optimize blindly. The File menu is already much closer at 10,712
+List in 69,640 (68.38%). These are the pre-capacity baselines and have not yet
+been promoted to acceptance evidence. The remaining residual includes exact
+custom folder art, selection fill, and some frame/scrollbar geometry, so these
+numbers are a queue for later narrowing, not a score to optimize blindly. The
+File menu is already much closer at 10,712
 of 94,300 compared pixels (11.36%).
 
 The shared core-menu scene now contains all measured rows, separators,

@@ -99,10 +99,12 @@ repeatable offline pack's native 16×16 resources; unknown titles remain
 undecorated. The production render therefore composes the full menu locally
 rather than cropping menu pixels from the framebuffer.
 
-The current named gaps are the available-space half of the Finder info string,
-exact per-folder custom icons beyond the current extraction roots, exact
-catalog metadata for reference fixtures rather than measured transcription,
-and a clean inactive-window reference without a promo modal. None of the ten
+The current named gaps are exact per-folder custom icons beyond the current
+extraction roots, exact catalog metadata for reference fixtures rather than
+measured transcription, and a clean inactive-window reference without a promo
+modal. `file.listing.freeBytes` now carries responder-observed volume capacity
+as optional presentation metadata, and Icons, Buttons and List all derive the
+native Finder count-and-available strip locally. None of the ten
 new captures has a validated state proof yet. Close this row only when all
 eleven receipts name the sealed parent, state proof, source revision, visual
 profile, accepted consecutive hashes, and per-region result.

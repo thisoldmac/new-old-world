@@ -340,6 +340,29 @@ final class FinderItemArbitrationTests: XCTestCase {
             "folder list rows carry disclosure triangles")
     }
 
+    func testAvailableSpaceReachesTheInfoStripInEveryFinderView() throws {
+        for view in [Scene.FinderPresentation.View.icon, .button, .name] {
+            var without = Self.folder(items: [
+                Self.item("Documents", x: 40, y: 60),
+            ], controls: [
+                .init(ref: "v", role: "scrollbar", title: "",
+                      rect: Rect(l: 304, t: 23, r: 320, b: 204),
+                      enabled: true, visible: true),
+            ])
+            without.finder = .init(path: "Macintosh HD:", view: view)
+            var with = without
+            with.finder?.availableBytes = 1_073_741_824
+
+            let plain = try RenderShot.png(scene: Self.scene([without]))
+            let available = try RenderShot.png(scene: Self.scene([with]))
+            let o = Self.contentOrigin
+            XCTAssertGreaterThan(differences(
+                plain, available,
+                in: CGRect(x: o.x, y: o.y, width: 320, height: 20)), 0,
+                "\(view) must render the shared available-space semantics")
+        }
+    }
+
     func testListViewDrawsCatalogMetadataInSemanticColumns() throws {
         var win = Self.folder(
             items: [Self.item("Read Me", x: 26, y: 44, w: 16, h: 16,
@@ -401,6 +424,10 @@ final class FinderItemArbitrationTests: XCTestCase {
         XCTAssertEqual(SceneRenderer.finderSizeString(.init(
             dataBytes: 1_024, rsrcBytes: 1_025)), "3 K")
         XCTAssertNil(SceneRenderer.finderSizeString(.init()))
+        XCTAssertEqual(SceneRenderer.finderAvailableString(1_073_741_824),
+                       "1.00 GB")
+        XCTAssertEqual(SceneRenderer.finderAvailableString(1_073_637_376),
+                       "1,023.9 MB")
     }
 
     func testFinderSnapshotSelectionChangesTheSemanticRow() throws {

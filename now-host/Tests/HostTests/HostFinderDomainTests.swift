@@ -98,6 +98,14 @@ final class HostFinderDomainTests: XCTestCase {
         XCTAssertEqual(metadata?.modified, 3_869_266_040)
     }
 
+    func testAvailableVolumeBytesSurviveFinderProjection() {
+        var window = fixtureWindow()
+        window.availableBytes = 1_073_741_824
+
+        XCTAssertEqual(HostFinderDomain.projectedWindow(window, z: 0)
+            .finder?.availableBytes, 1_073_741_824)
+    }
+
     private func fixtureWindow() -> HostFinderDomain.Window {
         .init(id: HostFinderDomain.windowID(1), path: "",
               rootLabel: "Macintosh HD:",

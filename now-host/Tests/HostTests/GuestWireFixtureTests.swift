@@ -300,7 +300,7 @@ final class GuestWireFixtureTests: XCTestCase {
         {"name":"Notes","kind":"file","fileType":"TEXT","creator":"ttxt",\
         "dataBytes":66,"rsrcBytes":0,"modified":3300000000,\
         "identity":"fedcba9876543210"}],\
-        "more":false,"cursor":3,"root":"Macintosh HD:Lab:"}
+        "more":false,"cursor":3,"freeBytes":1073637376,"root":"Macintosh HD:Lab:"}
         """
         guard case .fileListing(let listing) = try decode(json) else {
             return XCTFail("not a listing")
@@ -310,6 +310,7 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(listing.entries.first?.identity,
                        "0123456789abcdef")
         XCTAssertEqual(listing.root, "Macintosh HD:Lab:")
+        XCTAssertEqual(listing.freeBytes, 1_073_637_376)
     }
 
     func testGuestReservationAndFinalizationEvidenceDecodes() throws {
@@ -344,6 +345,8 @@ final class GuestWireFixtureTests: XCTestCase {
             return XCTFail("not a listing")
         }
         XCTAssertNil(listing.root)
+        XCTAssertNil(listing.freeBytes,
+                     "the optional field preserves older and 68K guests")
     }
 
     /// file_refuse(): every guest-side failure takes this shape.

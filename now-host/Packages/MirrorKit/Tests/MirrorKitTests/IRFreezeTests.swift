@@ -222,6 +222,8 @@ final class IRFreezeTests: XCTestCase {
         XCTAssertTrue(declared.contains("Scene.FinderPresentation.path"))
         XCTAssertTrue(declared.contains("Scene.FinderPresentation.complete"))
         XCTAssertTrue(declared.contains(
+            "Scene.FinderPresentation.availableBytes"))
+        XCTAssertTrue(declared.contains(
             "Scene.FinderPresentation.ItemMetadata.modified"))
     }
 

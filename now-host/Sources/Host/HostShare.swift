@@ -323,6 +323,15 @@ final class HostShare {
         return (page, served < contents.count, served + 1)
     }
 
+    func availableBytes(path: String) throws -> Int {
+        let url = try resolve(path)
+        let values = try url.resourceValues(forKeys: [.volumeAvailableCapacityKey])
+        guard let capacity = values.volumeAvailableCapacity else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return max(0, capacity)
+    }
+
     /// The host half of FileEntry.identity. It is opaque on the wire and
     /// intentionally binds both file-system identity and this exact catalog
     /// observation, so a future mutation can recompute rather than trust a

@@ -265,6 +265,26 @@ int now_files_list(const char *rel_path, short start,
     return count;
 }
 
+long now_files_volume_free(const char *rel_path)
+{
+    FSSpec spec;
+    HParamBlockRec pb;
+    Str255 vname;
+
+    if (resolve(rel_path, &spec) != kFilesOK) {
+        return -1;
+    }
+    memset(&pb, 0, sizeof pb);
+    vname[0] = 0;
+    pb.volumeParam.ioNamePtr = vname;
+    pb.volumeParam.ioVRefNum = spec.vRefNum;
+    pb.volumeParam.ioVolIndex = 0;
+    if (PBHGetVInfoSync(&pb) != noErr) {
+        return -1;
+    }
+    return (long)pb.volumeParam.ioVFrBlk * pb.volumeParam.ioVAlBlkSiz;
+}
+
 /* --- staging ------------------------------------------------------------ */
 
 /* CRC-16/XMODEM over the first 124 header bytes, per MacBinary II. */

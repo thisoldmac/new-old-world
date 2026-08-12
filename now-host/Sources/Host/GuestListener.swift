@@ -1090,6 +1090,7 @@ final class GuestListener: ObservableObject {
             session.send(.fileListing(FileListing(
                 id: request.id, path: request.path, entries: page.entries,
                 more: page.more, cursor: page.next,
+                freeBytes: try? self.share.availableBytes(path: request.path),
                 /* Only the root listing names the place; a subfolder
                    listing already knows where it is. */
                 root: request.path.isEmpty ? share.rootDisplayName : nil)))

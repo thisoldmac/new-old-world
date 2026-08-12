@@ -945,9 +945,22 @@ struct FileListing: Codable, Equatable, Sendable {
     var entries: [FileEntry]
     var more: Bool
     var cursor: Int?
+    /// Free bytes on the responder's volume containing this folder.
+    var freeBytes: Int? = nil
     /// What the other machine is sharing, in its own spelling. Display
     /// only; every path on the wire is relative to it.
     var root: String?
+
+    init(id: Int, path: String, entries: [FileEntry], more: Bool,
+         cursor: Int?, freeBytes: Int? = nil, root: String? = nil) {
+        self.id = id
+        self.path = path
+        self.entries = entries
+        self.more = more
+        self.cursor = cursor
+        self.freeBytes = freeBytes
+        self.root = root
+    }
 }
 
 struct FileGet: Codable, Equatable, Sendable {

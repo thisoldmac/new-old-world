@@ -187,6 +187,9 @@ def render_scene(repo: Path, case: OracleCase, scene: Path, output: Path,
         command += ["--finder-metadata-json",
                     json.dumps(case.render["finderMetadata"],
                                separators=(",", ":"), sort_keys=True)]
+    if case.render.get("finderAvailableBytes") is not None:
+        command += ["--finder-available-bytes",
+                    str(case.render["finderAvailableBytes"])]
     if case.render.get("appleMenuProfile") is not None:
         command += ["--apple-menu-profile",
                     str(case.render["appleMenuProfile"])]

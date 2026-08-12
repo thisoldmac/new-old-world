@@ -995,6 +995,7 @@ final class HostFinderSession {
                 self.onChange()
             case .success(let listing):
                 self.windows[index].rootLabel = listing.root
+                self.windows[index].availableBytes = listing.freeBytes
                 self.windows[index].entries.append(contentsOf: listing.entries)
                 self.windows[index].pages += 1
                 self.sendPendingGuestView(id: windowID)

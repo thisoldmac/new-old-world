@@ -11,6 +11,7 @@ private struct Arguments {
     var finderView: Scene.FinderPresentation.View?
     var finderSelectedName: String?
     var finderMetadata: [String: Scene.FinderPresentation.ItemMetadata] = [:]
+    var finderAvailableBytes: Int?
     var appleMenuProfile: String?
 
     init(_ values: [String]) throws {
@@ -48,6 +49,11 @@ private struct Arguments {
                 finderMetadata = try JSONDecoder().decode(
                     [String: Scene.FinderPresentation.ItemMetadata].self,
                     from: data)
+            case "--finder-available-bytes":
+                guard let parsed = Int(value), parsed >= 0 else {
+                    throw ArgumentError("--finder-available-bytes must be a non-negative integer")
+                }
+                finderAvailableBytes = parsed
             case "--apple-menu-profile":
                 guard value == "macos-8.6" else {
                     throw ArgumentError("--apple-menu-profile must be macos-8.6")
@@ -98,7 +104,8 @@ private struct MirrorRenderCLI {
                 scene.windows[index].finder = .init(
                     path: "", view: finderView,
                     selectedNames: arguments.finderSelectedName.map { [$0] } ?? [],
-                    itemMetadata: arguments.finderMetadata)
+                    itemMetadata: arguments.finderMetadata,
+                    availableBytes: arguments.finderAvailableBytes)
             } else if arguments.finderSelectedName != nil {
                 throw ArgumentError("--finder-selected-name requires --finder-view")
             }

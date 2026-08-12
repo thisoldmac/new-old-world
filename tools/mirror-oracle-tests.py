@@ -482,6 +482,15 @@ def main() -> None:
         assert json.loads(metadata_receipt["command"][-1]) == {
             "Read Me": {"modified": 3869307060},
         }
+        available_case = fixture_case()
+        available_case.render.update({"finderView": "icon",
+                                      "finderAvailableBytes": 1073637376})
+        available_output = root / "renderer-available.png"
+        available_receipt = render_scene(
+            REPO, available_case, scene_path, available_output, run=fake_run)
+        assert available_receipt["command"][-2:] == [
+            "--finder-available-bytes", "1073637376",
+        ]
 
         apple_profile_case = replace(
             fixture_case(), render={"openMenu": 0,
@@ -534,10 +543,12 @@ def main() -> None:
         ]
         assert load_case("finder-front-icon-view").render == {
             "finderView": "icon",
+            "finderAvailableBytes": 1073637376,
         }
         list_case = load_case("finder-list-selection")
         assert list_case.render["finderView"] == "name"
         assert list_case.render["finderSelectedName"] == "Applications"
+        assert list_case.render["finderAvailableBytes"] == 1073637376
         assert list_case.render["finderMetadata"]["Applications"] == {
             "modified": 3869316420,
         }

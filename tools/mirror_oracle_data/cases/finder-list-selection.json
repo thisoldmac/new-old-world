@@ -22,6 +22,7 @@
   "render": {
     "finderView": "name",
     "finderSelectedName": "Applications",
+    "finderAvailableBytes": 1073637376,
     "finderMetadata": {
       "Apple Extras": {"modified": 3869263860},
       "Applications": {"modified": 3869316420},

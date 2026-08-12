@@ -5440,6 +5440,7 @@ static void serve_file_list(const char *request)
     short next = 1;
     int n, i;
     long pos;
+    long free_bytes;
 
     path[0] = '\0';
     now_json_find_text(request, "path", path, sizeof path);
@@ -5452,6 +5453,7 @@ static void serve_file_list(const char *request)
         return;
     }
     now_json_escape(path, esc, sizeof esc);
+    free_bytes = now_files_volume_free(path);
     pos = snprintf(json, sizeof json,
                    "{\"type\":\"file.listing\",\"id\":%ld,"
                    "\"path\":\"%s\",\"entries\":[", id, esc);
@@ -5484,6 +5486,10 @@ static void serve_file_list(const char *request)
     pos += snprintf(json + pos, sizeof json - (size_t)pos,
                     "],\"more\":%s,\"cursor\":%d",
                     more ? "true" : "false", (int)next);
+    if (free_bytes >= 0) {
+        pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                        ",\"freeBytes\":%ld", free_bytes);
+    }
     /* Only the root listing carries it: it names the place, and a
        subfolder listing already knows where it is. */
     if (path[0] == '\0') {

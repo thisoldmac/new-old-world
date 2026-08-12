@@ -65,6 +65,9 @@ int now_files_list(const char *rel_path, short start,
                    FileEntry *out, int max,
                    Boolean *more, short *next_start);
 
+/* Free bytes on the volume containing rel_path, or -1 when unavailable. */
+long now_files_volume_free(const char *rel_path);
+
 /* Stages a file for sending. container kContainerAuto applies the fork
    rule: data-only ships the data fork, resource-only ships MacBinary,
    both-forks ships the data fork (ask for MacBinary explicitly to get

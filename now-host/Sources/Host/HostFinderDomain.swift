@@ -40,6 +40,7 @@ enum HostFinderDomain {
         var complete = false
         var loading = false
         var error: String?
+        var availableBytes: Int?
 
         var title: String {
             if path.isEmpty {
@@ -87,6 +88,11 @@ enum HostFinderDomain {
         let fieldRight = max(1, width - 16)
         let visibleHeight = max(1, fieldBottom - fieldTop)
         let entries = sortedEntries(of: window)
+        let metadata = Dictionary(uniqueKeysWithValues: entries.map { entry in
+            (entry.name, Scene.FinderPresentation.ItemMetadata(
+                dataBytes: entry.dataBytes, rsrcBytes: entry.rsrcBytes,
+                modified: entry.modified))
+        })
         let contentHeightNeeded = layoutHeight(entries.count, view: window.view,
                                                width: fieldRight,
                                                fieldTop: fieldTop)
@@ -123,13 +129,8 @@ enum HostFinderDomain {
                           selectedNames: window.selectedNames,
                           pages: max(1, window.pages),
                           complete: window.complete,
-                          itemMetadata: Dictionary(uniqueKeysWithValues:
-                            entries.map { entry in
-                                (entry.name, .init(
-                                    dataBytes: entry.dataBytes,
-                                    rsrcBytes: entry.rsrcBytes,
-                                    modified: entry.modified))
-                            })),
+                          itemMetadata: metadata,
+                          availableBytes: window.availableBytes),
             display: nil)
     }
 

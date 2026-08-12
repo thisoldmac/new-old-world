@@ -1556,7 +1556,10 @@ public struct SceneRenderer {
                  with: .color(Platinum.g5))
         let count = (win.items ?? []).filter { $0.placed && !$0.invisible }.count
         let noun = count == 1 ? "item" : "items"
-        let label = "\(count) \(noun)"
+        var label = "\(count) \(noun)"
+        if let available = win.finder?.availableBytes {
+            label += ", \(Self.finderAvailableString(available)) available"
+        }
         let width = CGFloat(FontBook.small?.width(label) ?? label.count * 6)
         appText(label, ctx, x: floor(info.midX - width / 2),
                 baselineY: info.minY + CGFloat(FontBook.small?.ascent ?? 9) + 3,
@@ -1576,6 +1579,24 @@ public struct SceneRenderer {
                                  width: field.width, height: 1)),
                      with: .color(Platinum.g2))
         }
+    }
+
+    static func finderAvailableString(_ bytes: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        if bytes >= 1_073_741_824 {
+            formatter.minimumFractionDigits = 2
+            formatter.maximumFractionDigits = 2
+            let value = Double(bytes) / 1_073_741_824
+            return (formatter.string(from: NSNumber(value: value)) ?? "--")
+                + " GB"
+        }
+        formatter.minimumFractionDigits = 1
+        formatter.maximumFractionDigits = 1
+        let value = Double(bytes) / 1_048_576
+        return (formatter.string(from: NSNumber(value: value)) ?? "--")
+            + " MB"
     }
 
     /// Mac OS 8.6 Finder Buttons are a fourth presentation, not the later

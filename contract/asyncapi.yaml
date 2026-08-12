@@ -2970,6 +2970,13 @@ components:
                   precondition recomputed immediately before acting.
         more: { type: boolean }
         cursor: { type: integer }
+        freeBytes:
+          type: integer
+          minimum: 0
+          description: >
+            Responder-observed free bytes on the volume containing the
+            listed folder. Optional when the file system cannot report it.
+            Presentation metadata only; it grants no additional file access.
         root:
           type: string
           description: >
