@@ -209,6 +209,13 @@ final class AgentIntegrationHostAdapter {
         mirrorEngines: MirrorStateEngineRegistry? = nil,
         projectStore: ProjectStore? = try? ProjectStore()
     ) {
+        /* Compatibility hashes the running executable. Do that while the
+           adapter is being constructed, before a local server can expose it:
+           leaving the static lazy meant the first session-health request paid
+           the cold-file cost inside its two-second socket budget. Concurrent
+           first callers on a slower machine then timed out while the
+           MainActor initialized this otherwise immutable value. */
+        _ = Self.compatibility
         self.listener = listener
         self.launchCommandTimeout = launchCommandTimeout
         self.catalogSearchTimeout = catalogSearchTimeout

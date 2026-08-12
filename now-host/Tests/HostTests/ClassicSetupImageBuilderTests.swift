@@ -62,6 +62,10 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
         try nativeImage.dataFork.write(to: raw)
         let mount = temporary.appendingPathComponent(
             "mount", isDirectory: true)
+        // Xcode 16's diskutil requires an explicit mount point to exist;
+        // newer diskutil versions create it as a convenience.
+        try FileManager.default.createDirectory(
+            at: mount, withIntermediateDirectories: true)
         let plist = try run("/usr/sbin/diskutil", [
             "image", "attach", "--plist", "--readOnly", "--nobrowse",
             "--mountPoint", mount.path, raw.path

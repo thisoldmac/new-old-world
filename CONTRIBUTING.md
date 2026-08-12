@@ -148,11 +148,12 @@ from one to the other.
     tools/setup-hooks
 
 It points git at `.githooks`, which is repo-local config every worktree
-inherits. Two refusals live there: a direct commit on `main`, and a commit
-that changes the resident extension without baking it into the shared QEMU
-stage image first (`scripts/bake-ext-image`). Both are overridable —
-`TBT_ALLOW_MAIN=1`, `TBT_DEFER_EXT_BAKE=1` with a written reason — because
-enforcement is the floor and not the rule. See AGENTS.md.
+inherits. It also configures `main` as a fast-forward-only mirror of
+`origin/main`. Direct main commits, local feature-to-main landings, and direct
+main pushes are refused; there is no local main override. A resident-extension
+commit may still record an explicit bake deferral with
+`TBT_DEFER_EXT_BAKE=1` and a written reason, but that deferral cannot land on
+main. Merge through GitHub, then run `tools/sync-main`. See AGENTS.md.
 
 ## Local machine configuration
 

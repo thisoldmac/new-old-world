@@ -317,8 +317,7 @@ a shared bake over. The rules that must not be restated anywhere else:
   receipt. It sees merge commits, fast-forwards,
   `git fetch . branch:main`, and forced ref updates—the paths commit and merge
   hooks cannot see—and a branch deferral cannot override it. Lane-to-lane
-  updates are untouched. As with `TBT_ALLOW_MAIN=1`, the enforcement is the
-  floor and not the rule.
+  updates are untouched. The enforcement is the floor and not the rule.
 - **A note is not a bake.** An image can reach the oracle's path by hand —
   that is how the current one got there. `tools/ext-bake-gate note-image
   --reason "…"` records who put it there and why, and says in its own
@@ -364,19 +363,18 @@ agents branch in their own worktrees — so the shared checkout stays on
 
 - **Work on a branch, never on `main`.** Before your first edit, cut one
   — `git checkout -b <type>/<kebab-slug>`, forked off the parent branch you are
-  continuing, not off main. `main` receives finished work by
-  fast-forward or merge; it is never where work is typed. This is
+  continuing, not off main. GitHub `main` receives finished work only through
+  its protected pull-request path; local `main` is a mirror, not another
+  landing boundary. This is
   enforced (`.githooks/pre-commit`, plus a PreToolUse hook on
   `Write`/`Edit`/`Bash` — `.claude/hooks/guard-main.sh`) — **run
   `tools/setup-hooks` once per clone** to point git at it, which every
-  worktree off that checkout then inherits. Neither half reaches a
-  worktree cut off `main`, because `.githooks` and the `tools/` it
-  invokes are **not on `main`** and never have been; that outage, and
-  where every rule in this repository ought to live, is
-  [docs/rule-scopes.md](docs/rule-scopes.md).
-  The enforcement is the floor, not the
-  rule: don't reach for `TBT_ALLOW_MAIN=1` to get past a block you
-  should have avoided by branching. Branches describe the change, not
+  worktree off that checkout then inherits. `.githooks/pre-push` refuses every
+  direct remote-main update, and `.githooks/reference-transaction` permits a
+  local-main update only when it is the fetched `origin/main` and a
+  fast-forward. There is no environment override for those two boundaries.
+  The history of the old scope outage, and where every rule belongs, is
+  [docs/rule-scopes.md](docs/rule-scopes.md). Branches describe the change, not
   the person or automation making it: use `feat/`, `fix/`, `docs/`,
   `refactor/`, `test/`, `build/`, `ci/`, `chore/`, `perf/`, or `revert/`.
   Do not prepend `claude/`, `codex/`, `thread/`, `fork/`, or another

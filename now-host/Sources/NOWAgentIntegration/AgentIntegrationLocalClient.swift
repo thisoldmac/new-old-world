@@ -2,6 +2,16 @@ import Darwin
 import Foundation
 
 public struct AgentIntegrationLocalClient: Sendable {
+    /// Blocking Unix-socket calls must not occupy Swift's cooperative
+    /// executor. On a small-core machine, concurrent `Task.detached` reads
+    /// can consume every executor thread while the MainActor host handlers
+    /// that would answer them wait to run. A Dispatch queue is the explicit
+    /// bridge for this synchronous transport.
+    private static let socketIOQueue = DispatchQueue(
+        label: "dev.newoldworld.agent-integration.client-io",
+        qos: .userInitiated,
+        attributes: .concurrent)
+
     public let endpoint: AgentIntegrationEndpoint
     /// WHICH machine every request from this client is about. Set once
     /// with `addressing(_:)` rather than threaded through eleven method
@@ -225,10 +235,10 @@ public struct AgentIntegrationLocalClient: Sendable {
     }
 
     func sendRaw(_ request: Data) async throws -> Data {
-        try await Task.detached {
+        try await Self.performSocketIO {
             try sendRaw(
                 request, receiveTimeoutSeconds: readOnlyReceiveTimeout)
-        }.value
+        }
     }
 
     private func send(operation: AgentIntegrationLocalRequest.Operation)
@@ -653,9 +663,11 @@ public struct AgentIntegrationLocalClient: Sendable {
 
     private func send(_ request: AgentIntegrationLocalRequest) async throws
         -> AgentIntegrationLocalResponse {
-        var request = request
-        request.guestSelector = guestSelector
-        return try await Task.detached {
+        var mutableRequest = request
+        mutableRequest.guestSelector = guestSelector
+        let addressedRequest = mutableRequest
+        return try await Self.performSocketIO {
+            let request = addressedRequest
             let timeout: TimeInterval
             switch request.operation {
             case .sessionHealth, .listProcesses,
@@ -822,7 +834,21 @@ public struct AgentIntegrationLocalClient: Sendable {
                     "\(error.code): \(error.message)")
             }
             return decoded
-        }.value
+        }
+    }
+
+    private static func performSocketIO<Result: Sendable>(
+        _ operation: @escaping @Sendable () throws -> Result
+    ) async throws -> Result {
+        try await withCheckedThrowingContinuation { continuation in
+            socketIOQueue.async {
+                do {
+                    continuation.resume(returning: try operation())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 
     private func sendRaw(_ request: Data,

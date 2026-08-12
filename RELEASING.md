@@ -24,12 +24,21 @@ candidate.
   packaging changes. Product work continues on `main`; a release fix is also
   merged forward when it applies there.
 
-On GitHub, protect `main` and `release/v*`: disallow direct and force pushes,
-require an up-to-date pull request, and require **Git policy**,
-**Documentation**, **Native guest tests**, **Host suites and app builds**, and
-**No lab configuration in the tree**. GitHub configuration is part of
-repository commissioning; the files in this checkout cannot impose those
-settings themselves.
+GitHub `main` is protected by the active **Protected main** ruleset recorded in
+`.github/repository-policy.json`: direct, force and deletion pushes are
+blocked; changes require a linear squash or rebase pull request, resolved
+review conversations, and **Git policy**, **Documentation**, **Native guest
+tests**, **Host suites and app builds**, and **No lab configuration in the
+tree**. Zero approvals are required while this is a solo-maintainer repository.
+Branches do not have to rerun against every intervening main commit yet; that
+deliberately avoids spending another macOS runner cycle when concurrency is
+low. Run `tools/github-policy-check` to detect drift instead of trusting this
+prose.
+
+Before the first `release/v*` branch is cut, give that pattern an equivalent
+ruleset. It is intentionally not created speculatively while no release branch
+exists. Required signing also remains deferred until human, agent and
+GitHub-generated commits all have a verified signing path.
 
 ## Candidate and final identities
 

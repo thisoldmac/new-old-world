@@ -95,7 +95,8 @@ enum ClassicDither {
         // the 7/16-3/16-5/16-1/16 split stays integral.
         var carryNow = [Int](repeating: 0, count: width * 3)
         var carryNext = [Int](repeating: 0, count: width * 3)
-        pixels.withUnsafeMutableBytes { out in
+        pixels.withUnsafeMutableBytes {
+            (out: UnsafeMutableRawBufferPointer) -> Void in
             for y in 0..<height {
                 for x in 0..<width {
                     let at = (y * width + x) * 3
@@ -138,7 +139,8 @@ enum ClassicDither {
         // Atkinson spreads eighths of the error two rows deep.
         var carry = [[Int]](repeating: [Int](repeating: 0, count: width),
                             count: 3)
-        pixels.withUnsafeMutableBytes { out in
+        pixels.withUnsafeMutableBytes {
+            (out: UnsafeMutableRawBufferPointer) -> Void in
             for y in 0..<height {
                 for x in 0..<width {
                     let at = (y * width + x) * 3

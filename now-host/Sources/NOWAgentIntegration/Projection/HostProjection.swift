@@ -386,7 +386,7 @@ public struct HostProjectionArguments: @unchecked Sendable {
 /// What a projection hands back: one typed result to render, or the reason
 /// the call was not well formed. A projection never renders the transport's
 /// error itself — that is the face's job.
-public enum HostProjectionOutcome {
+public enum HostProjectionOutcome: Sendable {
     case value(HostProjectionValue)
     /// The caller's arguments were refused. The text is written for that
     /// caller and says what the projection would have accepted.
@@ -420,18 +420,20 @@ public enum HostProjectionOutcome {
 /// the same answer the encodable part describes, never a second answer. A
 /// row whose metadata says one thing and whose attachment shows another
 /// would be two facts about one machine.
-public struct HostProjectionValue {
+public struct HostProjectionValue: Sendable {
     /// A non-JSON rendering of this result, for faces that can carry one.
-    public enum Attachment {
+    public enum Attachment: Sendable {
         /// Image bytes and their media type — `image/png` for a capture.
         case image(bytes: Data, mimeType: String)
     }
 
-    private let encodeValue: (JSONEncoder) throws -> Data
+    private let encodeValue: @Sendable (JSONEncoder) throws -> Data
     public let attachment: Attachment?
 
-    public init<Value: Encodable>(_ value: Value,
-                                  attachment: Attachment? = nil) {
+    public init<Value: Encodable & Sendable>(
+        _ value: Value,
+        attachment: Attachment? = nil
+    ) {
         encodeValue = { try $0.encode(value) }
         self.attachment = attachment
     }

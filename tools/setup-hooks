@@ -8,7 +8,13 @@
 # census, so never infer another lane is armed from this command's success.
 set -eu
 root=$(git rev-parse --show-toplevel)
+"$root/tools/main-ref-policy" remote-check
 git -C "$root" config core.hooksPath .githooks
+git -C "$root" config branch.main.remote origin
+git -C "$root" config branch.main.merge refs/heads/main
+git -C "$root" config pull.ff only
+git -C "$root" config fetch.prune true
+git -C "$root" config push.default simple
 
 # The receipts merge driver. A driver's BODY cannot be tracked — git will
 # not run a command named by a file in the tree it is merging — so
@@ -21,14 +27,16 @@ git -C "$root" config merge.nowreceipts.driver \
     "$root/tools/receipts-merge-driver %O %A %B %L %P"
 
 echo "core.hooksPath = .githooks"
-echo "  pre-commit:       main-guardrail (TBT_ALLOW_MAIN=1 overrides)"
+echo "  pre-commit:       main-guardrail (no local override)"
 echo "                    creator-neutral branch policy"
 echo "                    ext-bake-gate  (TBT_DEFER_EXT_BAKE=1 + reason defers)"
 echo "                    product-version copies must agree"
 echo "  commit-msg:       Conventional Commit title policy"
+echo "  pre-push:         refuses every direct update to remote main"
 echo "  pre-merge-commit: ext-bake-gate merge-check (aborts an incoherent merge)"
-echo "  reference-transaction: refuses main resident changes without a shared bake"
-echo "                         or product changes without a release-version advance"
+echo "  reference-transaction: local main may only fast-forward to origin/main"
+echo "                         after resident and product release gates pass"
 echo "  post-merge:       says what the stage image is now (cannot refuse)"
+echo "main tracks origin/main; pull.ff=only; fetch.prune=true; push.default=simple"
 echo "merge.nowreceipts = tools/receipts-merge-driver"
 echo "  ext/stage-receipts.json conflicts BY DESIGN on every real merge."

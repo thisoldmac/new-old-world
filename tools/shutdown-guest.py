@@ -103,7 +103,21 @@ from lab_root import import_harness  # noqa: E402
 # THE RIG IS MISSING IS NOT THE GUEST REFUSING TO SHUT DOWN. import_harness
 # exits 3 saying so, so a caller cannot read a host-side setup problem as a
 # machine that would not go down and reach for a power cut.
-Harness, HarnessError = import_harness("shut itself down")
+_HARNESS_TYPES = None
+
+
+def harness_types():
+    """Load the private rig only when a route actually needs it.
+
+    The route classifier and source guards are deliberately machineless and
+    run in the public CI checkout. A real anchor operation still crosses the
+    same import_harness boundary and exits 3 with its fail-closed message when
+    the sibling lab package is unavailable.
+    """
+    global _HARNESS_TYPES
+    if _HARNESS_TYPES is None:
+        _HARNESS_TYPES = import_harness("shut itself down")
+    return _HARNESS_TYPES
 
 DEV = os.environ.get("NOW_GUEST_DIR", "Macintosh HD:TimBotTu:now-dev")
 APPLET = os.environ.get("NOW_SHUTDOWN_NAME", "NOW Shut Down")
@@ -157,6 +171,7 @@ def worker_answers(port):
 
     A fresh Harness per call for the same reason qmp_alive opens a fresh
     socket: a held connection reports the machine that WAS there."""
+    Harness, _ = harness_types()
     try:
         Harness(host="127.0.0.1", port=port,
                 expect_backing={"worker"}).request("hello", {})
@@ -420,6 +435,7 @@ def anchor_scope(port):
 
     None means the anchor did not answer - which is a different problem
     from a narrow scope and must not be reported as one."""
+    Harness, _ = harness_types()
     try:
         hello = Harness(host="127.0.0.1", port=port,
                         expect_backing={"worker"}).request("hello", {})
@@ -557,6 +573,7 @@ def quit_front_application(h):
     """Give whatever is in front a chance to save itself before the applet
     takes the machine down without asking. The Finder has no Quit, so it
     is left alone; anything else gets Cmd-Q and up to ten seconds."""
+    _, HarnessError = harness_types()
     front = front_process(h)
     if front is None or front.get("signature") == "MACS":
         return
@@ -682,6 +699,7 @@ def _graceful(a):
     # An anchor that will not answer is a CLOSED ROUTE, not a crash. It
     # used to raise out of main with a HarnessError traceback, which is
     # the least actionable ending this file has ever had.
+    Harness, HarnessError = harness_types()
     try:
         h = Harness(host="127.0.0.1", port=a.port, expect_backing={"worker"})
         st = h.request("stat", {"path": a.applet})

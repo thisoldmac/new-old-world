@@ -101,14 +101,21 @@ public enum MirrorActProjections {
     /// assert the opposite of, so including it would either fail them or
     /// force them to carve out the one row they were written about. It is
     /// registered with the observations, where it belongs.
-    // Projection metatypes have no instance state; this registry is immutable.
-    public nonisolated(unsafe) static let rows: [any HostProjection.Type] = [
+    // The catalog explains the Swift 6.1/6.2 erased-metatype diagnostic
+    // transition. One factory keeps both compiler declarations on one list.
+#if compiler(>=6.2)
+    public nonisolated(unsafe) static let rows = makeRows()
+#else
+    public static let rows = makeRows()
+#endif
+
+    private static func makeRows() -> [any HostProjection.Type] { [
         WindowActProjection.self,
         ControlActProjection.self,
         MenuActProjection.self,
         TextGetProjection.self,
         TextSetProjection.self,
-    ]
+    ] }
 
     /// The requirements the whole plane rests on, for the test that checks
     /// no row requires anything outside it.

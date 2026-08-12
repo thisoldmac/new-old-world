@@ -371,6 +371,24 @@ def main() -> int:
             "name: Documentation", "name: Docs changed name",
             "does not expose the recorded required check",
         )
+        expect_mutation(
+            test_root, "Pages green-main guard", test_root / ".github/workflows/pages.yml",
+            "github.event.workflow_run.conclusion == 'success'",
+            "github.event.workflow_run.conclusion == 'failure'",
+            "Pages deployment workflow must require green CI",
+        )
+        expect_mutation(
+            test_root, "Pages verified revision", test_root / ".github/workflows/pages.yml",
+            "ref: ${{ github.event.workflow_run.head_sha }}",
+            "ref: main",
+            "Pages deployment workflow must checkout the verified revision",
+        )
+        expect_mutation(
+            test_root, "Pages hidden release assets", test_root / ".github/workflows/pages.yml",
+            "include-hidden-files: true",
+            "include-hidden-files: false",
+            "Pages deployment workflow must publish RFC 9116 .well-known assets",
+        )
 
         generated = test_root / "docs/generated/asyncapi.md"
         original_generated = replace(generated, "# Generated wire contract reference", "# Stale wire contract reference")
@@ -414,6 +432,15 @@ def main() -> int:
         )
         if generated_release.returncode:
             raise RuntimeError("release asset fixture failed:\n" + generated_release.stdout + generated_release.stderr)
+        security_text = (release_site / ".well-known/security.txt").read_text()
+        robots_text = (release_site / "robots.txt").read_text()
+        if "Policy: https://now.example/developer-guide/reference/security/" not in security_text:
+            raise RuntimeError("security.txt policy is not rooted at the configured documentation origin")
+        if "Sitemap: https://now.example/sitemap.xml" not in robots_text:
+            raise RuntimeError("robots.txt sitemap is not rooted at the configured documentation origin")
+        if "https://now.example/docs/" in security_text + robots_text:
+            raise RuntimeError("release assets retain the retired /docs/ base path")
+        print("[docs-gate-selftest] root release assets: matched canonical documentation origin")
         configured = integration.read_text()
         integration.write_text(
             set_yaml_scalar(configured, "security_contact", "mailto:changed@now.example")

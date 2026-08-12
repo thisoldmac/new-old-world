@@ -14,9 +14,9 @@ the initial release profile.
 > passed its physical-hardware matrix. The wire is plaintext and unauthenticated
 > for use on a trusted LAN only.
 
-Start with the [user guide](docs/user-guide/index.md),
-[developer orientation](docs/developer-guide/orientation.md), or
-[current limitations](docs/user-guide/reference/limitations.md). Release
+Start with the [published documentation](https://docs.newoldworldmac.com/),
+[developer orientation](https://docs.newoldworldmac.com/developer-guide/orientation/),
+or [current limitations](https://docs.newoldworldmac.com/user-guide/reference/limitations/). Release
 branches, immutable numbered candidates, and promotion are defined in
 [RELEASING.md](RELEASING.md).
 

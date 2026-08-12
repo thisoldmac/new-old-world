@@ -36,16 +36,20 @@ def main() -> int:
         return 1
 
     origin = str(config["canonical_origin"]).rstrip("/")
+    base_path = "/" + str(config["base_path"]).strip("/")
+    if base_path != "/":
+        base_path += "/"
+    site_origin = origin + base_path
     site = Path(args.site_dir)
     well_known = site / ".well-known"
     security = (
         f"Contact: {config['security_contact']}\n"
         f"Expires: {config['security_expires']}\n"
         f"Canonical: {origin}/.well-known/security.txt\n"
-        f"Policy: {origin}/docs/developer-guide/reference/security/\n"
+        f"Policy: {site_origin}developer-guide/reference/security/\n"
     )
     robots = (
-        "User-agent: *\nAllow: /\n" f"Sitemap: {origin}/docs/sitemap.xml\n"
+        "User-agent: *\nAllow: /\n" f"Sitemap: {site_origin}sitemap.xml\n"
     )
     if args.check:
         expected = {well_known / "security.txt": security, site / "robots.txt": robots}

@@ -381,6 +381,35 @@ class RoutesReadTheMachineRatherThanAssumeIt(unittest.TestCase):
         self.mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.mod)
 
+    def _without_lab(self, statement):
+        script = f"""
+import importlib.util
+spec = importlib.util.spec_from_file_location(
+    'shutdown_guest', {str(TOOLS / 'shutdown-guest.py')!r})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+{statement}
+"""
+        env = dict(os.environ)
+        env["NOW_LAB_ROOT"] = str(ROOT / "missing-public-ci-lab")
+        env.pop("PYTHONPATH", None)
+        return subprocess.run([sys.executable, "-c", script], env=env,
+                              cwd=ROOT, capture_output=True, text=True)
+
+    def test_machineless_routes_import_without_the_private_lab(self):
+        """MUTATION: eagerly load the harness and this exits 3 on import."""
+        proc = self._without_lab(
+            "print(mod.routes(None, wire=None, applet_staged=True)[0][0])")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("Finder Special > Shut Down", proc.stdout)
+
+    def test_a_harness_route_still_names_the_missing_rig(self):
+        """Lazy loading must not turn a missing rig into a guest refusal."""
+        proc = self._without_lab("mod.harness_types()")
+        self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+        self.assertIn("NOTHING WAS ASKED", proc.stderr)
+        self.assertIn("Do NOT power-cut", proc.stderr)
+
     def test_the_canonical_scope_leaves_two_routes_open_and_one_shut(self):
         """The exact 24 verbs read out of both base images on 2026-08-07."""
         canonical = {

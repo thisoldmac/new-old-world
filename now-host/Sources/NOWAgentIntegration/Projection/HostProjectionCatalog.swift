@@ -7,9 +7,16 @@ import Foundation
 /// session facts, then observation, then the actions, then the guest Files
 /// family. It is not alphabetical and should not become so.
 public enum HostProjectionCatalog {
-    // Projection metatypes have no instance state; the array is immutable
-    // after construction. Swift cannot derive Sendable for the erased type.
-    public nonisolated(unsafe) static let projections: [any HostProjection.Type] = [
+    // Swift 6.1 accepts the immutable erased-metatype array as Sendable and
+    // warns on the escape hatch; Swift 6.2+ requires that hatch again. The
+    // rows stay in one factory so the compiler fence cannot fork the catalog.
+#if compiler(>=6.2)
+    public nonisolated(unsafe) static let projections = makeProjections()
+#else
+    public static let projections = makeProjections()
+#endif
+
+    private static func makeProjections() -> [any HostProjection.Type] { [
         ProjectsProjection.self,
         DevelopmentEnvironmentProjection.self,
         DevelopmentProjection.self,
@@ -141,5 +148,5 @@ public enum HostProjectionCatalog {
         GuestFilesUploadBeginProjection.self,
         GuestFilesUploadAppendProjection.self,
         GuestFilesUploadCommitProjection.self,
-    ]
+    ] }
 }

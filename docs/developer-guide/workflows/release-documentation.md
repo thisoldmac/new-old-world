@@ -6,9 +6,9 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [RELEASING.md, docs/site-integration.yaml, scripts/test-docs]
-source_dependencies: [RELEASING.md, docs/site-integration.yaml, docs/assets/screenshots/manifest.yaml, product/features.yaml, scripts/test-docs, scripts/docs-build, scripts/verify-host-signature, docs/naming.md, contract/resident_version.h, docs/status.md, docs/known-wrong.md, docs/open-issues.md]
+source_dependencies: [RELEASING.md, docs/site-integration.yaml, docs/assets/screenshots/manifest.yaml, product/features.yaml, scripts/test-docs, scripts/docs-build, .github/workflows/pages.yml, scripts/verify-host-signature, docs/naming.md, contract/resident_version.h, docs/status.md, docs/known-wrong.md, docs/open-issues.md]
 media_ids: []
-last_verified: 2026-08-09
+last_verified: 2026-08-11
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
