@@ -44,9 +44,11 @@ ownership retention. The shipping module's Continuity layout renders offscreen
 at 900×720.
 The hide guard was mutation-checked: reversing it made the exact ownership test
 fail on the absent hide/show calls, and restoration made it pass. The full
-`scripts/test-host` gate passed both 2,221-test asset modes, the isolated socket
-test, and unsigned Debug and Release app builds. This was therefore **tested,
-not metal-verified** at commit `38564f9e` before the hardware run.
+The initial `scripts/test-host` gate passed both 2,221-test asset modes, the
+isolated socket test, and unsigned Debug and Release app builds. This was
+therefore **tested, not metal-verified** at commit `38564f9e` before the
+hardware run. After the feedback corrections, the same gate passed both
+2,226-test modes, the isolated socket test, and both app builds at `a8ff7031`.
 
 The signed `38564f9e` host was then run with the existing PowerBook guest and
 resident. The user reported that the complete screen-edge feature worked on the
