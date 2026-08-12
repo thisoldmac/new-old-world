@@ -261,8 +261,10 @@ final class MultiGuestFocusTests: XCTestCase {
             for: "census", as: CensusHostModuleRuntime.self))
         let software = try XCTUnwrap(state.moduleRuntime(
             for: "software", as: SoftwareHostModuleRuntime.self))
+        let files = try XCTUnwrap(state.moduleRuntime(
+            for: "files", as: FilesHostModuleRuntime.self))
         for label in [screen.model.connection.peerLabel,
-                      state.files.connection.peerLabel,
+                      files.model.connection.peerLabel,
                       census.model.connection.peerLabel,
                       state.processes.connection.peerLabel,
                       software.model.connection.peerLabel] {

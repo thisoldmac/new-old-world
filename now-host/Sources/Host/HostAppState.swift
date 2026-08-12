@@ -9,12 +9,6 @@ final class HostAppState: ObservableObject {
         didSet { defaults.set(selectedModuleID, forKey: Self.selectionKey) }
     }
     private let notifier = CaptureNotifier()
-    private(set) lazy var files: FilesModuleModel = {
-        FilesModuleModel(
-            listener: listener,
-            defaults: defaults,
-            artifactApprover: agentIntegration)
-    }()
 
     /// A file the guest sent landed here — say so outside the window.
     ///
@@ -289,14 +283,16 @@ final class HostAppState: ObservableObject {
     /// switch — the two used to be separate assignments, and a module added
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
-        [files, diagnostics, processes, mirror]
+        [diagnostics, processes, mirror]
     }
 
     private lazy var moduleRuntimes = HostModuleRuntimeStore(
         registry: moduleRegistry,
         context: HostModuleContext(
             listener: listener,
-            currentConnection: { [unowned self] in self.currentConnection }))
+            currentConnection: { [unowned self] in self.currentConnection },
+            defaults: defaults,
+            artifactApprover: agentIntegration))
     private let moduleRegistry: ModuleRegistry
 
     /// Points the whole window at another connected Mac.

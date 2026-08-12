@@ -10,6 +10,18 @@ enum ModuleTier: String, CaseIterable, Sendable {
 struct HostModuleContext {
     let listener: GuestListener
     let currentConnection: () -> GuestConnectionState
+    let defaults: UserDefaults
+    let artifactApprover: AgentIntegrationHostAdapter?
+
+    init(listener: GuestListener,
+         currentConnection: @escaping () -> GuestConnectionState,
+         defaults: UserDefaults = ProductIdentity.defaults,
+         artifactApprover: AgentIntegrationHostAdapter? = nil) {
+        self.listener = listener
+        self.currentConnection = currentConnection
+        self.defaults = defaults
+        self.artifactApprover = artifactApprover
+    }
 }
 
 @MainActor
@@ -190,10 +202,11 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == ScreenHostModule.definition.descriptor.id {
             return ScreenHostModule.definition
         }
+        if descriptor.id == FilesHostModule.definition.descriptor.id {
+            return FilesHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
-            case "files":
-                return AnyView(FilesModuleView(model: state.files))
             case "icloud":
                 return AnyView(CloudModuleView(model: state.cloudModule))
             case "processes":

@@ -90,13 +90,7 @@ struct ModuleRegistry {
        something else is how the copy drifted in the first place. */
     private static let standardDescriptors: [ModuleDescriptor] = [
         ScreenHostModule.definition.descriptor,
-        ModuleDescriptor(
-            id: "files",
-            title: "Files",
-            symbol: "folder",
-            summary: "Browse \(MachineNaming.possessive(nil)) share, and "
-                + "move files both ways"
-        ),
+        FilesHostModule.definition.descriptor,
         /* Straight after Files because it is the same subject seen from
            this side: Files is what the two machines exchange, iCloud is
            what of THIS Mac's cloud joins that exchange. It is the one

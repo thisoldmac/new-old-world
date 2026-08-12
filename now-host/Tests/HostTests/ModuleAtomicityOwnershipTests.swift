@@ -128,4 +128,31 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"screen\""))
         XCTAssertTrue(definition.contains("screenshots_module_ops"))
     }
+
+    func testFilesDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = FilesHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "files")
+        XCTAssertEqual(definition.descriptor.tier, .core)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testFilesOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/files/files_module_definition.c")
+
+        XCTAssertFalse(state.contains("lazy var files"))
+        XCTAssertFalse(compatibility.contains("case \"files\""))
+        XCTAssertFalse(registry.contains("k_files_definition"))
+        XCTAssertTrue(registry.contains("files_module_definition()"))
+        XCTAssertTrue(definition.contains("\"files\""))
+        XCTAssertTrue(definition.contains("files_module_ops"))
+    }
 }

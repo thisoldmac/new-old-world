@@ -20,18 +20,6 @@
 #include "software_module.h"
 #include "web_module.h"
 
-/* Compatibility definitions for pages whose metadata has not moved into its
-   own domain yet. Networking is the pilot: its definition lives beside its
-   implementation and enters this one composition root by pointer. */
-static const WorkshopModuleDefinition k_files_definition = {
-    kWorkshopFiles, "files", "Files",
-    "Browse the other Mac's share and choose what this Mac exposes.",
-    "Files still lives in File Sharing and the peer browser windows.",
-    "Browse and exchange", 130, kWorkshopModuleTierCore,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    files_module_ops
-};
-
 static const WorkshopModuleDefinition k_processes_definition = {
     kWorkshopProcesses, "processes", "Processes",
     "Everything running on this Mac. Quit asks politely and never forces.",
@@ -142,7 +130,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
 {
     switch (page_id) {
     case kWorkshopScreenshots: return screenshots_module_definition();
-    case kWorkshopFiles: return &k_files_definition;
+    case kWorkshopFiles: return files_module_definition();
     case kWorkshopConsole: return console_module_definition();
     case kWorkshopProcesses: return &k_processes_definition;
     case kWorkshopHardware: return census_module_definition();
