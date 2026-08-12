@@ -135,6 +135,51 @@ policy's mutation evidence.
 - **Say what you did not verify.** A PR that names its own gaps is worth
   more than one that implies coverage it does not have.
 
+### Product-code QA before merge
+
+A pull request that changes product code or its shared contract cannot merge on
+automated suites alone. The machine-readable scope is
+`.github/repository-policy.json > code_qa.product_code`; it covers both guests,
+the host, resident components, Web Bridge, the wire contract, and the global
+feature profile. Documentation, GitHub administration, and developer-only
+tooling do not trigger this gate by themselves.
+
+Two successes must exist on the pull request's current head:
+
+1. **Emulator QA** — an agent-driven local sweep of every affected product
+   surface on each applicable emulator. Exercise the human surface and the
+   wire/console surface where the change can affect them; record what was not
+   applicable rather than silently omitting it. After the sweep:
+
+       tools/code-qa attest-emulator --pr N --summary "what was exercised and observed"
+
+2. **Metal QA** — QA of the affected surface on applicable physical hardware,
+   using the repository's machine/build identity guards. After the run:
+
+       tools/code-qa attest-metal --pr N --machine "machine name" \
+         --summary "what was exercised and observed"
+
+Both commands refuse a dirty tree or a local revision other than the current PR
+head. A later push therefore needs fresh evidence. The emulator sweep is a
+required local review, not a claim that emulator behavior settles hardware
+behavior.
+
+Only the human owner may waive metal QA, interactively and with a concrete
+reason:
+
+    tools/code-qa override-metal --pr N --reason "why metal QA is omitted"
+
+The override produces a visible PR record, applies only to that head revision,
+and never changes the result's verification status to metal-verified. Agents
+must stop and ask the owner; they may not invoke or answer the override prompt.
+
+GitHub Team does not provide required environment reviewers for private
+repositories. GitHub therefore cannot distinguish an owner's browser action
+from tooling authenticated as that owner. The interactive command, named actor,
+exact confirmation, and PR record make the override explicit and auditable;
+the agent prohibition is a repository rule, not a claim of stronger platform
+identity.
+
 ## Where notes go
 
 `docs/` is published and deliberate. `docs/local/` is gitignored scratch

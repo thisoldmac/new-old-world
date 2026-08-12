@@ -47,6 +47,8 @@ jobs:
           fetch-depth: 0
       - name: Prove policy mutations are refused
         run: tools/git-policy selftest
+      - name: Prove product-code QA classification
+        run: tools/code-qa selftest
       - name: Validate branch and pull-request title
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
