@@ -12,6 +12,12 @@ final class MirrorContinuityController: ObservableObject,
                                       ContinuityInputDriver {
     typealias Audit = (HostLog.LogLevel, String) -> Void
 
+    private struct BufferedPrimaryCycle {
+        var press: MirrorKit.Point
+        var latest: MirrorKit.Point
+        var release: MirrorKit.Point?
+    }
+
     enum Phase: Equatable {
         case idle
         case arming
@@ -43,12 +49,32 @@ final class MirrorContinuityController: ObservableObject,
                 requestedHz = 30
                 return
             }
-            if !loadingRate,
+            if !loadingSettings,
                let machine = listener.activeContinuityTarget?.key.machine {
                 defaults.set(requestedHz, forKey: rateKey(for: machine))
             }
             if phase != .idle {
-                relinquish(reason: "rate changed", keepEnabled: true)
+                rearmAfterConfigurationChange(reason: "rate changed")
+            }
+        }
+    }
+    @Published var autoReconnect = false {
+        didSet {
+            guard autoReconnect != oldValue, !loadingSettings,
+                  let machine = listener.activeContinuityTarget?.key.machine
+            else { return }
+            defaults.set(autoReconnect, forKey: reconnectKey(for: machine))
+        }
+    }
+    @Published var fastPump = false {
+        didSet {
+            guard fastPump != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(fastPump, forKey: fastPumpKey(for: machine))
+            }
+            if phase != .idle {
+                rearmAfterConfigurationChange(reason: "Fast Pump changed")
             }
         }
     }
@@ -73,6 +99,9 @@ final class MirrorContinuityController: ObservableObject,
     private var pressAcknowledged = false
     private var releasePending = false
     private var deferredButtonPoint: MirrorKit.Point?
+    private var bufferedButtonCycle: BufferedPrimaryCycle?
+    private var capturingBufferedCycle = false
+    private var pointerInside = false
     private var idleIntervals = 0
     private var udp: NWConnection?
     /* Network.framework may spend time preparing a physical interface while
@@ -85,10 +114,11 @@ final class MirrorContinuityController: ObservableObject,
     private var armTimeout: Task<Void, Never>?
     private var buttonAckTimeout: Task<Void, Never>?
     private var permissionRetry: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
     private var waitingForLocalNetworkAccess = false
     private var permissionRetryCount = 0
     private var suppressEnabledObserver = false
-    private var loadingRate = false
+    private var loadingSettings = false
     private var acceptedHz = 30
     private var sentDatagrams: UInt32 = 0
     private var validAcks: UInt32 = 0
@@ -110,10 +140,11 @@ final class MirrorContinuityController: ObservableObject,
         listener.onContinuityReport = { [weak self] key, report in
             self?.received(report, from: key)
         }
-        loadRateForActiveGuest()
+        loadSettingsForActiveGuest()
     }
 
     func pointerMoved(to point: MirrorKit.Point) {
+        pointerInside = true
         self.point = point
         positionDirty = true
         guard isEnabled else { return }
@@ -125,6 +156,7 @@ final class MirrorContinuityController: ObservableObject,
     }
 
     func pointerLeft() {
+        pointerInside = false
         guard phase != .idle else { return }
         if phase == .active { sendState(inside: false, keepalive: false) }
         relinquish(reason: "pointer left Mirror", keepEnabled: true)
@@ -133,13 +165,27 @@ final class MirrorContinuityController: ObservableObject,
     @discardableResult
     func primaryDown(at point: MirrorKit.Point) -> Bool {
         guard phase == .active else { return false }
-        /* A second press cannot fall through to Mirror while the preceding
-           raw release is settling. Consuming it avoids mixing the semantic
-           and device planes; the next ordinary press works after its ACK. */
-        guard !buttonCycleActive else {
-            audit(.warn, "ignored primary down while release is settling")
+        /* A human double-click can begin while the first manager-up is still
+           settling on a cooperatively scheduled guest. Buffer exactly one
+           complete following cycle instead of dropping that second click or
+           letting it fall through to Mirror's semantic plane. */
+        if buttonCycleActive {
+            guard bufferedButtonCycle == nil,
+                  releasePending || !wireButtonDown else {
+                audit(.warn, "ignored primary down while button is held")
+                return true
+            }
+            bufferedButtonCycle = BufferedPrimaryCycle(
+                press: point, latest: point, release: nil)
+            capturingBufferedCycle = true
             return true
         }
+        beginPrimaryCycle(at: point)
+        return true
+    }
+
+    private func beginPrimaryCycle(at point: MirrorKit.Point,
+                                   releasedAt: MirrorKit.Point? = nil) {
         self.point = point
         positionDirty = true
         advancePositionIfNeeded()
@@ -147,16 +193,20 @@ final class MirrorContinuityController: ObservableObject,
         buttonCycleActive = true
         wireButtonDown = true
         pressAcknowledged = false
-        releasePending = false
-        deferredButtonPoint = nil
+        releasePending = releasedAt != nil
+        deferredButtonPoint = releasedAt
         sendState(inside: true, keepalive: false)
         scheduleButtonAckTimeout(generation: buttonGeneration, down: true)
-        return true
     }
 
     @discardableResult
     func primaryDragged(to point: MirrorKit.Point) -> Bool {
-        guard phase == .active, buttonCycleActive else { return false }
+        guard phase == .active else { return false }
+        if capturingBufferedCycle, bufferedButtonCycle != nil {
+            bufferedButtonCycle?.latest = point
+            return true
+        }
+        guard buttonCycleActive else { return false }
         if pressAcknowledged {
             self.point = point
             positionDirty = true
@@ -170,7 +220,14 @@ final class MirrorContinuityController: ObservableObject,
 
     @discardableResult
     func primaryUp(at point: MirrorKit.Point) -> Bool {
-        guard phase == .active, buttonCycleActive else { return false }
+        guard phase == .active else { return false }
+        if capturingBufferedCycle, bufferedButtonCycle != nil {
+            bufferedButtonCycle?.latest = point
+            bufferedButtonCycle?.release = point
+            capturingBufferedCycle = false
+            return true
+        }
+        guard buttonCycleActive else { return false }
         deferredButtonPoint = point
         releasePending = true
         if pressAcknowledged { sendPrimaryRelease() }
@@ -178,6 +235,7 @@ final class MirrorContinuityController: ObservableObject,
     }
 
     func cancel(reason: String) {
+        pointerInside = false
         relinquish(reason: reason, keepEnabled: true)
     }
 
@@ -194,7 +252,8 @@ final class MirrorContinuityController: ObservableObject,
         resetTransport()
         setEnabledWithoutTeardown(false)
         status = "off"
-        loadRateForActiveGuest()
+        pointerInside = false
+        loadSettingsForActiveGuest()
     }
 
     private func arm(permissionRetry: Bool = false) {
@@ -213,7 +272,7 @@ final class MirrorContinuityController: ObservableObject,
         self.target = target
         armID = listener.armContinuity(
             nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
-            requestedHz: rate, leaseTicks: 90)
+            requestedHz: rate, leaseTicks: 90, fastPump: fastPump)
         guard armID != nil else {
             status = "unavailable: no Mac is connected"
             self.target = nil
@@ -258,13 +317,16 @@ final class MirrorContinuityController: ObservableObject,
                     + "\(ContinuityContract.version)"
                 : "the guest reported Continuity control version "
                     + "\(report.version!), expected "
-                    + "\(ContinuityContract.version)")
+                    + "\(ContinuityContract.version)", retryable: false)
             return
         }
         if report.id == armID {
             guard report.state == "armed", let port = report.udpPort,
                   port > 0, port <= Int(UInt16.max) else {
-                guestEnded(reason: reportDescription(report))
+                guestEnded(reason: reportDescription(report),
+                           retryable: report.reason != "unsupported"
+                               && report.reason != "wrong-version",
+                           retryImmediately: report.reason != "guest-input")
                 return
             }
             acceptedHz = [15, 30, 60].contains(report.acceptedHz ?? 0)
@@ -279,13 +341,16 @@ final class MirrorContinuityController: ObservableObject,
         if phase == .arming, report.id == nil { return }
         if report.id == nil,
            report.state == "exited" || report.state == "refused" {
-            guestEnded(reason: reportDescription(report))
+            guestEnded(reason: reportDescription(report),
+                       retryable: report.reason != "unsupported"
+                           && report.reason != "wrong-version",
+                       retryImmediately: report.reason != "guest-input")
         }
     }
 
     private func openUDP(host: String, port: UInt16) {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-            guestEnded(reason: "invalid UDP port")
+            guestEnded(reason: "invalid UDP port", retryable: false)
             return
         }
         let connection = NWConnection(host: NWEndpoint.Host(host),
@@ -540,7 +605,8 @@ final class MirrorContinuityController: ObservableObject,
     private func apply(_ ack: ContinuityAckDatagram) {
         applyButtonAcknowledgement(ack)
         if ack.exitReason != .none || ack.state == .inactive {
-            guestEnded(reason: exitDescription(ack.exitReason))
+            guestEnded(reason: exitDescription(ack.exitReason),
+                       retryImmediately: ack.exitReason != .guestInput)
         }
     }
 
@@ -567,6 +633,19 @@ final class MirrorContinuityController: ObservableObject,
             buttonCycleActive = false
             releasePending = false
             deferredButtonPoint = nil
+            startBufferedPrimaryCycleIfNeeded()
+        }
+    }
+
+    private func startBufferedPrimaryCycleIfNeeded() {
+        guard let bufferedButtonCycle else { return }
+        self.bufferedButtonCycle = nil
+        capturingBufferedCycle = false
+        beginPrimaryCycle(at: bufferedButtonCycle.press,
+                          releasedAt: bufferedButtonCycle.release)
+        if bufferedButtonCycle.release == nil,
+           bufferedButtonCycle.latest != bufferedButtonCycle.press {
+            deferredButtonPoint = bufferedButtonCycle.latest
         }
     }
 
@@ -592,7 +671,12 @@ final class MirrorContinuityController: ObservableObject,
     private func scheduleButtonAckTimeout(generation: UInt32, down: Bool) {
         buttonAckTimeout?.cancel()
         buttonAckTimeout = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            /* Down must settle quickly before a hold is considered live. Up
+               is already safe in low memory and can wait for a starved NOW
+               task to regain cooperative time after the target tracking loop
+               unwinds. */
+            try? await Task.sleep(
+                nanoseconds: down ? 1_000_000_000 : 5_000_000_000)
             guard let self, !Task.isCancelled,
                   self.phase == .active, self.buttonCycleActive,
                   self.wireButtonDown == down,
@@ -603,6 +687,37 @@ final class MirrorContinuityController: ObservableObject,
                 + "ending epoch=\(self.epoch), generation=\(generation)")
             self.relinquish(reason: "button \(transition) acknowledgement timed out",
                             keepEnabled: true)
+            self.scheduleReconnect(reason: "button \(transition) timeout")
+        }
+    }
+
+    private func rearmAfterConfigurationChange(reason: String) {
+        let shouldRearm = isEnabled && pointerInside
+        relinquish(reason: reason, keepEnabled: true)
+        if shouldRearm {
+            scheduleReconnect(reason: reason, delay: 0.25,
+                              requiresOptIn: false)
+        }
+    }
+
+    private func scheduleReconnect(reason: String, delay: Double = 0.75,
+                                   requiresOptIn: Bool = true) {
+        guard (!requiresOptIn || autoReconnect), isEnabled, pointerInside,
+              listener.activeContinuityTarget != nil else { return }
+        reconnectTask?.cancel()
+        status = "Continuity interrupted; reconnecting…"
+        reconnectTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(
+                nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled,
+                  (!requiresOptIn || self.autoReconnect),
+                  self.isEnabled, self.pointerInside,
+                  self.phase == .idle,
+                  self.listener.activeContinuityTarget != nil else { return }
+            self.reconnectTask = nil
+            self.positionDirty = true
+            self.audit(.info, "automatic reconnect: reason=\(reason)")
+            self.arm()
         }
     }
 
@@ -635,6 +750,8 @@ final class MirrorContinuityController: ObservableObject,
         buttonAckTimeout = nil
         permissionRetry?.cancel()
         permissionRetry = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
         waitingForLocalNetworkAccess = false
         udp?.cancel()
         udp = nil
@@ -658,13 +775,24 @@ final class MirrorContinuityController: ObservableObject,
         else if keepEnabled { status = "move over the Mirror to reconnect" }
     }
 
-    private func guestEnded(reason: String) {
+    private func guestEnded(reason: String, retryable: Bool = true,
+                            retryImmediately: Bool = true) {
         audit(.warn, "guest ended Continuity: reason=\(reason), "
             + "epoch=\(epoch), sent=\(sentDatagrams), "
             + "validAcks=\(validAcks)")
         resetTransport()
-        status = "Continuity ended on the Mac: \(reason)"
-        setEnabledWithoutTeardown(false)
+        if autoReconnect && retryable && isEnabled {
+            if retryImmediately {
+                status = "Continuity ended on the Mac: \(reason); reconnecting…"
+                scheduleReconnect(reason: reason)
+            } else {
+                status = "Continuity ended on the Mac: \(reason); move the "
+                    + "host pointer to reconnect"
+            }
+        } else {
+            status = "Continuity ended on the Mac: \(reason)"
+            setEnabledWithoutTeardown(false)
+        }
     }
 
     private func reportDescription(_ report: ContinuityReport) -> String {
@@ -695,6 +823,8 @@ final class MirrorContinuityController: ObservableObject,
         buttonAckTimeout = nil
         permissionRetry?.cancel()
         permissionRetry = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
         waitingForLocalNetworkAccess = false
         udp?.cancel()
         udp = nil
@@ -715,6 +845,8 @@ final class MirrorContinuityController: ObservableObject,
         pressAcknowledged = false
         releasePending = false
         deferredButtonPoint = nil
+        bufferedButtonCycle = nil
+        capturingBufferedCycle = false
     }
 
     private func setEnabledWithoutTeardown(_ enabled: Bool) {
@@ -724,19 +856,29 @@ final class MirrorContinuityController: ObservableObject,
         suppressEnabledObserver = false
     }
 
-    private func loadRateForActiveGuest() {
+    private func loadSettingsForActiveGuest() {
         guard let machine = listener.activeContinuityTarget?.key.machine else {
             return
         }
         let stored = defaults.integer(forKey: rateKey(for: machine))
         let rate = [15, 30, 60].contains(stored) ? stored : 30
-        loadingRate = true
+        loadingSettings = true
         requestedHz = rate
-        loadingRate = false
+        autoReconnect = defaults.bool(forKey: reconnectKey(for: machine))
+        fastPump = defaults.bool(forKey: fastPumpKey(for: machine))
+        loadingSettings = false
     }
 
     private func rateKey(for machine: GuestID) -> String {
         "mirror.continuity.rate.\(machine.slug)"
+    }
+
+    private func reconnectKey(for machine: GuestID) -> String {
+        "mirror.continuity.autoReconnect.\(machine.slug)"
+    }
+
+    private func fastPumpKey(for machine: GuestID) -> String {
+        "mirror.continuity.fastPump.\(machine.slug)"
     }
 
     private func wireDisarmReason(for reason: String) -> String {

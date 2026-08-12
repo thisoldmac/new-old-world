@@ -327,6 +327,19 @@ void now_ext_cursor_remember_continuity_point(NowPeekI32 h, NowPeekI32 v)
     remember_owned_device_point(pt);
 }
 
+/* The synthetic PPC Cursor Device normally draws its own report, but an
+   application can leave CrsrObscure set until the next physical mouse move.
+   Continuity is that next movement. This is called only from the PPC app's
+   synchronous resident service in cooperative task time, never from a timer. */
+void now_ext_cursor_reveal_continuity(void)
+{
+    if (*gCrsrObscure == 0)
+        return;
+    *gCrsrObscure = 0;
+    HideCursor();
+    ShowCursor();
+}
+
 /* Called from Continuity's Time Manager task immediately after its sole
    position write. Resident memory only: this does not follow a CursorDevice,
    call a manager, or mutate another mouse global. */

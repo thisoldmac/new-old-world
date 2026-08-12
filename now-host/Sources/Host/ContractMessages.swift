@@ -179,6 +179,7 @@ struct ContinuityArm: Codable, Equatable, Sendable {
     var epoch: UInt32
     var requestedHz: Int
     var leaseTicks: Int
+    var fastPump: Bool?
 }
 
 struct ContinuityDisarm: Codable, Equatable, Sendable {

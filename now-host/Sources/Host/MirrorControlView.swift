@@ -303,11 +303,17 @@ private struct ContinuityControlCard: View {
                     .pickerStyle(.segmented)
                     .disabled(!controller.isEnabled || !mirrorRunning)
                 }
+                Toggle("Reconnect after interruption",
+                       isOn: $controller.autoReconnect)
+                    .disabled(!mirrorRunning)
+                Toggle("Fast Pump (experimental)",
+                       isOn: $controller.fastPump)
+                    .disabled(!controller.isEnabled || !mirrorRunning)
                 Text(controller.status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Optional and off by default. Primary clicks and drags bypass Mirror while connected. Moving the physical guest mouse immediately returns control to that Mac.")
+                Text("Optional and off by default. Primary clicks and drags bypass Mirror while connected. Moving the physical guest mouse immediately returns control to that Mac. Fast Pump asks the guest to yield every tick while Continuity is armed; it may improve motion at the cost of more guest CPU time.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -6718,6 +6718,7 @@ static void serve_continuity_arm(const char *request)
     unsigned long epoch = now_json_find_u32(request, "epoch", 0);
     unsigned long hz = now_json_find_u32(request, "requestedHz", 0);
     unsigned long lease = now_json_find_u32(request, "leaseTicks", 0);
+    int fast_pump = now_json_find_bool(request, "fastPump", 0);
     unsigned long version = now_json_find_u32(request, "version", 0);
     int result;
 
@@ -6731,7 +6732,7 @@ static void serve_continuity_arm(const char *request)
         return;
     }
     result = now_continuity_arm(id, g.port, nonce_hi, nonce_lo, epoch,
-                                hz, lease);
+                                hz, lease, fast_pump);
     if (result == kNowContinuityArmUnsupported)
         (void)continuity_refuse(id, epoch, "unsupported");
     else if (result == kNowContinuityArmTransportUnavailable)
@@ -7536,7 +7537,8 @@ ConnPhase conn_phase(void)
 Boolean conn_wants_fast_pump(void)
 {
     return g_xfer.active || g_stream.active || g_offer.active
-        || g_put.active || g_ctlq.count > 0;
+        || g_put.active || g_ctlq.count > 0
+        || now_continuity_wants_fast_pump();
 }
 
 long conn_sleep_ticks(void)

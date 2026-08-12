@@ -140,12 +140,12 @@ def send_until_applied(udp, lease, sequence, h, v, generation, down,
         f"not applied after {sends} sends; last={replies[-1] if replies else None}")
 
 
-def arm(link, ident, lease):
+def arm(link, ident, lease, fast_pump=False):
     nonce_hi, nonce_lo, epoch = lease
     link._send({
         "type": "continuity.arm", "version": VERSION, "id": ident,
         "nonceHi": nonce_hi, "nonceLo": nonce_lo, "epoch": epoch,
-        "requestedHz": 30, "leaseTicks": 90,
+        "requestedHz": 30, "leaseTicks": 90, "fastPump": fast_pump,
     })
     report = next_control(link, "continuity.report", ident)
     if report.get("state") not in ("armed", "active"):
@@ -202,8 +202,8 @@ def native_move(qmp, link, dx, dy):
     return {"before": before, "after": after, "rows": after_rows}
 
 
-def run_click(link, udp, lease, ident):
-    armed = arm(link, ident, lease)
+def run_click(link, udp, lease, ident, fast_pump=False):
+    armed = arm(link, ident, lease, fast_pump)
     down, down_sends, _ = send_until_applied(
         udp, lease, 1, 360, 280, 1, True)
     up, up_sends, _ = send_until_applied(
@@ -215,8 +215,8 @@ def run_click(link, udp, lease, ident):
             "disarmed": stopped}
 
 
-def run_click_burst(link, udp, lease, ident, cycles=16):
-    armed = arm(link, ident, lease)
+def run_click_burst(link, udp, lease, ident, cycles=16, fast_pump=False):
+    armed = arm(link, ident, lease, fast_pump)
     sequence = 0
     generation = 0
     sends = 0
@@ -241,8 +241,8 @@ def run_click_burst(link, udp, lease, ident, cycles=16):
             "rows": rows, "disarmed": stopped}
 
 
-def run_drag(link, udp, lease, ident):
-    armed = arm(link, ident, lease)
+def run_drag(link, udp, lease, ident, fast_pump=False):
+    armed = arm(link, ident, lease, fast_pump)
     down, down_sends, replies = send_until_applied(
         udp, lease, 1, 280, 220, 1, True)
     points = [(280 + i * 5, 220 + i * 3) for i in range(1, 31)]
@@ -266,8 +266,8 @@ def run_drag(link, udp, lease, ident):
             "disarmed": stopped}
 
 
-def run_lease_release(link, udp, lease, ident):
-    armed = arm(link, ident, lease)
+def run_lease_release(link, udp, lease, ident, fast_pump=False):
+    armed = arm(link, ident, lease, fast_pump)
     down, sends, _ = send_until_applied(
         udp, lease, 1, 420, 320, 1, True)
     exited = next_exit(link, "lease-expired", timeout=10)
@@ -276,8 +276,8 @@ def run_lease_release(link, udp, lease, ident):
             "exit": exited, "rows": rows}
 
 
-def run_native_takeover(qmp, link, udp, lease, ident):
-    armed = arm(link, ident, lease)
+def run_native_takeover(qmp, link, udp, lease, ident, fast_pump=False):
+    armed = arm(link, ident, lease, fast_pump)
     down, sends, _ = send_until_applied(
         udp, lease, 1, 460, 340, 1, True)
     qmp.cmd("input-send-event", {"events": [
@@ -309,6 +309,8 @@ def main():
                         choices=("pmu", "pmu-adb", "cuda"))
     parser.add_argument("--expect-build-prefix", required=True)
     parser.add_argument("--artifacts", required=True)
+    parser.add_argument("--fast-pump", action="store_true",
+                        help="arm every test epoch with experimental Fast Pump")
     args = parser.parse_args()
     args.artifacts = os.path.abspath(args.artifacts)
     os.makedirs(args.artifacts, exist_ok=True)
@@ -335,27 +337,33 @@ def main():
         "guestBuild": build,
         "residentCapabilities": capabilities,
         "residentFingerprint": extension.get("buildFingerprint"),
+        "fastPump": args.fast_pump,
     }
     active_epoch = None
     try:
         active_epoch = 101
         receipt["click"] = run_click(
-            link, udp, (nonce_hi, nonce_lo, active_epoch), 8101)
+            link, udp, (nonce_hi, nonce_lo, active_epoch), 8101,
+            args.fast_pump)
         receipt["nativeAfterClick"] = native_move(qmp, link, -90, -60)
         active_epoch = 102
         receipt["rapidClicks"] = run_click_burst(
-            link, udp, (nonce_hi, nonce_lo, active_epoch), 8111)
+            link, udp, (nonce_hi, nonce_lo, active_epoch), 8111,
+            fast_pump=args.fast_pump)
         active_epoch = 103
         receipt["drag"] = run_drag(
-            link, udp, (nonce_hi, nonce_lo, active_epoch), 8121)
+            link, udp, (nonce_hi, nonce_lo, active_epoch), 8121,
+            args.fast_pump)
         receipt["nativeAfterDrag"] = native_move(qmp, link, 90, 60)
         active_epoch = 104
         receipt["leaseRelease"] = run_lease_release(
-            link, udp, (nonce_hi, nonce_lo, active_epoch), 8131)
+            link, udp, (nonce_hi, nonce_lo, active_epoch), 8131,
+            args.fast_pump)
         receipt["nativeAfterLease"] = native_move(qmp, link, -70, 45)
         active_epoch = 105
         receipt["nativeTakeover"] = run_native_takeover(
-            qmp, link, udp, (nonce_hi, nonce_lo, active_epoch), 8141)
+            qmp, link, udp, (nonce_hi, nonce_lo, active_epoch), 8141,
+            args.fast_pump)
         receipt["wireAfterTakeover"] = mouseloc(link)
         receipt["failure"] = None
     except Exception as error:

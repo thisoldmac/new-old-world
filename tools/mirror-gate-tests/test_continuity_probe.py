@@ -47,6 +47,23 @@ class ContinuityProbeCodecTests(unittest.TestCase):
         self.assertEqual(fields[2], DIRECT.INSIDE | DIRECT.PRIMARY_DOWN)
         self.assertEqual(fields[9], 9)
 
+    def test_direct_pointer_instrument_can_opt_into_fast_pump(self):
+        class Link:
+            def __init__(self):
+                self.sent = None
+
+            def _send(self, message):
+                self.sent = message
+
+        link = Link()
+        original = DIRECT.next_control
+        DIRECT.next_control = lambda *_args, **_kwargs: {"state": "armed"}
+        try:
+            DIRECT.arm(link, 7, (1, 2, 3), fast_pump=True)
+        finally:
+            DIRECT.next_control = original
+        self.assertIs(link.sent["fastPump"], True)
+
 
 if __name__ == "__main__":
     unittest.main()

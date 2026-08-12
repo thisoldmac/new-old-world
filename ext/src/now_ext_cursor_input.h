@@ -25,6 +25,7 @@ typedef struct {
 
 NowPeekU32 now_ext_cursor_physical_input_seq(void);
 void now_ext_cursor_remember_continuity_point(NowPeekI32 h, NowPeekI32 v);
+void now_ext_cursor_reveal_continuity(void);
 void now_ext_cursor_remember_continuity_tracking_point(NowPeekI32 h,
                                                        NowPeekI32 v);
 void now_ext_cursor_remember_continuity_button(unsigned down);

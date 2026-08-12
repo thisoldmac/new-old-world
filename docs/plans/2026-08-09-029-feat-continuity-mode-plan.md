@@ -138,8 +138,11 @@ The control has explicit states rather than one optimistic Boolean:
 - `Guest took control`
 - `Degraded` with reason
 
-`Guest took control` turns the session toggle off. Host packets from the old
-epoch cannot re-arm it; the person must explicitly enable Continuity again.
+`Guest took control` turns the session toggle off by default. With optional
+automatic recovery enabled, the epoch still ends immediately but the host
+keeps the policy toggle armed and waits for fresh host motion before asking for
+a new epoch. It never immediately fights the physical guest input that just
+took control.
 
 ### Requirements
 
@@ -232,6 +235,15 @@ epoch cannot re-arm it; the person must explicitly enable Continuity again.
   active. Bypass ends immediately on guest takeover, degradation, or teardown.
 - R30. The feature's internal names distinguish pointer Continuity from the
   existing `NOWMirrorSceneContinuity` scene reducer.
+- R31. Automatic reconnect is opt-in and remembered per stable guest. It may
+  retry transport or lease interruptions while the host remains in guest
+  space, but physical guest takeover requires fresh host motion.
+- R32. Experimental Fast Pump is opt-in and remembered per stable guest. It
+  only selects the existing one-tick task-time event-loop sleep while the
+  epoch is armed, and resets on disarm, disconnect, and shutdown.
+- R33. One complete second primary cycle may wait behind one unacknowledged
+  manager-up so double-click survives cooperative tracking delay. No unbounded
+  edge queue is permitted.
 
 ### Acceptance examples
 

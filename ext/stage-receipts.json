@@ -480,6 +480,18 @@
         "ext/src/now_ext_cursor_input.h"
       ],
       "reason": "Recovered from exact session patches for the branch-private resident already metal-tested; shared oracle promotion remains deferred to release-candidate landing."
+    },
+    {
+      "at": "2026-08-12T12:32:07-0400",
+      "branch": "codex/dev/cross-cutting/continuity-cursor-v0",
+      "extDigest": "caf00ee4e6194135e0fc18bd044682e914b996ed",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h"
+      ],
+      "reason": "Recovered from exact session patches for the branch-private resident already tested and baked; shared oracle promotion remains deferred to release-candidate landing."
     }
   ]
 }

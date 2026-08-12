@@ -385,6 +385,7 @@ void now_ext_continuity_service(void)
         }
         now_ext_cursor_remember_continuity_point(cell->request_h,
                                                  cell->request_v);
+        now_ext_cursor_reveal_continuity();
         gTasktimeCursorApplies++;
         cell->at_h = cell->request_h;
         cell->at_v = cell->request_v;

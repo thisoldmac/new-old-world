@@ -33,7 +33,8 @@ final class ContractMessageTests: XCTestCase {
         let arm = ContinuityArm(version: ContinuityContract.version,
                                 id: 9, nonceHi: 0x0123_4567,
                                 nonceLo: 0x89AB_CDEF, epoch: 4,
-                                requestedHz: 30, leaseTicks: 90)
+                                requestedHz: 30, leaseTicks: 90,
+                                fastPump: true)
         let report = ContinuityReport(
             version: ContinuityContract.version,
             id: 9, epoch: 4, state: "armed", acceptedHz: 30,

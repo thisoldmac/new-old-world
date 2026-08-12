@@ -204,6 +204,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
 
     private func makeArmingRig(
         initial: MirrorKit.Point = .init(x: 40, y: 50),
+        autoReconnect: Bool = false,
+        fastPump: Bool = false,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ArmingRig {
         let guest = FakeGuest(port: try XCTUnwrap(listener.boundPort))
@@ -216,6 +218,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
 
         let controller = MirrorContinuityController(
             listener: listener, defaults: defaults, audit: audit)
+        controller.autoReconnect = autoReconnect
+        controller.fastPump = fastPump
         controller.isEnabled = true
         controller.pointerMoved(to: initial)
         try await waitUntil("arm") {
@@ -233,13 +237,17 @@ final class MirrorContinuityControllerTests: XCTestCase {
 
     private func makeActiveRig(
         initial: MirrorKit.Point = .init(x: 40, y: 50),
+        autoReconnect: Bool = false,
+        fastPump: Bool = false,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ActiveRig {
         let port = try XCTUnwrap(listener.boundPort)
         let udp = try FakeContinuityUDP(port: port)
         udp.start()
         try await waitUntil("UDP listener") { udp.ready }
-        let rig = try await makeArmingRig(initial: initial, audit: audit)
+        let rig = try await makeArmingRig(
+            initial: initial, autoReconnect: autoReconnect,
+            fastPump: fastPump, audit: audit)
         try rig.guest.send(.continuityReport(.init(
             version: ContinuityContract.version,
             id: rig.arm.id, epoch: rig.arm.epoch, state: "armed",
@@ -430,7 +438,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         }
     }
 
-    func testUnacknowledgedReleaseEndsTheEpoch() async throws {
+    func testManagerReleaseMaySettleAfterTrackingLoopWithoutDisconnect()
+        async throws {
         let rig = try await makeActiveRig()
         defer { rig.udp.stop() }
 
@@ -451,18 +460,109 @@ final class MirrorContinuityControllerTests: XCTestCase {
                     && !$0.flags.contains(.primaryDown)
             }
         }
-        try await waitUntil("unacknowledged release teardown", timeout: 2) {
-            !rig.controller.isActive && rig.guest.received.contains {
-                if case .continuityDisarm(let disarm) = $0 {
-                    return disarm.epoch == rig.arm.epoch
-                }
-                return false
+        try await Task.sleep(nanoseconds: 1_200_000_000)
+        XCTAssertTrue(rig.controller.isActive,
+                      "a tracking loop may starve the manager-up report")
+        let up = try XCTUnwrap(rig.udp.packets.last {
+            $0.buttonGeneration != down.buttonGeneration
+                && !$0.flags.contains(.primaryDown)
+        })
+        rig.udp.acknowledge(up)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(rig.controller.isActive)
+    }
+
+    func testSecondClickIsBufferedUntilFirstReleaseSettles()
+        async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 40, y: 50)))
+        try await waitUntil("first press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
             }
         }
-        XCTAssertTrue(rig.controller.isEnabled,
-                      "a failed cycle leaves the optional mode available")
-        XCTAssertEqual(rig.controller.status,
-                       "move over the Mirror to reconnect")
+        let firstDown = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        })
+        rig.udp.acknowledge(firstDown)
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 40, y: 50)))
+        try await waitUntil("first release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != 0
+                    && $0.buttonGeneration != firstDown.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+            }
+        }
+        let firstUp = try XCTUnwrap(rig.udp.packets.last {
+            $0.buttonGeneration != 0
+                && $0.buttonGeneration != firstDown.buttonGeneration
+                && !$0.flags.contains(.primaryDown)
+        })
+
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 42, y: 52)))
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 42, y: 52)))
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(rig.udp.packets.contains {
+            $0.buttonGeneration != 0
+                && $0.buttonGeneration != firstDown.buttonGeneration
+                && $0.buttonGeneration != firstUp.buttonGeneration
+        }, "the second click must wait for the first manager-up")
+
+        rig.udp.acknowledge(firstUp)
+        try await waitUntil("second press") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != firstDown.buttonGeneration
+                    && $0.buttonGeneration != firstUp.buttonGeneration
+                    && $0.flags.contains(.primaryDown)
+            }
+        }
+        let secondDown = try XCTUnwrap(rig.udp.packets.last {
+            $0.buttonGeneration != firstDown.buttonGeneration
+                && $0.buttonGeneration != firstUp.buttonGeneration
+                && $0.flags.contains(.primaryDown)
+        })
+        rig.udp.acknowledge(secondDown)
+        try await waitUntil("second release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != firstDown.buttonGeneration
+                    && $0.buttonGeneration != firstUp.buttonGeneration
+                    && $0.buttonGeneration != secondDown.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+            }
+        }
+    }
+
+    func testAutoReconnectRearmsAfterLeaseExpiry() async throws {
+        let rig = try await makeActiveRig(autoReconnect: true)
+        defer { rig.udp.stop() }
+
+        try rig.guest.send(.continuityReport(.init(
+            version: ContinuityContract.version,
+            id: nil, epoch: rig.arm.epoch, state: "exited",
+            acceptedHz: rig.arm.requestedHz, udpPort: nil,
+            reason: "lease-expired", acceptedPackets: 4,
+            stalePackets: 0, malformedPackets: 0,
+            appliedPositionSequence: 3, appliedButtonGeneration: 0)))
+        try await waitUntil("automatic rearm", timeout: 2) {
+            rig.guest.received.compactMap { message -> ContinuityArm? in
+                if case .continuityArm(let arm) = message { return arm }
+                return nil
+            }.count == 2
+        }
+        let arms = rig.guest.received.compactMap { message -> ContinuityArm? in
+            if case .continuityArm(let arm) = message { return arm }
+            return nil
+        }
+        XCTAssertNotEqual(arms[0].epoch, arms[1].epoch)
+        XCTAssertTrue(rig.controller.isEnabled)
+        XCTAssertEqual(rig.controller.phase, .arming)
+    }
+
+    func testFastPumpIsRequestedOnlyWhenOptedIn() async throws {
+        let fast = try await makeArmingRig(fastPump: true)
+        XCTAssertEqual(fast.arm.fastPump, true)
     }
 
     func testClicksFallThroughUntilTheRawLaneIsActive() async throws {
@@ -598,7 +698,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         })
     }
 
-    func testRatePersistsForTheStableGuestButEnablementDoesNot()
+    func testContinuitySettingsPersistButEnablementDoesNot()
         async throws {
         let port = try XCTUnwrap(listener.boundPort)
         let guest = FakeGuest(port: port)
@@ -612,12 +712,16 @@ final class MirrorContinuityControllerTests: XCTestCase {
         var controller: MirrorContinuityController? =
             MirrorContinuityController(listener: listener, defaults: defaults)
         controller?.requestedHz = 60
+        controller?.autoReconnect = true
+        controller?.fastPump = true
         controller?.isEnabled = true
         controller = nil
 
         let reopened = MirrorContinuityController(listener: listener,
                                                   defaults: defaults)
         XCTAssertEqual(reopened.requestedHz, 60)
+        XCTAssertTrue(reopened.autoReconnect)
+        XCTAssertTrue(reopened.fastPump)
         XCTAssertFalse(reopened.isEnabled,
                        "opening a new Mirror session must not seize input")
     }

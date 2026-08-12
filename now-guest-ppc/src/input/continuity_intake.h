@@ -28,12 +28,13 @@ typedef struct {
 int now_continuity_arm(long id, unsigned short port,
                        unsigned long nonce_hi, unsigned long nonce_lo,
                        unsigned long epoch, unsigned long requested_hz,
-                       unsigned long lease_ticks);
+                       unsigned long lease_ticks, int fast_pump);
 int now_continuity_disarm(long id, unsigned long epoch);
 void now_continuity_disconnect(void);
 void now_continuity_shutdown(void);
 int now_continuity_take_report(NowContinuityReport *out);
 unsigned short now_continuity_udp_port(void);
+int now_continuity_wants_fast_pump(void);
 const char *now_continuity_state_name(unsigned long state);
 const char *now_continuity_reason_name(unsigned long reason);
 

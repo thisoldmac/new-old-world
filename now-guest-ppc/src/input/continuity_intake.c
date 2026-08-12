@@ -26,6 +26,7 @@ static unsigned short gBoundPort;
 static volatile NowCU32 gNonceHi;
 static volatile NowCU32 gNonceLo;
 static volatile NowCU32 gEpoch;
+static int gFastPump;
 static volatile NowCU32 gMalformed;
 static volatile NowCU32 gRejected;
 static volatile Boolean gAckPending;
@@ -352,7 +353,7 @@ static int open_udp(unsigned short port)
 int now_continuity_arm(long id, unsigned short port,
                        unsigned long nonce_hi, unsigned long nonce_lo,
                        unsigned long epoch, unsigned long requested_hz,
-                       unsigned long lease_ticks)
+                       unsigned long lease_ticks, int fast_pump)
 {
     NowPeekContinuityCell *shared = cell();
 
@@ -403,8 +404,9 @@ int now_continuity_arm(long id, unsigned short port,
     /* Publish notifier authority only after the resident accepted the same
        epoch. A datagram can never outrun construction of its consumer. */
     gEpoch = (NowCU32)epoch;
-    now_log(kLogInfo, "mirror", "arm epoch=%lu hz=%lu lease=%lu",
-            epoch, requested_hz, lease_ticks);
+    gFastPump = fast_pump != 0;
+    now_log(kLogInfo, "mirror", "arm epoch=%lu hz=%lu lease=%lu fast=%d",
+            epoch, requested_hz, lease_ticks, gFastPump);
     return kNowContinuityArmOK;
 }
 
@@ -417,6 +419,7 @@ int now_continuity_disarm(long id, unsigned long epoch)
         return 0;
     }
     gEpoch = 0;                    /* datagrams lose authority first */
+    gFastPump = 0;
     shared->enabled = 0;
     bump_nonzero(&shared->control_seq);
     gPendingReplyID = id;
@@ -439,6 +442,7 @@ void now_continuity_disconnect(void)
     NowPeekContinuityCell *shared;
 
     gEpoch = 0;                    /* revoke before table or transport work */
+    gFastPump = 0;
     shared = cell();
     if (shared != NULL && shared->enabled) {
         shared->enabled = 0;
@@ -461,6 +465,7 @@ void now_continuity_disconnect(void)
 void now_continuity_shutdown(void)
 {
     gEpoch = 0;
+    gFastPump = 0;
     gNotifierCell = NULL;
     close_udp("application shutdown");
     now_continuity_service_shutdown();
@@ -469,6 +474,11 @@ void now_continuity_shutdown(void)
 unsigned short now_continuity_udp_port(void)
 {
     return gBoundPort;
+}
+
+int now_continuity_wants_fast_pump(void)
+{
+    return gEpoch != 0 && gFastPump;
 }
 
 int now_continuity_take_report(NowContinuityReport *out)

@@ -41,6 +41,8 @@ notifier = body("static pascal void continuity_notifier(")
 take_report = body("int now_continuity_take_report(")
 arm = body("int now_continuity_arm(")
 open_udp = body("static int open_udp(")
+shutdown = body("void now_continuity_shutdown(")
+fast_pump = body("int now_continuity_wants_fast_pump(")
 
 failures = []
 if "gEpoch = 0" not in disarm:
@@ -55,6 +57,18 @@ elif disconnect.index("gEpoch = 0") > disconnect.index("shared = cell()"):
     failures.append("TCP disconnect reads shared state before revoking UDP authority")
 if "close_udp(" in disconnect:
     failures.append("TCP disconnect tears down OT before resident reset settles")
+for name, source in (("disarm", disarm), ("disconnect", disconnect),
+                     ("shutdown", shutdown)):
+    if "gFastPump = 0" not in source:
+        failures.append(f"{name} can leave optional Fast Pump armed")
+if "gEpoch != 0 && gFastPump" not in fast_pump:
+    failures.append("Fast Pump is no longer bounded to a live authority epoch")
+if 'now_json_find_bool(request, "fastPump", 0)' not in WIRE:
+    failures.append("continuity.arm no longer defaults optional Fast Pump off")
+if "now_continuity_wants_fast_pump()" not in body(
+        "Boolean conn_wants_fast_pump", WIRE):
+    failures.append(
+        "Continuity Fast Pump no longer reaches the existing task sleep policy")
 if "endpoint retained" not in disconnect:
     failures.append("disconnect no longer records its retained transport policy")
 if "kOTFlowErr" not in try_ack or "gAckPending = true" not in try_ack:

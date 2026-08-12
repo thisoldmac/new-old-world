@@ -35,6 +35,9 @@ def function_body(source: str, signature: str, next_signature: str) -> str:
 resident_service = function_body(
     CONTINUITY, "void now_ext_continuity_service(",
     "void now_ext_continuity_tick(")
+reveal = function_body(
+    CURSOR, "void now_ext_cursor_reveal_continuity(",
+    "void now_ext_cursor_remember_continuity_tracking_point(")
 ppc_move = function_body(
     PPC_CURSOR, "long now_continuity_cursor_move(",
     "void now_continuity_cursor_shutdown(")
@@ -72,6 +75,10 @@ check("gServiceActive" in resident_service
       "resident service lost its non-reentrant guard and counter")
 check("trace_event" in resident_service,
       "resident service lost its allocation-free flight recorder")
+check("now_ext_cursor_reveal_continuity();" in resident_service,
+      "successful task-time movement no longer wakes an obscured cursor")
+check("HideCursor();" in reveal and "ShowCursor();" in reveal,
+      "the task-time visibility wake no longer redraws through QuickDraw")
 
 check("now_cdm_move_to(gDevice" in ppc_move,
       "PPC task-time cursor path no longer uses the corrected transition")

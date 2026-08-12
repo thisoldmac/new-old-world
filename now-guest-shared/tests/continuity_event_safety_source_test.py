@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("NOW_SOURCE_ROOT", Path(__file__).resolve().parents[2]))
 RESIDENT = (ROOT / "ext/src/now_ext_continuity.c").read_text()
+CURSOR = (ROOT / "ext/src/now_ext_cursor.c").read_text()
 PPC = (ROOT / "now-guest-ppc/src/input/continuity_service.c").read_text()
 PPC_CURSOR = (ROOT / "now-guest-ppc/src/input/continuity_cursor.c").read_text()
 HOST = (ROOT / "now-host/Sources/Host/MirrorContinuityController.swift").read_text()
@@ -20,7 +21,7 @@ def body(source: str, start_name: str, end_name: str) -> str:
     return source[start:end]
 
 
-tick = body(RESIDENT, "void now_ext_continuity_tick(",
+tick = body(RESIDENT, "void now_ext_continuity_tick(TMTaskPtr task)\n{",
             "int now_ext_continuity_boot(")
 release = body(RESIDENT, "static void release_button_lowmem(",
                "static void request_button(")
@@ -32,6 +33,8 @@ result = body(RESIDENT, "static void process_event_result(",
               "static void force_reset(")
 service = body(RESIDENT, "void now_ext_continuity_service(",
                "void now_ext_continuity_tick(")
+reveal = body(CURSOR, "void now_ext_cursor_reveal_continuity(",
+              "void now_ext_cursor_remember_continuity_tracking_point(")
 host_buttons = body(HOST, "func primaryDown", "func cancel")
 failures = []
 
@@ -86,6 +89,13 @@ check("kNowPeekContinuityExitLeaseExpired" in tick
       "the timer no longer covers every forced-release boundary")
 check("now_continuity_button_action" in service,
       "the resident no longer consumes the v2 primary transition")
+check("now_ext_cursor_reveal_continuity();" in service,
+      "task-time synthetic movement no longer reveals an obscured cursor")
+check("now_ext_cursor_reveal_continuity" not in tick,
+      "the interrupt timer again reaches cursor visibility/QuickDraw work")
+check("*gCrsrObscure = 0" in reveal
+      and "HideCursor();" in reveal and "ShowCursor();" in reveal,
+      "Continuity no longer reproduces the native mouse visibility wake")
 check("applied_button_generation" in service,
       "the resident no longer acknowledges button transitions")
 check("guard phase == .active" in host_buttons,

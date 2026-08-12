@@ -634,6 +634,47 @@ unverified on the PowerBook 1400c and the capability remains quarantined for a
 bounded attended metal pass. The private receipts are named in
 [continuity-mode.md](continuity-mode.md). No shared image was modified.
 
+**2026-08-11 attended click/drag update:** raw click and a Finder drag both ran
+on the PowerBook without reproducing the prior system wedge. The drag's logical
+position was accurate, but its drawn cursor remained at the press point except
+for brief flashes at the current point; mouse-up then ended the Continuity
+epoch. A hidden OS 9 cursor also stayed hidden until native trackpad movement,
+and a second rapid click was lost. The next candidate clears `CrsrObscure` and
+balances the cursor only from the PPC application's synchronous resident
+service, permits five seconds for a manager-up delayed by a tracking loop,
+buffers exactly one following click cycle, and offers optional per-guest epoch
+reconnect. These changes are tested, not yet metal-verified. The stale drag
+sprite is a separate cooperative-starvation problem: the preserved cursor
+research measured chain-only `GetMouse`/`StillDown`/`Button` hooks as the
+task-time redraw vehicle during tracking. Integrating permanent global trap
+patches remains an explicit safety decision, not an incidental cleanup.
+
+Fast Pump is now an optional experimental arm field. It adds armed Continuity
+to the existing one-tick cooperative sleep predicate and resets on every
+disarm, disconnect, and shutdown. This can test the observed roughly 500 ms
+periodic stalls without moving work into the notifier or Time Manager task.
+The 15/30/60 Hz cadence and CPU/fairness effects remain open metal measurements.
+Raw menu-title clicks currently use classic hold-to-track semantics and close
+on mouse-up; whether direct-pointer mode should synthesize Mac OS 9's later
+click-to-open UX or remain raw is still a product decision.
+
+Independent private PMU/USB and CUDA/ADB cold boots then exercised Fast Pump
+against guest build `582abf3ee6e2…` and resident fingerprint `e500d393bf76…`.
+Both passed click, 16 rapid cycles / 32 ordered edges, a 30-point drag,
+dead-man release, native return, wire liveness, Finder shutdown, and clean HFS
+inspection with zero rejects and no pending manager-up. CUDA additionally
+reported actual `guest-input` takeover; PMU retained its known held-QMP-input
+limitation and is credited only for lease release. The receipts are named in
+[continuity-mode.md](continuity-mode.md). This is emulator safety evidence,
+not a claim that Fast Pump improves PowerBook cadence.
+
+The exact resident was privately baked as
+`agent-stage/now-stage-continuity-direct-pointer-next.qcow2`, SHA-256
+`ace409f65ef6ea3fa767326bde62ecd890393a43b12fe6ea7831849a1d1c7aac`.
+It reported fingerprint `e500d393…`, all 1023 capabilities, survived the full
+census, shut down through Finder, left a clean HFS volume, and passed
+`qemu-img check`. No shared image or shared receipt was modified.
+
 **2026-08-11 transport and metal update:** the first resident 1.17 host handoff armed
 over TCP but delivered no UDP packet to the guest: 70 host sends, zero guest
 accepted/stale/malformed packets, zero ACK attempts, and zero resident applies.

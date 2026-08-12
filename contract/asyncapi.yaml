@@ -2137,6 +2137,15 @@ components:
             refreshes this lease. Before the first state,
             the resident uses its fixed five-second arming grace so UDP
             setup cannot consume the live-input dead-man.
+        fastPump:
+          type: boolean
+          default: false
+          description: >
+            Experimental and host-selected. While this Continuity epoch is
+            armed, the guest's cooperative event loop uses its existing
+            one-tick work-in-flight sleep instead of the ordinary idle sleep.
+            This never moves Cursor Device, Event Manager, or QuickDraw work
+            into an Open Transport notifier or resident timer.
     ContinuityDisarm:
       type: object
       required: [type, version, id, epoch, reason]

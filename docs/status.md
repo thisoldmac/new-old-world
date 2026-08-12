@@ -210,6 +210,16 @@ parallel availability lists.
 
 - **Mirror Continuity is isolated on a release-candidate-bound feature branch**
   (updated 2026-08-11). Its contract, host UI, and transport are implemented.
+  An attended direct-pointer pass subsequently delivered raw clicks and a
+  Finder drag on the PowerBook without a system wedge. It exposed a hidden
+  cursor wake bug, a tracking-loop sprite stranded at the press point, an
+  over-aggressive mouse-up timeout, and a lost rapid second click. The next
+  tested candidate wakes an obscured cursor from task time, gives manager-up
+  five seconds to settle, buffers one following click cycle, and adds optional
+  per-guest epoch reconnect plus experimental one-tick Fast Pump. The
+  tracking-loop sprite fix remains gated on explicit acceptance of the cursor
+  research spike's permanent chain-only tracking hooks; these post-metal
+  corrections are not yet metal-verified.
   V0 hover movement uses a
   TCP-authorized, same-numbered UDP lane at a user-selected 15/30/60 Hz. The
   resident releases on host departure, focus loss, link loss, lease expiry, or

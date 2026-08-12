@@ -9,7 +9,11 @@ Mirror's semantic click path is bypassed only while that raw lane is active.
 
 It is off by default and its enable switch is session-only. The update rate is
 user-selectable at 15, 30, or 60 Hz; 30 Hz is the default, and the selection is
-remembered per stable guest identity.
+remembered per stable guest identity. Two separately optional preferences are
+also remembered per guest: automatic recovery of an interrupted pointer epoch,
+and experimental Fast Pump. Fast Pump reuses the guest event loop's existing
+one-tick work-in-flight sleep while an epoch is armed; it does not move any
+manager or drawing work into the Open Transport notifier or resident timer.
 
 ## Product direction: one input engine, several surfaces
 
@@ -88,6 +92,13 @@ is live it switches to the clamped 0.25–10 second lease; the host currently
 requests 90 ticks (1.5 s). Setup therefore cannot spend the dead-man that
 protects a held live button.
 
+A cooperatively scheduled tracking loop may delay the PPC application's
+manager-up result even after the resident has made low-memory button-up safe.
+The host therefore allows five seconds for up to settle, while retaining the
+one-second down bound. A second complete primary cycle may wait behind that
+single outstanding up; this preserves a human double-click without permitting
+an unbounded click queue.
+
 ## Yielding to the guest
 
 Continuity does not disable the guest's physical pointing device. P9 samples
@@ -112,8 +123,45 @@ foreground application's tracking loop has starved the PPC wire pump.
   edge stream, so guest tracking loops receive a real drag.
 
 All three slices are implemented and emulator-tested together as direct-pointer
-wire version 2 / resident table V4. Direct click and drag remain
-**not Metal-verified** until observed on the PowerBook 1400c.
+wire version 2 / resident table V4. On 2026-08-11 the PowerBook 1400c accepted
+raw clicks and a Finder drag without a system wedge, so those paths have a
+positive bounded metal result. The pass also exposed four correctness gaps:
+an obscured OS 9 cursor did not reappear on synthetic movement; the drawn
+sprite remained at the press point during tracking even though the drag itself
+moved accurately; the epoch ended after mouse-up; and a second click was lost.
+The cursor visibility wake, delayed-up tolerance, and one-cycle double-click
+buffer are implemented and tested here but await another attended metal pass.
+The tracking-loop sprite requires the research spike's chain-only task-time
+tracking hooks and remains open until that global resident mechanism is
+explicitly accepted and integrated.
+
+Clicking an OS 9 menu title through raw direct-pointer input currently follows
+classic tracking semantics: the menu tracks while held and closes on mouse-up.
+This is a faithful raw-input result, but it differs from the later click-to-open
+behavior a Mac OS 9 user may expect. It remains a named UX decision rather than
+being silently routed back through Mirror's semantic menu act.
+
+The post-metal candidate was then cold-booted independently on
+`mac99,via=pmu` and `mac99,via=cuda` with Fast Pump enabled. Both guests
+reported build `582abf3ee6e2…`, resident fingerprint `e500d393bf76…`, and all
+1023 capabilities. Each completed a click, 16 rapid click cycles / 32 ordered
+transitions, a 30-point held drag, lease-expiry release, native motion after
+release, wire liveness, Finder shutdown, and clean HFS-volume inspection with
+zero rejected packets and no pending manager-up. CUDA additionally observed
+actual `guest-input` takeover while held; PMU recorded its known QMP limitation
+and proved only dead-man release for that row. Receipts are
+`/private/tmp/now-continuity-pmu/direct-pointer-fast/direct-pointer.json` and
+`/private/tmp/now-continuity-cuda/direct-pointer-fast/direct-pointer.json`.
+This proves the optional sleep policy did not weaken the emulator safety rows;
+it does not measure visible cadence or CPU/fairness on the PowerBook.
+
+The same source was then baked into the branch-private image
+`agent-stage/now-stage-continuity-direct-pointer-next.qcow2`, SHA-256
+`ace409f65ef6ea3fa767326bde62ecd890393a43b12fe6ea7831849a1d1c7aac`.
+The guest reported the exact `e500d393…` fingerprint and all capabilities,
+survived the full 14-probe census, shut down through Finder, left the HFS
+volume cleanly unmounted, and passed `qemu-img check`. The shared oracle was
+not changed.
 
 Secondary click, scroll, keyboard input, MCP, agent integration, the guest
 console, and NOW-68K are not Continuity surfaces.
@@ -143,7 +191,7 @@ it then repeated drag, lease, takeover, and wire-liveness checks. The receipts
 are `/private/tmp/nowdp2-pmu/direct-pointer/direct-pointer.json` and
 `/private/tmp/nowdp2-cuda/direct-pointer-burst/direct-pointer.json`. These are
 emulator functional and safety results; the PowerBook click/drag row is still
-open.
+open for the corrected post-metal candidate.
 
 Six earlier PowerBook 1400c runs wedged the machine after resident pointer
 placement. They separately ruled out
