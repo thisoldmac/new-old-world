@@ -46,6 +46,22 @@
   padding-inline-start: 1.25rem;
 }
 
+.now-module-tier {
+  border: 1px solid var(--md-default-fg-color--lighter);
+  border-left: 0.3rem solid currentColor;
+  border-radius: 0.25rem;
+  margin-block: 0 1.25rem;
+  padding: 0.65rem 0.9rem;
+}
+
+.now-module-tier--experimental {
+  color: #8a5300;
+}
+
+.now-module-tier--debug {
+  color: #7a3e8e;
+}
+
 .now-release-state {
   border: 1px solid currentColor;
   border-radius: 999px;

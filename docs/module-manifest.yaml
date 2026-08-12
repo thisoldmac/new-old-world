@@ -1,4 +1,4 @@
-version: 1
+version: 2
 host_registry: now-host/Sources/Host/ModuleRegistry.swift
 ppc_registry: now-guest-ppc/src/workshop/workshop_module.h
 ppc_wiring: now-guest-ppc/src/workshop/workshop_window.c
@@ -6,81 +6,129 @@ guest_68k_registry: now-guest-68k/src/commands/commands68.c
 modules:
   - id: screen
     title: Screen
+    tier: core
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/screen.md
     ppc_pages: [kWorkshopScreenshots]
     guest_68k: supported-subset
   - id: files
     title: Files
+    tier: core
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/files.md
     ppc_pages: [kWorkshopFiles]
     guest_68k: supported-subset
   - id: icloud
     title: iCloud
+    tier: experimental
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/icloud.md
     ppc_pages: [kWorkshopCloud]
     guest_68k: unavailable
   - id: processes
     title: Processes
+    tier: core
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/processes.md
     ppc_pages: [kWorkshopProcesses]
     guest_68k: supported-subset
   - id: mirror
     title: Mirror
+    tier: experimental
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/mirror.md
     ppc_pages: [kWorkshopMirror]
     guest_68k: unavailable
   - id: console
     title: Console
+    tier: core
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/console.md
     ppc_pages: [kWorkshopConsole]
     guest_68k: supported
   - id: chat
     title: Chat
+    tier: experimental
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/chat.md
     ppc_pages: [kWorkshopChat]
     guest_68k: unavailable
   - id: web
     title: Web
+    tier: experimental
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/web.md
     ppc_pages: [kWorkshopWeb]
     guest_68k: unavailable
   - id: development
     title: Development
+    tier: experimental
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/development.md
     ppc_pages: [kWorkshopDevelopment]
     guest_68k: unavailable
   - id: census
     title: Hardware
+    tier: core
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/hardware.md
     ppc_pages: [kWorkshopHardware]
     guest_68k: supported-subset
   - id: diagnostics
     title: Diagnostics
+    tier: debug
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/diagnostics.md
     ppc_pages: [kWorkshopDiagnostics]
     guest_68k: console-only
   - id: networking
     title: Networking
+    tier: core
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/networking.md
     ppc_pages: [kWorkshopNetworking]
     guest_68k: main-window-summary
   - id: software
     title: Software
+    tier: core
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/software.md
     ppc_pages: [kWorkshopSoftware]
     guest_68k: supported-subset
   - id: mcp
     title: MCP
+    tier: experimental
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/mcp.md
     ppc_pages: [kWorkshopMCP]
     guest_68k: unavailable
   - id: logs
     title: Logs
+    tier: debug
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/logs.md
     ppc_pages: [kWorkshopLogs]
     guest_68k: console-only
   - id: settings
     title: Connections and preferences
+    tier: core
+    domains: []
+    feature_id: null
     page: user-guide/reference/modules/connections-and-preferences.md
     ppc_pages: [kWorkshopPreferences, kWorkshopConnection]
     guest_68k: main-window

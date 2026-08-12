@@ -238,6 +238,24 @@ def main() -> int:
             "  - id: screen\n", "  - id: screen-renamed\n", "do not match host registry",
         )
         expect_mutation(
+            test_root, "missing module tier", test_root / "docs/module-manifest.yaml",
+            "    tier: core\n", "", "missing fields: tier",
+        )
+        expect_mutation(
+            test_root, "invalid module tier", test_root / "docs/module-manifest.yaml",
+            "    tier: core\n", "    tier: unstable\n", "invalid tier 'unstable'",
+        )
+        expect_mutation(
+            test_root, "invalid module domains", test_root / "docs/module-manifest.yaml",
+            "    domains: []\n", "    domains: networking\n",
+            "domains must be a list of strings",
+        )
+        expect_mutation(
+            test_root, "unknown module feature", test_root / "docs/module-manifest.yaml",
+            "    feature_id: null\n", "    feature_id: classic.nope\n",
+            "unknown product feature 'classic.nope'",
+        )
+        expect_mutation(
             test_root, "host module without guide", test_root / "now-host/Sources/Host/ModuleRegistry.swift",
             'id: "screen"', 'id: "screen-unmapped"', "do not match host registry",
         )
@@ -246,6 +264,12 @@ def main() -> int:
             test_root / "now-host/Sources/Host/NetworkingHostModule.swift",
             'id: "networking"', 'id: "networking-unmapped"',
             "do not match host registry",
+        )
+        expect_mutation(
+            test_root, "host module tier drift",
+            test_root / "now-host/Sources/Host/NetworkingHostModule.swift",
+            "            tier: .core),", "            tier: .debug),",
+            "does not match host tier 'debug'",
         )
         expect_mutation(
             test_root, "PPC page without mapping", test_root / "now-guest-ppc/src/workshop/workshop_module.h",
@@ -419,6 +443,18 @@ def main() -> int:
                 '<h1 id="files-module">',
                 '<aside class="now-release-banner"></aside><h1 id="files-module">',
                 "need 0", rendered,
+            )
+            mirror = rendered / "user-guide/reference/modules/mirror/index.html"
+            expect_mutation(
+                test_root, "rendered experimental module tier", mirror,
+                'data-tier="experimental"', 'data-tier=""',
+                "rendered module tier labels are ['']", rendered,
+            )
+            logs = rendered / "user-guide/reference/modules/logs/index.html"
+            expect_mutation(
+                test_root, "rendered debug module tier", logs,
+                'data-tier="debug"', 'data-tier=""',
+                "rendered module tier labels are ['']", rendered,
             )
             deep_record = rendered / "files/index.html"
             deep_record_bytes = deep_record.read_bytes()

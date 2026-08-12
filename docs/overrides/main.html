@@ -65,6 +65,22 @@
       {% if provenance.reviewed %}human reviewed{% else %}human review pending{% endif %}.
     </aside>
   {% endif %}
+  {% if page and page.meta and page.meta.module_ids %}
+    {% set module = config.extra.module_taxonomy[page.meta.module_ids[0]] %}
+    {% if module.tier != "core" %}
+      <aside
+        class="now-module-tier now-module-tier--{{ module.tier }}"
+        aria-label="Module maturity"
+        data-tier="{{ module.tier }}">
+        <strong>{{ module.tier | title }} module.</strong>
+        {% if module.tier == "experimental" %}
+          Its interface or behavior may change before the first release candidate.
+        {% else %}
+          It is intended for diagnosis and development, outside the ordinary core workflow.
+        {% endif %}
+      </aside>
+    {% endif %}
+  {% endif %}
   {% if page and page.meta and page.meta.feature_ids %}
     {% set availability = namespace(show=false) %}
     {% for feature_id in page.meta.feature_ids %}
