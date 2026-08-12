@@ -116,36 +116,84 @@ enum ContinuityDisplayGeometry {
         let size = CGSize(width: guestSize.width * scale.rawValue,
                           height: guestSize.height * scale.rawValue)
         let raw = CGRect(origin: proposed, size: size)
-        var answers: [(CGFloat, CGPoint)] = []
+        var answers: [(distance: CGFloat, aligned: Bool, origin: CGPoint)] = []
 
         for host in hosts {
-            let verticalOverlap = overlap(raw.minY ... raw.maxY,
-                                          host.frame.minY ... host.frame.maxY)
-            if verticalOverlap != nil {
-                answers.append((abs(raw.minX - host.frame.maxX),
-                                CGPoint(x: host.frame.maxX, y: proposed.y)))
-                answers.append((abs(raw.maxX - host.frame.minX),
+            let alignedY = nearest(proposed.y,
+                                   to: [host.frame.minY,
+                                        host.frame.maxY - size.height],
+                                   threshold: threshold)
+            for (y, aligned) in snapValues(raw: proposed.y,
+                                           aligned: alignedY) {
+                answers.append((abs(raw.minX - host.frame.maxX), aligned,
+                                CGPoint(x: host.frame.maxX, y: y)))
+                answers.append((abs(raw.maxX - host.frame.minX), aligned,
                                 CGPoint(x: host.frame.minX - size.width,
-                                        y: proposed.y)))
+                                        y: y)))
             }
-            let horizontalOverlap = overlap(raw.minX ... raw.maxX,
-                                            host.frame.minX ... host.frame.maxX)
-            if horizontalOverlap != nil {
-                answers.append((abs(raw.minY - host.frame.maxY),
-                                CGPoint(x: proposed.x, y: host.frame.maxY)))
-                answers.append((abs(raw.maxY - host.frame.minY),
-                                CGPoint(x: proposed.x,
+
+            let alignedX = nearest(proposed.x,
+                                   to: [host.frame.minX,
+                                        host.frame.maxX - size.width],
+                                   threshold: threshold)
+            for (x, aligned) in snapValues(raw: proposed.x,
+                                           aligned: alignedX) {
+                answers.append((abs(raw.minY - host.frame.maxY), aligned,
+                                CGPoint(x: x, y: host.frame.maxY)))
+                answers.append((abs(raw.maxY - host.frame.minY), aligned,
+                                CGPoint(x: x,
                                         y: host.frame.minY - size.height)))
             }
         }
 
-        guard let closest = answers.min(by: { $0.0 < $1.0 }),
-              closest.0 <= threshold else { return proposed }
-        let snapped = CGRect(origin: closest.1, size: size)
-        guard !hosts.contains(where: {
-            positiveArea($0.frame.intersection(snapped))
+        let valid = answers.filter { answer in
+            guard answer.distance <= threshold else { return false }
+            let frame = CGRect(origin: answer.origin, size: size)
+            return collisionFree(frame, hosts: hosts)
+                && sharedEdge(hosts: hosts, guest: frame) != nil
+        }
+        guard let closest = valid.min(by: {
+            if $0.distance != $1.distance { return $0.distance < $1.distance }
+            return $0.aligned && !$1.aligned
         }) else { return proposed }
-        return closest.1
+        return closest.origin
+    }
+
+    static func resolvedOrigin(proposed: CGPoint, previous: CGPoint,
+                               guestSize: CGSize, scale: GuestDisplayScale,
+                               hosts: [HostDisplayDescriptor]) -> CGPoint {
+        let size = CGSize(width: guestSize.width * scale.rawValue,
+                          height: guestSize.height * scale.rawValue)
+        let snapped = snappedOrigin(proposed: proposed, guestSize: guestSize,
+                                    scale: scale, hosts: hosts)
+        if collisionFree(CGRect(origin: snapped, size: size), hosts: hosts) {
+            return snapped
+        }
+
+        var xValues = [proposed.x]
+        var yValues = [proposed.y]
+        for host in hosts {
+            xValues.append(contentsOf: [host.frame.minX - size.width,
+                                        host.frame.maxX])
+            yValues.append(contentsOf: [host.frame.minY - size.height,
+                                        host.frame.maxY])
+        }
+        let candidates = xValues.flatMap { x in
+            yValues.map { CGPoint(x: x, y: $0) }
+        }.filter {
+            collisionFree(CGRect(origin: $0, size: size), hosts: hosts)
+        }
+        if let closest = candidates.min(by: {
+            squaredDistance($0, proposed) < squaredDistance($1, proposed)
+        }) {
+            return snappedOrigin(proposed: closest, guestSize: guestSize,
+                                 scale: scale, hosts: hosts)
+        }
+
+        let previousFrame = CGRect(origin: previous, size: size)
+        return collisionFree(previousFrame, hosts: hosts) ? previous
+            : defaultGuestOrigin(hosts: hosts, guestSize: guestSize,
+                                 scale: scale)
     }
 
     static func guestEntryPoint(at hostPoint: CGPoint,
@@ -214,6 +262,32 @@ enum ContinuityDisplayGeometry {
             && rect.height > adjacencyTolerance
     }
 
+    private static func collisionFree(_ guest: CGRect,
+                                      hosts: [HostDisplayDescriptor]) -> Bool {
+        !hosts.contains { positiveArea($0.frame.intersection(guest)) }
+    }
+
+    private static func nearest(_ value: CGFloat, to candidates: [CGFloat],
+                                threshold: CGFloat) -> CGFloat? {
+        guard let answer = candidates.min(by: {
+            abs($0 - value) < abs($1 - value)
+        }), abs(answer - value) <= threshold else { return nil }
+        return answer
+    }
+
+    private static func snapValues(raw: CGFloat, aligned: CGFloat?)
+        -> [(CGFloat, Bool)] {
+        guard let aligned, aligned != raw else { return [(raw, false)] }
+        return [(aligned, true), (raw, false)]
+    }
+
+    private static func squaredDistance(_ lhs: CGPoint,
+                                        _ rhs: CGPoint) -> CGFloat {
+        let x = lhs.x - rhs.x
+        let y = lhs.y - rhs.y
+        return x * x + y * y
+    }
+
     private static func overlap(_ lhs: ClosedRange<CGFloat>,
                                 _ rhs: ClosedRange<CGFloat>)
         -> ClosedRange<CGFloat>? {
@@ -273,6 +347,13 @@ final class ContinuityDisplayLayout: ObservableObject {
                 hosts: resolvedHosts, guestSize: resolvedGuestSize,
                 scale: resolvedScale)
         }
+        let safeDefault = ContinuityDisplayGeometry.defaultGuestOrigin(
+            hosts: resolvedHosts, guestSize: resolvedGuestSize,
+            scale: resolvedScale)
+        guestOrigin = ContinuityDisplayGeometry.resolvedOrigin(
+            proposed: guestOrigin, previous: safeDefault,
+            guestSize: resolvedGuestSize, scale: resolvedScale,
+            hosts: resolvedHosts)
         if observeScreens {
             screenSubscription = NotificationCenter.default.publisher(
                 for: NSApplication.didChangeScreenParametersNotification)
@@ -317,17 +398,22 @@ final class ContinuityDisplayLayout: ObservableObject {
         let oldFrame = guestFrame
         guestSize = valid
         preserve(edge: oldEdge, oldFrame: oldFrame)
+        guestOrigin = ContinuityDisplayGeometry.resolvedOrigin(
+            proposed: guestOrigin, previous: oldFrame.origin,
+            guestSize: guestSize, scale: guestScale, hosts: hostDisplays)
         persistOrigin()
     }
 
     func setGuestOrigin(_ origin: CGPoint) {
-        guestOrigin = origin
+        guestOrigin = ContinuityDisplayGeometry.resolvedOrigin(
+            proposed: origin, previous: guestOrigin, guestSize: guestSize,
+            scale: guestScale, hosts: hostDisplays)
     }
 
     func finishGuestMove() {
-        guestOrigin = ContinuityDisplayGeometry.snappedOrigin(
-            proposed: guestOrigin, guestSize: guestSize, scale: guestScale,
-            hosts: hostDisplays)
+        guestOrigin = ContinuityDisplayGeometry.resolvedOrigin(
+            proposed: guestOrigin, previous: guestOrigin,
+            guestSize: guestSize, scale: guestScale, hosts: hostDisplays)
         persistOrigin()
     }
 
@@ -337,6 +423,9 @@ final class ContinuityDisplayLayout: ObservableObject {
         let oldFrame = guestFrame
         guestScale = scale
         preserve(edge: oldEdge, oldFrame: oldFrame)
+        guestOrigin = ContinuityDisplayGeometry.resolvedOrigin(
+            proposed: guestOrigin, previous: oldFrame.origin,
+            guestSize: guestSize, scale: guestScale, hosts: hostDisplays)
         defaults?.set(scale.rawValue, forKey: Self.scaleKey)
         persistOrigin()
     }

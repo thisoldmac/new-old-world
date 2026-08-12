@@ -52,10 +52,59 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         let layout = makeLayout()
         layout.setGuestOrigin(CGPoint(x: 1410, y: 120))
 
-        layout.finishGuestMove()
-
         XCTAssertEqual(layout.guestOrigin, CGPoint(x: 1440, y: 120))
         XCTAssertEqual(layout.sharedEdge?.guestSide, .left)
+    }
+
+    func testMovingGuestNearHostAlsoAlignsNearbyScreenEdges() {
+        let layout = makeLayout()
+
+        layout.setGuestOrigin(CGPoint(x: 1410, y: 285))
+
+        XCTAssertEqual(layout.guestOrigin, CGPoint(x: 1440, y: 300))
+        XCTAssertEqual(layout.sharedEdge?.guestSide, .left)
+    }
+
+    func testGuestCannotOverlapAHostPastTheMagneticThreshold() {
+        let layout = makeLayout()
+
+        layout.setGuestOrigin(CGPoint(x: 800, y: 100))
+
+        XCTAssertFalse(layout.guestFrame.intersects(host.frame))
+        XCTAssertNotNil(layout.sharedEdge)
+    }
+
+    func testGuestCannotOverlapAnyDisplayInAHostArrangement() {
+        let builtIn = HostDisplayDescriptor(
+            id: 42, name: "Built-in Retina Display",
+            frame: CGRect(x: 1440, y: 0, width: 982, height: 638),
+            pixelSize: CGSize(width: 3024, height: 1964), isPrimary: false)
+        let layout = ContinuityDisplayLayout(
+            hostDisplays: [host, builtIn],
+            guestSize: CGSize(width: 800, height: 600), defaults: nil,
+            observeScreens: false)
+
+        layout.setGuestOrigin(CGPoint(x: 1800, y: 50))
+
+        XCTAssertFalse(layout.guestFrame.intersects(host.frame))
+        XCTAssertFalse(layout.guestFrame.intersects(builtIn.frame))
+        XCTAssertNotNil(layout.sharedEdge)
+    }
+
+    func testStoredOverlappingPlacementIsMadeCollisionFreeOnLoad() {
+        let suite = "ContinuityDisplayLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "mirror.continuity.hasGuestDisplayOrigin")
+        defaults.set(800.0, forKey: "mirror.continuity.guestDisplayOriginX")
+        defaults.set(100.0, forKey: "mirror.continuity.guestDisplayOriginY")
+
+        let layout = ContinuityDisplayLayout(
+            hostDisplays: [host], guestSize: CGSize(width: 800, height: 600),
+            defaults: defaults, observeScreens: false)
+
+        XCTAssertFalse(layout.guestFrame.intersects(host.frame))
+        XCTAssertNotNil(layout.sharedEdge)
     }
 
     func testGuestEdgeCoordinatesMapAtScaledResolution() throws {
@@ -115,7 +164,7 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertEqual(environment.moves.last?.point.y, 300)
     }
 
-    func testNativeHostButtonReturnsControlImmediately() {
+    func testNativeHostClickIsSentWithoutRelinquishingGuestControl() {
         let layout = makeLayout()
         let driver = Driver()
         let environment = Environment()
@@ -128,13 +177,47 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
                                buttonsDown: false))
         controller.transportPhaseChanged(.active)
 
-        environment.emit(.init(kind: .buttonDown,
+        environment.emit(.init(kind: .primaryDown,
                                location: CGPoint(x: 1439, y: 450),
                                delta: .zero, buttonsDown: true))
+        environment.emit(.init(kind: .primaryUp,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: .zero, buttonsDown: false))
 
-        XCTAssertEqual(controller.state, .ready)
-        XCTAssertEqual(driver.leftCount, 1)
-        XCTAssertEqual(environment.shown, [host.id])
+        XCTAssertEqual(controller.state, .active)
+        XCTAssertEqual(driver.leftCount, 0)
+        XCTAssertEqual(driver.downPoints, [MirrorKit.Point(x: 0, y: 450)])
+        XCTAssertEqual(driver.upPoints, [MirrorKit.Point(x: 0, y: 450)])
+        XCTAssertTrue(environment.shown.isEmpty)
+        XCTAssertEqual(environment.moves.last?.displayID, host.id)
+    }
+
+    func testHeldHostMotionDragsOnGuestWithoutRelinquishingControl() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        environment.emit(.init(kind: .primaryDown,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: .zero, buttonsDown: true))
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 8, y: -5),
+                               buttonsDown: true))
+
+        XCTAssertEqual(controller.state, .active)
+        XCTAssertEqual(driver.leftCount, 0)
+        XCTAssertEqual(driver.draggedPoints,
+                       [MirrorKit.Point(x: 8, y: 455)])
+        XCTAssertTrue(environment.shown.isEmpty)
     }
 
     func testMirrorCursorAndContinuityExposeMutuallyExclusiveEntrySurfaces()
@@ -169,9 +252,26 @@ private extension ContinuityDisplayLayoutTests {
     final class Driver: ContinuityEdgeDriving {
         var points: [MirrorKit.Point] = []
         var leftCount = 0
+        var downPoints: [MirrorKit.Point] = []
+        var draggedPoints: [MirrorKit.Point] = []
+        var upPoints: [MirrorKit.Point] = []
 
         func pointerMoved(to point: MirrorKit.Point) { points.append(point) }
         func pointerLeft() { leftCount += 1 }
+        func primaryDown(at point: MirrorKit.Point,
+                         inMenuBar: Bool) -> Bool {
+            _ = inMenuBar
+            downPoints.append(point)
+            return true
+        }
+        func primaryDragged(to point: MirrorKit.Point) -> Bool {
+            draggedPoints.append(point)
+            return true
+        }
+        func primaryUp(at point: MirrorKit.Point) -> Bool {
+            upPoints.append(point)
+            return true
+        }
     }
 
     final class Environment: ContinuityPointerEnvironment {

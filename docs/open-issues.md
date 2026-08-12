@@ -7,6 +7,60 @@ search:
 
 # Open issues
 
+## METAL-VERIFIED CORE; LAYOUT HARDENING TESTED: Mirror Cursor and Continuity Mode are separate host surfaces (2026-08-12, `feat/continuity-screen-edge`)
+
+The Mirror module now names its rendered-screen pointer option **Mirror
+Cursor**. It remains off by default and is exposed to `LiveMirrorView` only
+while the rendered Mirror is showing. **Continuity Mode** is a separate module
+surface: selecting it removes the Mirror render and replaces it with an
+arrangement editor derived from `NSScreen.screens`. Host displays are fixed and
+read-only; one movable guest display takes its pixel dimensions from the live
+scene and supports 50%, 100%, 200%, and 400% layout scales. A placement counts
+only when the virtual display has a positive-length shared edge with one host
+display and overlaps no host display. Dragging now resolves live against the
+whole host arrangement: nearby display edges align magnetically, and a deep
+overlap is projected to the nearest collision-free attached position rather
+than being saved as an invalid arrangement. Stored placements are checked by
+the same rule when loaded.
+
+The host-wide edge controller reuses the existing Continuity TCP/UDP transport;
+it changes no wire message, resident table, extension, or guest input path. An
+outward crossing arms at the corresponding guest boundary coordinate. The host
+cursor is hidden only after guest ownership becomes active, then pinned at the
+entry edge while relative host motion drives the guest. Crossing back through
+that shared edge releases the guest and restores the host cursor at the
+corresponding edge point. A guest-input exit reported by the existing transport
+performs the same restoration and leaves Continuity Mode ready for a later
+crossing. A native host click no longer releases ownership; the existing
+Continuity button transport now receives primary down, held motion, and up at
+the driven guest point. File traversal between systems remains explicitly
+outside this slice.
+
+Pure geometry and fake-cursor tests cover host topology, guest sizing and
+scaling, edge snapping, scaled coordinate mapping, mutually exclusive Mirror
+Cursor/Continuity entry surfaces, collision-free placement across multiple host
+displays, stored-placement repair, cursor hide/drive/return, and native-button
+ownership retention. The shipping module's Continuity layout renders offscreen
+at 900×720.
+The hide guard was mutation-checked: reversing it made the exact ownership test
+fail on the absent hide/show calls, and restoration made it pass. The full
+`scripts/test-host` gate passed both 2,221-test asset modes, the isolated socket
+test, and unsigned Debug and Release app builds. This was therefore **tested,
+not metal-verified** at commit `38564f9e` before the hardware run.
+
+The signed `38564f9e` host was then run with the existing PowerBook guest and
+resident. The user reported that the complete screen-edge feature worked on the
+first attempt; the same run specifically observed that a native host click
+returned ownership, exposing the policy defect corrected above. That establishes
+the real macOS event path, outward edge acquisition, visible cursor ownership,
+and PowerBook response as **metal-verified**. Reverse-edge return and physical
+PowerBook-input return were not separately called out in the report, and the
+new snapping/collision/button-retention corrections remain host-tested until the
+next packaged run. The run also exposed one resident-side defect: if the guest
+cursor was already hidden, acquiring it across the edge drove its position but
+did not redraw it. That task-time reveal correction belongs to the active
+resident/input lane and is not contained in this host-only branch.
+
 ## TESTED: Mirror mode has a copy-on-drop file lane (2026-08-12, `feat/mirror-drag-drop`)
 
 The host now turns a guest file dragged past the Mirror edge into a native

@@ -5,7 +5,8 @@ import MirrorKit
 struct HostPointerSample: Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case moved
-        case buttonDown
+        case primaryDown
+        case primaryUp
     }
 
     let kind: Kind
@@ -38,9 +39,7 @@ private final class AppKitContinuityPointerEnvironment:
         -> AnyObject {
         let monitors = Monitors()
         let mask: NSEvent.EventTypeMask = [
-            .mouseMoved, .leftMouseDragged, .rightMouseDragged,
-            .otherMouseDragged, .leftMouseDown, .rightMouseDown,
-            .otherMouseDown,
+            .mouseMoved, .leftMouseDragged, .leftMouseDown, .leftMouseUp,
         ]
         monitors.local = NSEvent.addLocalMonitorForEvents(matching: mask) {
             event in
@@ -77,8 +76,10 @@ private final class AppKitContinuityPointerEnvironment:
     private static func sample(_ event: NSEvent) -> HostPointerSample {
         let kind: HostPointerSample.Kind
         switch event.type {
-        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            kind = .buttonDown
+        case .leftMouseDown:
+            kind = .primaryDown
+        case .leftMouseUp:
+            kind = .primaryUp
         default:
             kind = .moved
         }
@@ -97,6 +98,9 @@ private final class AppKitContinuityPointerEnvironment:
 protocol ContinuityEdgeDriving: AnyObject {
     func pointerMoved(to point: MirrorKit.Point)
     func pointerLeft()
+    func primaryDown(at point: MirrorKit.Point, inMenuBar: Bool) -> Bool
+    func primaryDragged(to point: MirrorKit.Point) -> Bool
+    func primaryUp(at point: MirrorKit.Point) -> Bool
 }
 
 @MainActor
@@ -193,12 +197,7 @@ final class ContinuityEdgeController: ObservableObject {
         case .ready:
             beginEntryIfNeeded(sample)
         case .arming:
-            if sample.kind == .buttonDown || sample.buttonsDown {
-                driver?.pointerLeft()
-                pending = nil
-                state = .ready
-                status = "Move across the shared edge to enter the guest"
-            }
+            break
         case .active:
             driveGuest(with: sample)
         }
@@ -223,8 +222,15 @@ final class ContinuityEdgeController: ObservableObject {
 
     private func driveGuest(with sample: HostPointerSample) {
         guard var ownership else { return }
-        if sample.kind == .buttonDown || sample.buttonsDown {
-            returnToHost(ownership, reason: "host mouse input")
+        if sample.kind == .primaryDown {
+            _ = driver?.primaryDown(at: mirrorPoint(ownership.guestPoint),
+                                    inMenuBar: false)
+            pinHostCursor(for: ownership)
+            return
+        }
+        if sample.kind == .primaryUp {
+            _ = driver?.primaryUp(at: mirrorPoint(ownership.guestPoint))
+            pinHostCursor(for: ownership)
             return
         }
         let factor = CGFloat(layout.guestScale.rawValue)
@@ -242,9 +248,17 @@ final class ContinuityEdgeController: ObservableObject {
             x: min(max(0, next.x), max(0, layout.guestSize.width - 1)),
             y: min(max(0, next.y), max(0, layout.guestSize.height - 1)))
         self.ownership = ownership
-        driver?.pointerMoved(to: .init(x: Int(ownership.guestPoint.x),
-                                      y: Int(ownership.guestPoint.y)))
+        let point = mirrorPoint(ownership.guestPoint)
+        if sample.buttonsDown {
+            _ = driver?.primaryDragged(to: point)
+        } else {
+            driver?.pointerMoved(to: point)
+        }
         pinHostCursor(for: ownership)
+    }
+
+    private func mirrorPoint(_ point: CGPoint) -> MirrorKit.Point {
+        .init(x: Int(point.x), y: Int(point.y))
     }
 
     private func returnToHost(_ ownership: Ownership, reason: String) {

@@ -358,8 +358,8 @@ private struct ContinuityControlCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Primary clicks and drags remain Mirror-only in this "
-                     + "slice. Fast Pump asks the guest to yield every tick. "
+                Text("Primary clicks and held motion follow the pointer into "
+                     + "the guest. Fast Pump asks the guest to yield every tick. "
                      + "The held-point experiments remain diagnostic and do "
                      + "not modify the physical device.")
                     .font(.caption)
