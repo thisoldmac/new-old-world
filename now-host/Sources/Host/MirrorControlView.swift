@@ -21,6 +21,7 @@ import MirrorKitUI
 /// a visible handle does not also need a button somewhere else.
 struct MirrorToolbarView: View {
     @ObservedObject var model: MirrorControlModel
+    @ObservedObject var source: NOWMirrorSource
     @ObservedObject var run: MirrorRunControl
     @ObservedObject var presentation: MirrorPresentation
     /// Detaching is not `presentation.isDetached.toggle()`: the window
@@ -33,7 +34,18 @@ struct MirrorToolbarView: View {
         HStack(spacing: 12) {
             identity
             Spacer(minLength: 8)
-            if !presentation.isDetached {
+            Picker("Surface", selection: $source.surfaceMode) {
+                ForEach(MirrorSurfaceMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 170)
+            .help("Mirror shows and drives the remote screen. Continuity "
+                  + "arranges it beside this Mac and passes the pointer "
+                  + "through their shared edge.")
+            if !presentation.isDetached && source.surfaceMode == .mirror {
                 /* A MENU rather than a segmented control. Five stops as
                    segments is 260 points of toolbar for a setting that
                    is changed occasionally — it crowded out the machine's
@@ -62,6 +74,7 @@ struct MirrorToolbarView: View {
             Button(presentation.isDetached ? "Attach" : "Detach") {
                 setDetached(!presentation.isDetached)
             }
+            .disabled(source.surfaceMode == .continuity)
             .help(presentation.isDetached
                   ? "Bring the Mirror back into this page."
                   : "Put the Mirror in a window of its own. It keeps "
@@ -156,7 +169,7 @@ struct MirrorControlView: View {
             MirrorScrollBox {
                 VStack(alignment: .leading, spacing: 14) {
                     MirrorLifecycleCard(model: model)
-                    ContinuityControlCard(controller: source.continuity,
+                    ContinuityControlCard(source: source,
                                           mirrorRunning: source.running)
                     MirrorPlanesCard(model: model)
                     hostFinderCard
@@ -283,15 +296,38 @@ struct MirrorControlView: View {
 }
 
 private struct ContinuityControlCard: View {
+    @ObservedObject var source: NOWMirrorSource
     @ObservedObject var controller: MirrorContinuityController
     var mirrorRunning: Bool
 
+    init(source: NOWMirrorSource, mirrorRunning: Bool) {
+        self.source = source
+        self.controller = source.continuity
+        self.mirrorRunning = mirrorRunning
+    }
+
     var body: some View {
-        GroupBox("Continuity") {
+        GroupBox(source.surfaceMode == .mirror
+                 ? "Mirror Cursor" : "Continuity Pointer") {
             VStack(alignment: .leading, spacing: 8) {
-                Toggle("Use the guest pointer directly",
-                       isOn: $controller.isEnabled)
-                    .disabled(!mirrorRunning)
+                if source.surfaceMode == .mirror {
+                    Toggle("Mirror Cursor",
+                           isOn: $source.mirrorCursorEnabled)
+                        .disabled(!mirrorRunning)
+                    Text("Moves the guest cursor while the pointer is over "
+                         + "the rendered Mirror. It is a Mirror feature, "
+                         + "not screen-edge Continuity.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("The guest pointer is acquired only after the host "
+                         + "pointer crosses the shared edge in the display "
+                         + "layout. Guest mouse input returns control here.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Update rate")
                     Picker("Update rate", selection: $controller.requestedHz) {
@@ -322,7 +358,10 @@ private struct ContinuityControlCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Optional and off by default. Primary clicks and drags bypass Mirror while connected. Moving the physical guest mouse immediately returns control to that Mac. Fast Pump asks the guest to yield every tick. The held-point experiments test ADB contention without modifying the physical device; cursor hiding isolates the guest sprite during a drag.")
+                Text("Primary clicks and drags remain Mirror-only in this "
+                     + "slice. Fast Pump asks the guest to yield every tick. "
+                     + "The held-point experiments remain diagnostic and do "
+                     + "not modify the physical device.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

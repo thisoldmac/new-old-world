@@ -9,7 +9,8 @@ import Network
 /// from the command or agent surfaces.
 @MainActor
 final class MirrorContinuityController: ObservableObject,
-                                      ContinuityInputDriver {
+                                      ContinuityInputDriver,
+                                      ContinuityEdgeDriving {
     typealias Audit = (HostLog.LogLevel, String) -> Void
 
     private struct BufferedPrimaryCycle {
@@ -40,7 +41,12 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
-    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var phase: Phase = .idle {
+        didSet {
+            guard phase != oldValue else { return }
+            onPhaseChanged?(phase)
+        }
+    }
     @Published private(set) var status = "off"
     @Published var requestedHz = 30 {
         didSet {
@@ -122,6 +128,24 @@ final class MirrorContinuityController: ObservableObject,
     var isActive: Bool { phase == .active }
     @Published private(set) var isMenuTracking = false
 
+    let layout: ContinuityDisplayLayout
+    /// Continuity Mode keeps listening at the configured host edge after
+    /// physical guest input ends one ownership epoch. Mirror Cursor retains
+    /// its older opt-in behavior and turns itself off unless reconnect was
+    /// explicitly requested.
+    var maintainsOptInAfterGuestExit = false
+
+    private(set) lazy var edge: ContinuityEdgeController = {
+        let edge = ContinuityEdgeController(layout: layout, driver: self)
+        onPhaseChanged = { [weak edge] phase in
+            edge?.transportPhaseChanged(phase)
+        }
+        onOwnershipEnded = { [weak edge] reason in
+            edge?.transportEnded(reason: reason)
+        }
+        return edge
+    }()
+
     private let listener: GuestListener
     private let defaults: UserDefaults
     private let audit: Audit
@@ -170,6 +194,8 @@ final class MirrorContinuityController: ObservableObject,
     private var lastAuditedButtonGeneration: UInt32 = 0
     private var lastPrimaryDownUptime: TimeInterval?
     private var buttonTransitionSentUptime: TimeInterval?
+    private var onPhaseChanged: ((Phase) -> Void)?
+    private var onOwnershipEnded: ((String) -> Void)?
 
     init(listener: GuestListener,
          defaults: UserDefaults = ProductIdentity.defaults,
@@ -177,6 +203,7 @@ final class MirrorContinuityController: ObservableObject,
          audit: Audit? = nil) {
         self.listener = listener
         self.defaults = defaults
+        self.layout = ContinuityDisplayLayout(defaults: defaults)
         self.localNetworkAccess = localNetworkAccess
         self.audit = audit ?? {
             HostLog.shared.write($0, "continuity", $1)
@@ -883,6 +910,12 @@ final class MirrorContinuityController: ObservableObject,
             + "epoch=\(epoch), sent=\(sentDatagrams), "
             + "validAcks=\(validAcks)")
         resetTransport()
+        onOwnershipEnded?(reason)
+        if maintainsOptInAfterGuestExit && retryable && isEnabled {
+            status = "Guest returned pointer control: \(reason); move across "
+                + "the shared edge to enter again"
+            return
+        }
         if autoReconnect && retryable && isEnabled {
             if retryImmediately {
                 status = "Continuity ended on the Mac: \(reason); reconnecting…"

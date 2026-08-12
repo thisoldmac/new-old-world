@@ -212,6 +212,24 @@ enum MirrorPerformDisposition: Equatable {
 final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     @Published private(set) var scene: MirrorKit.Scene?
+    @Published var surfaceMode: MirrorSurfaceMode = .mirror {
+        didSet {
+            guard surfaceMode != oldValue else { return }
+            if surfaceMode == .continuity {
+                continuity.cancel(reason: "switched to Continuity Mode")
+            }
+            reconcilePointerOwnership()
+        }
+    }
+    /// A Mirror feature, deliberately independent of Continuity Mode. Its
+    /// preference survives a trip through the layout editor so returning to
+    /// Mirror restores the same behavior rather than silently changing it.
+    @Published var mirrorCursorEnabled = false {
+        didSet {
+            guard mirrorCursorEnabled != oldValue else { return }
+            reconcilePointerOwnership()
+        }
+    }
 
     /// **What the machine last DID, not what the poll last saw.**
     ///
@@ -296,7 +314,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private weak var localNetworkAccess: LocalNetworkAccessController?
     let continuity: MirrorContinuityController
     private var continuitySubscription: AnyCancellable?
-    var continuityInputDriver: ContinuityInputDriver? { continuity }
+    var continuityInputDriver: ContinuityInputDriver? {
+        surfaceMode == .mirror && mirrorCursorEnabled ? continuity : nil
+    }
     private let hostFinder: HostFinderSession
     private var lastGuestScene: MirrorKit.Scene?
     private let engineRegistry: MirrorStateEngineRegistry?
@@ -516,6 +536,27 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         hostFinder.resetForGuestChange()
     }
 
+    // MARK: - Pointer ownership
+
+    private func reconcilePointerOwnership() {
+        guard running else {
+            continuity.edge.stop(reason: "Mirror stopped")
+            continuity.maintainsOptInAfterGuestExit = false
+            continuity.isEnabled = false
+            return
+        }
+        switch surfaceMode {
+        case .mirror:
+            continuity.edge.stop(reason: "Mirror mode")
+            continuity.maintainsOptInAfterGuestExit = false
+            continuity.isEnabled = mirrorCursorEnabled
+        case .continuity:
+            continuity.maintainsOptInAfterGuestExit = true
+            continuity.isEnabled = true
+            continuity.edge.start()
+        }
+    }
+
     // MARK: - The poll
 
     func start() {
@@ -554,6 +595,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
         actTimeline.depth = 0
         running = true
+        reconcilePointerOwnership()
         cycleGeneration = nil
         pollRequestedAfterCycle = false
         cycleIO.guestChanged()
@@ -563,6 +605,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     func stop() {
+        continuity.edge.stop(reason: "Mirror stopped")
         continuity.cancel(reason: "Mirror stopped")
         let stoppingKey = pinnedGuestKey
         let canRelease = stoppingKey != nil
@@ -612,6 +655,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Called immediately before the listener changes focus, while the
     /// outgoing guest can still receive the content owner's explicit stop.
     func activeGuestWillChange() {
+        continuity.edge.stop(reason: "the selected Mac is changing")
         continuity.sessionWillEnd(reason: "the selected Mac is changing")
         guard let pinnedGuestKey,
               pinnedGuestKey == cycleIO.activeKey() else { return }
@@ -958,6 +1002,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             sceneGuestKey = delivery.guestKey
             decoded = continuity.scene
             decoded = withIcons(decoded)
+            let screen = decoded.screen
+            if screen.w > 0, screen.h > 0 {
+                self.continuity.layout.updateGuestSize(CGSize(
+                    width: CGFloat(screen.w), height: CGFloat(screen.h)))
+            }
             armTransitionSampler(for: decoded)
             _ = shadowEngine?.enrichFinder(decoded)
             scene = projectedScene(fallback: decoded)
