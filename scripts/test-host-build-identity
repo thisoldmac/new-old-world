@@ -43,8 +43,12 @@ for temporary in /tmp/now-continuity /private/tmp/now-continuity \
         exit 1
     fi
 done
-"$handoff_path" /Users/example/Applications || {
-    echo "Continuity handoff rejects a stable Applications path" >&2
+if "$handoff_path" /Users/example/Applications >/dev/null 2>&1; then
+    echo "Continuity handoff accepts a durable but noncanonical Applications path" >&2
+    exit 1
+fi
+"$handoff_path" "$HOME/Applications" || {
+    echo "Continuity handoff rejects its canonical installed path" >&2
     exit 1
 }
 rg -Fq '"$repo_root/tools/host-handoff-path" "$output_root"' \
