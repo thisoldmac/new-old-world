@@ -107,8 +107,7 @@ struct MirrorPaneView: View {
     }
 
     private var liveMirror: some View {
-        LiveMirrorView(
-            controller: source,
+        LiveMirrorView(controller: source,
             keyboard: keyboard,
             hostFilePromise: { fileTransfer.promise(for: $0) },
             hostFilesDropped: { fileTransfer.copyHostFiles($0, to: $1) })
