@@ -172,73 +172,7 @@ struct HostRootView: View {
 
     @ViewBuilder
     private var detail: some View {
-        switch state.selectedModuleID {
-        case "screen":
-            ScreenshotsModuleView(model: state.screenshots)
-        case "files":
-            FilesModuleView(model: state.files)
-        case "icloud":
-            CloudModuleView(model: state.cloudModule)
-        case "processes":
-            ProcessesModuleView(model: state.processes)
-        case "mirror":
-            MirrorModuleView(
-                model: state.mirror,
-                source: state.mirrorSource,
-                run: state.mirrorRun,
-                presentation: state.mirrorPresentation,
-                window: state.mirrorWindow,
-                connectedMachineName: state.connectedMachineName,
-                timeline: state.mirrorSource.actTimeline,
-                cycles: state.mirrorSource.cycleTimeline)
-        case "console":
-            ConsoleModuleView(model: state.console, listener: state.listener)
-        case "chat":
-            ChatModuleView(model: state.chat)
-        case "web":
-            WebModuleView(model: state.web)
-        case "development":
-            DevelopmentModuleView(model: state.development)
-        case "census":
-            CensusModuleView(model: state.census)
-        case "diagnostics":
-            DiagnosticsModuleView(model: state.diagnostics)
-        case "networking":
-            NetworkingModuleView(model: state.networking)
-        case "software":
-            SoftwareModuleView(model: state.software)
-        case "mcp":
-            MCPModuleView(model: state.agentActivity,
-                          companions: state.agentCompanions,
-                          listener: state.listener,
-                          startStdio: state.startMCPStdio,
-                          stopStdio: state.stopMCPStdio,
-                          startHTTP: state.startMCPHTTP,
-                          stopHTTP: state.stopMCPHTTP)
-        case "logs":
-            LogsModuleView(model: state.logs, log: state.logs.log)
-        case "settings":
-            ConnectionsModuleView(model: state.connections,
-                                  settings: state.settings,
-                                  listener: state.listener,
-                                  onboarding: state.onboarding,
-                                  onStart: { state.startListening() },
-                                  onStop: { state.stopListening() })
-        default:
-            // A card rather than a full-bleed pane: this is the one detail
-            // state that is not a module, and reading as something floating
-            // in an empty pane says so without a sentence of explanation.
-            VStack(spacing: 10) {
-                Image(systemName: "questionmark.app")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-                Text("Module Unavailable")
-                    .font(.title2.weight(.semibold))
-            }
-            .padding(28)
-            .nowGlassPanel()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        state.moduleView(registry: registry, id: state.selectedModuleID)
     }
 }
 

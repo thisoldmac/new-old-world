@@ -242,6 +242,12 @@ def main() -> int:
             'id: "screen"', 'id: "screen-unmapped"', "do not match host registry",
         )
         expect_mutation(
+            test_root, "definition-owned host module without guide",
+            test_root / "now-host/Sources/Host/NetworkingHostModule.swift",
+            'id: "networking"', 'id: "networking-unmapped"',
+            "do not match host registry",
+        )
+        expect_mutation(
             test_root, "PPC page without mapping", test_root / "now-guest-ppc/src/workshop/workshop_module.h",
             "    kWorkshopPreferences,", "    kWorkshopUnmapped,\n    kWorkshopPreferences,",
             "do not match live enum",

@@ -224,8 +224,38 @@ class SiteHTML(HTMLParser):
 
 
 def extract_host_ids(root: Path) -> list[str]:
-    text = (root / "now-host/Sources/Host/ModuleRegistry.swift").read_text()
-    return re.findall(r"\bid:\s*\"([^\"]+)\"", text[text.index("static let standard"):])
+    sources = root / "now-host/Sources/Host"
+    registry = (sources / "ModuleRegistry.swift").read_text()
+    block = registry[
+        registry.index("private static let standardDescriptors"):
+        registry.index("static let standard =")
+    ]
+    ids: list[str] = []
+    entries = re.compile(
+        r'\bid:\s*"([^"]+)"|'
+        r'\b([A-Za-z_][A-Za-z0-9_]*)\.definition\.descriptor'
+    )
+    definition_pattern = (
+        r"\b(?:enum|struct)\s+{symbol}\s*\{{.*?"
+        r"\bstatic\s+let\s+definition(?:\s*:\s*HostModuleDefinition)?\s*=\s*"
+        r"HostModuleDefinition\s*\(.*?\bid:\s*\"([^\"]+)\""
+    )
+    swift_sources = [path.read_text() for path in sorted(sources.glob("*.swift"))]
+    for entry in entries.finditer(block):
+        if entry.group(1):
+            ids.append(entry.group(1))
+            continue
+        symbol = entry.group(2)
+        pattern = re.compile(
+            definition_pattern.format(symbol=re.escape(symbol)), re.DOTALL
+        )
+        resolved = next(
+            (match.group(1) for source in swift_sources
+             if (match := pattern.search(source))),
+            None,
+        )
+        ids.append(resolved or f"<unresolved:{symbol}>")
+    return ids
 
 
 def extract_ppc_pages(root: Path) -> list[str]:

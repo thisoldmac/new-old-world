@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import MirrorKit
+import SwiftUI
 
 @MainActor
 final class HostAppState: ObservableObject {
@@ -290,7 +291,6 @@ final class HostAppState: ObservableObject {
     private(set) lazy var web = WebBridgeModel(defaults: defaults)
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
-    private(set) lazy var networking = NetworkingModel(listener: listener)
     private(set) lazy var cloudModule = CloudModuleModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)
     private(set) lazy var processes: ProcessesModel = {
@@ -317,9 +317,15 @@ final class HostAppState: ObservableObject {
     /// switch — the two used to be separate assignments, and a module added
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
-        [screenshots, files, census, diagnostics, processes, software,
-         networking, mirror]
+        [screenshots, files, census, diagnostics, processes, software, mirror]
     }
+
+    private lazy var moduleRuntimes = HostModuleRuntimeStore(
+        registry: moduleRegistry,
+        context: HostModuleContext(
+            listener: listener,
+            currentConnection: { [unowned self] in self.currentConnection }))
+    private let moduleRegistry: ModuleRegistry
 
     /// Points the whole window at another connected Mac.
     ///
@@ -339,6 +345,7 @@ final class HostAppState: ObservableObject {
          defaults: UserDefaults = UserDefaults(
              suiteName: ProductIdentity.preferencesSuite) ?? .standard) {
         self.defaults = defaults
+        moduleRegistry = registry
         settings = SettingsModel(defaults: defaults)
         onboarding = OnboardingPortal()
         logs = LogsModel(log: .shared, defaults: defaults)
@@ -394,6 +401,7 @@ final class HostAppState: ObservableObject {
                 for model in self.guestScopedModels {
                     model.guestLeft(gone)
                 }
+                self.moduleRuntimes.guestLeft(gone)
             default:
                 break
             }
@@ -491,6 +499,7 @@ final class HostAppState: ObservableObject {
         for model in guestScopedModels {
             model.connection = connection
         }
+        moduleRuntimes.focus(on: connection)
         /* Do not construct the Mirror merely because a connection changed.
            Once it exists, however, its pinned GuestKey is session state and
            must cross the same boundary as every model above. */
@@ -530,6 +539,20 @@ final class HostAppState: ObservableObject {
 
     func stopListening() {
         listener.stop()
+    }
+
+    func moduleView(registry: ModuleRegistry, id: String) -> AnyView {
+        precondition(registry.modules.map(\.id) == moduleRegistry.modules.map(\.id),
+                     "HostRootView must render the state registry")
+        return moduleRuntimes.view(for: id, state: self)
+    }
+
+    func shutDownModules() {
+        moduleRuntimes.shutDown()
+    }
+
+    var currentConnection: GuestConnectionState {
+        Self.guestState(from: listener.state, key: listener.activeKey)
     }
 
     /// Opt-in end-to-end proof: with NOW_HOST_SMOKE set, pull one capture as

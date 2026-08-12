@@ -19,19 +19,37 @@ struct ModuleDescriptor: Identifiable, Equatable, Sendable {
     /// A footer row shows the live link state (dot + wire status) only for
     /// the module that IS the link. Others — Logs — show their summary.
     var showsLinkStatus: Bool = false
+    var tier: ModuleTier = .core
+    var domains: [String] = []
+    var featureID: ProductFeatureID? = nil
 }
 
-struct ModuleRegistry: Sendable {
+@MainActor
+struct ModuleRegistry {
+    let definitions: [HostModuleDefinition]
     let modules: [ModuleDescriptor]
 
     init(modules: [ModuleDescriptor]) {
         precondition(Set(modules.map(\.id)).count == modules.count,
                      "Module identifiers must be unique")
+        definitions = modules.map { HostModuleDefinition(descriptor: $0) }
+        self.modules = modules
+    }
+
+    init(definitions: [HostModuleDefinition]) {
+        let modules = definitions.map(\.descriptor)
+        precondition(Set(modules.map(\.id)).count == modules.count,
+                     "Module identifiers must be unique")
+        self.definitions = definitions
         self.modules = modules
     }
 
     func module(id: String) -> ModuleDescriptor? {
         modules.first { $0.id == id }
+    }
+
+    func definition(id: String) -> HostModuleDefinition? {
+        definitions.first { $0.descriptor.id == id }
     }
 
     /// Module ids that have been renamed, old name to new.
@@ -70,7 +88,7 @@ struct ModuleRegistry: Sendable {
        written through those constants rather than spelled out, because a
        sidebar that says "the connected Mac" while every page under it says
        something else is how the copy drifted in the first place. */
-    static let standard = ModuleRegistry(modules: [
+    private static let standardDescriptors: [ModuleDescriptor] = [
         ModuleDescriptor(
             /* Not "Screenshots": the page took a still picture when it was
                named, and it now also carries the live stream and its
@@ -99,7 +117,8 @@ struct ModuleRegistry: Sendable {
             title: "iCloud",
             symbol: "icloud",
             summary: "What of \(MachineNaming.thisMac)'s iCloud "
-                + "\(MachineNaming.simpleReference) may browse"
+                + "\(MachineNaming.simpleReference) may browse",
+            tier: .experimental
         ),
         ModuleDescriptor(
             id: "processes",
@@ -130,7 +149,8 @@ struct ModuleRegistry: Sendable {
             title: "Mirror",
             symbol: "macwindow.on.rectangle",
             summary: "See and drive \(MachineNaming.simpleReference), "
-                + "here or in its own window"
+                + "here or in its own window",
+            tier: .experimental
         ),
         ModuleDescriptor(
             id: "console",
@@ -147,21 +167,24 @@ struct ModuleRegistry: Sendable {
             title: "Chat",
             symbol: "bubble.left.and.bubble.right",
             summary: "Talk to a model that can see and drive "
-                + "\(MachineNaming.simpleReference)"
+                + "\(MachineNaming.simpleReference)",
+            tier: .experimental
         ),
         ModuleDescriptor(
             id: "web",
             title: "Web",
             symbol: "globe",
             summary: "Translate modern pages for a browser on "
-                + "\(MachineNaming.simpleReference)"
+                + "\(MachineNaming.simpleReference)",
+            tier: .experimental
         ),
         ModuleDescriptor(
             id: "development",
             title: "Development",
             symbol: "hammer",
             summary: "Projects, toolchains, builds and runs for "
-                + "\(MachineNaming.simpleReference)"
+                + "\(MachineNaming.simpleReference)",
+            tier: .experimental
         ),
         ModuleDescriptor(
             id: "census",
@@ -183,7 +206,8 @@ struct ModuleRegistry: Sendable {
                summary said "this Mac's screen reads", which named the
                wrong machine outright: nothing here reads this Mac. */
             summary: "Measure \(MachineNaming.possessive(nil)) screen "
-                + "reads and file transfers"
+                + "reads and file transfers",
+            tier: .debug
         ),
         /* Beside Diagnostics rather than beside Connections: this page
            is what the machine being driven says about its own networking,
@@ -191,13 +215,7 @@ struct ModuleRegistry: Sendable {
            Connections page is about which machines this one is talking to.
            Different questions, and putting them together would suggest one
            answer. */
-        ModuleDescriptor(
-            id: "networking",
-            title: "Networking",
-            symbol: "network",
-            summary: "What \(MachineNaming.simpleReference) says about "
-                + "its link, address and network hardware"
-        ),
+        NetworkingHostModule.definition.descriptor,
         ModuleDescriptor(
             id: "software",
             title: "Software",
@@ -223,14 +241,16 @@ struct ModuleRegistry: Sendable {
             symbol: "app.connected.to.app.below.fill",
             summary: "The MCP server agents reach "
                 + "\(MachineNaming.thisMac) through",
-            placement: .footer
+            placement: .footer,
+            tier: .experimental
         ),
         ModuleDescriptor(
             id: "logs",
             title: "Logs",
             symbol: "text.alignleft",
             summary: "What \(MachineNaming.thisMac) has recorded happening",
-            placement: .footer
+            placement: .footer,
+            tier: .debug
         ),
         /* The link, and who is on it — one page, formerly two rows.
            "Connections" sat in the list (the roster of machines) while this
@@ -253,5 +273,10 @@ struct ModuleRegistry: Sendable {
             placement: .footer,
             showsLinkStatus: true
         ),
-    ])
+    ]
+
+    static let standard = ModuleRegistry(definitions:
+        standardDescriptors.map {
+            LegacyHostModuleDefinitions.definition(for: $0)
+        })
 }
