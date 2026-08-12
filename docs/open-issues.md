@@ -7,7 +7,7 @@ search:
 
 # Open issues
 
-## TESTED: Continuity now sits on the atomic module foundation (2026-08-12, `codex/dev/cross-cutting/continuity-cursor-v0`)
+## TESTED: Continuity now sits on the atomic module foundation (2026-08-12, `feat/continuity-direct-pointer`)
 
 The Continuity and SheepShaver work has been merged with the public pre-RC
 foundation. That foundation made all 16 host modules and all 17 PowerPC
