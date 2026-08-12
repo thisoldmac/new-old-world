@@ -7,6 +7,42 @@ search:
 
 # Open issues
 
+## TESTED; HOST/POWERBOOK EDGE HANDOFF UNVERIFIED: Mirror Cursor and Continuity Mode are separate host surfaces (2026-08-12, `feat/continuity-screen-edge`)
+
+The Mirror module now names its rendered-screen pointer option **Mirror
+Cursor**. It remains off by default and is exposed to `LiveMirrorView` only
+while the rendered Mirror is showing. **Continuity Mode** is a separate module
+surface: selecting it removes the Mirror render and replaces it with an
+arrangement editor derived from `NSScreen.screens`. Host displays are fixed and
+read-only; one movable guest display takes its pixel dimensions from the live
+scene and supports 50%, 100%, 200%, and 400% layout scales. A placement counts
+only when the virtual display has a positive-length shared edge with one host
+display and overlaps no host display.
+
+The host-wide edge controller reuses the existing Continuity TCP/UDP transport;
+it changes no wire message, resident table, extension, or guest input path. An
+outward crossing arms at the corresponding guest boundary coordinate. The host
+cursor is hidden only after guest ownership becomes active, then pinned at the
+entry edge while relative host motion drives the guest. Crossing back through
+that shared edge or pressing a native host mouse button releases the guest and
+restores the host cursor at the corresponding edge point. A guest-input exit
+reported by the existing transport performs the same restoration and leaves
+Continuity Mode ready for a later crossing. File and held-drag traversal are
+explicitly outside this slice.
+
+Pure geometry and fake-cursor tests cover host topology, guest sizing and
+scaling, edge snapping, scaled coordinate mapping, mutually exclusive Mirror
+Cursor/Continuity entry surfaces, cursor hide/drive/return, and native-button
+release. The shipping module's Continuity layout renders offscreen at 900×720.
+The hide guard was mutation-checked: reversing it made the exact ownership test
+fail on the absent hide/show calls, and restoration made it pass. The full
+`scripts/test-host` gate passed both 2,220-test asset modes, the isolated socket
+test, and unsigned Debug and Release app builds. This is therefore **tested,
+not metal-verified**. A live host + PowerBook pass must still establish actual
+macOS global-event delivery, multi-display coordinate orientation, visible
+hide/restore behavior, edge re-entry after physical PowerBook input, and the
+PowerBook's response to the reused pointer transport.
+
 ## TESTED: Continuity now sits on the atomic module foundation (2026-08-12, `feat/continuity-direct-pointer`)
 
 The Continuity and SheepShaver work has been merged with the public pre-RC
