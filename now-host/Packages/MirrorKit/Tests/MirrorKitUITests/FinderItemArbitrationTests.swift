@@ -445,6 +445,37 @@ final class FinderItemArbitrationTests: XCTestCase {
                                          width: 112, height: 18)), 0)
     }
 
+    func testIconSelectionChangesTheRenderedIcon() throws {
+        var plain = Self.folder(items: [
+            Self.item("System Folder", x: 40, y: 60),
+        ])
+        plain.finder = .init(path: "Macintosh HD:", view: .icon)
+        var selected = plain
+        selected.finder?.selectedNames = ["System Folder"]
+
+        let a = try RenderShot.png(scene: Self.scene([plain]))
+        let b = try RenderShot.png(scene: Self.scene([selected]))
+        let o = Self.contentOrigin
+        let box = CGRect(x: o.x + 40, y: o.y + 60,
+                         width: 32, height: 32)
+        XCTAssertGreaterThan(differences(a, b, in: box), 20,
+                             "selection must alter icon ink, not only its label")
+    }
+
+    func testSelectedBitmapHalvesEightBitColourChannels() throws {
+        var sourceBytes: [UInt8] = [0x66, 0xCC, 0xFE, 0xFF]
+        let source = try XCTUnwrap(CGContext(
+            data: &sourceBytes, width: 1, height: 1,
+            bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
+        let selected = try XCTUnwrap(IconAtlas.selectedAppearance(source))
+        let data = try XCTUnwrap(selected.dataProvider?.data)
+        let bytes = CFDataGetBytePtr(data)!
+        XCTAssertEqual(Array(UnsafeBufferPointer(start: bytes, count: 4)),
+                       [0x33, 0x66, 0x7F, 0xFF])
+    }
+
     /// Finder semantics now own the whole interior. Historical display ops
     /// must not alter a semantic render: accepting even the text subset would
     /// silently restore the same P3 path that crashes Finder on the PB1400c.

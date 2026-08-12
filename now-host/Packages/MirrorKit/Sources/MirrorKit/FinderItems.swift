@@ -546,6 +546,16 @@ public enum FinderItems {
         return .icon
     }
 
+    /// Mac OS 8.6 Buttons view is an activation surface, not an icon grid
+    /// with a different decoration. A primary click enters the folder on
+    /// mouse-down; Icons, List and Small Icons retain Finder's ordinary
+    /// select-then-double-click model. This is presentation behavior, so the
+    /// same view discriminator that chooses the drawing owns the interaction
+    /// rule too.
+    public static func activatesOnPrimaryClick(_ win: Scene.Window) -> Bool {
+        presentationView(win) == .button
+    }
+
     /// Semantic selection targets in content-local coordinates.
     ///
     /// Name view owns the whole visible row. Icon, button, and small-icon views own

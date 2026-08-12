@@ -344,8 +344,8 @@ unless `run --report-only` was requested. Whole-screen similarity is not an
 acceptance measure. Cases that depend on window geometry resolve their region
 from the same scene JSON rendered by MirrorKit.
 
-The first profile is `platinum.macos-8.6.default`, with eleven broad Finder
-and menu-bar cases: resting desktop; icon, Buttons and List folder views;
+The first profile is `platinum.macos-8.6.default`, with twelve broad Finder
+and menu-bar cases: resting desktop; icon, selected-icon, Buttons and List folder views;
 inactive Finder chrome; and Apple, File, Edit, View, Special and Help menus.
 The shared `finder-clean-desktop` input sequence uses Finder's own
 Command-Option-W close-all gesture and then clears desktop selection. This
@@ -356,10 +356,15 @@ against the running 8.6 profile. Only the resting desktop currently carries a
 validated state proof and accepted comparison, so the others remain
 reference-only rather than silently becoming acceptance evidence.
 
-The three view cases have checked-in semantic calibration scenes derived from
+The view cases have checked-in semantic calibration scenes derived from
 the measured window, scrollbar, item and column-header geometry. Buttons is a
 distinct semantic view and renders its 48 by 48 raised wells; it is no longer
-collapsed into the small-icon view. The render harness applies view and
+collapsed into the small-icon view. It also activates an item on one primary
+click rather than retaining a selection like Icons and List. The Icons case
+explicitly selects `as Icons` instead of trusting the folder's saved view, and
+the selected-icon case measures the native selection treatment: each icon
+colour channel is multiplied by 128/255 while the tight name patch becomes
+black with white Geneva text. The render harness applies view and
 selection as explicit test overlays because `FinderPresentation` is
 deliberately host-internal and excluded from encoded scene IR. This preserves
 the protocol boundary while making the same production `RenderShot` path
@@ -375,7 +380,7 @@ acceptance claims. Against the measured full-window regions, Icons currently
 differs in 28,573 of 101,844 pixels (28.06%), Buttons in 43,564 (42.78%), and
 List in 69,640 (68.38%). These are the pre-capacity baselines and have not yet
 been promoted to acceptance evidence. The remaining residual includes exact
-custom folder art, selection fill, and some frame/scrollbar geometry, so these
+custom folder art and some frame/scrollbar geometry, so these
 numbers are a queue for later narrowing, not a score to optimize blindly. The
 File menu is already much closer at 10,712
 of 94,300 compared pixels (11.36%).

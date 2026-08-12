@@ -452,17 +452,19 @@ public struct SceneRenderer {
            it, and the two must stay one number or a click lands where
            nothing was drawn. */
         let box = CGRect(origin: origin, size: Self.iconBoxSize(item))
-        drawGenericIcon(ctx, box, item: item, container: container)
+        let drewSelectedBitmap = drawGenericIcon(
+            ctx, box, item: item, container: container, selected: selected)
 
         // Selection is an INVERSION, not a backing box. The Finder darkens the
         // icon itself and flips the label to white-on-black; a rectangle behind
         // the icon is a different visual language and reads as a highlight
         // rather than a selection. Darken through the icon's own pixels so the
         // artwork still shows, which is what OS 8.5+ does.
-        if selected {
+        if selected && !drewSelectedBitmap {
             var inv = ctx
             inv.blendMode = .multiply
-            inv.fill(Path(box), with: .color(Platinum.g4))
+            inv.fill(Path(box), with: .color(
+                Platinum.finderIconSelectionMultiplier))
         }
 
         // Name label: Geneva 10, with QuickDraw's synthetic italic for aliases,
@@ -520,18 +522,23 @@ public struct SceneRenderer {
 
     /// The item's best resource-backed bitmap (IconAtlas) when we have one,
     /// else a procedural Platinum glyph — plus the alias badge.
+    @discardableResult
     private func drawGenericIcon(_ ctx: GraphicsContext, _ box: CGRect,
                                  item: MirrorKit.Scene.DesktopItem,
-                                 container: String? = nil) {
+                                 container: String? = nil,
+                                 selected: Bool = false) -> Bool {
         if let bitmap = IconAtlas.icon(for: item,
                                        size: IconAtlas.Size.fitting(box),
                                        container: container) {
-            ctx.draw(Image(decorative: bitmap, scale: 1)
+            let appearance = selected
+                ? (IconAtlas.selectedAppearance(bitmap) ?? bitmap) : bitmap
+            ctx.draw(Image(decorative: appearance, scale: 1)
                         .interpolation(.none), in: box)
             drawAliasBadge(ctx, box, item: item)
-            return
+            return selected
         }
         drawProceduralIcon(ctx, box, item: item)
+        return false
     }
 
     /// The procedural fallback (used only when the bitmap is missing).
@@ -1422,7 +1429,8 @@ public struct SceneRenderer {
         if selected {
             var inverted = ctx
             inverted.blendMode = .multiply
-            inverted.fill(Path(box), with: .color(Platinum.g4))
+            inverted.fill(Path(box), with: .color(
+                Platinum.finderIconSelectionMultiplier))
         }
         let ascent = CGFloat(FontBook.small?.ascent ?? 9)
         let width = CGFloat(FontBook.small?.width(item.name)
@@ -1625,7 +1633,8 @@ public struct SceneRenderer {
         if selected {
             var inverted = ctx
             inverted.blendMode = .multiply
-            inverted.fill(Path(iconBox), with: .color(Platinum.g4))
+            inverted.fill(Path(iconBox), with: .color(
+                Platinum.finderIconSelectionMultiplier))
         }
 
         let font = Self.desktopLabelFont(item)

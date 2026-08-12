@@ -4,7 +4,7 @@ search:
 ---
 # Open issues
 
-## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle has one accepted pair and ten replayable breadth cases (2026-08-11, `codex/sheepshaver-86-tooling`)
+## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle has one accepted pair and eleven replayable breadth cases (2026-08-12, `codex/sheepshaver-86-tooling`)
 
 The repository now has one visual-oracle loop shared by SheepShaver and QEMU:
 sealed-image clone verification, disposable `.sheepvm` runs, masked
@@ -72,9 +72,9 @@ independent source icons to leave identical target pixels before deriving the
 Get QuickTime now each match their native 32×32 icon region exactly.
 
 This is **tested tooling plus one accepted pair**, not an accepted corpus. The
-corpus now spans eleven cases rather than six: the original desktop, inactive
+corpus now spans twelve cases rather than six: the original desktop, inactive
 window, File and Apple cases; all three Finder folder views, with Buttons kept
-distinct from small icons; and Edit, View, Special and Help. A shared
+distinct from small icons; a selected Icons case; and Edit, View, Special and Help. A shared
 Command-Option-W reset makes every case replayable without depending on how
 many Finder windows the profile saved. All three view cases and all five core
 menus were stable-captured on the running 8.6 profile, and checked-in semantic
@@ -82,6 +82,18 @@ fixtures exercise the production renderer for Icons, Buttons, List, File,
 Edit, View, Special and Help. The host's synthetic Finder menu now carries the
 measured full rows, separators, enablement, shortcuts and submenu arrows rather
 than an OS-9-shaped approximation.
+
+The view cases now encode interaction as well as geometry. Icons explicitly
+chooses Finder's `as Icons` command instead of inheriting a folder's saved view.
+An attributable selected/unselected pair measures the icon treatment as an
+exact 128/255 multiply per colour channel, with a tight black label patch and
+white Geneva text; a mutation back to the former Platinum-grey multiplier is
+named by the render test. A fresh List capture confirms that only the name cell
+selects black, not the full row. Buttons is not a persistent-selection view at
+all: one primary click activates the item immediately. The host now follows that
+rule while Icons, List and Small Icons retain select-then-double-click. These
+new captures are still reference-only until their required-state observations
+are independently completed.
 
 The broad Finder rendering pass also adds the item-count strip, light-grey
 ruled list field, folder disclosure triangles, and semantic list metadata.
@@ -104,9 +116,9 @@ extraction roots, exact catalog metadata for reference fixtures rather than
 measured transcription, and a clean inactive-window reference without a promo
 modal. `file.listing.freeBytes` now carries responder-observed volume capacity
 as optional presentation metadata, and Icons, Buttons and List all derive the
-native Finder count-and-available strip locally. None of the ten
+native Finder count-and-available strip locally. None of the eleven
 new captures has a validated state proof yet. Close this row only when all
-eleven receipts name the sealed parent, state proof, source revision, visual
+twelve receipts name the sealed parent, state proof, source revision, visual
 profile, accepted consecutive hashes, and per-region result.
 
 The first full-window mismatch baselines are now reproducible: Icons

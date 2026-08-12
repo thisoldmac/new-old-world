@@ -736,6 +736,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
            let window = scene.windows.first(where: { $0.id == id }) {
             let contextual = FinderItems.isHostOwnedWindow(window)
                 && (secondary || mods & KeyCaptureView.Mods.control != 0)
+            if !contextual,
+               FinderItems.activatesOnPrimaryClick(window) {
+                guard let driver = controller.finderInteractionDriver else {
+                    controller.note("this mirror cannot open Finder items")
+                    return
+                }
+                driver.openFinderItems(
+                    [name], in: finderContainer(for: window),
+                    at: Point(x: point.x, y: point.y))
+                return
+            }
             let names: Set<String>
             if contextual, finderInterior.isSelected(name, in: window) {
                 /* A contextual click never toggles an already-selected item

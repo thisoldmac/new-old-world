@@ -50,6 +50,7 @@ public enum IconAtlas {
     }
 
     private static var cache: [String: CGImage?] = [:]
+    private static var selectedCache: [ObjectIdentifier: CGImage] = [:]
 
     private static let fileIconItems: [String: [String: Any]] = {
         guard let root = AssetPack.root,
@@ -80,6 +81,37 @@ public enum IconAtlas {
 
     private static func image(_ name: String, subdir: String) -> CGImage? {
         image(relativePath: "\(subdir)/\(name).png")
+    }
+
+    /// Finder's selected icon is an 8-bit channel operation, not a host
+    /// compositor blend. SwiftUI's `.multiply` runs through ColorSync and a
+    /// nominal 50% grey therefore does not map 0xCC to 0x66 on extracted
+    /// bitmap art. Materialize the selected pixels once so resource-backed
+    /// and procedural icons obey the same measured Mac OS 8.6 rule.
+    static func selectedAppearance(_ source: CGImage) -> CGImage? {
+        let key = ObjectIdentifier(source)
+        if let cached = selectedCache[key] { return cached }
+        let width = source.width
+        let height = source.height
+        let bytesPerRow = width * 4
+        var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
+        guard let context = CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.interpolationQuality = .none
+        context.draw(source, in: CGRect(x: 0, y: 0,
+                                        width: width, height: height))
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            pixels[offset] = UInt8((UInt16(pixels[offset]) * 128) / 255)
+            pixels[offset + 1] = UInt8((UInt16(pixels[offset + 1]) * 128) / 255)
+            pixels[offset + 2] = UInt8((UInt16(pixels[offset + 2]) * 128) / 255)
+        }
+        guard let selected = context.makeImage() else { return nil }
+        selectedCache[key] = selected
+        return selected
     }
 
     /// A generic icon by name from the extracted pack (`application`,

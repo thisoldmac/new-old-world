@@ -131,11 +131,12 @@ def main() -> None:
     profiles = list_profiles()
     cases = list_cases()
     assert [profile.id for profile in profiles] == ["platinum.macos-8.6.default"]
-    assert len(cases) == 11
+    assert len(cases) == 12
     assert {case.id for case in cases} == {
         "finder-desktop", "finder-front-icon-view", "finder-inactive-window",
         "finder-list-selection", "finder-file-menu-open", "finder-apple-menu-open",
-        "finder-buttons-view", "finder-edit-menu-open", "finder-view-menu-open",
+        "finder-buttons-view", "finder-icon-selection",
+        "finder-edit-menu-open", "finder-view-menu-open",
         "finder-special-menu-open", "finder-help-menu-open",
     }
 
@@ -539,10 +540,22 @@ def main() -> None:
         assert apple_menu.regions[1]["name"] == "apple-menu"
         assert apple_menu.regions[1]["rect"] == [9, 19, 207, 403]
         assert load_case("finder-buttons-view").input_actions[-4:] == [
-            "move 130 10", "down 0", "move 145 42", "up 0",
+            "move 130 10", "down 0", "move 145 44", "up 0",
+        ]
+        assert load_case("finder-front-icon-view").input_actions[-4:] == [
+            "move 130 10", "down 0", "move 145 27", "up 0",
         ]
         assert load_case("finder-front-icon-view").render == {
             "finderView": "icon",
+            "finderAvailableBytes": 1073637376,
+        }
+        icon_selection = load_case("finder-icon-selection")
+        assert icon_selection.input_actions[-3:] == [
+            "move 64 94", "down 0", "up 0",
+        ]
+        assert icon_selection.render == {
+            "finderView": "icon",
+            "finderSelectedName": "System Folder",
             "finderAvailableBytes": 1073637376,
         }
         list_case = load_case("finder-list-selection")
