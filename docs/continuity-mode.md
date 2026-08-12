@@ -883,6 +883,47 @@ held `guest-input` takeover; PMU retained its known lease-expiry fallback.
 This is Tested emulator evidence. Only the next attended PowerBook run can say
 whether active reassertion stops the ADB/PMU alternation.
 
+The attended PowerBook run answered that last question: **it does not**. Menus
+now track correctly, proving the target-context links are live, but Finder
+drags still alternate between their press point and the current host point.
+Because the dragged item alternates with the cursor, hiding the cursor would be
+only a cosmetic mask; the application's tracker is still observing two points.
+
+The next build therefore exposes two independent, off-by-default experiments
+instead of folding another unproved mechanism into the default path:
+
+- **Pin held point** reasserts the latest coherent host point on every bounded
+  16 ms resident timer tick, including ticks with no new host sequence. The
+  prior timer wrote only when a newer packet arrived, leaving an arbitrarily
+  long ADB-owned interval between host updates.
+- **Virtual GetMouse** makes the held target-context `_GetMouse` trampoline
+  answer its `Point *` directly from that coherent source. It retains the
+  incumbent chain whenever the option or source is inactive; `_StillDown` and
+  `_Button` always retain their original truth and chain.
+
+Neither experiment writes `RawMouse`, `MTemp`, a Cursor Device record, or any
+ADB/PMU state. Physical motion is still sampled from `RawMouse` and remains the
+optimistic takeover signal. The shared table records `tracking_pin_writes` and
+`tracking_getmouse_answers`, so a metal result can say which mechanism actually
+ran instead of inferring it from a checked box.
+
+### Double-click timing is measured at both scheduling boundaries
+
+The host already buffers exactly one second primary cycle while the first
+manager-up is pending. That preserves edge order and avoids overwriting the
+guest's owed Cursor Device transition, but attended testing still finds double
+clicks intermittent. The likely variable is elapsed down-to-down time: the
+second press cannot be issued until the first manager-up settles, and a
+cooperative hitch can stretch that interval beyond the guest application's
+double-click threshold.
+
+The host now records the observed host down-to-down interval and each down/up
+acknowledgement latency. The resident's existing flight recorder supplies the
+guest apply ticks. This is diagnostic, not a claimed fix. The next attended
+failure should establish whether the guest sees the second down too late before
+choosing between an atomic queued-edge contract and event-timestamp assistance;
+changing a delay without that measurement would only move the flaky boundary.
+
 ### Menu visibility: one synchronized path and one missing transport
 
 Mirror's pre-existing dropdown is host-local state. Before this slice a menu

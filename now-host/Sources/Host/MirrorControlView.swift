@@ -309,11 +309,17 @@ private struct ContinuityControlCard: View {
                 Toggle("Fast Pump (experimental)",
                        isOn: $controller.fastPump)
                     .disabled(!controller.isEnabled || !mirrorRunning)
+                Toggle("Pin held point (experimental)",
+                       isOn: $controller.pinHeldPoint)
+                    .disabled(!controller.isEnabled || !mirrorRunning)
+                Toggle("Virtual GetMouse (experimental)",
+                       isOn: $controller.virtualGetMouse)
+                    .disabled(!controller.isEnabled || !mirrorRunning)
                 Text(controller.status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Optional and off by default. Primary clicks and drags bypass Mirror while connected. Moving the physical guest mouse immediately returns control to that Mac. Fast Pump asks the guest to yield every tick while Continuity is armed; it may improve motion at the cost of more guest CPU time.")
+                Text("Optional and off by default. Primary clicks and drags bypass Mirror while connected. Moving the physical guest mouse immediately returns control to that Mac. Fast Pump asks the guest to yield every tick. The held-point experiments test ADB contention without modifying the physical device.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

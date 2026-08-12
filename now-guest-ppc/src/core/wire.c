@@ -6725,6 +6725,7 @@ static void serve_continuity_arm(const char *request)
     unsigned long hz = now_json_find_u32(request, "requestedHz", 0);
     unsigned long lease = now_json_find_u32(request, "leaseTicks", 0);
     int fast_pump = now_json_find_bool(request, "fastPump", 0);
+    unsigned long tracking_options = 0;
     unsigned long version = now_json_find_u32(request, "version", 0);
     int result;
 
@@ -6737,8 +6738,12 @@ static void serve_continuity_arm(const char *request)
         (void)continuity_refuse(id, epoch, "unavailable");
         return;
     }
+    if (now_json_find_bool(request, "pinHeldPoint", 0))
+        tracking_options |= kNowPeekContinuityTrackingPinHeldPoint;
+    if (now_json_find_bool(request, "virtualGetMouse", 0))
+        tracking_options |= kNowPeekContinuityTrackingVirtualGetMouse;
     result = now_continuity_arm(id, g.port, nonce_hi, nonce_lo, epoch,
-                                hz, lease, fast_pump);
+                                hz, lease, fast_pump, tracking_options);
     if (result == kNowContinuityArmUnsupported)
         (void)continuity_refuse(id, epoch, "unsupported");
     else if (result == kNowContinuityArmTransportUnavailable)

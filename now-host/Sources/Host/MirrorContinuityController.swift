@@ -78,6 +78,32 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
+    @Published var pinHeldPoint = false {
+        didSet {
+            guard pinHeldPoint != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(pinHeldPoint,
+                             forKey: pinHeldPointKey(for: machine))
+            }
+            if phase != .idle {
+                rearmAfterConfigurationChange(reason: "held-point pin changed")
+            }
+        }
+    }
+    @Published var virtualGetMouse = false {
+        didSet {
+            guard virtualGetMouse != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(virtualGetMouse,
+                             forKey: virtualGetMouseKey(for: machine))
+            }
+            if phase != .idle {
+                rearmAfterConfigurationChange(reason: "GetMouse mode changed")
+            }
+        }
+    }
 
     var isActive: Bool { phase == .active }
     @Published private(set) var isMenuTracking = false
@@ -128,6 +154,8 @@ final class MirrorContinuityController: ObservableObject,
     private var sentDatagrams: UInt32 = 0
     private var validAcks: UInt32 = 0
     private var lastAuditedButtonGeneration: UInt32 = 0
+    private var lastPrimaryDownUptime: TimeInterval?
+    private var buttonTransitionSentUptime: TimeInterval?
 
     init(listener: GuestListener,
          defaults: UserDefaults = ProductIdentity.defaults,
@@ -171,6 +199,12 @@ final class MirrorContinuityController: ObservableObject,
     func primaryDown(at point: MirrorKit.Point,
                      inMenuBar: Bool = false) -> Bool {
         guard phase == .active else { return false }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let lastPrimaryDownUptime {
+            audit(.info, String(format: "primary down interval %.1f ms",
+                                (now - lastPrimaryDownUptime) * 1_000))
+        }
+        lastPrimaryDownUptime = now
         if menuLatched, buttonCycleActive, wireButtonDown {
             self.point = point
             positionDirty = true
@@ -215,6 +249,7 @@ final class MirrorContinuityController: ObservableObject,
         menuReleaseArmed = false
         isMenuTracking = inMenuBar
         sendState(inside: true, keepalive: false)
+        buttonTransitionSentUptime = ProcessInfo.processInfo.systemUptime
         scheduleButtonAckTimeout(generation: buttonGeneration, down: true)
     }
 
@@ -307,7 +342,9 @@ final class MirrorContinuityController: ObservableObject,
         self.target = target
         armID = listener.armContinuity(
             nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
-            requestedHz: rate, leaseTicks: 90, fastPump: fastPump)
+            requestedHz: rate, leaseTicks: 90, fastPump: fastPump,
+            pinHeldPoint: pinHeldPoint,
+            virtualGetMouse: virtualGetMouse)
         guard armID != nil else {
             status = "unavailable: no Mac is connected"
             self.target = nil
@@ -648,6 +685,14 @@ final class MirrorContinuityController: ObservableObject,
     private func applyButtonAcknowledgement(_ ack: ContinuityAckDatagram) {
         guard buttonCycleActive,
               ack.buttonGeneration == buttonGeneration else { return }
+        if let sent = buttonTransitionSentUptime {
+            let direction = wireButtonDown ? "down" : "up"
+            audit(.info, String(format: "primary %@ acknowledged in %.1f ms",
+                                direction,
+                                (ProcessInfo.processInfo.systemUptime - sent)
+                                    * 1_000))
+            buttonTransitionSentUptime = nil
+        }
         if wireButtonDown {
             guard !pressAcknowledged else { return }
             pressAcknowledged = true
@@ -704,6 +749,7 @@ final class MirrorContinuityController: ObservableObject,
         buttonAckTimeout?.cancel()
         buttonAckTimeout = nil
         sendState(inside: true, keepalive: false)
+        buttonTransitionSentUptime = ProcessInfo.processInfo.systemUptime
         scheduleButtonAckTimeout(generation: buttonGeneration, down: false)
     }
 
@@ -802,6 +848,8 @@ final class MirrorContinuityController: ObservableObject,
         sentDatagrams = 0
         validAcks = 0
         lastAuditedButtonGeneration = 0
+        lastPrimaryDownUptime = nil
+        buttonTransitionSentUptime = nil
         resetButtonState()
         if wasOwned {
             audit(.info, "ending locally: reason=\(reason), "
@@ -910,6 +958,8 @@ final class MirrorContinuityController: ObservableObject,
         requestedHz = rate
         autoReconnect = defaults.bool(forKey: reconnectKey(for: machine))
         fastPump = defaults.bool(forKey: fastPumpKey(for: machine))
+        pinHeldPoint = defaults.bool(forKey: pinHeldPointKey(for: machine))
+        virtualGetMouse = defaults.bool(forKey: virtualGetMouseKey(for: machine))
         loadingSettings = false
     }
 
@@ -923,6 +973,14 @@ final class MirrorContinuityController: ObservableObject,
 
     private func fastPumpKey(for machine: GuestID) -> String {
         "mirror.continuity.fastPump.\(machine.slug)"
+    }
+
+    private func pinHeldPointKey(for machine: GuestID) -> String {
+        "mirror.continuity.pinHeldPoint.\(machine.slug)"
+    }
+
+    private func virtualGetMouseKey(for machine: GuestID) -> String {
+        "mirror.continuity.virtualGetMouse.\(machine.slug)"
     }
 
     private func wireDisarmReason(for reason: String) -> String {

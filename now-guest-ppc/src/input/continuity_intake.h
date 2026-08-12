@@ -28,7 +28,8 @@ typedef struct {
 int now_continuity_arm(long id, unsigned short port,
                        unsigned long nonce_hi, unsigned long nonce_lo,
                        unsigned long epoch, unsigned long requested_hz,
-                       unsigned long lease_ticks, int fast_pump);
+                       unsigned long lease_ticks, int fast_pump,
+                       unsigned long tracking_options);
 int now_continuity_disarm(long id, unsigned long epoch);
 void now_continuity_disconnect(void);
 void now_continuity_shutdown(void);

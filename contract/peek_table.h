@@ -917,6 +917,10 @@ enum {
        application; the resident owns only tracking-loop MouseLocation and an
        unconditional MBState-up escape. */
     kNowPeekContinuityFormatV4 = 4,
+    /* V5 appends host-selected tracking experiments and their counters. The
+       experiments are inactive by default and never mutate a physical Cursor
+       Device or ADB-owned global. */
+    kNowPeekContinuityFormatV5 = 5,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -945,6 +949,14 @@ enum {
        spending the live-input release lease before its first packet. */
     kNowPeekContinuityArmGraceTicks = 300,
     kNowPeekContinuityTickMs = 16
+};
+
+enum {
+    kNowPeekContinuityTrackingPinHeldPoint = 1u << 0,
+    kNowPeekContinuityTrackingVirtualGetMouse = 1u << 1,
+    kNowPeekContinuityTrackingKnownMask =
+        kNowPeekContinuityTrackingPinHeldPoint
+            | kNowPeekContinuityTrackingVirtualGetMouse
 };
 
 enum {
@@ -1060,6 +1072,12 @@ typedef struct {
     NowPeekU32 button_timer_ticks;
     NowPeekU32 button_forced_releases;
     NowPeekU32 button_release_reason;
+    /* V5 experimental tracking tail. Written before control_seq commits, then
+       read as immutable for the epoch. The two counters distinguish which
+       intervention actually ran on metal. */
+    NowPeekU32 tracking_options;
+    NowPeekU32 tracking_pin_writes;
+    NowPeekU32 tracking_getmouse_answers;
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -1972,7 +1990,7 @@ _Static_assert(offsetof(NowPeekTable, gne_passes)
                "the filter pass counter follows the rest-state pair");
 _Static_assert(sizeof(NowPeekContinuityTraceEntry) == 20,
                "continuity trace ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 420,
+_Static_assert(sizeof(NowPeekContinuityCell) == 432,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -1992,6 +2010,12 @@ _Static_assert(offsetof(NowPeekContinuityCell, pending_mouseup) == 404,
                "continuity V4 release debt offset");
 _Static_assert(offsetof(NowPeekContinuityCell, button_release_reason) == 416,
                "continuity V4 release reason offset");
+_Static_assert(offsetof(NowPeekContinuityCell, tracking_options) == 420,
+               "continuity V5 tracking options offset");
+_Static_assert(offsetof(NowPeekContinuityCell, tracking_pin_writes) == 424,
+               "continuity V5 pin counter offset");
+_Static_assert(offsetof(NowPeekContinuityCell, tracking_getmouse_answers) == 428,
+               "continuity V5 GetMouse counter offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

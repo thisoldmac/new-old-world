@@ -180,6 +180,8 @@ struct ContinuityArm: Codable, Equatable, Sendable {
     var requestedHz: Int
     var leaseTicks: Int
     var fastPump: Bool?
+    var pinHeldPoint: Bool?
+    var virtualGetMouse: Bool?
 }
 
 struct ContinuityDisarm: Codable, Equatable, Sendable {

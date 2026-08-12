@@ -65,7 +65,7 @@ static NowPeekContinuityCell *cell(void)
     if (table == NULL
         || table->length < (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                         + sizeof(NowPeekContinuityCell))
-        || table->continuity_format != kNowPeekContinuityFormatV4
+        || table->continuity_format != kNowPeekContinuityFormatV5
         || !(table->caps & kNowPeekTableCapContinuity))
         return NULL;
     return &table->continuity;
@@ -353,7 +353,8 @@ static int open_udp(unsigned short port)
 int now_continuity_arm(long id, unsigned short port,
                        unsigned long nonce_hi, unsigned long nonce_lo,
                        unsigned long epoch, unsigned long requested_hz,
-                       unsigned long lease_ticks, int fast_pump)
+                       unsigned long lease_ticks, int fast_pump,
+                       unsigned long tracking_options)
 {
     NowPeekContinuityCell *shared = cell();
 
@@ -387,6 +388,10 @@ int now_continuity_arm(long id, unsigned short port,
     shared->epoch = (NowPeekU32)epoch;
     shared->lease_ticks = (NowPeekU32)lease_ticks;
     shared->requested_hz = (NowPeekU32)requested_hz;
+    shared->tracking_options = (NowPeekU32)tracking_options
+        & (NowPeekU32)kNowPeekContinuityTrackingKnownMask;
+    shared->tracking_pin_writes = 0;
+    shared->tracking_getmouse_answers = 0;
     bump_nonzero(&shared->control_seq);
     gPendingReplyID = id;
     gPendingControlSeq = shared->control_seq;
@@ -405,8 +410,10 @@ int now_continuity_arm(long id, unsigned short port,
        epoch. A datagram can never outrun construction of its consumer. */
     gEpoch = (NowCU32)epoch;
     gFastPump = fast_pump != 0;
-    now_log(kLogInfo, "mirror", "arm epoch=%lu hz=%lu lease=%lu fast=%d",
-            epoch, requested_hz, lease_ticks, gFastPump);
+    now_log(kLogInfo, "mirror",
+            "arm epoch=%lu hz=%lu lease=%lu fast=%d tracking=0x%lx",
+            epoch, requested_hz, lease_ticks, gFastPump,
+            tracking_options);
     return kNowContinuityArmOK;
 }
 

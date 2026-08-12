@@ -13,6 +13,7 @@ PPC_CURSOR = (ROOT / "now-guest-ppc/src/input/continuity_cursor.c").read_text()
 HOST = (ROOT / "now-host/Sources/Host/MirrorContinuityController.swift").read_text()
 CONTRACT = (ROOT / "contract/continuity_udp.h").read_text()
 EXT_CMAKE = (ROOT / "ext/CMakeLists.txt").read_text()
+TRACKING_ASM = (ROOT / "ext/src/now_ext_cursor_tracking.S").read_text()
 
 
 def body(source: str, start_name: str, end_name: str) -> str:
@@ -46,8 +47,8 @@ def check(ok: bool, message: str) -> None:
 
 check("#define NOW_CONTINUITY_VERSION 2u" in CONTRACT,
       "the direct-pointer wire is not versioned independently from v0")
-check("kNowPeekContinuityFormatV4" in RESIDENT,
-      "the resident no longer requires the V4 button/event table tail")
+check("kNowPeekContinuityFormatV5" in RESIDENT,
+      "the resident no longer requires the V5 tracking table tail")
 check("now_ext_continuity_tm.S" in EXT_CMAKE,
       "the held-button release vehicle is not linked")
 check("now_continuity_cursor_button(" in PPC,
@@ -67,6 +68,9 @@ check("LMSetMouseLocation(pt)" in tick,
       "the timer no longer advances tracking-loop MouseLocation")
 check("now_ext_cursor_remember_continuity_tracking_point(h, v)" in tick,
       "tracking-loop points are no longer excluded from native takeover")
+check("now_ext_cursor_reassert_continuity_tracking()" in tick
+      and "kNowPeekContinuityTrackingPinHeldPoint" in tick,
+      "the optional held-point pin no longer runs from the bounded timer")
 check("position_seq, cell->request_position_seq" in tick
       and "cell->applied_position_seq = position_seq" not in tick,
       "the timer again claims a manager apply or repeats one tracking point")
@@ -93,6 +97,15 @@ check("now_ext_cursor_reveal_continuity();" in service,
       "task-time synthetic movement no longer reveals an obscured cursor")
 check("now_ext_cursor_reveal_continuity" not in tick,
       "the interrupt timer again reaches cursor visibility/QuickDraw work")
+for token in ("HideCursor", "ShowCursor", "LMSetRawMouseLocation",
+              "LMSetMouseTemp", "now_cdm_"):
+    pin = body(CURSOR, "int now_ext_cursor_reassert_continuity_tracking(",
+               "int now_ext_cursor_answer_continuity_getmouse(")
+    check(token not in pin,
+          f"the optional held-point pin reaches unsafe work: {token}")
+check("jsr now_ext_cursor_answer_continuity_getmouse" in TRACKING_ASM
+      and "addq.l #4,%sp" in TRACKING_ASM,
+      "Virtual GetMouse no longer owns its Pascal argument cleanup")
 check("*gCrsrObscure = 0" in reveal
       and "HideCursor();" in reveal and "ShowCursor();" in reveal,
       "Continuity no longer reproduces the native mouse visibility wake")

@@ -49,7 +49,7 @@ static NowPeekContinuityCell *continuity_cell(NowPeekTable *table)
                                      + sizeof(NowPeekContinuityCell)))
         return NULL;
     if (table->continuity_format
-            != (NowPeekU32)kNowPeekContinuityFormatV4)
+            != (NowPeekU32)kNowPeekContinuityFormatV5)
         return NULL;
     return &table->continuity;
 }
@@ -237,6 +237,7 @@ static void finish_locked(NowPeekContinuityCell *cell, NowPeekU32 reason,
 {
     force_reset(cell, reason);
     now_ext_cursor_cancel_task_apply();
+    now_ext_cursor_configure_continuity_tracking(0);
     cell->state = (NowPeekU32)kNowPeekContinuityStateExited;
     cell->exit_reason = reason;
     cell->apply_ticks = ticks;
@@ -269,6 +270,7 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
     cell->event_result_err = 0;
     cell->pending_mouseup = 0;
     cell->button_release_reason = 0;
+    now_ext_cursor_configure_continuity_tracking(cell->tracking_options);
     gNativeInputSeq = now_ext_cursor_physical_input_seq();
     gNativeInputBaseline = gNativeInputSeq;
     publish_tasktime_counters(cell);
@@ -566,6 +568,10 @@ void now_ext_continuity_tick(TMTaskPtr task)
         cell->at_h = h;
         cell->at_v = v;
     }
+    if ((cell->tracking_options
+            & (NowPeekU32)kNowPeekContinuityTrackingPinHeldPoint) != 0
+            && now_ext_cursor_reassert_continuity_tracking())
+        cell->tracking_pin_writes++;
     if (now_continuity_button_action(
             cell->applied_button_generation, 1,
             button_generation, flags) == kNowContinuityButtonRelease) {
@@ -586,7 +592,7 @@ int now_ext_continuity_boot(NowPeekTable *table)
     if (table->length < (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                      + sizeof(NowPeekContinuityCell)))
         return 0;
-    table->continuity_format = (NowPeekU32)kNowPeekContinuityFormatV4;
+    table->continuity_format = (NowPeekU32)kNowPeekContinuityFormatV5;
     cell = &table->continuity;
     cell->state = (NowPeekU32)kNowPeekContinuityStateInactive;
     cell->exit_reason = (NowPeekU32)kNowPeekContinuityExitNone;

@@ -121,6 +121,7 @@ extern void now_cursor_button_patch(void);
    uninitialised destination. Once installed, these links live until reboot. */
 volatile unsigned char gNowCursorTrackingRedrawOwed = 0;
 volatile unsigned char gNowCursorTrackingSourceActive = 0;
+volatile unsigned char gNowCursorTrackingVirtualGetMouse = 0;
 void *gNowCursorOldGetMouse = NULL;
 void *gNowCursorOldStillDown = NULL;
 void *gNowCursorOldButton = NULL;
@@ -427,7 +428,55 @@ void now_ext_cursor_end_continuity_tracking(void)
     gNowCursorTrackingRedrawOwed = 0;
 }
 
-/* Settle only the picture. This is entered from chain-only Toolbox hooks in
+/* Epoch configuration is copied into one resident byte for the assembly hot
+   path. Unknown bits were already masked by the application, but masking here
+   keeps this entry safe if another resident caller appears later. */
+void now_ext_cursor_configure_continuity_tracking(NowPeekU32 options)
+{
+    gNowCursorTrackingVirtualGetMouse =
+        (options & (NowPeekU32)kNowPeekContinuityTrackingVirtualGetMouse)
+            != 0;
+}
+
+/* Interrupt-safe held-point pin. This deliberately touches MouseLocation
+   only: RawMouse, MTemp and the physical Cursor Device remain owned by the
+   ADB/USB path, preserving optimistic local takeover. */
+int now_ext_cursor_reassert_continuity_tracking(void)
+{
+    Point pt;
+
+    if (!continuity_tracking_source_point(&pt))
+        return 0;
+    LMSetMouseLocation(pt);
+    return 1;
+}
+
+/* Answer the Pascal _GetMouse out parameter from the held source. The
+   assembly trampoline owns the Pascal stack cleanup; this C half only proves
+   the option and source are still active, then writes the caller's Point. */
+int now_ext_cursor_answer_continuity_getmouse(void *mouse_loc)
+{
+    Point pt;
+    NowPeekContinuityCell *cell;
+
+    if (!gNowCursorTrackingVirtualGetMouse || mouse_loc == NULL
+            || !continuity_tracking_source_point(&pt))
+        return 0;
+    LMSetMouseLocation(pt);
+    *(Point *)mouse_loc = pt;
+    if (gTable != NULL
+            && gTable->length
+                >= (NowPeekU32)(offsetof(NowPeekTable, continuity)
+                                 + sizeof(NowPeekContinuityCell))
+            && gTable->continuity_format
+                == (NowPeekU32)kNowPeekContinuityFormatV5) {
+        cell = &gTable->continuity;
+        cell->tracking_getmouse_answers++;
+    }
+    return 1;
+}
+
+/* Settle only the picture. This is entered from Toolbox hooks in
    the tracked application's task-time context. Clearing first makes nested
    GetMouse/StillDown/Button calls harmless; a timer interrupt that publishes
    a newer point during QuickDraw leaves a fresh debt for the next hook. */
@@ -447,8 +496,9 @@ void now_ext_cursor_settle_continuity_tracking(void)
     live = LMGetMouseLocation();
     moved = live.h != pt.h || live.v != pt.v;
     /* The PowerBook's ADB path can republish its stationary physical point
-       between host ticks. Reassert our held point on every tracking call,
-       then let the real Toolbox trap answer normally. */
+       between host ticks. Reassert our held point on every tracking call.
+       The baseline mode then lets the real Toolbox trap answer normally;
+       Virtual GetMouse may answer its out parameter directly afterwards. */
     LMSetMouseLocation(pt);
     if (!owed && !moved)
         return;

@@ -2151,6 +2151,23 @@ components:
             one-tick work-in-flight sleep instead of the ordinary idle sleep.
             This never moves Cursor Device, Event Manager, or QuickDraw work
             into an Open Transport notifier or resident timer.
+        pinHeldPoint:
+          type: boolean
+          default: false
+          description: >
+            Experimental and host-selected. While the primary button is held,
+            the resident reasserts its latest host-owned MouseLocation on
+            every bounded timer tick, including ticks with no newer position
+            datagram. This tests contention from a physical ADB or USB device
+            without mutating that device or its driver-owned state.
+        virtualGetMouse:
+          type: boolean
+          default: false
+          description: >
+            Experimental and host-selected. While the primary button is held,
+            the resident's target-context GetMouse hook answers from the
+            host-owned tracking point instead of tail-chaining to the
+            incumbent trap. Inactive calls always retain the original chain.
     ContinuityDisarm:
       type: object
       required: [type, version, id, epoch, reason]

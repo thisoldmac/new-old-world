@@ -147,7 +147,7 @@ check("gOwnedDeviceHistory" in CURSOR
       "task-time and timer-owned point history again share an unsafe writer")
 check("now_ext_continuity_gne" not in CORE,
       "the global jGNE path again services Continuity")
-check("kNowPeekContinuityFormatV4" in CONTINUITY,
+check("kNowPeekContinuityFormatV5" in CONTINUITY,
       "the resident no longer advertises the direct-pointer contract")
 check("now_continuity_cursor_move" in SERVICE
       and "now_continuity_cursor_button" in SERVICE

@@ -206,6 +206,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         initial: MirrorKit.Point = .init(x: 40, y: 50),
         autoReconnect: Bool = false,
         fastPump: Bool = false,
+        pinHeldPoint: Bool = false,
+        virtualGetMouse: Bool = false,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ArmingRig {
         let guest = FakeGuest(port: try XCTUnwrap(listener.boundPort))
@@ -220,6 +222,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
             listener: listener, defaults: defaults, audit: audit)
         controller.autoReconnect = autoReconnect
         controller.fastPump = fastPump
+        controller.pinHeldPoint = pinHeldPoint
+        controller.virtualGetMouse = virtualGetMouse
         controller.isEnabled = true
         controller.pointerMoved(to: initial)
         try await waitUntil("arm") {
@@ -634,6 +638,13 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(fast.arm.fastPump, true)
     }
 
+    func testHeldPointExperimentsAreRequestedOnlyWhenOptedIn() async throws {
+        let experiments = try await makeArmingRig(
+            pinHeldPoint: true, virtualGetMouse: true)
+        XCTAssertEqual(experiments.arm.pinHeldPoint, true)
+        XCTAssertEqual(experiments.arm.virtualGetMouse, true)
+    }
+
     func testClicksFallThroughUntilTheRawLaneIsActive() async throws {
         let rig = try await makeArmingRig()
         XCTAssertFalse(rig.controller.primaryDown(at: .init(x: 45, y: 55)))
@@ -783,6 +794,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         controller?.requestedHz = 60
         controller?.autoReconnect = true
         controller?.fastPump = true
+        controller?.pinHeldPoint = true
+        controller?.virtualGetMouse = true
         controller?.isEnabled = true
         controller = nil
 
@@ -791,6 +804,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(reopened.requestedHz, 60)
         XCTAssertTrue(reopened.autoReconnect)
         XCTAssertTrue(reopened.fastPump)
+        XCTAssertTrue(reopened.pinHeldPoint)
+        XCTAssertTrue(reopened.virtualGetMouse)
         XCTAssertFalse(reopened.isEnabled,
                        "opening a new Mirror session must not seize input")
     }

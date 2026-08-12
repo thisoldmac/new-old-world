@@ -695,7 +695,9 @@ final class GuestListener: ObservableObject {
     @discardableResult
     func armContinuity(nonceHi: UInt32, nonceLo: UInt32, epoch: UInt32,
                        requestedHz: Int, leaseTicks: Int,
-                       fastPump: Bool = false) -> Int? {
+                       fastPump: Bool = false,
+                       pinHeldPoint: Bool = false,
+                       virtualGetMouse: Bool = false) -> Int? {
         guard let session else { return nil }
         let id = nextContinuityId
         nextContinuityId &+= 1
@@ -703,7 +705,8 @@ final class GuestListener: ObservableObject {
             version: ContinuityContract.version,
             id: id, nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
             requestedHz: requestedHz, leaseTicks: leaseTicks,
-            fastPump: fastPump)))
+            fastPump: fastPump, pinHeldPoint: pinHeldPoint,
+            virtualGetMouse: virtualGetMouse)))
         return id
     }
 

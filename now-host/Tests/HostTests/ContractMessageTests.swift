@@ -34,7 +34,8 @@ final class ContractMessageTests: XCTestCase {
                                 id: 9, nonceHi: 0x0123_4567,
                                 nonceLo: 0x89AB_CDEF, epoch: 4,
                                 requestedHz: 30, leaseTicks: 90,
-                                fastPump: true)
+                                fastPump: true, pinHeldPoint: true,
+                                virtualGetMouse: true)
         let report = ContinuityReport(
             version: ContinuityContract.version,
             id: 9, epoch: 4, state: "armed", acceptedHz: 30,
