@@ -23,15 +23,6 @@
 /* Compatibility definitions for pages whose metadata has not moved into its
    own domain yet. Networking is the pilot: its definition lives beside its
    implementation and enters this one composition root by pointer. */
-static const WorkshopModuleDefinition k_screenshots_definition = {
-    kWorkshopScreenshots, "screen", "Screenshots",
-    "Capture this Mac, send a still, or stream its screen.",
-    "Screenshots still lives in its own window (Windows menu).",
-    "Capture and stream", 129, kWorkshopModuleTierCore,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    screenshots_module_ops
-};
-
 static const WorkshopModuleDefinition k_files_definition = {
     kWorkshopFiles, "files", "Files",
     "Browse the other Mac's share and choose what this Mac exposes.",
@@ -150,7 +141,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     WorkshopModuleID page_id)
 {
     switch (page_id) {
-    case kWorkshopScreenshots: return &k_screenshots_definition;
+    case kWorkshopScreenshots: return screenshots_module_definition();
     case kWorkshopFiles: return &k_files_definition;
     case kWorkshopConsole: return console_module_definition();
     case kWorkshopProcesses: return &k_processes_definition;

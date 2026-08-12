@@ -89,16 +89,7 @@ struct ModuleRegistry {
        sidebar that says "the connected Mac" while every page under it says
        something else is how the copy drifted in the first place. */
     private static let standardDescriptors: [ModuleDescriptor] = [
-        ModuleDescriptor(
-            /* Not "Screenshots": the page took a still picture when it was
-               named, and it now also carries the live stream and its
-               recording. One noun for the subject both of those are about. */
-            id: "screen",
-            title: "Screen",
-            symbol: "camera.viewfinder",
-            summary: "Capture, stream and save "
-                + "\(MachineNaming.possessive(nil)) screen"
-        ),
+        ScreenHostModule.definition.descriptor,
         ModuleDescriptor(
             id: "files",
             title: "Files",

@@ -187,10 +187,11 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == SoftwareHostModule.definition.descriptor.id {
             return SoftwareHostModule.definition
         }
+        if descriptor.id == ScreenHostModule.definition.descriptor.id {
+            return ScreenHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
-            case "screen":
-                return AnyView(ScreenshotsModuleView(model: state.screenshots))
             case "files":
                 return AnyView(FilesModuleView(model: state.files))
             case "icloud":

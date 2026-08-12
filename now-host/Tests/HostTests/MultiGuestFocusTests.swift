@@ -243,7 +243,9 @@ final class MultiGuestFocusTests: XCTestCase {
             essGuest.connection.cancel()
         }
 
-        XCTAssertEqual(state.screenshots.connection.peerLabel,
+        let screen = try XCTUnwrap(state.moduleRuntime(
+            for: "screen", as: ScreenHostModuleRuntime.self))
+        XCTAssertEqual(screen.model.connection.peerLabel,
                        "PowerBook 1400c")
 
         let outgoingMirrorKey = try liveKey(state, "PowerBook 1400c")
@@ -253,13 +255,13 @@ final class MultiGuestFocusTests: XCTestCase {
         let incomingMirrorKey = try liveKey(state, "PowerBook 180c")
         XCTAssertTrue(state.selectGuest(incomingMirrorKey))
         try await waitUntil("the models follow") {
-            state.screenshots.connection.peerLabel == "PowerBook 180c"
+            screen.model.connection.peerLabel == "PowerBook 180c"
         }
         let census = try XCTUnwrap(state.moduleRuntime(
             for: "census", as: CensusHostModuleRuntime.self))
         let software = try XCTUnwrap(state.moduleRuntime(
             for: "software", as: SoftwareHostModuleRuntime.self))
-        for label in [state.screenshots.connection.peerLabel,
+        for label in [screen.model.connection.peerLabel,
                       state.files.connection.peerLabel,
                       census.model.connection.peerLabel,
                       state.processes.connection.peerLabel,
@@ -275,7 +277,7 @@ final class MultiGuestFocusTests: XCTestCase {
 
         essGuest.connection.cancel()
         try await waitUntil("the active disconnect promotes the remaining Mac") {
-            state.screenshots.connection.peerLabel == "PowerBook 1400c"
+            screen.model.connection.peerLabel == "PowerBook 1400c"
         }
         XCTAssertEqual(state.mirrorSource.pinnedGuestKey, outgoingMirrorKey,
                        "an active disconnect starts a fresh session on the "

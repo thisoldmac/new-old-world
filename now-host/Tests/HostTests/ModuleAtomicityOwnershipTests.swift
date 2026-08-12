@@ -100,4 +100,32 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"software\""))
         XCTAssertTrue(definition.contains("software_module_ops"))
     }
+
+    func testScreenDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = ScreenHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "screen")
+        XCTAssertEqual(definition.descriptor.tier, .core)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testScreenOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/screenshots/screenshots_module_definition.c")
+
+        XCTAssertFalse(state.contains("lazy var screenshots"))
+        XCTAssertFalse(state.contains("lazy var quickCapture"))
+        XCTAssertFalse(compatibility.contains("case \"screen\""))
+        XCTAssertFalse(registry.contains("k_screenshots_definition"))
+        XCTAssertTrue(registry.contains("screenshots_module_definition()"))
+        XCTAssertTrue(definition.contains("\"screen\""))
+        XCTAssertTrue(definition.contains("screenshots_module_ops"))
+    }
 }

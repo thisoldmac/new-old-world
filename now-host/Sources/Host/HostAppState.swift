@@ -8,13 +8,6 @@ final class HostAppState: ObservableObject {
     @Published var selectedModuleID: String {
         didSet { defaults.set(selectedModuleID, forKey: Self.selectionKey) }
     }
-    private(set) lazy var screenshots: ScreenshotModuleModel = {
-        let model = ScreenshotModuleModel(listener: listener)
-        model.announce = { [notifier] guest, format, fileURL in
-            notifier.announce(guest: guest, format: format, fileURL: fileURL)
-        }
-        return model
-    }()
     private let notifier = CaptureNotifier()
     private(set) lazy var files: FilesModuleModel = {
         FilesModuleModel(
@@ -37,24 +30,6 @@ final class HostAppState: ObservableObject {
             else { return }
             notifier.announce(fileFrom: guest, url: url, bytes: bytes)
         }
-
-    /// The menu-bar "Screenshot Guest" command. Reports through the system
-    /// notifier and, because that path is silent under an ad-hoc signature,
-    /// also through whatever visible fallback the app installs below.
-    private(set) lazy var quickCapture: QuickCaptureCommand = {
-        let command = QuickCaptureCommand(screenshots: screenshots,
-                                          files: files)
-        command.report = { [weak self] outcome in
-            guard let self else { return }
-            self.notifier.announce(outcome: outcome)
-            self.quickCaptureFeedback?(outcome)
-        }
-        return command
-    }()
-
-    /// Set by the app delegate to flash the status item. Kept as a hook so
-    /// HostAppState stays free of AppKit chrome and tests stay silent.
-    var quickCaptureFeedback: ((QuickCaptureOutcome) -> Void)?
 
     /// Starting and stopping NOW's two MCP transports, set by the app delegate.
     ///
@@ -299,7 +274,7 @@ final class HostAppState: ObservableObject {
         model.onScreenshotApp = { [weak self] psnHigh, psnLow in
             guard let self else { return }
             self.selectedModuleID = "screen"
-            self.screenshots.captureProcess(psnHigh: psnHigh, psnLow: psnLow)
+            self.captureProcess(psnHigh: psnHigh, psnLow: psnLow)
         }
         return model
     }()
@@ -314,7 +289,7 @@ final class HostAppState: ObservableObject {
     /// switch — the two used to be separate assignments, and a module added
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
-        [screenshots, files, diagnostics, processes, mirror]
+        [files, diagnostics, processes, mirror]
     }
 
     private lazy var moduleRuntimes = HostModuleRuntimeStore(
@@ -545,6 +520,31 @@ final class HostAppState: ObservableObject {
         for id: String, as type: Runtime.Type
     ) -> Runtime? {
         moduleRuntimes.runtime(for: id, as: type)
+    }
+
+    private var screenRuntime: ScreenHostModuleRuntime? {
+        moduleRuntimes.runtime(
+            for: ScreenHostModule.definition.descriptor.id,
+            as: ScreenHostModuleRuntime.self)
+    }
+
+    var quickCaptureReadiness: QuickCaptureReadiness {
+        screenRuntime?.quickCapture.readiness
+            ?? .init(isEnabled: false, reason: "Screen is unavailable")
+    }
+
+    func setQuickCaptureFeedback(
+        _ feedback: @escaping (QuickCaptureOutcome) -> Void
+    ) {
+        screenRuntime?.quickCaptureFeedback = feedback
+    }
+
+    func runQuickCapture() {
+        screenRuntime?.quickCapture.run()
+    }
+
+    func captureProcess(psnHigh: Int, psnLow: Int) {
+        screenRuntime?.model.captureProcess(psnHigh: psnHigh, psnLow: psnLow)
     }
 
     func shutDownModules() {

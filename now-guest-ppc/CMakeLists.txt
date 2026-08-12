@@ -52,6 +52,7 @@ add_application(now-guest-ppc
     src/software/software_module_definition.c
     src/screenshots/pixels.c
     src/screenshots/screenshots_module.c
+    src/screenshots/screenshots_module_definition.c
     src/census/census_module.c
     src/census/census_module_definition.c
     src/census/census_probes.c

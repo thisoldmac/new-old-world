@@ -234,7 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             item?.button?.title = $0
         }
         flash = flasher
-        state.quickCaptureFeedback = { [weak flasher] in
+        state.setQuickCaptureFeedback { [weak flasher] in
             flasher?.flash($0.flash)
         }
 
@@ -319,7 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     @objc func screenshotGuest() {
-        state.quickCapture.run()
+        state.runQuickCapture()
     }
 
     /// Test seam: the delegate's state is otherwise built lazily on launch.
@@ -332,7 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// delegate subscribing to anything.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard item.action == #selector(screenshotGuest) else { return true }
-        return state.quickCapture.readiness.isEnabled
+        return state.quickCaptureReadiness.isEnabled
     }
 
     /// Refresh the header the instant before it is read, so "quiet for 34s"
@@ -341,7 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         state.guestStatus.refresh()
         menu.item(withTag: Self.statusLineTag)?.title =
             statusHeaderLine(status: state.guestStatus.status,
-                             readiness: state.quickCapture.readiness)
+                             readiness: state.quickCaptureReadiness)
         if let toggle = menu.item(withTag: MainMenu.Tag.listenToggle.rawValue) {
             toggle.title = Self.listenToggleTitle(state.listener.state)
         }

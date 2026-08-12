@@ -256,8 +256,10 @@ def main() -> int:
             "unknown product feature 'classic.nope'",
         )
         expect_mutation(
-            test_root, "host module without guide", test_root / "now-host/Sources/Host/ModuleRegistry.swift",
-            'id: "screen"', 'id: "screen-unmapped"', "do not match host registry",
+            test_root, "host module without guide",
+            test_root / "now-host/Sources/Host/ScreenHostModule.swift",
+            'id: "screen"', 'id: "screen-unmapped"',
+            "do not match host registry",
         )
         expect_mutation(
             test_root, "definition-owned host module without guide",
