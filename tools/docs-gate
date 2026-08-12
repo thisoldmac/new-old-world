@@ -231,13 +231,13 @@ def extract_host_ids(root: Path) -> list[str]:
     sources = root / "now-host/Sources/Host"
     registry = (sources / "ModuleRegistry.swift").read_text()
     block = registry[
-        registry.index("private static let standardDescriptors"):
+        registry.index("private static let standardDefinitions"):
         registry.index("static let standard =")
     ]
     ids: list[str] = []
     entries = re.compile(
         r'\bid:\s*"([^"]+)"|'
-        r'\b([A-Za-z_][A-Za-z0-9_]*)\.definition\.descriptor'
+        r'\b([A-Za-z_][A-Za-z0-9_]*)\.definition(?:\.descriptor)?'
     )
     definition_pattern = (
         r"\b(?:enum|struct)\s+{symbol}\s*\{{.*?"

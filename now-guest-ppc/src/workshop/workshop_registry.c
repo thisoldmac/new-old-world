@@ -20,29 +20,43 @@
 #include "software_module.h"
 #include "web_module.h"
 
+/* One ordered composition list, indexed by the persisted Workshop page id.
+   Definitions own metadata and construction; the registry only establishes
+   product order and rejects a definition filed under the wrong stable id. */
+static const WorkshopModuleDefinitionFactory k_module_definitions[] = {
+    screenshots_module_definition,
+    files_module_definition,
+    console_module_definition,
+    processes_module_definition,
+    census_module_definition,
+    software_module_definition,
+    mcp_module_definition,
+    diagnostics_module_definition,
+    network_module_definition,
+    cloud_module_definition,
+    chat_module_definition,
+    mirror_module_definition,
+    development_module_definition,
+    web_module_definition,
+    preferences_module_definition,
+    logs_module_definition,
+    connection_module_definition,
+};
+
 const WorkshopModuleDefinition *workshop_module_definition(
     WorkshopModuleID page_id)
 {
-    switch (page_id) {
-    case kWorkshopScreenshots: return screenshots_module_definition();
-    case kWorkshopFiles: return files_module_definition();
-    case kWorkshopConsole: return console_module_definition();
-    case kWorkshopProcesses: return processes_module_definition();
-    case kWorkshopHardware: return census_module_definition();
-    case kWorkshopSoftware: return software_module_definition();
-    case kWorkshopMCP: return mcp_module_definition();
-    case kWorkshopDiagnostics: return diagnostics_module_definition();
-    case kWorkshopNetworking: return network_module_definition();
-    case kWorkshopCloud: return cloud_module_definition();
-    case kWorkshopChat: return chat_module_definition();
-    case kWorkshopMirror: return mirror_module_definition();
-    case kWorkshopDevelopment: return development_module_definition();
-    case kWorkshopWeb: return web_module_definition();
-    case kWorkshopPreferences: return preferences_module_definition();
-    case kWorkshopLogs: return logs_module_definition();
-    case kWorkshopConnection: return connection_module_definition();
-    default: return NULL;
+    const WorkshopModuleDefinition *definition;
+    int index = (int)page_id - 1;
+
+    if (index < 0 || index >= kWorkshopModuleCount ||
+        (int)(sizeof(k_module_definitions) /
+              sizeof(k_module_definitions[0])) != kWorkshopModuleCount) {
+        return NULL;
     }
+    definition = k_module_definitions[index]();
+    return definition != NULL && definition->page_id == page_id
+        ? definition : NULL;
 }
 
 Boolean workshop_registry_prepare(

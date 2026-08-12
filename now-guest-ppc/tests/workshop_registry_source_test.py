@@ -56,9 +56,23 @@ assert declared == expected_pages, (
     f"persisted Workshop page IDs moved: {declared} != {expected_pages}"
 )
 
-cases = re.findall(r"case\s+(kWorkshop[A-Za-z]+)\s*:", registry)
-assert len(cases) == len(set(cases)) == len(expected_pages)
-assert set(cases) == set(expected_pages), "registry must resolve every page once"
+assert "switch (page_id)" not in registry, (
+    "adding a Workshop module must not grow a central dispatch switch"
+)
+catalog = registry[
+    registry.index("k_module_definitions[]"):
+    registry.index("const WorkshopModuleDefinition *workshop_module_definition")
+]
+factories = re.findall(r"\b([a-z][a-z0-9_]*)_module_definition\s*,", catalog)
+assert len(factories) == len(expected_pages), (
+    "registry must compose exactly one factory for every persisted page"
+)
+assert len(factories) == len(set(factories)), (
+    "registry must not compose one module factory twice"
+)
+assert "definition->page_id == page_id" in registry, (
+    "the registry must reject a definition filed under the wrong page id"
+)
 
 for token in (
     "kWorkshopNetworking",
@@ -70,7 +84,7 @@ for token in (
     "network_module_ops",
 ):
     assert token in network, f"Networking definition lost {token}"
-assert "network_module_definition()" in registry
+assert "network_module_definition," in registry
 
 for source in (
     "src/workshop/workshop_registry.c",

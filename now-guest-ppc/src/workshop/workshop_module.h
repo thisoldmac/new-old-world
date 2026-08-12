@@ -78,6 +78,8 @@ typedef enum {
 } WorkshopModuleTier;
 
 typedef const WorkshopModuleOps *(*WorkshopModuleOpsFactory)(void);
+typedef const struct WorkshopModuleDefinition
+    *(*WorkshopModuleDefinitionFactory)(void);
 
 /* One statically linked module definition. Placement remains the person's
    rail order; maturity, future domain grouping and product admission are

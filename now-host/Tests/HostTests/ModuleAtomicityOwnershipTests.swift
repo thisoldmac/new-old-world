@@ -3,6 +3,31 @@ import XCTest
 
 @MainActor
 final class ModuleAtomicityOwnershipTests: XCTestCase {
+    private func assertPPCRegistryComposes(
+        _ factory: String, in registry: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            registry.contains("\(factory),"),
+            "the PPC composition catalog must include \(factory)",
+            file: file, line: line)
+    }
+
+    func testCompositionRootsContainOrderButNoModuleDispatchSwitches() throws {
+        let host = try GateSource.hostSwift(
+            "now-host/Sources/Host/ModuleRegistry.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let ppc = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+
+        XCTAssertTrue(host.contains("standardDefinitions"))
+        XCTAssertFalse(host.contains("LegacyHostModuleDefinitions"))
+        XCTAssertFalse(compatibility.contains("LegacyHostModuleDefinitions"))
+        XCTAssertTrue(ppc.contains("k_module_definitions[]"))
+        XCTAssertFalse(ppc.contains("switch (page_id)"))
+        XCTAssertTrue(ppc.contains("definition->page_id == page_id"))
+    }
     func testConsoleDefinitionOwnsItsRuntimeAndMetadata() {
         let definition = ConsoleHostModule.definition
 
@@ -42,7 +67,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(state.contains("lazy var console"))
         XCTAssertFalse(compatibility.contains("case \"console\""))
         XCTAssertFalse(registry.contains("k_console_definition"))
-        XCTAssertTrue(registry.contains("console_module_definition()"))
+        assertPPCRegistryComposes("console_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"console\""))
         XCTAssertTrue(definition.contains("console_module_ops"))
     }
@@ -69,7 +94,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(state.contains("lazy var census"))
         XCTAssertFalse(compatibility.contains("case \"census\""))
         XCTAssertFalse(registry.contains("k_hardware_definition"))
-        XCTAssertTrue(registry.contains("census_module_definition()"))
+        assertPPCRegistryComposes("census_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"census\""))
         XCTAssertTrue(definition.contains("census_module_ops"))
     }
@@ -96,7 +121,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(state.contains("lazy var software"))
         XCTAssertFalse(compatibility.contains("case \"software\""))
         XCTAssertFalse(registry.contains("k_software_definition"))
-        XCTAssertTrue(registry.contains("software_module_definition()"))
+        assertPPCRegistryComposes("software_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"software\""))
         XCTAssertTrue(definition.contains("software_module_ops"))
     }
@@ -124,7 +149,8 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(state.contains("lazy var quickCapture"))
         XCTAssertFalse(compatibility.contains("case \"screen\""))
         XCTAssertFalse(registry.contains("k_screenshots_definition"))
-        XCTAssertTrue(registry.contains("screenshots_module_definition()"))
+        assertPPCRegistryComposes(
+            "screenshots_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"screen\""))
         XCTAssertTrue(definition.contains("screenshots_module_ops"))
     }
@@ -151,7 +177,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(state.contains("lazy var files"))
         XCTAssertFalse(compatibility.contains("case \"files\""))
         XCTAssertFalse(registry.contains("k_files_definition"))
-        XCTAssertTrue(registry.contains("files_module_definition()"))
+        assertPPCRegistryComposes("files_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"files\""))
         XCTAssertTrue(definition.contains("files_module_ops"))
     }
@@ -182,7 +208,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(model.contains("onScreenshotApp"))
         XCTAssertFalse(compatibility.contains("case \"processes\""))
         XCTAssertFalse(registry.contains("k_processes_definition"))
-        XCTAssertTrue(registry.contains("processes_module_definition()"))
+        assertPPCRegistryComposes("processes_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"processes\""))
         XCTAssertTrue(definition.contains("processes_module_ops"))
     }
@@ -209,7 +235,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(state.contains("lazy var cloudModule"))
         XCTAssertFalse(compatibility.contains("case \"icloud\""))
         XCTAssertFalse(registry.contains("k_cloud_definition"))
-        XCTAssertTrue(registry.contains("cloud_module_definition()"))
+        assertPPCRegistryComposes("cloud_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"icloud\""))
         XCTAssertTrue(definition.contains("cloud_module_ops"))
     }
@@ -251,7 +277,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(state.contains("lazy var chat"))
         XCTAssertFalse(compatibility.contains("case \"chat\""))
         XCTAssertFalse(registry.contains("k_chat_definition"))
-        XCTAssertTrue(registry.contains("chat_module_definition()"))
+        assertPPCRegistryComposes("chat_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"chat\""))
         XCTAssertTrue(definition.contains("chat_module_ops"))
     }
@@ -281,7 +307,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(compatibility.contains("case \"web\""))
         XCTAssertTrue(runtime.contains("model.stop()"))
         XCTAssertFalse(registry.contains("k_web_definition"))
-        XCTAssertTrue(registry.contains("web_module_definition()"))
+        assertPPCRegistryComposes("web_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"web\""))
         XCTAssertTrue(definition.contains("web_module_ops"))
     }
@@ -308,7 +334,8 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(state.contains("lazy var development"))
         XCTAssertFalse(compatibility.contains("case \"development\""))
         XCTAssertFalse(registry.contains("k_development_definition"))
-        XCTAssertTrue(registry.contains("development_module_definition()"))
+        assertPPCRegistryComposes(
+            "development_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"development\""))
         XCTAssertTrue(definition.contains("development_module_ops"))
     }
@@ -340,7 +367,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(runtime.contains("run.stop()"))
         XCTAssertTrue(runtime.contains("window.close()"))
         XCTAssertFalse(registry.contains("k_mirror_definition"))
-        XCTAssertTrue(registry.contains("mirror_module_definition()"))
+        assertPPCRegistryComposes("mirror_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"mirror\""))
         XCTAssertTrue(definition.contains("mirror_module_ops"))
     }
@@ -403,7 +430,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(compatibility.contains("case \"mcp\""))
         XCTAssertTrue(runtime.contains("func shutDown()"))
         XCTAssertFalse(registry.contains("k_mcp_definition"))
-        XCTAssertTrue(registry.contains("mcp_module_definition()"))
+        assertPPCRegistryComposes("mcp_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"mcp\""))
         XCTAssertTrue(definition.contains("mcp_module_ops"))
     }
@@ -435,7 +462,8 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(runtime.contains("model.connection = connection"))
         XCTAssertTrue(runtime.contains("model.guestLeft(key)"))
         XCTAssertFalse(registry.contains("k_diagnostics_definition"))
-        XCTAssertTrue(registry.contains("diagnostics_module_definition()"))
+        assertPPCRegistryComposes(
+            "diagnostics_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"diagnostics\""))
         XCTAssertTrue(definition.contains("diagnostics_module_ops"))
     }
@@ -482,7 +510,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(compatibility.contains("case \"logs\""))
         XCTAssertTrue(runtime.contains("context.logs"))
         XCTAssertFalse(registry.contains("k_logs_definition"))
-        XCTAssertTrue(registry.contains("logs_module_definition()"))
+        assertPPCRegistryComposes("logs_module_definition", in: registry)
         XCTAssertTrue(definition.contains("\"logs\""))
         XCTAssertTrue(definition.contains("logs_module_ops"))
     }
@@ -520,8 +548,9 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(runtime.contains("select: context.selectGuest"))
         XCTAssertFalse(registry.contains("k_preferences_definition"))
         XCTAssertFalse(registry.contains("k_connection_definition"))
-        XCTAssertTrue(registry.contains("preferences_module_definition()"))
-        XCTAssertTrue(registry.contains("connection_module_definition()"))
+        assertPPCRegistryComposes(
+            "preferences_module_definition", in: registry)
+        assertPPCRegistryComposes("connection_module_definition", in: registry)
         XCTAssertTrue(preferences.contains("\"settings\""))
         XCTAssertTrue(preferences.contains("preferences_module_ops"))
         XCTAssertTrue(connection.contains("\"settings\""))

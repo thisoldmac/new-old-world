@@ -88,17 +88,17 @@ struct ModuleRegistry {
        written through those constants rather than spelled out, because a
        sidebar that says "the connected Mac" while every page under it says
        something else is how the copy drifted in the first place. */
-    private static let standardDescriptors: [ModuleDescriptor] = [
-        ScreenHostModule.definition.descriptor,
-        FilesHostModule.definition.descriptor,
+    private static let standardDefinitions: [HostModuleDefinition] = [
+        ScreenHostModule.definition,
+        FilesHostModule.definition,
         /* Straight after Files because it is the same subject seen from
            this side: Files is what the two machines exchange, iCloud is
            what of THIS Mac's cloud joins that exchange. It is the one
            list page about this side rather than the machine being driven
            — kept in the list anyway, because it is a feature a person
            turns on, not the state of the link. */
-        CloudHostModule.definition.descriptor,
-        ProcessesHostModule.definition.descriptor,
+        CloudHostModule.definition,
+        ProcessesHostModule.definition,
         /* Kept where the Mirror page has always been, and now beside
            Processes for a reason rather than by inheritance: it answers
            the next question about the same subject — Processes is what is
@@ -116,30 +116,30 @@ struct ModuleRegistry {
            somewhere else. It is also the only module that owns a live
            poll, and that poll deliberately keeps running while another
            module is showing. */
-        MirrorHostModule.definition.descriptor,
-        ConsoleHostModule.definition.descriptor,
+        MirrorHostModule.definition,
+        ConsoleHostModule.definition,
         /* Beside Console because it is the same posture — a page that DOES
            things to the machine, through a model instead of a verb table.
            The provider configuration lives on this page too, per the
            no-preferences-window rule. */
-        ChatHostModule.definition.descriptor,
-        WebHostModule.definition.descriptor,
-        DevelopmentHostModule.definition.descriptor,
-        CensusHostModule.definition.descriptor,
+        ChatHostModule.definition,
+        WebHostModule.definition,
+        DevelopmentHostModule.definition,
+        CensusHostModule.definition,
         /* Immediately after Hardware, because it answers the same class of
            question by the other route: Hardware is what the machine IS, and
            this is what the machine can MEASURE about itself. A person
            chasing a slow transfer or a wrong-looking screenshot reads them
            together. */
-        DiagnosticsHostModule.definition.descriptor,
+        DiagnosticsHostModule.definition,
         /* Beside Diagnostics rather than beside Connections: this page
            is what the machine being driven says about its own networking,
            which is a measurement of that machine - the footer's
            Connections page is about which machines this one is talking to.
            Different questions, and putting them together would suggest one
            answer. */
-        NetworkingHostModule.definition.descriptor,
-        SoftwareHostModule.definition.descriptor,
+        NetworkingHostModule.definition,
+        SoftwareHostModule.definition,
         /* In the footer rather than the list, and above Logs, because the
            list is what you can do to the machine being driven and the
            footer is the state of this side. This page is about this host: the server an
@@ -152,8 +152,8 @@ struct ModuleRegistry {
            is what the page now controls: MCP is the server this host runs
            and this side owns its lifecycle. The audit model underneath is
            deliberately NOT named that — see MCPModuleView. */
-        MCPHostModule.definition.descriptor,
-        LogsHostModule.definition.descriptor,
+        MCPHostModule.definition,
+        LogsHostModule.definition,
         /* The link, and who is on it — one page, formerly two rows.
            "Connections" sat in the list (the roster of machines) while this
            one sat in the footer (the port and the link state), and neither
@@ -165,11 +165,8 @@ struct ModuleRegistry {
         /* The id is a preferences key and the ⌘, target, not a name: it is
            what a saved selection and the Settings menu item both spell, so
            it stays put while the title says what the page is about. */
-        SettingsHostModule.definition.descriptor,
+        SettingsHostModule.definition,
     ]
 
-    static let standard = ModuleRegistry(definitions:
-        standardDescriptors.map {
-            LegacyHostModuleDefinitions.definition(for: $0)
-        })
+    static let standard = ModuleRegistry(definitions: standardDefinitions)
 }
