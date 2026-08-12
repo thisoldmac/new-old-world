@@ -769,6 +769,17 @@ final class Session {
         send(.fileGet(FileGet(id: id, path: path, container: container)))
     }
 
+    func sendMirrorFileGet(id: Int, source: MirrorFileSource,
+                           container: String?, stagingDirectory: URL) {
+        fileBegin = nil
+        fileSink?.abort()
+        fileSink = nil
+        fileStagingDirectory = stagingDirectory
+        fileStart = Date()
+        send(.fileGet(FileGet(id: id, path: "", container: container,
+                              mirrorSource: source)))
+    }
+
     func sendDevelopmentProjectFileGet(id: Int, projectID: String,
                                        path: String,
                                        stagingDirectory: URL) {

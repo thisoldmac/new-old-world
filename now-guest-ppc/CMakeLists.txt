@@ -35,6 +35,7 @@ add_application(now-guest-ppc
     ../now-guest-shared/src/macbinary_lengths.c
     src/screenshots/capture.c
     src/files/fileshare.c
+    src/files/files_drop.c
     src/files/files_module_definition.c
     src/files/files_capacity.c
     src/core/pump.c

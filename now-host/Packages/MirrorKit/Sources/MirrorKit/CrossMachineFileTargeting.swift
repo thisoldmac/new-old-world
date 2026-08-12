@@ -66,25 +66,29 @@ public enum CrossMachineFileTargeting {
 
     public static func source(_ scene: Scene, x: Int, y: Int)
         -> Result<Source, Refusal> {
-        switch HitTester.hitTest(scene, x: x, y: y) {
-        case .desktopItem(let name, _, _):
-            guard let item = scene.desktopItems?.last(where: {
-                $0.name == name
-            }) else { return .failure(.notAFile(name)) }
-            return source(item, folderPath: nil)
+        guard case .success(let subject) = DragTargeting.subject(
+            scene, x: x, y: y) else {
+            return .failure(.notAFile("that part of the mirror"))
+        }
+        return source(subject, in: scene)
+    }
 
-        case .windowItem(let windowID, let name, _, _):
+    /// Resolves an already-picked item without hit-testing a second point.
+    /// This is the handoff used when a drag crosses the mirror edge: the
+    /// pointer is outside by then, but the source remains the item selected
+    /// at mouse-down.
+    public static func source(_ subject: DragTargeting.Subject,
+                              in scene: Scene) -> Result<Source, Refusal> {
+        switch subject {
+        case .desktopItem(let item):
+            return source(item, folderPath: nil)
+        case .windowItem(let windowID, let item):
             guard let window = scene.windows.last(where: {
                 $0.id == windowID
-            }), let item = window.items?.last(where: { $0.name == name })
-            else { return .failure(.notAFile(name)) }
-            guard let path = window.finder?.path, !path.isEmpty else {
-                return .failure(.sourcePathUnknown(name))
+            }), let path = window.finder?.path, !path.isEmpty else {
+                return .failure(.sourcePathUnknown(item.name))
             }
             return source(item, folderPath: path)
-
-        default:
-            return .failure(.notAFile("that part of the mirror"))
         }
     }
 

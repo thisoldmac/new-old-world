@@ -3303,6 +3303,29 @@ components:
             head of a different one is worse than starting over. Absent
             with offset > 0 is refused `changed` as well — resuming
             blind is not offered.
+        mirrorSource:
+          $ref: "#/components/schemas/MirrorFileSource"
+          description: >
+            A source chosen by a person dragging an item out of Mirror.
+            When present, path is the empty share-relative placeholder and
+            the responder resolves this exact desktop or Finder item outside
+            the share. This is not a general absolute-path file.get: the
+            closed kind/path/name shape is owned by Mirror's local drag UI,
+            folders are refused, and an unknown Finder path fails closed.
+    MirrorFileSource:
+      type: object
+      required: [kind, name]
+      additionalProperties: false
+      properties:
+        kind: { enum: [desktop, finder-window] }
+        name:
+          type: string
+          description: The exact displayed item name at drag start.
+        path:
+          type: string
+          description: >
+            Exact absolute HFS folder path for finder-window. Absent for the
+            desktop, whose directory identity is resolved by FindFolder.
     FileOffer:
       type: object
       required: [type, id, name, path, container, bytes]
@@ -3369,6 +3392,32 @@ components:
             guest resolves path beneath this previously prepared inactive
             candidate rather than beneath the generic Files share. It is not
             accepted by any Files, Chat or MCP request schema.
+        mirrorDrop:
+          $ref: "#/components/schemas/MirrorFileDrop"
+          description: >
+            A release target chosen by a person over Mirror. When present,
+            the receiver resolves the named desktop, Finder folder, or
+            application identity before accepting bytes. The file is copied;
+            this field never requests a source move.
+    MirrorFileDrop:
+      type: object
+      required: [kind]
+      additionalProperties: false
+      properties:
+        kind:
+          enum: [desktop, finder-folder, application-process, application-creator]
+        path:
+          type: string
+          description: Exact absolute HFS folder path for finder-folder.
+        psn:
+          type: string
+          description: ProcessSerialNumber as high:low for application-process.
+        creator:
+          type: string
+          description: Four-byte creator for application-creator.
+        name:
+          type: string
+          description: Display name used to validate or explain the target.
     UpdateOffer:
       type: object
       required: [type, component, version, build, bytes, sha256, channel,

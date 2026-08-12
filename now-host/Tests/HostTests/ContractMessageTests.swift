@@ -3,6 +3,31 @@ import XCTest
 import NOWAgentIntegration
 
 final class ContractMessageTests: XCTestCase {
+    func testMirrorFileRoutingRoundTripsOnlyOnTheExistingFileFamily()
+        throws {
+        let get = FileGet(
+            id: 7, path: "", container: nil,
+            mirrorSource: .init(kind: "finder-window", name: "Read Me",
+                                path: "Macintosh HD:Work"))
+        let getMessage = ControlMessage.fileGet(get)
+        XCTAssertEqual(try ControlMessageCodec.decode(
+            ControlMessageCodec.encode(getMessage)), getMessage)
+
+        let offer = FileOffer(
+            id: 8, name: "Notes", path: "", container: "data", bytes: 12,
+            fileType: "TEXT", creator: "ttxt", modified: nil,
+            createParents: false, overwrite: false,
+            mirrorDrop: .init(kind: "application-process", psn: "0:42",
+                              name: "SimpleText"))
+        let offerMessage = ControlMessage.fileOffer(offer)
+        let encoded = try ControlMessageCodec.encode(offerMessage)
+        XCTAssertEqual(try ControlMessageCodec.decode(encoded), offerMessage)
+        let text = String(decoding: encoded, as: UTF8.self)
+        XCTAssertTrue(text.contains("\"mirrorDrop\""))
+        XCTAssertFalse(text.contains("move"),
+                       "the first Mirror transfer contract is copy-only")
+    }
+
     func testUpdateFamilyRoundTripsWithoutCallingIntegrityASignature()
         throws {
         let offer = UpdateOffer(

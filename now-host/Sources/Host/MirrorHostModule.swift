@@ -14,6 +14,7 @@ private enum MirrorHostModuleError: Error, CustomStringConvertible {
 final class MirrorHostModuleRuntime: HostModuleRuntime {
     let model: MirrorControlModel
     let presentation: MirrorPresentation
+    let fileTransfer: MirrorFileTransferModel
     private let context: HostModuleContext
     private let engines: MirrorStateEngineRegistry
     private(set) var madeSource = false
@@ -46,7 +47,8 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
     private(set) lazy var run = MirrorRunControl(
         source: source, defaults: context.defaults)
     private(set) lazy var window = NOWMirrorWindow(
-        source: source, presentation: presentation)
+        source: source, presentation: presentation,
+        fileTransfer: fileTransfer)
 
     init(context: HostModuleContext) throws {
         guard let engines = context.mirrorEngines,
@@ -58,15 +60,18 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
         model = MirrorControlModel(
             guestProbe: MirrorGuestWireProbe(listener: context.listener))
         presentation = MirrorPresentation(defaults: context.defaults)
+        fileTransfer = MirrorFileTransferModel(listener: context.listener)
     }
 
     func activeGuestWillChange() {
+        fileTransfer.activeGuestWillChange()
         guard madeSource else { return }
         run.activeGuestWillChange()
     }
 
     func focus(on connection: GuestConnectionState) {
         model.connection = connection
+        fileTransfer.connection = connection
         guard madeSource else { return }
         run.activeGuestDidChange()
     }
@@ -175,6 +180,7 @@ enum MirrorHostModule {
                 model: runtime.model, source: runtime.source,
                 run: runtime.run, presentation: runtime.presentation,
                 window: runtime.window,
+                fileTransfer: runtime.fileTransfer,
                 connectedMachineName: runtime.connectedMachineName,
                 timeline: runtime.source.actTimeline,
                 cycles: runtime.source.cycleTimeline))

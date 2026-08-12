@@ -2,6 +2,18 @@
 import AppKit
 import SwiftUI
 
+/// One host-owned drag stub. The pasteboard writer is normally an
+/// `NSFilePromiseProvider`; the image is the guest item's original icon.
+public struct HostFileDragItem {
+    public var writer: NSPasteboardWriting
+    public var image: NSImage
+
+    public init(writer: NSPasteboardWriting, image: NSImage) {
+        self.writer = writer
+        self.image = image
+    }
+}
+
 /// Pointer events SwiftUI's `DragGesture` does not expose: mouse-button
 /// identity, press-time modifiers, and scroll-wheel deltas. The view draws
 /// nothing and observes only events inside its own mirror surface.
@@ -11,6 +23,7 @@ struct PointerCaptureView: NSViewRepresentable {
     var onLeftDown: (CGPoint, Int) -> Bool
     var onLeftDragged: (CGPoint, Int) -> Bool
     var onLeftUp: (CGPoint, Int) -> Bool
+    var onBeginExternalDrag: (CGPoint) -> HostFileDragItem?
     var onCancel: () -> Void
     var onRightDown: (CGPoint, Int) -> Void
     var onScroll: (CGPoint, Int) -> Void
@@ -29,7 +42,7 @@ struct PointerCaptureView: NSViewRepresentable {
         view.stopObserving()
     }
 
-    final class CaptureView: NSView {
+    final class CaptureView: NSView, NSDraggingSource {
         private var monitor: Any?
         private var observers: [NSObjectProtocol] = []
         private var wheelRemainder = 0.0
@@ -40,6 +53,7 @@ struct PointerCaptureView: NSViewRepresentable {
         private var leftDown: ((CGPoint, Int) -> Bool)?
         private var leftDragged: ((CGPoint, Int) -> Bool)?
         private var leftUp: ((CGPoint, Int) -> Bool)?
+        private var beginExternalDrag: ((CGPoint) -> HostFileDragItem?)?
         private var cancel: (() -> Void)?
         private var right: ((CGPoint, Int) -> Void)?
         private var scroll: ((CGPoint, Int) -> Void)?
@@ -53,6 +67,7 @@ struct PointerCaptureView: NSViewRepresentable {
             leftDown = owner.onLeftDown
             leftDragged = owner.onLeftDragged
             leftUp = owner.onLeftUp
+            beginExternalDrag = owner.onBeginExternalDrag
             cancel = owner.onCancel
             right = owner.onRightDown
             scroll = owner.onScroll
@@ -92,6 +107,24 @@ struct PointerCaptureView: NSViewRepresentable {
                     return self.capturedLeft ? nil : event
                 case .leftMouseDragged:
                     guard self.capturedLeft else { return event }
+                    if !isInside,
+                       let item = self.beginExternalDrag?(point) {
+                        self.capturedLeft = false
+                        self.pointerInside = false
+                        self.exit?()
+                        let dragging = NSDraggingItem(
+                            pasteboardWriter: item.writer)
+                        let size = item.image.size
+                        dragging.setDraggingFrame(
+                            NSRect(x: point.x - size.width / 2,
+                                   y: point.y - size.height / 2,
+                                   width: size.width, height: size.height),
+                            contents: item.image)
+                        let session = self.beginDraggingSession(
+                            with: [dragging], event: event, source: self)
+                        session.animatesToStartingPositionsOnCancelOrFail = true
+                        return nil
+                    }
                     _ = self.leftDragged?(point, mods)
                     return nil
                 case .leftMouseUp:
@@ -149,6 +182,16 @@ struct PointerCaptureView: NSViewRepresentable {
             pointerInside = false
             capturedLeft = false
             cancel?()
+        }
+
+        func draggingSession(_ session: NSDraggingSession,
+                             sourceOperationMaskFor context:
+                                NSDraggingContext) -> NSDragOperation {
+            .copy
+        }
+
+        func ignoreModifierKeys(for session: NSDraggingSession) -> Bool {
+            true
         }
 
         func removeMonitor() {

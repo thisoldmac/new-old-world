@@ -1602,6 +1602,38 @@ final class GuestListener: ObservableObject {
                 ?? FileManager.default.temporaryDirectory)
     }
 
+    /// Pulls an item selected from the live Mirror scene. The guest resolves
+    /// this human-originated identity independently of the Files share; no
+    /// general absolute-path read is exposed to automation or projections.
+    func getMirrorFile(source: MirrorFileSource, container: String? = nil,
+                       stagingDirectory: URL? = nil,
+                       completion: @escaping (Result<FileDelivery,
+                                                   FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        guard pendingFile == nil else {
+            completion(.failure(.init(
+                code: "busy",
+                message: "Another file transfer is already in progress")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingFile = completion
+        fileWatchdogId = id
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            self?.deliverFile(.failure(.init(code: "timeout",
+                                             message: reason)))
+        }
+        session.sendMirrorFileGet(
+            id: id, source: source, container: container,
+            stagingDirectory: stagingDirectory
+                ?? FileManager.default.temporaryDirectory)
+    }
+
     func getDevelopmentProjectFile(projectID: String, path: String,
                                    stagingDirectory: URL,
                                    completion: @escaping (
@@ -1639,6 +1671,33 @@ final class GuestListener: ObservableObject {
             overwrite: overwrite
         ) { result in
             completion(result.map { _ in () })
+        }
+    }
+
+    /// Copies a host file to the exact release target represented by Mirror.
+    /// It shares the checked bulk lane but is deliberately separate from the
+    /// Files share path and never requests move or overwrite semantics.
+    func putMirrorFile(
+        name: String,
+        target: MirrorFileDrop,
+        container: String,
+        bytes: Data,
+        fileType: String? = nil,
+        creator: String? = nil,
+        modified: Int? = nil,
+        completion: @escaping (Result<Void, FileFailure>) -> Void
+    ) {
+        let checksum = TransferIdentity.crc32(bytes)
+        startPut(
+            name: name, into: "", container: container,
+            byteCount: bytes.count, crc32: checksum,
+            fileType: fileType, creator: creator, modified: modified,
+            createParents: false, overwrite: false,
+            developmentCandidate: nil, mirrorDrop: target
+        ) { result in
+            completion(result.map { _ in () })
+        } offer: { [weak session] offer in
+            session?.sendFileOffer(offer, bytes: bytes, crc32: checksum)
         }
     }
 
@@ -1753,6 +1812,7 @@ final class GuestListener: ObservableObject {
         createParents: Bool,
         overwrite: Bool,
         developmentCandidate: String?,
+        mirrorDrop: MirrorFileDrop? = nil,
         completion: @escaping (Result<PutReceipt, FileFailure>) -> Void,
         offer: (FileOffer) -> Void
     ) {
@@ -1800,7 +1860,8 @@ final class GuestListener: ObservableObject {
             overwrite: overwrite,
             resumeToken: TransferIdentity.token(
                 bytes: byteCount, crc32: crc32),
-            developmentCandidate: developmentCandidate))
+            developmentCandidate: developmentCandidate,
+            mirrorDrop: mirrorDrop))
     }
 
     private var pendingPut: ((Result<PutReceipt, FileFailure>) -> Void)?
