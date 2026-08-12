@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""Classify pull requests and record head-specific emulator and metal QA."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+POLICY_PATH = ROOT / ".github" / "repository-policy.json"
+
+
+class Refusal(RuntimeError):
+    pass
+
+
+def policy() -> dict:
+    return json.loads(POLICY_PATH.read_text())["code_qa"]
+
+
+def normalized(path: str) -> str:
+    value = path.strip().replace("\\", "/")
+    while value.startswith("./"):
+        value = value[2:]
+    if not value or value.startswith("/") or ".." in value.split("/"):
+        raise Refusal(f"not a repository-relative path: {path!r}")
+    return value
+
+
+def needs_product_qa(paths: list[str]) -> bool:
+    cfg = policy()["product_code"]
+    exact = set(cfg["exact_paths"])
+    prefixes = tuple(cfg["path_prefixes"])
+    return any((path := normalized(raw)) in exact or path.startswith(prefixes)
+               for raw in paths)
+
+
+def run(argv: list[str], *, input_text: str | None = None) -> str:
+    result = subprocess.run(
+        argv,
+        cwd=ROOT,
+        input=input_text,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise Refusal(f"{' '.join(argv)} failed: {detail}")
+    return result.stdout.strip()
+
+
+def repo_name() -> str:
+    configured = os.environ.get("GH_REPO") or os.environ.get("GITHUB_REPOSITORY")
+    if configured:
+        return configured
+    remote = run(["git", "config", "--get", "remote.origin.url"])
+    match = re.search(r"(?:github\.com[:/])([^/]+/[^/]+?)(?:\.git)?$", remote)
+    if not match:
+        raise Refusal("origin is not a GitHub repository; set GH_REPO=owner/name")
+    return match.group(1)
+
+
+def gh_json(endpoint: str) -> dict | list:
+    return json.loads(run(["gh", "api", endpoint]))
+
+
+def pull_request(number: int) -> tuple[dict, list[str]]:
+    repo = repo_name()
+    pr = gh_json(f"repos/{repo}/pulls/{number}")
+    files = gh_json(f"repos/{repo}/pulls/{number}/files?per_page=100")
+    if not isinstance(pr, dict) or not isinstance(files, list):
+        raise Refusal("GitHub returned an unexpected pull-request response")
+    if len(files) == 100:
+        raise Refusal("PR has at least 100 files; classify it manually before attesting")
+    return pr, [str(item["filename"]) for item in files]
+
+
+def post_status(sha: str, context: str, state: str, description: str,
+                target_url: str) -> None:
+    if context not in policy()["required_status_checks"]:
+        raise Refusal(f"unknown code-QA context: {context}")
+    run([
+        "gh", "api", "-X", "POST", f"repos/{repo_name()}/statuses/{sha}",
+        "-f", f"state={state}",
+        "-f", f"context={context}",
+        "-f", f"description={description[:140]}",
+        "-f", f"target_url={target_url}",
+    ])
+
+
+def post_comment(number: int, body: str) -> str:
+    return run([
+        "gh", "api", "-X", "POST", f"repos/{repo_name()}/issues/{number}/comments",
+        "-f", f"body={body}", "--jq", ".html_url",
+    ])
+
+
+def current_actor() -> str:
+    result = gh_json("user")
+    if not isinstance(result, dict) or not result.get("login"):
+        raise Refusal("GitHub did not identify the authenticated user")
+    return str(result["login"])
+
+
+def require_local_head(sha: str) -> None:
+    local = run(["git", "rev-parse", "HEAD"])
+    if local != sha:
+        raise Refusal(
+            f"local HEAD is {local[:12]}, but the PR head is {sha[:12]}; "
+            "check out the exact PR head before recording QA"
+        )
+    if run(["git", "status", "--porcelain"]):
+        raise Refusal("the worktree is dirty; QA must describe the exact committed PR head")
+
+
+def initialize(number: int) -> None:
+    pr, paths = pull_request(number)
+    sha = str(pr["head"]["sha"])
+    url = str(pr["html_url"])
+    required = needs_product_qa(paths)
+    state = "pending" if required else "success"
+    description = (
+        "required for this product-code change"
+        if required else "not required: no product code changed"
+    )
+    for context in policy()["required_status_checks"]:
+        post_status(sha, context, state, description, url)
+    print("required" if required else "exempt")
+
+
+def attest(number: int, kind: str, summary: str, machine: str | None) -> None:
+    pr, paths = pull_request(number)
+    if not needs_product_qa(paths):
+        raise Refusal("this PR changes no paths classified as product code")
+    sha = str(pr["head"]["sha"])
+    require_local_head(sha)
+    actor = current_actor()
+    context = "Emulator QA" if kind == "emulator" else "Metal QA"
+    machine_line = f"\n- Machine: {machine}" if machine else ""
+    body = (
+        f"<!-- now-code-qa kind={kind} sha={sha} -->\n"
+        f"### {context} — passed\n\n"
+        f"- PR head: `{sha}`\n"
+        f"- Recorded by: @{actor}{machine_line}\n"
+        f"- Evidence: {summary}\n\n"
+        "This evidence applies only to the named head revision."
+    )
+    comment_url = post_comment(number, body)
+    post_status(sha, context, "success", f"passed; recorded by {actor}", comment_url)
+    print(f"{context}: success for {sha[:12]} ({comment_url})")
+
+
+def override_metal(number: int, reason: str) -> None:
+    pr, paths = pull_request(number)
+    if not needs_product_qa(paths):
+        raise Refusal("this PR changes no paths classified as product code")
+    actor = current_actor()
+    allowed = set(policy()["human_override_actors"])
+    if actor not in allowed:
+        raise Refusal(f"@{actor} is not authorized to override metal QA")
+    if not sys.stdin.isatty():
+        raise Refusal("metal override requires an interactive human terminal")
+    if len(reason.strip()) < 12:
+        raise Refusal("override reason must state the concrete reason metal QA is omitted")
+    sha = str(pr["head"]["sha"])
+    phrase = f"I, {actor}, override metal QA for PR #{number} at {sha}"
+    print("This bypasses physical-hardware QA for product code.")
+    print(f"Type exactly:\n{phrase}")
+    if input("> ").strip() != phrase:
+        raise Refusal("confirmation did not match; no override was recorded")
+    body = (
+        f"<!-- now-code-qa kind=metal-override sha={sha} -->\n"
+        "### Metal QA — explicit human override\n\n"
+        f"- PR head: `{sha}`\n"
+        f"- Authorized by: @{actor}\n"
+        f"- Reason: {reason.strip()}\n\n"
+        "No metal-verification claim may be made from this override. "
+        "This authorization applies only to the named head revision."
+    )
+    comment_url = post_comment(number, body)
+    post_status(sha, "Metal QA", "success",
+                f"human override by {actor}; not metal-verified", comment_url)
+    print(f"Metal QA: overridden for {sha[:12]} ({comment_url})")
+
+
+def selftest() -> None:
+    required = [
+        "now-host/Sources/Host/ModuleRegistry.swift",
+        "now-host/Tests/HostTests/ModuleRegistryTests.swift",
+        "now-guest-ppc/src/preferences/preferences_module.c",
+        "now-guest-68k/src/core/wire68.c",
+        "ext/src/now_ext.c",
+        "contract/asyncapi.yaml",
+        "product/features.yaml",
+        "web-bridge/nowweb/server.py",
+    ]
+    exempt = [
+        "README.md",
+        "docs/user-guide/modules/control-panels.md",
+        ".github/workflows/ci.yml",
+        "tools/code-qa",
+        "scripts/test-docs",
+    ]
+    for path in required:
+        if not (ROOT / path).exists():
+            raise AssertionError(f"required-path fixture does not exist: {path}")
+        if not needs_product_qa([path]):
+            raise AssertionError(f"should require product QA: {path}")
+    for path in exempt:
+        if needs_product_qa([path]):
+            raise AssertionError(f"should not require product QA: {path}")
+    if not needs_product_qa([exempt[0], required[0]]):
+        raise AssertionError("a docs file must not hide a product-code change")
+    for invalid in ("", "/tmp/source.c", "../source.c"):
+        try:
+            needs_product_qa([invalid])
+        except Refusal:
+            pass
+        else:
+            raise AssertionError(f"should refuse invalid path: {invalid!r}")
+    print("code-qa selftest: passed")
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description=__doc__)
+    sub = result.add_subparsers(dest="command", required=True)
+    classify = sub.add_parser("classify", help="classify repository-relative paths")
+    classify.add_argument("paths", nargs="*")
+    classify.add_argument("--stdin", action="store_true")
+    init = sub.add_parser("initialize", help="initialize PR head statuses")
+    init.add_argument("--pr", type=int, required=True)
+    emulator = sub.add_parser("attest-emulator", help="record passing emulator QA")
+    emulator.add_argument("--pr", type=int, required=True)
+    emulator.add_argument("--summary", required=True)
+    metal = sub.add_parser("attest-metal", help="record passing metal QA")
+    metal.add_argument("--pr", type=int, required=True)
+    metal.add_argument("--summary", required=True)
+    metal.add_argument("--machine", required=True)
+    override = sub.add_parser("override-metal", help="interactively authorize no metal QA")
+    override.add_argument("--pr", type=int, required=True)
+    override.add_argument("--reason", required=True)
+    sub.add_parser("selftest")
+    return result
+
+
+def main() -> int:
+    args = parser().parse_args()
+    if args.command == "classify":
+        paths = list(args.paths)
+        if args.stdin:
+            paths.extend(line.rstrip("\n") for line in sys.stdin)
+        print("required" if needs_product_qa(paths) else "exempt")
+    elif args.command == "initialize":
+        initialize(args.pr)
+    elif args.command == "attest-emulator":
+        attest(args.pr, "emulator", args.summary, None)
+    elif args.command == "attest-metal":
+        attest(args.pr, "metal", args.summary, args.machine)
+    elif args.command == "override-metal":
+        override_metal(args.pr, args.reason)
+    elif args.command == "selftest":
+        selftest()
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Refusal as error:
+        print(f"code-qa: refusing: {error}", file=sys.stderr)
+        raise SystemExit(1)

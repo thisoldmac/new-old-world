@@ -148,6 +148,20 @@ Both: comments say **why**, not what. Match the surrounding density.
   the build, machine and port beside every number and
   `NOW_METAL_REPEATS` samples the large rungs more than once
   ([docs/68k-metal-baseline.md](docs/68k-metal-baseline.md)).
+- **Product code does not merge on automated gates alone.** A pull request
+  touching the product paths declared once in
+  `.github/repository-policy.json > code_qa.product_code` needs current-head
+  `Emulator QA` and `Metal QA` statuses. The emulator status is an agent-driven
+  sweep of every affected surface on the applicable emulators, not merely a
+  rerun of native tests. The metal status records QA on the applicable physical
+  machine with the build and machine guards above. Record them with
+  `tools/code-qa`; a later push invalidates both because GitHub requires them on
+  the new head. Only the human owner may run `tools/code-qa override-metal`, and
+  an override is explicit evidence of missing metal proof, never
+  metal-verification. Agents must stop and ask; they may not invoke or answer
+  its interactive confirmation. GitHub Team cannot enforce required environment
+  reviewers on this private repository, so that final human/agent distinction
+  is a working rule backed by an audited PR record rather than a platform claim.
 - **Your ports are derived, not asked for.** `tools/lane-ports` hashes
   your worktree path to a block of eight ports nobody else can pick, and
   `scripts/spin-up-ppc` already defaults to them — so no coordinating

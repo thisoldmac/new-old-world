@@ -1,0 +1,33 @@
+# Initialize head-specific QA requirements without executing pull-request code.
+# The local sweeps post the successes after testing the exact PR head.
+name: Code QA
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to reclassify
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  initialize:
+    name: Initialize code QA
+    runs-on: ubuntu-latest
+    steps:
+      # pull_request_target deliberately checks out the trusted base branch.
+      # Nothing from the proposed tree executes with the write-capable token.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Classify the change and initialize current-head statuses
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr || github.event.pull_request.number }}
+        run: tools/code-qa initialize --pr "$PR_NUMBER"
