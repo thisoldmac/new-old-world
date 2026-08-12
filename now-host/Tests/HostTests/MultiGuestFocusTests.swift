@@ -251,6 +251,10 @@ final class MultiGuestFocusTests: XCTestCase {
         let outgoingMirrorKey = try liveKey(state, "PowerBook 1400c")
         let mirror = try XCTUnwrap(state.moduleRuntime(
             for: "mirror", as: MirrorHostModuleRuntime.self))
+        XCTAssertEqual(mirror.model.connection.peerLabel,
+                       "PowerBook 1400c",
+                       "the Mirror controls must receive the active Mac "
+                           + "before its lazily-owned source is created")
         mirror.run.start()
         XCTAssertEqual(mirror.source.pinnedGuestKey, outgoingMirrorKey)
 
@@ -268,6 +272,7 @@ final class MultiGuestFocusTests: XCTestCase {
         let processes = try XCTUnwrap(state.moduleRuntime(
             for: "processes", as: ProcessesHostModuleRuntime.self))
         for label in [screen.model.connection.peerLabel,
+                      mirror.model.connection.peerLabel,
                       files.model.connection.peerLabel,
                       census.model.connection.peerLabel,
                       processes.model.connection.peerLabel,

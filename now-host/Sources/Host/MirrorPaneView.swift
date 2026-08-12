@@ -56,7 +56,15 @@ struct MirrorPaneView: View {
 
     @ViewBuilder
     private var surface: some View {
-        if let factor = presentation.zoom.factor {
+        if !source.running && source.scene == nil {
+            VStack(spacing: 8) {
+                Text("Mirror is stopped")
+                    .font(.headline)
+                Text("Choose Start to begin mirroring the connected Mac.")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let factor = presentation.zoom.factor {
             /* A fixed frame inside a scroller. FitTransform computes
                scale == guest/view, so a frame of exactly guest × factor
                makes the renderer's own CTM scale equal `factor` — and

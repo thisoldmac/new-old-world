@@ -66,6 +66,7 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
     }
 
     func focus(on connection: GuestConnectionState) {
+        model.connection = connection
         guard madeSource else { return }
         run.activeGuestDidChange()
     }
