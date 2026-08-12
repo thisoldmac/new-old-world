@@ -976,6 +976,46 @@ the real autopoll packet before that incumbent runs, rather than call the
 handler from an unrelated timer context. Only an attended PowerBook trace can
 show whether stationary trackpad packets are the remaining republisher.
 
+V7 adds one deliberately non-product experiment on top of that observer.
+`continuity.arm.virtualADB` is optional, defaults false, and is not emitted by
+the NOW host UI. When a fault instrument opts in, the normal Cursor Device
+position request is bypassed. A standard two-byte address-3 register-0 packet
+whose physical deltas are no larger than one count is treated as an emulator
+carrier: a pure shared-C transform replaces it with the bounded signed
+seven-bit delta toward the latest absolute host point, forces both physical
+button bits released, and then lets the incumbent handler and the rest of the
+ADB Manager path consume it normally. A larger physical delta is never
+rewritten and remains the optimistic guest-takeover signal. Disarm clears the
+active packet source. Passive mode continues to sample `RawMouse`; active mode
+uses the observer's untouched-physical-packet sequence, so an injected packet's
+later downstream `RawMouse` update cannot revoke its own epoch.
+
+The private CUDA V7 gate moved `(15,15)` to `(52,44)` using four carrier
+packets with zero Cursor Device position applies. A second run moved from
+`(77,44)` to `(114,73)`, pressed, dragged through the same ADB path to
+`(157,104)`, released with no button debt, and then passed a larger native
+delta through; the guest exited Continuity as `guest-input` and moved to
+`(182,104)`. The app, resident, and wire remained responsive. This proves that
+the incumbent ADB path can be the sole coordinate publisher in the CUDA rig.
+The final instrument also models classic cooperative tracking correctly: it
+streams held positions without waiting for an intermediate task-time
+acknowledgement, sends mouse-up to unwind Finder's nested loop, and only then
+requires the final position and generation acknowledgement. It fails if the
+lease safety path releases the button, if an injected report increments native
+input, or if takeover is not attributed to an untouched physical ADB packet.
+It does **not** prove that a stationary PowerBook trackpad supplies carrier
+packets, nor that stealing one-count physical deltas is acceptable product
+behavior. A true virtual ADB device or controller-level injection clock remains
+the likely production mechanism if the attended PowerBook trace shows no idle
+trackpad reports.
+
+The same resident checkpoint corrects a separate metal visibility defect.
+`CrsrObscure == 0` does not prove that the sprite is visible, so every applied
+task-time Continuity point now clears `CrsrObscure` and performs one balanced
+`HideCursor`/`ShowCursor` redraw. The source guard refuses an early return that
+would preserve a stale or already-hidden sprite. This is built and tested in
+the emulator; the screen-edge case that reported it still needs a metal rerun.
+
 ### Double-click timing is measured at both scheduling boundaries
 
 The host already buffers exactly one second primary cycle while the first

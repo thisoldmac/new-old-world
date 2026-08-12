@@ -1,10 +1,11 @@
-/* Passive ADB relative-device observer for the Continuity authority spike.
+/* ADB relative-device observer and opt-in injection spike for Continuity.
 
    The ADB Manager enters a device service routine at interrupt time, using a
    register ABI rather than an ordinary C call. now_ext_adb_observer.S owns
    that seam and calls the two bounded functions below around the incumbent
-   handler. The packet, original data-area pointer, and original handler all
-   remain authoritative; this module observes them and changes none of them.
+   handler. Passive mode leaves the packet, original data-area pointer, and
+   original handler unchanged. The opt-in V7 experiment may rewrite only a
+   standard two-byte register-0 packet before the incumbent sees it.
 
    Installation is lazy because SetADBInfo is a manager call and belongs in
    the PPC application's synchronous resident service, never an INIT-time or
@@ -19,6 +20,7 @@
 
 #include <string.h>
 
+#include "now_adb_injection_logic.h"
 extern void now_ext_adb_observer_entry(void);
 
 /* The assembly shim reads this symbol after restoring the interrupted ADB
@@ -32,10 +34,12 @@ static ADBAddress gAddress;
 static Boolean gSelected;
 static Boolean gInstalled;
 static volatile Boolean gRecording;
+static volatile Boolean gInjecting;
 static volatile unsigned char gDepth;
 static volatile Boolean gTraceActive;
 static NowPeekADBTraceEntry *gTraceEntry;
 static NowPeekU32 gTraceSeq;
+static volatile NowPeekU32 gPhysicalSeq;
 
 static NowPeekContinuityCell *observer_cell(NowPeekTable *table)
 {
@@ -44,7 +48,7 @@ static NowPeekContinuityCell *observer_cell(NowPeekTable *table)
     if (table->length < (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                      + sizeof(NowPeekContinuityCell)))
         return NULL;
-    if (table->continuity_format != (NowPeekU32)kNowPeekContinuityFormatV6)
+    if (table->continuity_format != (NowPeekU32)kNowPeekContinuityFormatV7)
         return NULL;
     return &table->continuity;
 }
@@ -104,6 +108,13 @@ void now_ext_adb_observer_begin(Ptr buffer, NowPeekU32 command)
     const unsigned char *packet = (const unsigned char *)buffer;
     unsigned length;
     NowPeekU32 seq;
+    NowPeekU32 packet_seq;
+    NowPeekU32 packet_epoch;
+    NowPeekU32 flags;
+    NowPeekI32 want_h;
+    NowPeekI32 want_v;
+    Point current;
+    NowADBInjectionResult injection;
 
     gDepth++;
     if (gDepth != 1) {
@@ -137,6 +148,33 @@ void now_ext_adb_observer_begin(Ptr buffer, NowPeekU32 command)
     gTraceEntry = entry;
     gTraceSeq = seq;
     gTraceActive = true;
+
+    if (!gInjecting || packet == NULL || length != 2u)
+        return;
+    packet_seq = cell->packet_seq;
+    packet_epoch = cell->packet_epoch;
+    want_h = cell->want_h;
+    want_v = cell->want_v;
+    flags = cell->flags;
+    if (packet_seq != cell->packet_seq
+            || packet_epoch != cell->adb_observer_epoch
+            || !(flags & (NowPeekU32)kNowPeekContinuityInside))
+        return;
+    current = LMGetMouseLocation();
+    injection = now_adb_injection_rewrite(
+        (unsigned)command, (unsigned char *)buffer + 1, length,
+        current.h, current.v, (short)want_h, (short)want_v);
+    if (injection.classification == kNowADBInjectionPhysical) {
+        cell->adb_injection_physical++;
+        gPhysicalSeq++;
+        return;
+    }
+    if (injection.classification != kNowADBInjectionCarrier)
+        return;
+    cell->adb_injection_packets++;
+    cell->adb_injection_carriers++;
+    if (injection.clamped)
+        cell->adb_injection_clamps++;
 }
 
 /* Called after the incumbent handler returns. No manager, allocation,
@@ -256,7 +294,8 @@ static int install_observer(NowPeekTable *table, NowPeekContinuityCell *cell)
     return 1;
 }
 
-void now_ext_adb_observer_start(NowPeekTable *table, NowPeekU32 epoch)
+void now_ext_adb_observer_start(NowPeekTable *table, NowPeekU32 epoch,
+                                unsigned inject)
 {
     NowPeekContinuityCell *cell = observer_cell(table);
     ADBSetInfoBlock replacement;
@@ -265,6 +304,7 @@ void now_ext_adb_observer_start(NowPeekTable *table, NowPeekU32 epoch)
     if (cell == NULL)
         return;
     gRecording = false;
+    gInjecting = false;
     cell->adb_observer_epoch = epoch;
     if (!gInstalled && !install_observer(table, cell))
         return;
@@ -294,6 +334,7 @@ void now_ext_adb_observer_start(NowPeekTable *table, NowPeekU32 epoch)
         cell->adb_observer_installs++;
     }
     gCell = cell;
+    gInjecting = inject != 0;
     gRecording = true;              /* publish recording authority last */
     mark_state(cell, (NowPeekU32)kNowPeekADBObserverRecording, noErr);
 }
@@ -301,8 +342,14 @@ void now_ext_adb_observer_start(NowPeekTable *table, NowPeekU32 epoch)
 void now_ext_adb_observer_stop(void)
 {
     gRecording = false;             /* callback sees idle before state does */
+    gInjecting = false;
     if (gCell != NULL && gInstalled)
         mark_state(gCell, (NowPeekU32)kNowPeekADBObserverInstalled, noErr);
+}
+
+NowPeekU32 now_ext_adb_observer_physical_seq(void)
+{
+    return gPhysicalSeq;
 }
 
 void now_ext_adb_observer_rollback(NowPeekTable *table)
@@ -311,6 +358,7 @@ void now_ext_adb_observer_rollback(NowPeekTable *table)
        transaction. If this ever becomes reachable after installation, retain
        the table pointer: the live ADB chain still owns the wrapper. */
     gRecording = false;
+    gInjecting = false;
     if (!gInstalled) {
         gCell = NULL;
         gSelected = false;

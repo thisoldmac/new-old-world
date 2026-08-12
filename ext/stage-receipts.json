@@ -587,6 +587,21 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "Passive ADB observer checkpoint: branch-private PMU/CUDA cold boots and private bake verified; shared oracle promotion deferred until attended PowerBook verification and release landing."
+    },
+    {
+      "at": "2026-08-12T19:37:30-0400",
+      "branch": "feat/continuity-adb-input-spike",
+      "extDigest": "e3c8e8ef44ab04b5e86e1036ba48276a41e6c8ff",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_adb_observer.c",
+        "ext/src/now_ext_adb_observer.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Virtual ADB remains an emulator-only authority experiment; shared image promotion is deferred until the passive PowerBook trace establishes idle packet behavior and the release candidate selects this mechanism."
     }
   ]
 }

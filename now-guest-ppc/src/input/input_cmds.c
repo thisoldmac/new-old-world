@@ -229,7 +229,7 @@ static void cursor_rows(InputRows *rows)
     row_addl(rows, "cursor last err", (long)c->last_err);
     if (t->length >= (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                   + sizeof(NowPeekContinuityCell))
-        && t->continuity_format == (NowPeekU32)kNowPeekContinuityFormatV6) {
+        && t->continuity_format == (NowPeekU32)kNowPeekContinuityFormatV7) {
         const NowPeekContinuityCell *continuity = &t->continuity;
 
         row_addl(rows, "native samples", (long)continuity->native_input_samples);
@@ -242,6 +242,8 @@ static void cursor_rows(InputRows *rows)
         row_addl(rows, "native buttons", (long)continuity->native_buttons);
         row_addl(rows, "cursor debt cancels",
                  (long)continuity->cursor_debt_cancels);
+        row_addl(rows, "task cursor applies",
+                 (long)continuity->tasktime_cursor_applies);
         row_addl(rows, "button generation",
                  (long)continuity->applied_button_generation);
         row_addl(rows, "button down", (long)continuity->button_down);
@@ -275,6 +277,14 @@ static void cursor_rows(InputRows *rows)
                  (long)continuity->adb_observer_reentries);
         row_addl(rows, "ADB observer trace seq",
                  (long)continuity->adb_trace_write_seq);
+        row_addl(rows, "ADB injection packets",
+                 (long)continuity->adb_injection_packets);
+        row_addl(rows, "ADB injection carriers",
+                 (long)continuity->adb_injection_carriers);
+        row_addl(rows, "ADB injection physical",
+                 (long)continuity->adb_injection_physical);
+        row_addl(rows, "ADB injection clamps",
+                 (long)continuity->adb_injection_clamps);
         if (continuity->adb_trace_write_seq != 0) {
             NowPeekU32 trace_seq = continuity->adb_trace_write_seq;
             const NowPeekADBTraceEntry *entry = &continuity->adb_trace[

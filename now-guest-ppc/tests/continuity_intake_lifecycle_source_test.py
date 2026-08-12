@@ -90,6 +90,8 @@ if 'now_json_find_bool(request, "fastPump", 0)' not in WIRE:
     failures.append("continuity.arm no longer defaults optional Fast Pump off")
 if 'now_json_find_bool(request, "hideGuestCursorWhileDragging", 0)' not in WIRE:
     failures.append("continuity.arm no longer defaults optional cursor hiding off")
+if 'now_json_find_bool(request, "virtualADB", 0)' not in WIRE:
+    failures.append("continuity.arm no longer defaults optional virtual ADB off")
 if "now_continuity_wants_fast_pump()" not in body(
         "Boolean conn_wants_fast_pump", WIRE):
     failures.append(

@@ -55,7 +55,7 @@ def check(ok: bool, message: str) -> None:
 
 check("#define NOW_CONTINUITY_VERSION 2u" in CONTRACT,
       "the direct-pointer wire is not versioned independently from v0")
-check("kNowPeekContinuityFormatV6" in RESIDENT,
+check("kNowPeekContinuityFormatV7" in RESIDENT,
       "the resident no longer requires the V6 ADB observer table tail")
 check("now_ext_continuity_tm.S" in EXT_CMAKE,
       "the held-button release vehicle is not linked")

@@ -108,9 +108,9 @@ add_executable(NowExt
     # cannot call managers or impersonate the physical ADB/PMU input path.
     src/now_ext_continuity.c
     src/now_ext_continuity_tm.S
-    # P9 diagnostic spike: passively wrap the existing relative ADB device
-    # handler and record its before/after low-memory cursor writes. The
-    # register ABI lives wholly in the adjacent assembly shim.
+    # P9 ADB authority spike: passively wrap the existing relative device by
+    # default. One explicit V7 option substitutes bounded packets through a
+    # pure shared-C transform; the register ABI remains in the adjacent shim.
     src/now_ext_adb_observer.c
     src/now_ext_adb_observer.S
     src/now_content_qdext.S
@@ -125,6 +125,7 @@ add_executable(NowExt
     # word between them; neither plane guesses from the other's cell.
     ../now-guest-shared/src/now_input_owner.c
     ../now-guest-shared/src/now_continuity_logic.c
+    ../now-guest-shared/src/now_adb_injection_logic.c
     ../now-guest-shared/src/now_semantic_guard.c)
 add_dependencies(NowExt generate_now_ext_identity)
 set_source_files_properties(src/now_ext.c

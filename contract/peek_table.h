@@ -927,6 +927,10 @@ enum {
        changes an ADB packet. This is diagnostic scaffolding for determining
        which cursor authority owns the PowerBook drag snap-back. */
     kNowPeekContinuityFormatV6 = 6,
+    /* V7 gives one opt-in experiment meaning to tracking_options bit 3:
+       substitute tiny relative ADB packets with a bounded delta toward the
+       latest host point. The default remains the V6 passive observer. */
+    kNowPeekContinuityFormatV7 = 7,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -961,10 +965,12 @@ enum {
     kNowPeekContinuityTrackingPinHeldPoint = 1u << 0,
     kNowPeekContinuityTrackingVirtualGetMouse = 1u << 1,
     kNowPeekContinuityTrackingHideGuestCursor = 1u << 2,
+    kNowPeekContinuityTrackingVirtualADB = 1u << 3,
     kNowPeekContinuityTrackingKnownMask =
         kNowPeekContinuityTrackingPinHeldPoint
             | kNowPeekContinuityTrackingVirtualGetMouse
             | kNowPeekContinuityTrackingHideGuestCursor
+            | kNowPeekContinuityTrackingVirtualADB
 };
 
 enum {
@@ -1137,6 +1143,12 @@ typedef struct {
     NowPeekU32 adb_observer_epoch;
     NowPeekU32 adb_trace_write_seq;
     NowPeekADBTraceEntry adb_trace[kNowPeekADBTraceCapacity];
+    /* V7 active ADB substitution diagnostics. The experiment accepts only
+       tiny carrier packets; larger physical deltas remain native. */
+    NowPeekU32 adb_injection_packets;
+    NowPeekU32 adb_injection_carriers;
+    NowPeekU32 adb_injection_physical;
+    NowPeekU32 adb_injection_clamps;
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -2056,7 +2068,7 @@ _Static_assert(sizeof(NowPeekContinuityTraceEntry) == 20,
                "continuity trace ABI drift");
 _Static_assert(sizeof(NowPeekADBTraceEntry) == 84,
                "ADB observer trace ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 1144,
+_Static_assert(sizeof(NowPeekContinuityCell) == 1160,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -2086,6 +2098,8 @@ _Static_assert(offsetof(NowPeekContinuityCell, adb_observer_state) == 432,
                "continuity V6 ADB observer offset");
 _Static_assert(offsetof(NowPeekContinuityCell, adb_trace) == 472,
                "continuity V6 ADB trace offset");
+_Static_assert(offsetof(NowPeekContinuityCell, adb_injection_packets) == 1144,
+               "continuity V7 ADB injection offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

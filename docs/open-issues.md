@@ -1361,6 +1361,30 @@ later system update whose context must be preserved. Packet substitution on the
 real autopoll lane is the next emulator-only experiment. No PowerBook has run
 this observer yet.
 
+**Updated 2026-08-12, active CUDA ADB authority proved:** Continuity table V7
+adds an explicit `virtualADB` arm experiment, absent/off in the product host.
+It bypasses the Cursor Device position request and substitutes only tiny
+two-byte ADB register-0 carrier packets with bounded deltas toward the latest
+host point; larger physical deltas pass through. The CUDA fault instrument
+reached exact absolute move and drag targets, settled down/up with no button
+debt, recorded zero Cursor Device position applies, then passed a larger native
+delta through and exited `guest-input`. This is Tested in a private CUDA clone,
+not metal-verified. It proves the ADB handler path removes the competing
+coordinate publisher. It does not provide an idle packet clock: QEMU, and
+possibly the PowerBook trackpad, reports nothing while stationary. Do not
+enable this on metal until the passive trace establishes the PowerBook's idle
+packet behavior; the product mechanism may need a real virtual ADB device or a
+controller-level injection source rather than carrier substitution.
+
+The final gate streams held states without awaiting task-time acknowledgement
+inside Finder's cooperative tracking loop, then sends up and requires the
+settled position/generation. It also requires zero false native-input changes,
+zero new forced releases, zero Cursor Device applies, and one wrapper-attributed
+physical packet for takeover. A related screen-edge metal report found that a
+previously hidden guest cursor could remain hidden: the task-time reveal path
+now redraws on every applied point even when `CrsrObscure` was already zero.
+That visibility correction is Tested, not yet rechecked on the PowerBook.
+
 **Corrected 2026-08-12, target-context installation:** that candidate installed
 the three tracking hooks once from NOW's arm service even though this resident's
 act plane has already measured Toolbox trap dispatch differing by process

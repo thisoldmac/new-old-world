@@ -42,9 +42,9 @@ def check(ok: bool, message: str) -> None:
         failures.append(message)
 
 
-check("kNowPeekContinuityFormatV6" in CONTRACT
-      and "kNowPeekContinuityFormatV6" in CONTINUITY,
-      "the observer tail is no longer gated by one V6 format")
+check("kNowPeekContinuityFormatV7" in CONTRACT
+      and "kNowPeekContinuityFormatV7" in CONTINUITY,
+      "the active observer tail is no longer gated by one V7 format")
 check("now_ext_adb_observer.c" in CMAKE
       and "now_ext_adb_observer.S" in CMAKE,
       "the observer and its register shim are not linked together")
@@ -79,10 +79,25 @@ check("gRecording = false" in stop,
       "disarm no longer withdraws observer recording authority")
 check("SetADBInfo" not in stop,
       "disarm attempts to unlink a potentially extended ADB chain")
-check("now_ext_adb_observer_start(gTable, cell->epoch)" in epoch,
+check("now_ext_adb_observer_start(" in epoch
+      and "kNowPeekContinuityTrackingVirtualADB" in epoch,
       "a Continuity epoch no longer starts passive ADB observation")
 check("now_ext_adb_observer_stop()" in finish,
       "Continuity authority exit no longer stops ADB recording")
+check("now_adb_injection_rewrite" in begin,
+      "the active ADB experiment bypasses the bounded packet transform")
+check("kNowPeekContinuityTrackingVirtualADB" in epoch,
+      "virtual ADB no longer requires an explicit epoch option")
+check("gPhysicalSeq++" in begin,
+      "physical ADB packets no longer publish an exact takeover sequence")
+check("now_ext_adb_observer_physical_seq" in CONTINUITY,
+      "virtual ADB takeover fell back to downstream RawMouse guessing")
+check(epoch.index("gNativeInputBaseline = gNativeInputSeq")
+      < epoch.index("now_ext_adb_observer_start("),
+      "ADB recording can begin before the physical-packet baseline exists")
+check("kNowPeekContinuityTrackingVirtualADB" in CONTINUITY
+      and "cell->request_position_seq = position_seq" in CONTINUITY,
+      "virtual ADB no longer has an explicit Cursor Device bypass")
 
 for forbidden in ("SetADBInfo", "GetADBInfo", "CountADBs", "GetIndADB",
                   "NewPtr", "DisposePtr", "malloc", "now_log", "FlushVol",
