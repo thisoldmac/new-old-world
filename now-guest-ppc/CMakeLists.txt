@@ -39,6 +39,8 @@ add_application(now-guest-ppc
     src/core/db_hilite.c
     src/core/build_stamp.c
     src/core/agent_access.c
+    src/core/product_features.generated.c
+    src/core/product_feature_policy.c
     src/screenshots/screenshot.c
     src/census/vprobe.c
     src/files/catsearch.c

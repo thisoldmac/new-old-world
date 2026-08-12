@@ -6,7 +6,7 @@ doc_type: how-to
 audience: user
 lifecycle: current
 authority: [README.md, docs/naming.md]
-source_dependencies: [now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, now-host/Package.swift, docs/feature-catalog.yaml]
+source_dependencies: [now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, now-host/Package.swift, product/features.yaml]
 feature_ids: [classic.powerpc, classic.pre-carbon]
 media_ids: []
 last_verified: 2026-08-09

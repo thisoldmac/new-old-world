@@ -5,8 +5,8 @@ description: See the alpha feature set, what works without the bundled NOW Exten
 doc_type: explanation
 audience: user
 lifecycle: current
-authority: [docs/feature-catalog.yaml, docs/status.md, docs/user-guide/reference/limitations.md]
-source_dependencies: [docs/feature-catalog.yaml, docs/status.md, docs/user-guide/reference/limitations.md, docs/module-manifest.yaml, docs/resident-components.md, contract/peek_table.h]
+authority: [product/features.yaml, docs/status.md, docs/user-guide/reference/limitations.md]
+source_dependencies: [product/features.yaml, docs/status.md, docs/user-guide/reference/limitations.md, docs/module-manifest.yaml, docs/resident-components.md, contract/peek_table.h]
 media_ids: []
 last_verified: 2026-08-09
 feature_ids: [resident.extension]

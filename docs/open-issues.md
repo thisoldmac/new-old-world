@@ -429,7 +429,7 @@ internal links, while the Mermaid initializer subscribes to each navigation
 update. User-guide navigation begins with a Getting started group: connect a
 classic Mac first, then review core features and Extension coverage. The
 coverage page now renders 15 user-facing feature rows from
-`docs/feature-catalog.yaml`, including app-only coverage, whether the Extension
+`product/features.yaml`, including app-only coverage, whether the Extension
 is required, and current maturity or evidence. The technical P0–P8 inventory
 remains in developer documentation. The docs gate maps every human-facing
 Extension row back to the complete resident capability inventory and its
@@ -491,7 +491,7 @@ metadata cannot prove that a paragraph serves the right reader.
 
 ## PLANNED RELEASE CONTROL: documentation has a feature profile; runtime flags do not yet exist (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
-`docs/feature-catalog.yaml` now declares the alpha product boundary:
+`product/features.yaml` now declares the alpha product boundary:
 the PowerPC Carbon guest is included, NOW Extension is optional, and the stale
 NOW-68K/pre-Carbon build is excluded. MkDocs renders those states on owning
 pages and generates the public release table and P0–P8 extension inventory from

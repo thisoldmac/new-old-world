@@ -6,7 +6,7 @@ doc_type: explanation
 audience: developer
 lifecycle: reference
 authority: [now-guest-68k/src/main.c, docs/architecture.md]
-source_dependencies: [now-guest-68k/src/main.c, now-guest-68k/src/commands/commands68.c, now-guest-68k/src/connection, now-guest-68k/src/core/wire68.c, docs/command-parity.md, docs/feature-catalog.yaml]
+source_dependencies: [now-guest-68k/src/main.c, now-guest-68k/src/commands/commands68.c, now-guest-68k/src/connection, now-guest-68k/src/core/wire68.c, docs/command-parity.md, product/features.yaml]
 feature_ids: [classic.pre-carbon]
 media_ids: []
 last_verified: 2026-08-09

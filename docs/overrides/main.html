@@ -68,7 +68,8 @@
   {% if page and page.meta and page.meta.feature_ids %}
     {% set availability = namespace(show=false) %}
     {% for feature_id in page.meta.feature_ids %}
-      {% if config.extra.feature_catalog.active.features[feature_id].state != "included" %}
+      {% set feature = config.extra.feature_catalog.active.features[feature_id] %}
+      {% if feature.state != "included" or (feature.runtime_binding == "flag" and not feature.runtime_default) %}
         {% set availability.show = true %}
       {% endif %}
     {% endfor %}
@@ -78,12 +79,14 @@
         <ul>
           {% for feature_id in page.meta.feature_ids %}
             {% set feature = config.extra.feature_catalog.active.features[feature_id] %}
-            {% if feature.state != "included" %}
+            {% if feature.state != "included" or (feature.runtime_binding == "flag" and not feature.runtime_default) %}
               <li>
                 <span class="now-release-state now-release-state--{{ feature.state }}">{{ feature.state }}</span>
                 <strong>{{ feature.title }}</strong>: {{ feature.note }}
-                {% if feature.flag_key %}
-                  Planned flag: <code>{{ feature.flag_key }}</code>; runtime binding is not implemented yet.
+                {% if feature.runtime_binding == "flag" %}
+                  Runtime flag: <code>{{ feature.flag_key }}</code>
+                  (default {{ "enabled" if feature.runtime_default else "disabled" }}).
+                  Release-profile exclusion takes precedence over a runtime override.
                 {% endif %}
               </li>
             {% endif %}

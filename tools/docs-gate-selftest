@@ -34,6 +34,16 @@ def run_gate(test_root: Path, site_dir: Path | None = None) -> subprocess.Comple
     )
 
 
+def run_feature_gate(test_root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        (sys.executable, str(ROOT / "tools/product-features"), "check",
+         "--root", str(test_root)),
+        cwd=test_root,
+        text=True,
+        capture_output=True,
+    )
+
+
 def replace(path: Path, old: str, new: str) -> str:
     original = path.read_text()
     if old not in original:
@@ -90,6 +100,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="now-docs-gate-") as raw:
         test_root = Path(raw)
         shutil.copytree(ROOT / "docs", test_root / "docs")
+        shutil.copytree(ROOT / "product", test_root / "product")
         shutil.copytree(ROOT / "contract", test_root / "contract")
         shutil.copy2(ROOT / "mkdocs.yml", test_root / "mkdocs.yml")
         for name in (
@@ -120,6 +131,24 @@ def main() -> int:
         baseline = run_gate(test_root)
         if baseline.returncode:
             raise RuntimeError("baseline gate failed:\n" + baseline.stdout + baseline.stderr)
+
+        original_features = replace(
+            test_root / "product/features.yaml",
+            "    runtime_default: false\n",
+            "    runtime_default: true\n",
+        )
+        try:
+            feature_result = run_feature_gate(test_root)
+            feature_output = feature_result.stdout + feature_result.stderr
+            if (feature_result.returncode == 0
+                    or "generated definitions are stale" not in feature_output):
+                raise RuntimeError(
+                    "generated feature freshness: expected stale refusal; "
+                    f"exit={feature_result.returncode}\n{feature_output}"
+                )
+            print("[docs-gate-selftest] generated feature freshness: refused by name")
+        finally:
+            (test_root / "product/features.yaml").write_text(original_features)
 
         marker = "<!-- now-doc-provenance: generated reviewed=false -->"
         expect_mutation(
@@ -218,28 +247,28 @@ def main() -> int:
             "do not match live enum",
         )
         expect_mutation(
-            test_root, "release profile coverage", test_root / "docs/feature-catalog.yaml",
+            test_root, "release profile coverage", test_root / "product/features.yaml",
             "      classic.pre-carbon:\n", "      classic.pre-carbon-renamed:\n",
             "active profile feature IDs differ from catalog",
         )
         expect_mutation(
-            test_root, "extension capability inventory", test_root / "docs/feature-catalog.yaml",
+            test_root, "extension capability inventory", test_root / "product/features.yaml",
             "symbols: [kNowPeekTableCapAnchors]", "symbols: []",
             "extension capability symbols differ from peek_table.h",
         )
         expect_mutation(
-            test_root, "module feature coverage", test_root / "docs/feature-catalog.yaml",
+            test_root, "module feature coverage", test_root / "product/features.yaml",
             "module_id: screen", "module_id: screen-renamed",
             "module feature coverage IDs do not match module manifest",
         )
         expect_mutation(
-            test_root, "product feature page", test_root / "docs/feature-catalog.yaml",
+            test_root, "product feature page", test_root / "product/features.yaml",
             "primary_page: user-guide/how-to/set-up-new-mac.md",
             "primary_page: user-guide/how-to/no-such-setup.md",
             "product feature guided-setup: primary page does not exist",
         )
         expect_mutation(
-            test_root, "extension feature coverage", test_root / "docs/feature-catalog.yaml",
+            test_root, "extension feature coverage", test_root / "product/features.yaml",
             "capability_ids: [structure]", "capability_ids: []",
             "feature coverage capability IDs differ from extension capability inventory",
         )

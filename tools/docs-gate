@@ -523,22 +523,22 @@ def check(root: Path, site_dir: Path | None) -> int:
                 f"(links={sorted(actual_paths)}, declared={sorted(declared_paths)})"
             )
 
-    feature_catalog = load_yaml(docs / "feature-catalog.yaml")
-    if feature_catalog.get("schema_version") != 1:
-        errors.append("docs/feature-catalog.yaml: schema_version must be 1")
+    feature_catalog = load_yaml(root / "product/features.yaml")
+    if feature_catalog.get("schema_version") != 2:
+        errors.append("product/features.yaml: schema_version must be 2")
     feature_defs = feature_catalog.get("features", {})
     if not isinstance(feature_defs, dict) or not feature_defs:
-        errors.append("docs/feature-catalog.yaml: features must be a non-empty mapping")
+        errors.append("product/features.yaml: features must be a non-empty mapping")
         feature_defs = {}
     active_profile_id = feature_catalog.get("active_profile")
     profiles = feature_catalog.get("profiles", {})
     active_profile = profiles.get(active_profile_id, {}) if isinstance(profiles, dict) else {}
     profile_features = active_profile.get("features", {}) if isinstance(active_profile, dict) else {}
     if not active_profile:
-        errors.append(f"docs/feature-catalog.yaml: active profile {active_profile_id!r} does not exist")
+        errors.append(f"product/features.yaml: active profile {active_profile_id!r} does not exist")
     elif set(profile_features) != set(feature_defs):
         errors.append(
-            "docs/feature-catalog.yaml: active profile feature IDs differ from catalog "
+            "product/features.yaml: active profile feature IDs differ from catalog "
             f"(profile={sorted(profile_features)}, catalog={sorted(feature_defs)})"
         )
     for feature_id, feature in feature_defs.items():
@@ -547,10 +547,20 @@ def check(root: Path, site_dir: Path | None) -> int:
             continue
         binding = feature.get("runtime_binding")
         flag_key = feature.get("flag_key")
-        if binding == "planned" and not flag_key:
-            errors.append(f"feature {feature_id}: planned runtime binding needs flag_key")
-        if binding != "planned" and flag_key:
-            errors.append(f"feature {feature_id}: flag_key requires runtime_binding: planned")
+        if binding not in {"intrinsic", "capability-negotiated", "flag"}:
+            errors.append(f"feature {feature_id}: invalid runtime binding {binding!r}")
+        if binding == "flag":
+            if not flag_key:
+                errors.append(f"feature {feature_id}: flag runtime binding needs flag_key")
+            if not isinstance(feature.get("runtime_default"), bool):
+                errors.append(
+                    f"feature {feature_id}: flag runtime binding needs boolean runtime_default"
+                )
+        elif flag_key is not None or "runtime_default" in feature:
+            errors.append(
+                f"feature {feature_id}: only flag runtime bindings declare "
+                "flag_key/runtime_default"
+            )
         entry = profile_features.get(feature_id, {})
         state = entry.get("state") if isinstance(entry, dict) else None
         if state not in ALLOWED_RELEASE_STATES:
@@ -580,11 +590,11 @@ def check(root: Path, site_dir: Path | None) -> int:
     capability_ids = [row.get("id") for row in capabilities if isinstance(row, dict)]
     capability_planes = [row.get("plane") for row in capabilities if isinstance(row, dict)]
     if len(capability_ids) != len(set(capability_ids)):
-        errors.append("docs/feature-catalog.yaml: duplicate extension capability id")
+        errors.append("product/features.yaml: duplicate extension capability id")
     expected_planes = {f"P{number}" for number in range(9)}
     if set(capability_planes) != expected_planes or len(capability_planes) != len(expected_planes):
         errors.append(
-            "docs/feature-catalog.yaml: extension capability planes must be exactly P0-P8 "
+            "product/features.yaml: extension capability planes must be exactly P0-P8 "
             f"(got={capability_planes})"
         )
     declared_symbols = [
@@ -596,7 +606,7 @@ def check(root: Path, site_dir: Path | None) -> int:
     live_symbols = re.findall(r"^\s*(kNowPeekTableCap[A-Za-z]+)\s*=", header, re.MULTILINE)
     if set(declared_symbols) != set(live_symbols) or len(declared_symbols) != len(live_symbols):
         errors.append(
-            "docs/feature-catalog.yaml: extension capability symbols differ from peek_table.h "
+            "product/features.yaml: extension capability symbols differ from peek_table.h "
             f"(catalog={declared_symbols}, live={live_symbols})"
         )
     modules = load_yaml(docs / "module-manifest.yaml")
@@ -609,7 +619,7 @@ def check(root: Path, site_dir: Path | None) -> int:
     if (set(module_coverage_ids) != set(manifest_ids)
             or len(module_coverage_ids) != len(manifest_ids)):
         errors.append(
-            "docs/feature-catalog.yaml: module feature coverage IDs do not match module manifest "
+            "product/features.yaml: module feature coverage IDs do not match module manifest "
             f"(coverage={module_coverage_ids}, manifest={manifest_ids})"
         )
     required_module_coverage_fields = {
@@ -617,7 +627,7 @@ def check(root: Path, site_dir: Path | None) -> int:
     }
     for row in module_coverage:
         if not isinstance(row, dict):
-            errors.append("docs/feature-catalog.yaml: module feature coverage rows must be mappings")
+            errors.append("product/features.yaml: module feature coverage rows must be mappings")
             continue
         missing_fields = sorted(required_module_coverage_fields - set(row))
         if missing_fields:
@@ -636,13 +646,13 @@ def check(root: Path, site_dir: Path | None) -> int:
         row.get("id") for row in product_coverage if isinstance(row, dict)
     ]
     if not product_coverage or len(product_coverage_ids) != len(set(product_coverage_ids)):
-        errors.append("docs/feature-catalog.yaml: product feature coverage needs unique rows")
+        errors.append("product/features.yaml: product feature coverage needs unique rows")
     required_product_coverage_fields = {
         "id", "title", "without_extension", "extension_required", "status", "primary_page",
     }
     for row in product_coverage:
         if not isinstance(row, dict):
-            errors.append("docs/feature-catalog.yaml: product feature coverage rows must be mappings")
+            errors.append("product/features.yaml: product feature coverage rows must be mappings")
             continue
         missing_fields = sorted(required_product_coverage_fields - set(row))
         if missing_fields:
@@ -664,14 +674,14 @@ def check(root: Path, site_dir: Path | None) -> int:
     extension_coverage = feature_catalog.get("extension_feature_coverage", [])
     coverage_ids = [row.get("id") for row in extension_coverage if isinstance(row, dict)]
     if not extension_coverage or len(coverage_ids) != len(set(coverage_ids)):
-        errors.append("docs/feature-catalog.yaml: extension feature coverage needs unique rows")
+        errors.append("product/features.yaml: extension feature coverage needs unique rows")
     covered_capabilities: list[str] = []
     required_coverage_fields = {
         "id", "title", "without_extension", "extension_required", "status", "capability_ids",
     }
     for row in extension_coverage:
         if not isinstance(row, dict):
-            errors.append("docs/feature-catalog.yaml: extension feature coverage rows must be mappings")
+            errors.append("product/features.yaml: extension feature coverage rows must be mappings")
             continue
         missing_fields = sorted(required_coverage_fields - set(row))
         if missing_fields:
@@ -690,7 +700,7 @@ def check(root: Path, site_dir: Path | None) -> int:
         covered_capabilities.extend(row["capability_ids"])
     if set(covered_capabilities) != set(capability_ids) or len(covered_capabilities) != len(capability_ids):
         errors.append(
-            "docs/feature-catalog.yaml: feature coverage capability IDs differ from extension "
+            "product/features.yaml: feature coverage capability IDs differ from extension "
             f"capability inventory (coverage={covered_capabilities}, inventory={capability_ids})"
         )
     release_page = docs / "user-guide/reference/release-profile.md"

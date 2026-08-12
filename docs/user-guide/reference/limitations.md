@@ -6,7 +6,7 @@ doc_type: reference
 audience: user
 lifecycle: current
 authority: [docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md]
-source_dependencies: [RELEASING.md, docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md, docs/feature-catalog.yaml, docs/onboarding.md, docs/development.md]
+source_dependencies: [RELEASING.md, docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md, product/features.yaml, docs/onboarding.md, docs/development.md]
 media_ids: []
 last_verified: 2026-08-10
 ---

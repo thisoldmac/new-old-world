@@ -6,7 +6,7 @@ doc_type: how-to
 audience: operator
 lifecycle: experimental
 authority: [docs/resident-components.md, docs/staged-images.md]
-source_dependencies: [ext, contract/peek_table.h, docs/resident-components.md, docs/feature-catalog.yaml]
+source_dependencies: [ext, contract/peek_table.h, docs/resident-components.md, product/features.yaml]
 media_ids: [setup-extension]
 last_verified: 2026-08-09
 feature_ids: [resident.extension]
