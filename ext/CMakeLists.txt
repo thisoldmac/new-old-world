@@ -108,6 +108,11 @@ add_executable(NowExt
     # cannot call managers or impersonate the physical ADB/PMU input path.
     src/now_ext_continuity.c
     src/now_ext_continuity_tm.S
+    # P9 diagnostic spike: passively wrap the existing relative ADB device
+    # handler and record its before/after low-memory cursor writes. The
+    # register ABI lives wholly in the adjacent assembly shim.
+    src/now_ext_adb_observer.c
+    src/now_ext_adb_observer.S
     src/now_content_qdext.S
     ../now-guest-shared/src/now_act_guard.c
     # P7's decisions, where the host cc can compile them and

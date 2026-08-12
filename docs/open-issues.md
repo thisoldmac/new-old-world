@@ -1338,6 +1338,29 @@ checks, and clean shutdown; CUDA also proved held physical takeover. Those
 rigs do not reproduce stationary PowerBook ADB republishing, so this remains
 Tested and not metal-verified.
 
+**Updated 2026-08-12, passive ADB authority observer in progress:** Pin held
+point and Virtual GetMouse together made PowerBook dragging mostly usable but
+did not remove the alternating origin/current cursor, and hiding the guest
+cursor hid both sprites without changing it. The next branch no longer adds a
+fourth coordinate reassertion. Continuity table V6 wraps exactly one relative
+ADB device's incumbent service routine, retains its handler packet and data
+pointer unchanged, and records the ADB packet plus `Mouse`, `RawMouse`,
+`MTemp`, and `MBState` around the incumbent call. The callback is bounded and
+preallocated; only PPC task time drains or persists samples. Disarm stops
+recording but deliberately leaves the passive link installed until reboot.
+CUDA/ADB installed handler ID 2 and observed two callbacks for two native QMP
+transitions. PMU/USB exposed a dormant address-3 handler ID 1, so installation
+also succeeded there, but native USB movement bypassed it and left callbacks at
+zero. Both completed the direct-pointer lifecycle and returned to native input;
+the emulator result proves transparent chaining and an ADB/USB control, not the
+source of the PowerBook's stationary republishing. On CUDA the `0x3C` two-byte
+register-0 packet left every sampled cursor global unchanged across the handler
+call even though the cursor moved later. That rules out invoking the incumbent
+from the Time Manager as an equivalent injection path: the handler feeds a
+later system update whose context must be preserved. Packet substitution on the
+real autopoll lane is the next emulator-only experiment. No PowerBook has run
+this observer yet.
+
 **Corrected 2026-08-12, target-context installation:** that candidate installed
 the three tracking hooks once from NOW's arm service even though this resident's
 act plane has already measured Toolbox trap dispatch differing by process

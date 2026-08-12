@@ -176,6 +176,13 @@ static void test_rest_words(void)
               && strstr(out, "act traps patched") != NULL
               && strstr(out, "restart") != NULL,
           "Continuity's permanent tracking hooks are named first");
+
+    facts.rest_state |= kNowPeekRestADBObserverInstalled;
+    now_mirror_rest_text(&facts, out, sizeof out);
+    check(strncmp(out, "ADB observer linked", 19) == 0
+              && strstr(out, "Cursor tracking patched") != NULL
+              && strstr(out, "restart") != NULL,
+          "the permanent passive ADB link is visible until restart");
     memset(tiny, 'x', sizeof tiny);
     now_mirror_rest_text(&facts, tiny, sizeof tiny);
     check(tiny[sizeof tiny - 1] == '\0',

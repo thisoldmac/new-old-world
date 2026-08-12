@@ -921,6 +921,12 @@ enum {
        experiments are inactive by default and never mutate a physical Cursor
        Device or ADB-owned global. */
     kNowPeekContinuityFormatV5 = 5,
+    /* V6 appends a passive ADB service-routine observer. The resident keeps
+       the incumbent device handler and data pointer intact, records the
+       packet and low-memory cursor state around that handler, and never
+       changes an ADB packet. This is diagnostic scaffolding for determining
+       which cursor authority owns the PowerBook drag snap-back. */
+    kNowPeekContinuityFormatV6 = 6,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -982,6 +988,43 @@ typedef struct {
     NowPeekI32 arg0;
     NowPeekI32 arg1;
 } NowPeekContinuityTraceEntry;
+
+enum {
+    kNowPeekADBObserverUnavailable = 0,
+    kNowPeekADBObserverInstalled = 1,
+    kNowPeekADBObserverRecording = 2,
+    kNowPeekADBObserverConflict = 3,
+    kNowPeekADBObserverInstallFailed = 4,
+    kNowPeekADBTraceCapacity = 8
+};
+
+/* V6's interrupt-owned ADB flight recorder. The service shim snapshots the
+   three cursor globals before and after the incumbent relative-device handler
+   and commits `seq` last. `data_0_3` and `data_4_7` preserve all eight bytes
+   after the ADB Manager's Pascal length byte in wire order. */
+typedef struct {
+    NowPeekU32 seq;
+    NowPeekU32 epoch;
+    NowPeekU32 ticks;
+    NowPeekU32 command;
+    NowPeekU32 data_length;
+    NowPeekU32 data_0_3;
+    NowPeekU32 data_4_7;
+    NowPeekI32 before_mouse_h;
+    NowPeekI32 before_mouse_v;
+    NowPeekI32 before_raw_h;
+    NowPeekI32 before_raw_v;
+    NowPeekI32 before_temp_h;
+    NowPeekI32 before_temp_v;
+    NowPeekU32 before_button;
+    NowPeekI32 after_mouse_h;
+    NowPeekI32 after_mouse_v;
+    NowPeekI32 after_raw_h;
+    NowPeekI32 after_raw_v;
+    NowPeekI32 after_temp_h;
+    NowPeekI32 after_temp_v;
+    NowPeekU32 after_button;
+} NowPeekADBTraceEntry;
 
 /* P9. One app-owned latest-state mailbox and one resident-owned status
    block. The application commits control_seq and packet_seq LAST; the
@@ -1080,6 +1123,20 @@ typedef struct {
     NowPeekU32 tracking_options;
     NowPeekU32 tracking_pin_writes;
     NowPeekU32 tracking_getmouse_answers;
+    /* V6 passive ADB observer tail. Installation happens only from the PPC
+       application's synchronous resident service. The callback itself owns
+       only these preallocated counters and ring entries. */
+    NowPeekU32 adb_observer_state;
+    NowPeekI32 adb_observer_address;
+    NowPeekI32 adb_observer_handler_id;
+    NowPeekU32 adb_observer_device_count;
+    NowPeekI32 adb_observer_install_result;
+    NowPeekU32 adb_observer_installs;
+    NowPeekU32 adb_observer_callbacks;
+    NowPeekU32 adb_observer_reentries;
+    NowPeekU32 adb_observer_epoch;
+    NowPeekU32 adb_trace_write_seq;
+    NowPeekADBTraceEntry adb_trace[kNowPeekADBTraceCapacity];
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -1716,7 +1773,12 @@ enum {
        Installed lazily on the first accepted Continuity arm and never
        removed until reboot; idle hooks perform only a byte test and tail
        jump to the incumbent. */
-    kNowPeekRestCursorTrackingPatched = 1u << 7
+    kNowPeekRestCursorTrackingPatched = 1u << 7,
+    /* A passive wrapper is installed around the relative ADB device's
+       incumbent service routine. It remains pass-through until reboot even
+       while recording is idle, because unlinking from an extended chain is
+       unsafe. */
+    kNowPeekRestADBObserverInstalled = 1u << 8
 };
 
 /* What the resident's own liveness channel is doing. Values are the
@@ -1992,7 +2054,9 @@ _Static_assert(offsetof(NowPeekTable, gne_passes)
                "the filter pass counter follows the rest-state pair");
 _Static_assert(sizeof(NowPeekContinuityTraceEntry) == 20,
                "continuity trace ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 432,
+_Static_assert(sizeof(NowPeekADBTraceEntry) == 84,
+               "ADB observer trace ABI drift");
+_Static_assert(sizeof(NowPeekContinuityCell) == 1144,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -2018,6 +2082,10 @@ _Static_assert(offsetof(NowPeekContinuityCell, tracking_pin_writes) == 424,
                "continuity V5 pin counter offset");
 _Static_assert(offsetof(NowPeekContinuityCell, tracking_getmouse_answers) == 428,
                "continuity V5 GetMouse counter offset");
+_Static_assert(offsetof(NowPeekContinuityCell, adb_observer_state) == 432,
+               "continuity V6 ADB observer offset");
+_Static_assert(offsetof(NowPeekContinuityCell, adb_trace) == 472,
+               "continuity V6 ADB trace offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

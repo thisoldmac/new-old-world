@@ -300,8 +300,9 @@ int main(void)
            | kNowPeekRestTransport | kNowPeekRestContentBlock
            | kNowPeekRestContentHooks | kNowPeekRestActPatched
            | kNowPeekRestQDExtPatched
-           | kNowPeekRestCursorTrackingPatched) == 0xFF,
-          "the eight rest-state bits are distinct and contiguous");
+           | kNowPeekRestCursorTrackingPatched
+           | kNowPeekRestADBObserverInstalled) == 0x1FF,
+          "the nine rest-state bits are distinct and contiguous");
 
     /* Reachability is not a dial, and the values are the contract rather
        than an ordering — a refusal carries the driver's own OSErr so that

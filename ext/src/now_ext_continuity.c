@@ -12,6 +12,7 @@
 #include "peek_table.h"
 #include "now_continuity_logic.h"
 #include "now_ext_core_logic.h"
+#include "now_ext_adb_observer.h"
 #include "now_ext_cursor_input.h"
 #include "now_input_owner.h"
 
@@ -52,7 +53,7 @@ static NowPeekContinuityCell *continuity_cell(NowPeekTable *table)
                                      + sizeof(NowPeekContinuityCell)))
         return NULL;
     if (table->continuity_format
-            != (NowPeekU32)kNowPeekContinuityFormatV5)
+            != (NowPeekU32)kNowPeekContinuityFormatV6)
         return NULL;
     return &table->continuity;
 }
@@ -257,6 +258,7 @@ static void finish_locked(NowPeekContinuityCell *cell, NowPeekU32 reason,
     force_reset(cell, reason);
     now_ext_cursor_cancel_task_apply();
     now_ext_cursor_configure_continuity_tracking(0);
+    now_ext_adb_observer_stop();
     cell->state = (NowPeekU32)kNowPeekContinuityStateExited;
     cell->exit_reason = reason;
     cell->apply_ticks = ticks;
@@ -290,6 +292,7 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
     cell->pending_mouseup = 0;
     cell->button_release_reason = 0;
     now_ext_cursor_configure_continuity_tracking(cell->tracking_options);
+    now_ext_adb_observer_start(gTable, cell->epoch);
     gNativeInputSeq = now_ext_cursor_physical_input_seq();
     gNativeInputBaseline = gNativeInputSeq;
     publish_tasktime_counters(cell);
@@ -633,7 +636,7 @@ int now_ext_continuity_boot(NowPeekTable *table)
     if (table->length < (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                      + sizeof(NowPeekContinuityCell)))
         return 0;
-    table->continuity_format = (NowPeekU32)kNowPeekContinuityFormatV5;
+    table->continuity_format = (NowPeekU32)kNowPeekContinuityFormatV6;
     cell = &table->continuity;
     cell->state = (NowPeekU32)kNowPeekContinuityStateInactive;
     cell->exit_reason = (NowPeekU32)kNowPeekContinuityExitNone;
@@ -664,6 +667,7 @@ int now_ext_continuity_boot(NowPeekTable *table)
 
 void now_ext_continuity_rollback(NowPeekTable *table)
 {
+    now_ext_adb_observer_rollback(table);
     if (table != NULL && table->continuity.button_down)
         release_button_lowmem();
     gButtonTaskRunning = false;

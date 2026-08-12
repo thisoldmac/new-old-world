@@ -927,6 +927,55 @@ gesture, leaving the host pointer visible over Mirror and changing no ADB or
 Cursor Device state. It is an isolation experiment for the remaining sprite
 fight, not yet a default or a metal result.
 
+### ADB authority spike: observe the incumbent before replacing it
+
+The cursor-hiding experiment hid both visible cursors and did not remove the
+alternation. Together with the partial improvement from Pin held point and
+Virtual GetMouse, that is evidence against treating the remainder as only a
+sprite problem. The current path has three coordinate publishers: the PPC
+application's synthetic absolute Cursor Device, the resident's held-point
+tracking source, and the physical ADB/PMU input device. More reassertion layers
+would make the observed result harder to attribute.
+
+Continuity table V6 therefore adds a **passive** ADB observer before attempting
+a virtual-device implementation. On the first Continuity epoch, task time
+enumerates devices by original ADB address 3, refuses zero or ambiguous
+matches, and uses `SetADBInfo` to wrap the existing relative device's service
+routine while retaining its exact data-area pointer. A register-ABI assembly
+shim presents the original packet, command, data pointer, and handler identity
+to the incumbent unchanged. Around that call, bounded C code records all eight
+ADB data bytes plus `Mouse`, `RawMouse`, `MTemp`, and `MBState` before and after.
+The callback allocates nothing and performs no manager, QuickDraw, Event
+Manager, file, log, or network operation.
+
+Disarm only turns recording off. The transparent wrapper remains linked until
+restart because removing it after another extension has chained behind it
+would be unsafe. The resident rest-state bit makes that persistent fact visible.
+The PPC application drains the eight-entry ring after its synchronous resident
+service returns, keeps every observation in the ordinary in-memory log, and—if
+disk logging is enabled—flushes the first observation and one checkpoint per
+60 callbacks. This gives a post-fault log a bounded chance to distinguish “ADB
+handler republished the old point” from “the alternation happened elsewhere”
+without doing disk I/O in interrupt context.
+
+This is diagnostic scaffolding, not the proposed final virtual ADB mouse. Its
+first emulator gate was deliberately asymmetric. CUDA/ADB installed handler ID
+2 and recorded two callbacks for the two QMP native transitions. PMU/USB still
+exposed a dormant address-3 handler (ID 1), so the observer installed there too,
+but native USB movement bypassed it and the callback count remained zero. Both
+rigs completed click, rapid-click, drag, lease-release, native-return, and clean
+Finder shutdown cycles. This establishes that the wrapper preserves the real
+CUDA handler and distinguishes ADB from USB input; it does not yet identify the
+PowerBook's stationary republisher. The CUDA trace also established a more
+important boundary: command `0x3C` delivered the standard two-byte address-3
+register-0 packet, but `Mouse`, `RawMouse`, `MTemp`, and `MBState` were all
+unchanged when the incumbent returned even though the cursor moved later. The
+service routine therefore feeds a later system update path; it is not itself a
+synchronous low-memory cursor writer. An active emulator spike should rewrite
+the real autopoll packet before that incumbent runs, rather than call the
+handler from an unrelated timer context. Only an attended PowerBook trace can
+show whether stationary trackpad packets are the remaining republisher.
+
 ### Double-click timing is measured at both scheduling boundaries
 
 The host already buffers exactly one second primary cycle while the first

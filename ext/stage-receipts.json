@@ -571,6 +571,22 @@
         "ext/src/now_ext_cursor_input.h"
       ],
       "reason": "Private bake continuity-release-cursor-hide verified exact resident, clean guest shutdown, clean HFS volume and qemu-img; shared promotion deferred until feature reaches release candidate after PowerBook metal verification."
+    },
+    {
+      "at": "2026-08-12T18:37:50-0400",
+      "branch": "feat/continuity-adb-input-spike",
+      "extDigest": "c0077d692a656605a207db0537eb4632228b903e",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_adb_observer.S",
+        "ext/src/now_ext_adb_observer.c",
+        "ext/src/now_ext_adb_observer.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Passive ADB observer checkpoint: branch-private PMU/CUDA cold boots and private bake verified; shared oracle promotion deferred until attended PowerBook verification and release landing."
     }
   ]
 }
