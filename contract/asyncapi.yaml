@@ -2168,6 +2168,15 @@ components:
             the resident's target-context GetMouse hook answers from the
             host-owned tracking point instead of tail-chaining to the
             incumbent trap. Inactive calls always retain the original chain.
+        hideGuestCursorWhileDragging:
+          type: boolean
+          default: false
+          description: >
+            Experimental and host-selected. The guest balances one
+            HideCursor/ShowCursor pair around a held primary gesture while
+            the host cursor remains visible over Mirror. This isolates the
+            native cursor sprite from ADB and Cursor Device position
+            contention without changing either device's state.
     ContinuityDisarm:
       type: object
       required: [type, version, id, epoch, reason]

@@ -291,11 +291,23 @@ returns one typed refusal instead of cascading generic decode failures.
 Projects and Development describe each operation as its own schema branch, so
 project-revision and workspace-commit guards cannot coexist accidentally.
 
+The stdio process can outlive an in-place replacement of the app bundle. It
+captures the executable vnode, size and modification time at launch and checks
+that identity after each input read, before sending anything to the host. If
+the stable app path now names another build, the pending call receives
+`now-mcp-companion-stale` with `reach: notSent` and the companion exits so its
+supervisor can relaunch the current binary. This is a deployment-lifecycle
+split, not a guest refusal and not an `invalid-response` retry loop.
+
 NOW offers two independently controlled transports over one `NOWMCPServer`
 registry and dispatcher. An MCP client launches the New Old World executable
 with `--mcp-stdio` for newline-delimited JSON-RPC; that narrow mode reaches the
 running app over the private same-user local socket described below. The normal
 app owns authenticated HTTP directly in process and binds it to IPv4 loopback.
+HTTP is preferred for a long-running client: the current app owns dispatch and
+lifecycle, so replacing the installed bundle cannot strand that client inside
+an older executable generation. Stdio remains the parity and fallback entry
+point for clients that require it.
 The MCP module starts and stops each transport independently, shows its current
 endpoint, copies the stdio command or HTTP URL, and exposes the bearer only by
 an explicit Copy action. Transport preferences live in NOW preferences.

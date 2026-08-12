@@ -122,6 +122,8 @@ extern void now_cursor_button_patch(void);
 volatile unsigned char gNowCursorTrackingRedrawOwed = 0;
 volatile unsigned char gNowCursorTrackingSourceActive = 0;
 volatile unsigned char gNowCursorTrackingVirtualGetMouse = 0;
+static volatile unsigned char gNowCursorTrackingHideGuestCursor = 0;
+static volatile unsigned char gNowCursorTrackingCursorHidden = 0;
 void *gNowCursorOldGetMouse = NULL;
 void *gNowCursorOldStillDown = NULL;
 void *gNowCursorOldButton = NULL;
@@ -417,6 +419,19 @@ void now_ext_cursor_remember_continuity_tracking_point(NowPeekI32 h,
     gNowCursorTrackingRedrawOwed = 1; /* publish after the point is complete */
 }
 
+/* The held source is already published before this task-time call. Hide one
+   native sprite only when the host explicitly selected the experiment; the
+   host pointer remains visible over Mirror. The matching ShowCursor runs in
+   task time on every normal and forced exit. */
+void now_ext_cursor_begin_continuity_tracking_visuals(void)
+{
+    if (!gNowCursorTrackingHideGuestCursor
+            || gNowCursorTrackingCursorHidden)
+        return;
+    HideCursor();
+    gNowCursorTrackingCursorHidden = 1;
+}
+
 /* Release the held source without removing the three trap links. The links
    are permanent for this boot because a later extension may chain behind
    them; inactive they only test resident bytes and tail-chain. */
@@ -435,6 +450,9 @@ void now_ext_cursor_configure_continuity_tracking(NowPeekU32 options)
 {
     gNowCursorTrackingVirtualGetMouse =
         (options & (NowPeekU32)kNowPeekContinuityTrackingVirtualGetMouse)
+            != 0;
+    gNowCursorTrackingHideGuestCursor =
+        (options & (NowPeekU32)kNowPeekContinuityTrackingHideGuestCursor)
             != 0;
 }
 
@@ -500,6 +518,10 @@ void now_ext_cursor_settle_continuity_tracking(void)
        The baseline mode then lets the real Toolbox trap answer normally;
        Virtual GetMouse may answer its out parameter directly afterwards. */
     LMSetMouseLocation(pt);
+    if (gNowCursorTrackingCursorHidden) {
+        gNowCursorTrackingRedrawOwed = 0;
+        return;
+    }
     if (!owed && !moved)
         return;
     gNowCursorTrackingRedrawOwed = 0;
@@ -512,6 +534,28 @@ void now_ext_cursor_settle_continuity_tracking(void)
        once more immediately before the patched trap tail-chains. */
     if (continuity_tracking_source_point(&pt))
         LMSetMouseLocation(pt);
+}
+
+/* Normal mouse-up keeps the held source alive until the PPC application's
+   corrected Cursor Device move and button-up have both returned. This final
+   task-time step makes the last host point authoritative for the redraw,
+   then removes the source and balances the optional HideCursor. */
+void now_ext_cursor_complete_continuity_tracking(void)
+{
+    Point pt;
+    Boolean have_point = continuity_tracking_source_point(&pt);
+
+    now_ext_cursor_end_continuity_tracking();
+    if (have_point)
+        LMSetMouseLocation(pt);
+    if (gNowCursorTrackingCursorHidden) {
+        gNowCursorTrackingCursorHidden = 0;
+        ShowCursor();
+    } else if (have_point) {
+        *gCrsrObscure = 0;
+        HideCursor();
+        ShowCursor();
+    }
 }
 
 /* Install the three tracking-loop hooks lazily in the CURRENT process context.
@@ -589,6 +633,10 @@ void now_ext_cursor_cancel_task_apply(void)
         gDebtCancels++;
     gTaskApplyOwed = false;
     now_ext_cursor_end_continuity_tracking();
+    if (gNowCursorTrackingCursorHidden) {
+        gNowCursorTrackingCursorHidden = 0;
+        ShowCursor();
+    }
 }
 
 void now_ext_cursor_input_diagnostics(NowCursorInputDiagnostics *out)
@@ -840,6 +888,14 @@ void now_ext_cursor_gne(NowPeekTable *table)
        performed only by NOW cannot protect a Finder/Menu Manager tracking loop. */
     if (gNowCursorTrackingSourceActive)
         (void)now_ext_cursor_enable_continuity_tracking();
+    if (!gNowCursorTrackingSourceActive
+            && gNowCursorTrackingCursorHidden) {
+        /* A timer may revoke a starved release source, but it may not enter
+           QuickDraw. The first subsequent task-time pass balances the hide
+           without restoring a stale host point over native input. */
+        gNowCursorTrackingCursorHidden = 0;
+        ShowCursor();
+    }
     if (!gTaskApplyOwed) {
         return;
     }
@@ -914,6 +970,8 @@ int now_ext_cursor_boot(NowPeekTable *table)
     gOwnedTrackingHistory.used = 0;
     gNowCursorTrackingRedrawOwed = 0;
     gNowCursorTrackingSourceActive = 0;
+    gNowCursorTrackingHideGuestCursor = 0;
+    gNowCursorTrackingCursorHidden = 0;
     gNowCursorTrackingSourceSeq = 0;
     gNowCursorTrackingSourceH = 0;
     gNowCursorTrackingSourceV = 0;

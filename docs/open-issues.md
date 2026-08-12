@@ -860,6 +860,30 @@ framebuffer oracles saw 93 changed pixels near the press point and 97 near the
 final point while held. The two receipts are named in `continuity-mode.md`.
 PowerBook behavior remains unverified.
 
+**2026-08-12 held-point metal update:** Pin Held Point and Virtual GetMouse
+each improved the PowerBook drag slightly; enabled together, the drag became
+mostly usable and the drop remained accurate. The native cursor sprite still
+alternated between the press point and current point, however, and sometimes
+returned to the press point after the dragged item had moved successfully.
+This is now bounded as a cursor-owner/release-handoff defect rather than the
+earlier logical tracker defect. The next candidate retains the final held point
+through the safe PPC final-move/manager-up handshake, with a one-second
+interrupt-safe source watchdog, and offers an off-by-default option to hide the
+guest sprite during the held gesture. Forced and physical-input exits still
+clear the source immediately. This candidate is Builds + Tested only, not
+metal-verified.
+
+The same pass found the agent-observability failure was not guest or module
+atomization: the live `--mcp-stdio` process still mapped the executable vnode
+from 16:02 while the stable app path and running host mapped the replacement
+from 16:04. The host socket answered `session_health` directly and its SHA-256
+matched the replacement. Future stdio companions now detect that exact
+in-place replacement before sending a call, return
+`now-mcp-companion-stale` / `reach: notSent`, and exit for supervisor restart.
+The generation guard was watched fail when forced to report every vnode as
+current. The already-running old companion still requires its one initial
+restart; code cannot retrofit itself into that process.
+
 Fast Pump is now an optional experimental arm field. It adds armed Continuity
 to the existing one-tick cooperative sleep predicate and resets on every
 disarm, disconnect, and shutdown. This can test the observed roughly 500 ms

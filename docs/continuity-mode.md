@@ -907,6 +907,26 @@ optimistic takeover signal. The shared table records `tracking_pin_writes` and
 `tracking_getmouse_answers`, so a metal result can say which mechanism actually
 ran instead of inferring it from a checked box.
 
+The attended PowerBook matrix found that each experiment improved the held
+drag slightly and that both together made it mostly usable. The remaining
+native cursor sprite still alternated between the press point and current host
+point, and sometimes returned to the press point after a successful drop. That
+split is narrower than the earlier dragged-item alternation: the target tracker
+is now substantially consuming the sourced point while the drawn cursor still
+has two owners.
+
+The next candidate fixes one definite release-order error and adds one narrower
+off-by-default experiment. Normal mouse-up now raises `MBState` but retains the
+held source until the PPC application's final Cursor Device move and manager-up
+have both returned; only then does task time redraw the final host point and
+retire the source. A one-second Time Manager watchdog may retire the source if
+the app never returns, but still performs no QuickDraw or manager call. Forced,
+lease, disconnect, and native-input exits remain immediate. **Hide guest cursor
+during drag** balances one `HideCursor`/`ShowCursor` pair around the held
+gesture, leaving the host pointer visible over Mirror and changing no ADB or
+Cursor Device state. It is an isolation experiment for the remaining sprite
+fight, not yet a default or a metal result.
+
 ### Double-click timing is measured at both scheduling boundaries
 
 The host already buffers exactly one second primary cycle while the first

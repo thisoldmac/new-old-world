@@ -29,13 +29,21 @@ release = body(RESIDENT, "static void release_button_lowmem(",
 request = body(RESIDENT, "static void request_button(",
                "static void release_button(")
 release_transition = body(RESIDENT, "static void release_button(",
-                          "static void process_event_result(")
-result = body(RESIDENT, "static void process_event_result(",
+                          "static int process_event_result(")
+result = body(RESIDENT, "static int process_event_result(",
               "static void force_reset(")
 service = body(RESIDENT, "void now_ext_continuity_service(",
                "void now_ext_continuity_tick(")
 reveal = body(CURSOR, "void now_ext_cursor_reveal_continuity(",
               "void now_ext_cursor_remember_continuity_tracking_point(")
+tracking_begin = body(
+    CURSOR, "void now_ext_cursor_begin_continuity_tracking_visuals(",
+    "void now_ext_cursor_end_continuity_tracking(")
+tracking_complete = body(
+    CURSOR, "void now_ext_cursor_complete_continuity_tracking(",
+    "int now_ext_cursor_enable_continuity_tracking(")
+tracking_gne = body(CURSOR, "void now_ext_cursor_gne(NowPeekTable *table)\n{",
+                    "int now_ext_cursor_boot(")
 host_buttons = body(HOST, "func primaryDown", "func cancel")
 failures = []
 
@@ -87,6 +95,15 @@ check("applied_button_generation = release_generation"
 check("applied_button_generation = generation" in result
       and "event_result_err == noErr" in result,
       "successful PPC manager-up no longer owns the release ACK")
+check("now_ext_cursor_complete_continuity_tracking();" in service,
+      "normal release no longer settles the final point after manager-up")
+check("now_ext_cursor_complete_continuity_tracking();" in service
+      and service.index("now_ext_cursor_complete_continuity_tracking();")
+          > service.index("cell->apply_result_seq"),
+      "normal release can clear its source before the final PPC move commits")
+check("gReleaseSettleStarted" in tick
+      and "now_ext_cursor_end_continuity_tracking();" in tick,
+      "a starved normal release can retain its tracking source forever")
 check("kNowPeekContinuityExitLeaseExpired" in tick
       and "kNowPeekContinuityExitGuestInput" in tick
       and "kNowPeekContinuityExitHostLeft" in tick,
@@ -109,6 +126,15 @@ check("jsr now_ext_cursor_answer_continuity_getmouse" in TRACKING_ASM
 check("*gCrsrObscure = 0" in reveal
       and "HideCursor();" in reveal and "ShowCursor();" in reveal,
       "Continuity no longer reproduces the native mouse visibility wake")
+check("HideCursor();" in tracking_begin
+      and "gNowCursorTrackingCursorHidden = 1" in tracking_begin,
+      "the optional drag-visibility experiment no longer hides exactly in task time")
+check("now_ext_cursor_end_continuity_tracking();" in tracking_complete
+      and "ShowCursor();" in tracking_complete,
+      "normal release no longer balances the optional hidden cursor")
+check("!gNowCursorTrackingSourceActive" in tracking_gne
+      and "ShowCursor();" in tracking_gne,
+      "the task-time watchdog recovery no longer balances a hidden cursor")
 check("applied_button_generation" in service,
       "the resident no longer acknowledges button transitions")
 check("guard phase == .active" in host_buttons,

@@ -315,11 +315,14 @@ private struct ContinuityControlCard: View {
                 Toggle("Virtual GetMouse (experimental)",
                        isOn: $controller.virtualGetMouse)
                     .disabled(!controller.isEnabled || !mirrorRunning)
+                Toggle("Hide guest cursor during drag (experimental)",
+                       isOn: $controller.hideGuestCursorWhileDragging)
+                    .disabled(!controller.isEnabled || !mirrorRunning)
                 Text(controller.status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Optional and off by default. Primary clicks and drags bypass Mirror while connected. Moving the physical guest mouse immediately returns control to that Mac. Fast Pump asks the guest to yield every tick. The held-point experiments test ADB contention without modifying the physical device.")
+                Text("Optional and off by default. Primary clicks and drags bypass Mirror while connected. Moving the physical guest mouse immediately returns control to that Mac. Fast Pump asks the guest to yield every tick. The held-point experiments test ADB contention without modifying the physical device; cursor hiding isolates the guest sprite during a drag.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

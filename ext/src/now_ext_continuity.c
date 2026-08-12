@@ -37,6 +37,9 @@ typedef struct {
 static ContinuityButtonTask gButtonTask;
 static Boolean gButtonTaskInstalled;
 static volatile Boolean gButtonTaskRunning;
+static volatile NowPeekU32 gReleaseSettleStarted;
+
+enum { kNowContinuityReleaseSettleMaxTicks = 60 };
 
 extern void now_ext_continuity_tm_entry(void);
 void now_ext_continuity_tick(TMTaskPtr task);
@@ -137,7 +140,8 @@ static void release_button(NowPeekContinuityCell *cell,
     /* MBState-up is first and unconditional. Everything after it is
        telemetry or task-time event debt and cannot leave the Mac held. */
     release_button_lowmem();
-    now_ext_cursor_end_continuity_tracking();
+    if (reason != (NowPeekU32)kNowPeekContinuityExitNone)
+        now_ext_cursor_end_continuity_tracking();
     cell->button_down = 0;
     cell->pending_mouseup = 1;
     if (release_generation == 0
@@ -146,6 +150,7 @@ static void release_button(NowPeekContinuityCell *cell,
         if (reason == (NowPeekU32)kNowPeekContinuityExitNone) {
             /* A duplicate host up needs no second manager transition. */
             cell->pending_mouseup = 0;
+            now_ext_cursor_end_continuity_tracking();
             gButtonTaskRunning = false;
             return;
         }
@@ -165,11 +170,21 @@ static void release_button(NowPeekContinuityCell *cell,
        The low-memory release is already safe, but advancing the ACK here lets
        the host start another press and overwrite this manager-up debt. */
     request_button(cell, release_generation, 0);
-    gButtonTaskRunning = false;
+    if (reason == (NowPeekU32)kNowPeekContinuityExitNone) {
+        /* Keep the held source through the target's final tracking redraw and
+           the PPC manager-up/final-position handshake. A bounded timer may
+           revoke only that source if cooperative task time never returns. */
+        gReleaseSettleStarted = (NowPeekU32)LMGetTicks();
+        gButtonTaskRunning = true;
+        PrimeTime((QElemPtr)&gButtonTask.task,
+                  (long)kNowPeekContinuityTickMs);
+    } else {
+        gButtonTaskRunning = false;
+    }
 }
 
-static void process_event_result(NowPeekContinuityCell *cell,
-                                 NowPeekU32 ticks)
+static int process_event_result(NowPeekContinuityCell *cell,
+                                NowPeekU32 ticks)
 {
     NowPeekU32 generation = cell->event_request_generation;
     int down = cell->event_request_down != 0;
@@ -177,17 +192,17 @@ static void process_event_result(NowPeekContinuityCell *cell,
     if (generation == 0
             || cell->event_result_generation != generation
             || cell->event_result_down != cell->event_request_down)
-        return;
+        return 0;
     if (down) {
         if (cell->button_down
                 || !now_continuity_sequence_newer(
                     generation, cell->applied_button_generation))
-            return;
+            return 0;
         if (cell->event_result_err != noErr) {
             cell->event_post_failures++;
             cell->button_release_reason =
                 (NowPeekU32)kNowPeekContinuityExitUnavailable;
-            return;
+            return 0;
         }
         /* CursorDeviceButtonDown already established the system's button
            state. Teach the physical-input sampler that this transition was
@@ -200,6 +215,7 @@ static void process_event_result(NowPeekContinuityCell *cell,
            The timer replaces it with newer host points while held. */
         now_ext_cursor_remember_continuity_tracking_point(
             cell->request_h, cell->request_v);
+        now_ext_cursor_begin_continuity_tracking_visuals();
         cell->button_down = 1;
         cell->applied_button_generation = generation;
         cell->event_down_posts++;
@@ -210,6 +226,7 @@ static void process_event_result(NowPeekContinuityCell *cell,
                   (long)kNowPeekContinuityTickMs);
         trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceApplied,
                     ticks, (NowPeekI32)generation, 1);
+        return 0;
     } else if (cell->pending_mouseup) {
         if (cell->event_result_err == noErr) {
             cell->event_up_posts++;
@@ -222,7 +239,9 @@ static void process_event_result(NowPeekContinuityCell *cell,
         /* MBState is already up. A manager refusal exits the epoch rather
            than retrying forever or acknowledging an unsettled transition. */
         cell->pending_mouseup = 0;
+        return cell->event_result_err == noErr;
     }
+    return 0;
 }
 
 static void force_reset(NowPeekContinuityCell *cell, NowPeekU32 reason)
@@ -293,6 +312,7 @@ void now_ext_continuity_service(void)
     NowPeekI32 v;
     NowPeekU32 native_input_seq;
     NowPeekU32 exit_due;
+    int release_settled;
 
     if (!gInstalled)
         return;
@@ -312,7 +332,7 @@ void now_ext_continuity_service(void)
                 ticks, (NowPeekI32)cell->state,
                 (NowPeekI32)cell->packet_seq);
 
-    process_event_result(cell, ticks);
+    release_settled = process_event_result(cell, ticks);
     if (cell->button_release_reason
             == (NowPeekU32)kNowPeekContinuityExitUnavailable) {
         finish_locked(cell,
@@ -412,6 +432,10 @@ void now_ext_continuity_service(void)
         trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceApplied,
                     ticks, (NowPeekI32)cell->applied_position_seq,
                     cell->at_h);
+    }
+    if (release_settled) {
+        now_ext_cursor_complete_continuity_tracking();
+        gButtonTaskRunning = false;
     }
 
     /* Sample physical RawMouse before the owned synthetic device reports its
@@ -514,11 +538,28 @@ void now_ext_continuity_tick(TMTaskPtr task)
     if (self == NULL || !gButtonTaskRunning)
         return;
     cell = continuity_cell(self->table);
-    if (cell == NULL || !cell->button_down) {
+    if (cell == NULL) {
         gButtonTaskRunning = false;
         return;
     }
     ticks = (NowPeekU32)LMGetTicks();
+    if (!cell->button_down) {
+        if (!cell->pending_mouseup) {
+            gButtonTaskRunning = false;
+            return;
+        }
+        if ((NowPeekU32)(ticks - gReleaseSettleStarted)
+                >= (NowPeekU32)kNowContinuityReleaseSettleMaxTicks) {
+            /* Source/low memory only. Visibility is restored by the next
+               task-time jGNE pass; a timer never calls QuickDraw. */
+            now_ext_cursor_end_continuity_tracking();
+            gButtonTaskRunning = false;
+            return;
+        }
+        PrimeTime((QElemPtr)&gButtonTask.task,
+                  (long)kNowPeekContinuityTickMs);
+        return;
+    }
     cell->button_timer_ticks++;
     if (now_ext_cursor_physical_input_seq() != gNativeInputBaseline) {
         release_button(cell, cell->button_generation,
@@ -649,4 +690,5 @@ void now_ext_continuity_rollback(NowPeekTable *table)
     gForcedResets = 0;
     gEventResetGeneration = 0;
     gTasktimeCursorApplies = 0;
+    gReleaseSettleStarted = 0;
 }

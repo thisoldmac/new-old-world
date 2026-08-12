@@ -558,6 +558,19 @@
         "ext/src/now_ext_cursor_tracking.S"
       ],
       "reason": "Private cold bake continuity-drag-matrix verified; shared bake deferred until feature reaches its release candidate after attended PowerBook drag testing."
+    },
+    {
+      "at": "2026-08-12T17:40:26-0400",
+      "branch": "feat/continuity-direct-pointer",
+      "extDigest": "3cfb6e376a7168bd3d44f57ea460f6c1b43a2c3b",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h"
+      ],
+      "reason": "Private bake continuity-release-cursor-hide verified exact resident, clean guest shutdown, clean HFS volume and qemu-img; shared promotion deferred until feature reaches release candidate after PowerBook metal verification."
     }
   ]
 }

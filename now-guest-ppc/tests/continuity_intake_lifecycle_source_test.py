@@ -59,8 +59,12 @@ tracking_remember = body(
     "void now_ext_cursor_remember_continuity_tracking_point(", EXT_CURSOR)
 tracking_end = body(
     "void now_ext_cursor_end_continuity_tracking(", EXT_CURSOR)
+tracking_begin = body(
+    "void now_ext_cursor_begin_continuity_tracking_visuals(", EXT_CURSOR)
+tracking_complete = body(
+    "void now_ext_cursor_complete_continuity_tracking(", EXT_CURSOR)
 release_button = body("static void release_button(", EXT_CONTINUITY)
-event_result = body("static void process_event_result(", EXT_CONTINUITY)
+event_result = body("static int process_event_result(", EXT_CONTINUITY)
 continuity_finish = body("static void finish_locked(", EXT_CONTINUITY)
 
 failures = []
@@ -84,6 +88,8 @@ if "gEpoch != 0 && gFastPump" not in fast_pump:
     failures.append("Fast Pump is no longer bounded to a live authority epoch")
 if 'now_json_find_bool(request, "fastPump", 0)' not in WIRE:
     failures.append("continuity.arm no longer defaults optional Fast Pump off")
+if 'now_json_find_bool(request, "hideGuestCursorWhileDragging", 0)' not in WIRE:
+    failures.append("continuity.arm no longer defaults optional cursor hiding off")
 if "now_continuity_wants_fast_pump()" not in body(
         "Boolean conn_wants_fast_pump", WIRE):
     failures.append(
@@ -193,8 +199,9 @@ for forbidden in ("NewPtr", "DisposePtr", "WaitNextEvent", "PPostEvent",
 if "gNowCursorTrackingSourceActive = 0" not in tracking_end \
         or "gNowCursorTrackingRedrawOwed = 0" not in tracking_end:
     failures.append("tracking authority exit no longer clears source and redraw debt")
-if "now_ext_cursor_end_continuity_tracking()" not in release_button:
-    failures.append("mouse-up no longer releases the active tracking source")
+if "reason != (NowPeekU32)kNowPeekContinuityExitNone" not in release_button \
+        or "now_ext_cursor_end_continuity_tracking()" not in release_button:
+    failures.append("forced mouse-up no longer releases tracking immediately")
 elif release_button.index("now_ext_cursor_end_continuity_tracking()") \
         < release_button.index("release_button_lowmem()"):
     failures.append("tracking source clears before the unconditional low-memory release")
@@ -204,6 +211,13 @@ if "now_ext_cursor_remember_continuity_tracking_point(" not in event_result \
 elif event_result.index("now_ext_cursor_remember_continuity_tracking_point(") \
         > event_result.index("cell->button_down = 1"):
     failures.append("button-down enters tracking before publishing its initial source")
+if "now_ext_cursor_begin_continuity_tracking_visuals();" not in event_result:
+    failures.append("button-down no longer starts optional tracking visuals in task time")
+if "HideCursor();" not in tracking_begin:
+    failures.append("the optional guest-cursor experiment no longer hides its sprite")
+if "now_ext_cursor_end_continuity_tracking();" not in tracking_complete \
+        or "ShowCursor();" not in tracking_complete:
+    failures.append("normal release no longer ends tracking before balancing cursor visibility")
 if tracking_install.count("NGetTrapAddress") < 3:
     failures.append("tracking install no longer snapshots all three incumbents")
 if tracking_install.count("NSetTrapAddress") != 3:

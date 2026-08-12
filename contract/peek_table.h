@@ -954,9 +954,11 @@ enum {
 enum {
     kNowPeekContinuityTrackingPinHeldPoint = 1u << 0,
     kNowPeekContinuityTrackingVirtualGetMouse = 1u << 1,
+    kNowPeekContinuityTrackingHideGuestCursor = 1u << 2,
     kNowPeekContinuityTrackingKnownMask =
         kNowPeekContinuityTrackingPinHeldPoint
             | kNowPeekContinuityTrackingVirtualGetMouse
+            | kNowPeekContinuityTrackingHideGuestCursor
 };
 
 enum {

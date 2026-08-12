@@ -33,7 +33,9 @@ void now_ext_cursor_remember_continuity_point(NowPeekI32 h, NowPeekI32 v);
 void now_ext_cursor_reveal_continuity(void);
 void now_ext_cursor_remember_continuity_tracking_point(NowPeekI32 h,
                                                        NowPeekI32 v);
+void now_ext_cursor_begin_continuity_tracking_visuals(void);
 void now_ext_cursor_end_continuity_tracking(void);
+void now_ext_cursor_complete_continuity_tracking(void);
 void now_ext_cursor_remember_continuity_button(unsigned down);
 void now_ext_cursor_cancel_task_apply(void);
 void now_ext_cursor_input_diagnostics(NowCursorInputDiagnostics *out);

@@ -208,6 +208,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         fastPump: Bool = false,
         pinHeldPoint: Bool = false,
         virtualGetMouse: Bool = false,
+        hideGuestCursorWhileDragging: Bool = false,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ArmingRig {
         let guest = FakeGuest(port: try XCTUnwrap(listener.boundPort))
@@ -224,6 +225,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         controller.fastPump = fastPump
         controller.pinHeldPoint = pinHeldPoint
         controller.virtualGetMouse = virtualGetMouse
+        controller.hideGuestCursorWhileDragging =
+            hideGuestCursorWhileDragging
         controller.isEnabled = true
         controller.pointerMoved(to: initial)
         try await waitUntil("arm") {
@@ -640,9 +643,11 @@ final class MirrorContinuityControllerTests: XCTestCase {
 
     func testHeldPointExperimentsAreRequestedOnlyWhenOptedIn() async throws {
         let experiments = try await makeArmingRig(
-            pinHeldPoint: true, virtualGetMouse: true)
+            pinHeldPoint: true, virtualGetMouse: true,
+            hideGuestCursorWhileDragging: true)
         XCTAssertEqual(experiments.arm.pinHeldPoint, true)
         XCTAssertEqual(experiments.arm.virtualGetMouse, true)
+        XCTAssertEqual(experiments.arm.hideGuestCursorWhileDragging, true)
     }
 
     func testClicksFallThroughUntilTheRawLaneIsActive() async throws {
@@ -796,6 +801,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         controller?.fastPump = true
         controller?.pinHeldPoint = true
         controller?.virtualGetMouse = true
+        controller?.hideGuestCursorWhileDragging = true
         controller?.isEnabled = true
         controller = nil
 
@@ -806,6 +812,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertTrue(reopened.fastPump)
         XCTAssertTrue(reopened.pinHeldPoint)
         XCTAssertTrue(reopened.virtualGetMouse)
+        XCTAssertTrue(reopened.hideGuestCursorWhileDragging)
         XCTAssertFalse(reopened.isEnabled,
                        "opening a new Mirror session must not seize input")
     }

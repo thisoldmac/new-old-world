@@ -104,6 +104,20 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
+    @Published var hideGuestCursorWhileDragging = false {
+        didSet {
+            guard hideGuestCursorWhileDragging != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(hideGuestCursorWhileDragging,
+                             forKey: hideGuestCursorKey(for: machine))
+            }
+            if phase != .idle {
+                rearmAfterConfigurationChange(
+                    reason: "guest cursor visibility changed")
+            }
+        }
+    }
 
     var isActive: Bool { phase == .active }
     @Published private(set) var isMenuTracking = false
@@ -344,7 +358,8 @@ final class MirrorContinuityController: ObservableObject,
             nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
             requestedHz: rate, leaseTicks: 90, fastPump: fastPump,
             pinHeldPoint: pinHeldPoint,
-            virtualGetMouse: virtualGetMouse)
+            virtualGetMouse: virtualGetMouse,
+            hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)
         guard armID != nil else {
             status = "unavailable: no Mac is connected"
             self.target = nil
@@ -960,6 +975,8 @@ final class MirrorContinuityController: ObservableObject,
         fastPump = defaults.bool(forKey: fastPumpKey(for: machine))
         pinHeldPoint = defaults.bool(forKey: pinHeldPointKey(for: machine))
         virtualGetMouse = defaults.bool(forKey: virtualGetMouseKey(for: machine))
+        hideGuestCursorWhileDragging = defaults.bool(
+            forKey: hideGuestCursorKey(for: machine))
         loadingSettings = false
     }
 
@@ -981,6 +998,10 @@ final class MirrorContinuityController: ObservableObject,
 
     private func virtualGetMouseKey(for machine: GuestID) -> String {
         "mirror.continuity.virtualGetMouse.\(machine.slug)"
+    }
+
+    private func hideGuestCursorKey(for machine: GuestID) -> String {
+        "mirror.continuity.hideGuestCursorWhileDragging.\(machine.slug)"
     }
 
     private func wireDisarmReason(for reason: String) -> String {

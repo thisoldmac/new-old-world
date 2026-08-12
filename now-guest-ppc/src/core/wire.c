@@ -6742,6 +6742,8 @@ static void serve_continuity_arm(const char *request)
         tracking_options |= kNowPeekContinuityTrackingPinHeldPoint;
     if (now_json_find_bool(request, "virtualGetMouse", 0))
         tracking_options |= kNowPeekContinuityTrackingVirtualGetMouse;
+    if (now_json_find_bool(request, "hideGuestCursorWhileDragging", 0))
+        tracking_options |= kNowPeekContinuityTrackingHideGuestCursor;
     result = now_continuity_arm(id, g.port, nonce_hi, nonce_lo, epoch,
                                 hz, lease, fast_pump, tracking_options);
     if (result == kNowContinuityArmUnsupported)
