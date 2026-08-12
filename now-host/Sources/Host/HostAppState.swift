@@ -233,21 +233,6 @@ final class HostAppState: ObservableObject {
         return mirrorSource.scene?.screen.known
     }
 
-    private(set) lazy var chat: ChatModuleModel = {
-        let model = ChatModuleModel(
-            agentIntegration: agentIntegration,
-            guestFiles: guestFiles,
-            agentActivity: agentActivity,
-            guestScreen: { [weak self] in
-                await MainActor.run {
-                    self?.guestScreenIfKnown.flatMap {
-                        ChatSystemPrompt.Screen(w: $0.w, h: $0.h)
-                    }
-                }
-            })
-        listener.chatService = model.wireService
-        return model
-    }()
     private(set) lazy var development = DevelopmentModel(
         store: try? ProjectStore(),
         readEnvironment: { [agentIntegration] in
@@ -278,7 +263,17 @@ final class HostAppState: ObservableObject {
             listener: listener,
             currentConnection: { [unowned self] in self.currentConnection },
             defaults: defaults,
-            artifactApprover: agentIntegration))
+            artifactApprover: agentIntegration,
+            agentIntegration: agentIntegration,
+            guestFiles: guestFiles,
+            agentActivity: agentActivity,
+            guestScreen: { [weak self] in
+                await MainActor.run {
+                    self?.guestScreenIfKnown.flatMap {
+                        ChatSystemPrompt.Screen(w: $0.w, h: $0.h)
+                    }
+                }
+            }))
     private let moduleRegistry: ModuleRegistry
 
     /// Points the whole window at another connected Mac.
@@ -327,8 +322,11 @@ final class HostAppState: ObservableObject {
             })
         /* Forced now rather than at first page view: a guest may ask
            chat.models before anyone opens the Chat page, and a lazy
-           wire service would answer that with pre-family silence. */
-        defer { _ = chat }
+           wire service would answer that with pre-family silence. The
+           runtime remains module-owned; this only admits it eagerly. */
+        defer {
+            _ = moduleRuntime(for: "chat", as: ChatHostModuleRuntime.self)
+        }
         let stored = defaults.string(forKey: Self.selectionKey)
         /* Through the rename table, so a person whose saved selection is a
            module's OLD id lands on it rather than on the fallback. */

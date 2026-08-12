@@ -213,4 +213,46 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"icloud\""))
         XCTAssertTrue(definition.contains("cloud_module_ops"))
     }
+
+    func testChatDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = ChatHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "chat")
+        XCTAssertEqual(definition.descriptor.tier, .experimental)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testChatRuntimeIsEagerAndOwnsTheWireService() {
+        let suite = "ChatModuleOwnership.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let state = HostAppState(registry: .standard, defaults: defaults)
+
+        XCTAssertNotNil(state.listener.chatService,
+                        "chat.* must be served before the page is opened")
+        XCTAssertNotNil(state.moduleRuntime(
+            for: "chat", as: ChatHostModuleRuntime.self))
+
+        state.shutDownModules()
+        XCTAssertNil(state.listener.chatService)
+    }
+
+    func testChatOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/chat/chat_module_definition.c")
+
+        XCTAssertFalse(state.contains("lazy var chat"))
+        XCTAssertFalse(compatibility.contains("case \"chat\""))
+        XCTAssertFalse(registry.contains("k_chat_definition"))
+        XCTAssertTrue(registry.contains("chat_module_definition()"))
+        XCTAssertTrue(definition.contains("\"chat\""))
+        XCTAssertTrue(definition.contains("chat_module_ops"))
+    }
 }

@@ -129,14 +129,7 @@ struct ModuleRegistry {
            things to the machine, through a model instead of a verb table.
            The provider configuration lives on this page too, per the
            no-preferences-window rule. */
-        ModuleDescriptor(
-            id: "chat",
-            title: "Chat",
-            symbol: "bubble.left.and.bubble.right",
-            summary: "Talk to a model that can see and drive "
-                + "\(MachineNaming.simpleReference)",
-            tier: .experimental
-        ),
+        ChatHostModule.definition.descriptor,
         ModuleDescriptor(
             id: "web",
             title: "Web",

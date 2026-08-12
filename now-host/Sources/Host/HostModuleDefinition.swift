@@ -12,15 +12,28 @@ struct HostModuleContext {
     let currentConnection: () -> GuestConnectionState
     let defaults: UserDefaults
     let artifactApprover: AgentIntegrationHostAdapter?
+    let agentIntegration: AgentIntegrationHostAdapter?
+    let guestFiles: GuestFilesCommandService?
+    let agentActivity: AgentActivityModel?
+    let guestScreen: @Sendable () async -> ChatSystemPrompt.Screen?
 
     init(listener: GuestListener,
          currentConnection: @escaping () -> GuestConnectionState,
          defaults: UserDefaults = ProductIdentity.defaults,
-         artifactApprover: AgentIntegrationHostAdapter? = nil) {
+         artifactApprover: AgentIntegrationHostAdapter? = nil,
+         agentIntegration: AgentIntegrationHostAdapter? = nil,
+         guestFiles: GuestFilesCommandService? = nil,
+         agentActivity: AgentActivityModel? = nil,
+         guestScreen: @escaping @Sendable () async
+            -> ChatSystemPrompt.Screen? = { nil }) {
         self.listener = listener
         self.currentConnection = currentConnection
         self.defaults = defaults
         self.artifactApprover = artifactApprover
+        self.agentIntegration = agentIntegration
+        self.guestFiles = guestFiles
+        self.agentActivity = agentActivity
+        self.guestScreen = guestScreen
     }
 }
 
@@ -211,6 +224,9 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == CloudHostModule.definition.descriptor.id {
             return CloudHostModule.definition
         }
+        if descriptor.id == ChatHostModule.definition.descriptor.id {
+            return ChatHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
             case "mirror":
@@ -222,8 +238,6 @@ enum LegacyHostModuleDefinitions {
                     connectedMachineName: state.connectedMachineName,
                     timeline: state.mirrorSource.actTimeline,
                     cycles: state.mirrorSource.cycleTimeline))
-            case "chat":
-                return AnyView(ChatModuleView(model: state.chat))
             case "web":
                 return AnyView(WebModuleView(model: state.web))
             case "development":

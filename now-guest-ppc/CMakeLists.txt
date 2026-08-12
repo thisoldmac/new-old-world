@@ -72,6 +72,7 @@ add_application(now-guest-ppc
     src/chat/chat_layout.c
     src/chat/chat_model.c
     src/chat/chat_module.c
+    src/chat/chat_module_definition.c
     src/cloud/cloud_card_cache.c
     src/cloud/cloud_filter.c
     src/cloud/cloud_layout.c

@@ -40,16 +40,6 @@ static const WorkshopModuleDefinition k_diagnostics_definition = {
     diagnostics_module_ops
 };
 
-static const WorkshopModuleDefinition k_chat_definition = {
-    kWorkshopChat, "chat", "Chat",
-    "A model on the other Mac's harness, talking about THIS Mac. It "
-    "can look at what runs here, with the access MCP grants.",
-    "Chat has not moved in yet.",
-    "Ask the other Mac's model", 141, kWorkshopModuleTierExperimental,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    chat_module_ops
-};
-
 static const WorkshopModuleDefinition k_mirror_definition = {
     kWorkshopMirror, "mirror", "Mirror",
     "Mirror's own extensions and agent on this Mac. NOW reads them; it "
@@ -120,7 +110,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopDiagnostics: return &k_diagnostics_definition;
     case kWorkshopNetworking: return network_module_definition();
     case kWorkshopCloud: return cloud_module_definition();
-    case kWorkshopChat: return &k_chat_definition;
+    case kWorkshopChat: return chat_module_definition();
     case kWorkshopMirror: return &k_mirror_definition;
     case kWorkshopDevelopment: return &k_development_definition;
     case kWorkshopWeb: return &k_web_definition;
