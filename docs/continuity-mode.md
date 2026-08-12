@@ -96,8 +96,12 @@ A cooperatively scheduled tracking loop may delay the PPC application's
 manager-up result even after the resident has made low-memory button-up safe.
 The host therefore allows five seconds for up to settle, while retaining the
 one-second down bound. A second complete primary cycle may wait behind that
-single outstanding up; this preserves a human double-click without permitting
-an unbounded click queue.
+single outstanding up; the host never waits to classify a single versus double
+click. Cursor button breadcrumbs are memory-only, because the earlier
+`FlushVol` before each manager transition stretched that acknowledgement far
+enough to destroy double-click timing. The bounded cycle preserves a human
+double-click without permitting an unbounded click queue; its corrected timing
+awaits metal verification.
 
 ## Yielding to the guest
 
@@ -135,11 +139,14 @@ The tracking-loop sprite requires the research spike's chain-only task-time
 tracking hooks and remains open until that global resident mechanism is
 explicitly accepted and integrated.
 
-Clicking an OS 9 menu title through raw direct-pointer input currently follows
-classic tracking semantics: the menu tracks while held and closes on mouse-up.
-This is a faithful raw-input result, but it differs from the later click-to-open
-behavior a Mac OS 9 user may expect. It remains a named UX decision rather than
-being silently routed back through Mirror's semantic menu act.
+The raw CDM path initially reduced OS 9 menus to System 6/7-style
+hold-to-track behavior: a menu tracked while held and closed on mouse-up.
+Direct-pointer mode now treats the menubar as an explicit input region. A
+stationary first click keeps the guest's native tracking loop live and the next
+click releases at the selected item, restoring the Mac OS 8/9 click-open model.
+A click-drag-release remains native, and leaving the Mirror or ending the lease
+still forces the held button up. This stays on the raw pointer plane rather
+than silently routing a menu through Mirror's semantic act.
 
 The post-metal candidate was then cold-booted independently on
 `mac99,via=pmu` and `mac99,via=cuda` with Fast Pump enabled. Both guests
@@ -682,11 +689,12 @@ through the corrected fallback transition disassembled from Apple's supplied
 values. Linking that object plus Retro68's monolithic `libInterfaceLib.a`
 directly made this Carbon CFM application unload before `main` on Mac OS 9.1,
 so both entry points are resolved from InterfaceLib by name and the final PEF
-is required to import CarbonLib but not InterfaceLib. It writes sampled and
-volume-flushed `move begin`/`move return` breadcrumbs around the manager call.
-Thus a future fault can distinguish "manager did not return" from "manager
-returned and resident commit stalled" without logging from foreign or
-interrupt context.
+is required to import CarbonLib but not InterfaceLib. It writes sampled,
+in-memory `move begin`/`move return` breadcrumbs around the manager call, with
+durable errors and terminal summaries. Thus a cooperative run can distinguish
+"manager did not return" from "manager returned and resident commit stalled"
+without making routine cursor motion wait for the disk or logging from foreign
+or interrupt context.
 
 The first PMU run after that correction also fixed the fault instrument: it
 had waited for every UDP acknowledgement before sending the next absolute

@@ -145,12 +145,21 @@ static void drain_trace(const NowPeekContinuityCell *cell)
             continue;
         }
         if (trace_is_sampled(entry)) {
-            now_log(entry->event == kNowPeekContinuityTraceApplyError
-                        ? kLogError : kLogInfo,
-                    "mirror", "resident trace seq=%lu event=%lu ticks=%lu arg=%ld,%ld",
-                    (unsigned long)entry->seq, (unsigned long)entry->event,
-                    (unsigned long)entry->ticks, (long)entry->arg0,
-                    (long)entry->arg1);
+            if (entry->event == kNowPeekContinuityTraceApplyError) {
+                now_log(kLogError, "mirror",
+                        "resident trace seq=%lu event=%lu ticks=%lu arg=%ld,%ld",
+                        (unsigned long)entry->seq,
+                        (unsigned long)entry->event,
+                        (unsigned long)entry->ticks, (long)entry->arg0,
+                        (long)entry->arg1);
+            } else {
+                now_log_memory(kLogInfo, "mirror",
+                               "resident trace seq=%lu event=%lu ticks=%lu arg=%ld,%ld",
+                               (unsigned long)entry->seq,
+                               (unsigned long)entry->event,
+                               (unsigned long)entry->ticks, (long)entry->arg0,
+                               (long)entry->arg1);
+            }
         }
         seq++;
         if (seq == 0)

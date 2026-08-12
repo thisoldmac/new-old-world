@@ -18,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = (ROOT / "now-guest-ppc/src/input/continuity_intake.c").read_text()
 WIRE = (ROOT / "now-guest-ppc/src/core/wire.c").read_text()
+CURSOR = (ROOT / "now-guest-ppc/src/input/continuity_cursor.c").read_text()
 
 
 def body(name, source=SOURCE):
@@ -43,6 +44,8 @@ arm = body("int now_continuity_arm(")
 open_udp = body("static int open_udp(")
 shutdown = body("void now_continuity_shutdown(")
 fast_pump = body("int now_continuity_wants_fast_pump(")
+cursor_button = body("long now_continuity_cursor_button(", CURSOR)
+cursor_move = body("long now_continuity_cursor_move(", CURSOR)
 
 failures = []
 if "gEpoch = 0" not in disarm:
@@ -114,6 +117,16 @@ if WIRE.count("(unsigned)now_continuity_udp_port()") != 3:
     failures.append("continuity reports no longer publish the actual UDP port")
 if "(unsigned)g.port" in body("static int send_continuity_report(", WIRE):
     failures.append("continuity reports again publish the TCP preference as UDP")
+for name, hot_path in (("button", cursor_button), ("move", cursor_move)):
+    if "now_log_flush(" in hot_path:
+        failures.append(
+            f"cursor {name} path flushes the disk while servicing live input")
+    if "now_log(kLogInfo" in hot_path:
+        failures.append(
+            f"cursor {name} breadcrumbs write to disk while servicing live input")
+    if "now_log_memory(" not in hot_path:
+        failures.append(
+            f"cursor {name} path lost its allocation-free in-memory breadcrumb")
 
 if failures:
     for failure in failures:

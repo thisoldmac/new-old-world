@@ -182,17 +182,15 @@ const char *now_log_line(int index)
     return g_lines[slot];
 }
 
-void now_log(LogLevel level, const char *area, const char *fmt, ...)
+static void log_line(LogLevel level, const char *area, const char *fmt,
+                     va_list args, Boolean persist)
 {
-    va_list args;
     char body[kLogLineMax - 20];       /* the stamp and tag take the rest */
     char line[kLogLineMax];
     char time[16];
     long len;
 
-    va_start(args, fmt);
     vsnprintf(body, sizeof body, fmt, args);
-    va_end(args);
 
     stamp(time, sizeof time, false);
     snprintf(line, sizeof line, "%.8s %-6.6s %s%.99s", time, area,
@@ -207,7 +205,7 @@ void now_log(LogLevel level, const char *area, const char *fmt, ...)
         ++g_count;
     }
 
-    if (g_ref == -1) {
+    if (!persist || g_ref == -1) {
         return;
     }
     len = (long)strlen(line);
@@ -224,6 +222,24 @@ void now_log(LogLevel level, const char *area, const char *fmt, ...)
     if (level == kLogError) {
         now_log_flush();
     }
+}
+
+void now_log(LogLevel level, const char *area, const char *fmt, ...)
+{
+    va_list args;
+
+    va_start(args, fmt);
+    log_line(level, area, fmt, args, true);
+    va_end(args);
+}
+
+void now_log_memory(LogLevel level, const char *area, const char *fmt, ...)
+{
+    va_list args;
+
+    va_start(args, fmt);
+    log_line(level, area, fmt, args, false);
+    va_end(args);
 }
 
 void now_log_flush(void)

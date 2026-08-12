@@ -101,6 +101,10 @@ final class MirrorContinuityController: ObservableObject,
     private var deferredButtonPoint: MirrorKit.Point?
     private var bufferedButtonCycle: BufferedPrimaryCycle?
     private var capturingBufferedCycle = false
+    private var primaryDownInMenuBar = false
+    private var primaryCycleDragged = false
+    private var menuLatched = false
+    private var menuReleaseArmed = false
     private var pointerInside = false
     private var idleIntervals = 0
     private var udp: NWConnection?
@@ -163,8 +167,16 @@ final class MirrorContinuityController: ObservableObject,
     }
 
     @discardableResult
-    func primaryDown(at point: MirrorKit.Point) -> Bool {
+    func primaryDown(at point: MirrorKit.Point,
+                     inMenuBar: Bool = false) -> Bool {
         guard phase == .active else { return false }
+        if menuLatched, buttonCycleActive, wireButtonDown {
+            self.point = point
+            positionDirty = true
+            deferredButtonPoint = point
+            menuReleaseArmed = true
+            return true
+        }
         /* A human double-click can begin while the first manager-up is still
            settling on a cooperatively scheduled guest. Buffer exactly one
            complete following cycle instead of dropping that second click or
@@ -180,12 +192,13 @@ final class MirrorContinuityController: ObservableObject,
             capturingBufferedCycle = true
             return true
         }
-        beginPrimaryCycle(at: point)
+        beginPrimaryCycle(at: point, inMenuBar: inMenuBar)
         return true
     }
 
     private func beginPrimaryCycle(at point: MirrorKit.Point,
-                                   releasedAt: MirrorKit.Point? = nil) {
+                                   releasedAt: MirrorKit.Point? = nil,
+                                   inMenuBar: Bool = false) {
         self.point = point
         positionDirty = true
         advancePositionIfNeeded()
@@ -195,6 +208,10 @@ final class MirrorContinuityController: ObservableObject,
         pressAcknowledged = false
         releasePending = releasedAt != nil
         deferredButtonPoint = releasedAt
+        primaryDownInMenuBar = inMenuBar
+        primaryCycleDragged = false
+        menuLatched = false
+        menuReleaseArmed = false
         sendState(inside: true, keepalive: false)
         scheduleButtonAckTimeout(generation: buttonGeneration, down: true)
     }
@@ -207,6 +224,7 @@ final class MirrorContinuityController: ObservableObject,
             return true
         }
         guard buttonCycleActive else { return false }
+        primaryCycleDragged = true
         if pressAcknowledged {
             self.point = point
             positionDirty = true
@@ -228,6 +246,20 @@ final class MirrorContinuityController: ObservableObject,
             return true
         }
         guard buttonCycleActive else { return false }
+        if menuLatched {
+            guard menuReleaseArmed else { return true }
+            menuLatched = false
+            menuReleaseArmed = false
+        } else if primaryDownInMenuBar && !primaryCycleDragged {
+            /* The raw CDM path otherwise falls back to System 6/7-style
+               hold-to-track behavior on this Mac OS 8/9 guest. Keep the
+               native tracking loop alive after a stationary host click so
+               the next click can select, matching the guest OS's click-open
+               model. A real click-drag-release never enters this latch. */
+            deferredButtonPoint = point
+            menuLatched = true
+            return true
+        }
         deferredButtonPoint = point
         releasePending = true
         if pressAcknowledged { sendPrimaryRelease() }
@@ -633,6 +665,10 @@ final class MirrorContinuityController: ObservableObject,
             buttonCycleActive = false
             releasePending = false
             deferredButtonPoint = nil
+            primaryDownInMenuBar = false
+            primaryCycleDragged = false
+            menuLatched = false
+            menuReleaseArmed = false
             startBufferedPrimaryCycleIfNeeded()
         }
     }
@@ -847,6 +883,10 @@ final class MirrorContinuityController: ObservableObject,
         deferredButtonPoint = nil
         bufferedButtonCycle = nil
         capturingBufferedCycle = false
+        primaryDownInMenuBar = false
+        primaryCycleDragged = false
+        menuLatched = false
+        menuReleaseArmed = false
     }
 
     private func setEnabledWithoutTeardown(_ enabled: Bool) {

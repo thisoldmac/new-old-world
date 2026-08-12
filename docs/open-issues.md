@@ -654,9 +654,27 @@ to the existing one-tick cooperative sleep predicate and resets on every
 disarm, disconnect, and shutdown. This can test the observed roughly 500 ms
 periodic stalls without moving work into the notifier or Time Manager task.
 The 15/30/60 Hz cadence and CPU/fairness effects remain open metal measurements.
-Raw menu-title clicks currently use classic hold-to-track semantics and close
-on mouse-up; whether direct-pointer mode should synthesize Mac OS 9's later
-click-to-open UX or remain raw is still a product decision.
+
+The attended follow-up found that Fast Pump makes 30/60 Hz movement nearly
+native between stalls but does not reduce the roughly 500 ms periodic hitches.
+The guest flight recorder explained that split: sampled cursor moves called
+`FlushVol` every 30 applies (twice per second at 60 Hz, once at 30 Hz), and
+every button transition flushed immediately before entering Cursor Device
+Manager. Those live-input breadcrumbs are now memory-only; errors and terminal
+summaries remain durable. A source guard rejects disk logging or `FlushVol` in
+the cursor move/button paths. This correction is tested, not yet metal-verified.
+
+That pass also confirmed raw menu-title clicks had regressed to System 6/7
+hold-to-track behavior on the OS 9 guest. The host now identifies the menubar
+from MirrorKit's existing hit-test boundary: a stationary first click latches
+native tracking until the selection click releases, while click-drag-release,
+pointer departure, and teardown retain their ordinary forced-up behavior.
+Double-clicks remain one bounded following cycle with no single-click
+classification delay; removing the button-path volume flush is the present
+timing fix, pending metal verification before adding a wider edge queue.
+
+A focus-demanding host alert can still interrupt pointer connection. It is an
+edge case deferred from this slice rather than folded into button-state logic.
 
 Independent private PMU/USB and CUDA/ADB cold boots then exercised Fast Pump
 against guest build `582abf3ee6e2…` and resident fingerprint `e500d393bf76…`.
@@ -988,8 +1006,9 @@ calls: runtime-resolved `NGetTrapAddress($AADB, ToolTrap)` plus
 The supplied object could not be linked wholesale: Retro68's monolithic
 InterfaceLib import member made the Carbon app unload before `main` on OS 9.1.
 The final-PEF build guard now refuses any load-time InterfaceLib import. A
-fixed resident trace ring and sampled, volume-flushed guest `move begin`/`move
-return` lines bracket the risky call. The V3 handshake, the exact transition,
+fixed resident trace ring and sampled, in-memory guest `move begin`/`move
+return` lines bracket the risky call without stalling live input; manager
+errors and terminal summaries remain durable. The V3 handshake, the exact transition,
 and absence of resident CDM are source-tested. Both cold-boot emulator rigs and
 the branch-private bake now pass. This qualifies a bounded seventh attended
 run, not PowerBook safety.
@@ -1693,6 +1712,14 @@ a bounded count of Finder-complement scripts; and after Stop plus Quit. Also run
 the same-duration Mirror session with automatic Finder details disabled. That
 distinguishes fixed extension cost, application-partition accounting, OSA-driven
 growth, and unrelated OS/Finder growth without adding polling to the scene loop.
+
+**2026-08-11 Continuity-session observation.** After Internet Explorer was
+opened and quit during a direct-pointer pass, Finder raised an out-of-memory
+exception and the system required restart. This is consistent with the
+pre-existing system-memory-pressure row but does not attribute the growth to
+Continuity, IE, Finder, or the OSA complement path. The next attended run must
+record the four memory boundaries above; Continuity hot paths must not add a
+polling allocator probe in an attempt to explain it.
 
 ### TESTED: the suspect mechanisms are now separate guest policy domains
 

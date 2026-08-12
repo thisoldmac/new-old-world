@@ -52,6 +52,13 @@ short now_log_retention(void);
    can be read by subsystem. */
 void now_log(LogLevel level, const char *area, const char *fmt, ...);
 
+/* Record a breadcrumb in the preallocated scrollback without touching the
+   File Manager. Live input and other latency-sensitive task-time paths use
+   this form so diagnostics cannot add a disk stall to the operation being
+   measured. The line remains available through tail/the Logs page and may be
+   summarized durably when the operation ends. */
+void now_log_memory(LogLevel level, const char *area, const char *fmt, ...);
+
 /* Force the pending log to the platter now. A kLogInfo line otherwise
    sits in the disk cache and a crash loses it; call this after a line
    that might be the last one before a risky step (teardown), so the log

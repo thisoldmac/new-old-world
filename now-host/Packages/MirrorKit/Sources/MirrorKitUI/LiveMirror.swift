@@ -13,7 +13,8 @@ public protocol ContinuityInputDriver: AnyObject {
 
     func pointerMoved(to point: MirrorKit.Point)
     func pointerLeft()
-    @discardableResult func primaryDown(at point: MirrorKit.Point) -> Bool
+    @discardableResult func primaryDown(
+        at point: MirrorKit.Point, inMenuBar: Bool) -> Bool
     @discardableResult func primaryDragged(to point: MirrorKit.Point) -> Bool
     @discardableResult func primaryUp(at point: MirrorKit.Point) -> Bool
     func cancel(reason: String)
@@ -306,8 +307,11 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                         point, scene: scene, size: geo.size)
                                     else { return false }
                                     return controller.continuityInputDriver?
-                                        .primaryDown(at: .init(
-                                            x: guest.x, y: guest.y)) ?? false
+                                        .primaryDown(
+                                            at: .init(x: guest.x, y: guest.y),
+                                            inMenuBar:
+                                                guest.y < HitTester.menubarHeight)
+                                        ?? false
                                 },
                                 onLeftDragged: { point, _ in
                                     guard let guest = continuityGuestPoint(

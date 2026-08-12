@@ -438,6 +438,67 @@ final class MirrorContinuityControllerTests: XCTestCase {
         }
     }
 
+    func testMenuBarClickLatchesUntilTheSelectionClickReleases()
+        async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+
+        XCTAssertTrue(rig.controller.primaryDown(
+            at: .init(x: 42, y: 10), inMenuBar: true))
+        try await waitUntil("menu press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+            }
+        }
+        let down = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        })
+        rig.udp.acknowledge(down)
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 42, y: 10)))
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(rig.udp.packets.contains {
+            $0.buttonGeneration != 0
+                && $0.buttonGeneration != down.buttonGeneration
+                && !$0.flags.contains(.primaryDown)
+        }, "a stationary menubar click must leave native menu tracking live")
+
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 55, y: 48)))
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 55, y: 48)))
+        try await waitUntil("menu selection release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != down.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+                    && $0.h == 55 && $0.v == 48
+            }
+        }
+    }
+
+    func testMenuBarDragUsesNativeReleaseWithoutLatching()
+        async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+
+        XCTAssertTrue(rig.controller.primaryDown(
+            at: .init(x: 42, y: 10), inMenuBar: true))
+        try await waitUntil("menu drag press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+            }
+        }
+        let down = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        })
+        rig.udp.acknowledge(down)
+        XCTAssertTrue(rig.controller.primaryDragged(to: .init(x: 55, y: 48)))
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 55, y: 48)))
+        try await waitUntil("menu drag release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != down.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+            }
+        }
+    }
+
     func testManagerReleaseMaySettleAfterTrackingLoopWithoutDisconnect()
         async throws {
         let rig = try await makeActiveRig()

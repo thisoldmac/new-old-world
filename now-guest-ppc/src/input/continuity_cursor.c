@@ -84,15 +84,21 @@ long now_continuity_cursor_button(unsigned long epoch,
             || generation == 0)
         return paramErr;
     gButtonCount++;
-    now_log(kLogInfo, "mirror",
-            "CDM PPC button begin epoch=%lu n=%lu generation=%lu down=%d",
-            epoch, gButtonCount, generation, down ? 1 : 0);
-    now_log_flush();
+    now_log_memory(kLogInfo, "mirror",
+                   "CDM PPC button begin epoch=%lu n=%lu generation=%lu down=%d",
+                   epoch, gButtonCount, generation, down ? 1 : 0);
     err = down ? now_cdm_button_down(gDevice)
                : now_cdm_button_up(gDevice);
-    now_log(err == noErr ? kLogInfo : kLogError, "mirror",
-            "CDM PPC button return epoch=%lu n=%lu generation=%lu down=%d err=%d",
-            epoch, gButtonCount, generation, down ? 1 : 0, (int)err);
+    if (err == noErr) {
+        now_log_memory(kLogInfo, "mirror",
+                       "CDM PPC button return epoch=%lu n=%lu generation=%lu down=%d err=%d",
+                       epoch, gButtonCount, generation, down ? 1 : 0,
+                       (int)err);
+    } else {
+        now_log(kLogError, "mirror",
+                "CDM PPC button return epoch=%lu n=%lu generation=%lu down=%d err=%d",
+                epoch, gButtonCount, generation, down ? 1 : 0, (int)err);
+    }
     return (long)err;
 }
 
@@ -109,13 +115,9 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
     gMoveCount++;
     durable = checkpoint(gMoveCount);
     if (durable) {
-        now_log(kLogInfo, "mirror",
-                "CDM PPC move begin epoch=%lu n=%lu seq=%lu at=%ld,%ld",
-                epoch, gMoveCount, sequence, h, v);
-        /* If the manager never returns, the last durable line names the exact
-           boundary. Sampling avoids turning a 30 Hz pointer into 30 disk
-           flushes per second on a 117 MHz PowerBook. */
-        now_log_flush();
+        now_log_memory(kLogInfo, "mirror",
+                       "CDM PPC move begin epoch=%lu n=%lu seq=%lu at=%ld,%ld",
+                       epoch, gMoveCount, sequence, h, v);
     }
     before = TickCount();
     err = now_cdm_move_to(gDevice, h, v);
@@ -125,9 +127,9 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
                 "CDM PPC move failed epoch=%lu n=%lu seq=%lu err=%d ticks=%lu",
                 epoch, gMoveCount, sequence, (int)err, after - before);
     } else if (durable) {
-        now_log(kLogInfo, "mirror",
-                "CDM PPC move return epoch=%lu n=%lu seq=%lu ticks=%lu",
-                epoch, gMoveCount, sequence, after - before);
+        now_log_memory(kLogInfo, "mirror",
+                       "CDM PPC move return epoch=%lu n=%lu seq=%lu ticks=%lu",
+                       epoch, gMoveCount, sequence, after - before);
     }
     return (long)err;
 }
