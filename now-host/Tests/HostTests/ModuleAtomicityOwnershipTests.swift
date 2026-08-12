@@ -186,4 +186,31 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"processes\""))
         XCTAssertTrue(definition.contains("processes_module_ops"))
     }
+
+    func testCloudDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = CloudHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "icloud")
+        XCTAssertEqual(definition.descriptor.tier, .experimental)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testCloudOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/cloud/cloud_module_definition.c")
+
+        XCTAssertFalse(state.contains("lazy var cloudModule"))
+        XCTAssertFalse(compatibility.contains("case \"icloud\""))
+        XCTAssertFalse(registry.contains("k_cloud_definition"))
+        XCTAssertTrue(registry.contains("cloud_module_definition()"))
+        XCTAssertTrue(definition.contains("\"icloud\""))
+        XCTAssertTrue(definition.contains("cloud_module_ops"))
+    }
 }

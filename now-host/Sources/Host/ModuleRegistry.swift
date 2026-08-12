@@ -97,14 +97,7 @@ struct ModuleRegistry {
            list page about this side rather than the machine being driven
            — kept in the list anyway, because it is a feature a person
            turns on, not the state of the link. */
-        ModuleDescriptor(
-            id: "icloud",
-            title: "iCloud",
-            symbol: "icloud",
-            summary: "What of \(MachineNaming.thisMac)'s iCloud "
-                + "\(MachineNaming.simpleReference) may browse",
-            tier: .experimental
-        ),
+        CloudHostModule.definition.descriptor,
         ProcessesHostModule.definition.descriptor,
         /* Kept where the Mirror page has always been, and now beside
            Processes for a reason rather than by inheritance: it answers

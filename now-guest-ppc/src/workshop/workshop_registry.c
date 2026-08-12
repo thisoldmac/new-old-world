@@ -40,16 +40,6 @@ static const WorkshopModuleDefinition k_diagnostics_definition = {
     diagnostics_module_ops
 };
 
-static const WorkshopModuleDefinition k_cloud_definition = {
-    kWorkshopCloud, "icloud", "iCloud",
-    "The other Mac's iCloud: its Drive, Photos and Contacts, served "
-    "one page at a time.",
-    "iCloud has not moved in yet.",
-    "The other Mac's cloud", 140, kWorkshopModuleTierExperimental,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    cloud_module_ops
-};
-
 static const WorkshopModuleDefinition k_chat_definition = {
     kWorkshopChat, "chat", "Chat",
     "A model on the other Mac's harness, talking about THIS Mac. It "
@@ -129,7 +119,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopMCP: return &k_mcp_definition;
     case kWorkshopDiagnostics: return &k_diagnostics_definition;
     case kWorkshopNetworking: return network_module_definition();
-    case kWorkshopCloud: return &k_cloud_definition;
+    case kWorkshopCloud: return cloud_module_definition();
     case kWorkshopChat: return &k_chat_definition;
     case kWorkshopMirror: return &k_mirror_definition;
     case kWorkshopDevelopment: return &k_development_definition;

@@ -208,10 +208,11 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == ProcessesHostModule.definition.descriptor.id {
             return ProcessesHostModule.definition
         }
+        if descriptor.id == CloudHostModule.definition.descriptor.id {
+            return CloudHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
-            case "icloud":
-                return AnyView(CloudModuleView(model: state.cloudModule))
             case "mirror":
                 return AnyView(MirrorModuleView(
                     model: state.mirror, source: state.mirrorSource,

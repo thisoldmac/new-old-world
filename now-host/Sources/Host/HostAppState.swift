@@ -258,7 +258,6 @@ final class HostAppState: ObservableObject {
         })
     private(set) lazy var web = WebBridgeModel(defaults: defaults)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
-    private(set) lazy var cloudModule = CloudModuleModel(listener: listener)
 
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"

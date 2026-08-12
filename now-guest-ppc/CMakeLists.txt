@@ -77,6 +77,7 @@ add_application(now-guest-ppc
     src/cloud/cloud_layout.c
     src/cloud/cloud_model.c
     src/cloud/cloud_module.c
+    src/cloud/cloud_module_definition.c
     src/cloud/cloud_nav.c
     src/cloud/cloud_preview.c
     src/cloud/cloud_photo_size.c
