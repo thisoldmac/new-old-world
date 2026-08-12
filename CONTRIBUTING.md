@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Contributing to New Old World
 
 This project talks to hardware most people do not have. That shapes what
@@ -97,11 +99,20 @@ coverage in a directory listing and proves nothing.
 
 ## Pull requests
 
-Working branches use a domained suffix: `dev/<domain>/<slug>`. An automation
-namespace may precede it, such as `codex/dev/host/swift-ownership`. The domain
-vocabulary and the separate `release/vX.Y.Z` qualification branches are in
-[RELEASING.md](RELEASING.md). `main` is candidate-ready integration, not a
+Working branches use creator-neutral Conventional Git names such as
+`feat/file-resume`, `docs/provenance-tags`, or
+`refactor/module-atomicity`. The allowed types and the separate
+`release/vX.Y.Z` qualification branches are in
+[RELEASING.md](RELEASING.md). Put the technical domain in the pull request
+and, when useful, the Conventional Commit scope; do not put the contributor or
+automation name in the branch. `main` is candidate-ready integration, not a
 scratch branch and not a release merely because it is green.
+
+Pull-request and squash titles use `type(scope): concise outcome`, with the
+scope optional. Existing branches whose merge base predates this policy are
+grandfathered so work in flight can land; branches created or rebased after
+adoption must use the current grammar. Run `tools/git-policy selftest` for the
+policy's mutation evidence.
 
 - **Small and reviewable beats finished and enormous.** A change that
   does one thing, with its test and its doc update, lands. A branch that
@@ -117,6 +128,10 @@ scratch branch and not a release merely because it is green.
   source dependencies and media slots in front matter. Run
   `tools/derived-doc-gate rederive <page>` for every changed derived page,
   then `scripts/test-docs`.
+- **Keep provenance explicit.** Every tracked Markdown file has exactly one
+  `now-doc-provenance` comment. Remove `generated` only after a human rewrite;
+  change `reviewed=false` to `reviewed=true` only after human review. Run
+  `tools/docs-provenance check` before the documentation gate.
 - **Say what you did not verify.** A PR that names its own gaps is worth
   more than one that implies coverage it does not have.
 
@@ -133,11 +148,12 @@ from one to the other.
     tools/setup-hooks
 
 It points git at `.githooks`, which is repo-local config every worktree
-inherits. Two refusals live there: a direct commit on `main`, and a commit
-that changes the resident extension without baking it into the shared QEMU
-stage image first (`scripts/bake-ext-image`). Both are overridable —
-`TBT_ALLOW_MAIN=1`, `TBT_DEFER_EXT_BAKE=1` with a written reason — because
-enforcement is the floor and not the rule. See AGENTS.md.
+inherits. It also configures `main` as a fast-forward-only mirror of
+`origin/main`. Direct main commits, local feature-to-main landings, and direct
+main pushes are refused; there is no local main override. A resident-extension
+commit may still record an explicit bake deferral with
+`TBT_DEFER_EXT_BAKE=1` and a written reason, but that deferral cannot land on
+main. Merge through GitHub, then run `tools/sync-main`. See AGENTS.md.
 
 ## Local machine configuration
 

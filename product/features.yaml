@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 active_profile: alpha
 
 features:
@@ -21,7 +21,8 @@ features:
     title: Pre-Carbon support (NOW-68K)
     description: The non-Carbon Toolbox and MacTCP guest for older 68K Macintosh systems.
     flag_key: classic.pre-carbon
-    runtime_binding: planned
+    runtime_binding: flag
+    runtime_default: false
     primary_pages:
       - user-guide/how-to/install-68k.md
       - developer-guide/architecture/68k-guest.md

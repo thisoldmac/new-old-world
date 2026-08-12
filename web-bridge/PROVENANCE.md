@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW Web Bridge provenance
 
 This is a NOW-owned graduation of the TimBotTu browser bridge, not a runtime

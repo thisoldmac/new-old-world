@@ -11,6 +11,8 @@ media_ids: []
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Onboarding and setup media
 
 Onboarding is a host-owned bootstrap path that ends at the normal NOW wire; it

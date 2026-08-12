@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Streaming a scene
 
 **Date:** 2026-07-31 · **Status:** design note, nothing built · **Decides:**

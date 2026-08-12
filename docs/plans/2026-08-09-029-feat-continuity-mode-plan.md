@@ -8,6 +8,9 @@ product_contract_source: session-settled
 execution: code
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
+
 # Mirror Continuity Mode - Plan
 
 ## Goal Capsule

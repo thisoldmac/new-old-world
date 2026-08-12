@@ -11,6 +11,8 @@ media_ids: []
 last_verified: 2026-08-10
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Projects and Development
 
 Development is a headless service with human controls, not an IDE embedded in

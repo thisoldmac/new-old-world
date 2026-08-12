@@ -243,27 +243,39 @@ final class MultiGuestFocusTests: XCTestCase {
             essGuest.connection.cancel()
         }
 
-        XCTAssertEqual(state.screenshots.connection.peerLabel,
+        let screen = try XCTUnwrap(state.moduleRuntime(
+            for: "screen", as: ScreenHostModuleRuntime.self))
+        XCTAssertEqual(screen.model.connection.peerLabel,
                        "PowerBook 1400c")
 
         let outgoingMirrorKey = try liveKey(state, "PowerBook 1400c")
-        state.mirrorRun.start()
-        XCTAssertEqual(state.mirrorSource.pinnedGuestKey, outgoingMirrorKey)
+        let mirror = try XCTUnwrap(state.moduleRuntime(
+            for: "mirror", as: MirrorHostModuleRuntime.self))
+        mirror.run.start()
+        XCTAssertEqual(mirror.source.pinnedGuestKey, outgoingMirrorKey)
 
         let incomingMirrorKey = try liveKey(state, "PowerBook 180c")
         XCTAssertTrue(state.selectGuest(incomingMirrorKey))
         try await waitUntil("the models follow") {
-            state.screenshots.connection.peerLabel == "PowerBook 180c"
+            screen.model.connection.peerLabel == "PowerBook 180c"
         }
-        for label in [state.screenshots.connection.peerLabel,
-                      state.files.connection.peerLabel,
-                      state.census.connection.peerLabel,
-                      state.processes.connection.peerLabel,
-                      state.software.connection.peerLabel] {
+        let census = try XCTUnwrap(state.moduleRuntime(
+            for: "census", as: CensusHostModuleRuntime.self))
+        let software = try XCTUnwrap(state.moduleRuntime(
+            for: "software", as: SoftwareHostModuleRuntime.self))
+        let files = try XCTUnwrap(state.moduleRuntime(
+            for: "files", as: FilesHostModuleRuntime.self))
+        let processes = try XCTUnwrap(state.moduleRuntime(
+            for: "processes", as: ProcessesHostModuleRuntime.self))
+        for label in [screen.model.connection.peerLabel,
+                      files.model.connection.peerLabel,
+                      census.model.connection.peerLabel,
+                      processes.model.connection.peerLabel,
+                      software.model.connection.peerLabel] {
             XCTAssertEqual(label, "PowerBook 180c",
                            "a module left behind shows the wrong Mac's state")
         }
-        XCTAssertEqual(state.mirrorSource.pinnedGuestKey, incomingMirrorKey,
+        XCTAssertEqual(mirror.source.pinnedGuestKey, incomingMirrorKey,
                        "the Mirror must cross the same connection boundary")
         XCTAssertNil(state.mirrorEngines.existing(for: outgoingMirrorKey),
                      "the outgoing session engine must not survive a switch")
@@ -271,12 +283,12 @@ final class MultiGuestFocusTests: XCTestCase {
 
         essGuest.connection.cancel()
         try await waitUntil("the active disconnect promotes the remaining Mac") {
-            state.screenshots.connection.peerLabel == "PowerBook 1400c"
+            screen.model.connection.peerLabel == "PowerBook 1400c"
         }
-        XCTAssertEqual(state.mirrorSource.pinnedGuestKey, outgoingMirrorKey,
+        XCTAssertEqual(mirror.source.pinnedGuestKey, outgoingMirrorKey,
                        "an active disconnect starts a fresh session on the "
                            + "remaining Mac")
-        XCTAssertNil(state.mirrorSource.scene)
+        XCTAssertNil(mirror.source.scene)
         XCTAssertNil(state.mirrorEngines.existing(for: incomingMirrorKey))
         XCTAssertNotNil(state.mirrorEngines.existing(for: outgoingMirrorKey))
     }
@@ -416,29 +428,31 @@ final class MultiGuestFocusTests: XCTestCase {
             jem.guest.connection.cancel()
             ess.guest.connection.cancel()
         }
+        let software = try XCTUnwrap(state.moduleRuntime(
+            for: "software", as: SoftwareHostModuleRuntime.self))
 
-        state.software.refresh()
+        software.model.refresh()
         try await waitUntil("the 1400c's inventory") {
-            state.software.rows.map(\.name) == ["SimpleText"]
+            software.model.rows.map(\.name) == ["SimpleText"]
         }
 
         XCTAssertTrue(state.selectGuest(try liveKey(state, "PowerBook 180c")))
         try await waitUntil("the switch reaches Software") {
-            state.software.connection.peerLabel == "PowerBook 180c"
+            software.model.connection.peerLabel == "PowerBook 180c"
         }
-        XCTAssertTrue(state.software.rows.isEmpty,
+        XCTAssertTrue(software.model.rows.isEmpty,
                       "the 1400c's applications are not the 180c's")
 
-        state.software.refresh()
+        software.model.refresh()
         try await waitUntil("the 180c's inventory") {
-            state.software.rows.map(\.name) == ["TeachText"]
+            software.model.rows.map(\.name) == ["TeachText"]
         }
 
         XCTAssertTrue(state.selectGuest(try liveKey(state, "PowerBook 1400c")))
         try await waitUntil("the switch back") {
-            state.software.connection.peerLabel == "PowerBook 1400c"
+            software.model.connection.peerLabel == "PowerBook 1400c"
         }
-        XCTAssertEqual(state.software.rows.map(\.name), ["SimpleText"],
+        XCTAssertEqual(software.model.rows.map(\.name), ["SimpleText"],
                        "coming back finds this machine's own inventory")
         XCTAssertEqual(jem.asked(), 1,
                        "a ~4s disk sweep is not repeated for a glance at "

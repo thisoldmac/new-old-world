@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # VRAM readout on the PowerBook 180c
 
 Measured 2026-07-25 on the PB180c (33 MHz 68030 + 68882, System 7.1,

@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-06
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Worlds hooked at birth — Plan
 
 Successor to [013](2026-08-06-013-feat-composing-interiors-host-side-plan.md),

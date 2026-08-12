@@ -177,26 +177,26 @@ final class MirrorContainerTests: XCTestCase {
     /// all four faces has to resolve BOTH axes, and start first.
     func testShowingTheMirrorStartsItBeforePuttingItAnywhere() throws {
         let state = try GateSource.hostSwift(
-            "now-host/Sources/Host/HostAppState.swift")
-        let show = try XCTUnwrap(state.range(of: "func showMirror()"))
+            "now-host/Sources/Host/MirrorHostModule.swift")
+        let show = try XCTUnwrap(state.range(of: "func show()"))
         let end = try XCTUnwrap(
             state.range(of: "\n    }", range: show.upperBound..<state.endIndex))
         let body = String(state[show.upperBound..<end.lowerBound])
 
         let started = try XCTUnwrap(
-            body.range(of: "mirrorRun.start()"),
+            body.range(of: "run.start()"),
             "showMirror must START the Mirror. Every face — the guest's "
             + "button, the Window menu, now_semantic_ui_start, --open-mirror — "
             + "ends here, and none of them can be left showing a Mirror "
             + "that is not running.")
         let shown = try XCTUnwrap(
-            body.range(of: "mirrorWindow.show("),
+            body.range(of: "window.show("),
             "and it must still put it where it can be seen")
         XCTAssertLessThan(
             started.lowerBound, shown.lowerBound,
             "start comes FIRST. Showing a stopped Mirror and starting it "
             + "afterwards is the same defect with a shorter window.")
-        XCTAssertTrue(body.contains("selectedModuleID = \"mirror\""),
+        XCTAssertTrue(body.contains("context.selectModule(\"mirror\")"),
                       "when the Mirror is attached, 'show it' means select "
                       + "its module — there is no window to raise")
     }

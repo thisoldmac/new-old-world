@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Releasing New Old World
 
 New Old World uses release candidates. A green development branch is not a
@@ -8,24 +10,35 @@ candidate.
 
 - `main` is the protected, candidate-ready integration branch. It accepts pull
   requests only and should always satisfy the repository gates.
-- Working branches end in `dev/<domain>/<slug>`. Automation may prepend its
-  owner namespace, for example `codex/dev/host/swift-ownership`. Domains are
-  `contract`, `host`, `guest-ppc`, `guest-68k`, `resident`, `docs`, `tooling`,
-  `release`, or `cross-cutting`.
-- `release/vX.Y.Z` is cut from a green `main` for qualification. A feature may
-  target that branch directly when the release candidate is its explicit
-  integration boundary. In that case the feature does not land on `main`
-  independently: the reviewed feature branch is merged into the release
-  branch, the exact combined revision is qualified, and an accepted release is
-  merged forward to `main`. After the candidate scope is fixed, the release
-  branch accepts only reviewed fixes, release metadata, documentation, and
-  packaging changes.
+- Working branches are creator-neutral `<type>/<kebab-slug>` names. Types are
+  `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`, `perf`,
+  and `revert`. Contributor and automation names are not prefixes. Technical
+  domain remains pull-request metadata and may be an optional Conventional
+  Commit scope: `feat(guest-ppc): add bounded transfer resume`.
+- The policy transition grandfathers a nonconforming branch only when its
+  merge base predates `tools/git-policy`. Rebasing or creating work after that
+  boundary adopts the current grammar. Dependabot is an explicit
+  service-managed exception.
+- `release/vX.Y.Z` is cut from a green `main` for qualification. After the cut,
+  it accepts only reviewed fixes, release metadata, documentation, and
+  packaging changes. Product work continues on `main`; a release fix is also
+  merged forward when it applies there.
 
-On GitHub, protect `main` and `release/v*`: disallow direct and force pushes,
-require an up-to-date pull request, and require **Documentation**, **Native
-guest tests**, **Host suites and app builds**, and **No lab configuration in
-the tree**. GitHub configuration is part of repository commissioning; the
-files in this checkout cannot impose those settings themselves.
+GitHub `main` is protected by the active **Protected main** ruleset recorded in
+`.github/repository-policy.json`: direct, force and deletion pushes are
+blocked; changes require a linear squash or rebase pull request, resolved
+review conversations, and **Git policy**, **Documentation**, **Native guest
+tests**, **Host suites and app builds**, and **No lab configuration in the
+tree**. Zero approvals are required while this is a solo-maintainer repository.
+Branches do not have to rerun against every intervening main commit yet; that
+deliberately avoids spending another macOS runner cycle when concurrency is
+low. Run `tools/github-policy-check` to detect drift instead of trusting this
+prose.
+
+Before the first `release/v*` branch is cut, give that pattern an equivalent
+ruleset. It is intentionally not created speculatively while no release branch
+exists. Required signing also remains deferred until human, agent and
+GitHub-generated commits all have a verified signing path.
 
 ## Candidate and final identities
 

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Scene deltas
 
 **Date:** 2026-08-06 · **Authority:** `contract/asyncapi.yaml` (`SceneRequest.since`,

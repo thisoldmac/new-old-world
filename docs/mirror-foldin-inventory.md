@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # What Mirror actually contains, and what has crossed
 
 > **Consolidation completed 2026-08-09.** This remains the executable and

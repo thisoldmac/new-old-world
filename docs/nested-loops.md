@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Nested event loops and wire liveness
 
 **Status:** audit + proposal, 2026-07-20. Nothing here is implemented

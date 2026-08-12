@@ -10,6 +10,9 @@ source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, sc
 media_ids: []
 last_verified: 2026-08-12
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # SheepShaver 8.6 UI oracle
 
 Use this lane for fast UI iteration at NOW's minimum Carbon floor: PowerPC

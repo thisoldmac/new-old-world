@@ -12,6 +12,8 @@ media_ids: [files-host, files-ppc, files-detail]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Files module
 
 ## What it does

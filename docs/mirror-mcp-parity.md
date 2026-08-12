@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror ↔ MCP parity — what an agent can drive, and what only a hand can
 
 **Status:** inventory taken 2026-08-04 against `7b3eceb`. Derived from the

@@ -10,6 +10,9 @@ source_dependencies: [docs/mirror-drive-loop.md, docs/mirror-knowledge.md, docs/
 media_ids: []
 last_verified: 2026-08-11
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror architecture
 
 Mirror projects guest-provided scene state into a host rendering and review surface. Its control loop is asymmetric by design: native guest input drives; QMP and capture tools observe. Guest-provided state is the only input permitted to mutate the Mirror model.

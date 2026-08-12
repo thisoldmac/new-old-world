@@ -11,6 +11,8 @@ media_ids: []
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # User guide
 
 Use this guide when you want to run NOW, not build it.

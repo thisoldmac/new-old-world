@@ -2,6 +2,9 @@
 search:
   exclude: true
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The Software module
 
 What is installed on the machine, and the ability to start it — the

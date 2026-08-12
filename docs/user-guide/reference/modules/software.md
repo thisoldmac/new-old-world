@@ -12,6 +12,8 @@ media_ids: [software-host, software-ppc]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Software module
 
 ## What it does

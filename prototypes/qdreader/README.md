@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # QD Reader — the other half of a throwaway, still not NOW
 
 **Date:** 2026-07-31 · **Status:** builds and packages, ladder not run ·

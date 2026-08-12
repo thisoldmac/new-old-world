@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror research index
 
 The standalone Mirror product is archived, but its research remains active

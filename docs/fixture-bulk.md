@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The capture fixtures: 720,000 lines, and where they went
 
 **Date:** 2026-08-06 · **Status:** measured and acted on

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Pre-alpha web guides and documentation currency gates
 
 **Date:** 2026-08-09

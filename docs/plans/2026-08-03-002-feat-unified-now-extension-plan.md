@@ -9,6 +9,8 @@ execution: code
 deepened: 2026-08-03
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Unified NOW Extension Prerequisite - Plan
 
 ## Summary

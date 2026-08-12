@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Local Network access contract
 
 This page is the authority for who owns NOW's macOS Local Network request and

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The colours the machine draws with
 
 The host renderer redraws windows the guest's Appearance Manager erased.

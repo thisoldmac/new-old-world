@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Gates that prove something by reading source text
 
 An audit of every gate in this repository that establishes a structural

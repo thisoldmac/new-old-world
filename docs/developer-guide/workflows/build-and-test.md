@@ -10,6 +10,9 @@ source_dependencies: [scripts/test-all, scripts/test-native, scripts/test-mirror
 media_ids: []
 last_verified: 2026-08-10
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Build and test
 
 ## Run the full gate
@@ -72,7 +75,7 @@ Mutate the exact condition the guard claims to detect, prove the mutation built,
 
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
-sources-sha1: 9a468d8d1cb7ce0a086a2e00425f17d1f5d2b54d
+sources-sha1: 36df71fa799d3d0f6d336d86bae3930c69ebcef4
 derive test-stages sha256=f78dc22859b46a2e58f5cfceec0ceaf149bf5b1e89be24a1705af22181842aa5 lines=8
     scripts/docs-source-group build
 rederived: pending
@@ -122,16 +125,29 @@ rederived: 2026-08-10T22:33:05-0400 e9bf9632 sources
 rederived: 2026-08-10T22:47:48-0400 431e7308 sources
 rederived: 2026-08-11T00:25:05-0400 bbab04b9 sources
 rederived: 2026-08-11T00:33:21-0400 4b24cc1f unchanged
-rederived: 2026-08-11T02:28:08-0400 b35fac0 sources
-rederived: 2026-08-11T03:40:39-0400 f568213 sources
-rederived: 2026-08-11T03:52:02-0400 43d9691 unchanged
-rederived: 2026-08-11T04:04:48-0400 edc4294 sources
-rederived: 2026-08-11T04:18:29-0400 c830686 sources
-rederived: 2026-08-11T11:48:16-0400 01020fa sources
-rederived: 2026-08-11T12:23:58-0400 23ceb2d sources
-rederived: 2026-08-11T13:21:46-0400 181ba5a sources
-rederived: 2026-08-11T13:23:43-0400 181ba5a sources
-rederived: 2026-08-11T18:32:07-0400 1e25306c sources
-rederived: 2026-08-11T18:35:08-0400 66eedfc sources
-rederived: 2026-08-12T12:38:33-0400 de3cc2f5 sources
+rederived: 2026-08-11T19:26:24-0400 955069d1 sources
+rederived: 2026-08-11T19:45:15-0400 065da692 sources
+rederived: 2026-08-11T20:08:53-0400 852b41ae sources
+rederived: 2026-08-11T20:43:59-0400 5c07bcd6 sources
+rederived: 2026-08-11T20:54:11-0400 f9ceab81 sources
+rederived: 2026-08-11T21:13:10-0400 098805ff sources
+rederived: 2026-08-11T21:20:51-0400 15514cc9 unchanged
+rederived: 2026-08-11T21:26:22-0400 7bfb617b unchanged
+rederived: 2026-08-11T21:32:38-0400 57a081ab unchanged
+rederived: 2026-08-11T21:39:37-0400 5a82bf82 unchanged
+rederived: 2026-08-11T21:49:35-0400 7dc5b09d unchanged
+rederived: 2026-08-11T21:54:55-0400 8c482312 unchanged
+rederived: 2026-08-11T21:59:53-0400 562b4b50 unchanged
+rederived: 2026-08-11T22:06:34-0400 65f52bf3 unchanged
+rederived: 2026-08-11T22:10:48-0400 3df65dde unchanged
+rederived: 2026-08-11T22:15:20-0400 68853632 unchanged
+rederived: 2026-08-11T22:31:03-0400 a16b6a61 unchanged
+rederived: 2026-08-11T22:41:39-0400 e1fc84c4 unchanged
+rederived: 2026-08-11T22:47:33-0400 9776cf7a unchanged
+rederived: 2026-08-11T23:12:01-0400 ddf740ce sources
+rederived: 2026-08-11T23:31:22-0400 ad4d680 sources
+rederived: 2026-08-11T23:37:11-0400 ad4d680 unchanged
+rederived: 2026-08-12T13:02:41-0400 7cea759e sources
+rederived: 2026-08-12T13:11:34-0400 7cea759e unchanged
+rederived: 2026-08-12T13:12:13-0400 7cea759e unchanged
 -->

@@ -27,6 +27,7 @@ add_application(now-guest-ppc
     src/console/console_model.c
     src/console/console_reply.c
     src/console/console_module.c
+    src/console/console_module_definition.c
     # Not under src/: one implementation both guests compile, the way
     # contract/ carries the headers both guests include. See its own
     # header for why the console history in particular is out here.
@@ -34,11 +35,14 @@ add_application(now-guest-ppc
     ../now-guest-shared/src/macbinary_lengths.c
     src/screenshots/capture.c
     src/files/fileshare.c
+    src/files/files_module_definition.c
     src/files/files_capacity.c
     src/core/pump.c
     src/core/db_hilite.c
     src/core/build_stamp.c
     src/core/agent_access.c
+    src/core/product_features.generated.c
+    src/core/product_feature_policy.c
     src/screenshots/screenshot.c
     src/census/vprobe.c
     src/files/catsearch.c
@@ -46,29 +50,40 @@ add_application(now-guest-ppc
     src/software/sw_vers_parse.c
     src/software/software_layout.c
     src/software/software_module.c
+    src/software/software_module_definition.c
     src/screenshots/pixels.c
     src/screenshots/screenshots_module.c
+    src/screenshots/screenshots_module_definition.c
     src/census/census_module.c
+    src/census/census_module_definition.c
     src/census/census_probes.c
     src/census/census_trap.c
     src/logs/logs_module.c
+    src/logs/logs_module_definition.c
     src/mcp/mcp_layout.c
     src/mcp/mcp_module.c
+    src/mcp/mcp_module_definition.c
     src/preferences/preferences_module.c
+    src/preferences/preferences_module_definition.c
+    src/connection/connection_module_definition.c
     src/diagnostics/diag_layout.c
     src/diagnostics/diagnostics_module.c
+    src/diagnostics/diagnostics_module_definition.c
     src/network/net_facts.c
     src/network/net_layout.c
     src/network/net_probe.c
     src/network/network_module.c
+    src/network/network_module_definition.c
     src/chat/chat_layout.c
     src/chat/chat_model.c
     src/chat/chat_module.c
+    src/chat/chat_module_definition.c
     src/cloud/cloud_card_cache.c
     src/cloud/cloud_filter.c
     src/cloud/cloud_layout.c
     src/cloud/cloud_model.c
     src/cloud/cloud_module.c
+    src/cloud/cloud_module_definition.c
     src/cloud/cloud_nav.c
     src/cloud/cloud_preview.c
     src/cloud/cloud_photo_size.c
@@ -85,6 +100,7 @@ add_application(now-guest-ppc
     src/mirror/mirror_json.c
     src/mirror/mirror_probe.c
     src/mirror/mirror_module.c
+    src/mirror/mirror_module_definition.c
     src/development/development_contract.c
     src/development/development_build.c
     src/development/development_project.c
@@ -96,9 +112,11 @@ add_application(now-guest-ppc
     src/development/development_toolchain_mac.c
     src/development/development_layout.c
     src/development/development_module.c
+    src/development/development_module_definition.c
     src/web/web_model.c
     src/web/web_port_dialog.c
     src/web/web_module.c
+    src/web/web_module_definition.c
     src/mirror/mirror_show.c
     src/census/census_decode.c
     src/census/census_report.c
@@ -148,7 +166,9 @@ add_application(now-guest-ppc
     src/processes/proc_roster.c
     src/processes/processes_layout.c
     src/processes/processes_module.c
+    src/processes/processes_module_definition.c
     src/workshop/workshop_construct.c
+    src/workshop/workshop_registry.c
     src/workshop/workshop_layout.c
     src/workshop/workshop_sidebar.c
     src/workshop/workshop_window.c

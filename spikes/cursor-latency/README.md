@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Driving a classic Mac's cursor over the network
 
 **This is a measurement rig, not a product.** It drives a guest

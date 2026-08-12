@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Pane keystrokes → guest front app (audit lane)
 
 Lane owner: `audit/pane-keys`. Status: **built, unit-tested by compile,

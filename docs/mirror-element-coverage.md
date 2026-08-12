@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # What the Mirror can and cannot see — the element gap ledger
 
 **Status:** derived 2026-08-05 from a ten-panel corpus captured off a live

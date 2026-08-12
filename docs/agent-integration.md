@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Host agent-integration boundary
 
 The optional MCP surface is owned by NOW. It projects a narrow typed view of

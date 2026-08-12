@@ -11,6 +11,8 @@ media_ids: []
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Route classic Mac and host work
 
 Choose by application model, not merely by CPU or folder name.

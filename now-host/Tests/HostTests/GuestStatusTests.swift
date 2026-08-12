@@ -235,9 +235,9 @@ final class GuestStatusTests: XCTestCase {
            is the claim a fixed number could never separate from a constant
            the status line happened to repeat. */
         XCTAssertEqual(port, state.listener.boundPort)
-        XCTAssertFalse(state.quickCapture.readiness.isEnabled,
+        XCTAssertFalse(state.quickCaptureReadiness.isEnabled,
                        "no guest — the command must be greyed out")
-        XCTAssertEqual(state.quickCapture.readiness.reason,
+        XCTAssertEqual(state.quickCaptureReadiness.reason,
                        "No \(MachineNaming.commonNoun) is connected")
 
         let guest = FakeGuest(port: try XCTUnwrap(state.listener.boundPort))
@@ -251,13 +251,13 @@ final class GuestStatusTests: XCTestCase {
         XCTAssertEqual(state.guestStatus.status.menuLine,
                        "Connected: PowerBook 1400")
         XCTAssertEqual(state.guestStatus.status.glyph, "●")
-        XCTAssertTrue(state.quickCapture.readiness.isEnabled,
+        XCTAssertTrue(state.quickCaptureReadiness.isEnabled,
                       "a connected guest must enable the command")
 
         state.stopListening()
         state.guestStatus.refresh()
         XCTAssertEqual(state.guestStatus.status, .notListening)
-        XCTAssertFalse(state.quickCapture.readiness.isEnabled,
+        XCTAssertFalse(state.quickCaptureReadiness.isEnabled,
                        "the command must go grey again when the wire closes")
     }
 

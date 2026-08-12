@@ -3,6 +3,8 @@ name: now-mcp
 description: Route tasks that inspect or operate a connected classic Macintosh through the NOW MCP. Use when the user asks about a running Mac OS 7–9 machine, its hardware, software, processes, files, screen, or UI, or asks to act on that machine. Do not use for source-code changes, general classic-Mac history, or emulator setup unless the task also requires interacting with a NOW-connected guest.
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW MCP
 
 Use NOW as the control plane for the connected classic Macintosh. Keep the

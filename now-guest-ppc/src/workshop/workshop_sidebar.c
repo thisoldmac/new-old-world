@@ -6,6 +6,7 @@
 
 #include "prefs.h"
 #include "pump.h"
+#include "workshop_registry.h"
 #include "wire.h"
 
 /* The rail is one framed white panel drawn by hand: icon, bold title,
@@ -48,25 +49,7 @@ enum {
     /* How far the mouse must travel before an Option-press becomes a
        drag. Without it, a hand that shifts one pixel while clicking
        rearranges the rail by accident. */
-    kDragSlop = 3,
-
-    kScreenshotsIconID = 129,
-    kFilesIconID = 130,
-    kConsoleIconID = 131,
-    kConnectionIconID = 132,
-    kProcessesIconID = 133,
-    kHardwareIconID = 134,
-    kLogsIconID = 135,
-    kSoftwareIconID = 136,
-    kMcpIconID = 137,
-    kDiagnosticsIconID = 138,
-    kNetworkingIconID = 139,
-    kCloudIconID = 140,
-    kChatIconID = 141,
-    kPreferencesIconID = 142,
-    kMirrorIconID = 143,
-    kDevelopmentIconID = 144,
-    kWebIconID = 145
+    kDragSlop = 3
 };
 
 /* The nav rows plus the three pinned ones ARE the module list. A count
@@ -139,30 +122,11 @@ static ControlActionUPP g_scroll_action_upp;
 static ConnPhase g_shown_phase = (ConnPhase)-1;
 static char g_shown_detail[96];
 
-static const struct {
-    const char *title;
-    const char *subtitle;
-    short icon_id;
-} k_rows[kWorkshopModuleCount + 1] = {
-    { NULL, NULL, 0 },
-    { "Screenshots", "Capture and stream", kScreenshotsIconID },
-    { "Files", "Browse and exchange", kFilesIconID },
-    { "Console", "Local commands", kConsoleIconID },
-    { "Processes", "Running applications", kProcessesIconID },
-    { "Hardware", "Census and probes", kHardwareIconID },
-    { "Software", "What is installed", kSoftwareIconID },
-    { "MCP", "Who may drive this Mac", kMcpIconID },
-    { "Diagnostics", "Measure this Mac", kDiagnosticsIconID },
-    { "Networking", "Link, address and ports", kNetworkingIconID },
-    { "iCloud", "The other Mac's cloud", kCloudIconID },
-    { "Chat", "Ask the other Mac's model", kChatIconID },
-    { "Mirror", "Its extensions and agent", kMirrorIconID },
-    { "Development", "Projects and toolchains", kDevelopmentIconID },
-    { "Web", "Classic browser gateway", kWebIconID },
-    { "Preferences", "How this window behaves", kPreferencesIconID },
-    { "Logs", "This launch's events", kLogsIconID },
-    { "Connection", NULL, kConnectionIconID }
-};
+static const WorkshopModuleDefinition *row_definition(
+    WorkshopModuleID module)
+{
+    return workshop_module_definition(module);
+}
 
 /* ---- the person's order ------------------------------------------- */
 
@@ -702,6 +666,7 @@ static void connection_lamp_color(RGBColor *out)
 
 static void draw_row_in(WorkshopModuleID module, const Rect *r)
 {
+    const WorkshopModuleDefinition *definition = row_definition(module);
     Rect icon_rect;
     Str255 text;
     RGBColor black = { 0, 0, 0 };
@@ -709,6 +674,10 @@ static void draw_row_in(WorkshopModuleID module, const Rect *r)
     short text_left;
     short text_width;
     short title_base = g_compact ? kCompactBaseline : kTitleBaseline;
+
+    if (definition == NULL) {
+        return;
+    }
 
     /* Collapsed: the band, the icon centred in it, and nothing else. The
        lamp still rides on Connection, because the one thing a person
@@ -729,7 +698,7 @@ static void draw_row_in(WorkshopModuleID module, const Rect *r)
                 (short)((r->top + r->bottom - kIconSize) / 2),
                 (short)((r->left + r->right + kIconSize) / 2),
                 (short)((r->top + r->bottom + kIconSize) / 2));
-        plot_small_icon(k_rows[module].icon_id, &icon);
+        plot_small_icon(definition->icon_id, &icon);
         if (module == kWorkshopConnection) {
             Rect lamp;
             RGBColor lamp_color;
@@ -760,7 +729,7 @@ static void draw_row_in(WorkshopModuleID module, const Rect *r)
             (short)((r->top + r->bottom - kIconSize) / 2),
             (short)(r->left + kIconInset + kIconSize),
             (short)((r->top + r->bottom - kIconSize) / 2 + kIconSize));
-    plot_small_icon(k_rows[module].icon_id, &icon_rect);
+    plot_small_icon(definition->icon_id, &icon_rect);
 
     text_left = (short)(icon_rect.right + kTextGap);
     text_width = (short)(r->right - text_left - 4);
@@ -772,7 +741,7 @@ static void draw_row_in(WorkshopModuleID module, const Rect *r)
        shows its name. */
     if (!(g_compact && module == kWorkshopConnection)) {
         MoveTo(text_left, (short)(r->top + title_base));
-        CopyCStringToPascal(k_rows[module].title, text);
+        CopyCStringToPascal(definition->title, text);
         TruncString(text_width, text, truncEnd);
         DrawString(text);
     }
@@ -820,7 +789,7 @@ static void draw_row_in(WorkshopModuleID module, const Rect *r)
         RGBForeColor(&gray);
     }
     MoveTo(text_left, (short)(r->top + kSubtitleBaseline));
-    CopyCStringToPascal(k_rows[module].subtitle, text);
+    CopyCStringToPascal(definition->sidebar_subtitle, text);
     TruncString(text_width, text, truncEnd);
     DrawString(text);
     RGBForeColor(&black);
@@ -885,6 +854,7 @@ static void hide_tag(void)
    system font, sitting to the RIGHT of the icon it explains. */
 static void draw_tag(void)
 {
+    const WorkshopModuleDefinition *definition;
     RGBColor cream = { 0xFFFF, 0xFFFF, 0xCCCC };
     RGBColor black = { 0, 0, 0 };
     RGBColor saved_back;
@@ -893,9 +863,13 @@ static void draw_tag(void)
     if (g_tag_module == (WorkshopModuleID)0 || g_owner == NULL) {
         return;
     }
+    definition = row_definition(g_tag_module);
+    if (definition == NULL) {
+        return;
+    }
     SetPortWindowPort(g_owner);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    CopyCStringToPascal(k_rows[g_tag_module].title, text);
+    CopyCStringToPascal(definition->title, text);
 
     GetBackColor(&saved_back);
     RGBBackColor(&cream);
@@ -911,13 +885,19 @@ static void draw_tag(void)
    so the rectangle the tag is ERASED by is the one it was drawn in. */
 static void tag_rect_for(WorkshopModuleID module, const Rect *row, Rect *out)
 {
+    const WorkshopModuleDefinition *definition = row_definition(module);
     short w;
+
+    if (definition == NULL) {
+        SetRect(out, 0, 0, 0, 0);
+        return;
+    }
 
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     {
         Str255 text;
 
-        CopyCStringToPascal(k_rows[module].title, text);
+        CopyCStringToPascal(definition->title, text);
         w = (short)(StringWidth(text) + 10);
     }
     out->left = (short)(g_lay.sidebar.right + 4);
@@ -1502,15 +1482,17 @@ void workshop_sidebar_describe_scene(const WorkshopSceneWriter *writer)
                        &g_lay.conn_divider, true);
     for (i = 1; i <= kWorkshopModuleCount; ++i) {
         WorkshopModuleID module = (WorkshopModuleID)i;
+        const WorkshopModuleDefinition *definition = row_definition(module);
         const Rect *row = row_rect(module);
         Rect icon;
         Rect title;
         Rect subtitle;
-        const char *detail = k_rows[module].subtitle;
+        const char *detail;
 
-        if (row == NULL) {
+        if (row == NULL || definition == NULL) {
             continue;                /* an ordinary scrolled-out nav row */
         }
+        detail = definition->sidebar_subtitle;
         if (module == g_selected) {
             workshop_scene_add(writer, kWorkshopSceneSelectionBand, "",
                                row, true);
@@ -1521,13 +1503,13 @@ void workshop_sidebar_describe_scene(const WorkshopSceneWriter *writer)
                 (short)((row->top + row->bottom - kIconSize) / 2
                         + kIconSize));
         workshop_scene_add(writer, kWorkshopSceneIcon,
-                           k_rows[module].title, &icon, true);
+                           definition->title, &icon, true);
 
         SetRect(&title, (short)(icon.right + kTextGap),
                 (short)(row->top + 3), (short)(row->right - 4),
                 (short)(row->top + 16));
         workshop_scene_add(writer, kWorkshopSceneStaticText,
-                           k_rows[module].title, &title, true);
+                           definition->title, &title, true);
 
         if (module == kWorkshopConnection) {
             detail = g_shown_detail[0] != '\0' ? g_shown_detail : "No link";

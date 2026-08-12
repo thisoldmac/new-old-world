@@ -14,7 +14,7 @@ final class QuickCaptureTests: XCTestCase {
         let screenshots = ScreenshotModuleModel(listener: listener,
                                                 defaults: defaults)
         let files = FilesModuleModel(listener: listener, defaults: defaults)
-        return (QuickCaptureCommand(screenshots: screenshots, files: files),
+        return (QuickCaptureCommand(screenshots: screenshots, listener: listener),
                 screenshots, files)
     }
 

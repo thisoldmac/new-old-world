@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Data Browser spike
 
 **One question:** can the guest use Carbon's Data Browser — the native

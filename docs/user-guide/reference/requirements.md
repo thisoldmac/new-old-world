@@ -6,10 +6,12 @@ doc_type: reference
 audience: user
 lifecycle: current
 authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md]
-source_dependencies: [now-host/Package.swift, now-host/NewOldWorld.xcodeproj/project.pbxproj, now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, SECURITY.md, docs/feature-catalog.yaml, docs/onboarding.md]
+source_dependencies: [now-host/Package.swift, now-host/NewOldWorld.xcodeproj/project.pbxproj, now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, SECURITY.md, product/features.yaml, docs/onboarding.md]
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
 
 # Requirements
 
@@ -36,7 +38,7 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: 5328a0e884171e4e853500ec2a722c021888f1ef
+sources-sha1: d8eed13fb12199a1d9073e093ccc7d05661526f2
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -82,13 +84,30 @@ rederived: 2026-08-10T22:33:06-0400 e9bf9632 sources
 rederived: 2026-08-10T22:47:49-0400 431e7308 sources
 rederived: 2026-08-11T00:25:05-0400 bbab04b9 unchanged
 rederived: 2026-08-11T00:33:22-0400 4b24cc1f sources
-rederived: 2026-08-11T03:40:39-0400 f568213 unchanged
-rederived: 2026-08-11T03:52:03-0400 43d9691 unchanged
-rederived: 2026-08-11T04:04:48-0400 edc4294 unchanged
-rederived: 2026-08-11T04:18:29-0400 c830686 unchanged
-rederived: 2026-08-11T13:21:47-0400 181ba5a sources
-rederived: 2026-08-11T13:23:43-0400 181ba5a sources
-rederived: 2026-08-11T18:32:08-0400 1e25306c sources
-rederived: 2026-08-11T18:35:08-0400 66eedfc sources
-rederived: 2026-08-12T12:38:33-0400 de3cc2f5 unchanged
+rederived: 2026-08-11T19:45:16-0400 065da692 sources
+rederived: 2026-08-11T20:08:54-0400 852b41ae sources
+rederived: 2026-08-11T20:44:00-0400 5c07bcd6 sources
+rederived: 2026-08-11T20:54:12-0400 f9ceab81 sources
+rederived: 2026-08-11T21:13:11-0400 098805ff sources
+rederived: 2026-08-11T21:20:51-0400 15514cc9 sources
+rederived: 2026-08-11T21:26:23-0400 7bfb617b sources
+rederived: 2026-08-11T21:32:39-0400 57a081ab sources
+rederived: 2026-08-11T21:39:38-0400 5a82bf82 sources
+rederived: 2026-08-11T21:49:35-0400 7dc5b09d sources
+rederived: 2026-08-11T21:54:56-0400 8c482312 sources
+rederived: 2026-08-11T21:59:54-0400 562b4b50 sources
+rederived: 2026-08-11T22:06:35-0400 65f52bf3 sources
+rederived: 2026-08-11T22:10:48-0400 3df65dde sources
+rederived: 2026-08-11T22:15:21-0400 68853632 sources
+rederived: 2026-08-11T22:31:04-0400 a16b6a61 sources
+rederived: 2026-08-11T22:41:40-0400 e1fc84c4 sources
+rederived: 2026-08-11T22:47:34-0400 9776cf7a sources
+rederived: 2026-08-11T22:56:41-0400 2401cdb7 sources
+rederived: 2026-08-11T23:03:13-0400 496fd2cd sources
+rederived: 2026-08-11T23:12:02-0400 ddf740ce sources
+rederived: 2026-08-11T23:31:22-0400 ad4d680 sources
+rederived: 2026-08-11T23:37:12-0400 ad4d680 unchanged
+rederived: 2026-08-12T13:02:41-0400 7cea759e sources
+rederived: 2026-08-12T13:11:35-0400 7cea759e unchanged
+rederived: 2026-08-12T13:12:13-0400 7cea759e unchanged
 -->

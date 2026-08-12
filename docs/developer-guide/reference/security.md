@@ -10,6 +10,9 @@ source_dependencies: [SECURITY.md, contract/asyncapi.yaml, now-host/Sources/Host
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Security and privacy
 
 The classic Mac initiates the connection to the host. Treat the configured listener and network as a trusted local environment; do not expose the port directly to an untrusted network. Contract revision checks, guest identity, active-guest selection, bounded frames, and explicit refusals reduce accidental cross-machine actions but are not a substitute for network isolation.

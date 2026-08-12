@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The Mirror drive loop
 
 **Read this file at the start of every CYCLE, before touching anything** —

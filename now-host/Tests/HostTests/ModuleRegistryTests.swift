@@ -1,6 +1,7 @@
 import XCTest
 @testable import Host
 
+@MainActor
 final class ModuleRegistryTests: XCTestCase {
     func testStandardRegistryHasScreenFirstAndSettings() {
         XCTAssertEqual(ModuleRegistry.standard.modules.map(\.id),
@@ -77,21 +78,30 @@ final class ModuleRegistryTests: XCTestCase {
         XCTAssertNil(ModuleRegistry.standard.resolvingRenames(id: "missing"))
     }
 
-    /// **Every module in the registry is drawn by the root view.**
-    ///
-    /// The sidebar and the detail pane keep two lists of module ids in two
-    /// files, and renaming one is exactly how they drift — a row that
-    /// selects a case the `switch` does not have lands a person on "Module
-    /// Unavailable". Read from the source, because the alternative is
-    /// instantiating SwiftUI views in a test to find out.
-    func testEveryModuleHasADetailPane() throws {
+    /// The root renders the selected definition; it must never regain a
+    /// parallel id switch as modules migrate into their own files.
+    func testEveryModuleHasADetailDefinition() throws {
+        let registry = ModuleRegistry.standard
+        XCTAssertEqual(registry.definitions.count, registry.modules.count)
+        for definition in registry.definitions {
+            XCTAssertNotNil(definition.makeView,
+                            "\(definition.descriptor.id) has no detail view")
+        }
         let view = try GateSource.hostSwift(
             "now-host/Sources/Host/HostRootView.swift")
-        for module in ModuleRegistry.standard.modules {
-            XCTAssertTrue(view.contains("case \"\(module.id)\":"),
-                          "HostRootView draws no pane for \(module.id), so "
-                              + "selecting it shows Module Unavailable.")
-        }
+        XCTAssertFalse(view.contains("switch state.selectedModuleID"))
+        XCTAssertTrue(view.contains("state.moduleView("))
+    }
+
+    func testTaxonomyIsIndependentFromPlacement() {
+        let tiers = Dictionary(uniqueKeysWithValues:
+            ModuleRegistry.standard.modules.map { ($0.id, $0.tier) })
+        XCTAssertEqual(tiers["networking"], .core)
+        XCTAssertEqual(tiers["mirror"], .experimental)
+        XCTAssertEqual(tiers["logs"], .debug)
+        XCTAssertEqual(ModuleRegistry.standard.module(id: "mcp")?.placement,
+                       .footer)
+        XCTAssertEqual(tiers["mcp"], .experimental)
     }
 
     /// A footer module is still a module, so a saved selection pointing at

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Stopping the Mirror should disconnect it, not pause it
 
 **Reported by Michelle, 2026-08-08, during the first metal session in

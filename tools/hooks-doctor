@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Are this clone's commit gates actually WIRED? Ask, rather than assume.
+"""Are this public clone's repository gates actually WIRED?
 
     tools/hooks-doctor            # report; exit 1 if the gates cannot fire
     tools/hooks-doctor --fix      # repair the wiring (see below)
@@ -32,9 +32,11 @@ relative value `.githooks` is the only form that resolves to the hooks the
 worktree actually has checked out. `tools/setup-hooks` has always set the
 relative form; something else set the absolute one.
 
-WHAT --fix DOES: removes every per-worktree `core.hooksPath` override,
-sets the relative value in the shared config, and configures the receipts
-merge driver. It never edits a working tree. Arming gates on a repository
+WHAT --fix DOES: after verifying the canonical GitHub origin, removes every
+per-worktree `core.hooksPath` override, sets the relative value in the shared
+config, configures main as a fast-forward-only mirror of origin/main, and
+configures the receipts merge driver. It never edits a working tree. Arming
+gates on a repository
 where other sessions are mid-commit is a sequencing decision, which is why
 it is a flag and not a side effect of the report.
 """
@@ -47,8 +49,8 @@ import os
 import subprocess
 import sys
 
-HOOKS = ("pre-commit", "pre-merge-commit", "reference-transaction",
-         "post-merge")
+HOOKS = ("pre-commit", "pre-push", "pre-merge-commit",
+         "reference-transaction", "post-merge")
 
 
 def git(*args: str, root: str = ".") -> str:
@@ -99,8 +101,8 @@ def main(argv: list[str]) -> int:
         except OSError:
             pass
     if overrides:
-        notes.append(f"{len(overrides)} worktree(s) carry their own "
-                     f"core.hooksPath, which shadows the shared one.")
+        problems.append(f"{len(overrides)} worktree(s) carry their own "
+                        f"core.hooksPath, which shadows the shared one.")
 
     # Does the path RESOLVE, from this worktree, to hooks that can execute?
     resolved = configured if os.path.isabs(configured or "") \
@@ -148,13 +150,43 @@ def main(argv: list[str]) -> int:
                      "ext/stage-receipts.json will merge textually instead of "
                      "conflicting (pre-merge-commit is the backstop).")
 
+    main_policy = os.path.join(root, "tools", "main-ref-policy")
+    if os.path.isfile(main_policy) and os.access(main_policy, os.X_OK):
+        policy = subprocess.run([main_policy, "config-check"], cwd=root,
+                                capture_output=True, text=True)
+        if policy.returncode:
+            detail = (policy.stderr or policy.stdout).strip()
+            problems.append(detail or "public-clone main policy is not configured")
+    else:
+        problems.append(f"{main_policy} is unavailable")
+
     if args.fix:
+        if not os.path.isfile(main_policy) or not os.access(main_policy, os.X_OK):
+            print(f"[hooks-doctor] refusing --fix: {main_policy} is unavailable",
+                  file=sys.stderr)
+            return 1
+        remote = subprocess.run([main_policy, "remote-check"], cwd=root,
+                                capture_output=True, text=True)
+        if remote.returncode:
+            print((remote.stderr or remote.stdout).strip(), file=sys.stderr)
+            print("[hooks-doctor] refusing --fix outside the canonical public clone",
+                  file=sys.stderr)
+            return 1
         for path in overrides:
             subprocess.run(["git", "config", "--file", path, "--unset-all",
                             "core.hooksPath"], capture_output=True)
         subprocess.run(["git", "config", "--file",
                         os.path.join(common, "config"), "core.hooksPath",
                         ".githooks"], check=True)
+        for key, value in (
+                ("branch.main.remote", "origin"),
+                ("branch.main.merge", "refs/heads/main"),
+                ("pull.ff", "only"),
+                ("fetch.prune", "true"),
+                ("push.default", "simple")):
+            subprocess.run(["git", "config", "--file",
+                            os.path.join(common, "config"), key, value],
+                           check=True)
         subprocess.run(["git", "config", "--file",
                         os.path.join(common, "config"),
                         "merge.nowreceipts.name",
@@ -165,9 +197,9 @@ def main(argv: list[str]) -> int:
                         "merge.nowreceipts.driver",
                         f"{root}/tools/receipts-merge-driver %O %A %B %L %P"],
                        check=True)
-        print(f"[hooks-doctor] armed: core.hooksPath = .githooks (relative), "
-              f"{len(overrides)} worktree override(s) removed, receipts merge "
-              f"driver configured.")
+        print(f"[hooks-doctor] armed: public main tracks origin/main, "
+              f"core.hooksPath = .githooks, {len(overrides)} worktree "
+              "override(s) removed, receipts merge driver configured.")
         print("  Re-run without --fix to confirm.")
         return 0
 
@@ -175,7 +207,7 @@ def main(argv: list[str]) -> int:
         print("")
         print("########################################################"
               "################")
-        print("#  THE COMMIT GATES ARE NOT ARMED IN THIS CLONE.        "
+        print("#  THE REPOSITORY GATES ARE NOT ARMED IN THIS CLONE.    "
               "               #")
         print("########################################################"
               "################")
@@ -184,9 +216,9 @@ def main(argv: list[str]) -> int:
         for n in notes:
             print(f"  - {n}")
         print("")
-        print("  The gate set is incomplete: commits or main ref updates can "
-              "bypass the")
-        print("  resident bake policy. A deferral written with "
+        print("  The gate set is incomplete: commits, pushes, or local main ref "
+              "updates can")
+        print("  bypass local protected-main or resident bake policy. A deferral written with "
               "TBT_DEFER_EXT_BAKE may not")
         print("  be recorded either,")
         print("  because the gate that records it never runs.")
@@ -219,6 +251,7 @@ def main(argv: list[str]) -> int:
             mark = "x" if os.access(os.path.join(resolved, hook), os.X_OK) else "-"
             print(f"  [{mark}] {hook}")
         print(f"  [{'x' if driver else '-'}] receipts merge driver")
+        print("  [x] public main tracks origin/main and cannot be locally ahead")
     for n in notes:
         print(f"  - {n}")
     return 0

@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-06
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # A guest that notices instead of polling - Plan
 
 Subordinate to [001, NOW Mirror UX Completion](2026-08-03-001-now-mirror-ux-completion-plan.md),

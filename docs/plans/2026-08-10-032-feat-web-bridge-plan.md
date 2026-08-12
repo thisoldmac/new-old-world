@@ -7,6 +7,8 @@ search:
   exclude: true
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Web bridge and classic-browser proxy plan
 
 ## Implementation receipt

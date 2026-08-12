@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # QD Probe — a throwaway INIT, not a NOW component
 
 **Date:** 2026-07-31 · **Status:** built, ladder not run · **Disposition:** delete

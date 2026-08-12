@@ -37,7 +37,7 @@ body = function_body(
     "void workshop_sidebar_describe_scene(const WorkshopSceneWriter *writer)",
 )
 lookup = body.index("const Rect *row = row_rect(module);")
-guard = body.find("if (row == NULL)", lookup)
+guard = body.find("if (row == NULL", lookup)
 first_use = min(
     body.index("workshop_scene_add(writer, kWorkshopSceneSelectionBand", lookup),
     body.index("row->left", lookup),

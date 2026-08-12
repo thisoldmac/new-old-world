@@ -12,6 +12,8 @@ media_ids: [setup-ppc-install]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Install the PowerPC guest
 
 ## Goal

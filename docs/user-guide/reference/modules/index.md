@@ -11,6 +11,8 @@ media_ids: []
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Module reference
 
 | Module | PowerPC Workshop | Pre-Carbon source (excluded from alpha) |
@@ -38,7 +40,7 @@ work; it does not mean NOW-68K ships in the alpha.
 
 <!-- derived-doc v1
 sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
-sources-sha1: 2b13100ccb1c3e10658bce7a5b8c9ece2429edd6
+sources-sha1: ef011757ae202fefd80dd3d96b06b44557a6100b
 derive module-map sha256=e5edea5367719897f1b871c5c05fbe460aed80238440e32af30aca05ad5a9145 lines=16
     scripts/docs-inventory
 rederived: pending
@@ -89,13 +91,31 @@ rederived: 2026-08-10T22:33:05-0400 e9bf9632 sources
 rederived: 2026-08-10T22:47:49-0400 431e7308 unchanged
 rederived: 2026-08-11T00:25:05-0400 bbab04b9 unchanged
 rederived: 2026-08-11T00:33:22-0400 4b24cc1f unchanged
-rederived: 2026-08-11T03:40:39-0400 f568213 unchanged
-rederived: 2026-08-11T03:52:03-0400 43d9691 unchanged
-rederived: 2026-08-11T04:04:48-0400 edc4294 unchanged
-rederived: 2026-08-11T04:18:29-0400 c830686 unchanged
-rederived: 2026-08-11T13:21:47-0400 181ba5a sources
-rederived: 2026-08-11T13:23:43-0400 181ba5a sources
-rederived: 2026-08-11T18:32:08-0400 1e25306c sources
-rederived: 2026-08-11T18:35:08-0400 66eedfc sources
-rederived: 2026-08-12T12:38:33-0400 de3cc2f5 unchanged
+rederived: 2026-08-11T19:45:15-0400 065da692 sources
+rederived: 2026-08-11T20:08:53-0400 852b41ae sources
+rederived: 2026-08-11T20:43:59-0400 5c07bcd6 sources
+rederived: 2026-08-11T20:54:11-0400 f9ceab81 sources
+rederived: 2026-08-11T21:13:10-0400 098805ff sources
+rederived: 2026-08-11T21:20:51-0400 15514cc9 sources
+rederived: 2026-08-11T21:26:23-0400 7bfb617b sources
+rederived: 2026-08-11T21:32:39-0400 57a081ab sources
+rederived: 2026-08-11T21:39:37-0400 5a82bf82 sources
+rederived: 2026-08-11T21:49:35-0400 7dc5b09d sources
+rederived: 2026-08-11T21:54:55-0400 8c482312 sources
+rederived: 2026-08-11T21:59:53-0400 562b4b50 sources
+rederived: 2026-08-11T22:06:35-0400 65f52bf3 sources
+rederived: 2026-08-11T22:10:48-0400 3df65dde sources
+rederived: 2026-08-11T22:15:20-0400 68853632 sources
+rederived: 2026-08-11T22:31:04-0400 a16b6a61 sources
+rederived: 2026-08-11T22:41:39-0400 e1fc84c4 sources
+rederived: 2026-08-11T22:47:34-0400 9776cf7a sources
+rederived: 2026-08-11T22:56:41-0400 2401cdb7 sources
+rederived: 2026-08-11T23:03:13-0400 496fd2cd sources
+rederived: 2026-08-11T23:10:57-0400 ddf740ce sources
+rederived: 2026-08-11T23:12:01-0400 ddf740ce unchanged
+rederived: 2026-08-11T23:31:22-0400 ad4d680 sources
+rederived: 2026-08-11T23:37:12-0400 ad4d680 unchanged
+rederived: 2026-08-12T13:02:41-0400 7cea759e sources
+rederived: 2026-08-12T13:11:34-0400 7cea759e unchanged
+rederived: 2026-08-12T13:12:13-0400 7cea759e unchanged
 -->

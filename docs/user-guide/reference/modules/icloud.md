@@ -12,6 +12,8 @@ media_ids: [icloud-host, icloud-ppc, icloud-detail]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # iCloud module
 
 ## What it does

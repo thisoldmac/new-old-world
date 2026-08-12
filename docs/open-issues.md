@@ -2,7 +2,35 @@
 search:
   exclude: true
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Open issues
+
+## TESTED: Continuity now sits on the atomic module foundation (2026-08-12, `codex/dev/cross-cutting/continuity-cursor-v0`)
+
+The Continuity and SheepShaver work has been merged with the public pre-RC
+foundation. That foundation made all 16 host modules and all 17 PowerPC
+Workshop pages own their metadata and construction wiring: the central host and
+Workshop files retain product order and application-wide services, while each
+module owns its runtime, model, view, cleanup and guest operations.
+
+The merge preserves that boundary. Local Network permission remains an
+application-owned service because the guest link and more than one optional
+module use it; it is injected through `HostModuleContext`. The Mirror module
+continues to own the Continuity controller, source, run control, presentation
+and cleanup. The Connections module receives the same permission service for
+its human-facing controls. Continuity therefore adds no dispatch case back to
+`HostRootView` or module-owned model back to `HostAppState`.
+
+The integrated revision passed `scripts/test-all` stages 1–7 using the
+documented test-only override for this private clone's unarmed shared hooks:
+documentation and mutation gates, release and image discipline, Web Bridge,
+186 native tests, MirrorKit, all seven guest/resident cross-build targets, 2,211
+host tests in both asset modes, the isolated socket test, and Debug/Release app
+builds. Stage 8 explicitly skipped because no live guest was requested. This is
+therefore **tested, not metal-verified**; metal behavior is unchanged by the
+merge and must not be inferred from the local pass.
 
 ## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle has one accepted pair and eleven replayable breadth cases (2026-08-12, `codex/sheepshaver-86-tooling`)
 

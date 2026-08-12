@@ -2,6 +2,9 @@
 search:
   exclude: true
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Files module — spec
 
 Move files between the guest and the host with smooth interop: automatic

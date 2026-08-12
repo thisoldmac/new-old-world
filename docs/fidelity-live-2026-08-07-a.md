@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Live-frame flicker, A side — 2026-08-07
 
 The measurement [sweep A](fidelity-sweep-2026-08-07-a.md) said it could

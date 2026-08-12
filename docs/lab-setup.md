@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Lab setup
 
 Everything in this project that knows about a *particular* machine reads

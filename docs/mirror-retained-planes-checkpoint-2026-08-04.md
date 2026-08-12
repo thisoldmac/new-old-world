@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror retained-planes checkpoint — 2026-08-04
 
 This checkpoint records the first direct drive of the retained state-engine

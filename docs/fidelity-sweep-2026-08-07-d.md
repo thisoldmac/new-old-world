@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Fidelity sweep D, 2026-08-07 — scoring the composed result of rounds 6 and 7
 
 **Verification level: TESTED on an emulated guest, with the build

@@ -12,6 +12,8 @@ media_ids: [development-host, development-ppc]
 last_verified: 2026-08-10
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Development module
 
 ## What it does

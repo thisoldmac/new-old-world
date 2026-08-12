@@ -3,7 +3,7 @@
 #
 #     scripts/test-all
 #
-#   1. documentation  - source, projection, render, and mutation gates
+#   1. documentation  - Git policy, source, projection, render, and mutations
 #   2. release gates  - staged-image and product-version mutation gates
 #   3. Web Bridge     - deterministic proxy and policy tests, <1 second
 #   4. native tests   - both guests' pure logic, host cc, ~2 seconds
@@ -98,6 +98,7 @@ if [ "$hooks_armed" = no ] && [ -z "${TBT_ALLOW_UNARMED_HOOKS:-}" ]; then
 fi
 
 echo "==> [1/8] documentation gate"
+"$script_dir/../tools/git-policy" selftest || fail "Git policy gate"
 "$script_dir/test-docs" || fail "documentation gate"
 
 echo
@@ -114,8 +115,8 @@ echo "==> [2/8] release and staged-image discipline gates"
     || fail "update manifest release gate"
 "$script_dir/../tools/host-signing-policy-tests" \
     || fail "host signing policy gate"
-"$script_dir/../tools/land-main-tests" \
-    || fail "checked-out main landing gate"
+"$script_dir/../tools/main-policy-tests" \
+    || fail "protected GitHub main and local-mirror gates"
 "$script_dir/../tools/ci-policy-test" || fail "GitHub Actions policy gate"
 "$script_dir/../tools/sheepshaver-86-tests" \
     || fail "SheepShaver 8.6 harness gate"

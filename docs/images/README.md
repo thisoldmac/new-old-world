@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Screenshots
 
 Empty on purpose, and tracked as a gap rather than left to be noticed.

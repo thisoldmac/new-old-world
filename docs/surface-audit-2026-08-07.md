@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # One capability, how many roads? — a surface audit
 
 **Read-only audit, taken 2026-08-07 03:44 UTC** against

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Known wrong, on purpose
 
 Everything NOW knowingly ships that disagrees with the machine, or

@@ -12,6 +12,8 @@ media_ids: [logs-host, logs-ppc]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Logs module
 
 ## What it does

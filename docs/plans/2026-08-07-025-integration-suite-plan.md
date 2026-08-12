@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # An integration suite that boots a Mac
 
 **2026-08-07. Specced, not scheduled** — implementation waits until the

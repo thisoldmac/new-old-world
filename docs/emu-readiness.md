@@ -2,6 +2,9 @@
 search:
   exclude: true
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Emulator readiness
 
 **Date:** 2026-07-31, revised 2026-08-01 · **Status:** an operator's

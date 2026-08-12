@@ -78,7 +78,8 @@ DEFERRING is allowed and is a WRITTEN DECISION, never a silent skip:
 
 appends the reason to ext/stage-receipts.json and stages it, so the
 deferral lands in the same commit as the work it excuses. Enforcement is
-the floor, not the rule (AGENTS.md > Git says the same of TBT_ALLOW_MAIN).
+the floor, not the rule (AGENTS.md > Git applies the same discipline to the
+protected-main hooks, which deliberately have no local override).
 """
 
 from __future__ import annotations

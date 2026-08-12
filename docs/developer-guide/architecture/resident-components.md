@@ -6,18 +6,21 @@ doc_type: explanation
 audience: developer
 lifecycle: current
 authority: [docs/resident-components.md, contract/peek_table.h, contract/resident_version.h]
-source_dependencies: [docs/resident-components.md, contract/peek_table.h, contract/resident_version.h, ext/src/now_ext.c, now-guest-ppc/src/peek/peek.c, tools/ext-bake-gate, docs/feature-catalog.yaml]
+source_dependencies: [docs/resident-components.md, contract/peek_table.h, contract/resident_version.h, ext/src/now_ext.c, now-guest-ppc/src/peek/peek.c, tools/ext-bake-gate, product/features.yaml]
 media_ids: []
 last_verified: 2026-08-09
 feature_ids: [resident.extension]
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Resident components
 
 The NOW Extension performs only work that must run in a foreign application context. The PowerPC application is the sole reader of foreign memory and exposes the result to the rest of the product. The extension is optional: the application must report an unavailable plane honestly and keep non-resident features usable.
 
 The public [feature coverage
 matrix](../../user-guide/explanation/core-features.md#feature-coverage)
-starts with user outcomes. This page owns the deeper P0–P9 execution, memory,
+starts with user outcomes. This page owns the deeper P0–P8 execution, memory,
 shared-header, bake, and recovery contracts.
 
 ```mermaid
@@ -43,7 +46,7 @@ deferral may permit a branch checkpoint but never the landing.
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 641f823c5aaf791341a1a4428bec544488bfbc27
+sources-sha1: 9124ea8f5903940f13a8124f440e1fab4302206e
 derive resident-contract sha256=94aa1ceb2d2998a0973bc7f381405e008f6bcfcd416bac1a70e2b26d14ef97f8 lines=12
     scripts/docs-source-group resident
 rederived: pending
@@ -90,13 +93,28 @@ rederived: 2026-08-10T22:33:05-0400 e9bf9632 sources
 rederived: 2026-08-10T22:47:48-0400 431e7308 unchanged
 rederived: 2026-08-11T00:25:04-0400 bbab04b9 unchanged
 rederived: 2026-08-11T00:33:21-0400 4b24cc1f unchanged
-rederived: 2026-08-11T03:40:38-0400 f568213 unchanged
-rederived: 2026-08-11T03:52:02-0400 43d9691 unchanged
-rederived: 2026-08-11T04:04:47-0400 edc4294 unchanged
-rederived: 2026-08-11T04:18:28-0400 c830686 unchanged
-rederived: 2026-08-11T13:21:46-0400 181ba5a sources
-rederived: 2026-08-11T13:23:42-0400 181ba5a sources
-rederived: 2026-08-11T18:32:07-0400 1e25306c sources, resident-contract 11->12
-rederived: 2026-08-11T18:35:07-0400 66eedfc sources
-rederived: 2026-08-12T12:38:32-0400 de3cc2f5 sources
+rederived: 2026-08-11T19:45:15-0400 065da692 sources
+rederived: 2026-08-11T20:08:52-0400 852b41ae sources
+rederived: 2026-08-11T20:43:59-0400 5c07bcd6 sources
+rederived: 2026-08-11T20:54:11-0400 f9ceab81 sources
+rederived: 2026-08-11T21:13:09-0400 098805ff sources
+rederived: 2026-08-11T21:20:50-0400 15514cc9 unchanged
+rederived: 2026-08-11T21:26:22-0400 7bfb617b unchanged
+rederived: 2026-08-11T21:32:38-0400 57a081ab unchanged
+rederived: 2026-08-11T21:39:37-0400 5a82bf82 unchanged
+rederived: 2026-08-11T21:49:34-0400 7dc5b09d unchanged
+rederived: 2026-08-11T21:54:55-0400 8c482312 unchanged
+rederived: 2026-08-11T21:59:53-0400 562b4b50 unchanged
+rederived: 2026-08-11T22:06:34-0400 65f52bf3 unchanged
+rederived: 2026-08-11T22:10:48-0400 3df65dde unchanged
+rederived: 2026-08-11T22:15:20-0400 68853632 unchanged
+rederived: 2026-08-11T22:31:03-0400 a16b6a61 unchanged
+rederived: 2026-08-11T22:41:39-0400 e1fc84c4 unchanged
+rederived: 2026-08-11T22:47:33-0400 9776cf7a unchanged
+rederived: 2026-08-11T23:12:01-0400 ddf740ce sources
+rederived: 2026-08-11T23:31:21-0400 ad4d680 sources
+rederived: 2026-08-11T23:37:11-0400 ad4d680 unchanged
+rederived: 2026-08-12T13:02:40-0400 7cea759e sources, resident-contract 11->12
+rederived: 2026-08-12T13:11:34-0400 7cea759e unchanged
+rederived: 2026-08-12T13:12:13-0400 7cea759e unchanged
 -->

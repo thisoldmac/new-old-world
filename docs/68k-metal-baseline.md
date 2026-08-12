@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # What to measure on the 180c, and how to record it
 
 The first metal run of the 68K file family should produce a **baseline**

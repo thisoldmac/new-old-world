@@ -14,5 +14,7 @@ typedef struct NowWorkshopConstructOps {
 } NowWorkshopConstructOps;
 
 int now_workshop_construct(const NowWorkshopConstructOps *ops);
+int now_workshop_ensure_constructed(int *created,
+                                    const NowWorkshopConstructOps *ops);
 
 #endif

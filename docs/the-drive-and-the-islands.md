@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The drive, and the islands underneath it
 
 **2026-08-07.** Michelle drove the round-9 stack for about thirty-two

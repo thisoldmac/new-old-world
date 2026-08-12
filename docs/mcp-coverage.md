@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # What an agent can ask for
 
 [contract-coverage.md](contract-coverage.md) answers **what each guest
@@ -636,7 +638,7 @@ to exist:
 | `cloud.listing` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.list` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
 | `cloud.refuse` | message | ppc | deliberate | The refusal half of the same family, same reason ([command-parity.md](command-parity.md)). |
 | `cloud.report` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.services` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
-| `continuity.report` | message | none | deliberate | The guest's control-plane answer to a host `continuity.arm` or `continuity.disarm`, plus the unsolicited notice that physical guest input or lease expiry ended ownership. It is not an independently askable guest capability: the Mirror's private Continuity controller consumes it to settle a temporary pointer lease, and the feature is explicitly excluded from MCP and agent integration ([continuity-mode.md](continuity-mode.md)). Exposing the report would give an agent neither authority to arm nor useful state outside the Mirror session that owns its nonce and epoch. |
+| `continuity.report` | message | none | deliberate | The bounded status and negotiation answer to the host Mirror module's internal `continuity.arm` request. The host consumes it to settle one optional human pointer-control epoch; exposing the raw report would make that transport handshake a second public control surface even though Continuity explicitly excludes MCP and agent integration. The ownership and surface boundary are stated in [continuity-mode.md](continuity-mode.md). Both guests emit a report, but neither dispatches one as an incoming request, which is why the mechanically derived Served column says `none`. |
 | `exec.cancel` | message | both | deliberate | Ends an exec, and is excluded with the rest of the console plane — [agent-integration.md](agent-integration.md). |
 | `exec.input` | message | both | deliberate | Part of the console plane excluded under rule 3 — [agent-integration.md](agent-integration.md) and the parity slice plan. |
 | `exec.request` | message | both | deliberate | The console plane. A shell is not user-initiable in any meaningful sense and is the one thing [agent-integration.md](agent-integration.md) is right to keep out. |
@@ -1233,7 +1235,6 @@ rederived: 2026-08-08T21:56:10-0400 0ca7eb51 sources, disposition-census 3->3
 rederived: 2026-08-09T04:12:08-0400 3159abaf sources
 rederived: 2026-08-09T04:56:02-0400 ecdf1284 unchanged
 rederived: 2026-08-09T04:56:23-0400 04313f08 unchanged
-rederived: 2026-08-09T17:43:15-0400 ce45cbb8 sources, ppc-inbound-types 49->51, 68k-inbound-types 23->25, disposition-census 3->3
 rederived: 2026-08-09T16:10:25-0400 e74b3ab1 sources
 rederived: 2026-08-09T16:29:42-0400 9034e3eb unchanged
 rederived: 2026-08-09T17:05:28-0400 446cf620 unchanged
@@ -1275,14 +1276,28 @@ rederived: 2026-08-10T22:33:05-0400 e9bf9632 unchanged
 rederived: 2026-08-10T22:47:49-0400 431e7308 unchanged
 rederived: 2026-08-11T00:25:05-0400 bbab04b9 unchanged
 rederived: 2026-08-11T00:33:22-0400 4b24cc1f unchanged
-rederived: 2026-08-11T02:26:26-0400 b35fac0 disposition-census 3->3
-rederived: 2026-08-11T03:40:39-0400 f568213 unchanged
-rederived: 2026-08-11T03:52:02-0400 43d9691 sources
-rederived: 2026-08-11T04:04:48-0400 edc4294 unchanged
-rederived: 2026-08-11T04:18:29-0400 c830686 unchanged
-rederived: 2026-08-11T13:21:46-0400 181ba5a unchanged
-rederived: 2026-08-11T13:23:43-0400 181ba5a unchanged
-rederived: 2026-08-11T18:32:08-0400 1e25306c sources, ppc-inbound-types 50->52, disposition-census 3->3
-rederived: 2026-08-11T18:35:08-0400 66eedfc sources, disposition-census 3->3
-rederived: 2026-08-12T12:38:33-0400 de3cc2f5 sources
+rederived: 2026-08-11T19:45:15-0400 065da692 unchanged
+rederived: 2026-08-11T20:08:53-0400 852b41ae unchanged
+rederived: 2026-08-11T20:43:59-0400 5c07bcd6 unchanged
+rederived: 2026-08-11T20:54:11-0400 f9ceab81 unchanged
+rederived: 2026-08-11T21:13:10-0400 098805ff unchanged
+rederived: 2026-08-11T21:20:51-0400 15514cc9 unchanged
+rederived: 2026-08-11T21:26:23-0400 7bfb617b unchanged
+rederived: 2026-08-11T21:32:38-0400 57a081ab unchanged
+rederived: 2026-08-11T21:39:37-0400 5a82bf82 unchanged
+rederived: 2026-08-11T21:49:35-0400 7dc5b09d unchanged
+rederived: 2026-08-11T21:54:55-0400 8c482312 unchanged
+rederived: 2026-08-11T21:59:53-0400 562b4b50 unchanged
+rederived: 2026-08-11T22:06:35-0400 65f52bf3 unchanged
+rederived: 2026-08-11T22:10:48-0400 3df65dde unchanged
+rederived: 2026-08-11T22:15:20-0400 68853632 unchanged
+rederived: 2026-08-11T22:31:03-0400 a16b6a61 unchanged
+rederived: 2026-08-11T22:41:39-0400 e1fc84c4 unchanged
+rederived: 2026-08-11T22:47:34-0400 9776cf7a unchanged
+rederived: 2026-08-11T23:12:01-0400 ddf740ce unchanged
+rederived: 2026-08-11T23:31:22-0400 ad4d680 sources
+rederived: 2026-08-11T23:37:11-0400 ad4d680 disposition-census 3->3
+rederived: 2026-08-12T13:02:41-0400 7cea759e sources, ppc-inbound-types 50->52, 68k-inbound-types 23->25
+rederived: 2026-08-12T13:11:34-0400 7cea759e disposition-census 3->3
+rederived: 2026-08-12T13:12:13-0400 7cea759e unchanged
 -->

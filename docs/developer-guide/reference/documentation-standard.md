@@ -5,11 +5,14 @@ description: The content, schema, accessibility, metadata, and publication stand
 doc_type: reference
 audience: developer
 lifecycle: current
-authority: [mkdocs.yml, tools/docs-gate, docs/feature-catalog.yaml]
-source_dependencies: [mkdocs.yml, tools/docs-gate, docs/requirements.txt, contract/asyncapi.yaml, docs/site-integration.yaml, docs/feature-catalog.yaml, docs/developer-guide/index.md, docs/agent-guide/index.md]
+authority: [mkdocs.yml, tools/docs-gate, product/features.yaml, tools/product-features]
+source_dependencies: [mkdocs.yml, tools/docs-gate, tools/product-features, docs/requirements.txt, contract/asyncapi.yaml, docs/site-integration.yaml, product/features.yaml, now-host/Sources/Host/ProductFeaturePolicy.swift, now-guest-ppc/src/core/product_feature_policy.c, docs/developer-guide/index.md, docs/agent-guide/index.md]
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Documentation standard
 
 | Concern | Standard or convention | NOW integration |
@@ -24,7 +27,7 @@ last_verified: 2026-08-09
 | Search scope | Curated guidance before evidence ledgers | Linked deep records keep stable rendered URLs, while `docs/reference-index.yaml` excludes deep and append-only records from primary search |
 | Verification date | Human attestation in ISO `YYYY-MM-DD` form | The gate rejects malformed and future dates; the date does not replace source-derived currency checks |
 | Page navigation | MkDocs Material instant navigation | Internal links replace the document content without a full-page reload; page-dependent scripts subscribe to navigation updates |
-| Release availability | Stable feature IDs and profiles | `docs/feature-catalog.yaml` drives page notices and generated availability tables; planned runtime flag keys are explicit but not claimed as implemented |
+| Release availability | Stable feature IDs and profiles | `product/features.yaml` drives page notices, generated availability tables, and bounded Swift and C runtime definitions |
 | Audience ownership | One owning explanation per audience purpose | User pages explain product use; the developer guide explains code; the coding-agent guide contains only operational agent protocol and links back for technical detail |
 | Publication | Standalone `/docs/` preview now; selected independent target `docs.newoldworldmac.com` | The app repository owns source, gates, and future GitHub Pages deployment; the website repository links to it without rebuilding its container |
 

@@ -10,6 +10,9 @@ source_dependencies: [CONTRIBUTING.md, scripts/test-all, scripts/test-docs]
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Contributing
 
 ## Choose a focused change

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Where each rule lives, and why that is the question
 
 Every hook, gate and convention in this repository is enforced from

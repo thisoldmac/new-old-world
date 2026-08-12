@@ -8,5 +8,6 @@
    persisted Invert switch on the status placard. */
 
 const WorkshopModuleOps *console_module_ops(void);
+const WorkshopModuleDefinition *console_module_definition(void);
 
 #endif /* NOW_CONSOLE_MODULE_H */

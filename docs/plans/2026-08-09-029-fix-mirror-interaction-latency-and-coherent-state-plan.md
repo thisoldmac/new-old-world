@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror interaction latency, priority, and coherent state
 
 **Status:** Implemented and Tested locally through the U6 local gate on

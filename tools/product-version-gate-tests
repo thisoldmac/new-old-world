@@ -87,7 +87,7 @@ def make_repo(path: Path) -> Path:
     for directory in (
         "contract", "now-host/Sources/Host",
         "now-host/NewOldWorld.xcodeproj", "now-guest-ppc/resources",
-        "now-guest-ppc/src/core", "scripts", "tools", ".githooks",
+        "now-guest-ppc/src/core", "scripts", "tools", ".githooks", ".github",
     ):
         (path / directory).mkdir(parents=True, exist_ok=True)
     # Model the real adoption boundary: old main has only the resident hook.
@@ -112,16 +112,33 @@ def make_repo(path: Path) -> Path:
             cwd=path, check=True)
     command("git", "add", ".", cwd=path, check=True)
     command("git", "commit", "-qm", "base 0.1.0", cwd=path, check=True)
+    command("git", "remote", "add", "origin",
+            "https://github.com/thisoldmac/new-old-world.git", cwd=path,
+            check=True)
+    for key, value in (("branch.main.remote", "origin"),
+                       ("branch.main.merge", "refs/heads/main"),
+                       ("pull.ff", "only"),
+                       ("fetch.prune", "true"),
+                       ("push.default", "simple")):
+        command("git", "config", key, value, cwd=path, check=True)
+    command("git", "update-ref", "refs/remotes/origin/main", "main",
+            cwd=path, check=True)
     command("git", "checkout", "-qb", "lane", cwd=path, check=True)
     shutil.copy(ROOT / "tools/product-version-gate",
                 path / "tools/product-version-gate")
+    shutil.copy(ROOT / "tools/main-ref-policy",
+                path / "tools/main-ref-policy")
+    shutil.copy(ROOT / ".github/repository-policy.json",
+                path / ".github/repository-policy.json")
     shutil.copy(ROOT / ".githooks/reference-transaction",
                 path / ".githooks/reference-transaction")
     write_version(path, (0, 1, 0), ("prealpha", 1))
     os.chmod(path / "tools/product-version-gate", 0o755)
+    os.chmod(path / "tools/main-ref-policy", 0o755)
     os.chmod(path / ".githooks/reference-transaction", 0o755)
-    command("git", "add", "tools/product-version-gate",
-            ".githooks/reference-transaction", cwd=path, check=True)
+    command("git", "add", "tools/product-version-gate", "tools/main-ref-policy",
+            ".github/repository-policy.json", ".githooks/reference-transaction",
+            cwd=path, check=True)
     command("git", "commit", "-qm", "adopt product main gate", cwd=path,
             check=True)
     return path
@@ -130,6 +147,11 @@ def make_repo(path: Path) -> Path:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def set_origin_main(repo: Path, ref: str) -> None:
+    command("git", "update-ref", "refs/remotes/origin/main", ref,
+            cwd=repo, check=True)
 
 
 def main() -> int:
@@ -149,6 +171,7 @@ def main() -> int:
         # old main's committed hook does not know this gate exists yet.
         command("git", "config", "core.hooksPath", ".githooks", cwd=repo,
                 check=True)
+        set_origin_main(repo, "lane")
         first = command("git", "branch", "-f", "main", "lane", cwd=repo)
         require(first.returncode == 0, first.stdout + first.stderr)
 
@@ -164,6 +187,7 @@ def main() -> int:
         command("git", "commit", "-qm", "second scratch build", cwd=repo,
                 check=True)
         command("git", "merge", "--no-edit", "main", cwd=repo, check=True)
+        set_origin_main(repo, "lane-b")
         second = command("git", "branch", "-f", "main", "lane-b", cwd=repo)
         require(second.returncode == 0, second.stdout + second.stderr)
 
@@ -182,6 +206,7 @@ def main() -> int:
         command("git", "add", ".", cwd=repo, check=True)
         command("git", "commit", "-qm", "release 0.2.0", cwd=repo,
                 check=True)
+        set_origin_main(repo, "lane-b")
         good = command("git", "branch", "-f", "main", "lane-b", cwd=repo)
         require(good.returncode == 0, good.stdout + good.stderr)
 
@@ -191,6 +216,7 @@ def main() -> int:
         command("git", "add", ".", cwd=repo, check=True)
         command("git", "commit", "-qm", "advance to alpha", cwd=repo,
                 check=True)
+        set_origin_main(repo, "lane-b")
         advanced = command("git", "branch", "-f", "main", "lane-b",
                            cwd=repo)
         require(advanced.returncode == 0, advanced.stdout + advanced.stderr)
@@ -198,6 +224,7 @@ def main() -> int:
         command("git", "add", ".", cwd=repo, check=True)
         command("git", "commit", "-qm", "bad lifecycle rollback", cwd=repo,
                 check=True)
+        set_origin_main(repo, "lane-b")
         lifecycle_rollback = command(
             "git", "branch", "-f", "main", "lane-b", cwd=repo)
         require(lifecycle_rollback.returncode != 0,
@@ -214,6 +241,7 @@ def main() -> int:
         write_version(repo, (0, 1, 0))
         command("git", "add", ".", cwd=repo, check=True)
         command("git", "commit", "-qm", "bad rollback", cwd=repo, check=True)
+        set_origin_main(repo, "rollback")
         rollback = command("git", "branch", "-f", "main", "rollback",
                            cwd=repo)
         require(rollback.returncode != 0, "version rollback passed")

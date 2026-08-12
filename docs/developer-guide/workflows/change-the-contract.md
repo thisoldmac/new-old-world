@@ -10,6 +10,9 @@ source_dependencies: [contract/asyncapi.yaml, tools/docs-contract-projector, now
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Change the contract
 
 ## Update the authority first

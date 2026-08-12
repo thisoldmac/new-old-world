@@ -10,6 +10,9 @@ source_dependencies: [scripts/emulator, scripts/spin-up-ppc, scripts/q800-68k, s
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Emulator and metal verification
 
 ## Choose the domain before the tool

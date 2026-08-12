@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Continuity mode
 
 Continuity is an optional input mode on top of Mirror. It does not replace

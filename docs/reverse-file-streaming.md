@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Reverse file streaming — diagnosis and handoff
 
 ## Outcome

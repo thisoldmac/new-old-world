@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Architecture
 
 > **A note on "TimBotTu" and "the corpus."** NOW grew out of a larger

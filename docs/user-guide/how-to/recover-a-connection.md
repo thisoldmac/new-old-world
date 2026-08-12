@@ -11,6 +11,8 @@ media_ids: [setup-recovery]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Recover a connection
 
 ## Goal

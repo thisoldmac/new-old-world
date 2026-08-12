@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # A trustworthy 68K metal pass
 
 How to run the NOW-68K suites against the PowerBook 180c so that the

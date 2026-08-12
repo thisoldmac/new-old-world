@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # What every lane needs, in one place
 
 **Passed into every dispatch. Read it fully — it is short on purpose.**

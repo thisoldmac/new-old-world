@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""Validate NOW branch names and Conventional Commit / PR titles.
+
+The policy has one migration rule: a nonconforming branch is grandfathered
+only when its merge base predates this file. That admits work already in
+flight when the policy lands without leaving an actor-prefix bypass behind.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+POLICY_MARKER = "tools/git-policy"
+TYPES = (
+    "feat", "fix", "docs", "refactor", "test", "build", "ci", "chore",
+    "perf", "revert",
+)
+TYPE_PATTERN = "|".join(TYPES)
+SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+BRANCH_RE = re.compile(rf"^(?:{TYPE_PATTERN})/{SLUG}$")
+RELEASE_RE = re.compile(r"^release/v[0-9]+\.[0-9]+\.[0-9]+$")
+SERVICE_RES = (re.compile(r"^dependabot/.+$"),)
+TITLE_RE = re.compile(
+    rf"^(?:{TYPE_PATTERN})(?:\({SLUG}\))?!?: [^\s].+$"
+)
+
+
+def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ("git", "-C", str(repo), *args), text=True, capture_output=True
+    )
+
+
+def ref_exists(repo: Path, ref: str) -> bool:
+    return git(repo, "rev-parse", "--verify", "--quiet", ref).returncode == 0
+
+
+def merge_base(repo: Path, head: str, base: str) -> str | None:
+    result = git(repo, "merge-base", head, base)
+    if result.returncode:
+        return None
+    value = result.stdout.strip()
+    return value or None
+
+
+def policy_exists_at(repo: Path, revision: str) -> bool:
+    return git(repo, "cat-file", "-e", f"{revision}:{POLICY_MARKER}").returncode == 0
+
+
+def modern_branch(name: str) -> bool:
+    return (
+        name in {"main", "master"}
+        or BRANCH_RE.fullmatch(name) is not None
+        or RELEASE_RE.fullmatch(name) is not None
+        or any(pattern.fullmatch(name) for pattern in SERVICE_RES)
+    )
+
+
+def default_base(repo: Path) -> str | None:
+    configured = os.environ.get("NOW_GIT_POLICY_BASE")
+    if configured:
+        return configured
+    for candidate in ("refs/remotes/origin/main", "refs/heads/main"):
+        if ref_exists(repo, candidate):
+            return candidate
+    return None
+
+
+def branch_error(name: str) -> str:
+    types = " | ".join(TYPES)
+    return (
+        f"branch {name!r} does not follow creator-neutral Conventional Git\n"
+        f"  use: <type>/<kebab-slug>\n"
+        f"  types: {types}\n"
+        "  release exception: release/vX.Y.Z\n"
+        "  do not prepend codex/, claude/, thread/, fork/, or another owner"
+    )
+
+
+def check_branch(
+    name: str,
+    repo: Path,
+    *,
+    head: str = "HEAD",
+    base_ref: str | None = None,
+    known_merge_base: str | None = None,
+) -> tuple[bool, str]:
+    if modern_branch(name):
+        return True, f"branch {name!r} follows the current policy"
+
+    boundary = known_merge_base
+    if boundary is None:
+        base = base_ref or default_base(repo)
+        if base is not None:
+            boundary = merge_base(repo, head, base)
+
+    if boundary is not None and not policy_exists_at(repo, boundary):
+        return (
+            True,
+            f"legacy branch {name!r} is grandfathered: merge base "
+            f"{boundary[:12]} predates {POLICY_MARKER}",
+        )
+    return False, branch_error(name)
+
+
+def title_error(title: str) -> str:
+    return (
+        f"title {title!r} is not a Conventional Commit title\n"
+        "  use: type(scope): concise outcome\n"
+        "  scope is optional; type and scope are lowercase"
+    )
+
+
+def check_title(title: str, *, commit_message: bool = False) -> tuple[bool, str]:
+    title = title.strip()
+    if commit_message and (title.startswith("Merge ") or title.startswith('Revert "')):
+        return True, "Git-generated merge or revert message"
+    if commit_message:
+        for prefix in ("fixup! ", "squash! "):
+            if title.startswith(prefix):
+                title = title[len(prefix):]
+                break
+    if TITLE_RE.fullmatch(title):
+        return True, f"title {title!r} follows the current policy"
+    return False, title_error(title)
+
+
+def emit(ok: bool, message: str) -> int:
+    stream = sys.stdout if ok else sys.stderr
+    prefix = "[git-policy]" if ok else "[git-policy] refusing"
+    print(f"{prefix} {message}", file=stream)
+    return 0 if ok else 1
+
+
+def selftest() -> int:
+    valid_branches = (
+        "feat/conventional-commits", "docs/provenance-tags",
+        "refactor/module-atomicity", "fix/guest-reconnect", "test/git-policy",
+        "release/v0.2.0", "dependabot/pip/mkdocs-1.7",
+    )
+    invalid_branches = (
+        "codex/feat/conventional-commits", "claude/refactor/modules",
+        "dev/tooling/conventional-git", "feat/SomeFeature", "feature/flags",
+        "feat/two--hyphens", "feat/", "release/0.2.0",
+    )
+    for name in valid_branches:
+        if not modern_branch(name):
+            raise AssertionError(f"valid branch refused: {name}")
+    for name in invalid_branches:
+        if modern_branch(name):
+            raise AssertionError(f"invalid branch accepted: {name}")
+    print("[git-policy-selftest] branch grammar mutations refused")
+
+    valid_titles = (
+        "feat: add module registration", "docs(provenance): mark generated pages",
+        "refactor(module-atomicity)!: replace central dispatch",
+        "fix(guest-ppc): preserve saved selection",
+    )
+    invalid_titles = (
+        "Add module registration", "(feat) add module registration",
+        "Feat: add module registration", "feat(Module): add registration",
+        "feature: add registration", "feat:   ",
+    )
+    for title in valid_titles:
+        if not check_title(title)[0]:
+            raise AssertionError(f"valid title refused: {title}")
+    for title in invalid_titles:
+        if check_title(title)[0]:
+            raise AssertionError(f"invalid title accepted: {title}")
+    print("[git-policy-selftest] title grammar mutations refused")
+
+    with tempfile.TemporaryDirectory(prefix="now-git-policy-") as raw:
+        repo = Path(raw)
+        (repo / "tools").mkdir()
+        commands = (
+            ("init", "-q", "-b", "main"),
+            ("config", "user.name", "Git Policy"),
+            ("config", "user.email", "git-policy@example.invalid"),
+        )
+        for command in commands:
+            result = git(repo, *command)
+            if result.returncode:
+                raise AssertionError(result.stderr)
+        (repo / "README.md").write_text("base\n")
+        git(repo, "add", "README.md")
+        git(repo, "commit", "-qm", "base")
+        base = git(repo, "rev-parse", "HEAD").stdout.strip()
+        git(repo, "branch", "codex/old-work", base)
+        (repo / POLICY_MARKER).write_text("policy\n")
+        git(repo, "add", POLICY_MARKER)
+        git(repo, "commit", "-qm", "adopt policy")
+        adopted = git(repo, "rev-parse", "HEAD").stdout.strip()
+
+        old_ok, _ = check_branch(
+            "codex/old-work", repo, known_merge_base=base
+        )
+        new_ok, _ = check_branch(
+            "codex/new-work", repo, known_merge_base=adopted
+        )
+        if not old_ok or new_ok:
+            raise AssertionError("grandfather boundary did not distinguish old and new work")
+    print("[git-policy-selftest] legacy branch boundary proved in a real repository")
+    print("[git-policy-selftest] all policy mutations refused")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    branch = sub.add_parser("check-branch")
+    branch.add_argument("branch")
+    branch.add_argument("--repo", default=".")
+    branch.add_argument("--head", default="HEAD")
+    branch.add_argument("--base-ref")
+    branch.add_argument("--merge-base")
+
+    current = sub.add_parser("check-current")
+    current.add_argument("--repo", default=".")
+    current.add_argument("--base-ref")
+
+    title = sub.add_parser("check-title")
+    title.add_argument("title")
+
+    message = sub.add_parser("check-commit-file")
+    message.add_argument("path")
+
+    sub.add_parser("selftest")
+    args = parser.parse_args()
+
+    if args.command == "selftest":
+        return selftest()
+    if args.command == "check-title":
+        return emit(*check_title(args.title))
+    if args.command == "check-commit-file":
+        path = Path(args.path)
+        first = path.read_text().splitlines()[0] if path.exists() else ""
+        return emit(*check_title(first, commit_message=True))
+    if args.command == "check-current":
+        repo = Path(args.repo).resolve()
+        result = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+        if result.returncode:
+            return 0
+        return emit(*check_branch(
+            result.stdout.strip(), repo, base_ref=args.base_ref
+        ))
+    if args.command == "check-branch":
+        return emit(*check_branch(
+            args.branch, Path(args.repo).resolve(), head=args.head,
+            base_ref=args.base_ref, known_merge_base=args.merge_base,
+        ))
+    raise AssertionError(args.command)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

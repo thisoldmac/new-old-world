@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The probe harnesses
 
 **Ported from `archive/mirror-standalone-2026-08-09/tests/` on 2026-07-31.** Wave 2B of

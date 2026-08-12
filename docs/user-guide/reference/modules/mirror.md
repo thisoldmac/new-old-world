@@ -12,6 +12,8 @@ media_ids: [mirror-host, mirror-ppc, mirror-detail]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror module
 
 ## What it does

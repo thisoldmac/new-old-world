@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Onboarding a PowerPC Macintosh
 
 NOW's host can temporarily serve the PPC application and its setup files to

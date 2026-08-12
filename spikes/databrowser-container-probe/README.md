@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Data Browser CONTAINER probe (compile-and-reason, no metal)
 
 **One question:** is Data Browser's hierarchical/container surface —

@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-05
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Liveness below the application - Plan
 
 Continues [011, A Mirror that survives being driven](2026-08-05-011-feat-a-mirror-that-survives-being-driven-plan.md),

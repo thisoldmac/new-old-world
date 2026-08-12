@@ -6,10 +6,13 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [RELEASING.md, docs/site-integration.yaml, scripts/test-docs]
-source_dependencies: [RELEASING.md, docs/site-integration.yaml, docs/assets/screenshots/manifest.yaml, docs/feature-catalog.yaml, scripts/test-docs, scripts/docs-build, .github/workflows/pages.yml, scripts/verify-host-signature, docs/naming.md, contract/resident_version.h, docs/status.md, docs/known-wrong.md, docs/open-issues.md]
+source_dependencies: [RELEASING.md, docs/site-integration.yaml, docs/assets/screenshots/manifest.yaml, product/features.yaml, scripts/test-docs, scripts/docs-build, .github/workflows/pages.yml, scripts/verify-host-signature, docs/naming.md, contract/resident_version.h, docs/status.md, docs/known-wrong.md, docs/open-issues.md]
 media_ids: []
 last_verified: 2026-08-11
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Release documentation
 
 Start with [the repository release procedure](../../../RELEASING.md). A green
@@ -22,10 +25,8 @@ blocker; this checklist does not turn manual assembly into reproducibility.
 
 The selected public target is `https://docs.newoldworldmac.com/`. Documentation
 source, validation, build, and deployment remain in this application
-repository. A GitHub Pages custom workflow publishes the generated site after
-the integrated CI run for a `main` revision succeeds. It checks out that exact
-verified revision rather than whichever commit happens to be current when the
-deployment begins. The separate `newoldworld-web`
+repository. Once the repository is public, a GitHub Pages custom workflow will
+publish the generated site independently. The separate `newoldworld-web`
 repository owns one stable link to that origin, not the documentation build.
 
 This boundary is deliberate: ordinary documentation corrections must not
@@ -33,25 +34,24 @@ rebuild, republish, or create a new revision of the Azure Container App serving
 the main website. Do not copy generated HTML between repositories, bake docs
 into the website container, or introduce cross-repository commit automation.
 
-The site is rooted at `/` on the documentation subdomain. The maintained
-canonical origin, DNS owner, main-site repository, and RFC 9116 expiry live in
-`docs/site-integration.yaml`. For a local release-equivalent build, set
+Until activation, keep using the standalone `/docs/` preview and do not claim
+that a docs build was deployed. At activation, verify the custom domain, add
+the Pages workflow, change the MkDocs base path to `/`, set the canonical
+origin and future RFC 9116 expiry in `docs/site-integration.yaml`, and configure
+the DNS record. Set
 `NOW_DOCS_SITE_URL` to the canonical docs URL and run:
 
 ```sh
 NOW_DOCS_RELEASE=1 scripts/docs-build
 ```
 
-The release mode refuses incomplete integration, generates `security.txt` and
-`robots.txt` from the maintained source, and checks the generated files before
-returning success. The Pages artifact includes dot-directories explicitly so
-`.well-known/security.txt` is not omitted.
+The release mode refuses incomplete integration and generates `security.txt` and `robots.txt` from the maintained source.
 
 ## Review truth and artifacts
 
 - Compare compatibility and limitations with `docs/status.md`, `docs/known-wrong.md`, `docs/open-issues.md`, contract coverage, and MCP coverage.
 - Compare every packaged artifact with the active profile in
-  `docs/feature-catalog.yaml`; excluded features must not appear in release
+  `product/features.yaml`; excluded features must not appear in release
   setup instructions or the bundle.
 - Freeze an artifact record from the actual packaged output. For every shipped
   payload, record its filename, byte size, and SHA-256. Also record the host's

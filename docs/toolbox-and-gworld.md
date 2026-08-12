@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The Toolbox and GWorld, measured
 
 **Emulator: QEMU mac99, Mac OS 9.1, 2026-08-06.** Nothing here has run

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The last of Mirror's verb surface — seven verdicts
 
 **Date:** 2026-07-31 · **Status:** decisions, with the evidence each was

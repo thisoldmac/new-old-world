@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Working conventions for New Old World
 
 Read this before writing code or docs here. It applies to **everyone —
@@ -315,8 +317,7 @@ a shared bake over. The rules that must not be restated anywhere else:
   receipt. It sees merge commits, fast-forwards,
   `git fetch . branch:main`, and forced ref updates—the paths commit and merge
   hooks cannot see—and a branch deferral cannot override it. Lane-to-lane
-  updates are untouched. As with `TBT_ALLOW_MAIN=1`, the enforcement is the
-  floor and not the rule.
+  updates are untouched. The enforcement is the floor and not the rule.
 - **A note is not a bake.** An image can reach the oracle's path by hand —
   that is how the current one got there. `tools/ext-bake-gate note-image
   --reason "…"` records who put it there and why, and says in its own
@@ -361,22 +362,25 @@ agents branch in their own worktrees — so the shared checkout stays on
 `main`, at the head of the work.
 
 - **Work on a branch, never on `main`.** Before your first edit, cut one
-  — `git checkout -b <ns>/<slug>`, forked off the parent branch you are
-  continuing, not off main. `main` receives finished work by
-  fast-forward or merge; it is never where work is typed. This is
+  — `git checkout -b <type>/<kebab-slug>`, forked off the parent branch you are
+  continuing, not off main. GitHub `main` receives finished work only through
+  its protected pull-request path; local `main` is a mirror, not another
+  landing boundary. This is
   enforced (`.githooks/pre-commit`, plus a PreToolUse hook on
   `Write`/`Edit`/`Bash` — `.claude/hooks/guard-main.sh`) — **run
   `tools/setup-hooks` once per clone** to point git at it, which every
-  worktree off that checkout then inherits. Neither half reaches a
-  worktree cut off `main`, because `.githooks` and the `tools/` it
-  invokes are **not on `main`** and never have been; that outage, and
-  where every rule in this repository ought to live, is
-  [docs/rule-scopes.md](docs/rule-scopes.md).
-  The enforcement is the floor, not the
-  rule: don't reach for `TBT_ALLOW_MAIN=1` to get past a block you
-  should have avoided by branching. The namespaces in use are
-  `claude/`, `codex/`, `thread/` and `fork/` — pick the one that says
-  who is working.
+  worktree off that checkout then inherits. `.githooks/pre-push` refuses every
+  direct remote-main update, and `.githooks/reference-transaction` permits a
+  local-main update only when it is the fetched `origin/main` and a
+  fast-forward. There is no environment override for those two boundaries.
+  The history of the old scope outage, and where every rule belongs, is
+  [docs/rule-scopes.md](docs/rule-scopes.md). Branches describe the change, not
+  the person or automation making it: use `feat/`, `fix/`, `docs/`,
+  `refactor/`, `test/`, `build/`, `ci/`, `chore/`, `perf/`, or `revert/`.
+  Do not prepend `claude/`, `codex/`, `thread/`, `fork/`, or another
+  creator namespace. `release/vX.Y.Z` is reserved for qualification.
+  `tools/git-policy` enforces the grammar and grandfathers only work whose
+  merge base predates the policy.
 - **Commit early and often — a session can end without warning.** Commit
   a checkpoint as soon as you have something coherent, and again as you
   go. Do not save it all for the end, and above all do not wait for the
@@ -427,6 +431,13 @@ dependencies, lifecycle, media IDs, and a verification date. Run
 `scripts/test-docs` before landing documentation or a source change named by
 those pages. `tools/docs-gate-selftest` is the mutation evidence for that
 gate.
+
+Every tracked Markdown file also carries exactly one
+`now-doc-provenance` comment. `generated` is a presence marker and is removed
+only by a human rewrite; `reviewed=true` records a separate human review.
+Generated projections and `derived-doc` pages must retain `generated`.
+`tools/docs-provenance` is the grammar and corpus gate; published pages render
+the state, while repository records and `docs/local/` scratch do not.
 
 Module documentation is derived from the live host registry and PowerPC
 Workshop enum through `docs/module-manifest.yaml`. A new module updates the

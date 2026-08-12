@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""Check or apply NOW's universal Markdown provenance marker."""
+
+from __future__ import annotations
+
+import argparse
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "docs/hooks"))
+
+from provenance import Provenance, ProvenanceError, parse  # noqa: E402
+
+
+def repo_root(value: str | None = None) -> Path:
+    raw = value or os.environ.get("NOW_DOCS_GATE_ROOT")
+    return Path(raw).resolve() if raw else ROOT
+
+
+def tracked_markdown(root: Path) -> list[Path]:
+    manifest = os.environ.get("NOW_DOCS_GATE_TRACKED_MARKDOWN_MANIFEST")
+    if manifest:
+        rels = Path(manifest).read_text().splitlines()
+    else:
+        result = subprocess.run(
+            ("git", "-C", str(root), "ls-files", "--", "*.md"),
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode:
+            raise SystemExit(
+                "[docs-provenance] cannot enumerate tracked Markdown: "
+                + result.stderr.strip()
+            )
+        rels = result.stdout.splitlines()
+    return [root / rel for rel in sorted(filter(None, rels))]
+
+
+def requires_generated(path: Path, text: str, root: Path) -> bool:
+    rel = path.relative_to(root)
+    return (
+        rel.parts[:2] == ("docs", "generated")
+        or "<!-- derived-doc v1" in text
+    )
+
+
+def check(root: Path) -> int:
+    errors: list[str] = []
+    counts = {"generated": 0, "human": 0, "reviewed": 0, "pending": 0}
+    files = tracked_markdown(root)
+    for path in files:
+        rel = path.relative_to(root)
+        if not path.exists():
+            errors.append(f"{rel}: tracked Markdown file is missing")
+            continue
+        text = path.read_text()
+        try:
+            provenance = parse(text)
+        except ProvenanceError as exc:
+            errors.append(f"{rel}: {exc}")
+            continue
+        if requires_generated(path, text, root) and not provenance.generated:
+            errors.append(
+                f"{rel}: generated projection or derived document must retain generated"
+            )
+        counts["generated" if provenance.generated else "human"] += 1
+        counts["reviewed" if provenance.reviewed else "pending"] += 1
+
+    if errors:
+        print("[docs-provenance] FAILED", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 1
+    print(
+        f"[docs-provenance] {len(files)} tracked Markdown files: "
+        f"{counts['generated']} generated, {counts['human']} human-rewritten; "
+        f"{counts['reviewed']} reviewed, {counts['pending']} pending"
+    )
+    return 0
+
+
+def insert_marker(text: str, marker: str) -> str:
+    if text.startswith("---\n"):
+        end = text.find("\n---\n", 4)
+        if end < 0:
+            raise ProvenanceError("unterminated YAML front matter")
+        split = end + len("\n---\n")
+        return text[:split] + "\n" + marker + "\n\n" + text[split:]
+    return marker + "\n\n" + text
+
+
+def apply(root: Path) -> int:
+    marker = Provenance(generated=True, reviewed=False).marker
+    pending: list[tuple[Path, str]] = []
+    for path in tracked_markdown(root):
+        text = path.read_text()
+        try:
+            parse(text)
+            continue
+        except ProvenanceError as exc:
+            if "missing" not in str(exc):
+                raise SystemExit(f"[docs-provenance] refusing {path}: {exc}")
+        pending.append((path, insert_marker(text, marker)))
+    for path, text in pending:
+        path.write_text(text)
+    print(f"[docs-provenance] marked {len(pending)} tracked Markdown files")
+    return check(root)
+
+
+def selftest() -> int:
+    with tempfile.TemporaryDirectory(prefix="now-docs-provenance-") as raw:
+        root = Path(raw)
+        first = root / "a.md"
+        invalid = root / "z.md"
+        first.write_text("# First\n")
+        invalid.write_text("<!-- now-doc-provenance: reviewed=pending -->\n\n# Last\n")
+        manifest = root / "manifest"
+        manifest.write_text("a.md\nz.md\n")
+        previous = os.environ.get("NOW_DOCS_GATE_TRACKED_MARKDOWN_MANIFEST")
+        os.environ["NOW_DOCS_GATE_TRACKED_MARKDOWN_MANIFEST"] = str(manifest)
+        try:
+            try:
+                apply(root)
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError("malformed late marker was not refused")
+            if first.read_text() != "# First\n":
+                raise AssertionError("refused apply partially changed an earlier file")
+            invalid.write_text("# Last\n")
+            if apply(root):
+                raise AssertionError("valid corpus did not pass after apply")
+        finally:
+            if previous is None:
+                os.environ.pop("NOW_DOCS_GATE_TRACKED_MARKDOWN_MANIFEST", None)
+            else:
+                os.environ["NOW_DOCS_GATE_TRACKED_MARKDOWN_MANIFEST"] = previous
+    print("[docs-provenance-selftest] refusal is transactional")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=("check", "apply", "selftest"))
+    parser.add_argument("--root")
+    args = parser.parse_args()
+    root = repo_root(args.root)
+    if args.command == "check":
+        return check(root)
+    if args.command == "apply":
+        return apply(root)
+    return selftest()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

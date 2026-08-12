@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Census trap-dispatch spike
 
 **One question:** can NOW's Carbon guest reach the two 68K-trap-only

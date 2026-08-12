@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Resident components
 
 NOW's charter says two applications and one wire contract. This note

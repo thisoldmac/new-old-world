@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Reading the guest's assets straight off the disk image
 
 **Date:** 2026-08-06, extended 2026-08-11 · **Status:** measured here, on this
