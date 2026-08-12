@@ -71,7 +71,10 @@ final class NearestNeighbourSamplingTests: XCTestCase {
            — the deletion was loud. */
         /* 8 → 9 on 2026-08-11: the attributed Apple menu mark joined the
            semantic renderer. Its call site explicitly requests `.none`. */
-        XCTAssertEqual(total, 9,
+        /* 9 → 10 on 2026-08-11: the cross-proved Finder alias transform
+           joined the same local renderer and also explicitly requests
+           nearest-neighbour sampling. */
+        XCTAssertEqual(total, 10,
                        "the number of drawn bitmaps in MirrorKitUI changed. "
                        + "That is fine — check the new one asks for "
                        + "nearest-neighbour, then update this number so the "

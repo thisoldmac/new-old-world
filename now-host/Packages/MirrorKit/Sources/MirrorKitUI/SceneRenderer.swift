@@ -592,11 +592,18 @@ public struct SceneRenderer {
         drawAliasBadge(ctx, box, item: item)
     }
 
-    /// The alias badge: a small italic arrow, bottom-left (overlaid on either
-    /// the real bitmap or the procedural glyph).
+    /// Finder's alias transform over either resource-backed or procedural art.
+    /// Large icons use the profile-scoped cross-proved framebuffer residual;
+    /// the old procedural mark remains an explicit fallback for incomplete
+    /// packs and for small/list-view art that has not been separately proved.
     private func drawAliasBadge(_ ctx: GraphicsContext, _ box: CGRect,
                                 item: MirrorKit.Scene.DesktopItem) {
         guard item.alias else { return }
+        if let badge = IconAtlas.aliasBadge(size: .fitting(box)) {
+            ctx.draw(Image(decorative: badge, scale: 1)
+                        .interpolation(.none), in: box)
+            return
+        }
         var a = Path()
         a.move(to: CGPoint(x: box.minX + 2, y: box.maxY - 3))
         a.addLine(to: CGPoint(x: box.minX + 9, y: box.maxY - 3))

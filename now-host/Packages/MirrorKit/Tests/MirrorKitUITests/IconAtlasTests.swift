@@ -128,6 +128,14 @@ final class IconAtlasTests: XCTestCase {
                       "the desktop route ignored stronger file-owned art")
     }
 
+    func testLargeAliasChromeComesFromTheProfilePackOnly() throws {
+        try skipUnlessAssetPack()
+        XCTAssertEqual(IconAtlas.aliasBadge(size: .large)?.width, 32)
+        XCTAssertEqual(IconAtlas.aliasBadge(size: .large)?.height, 32)
+        XCTAssertNil(IconAtlas.aliasBadge(size: .small),
+                     "large desktop proof cannot define list-view chrome")
+    }
+
     /// Watched to fail by routing aliases through `FontBook.small` again:
     /// the target's three actual aliases use Geneva 9 italic while the
     /// non-alias QuickTime document uses the plain strike.

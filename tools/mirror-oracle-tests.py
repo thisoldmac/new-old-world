@@ -366,6 +366,82 @@ def main() -> None:
             base_assets, root / "wrong-capture-assets",
         ), "does not match the capture receipt")
 
+        # A Finder alias badge is not accepted from one convenient crop. Two
+        # independently extracted icons must leave the same opaque residual
+        # over the already-proved desktop tile.
+        fileicons = base_assets / "fileicons"
+        fileicons.mkdir()
+        icon_a = solid(2, 2, (30, 40, 50))
+        icon_b = solid(2, 2, (60, 70, 80))
+        write_png(icon_a, fileicons / "a.png")
+        write_png(icon_b, fileicons / "b.png")
+        (fileicons / "manifest.json").write_text(json.dumps({
+            "items": {
+                "Desktop Folder:A": {"large": "fileicons/a.png"},
+                "Desktop Folder:B": {"large": "fileicons/b.png"},
+            },
+        }))
+        alias_pixels = bytearray(solid(4, 3, (20, 20, 20)).rgba)
+        for origin, icon in ((0, icon_a), (2, icon_b)):
+            for y in range(2):
+                for x in range(2):
+                    source_offset = (y * 2 + x) * 4
+                    target_offset = (y * 4 + origin + x) * 4
+                    alias_pixels[target_offset : target_offset + 4] = \
+                        icon.rgba[source_offset : source_offset + 4]
+        for x in (0, 2):
+            offset = (1 * 4 + x) * 4
+            alias_pixels[offset : offset + 4] = bytes((9, 8, 7, 255))
+        alias_source = Image(4, 3, bytes(alias_pixels))
+        alias_guest = root / "alias-guest.png"
+        write_png(alias_source, alias_guest)
+        alias_profile_raw = dict(fixture_profile().raw)
+        alias_profile_raw["desktopPattern"] = {
+            "name": "Mac OS Default", "asset": "patterns/desktop.png",
+            "tileOrigin": [0, 0], "proofRegions": [[0, 2, 4, 3]],
+        }
+        alias_profile_raw["chromeAssets"] = {
+            "appleMenu": {"rect": [0, 2, 1, 3], "background": "#141414"},
+            "aliasBadge": {"proofs": [
+                {"path": "Desktop Folder:A", "rect": [0, 0, 2, 2]},
+                {"path": "Desktop Folder:B", "rect": [2, 0, 4, 2]},
+            ]},
+        }
+        alias_profile = replace(fixture_profile(), raw=alias_profile_raw)
+        alias_capture = root / "alias-capture.json"
+        alias_capture.write_text(json.dumps({
+            "kind": "capture", "case": {"id": "test"},
+            "profile": {"id": alias_profile.id},
+            "acceptedCapture": {
+                "path": str(alias_guest),
+                "sha256": hashlib.sha256(alias_guest.read_bytes()).hexdigest(),
+            },
+            "evidenceStatus": "state-proof-validated",
+        }))
+        alias_assets = root / "alias-assets"
+        alias_receipt = extract_chrome(
+            alias_profile, alias_guest, alias_capture, base_assets, alias_assets)
+        alias_badge = load(alias_assets / "chrome" / "alias-badge.png")
+        assert alias_badge.pixel(0, 1) == (9, 8, 7, 255)
+        assert alias_badge.pixel(1, 1)[3] == 0
+        assert alias_receipt["aliasBadge"]["outputPixels"] == 1
+        assert alias_receipt["aliasBadge"]["commonPixels"] == 1
+        assert alias_receipt["aliasBadge"]["verdict"] == "cross-proof-exact"
+
+        disagreeing = changed(alias_source, 2, 1, (6, 5, 4))
+        disagreeing_guest = root / "alias-disagreeing.png"
+        write_png(disagreeing, disagreeing_guest)
+        disagreeing_capture = json.loads(alias_capture.read_text())
+        disagreeing_capture["acceptedCapture"]["path"] = str(disagreeing_guest)
+        disagreeing_capture["acceptedCapture"]["sha256"] = hashlib.sha256(
+            disagreeing_guest.read_bytes()).hexdigest()
+        disagreeing_receipt = root / "alias-disagreeing-capture.json"
+        disagreeing_receipt.write_text(json.dumps(disagreeing_capture))
+        assert_raises(ValueError, lambda: extract_chrome(
+            alias_profile, disagreeing_guest, disagreeing_receipt,
+            base_assets, root / "alias-disagreeing-assets",
+        ), "residual disagrees")
+
         scene_path = root / "scene.json"
         scene_path.write_text("{}")
         render_output = root / "renderer-output.png"
@@ -406,7 +482,7 @@ def main() -> None:
         assert "profile platinum.macos-8.6.default" in listing
         assert "case finder-file-menu-open" in listing
 
-    print("mirror-oracle: 30 capture, state, image, profile, asset, and diff behaviors passed")
+    print("mirror-oracle: 32 capture, state, image, profile, asset, and diff behaviors passed")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,14 @@
         "background": "#DDDDDD",
         "source": "Finder application-menu slot in the same stable native framebuffer"
       }
+    },
+    "aliasBadge": {
+      "proofs": [
+        {"path": "Desktop Folder:Browse the Internet", "rect": [736, 220, 768, 252]},
+        {"path": "Desktop Folder:Mail", "rect": [736, 348, 768, 380]},
+        {"path": "Desktop Folder:Register with Apple", "rect": [736, 412, 768, 444]}
+      ],
+      "source": "opaque residual shared by three independently extracted custom icons over the proved desktop tile; every output pixel must agree across all three target regions and differ in at least two proofs"
     }
   },
   "notes": [

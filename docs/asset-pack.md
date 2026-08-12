@@ -95,6 +95,14 @@ decoder: FinderInfo bytes plus resource-fork bytes in, attributed icon suite
 out. Connection permissions, session choice, and transfer are adapter concerns;
 icon selection and pack layout are not.
 
+Profile-scoped derived chrome may depend on those extracted assets without
+turning into a hand crop. The 8.6 alias badge is accepted only after three
+file-owned icon suites, composed over the separately proved desktop pattern,
+leave one identical framebuffer residual. Its receipt records every classic
+path, source-asset hash, rectangle, changed-pixel count, union, intersection,
+opaque bounds, and capture receipt. A disagreement refuses the whole derived
+pack.
+
 The renderer is a consumer, not a fourth acquisition route. MirrorKit composes
 semantic scenes locally from pack assets plus procedural furniture. Native
 framebuffers never enter the NOW semantic protocol, and a pixel comparison is

@@ -70,6 +70,12 @@ bytes-only decoder and version-0.3.0 manifest contract. Live session choice,
 permission, and pull receipts stay above that boundary; asset interpretation
 stays below it.
 
+Derived chrome can join those domains through explicit proof rather than image
+copying. For the 8.6 Finder alias transform, the visual-profile adapter
+composes each independently extracted file icon over the proved desktop tile
+and accepts only the opaque residual whose target RGB agrees across every
+declared proof. MirrorKit then draws that private, versioned overlay locally.
+
 Visual versioning is explicit at the tooling boundary. The initial
 `platinum.macos-8.6.default` profile records system, theme, screen/depth,
 calibration source, and asset policy. It does not claim that Mac OS 8.6 and 9.1

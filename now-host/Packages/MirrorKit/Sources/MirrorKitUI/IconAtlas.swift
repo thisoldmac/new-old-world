@@ -94,6 +94,15 @@ public enum IconAtlas {
             ?? image(name + Size.large.suffix, subdir: "icons")
     }
 
+    /// Finder's profile-scoped large-icon alias transform, derived only when
+    /// independent attributed icons leave one identical framebuffer residual.
+    /// Small/list-view alias chrome remains a separate oracle question.
+    static func aliasBadge(size: Size) -> CGImage? {
+        size == .large
+            ? image(relativePath: "chrome/alias-badge.png")
+            : nil
+    }
+
     /// The app's own icon, by the creator signature the guest reported for a
     /// running process. This is not inference: the signature comes off the
     /// wire with the process, so `fndf` really is Sherlock. nil when the

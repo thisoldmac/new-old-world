@@ -10,7 +10,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from .images import load, transparent_crop, write_png
+from .images import Image, load, transparent_crop, write_png
 from .model import VisualProfile
 
 
@@ -167,6 +167,151 @@ def _prove_desktop_pattern(profile: VisualProfile, source, output: Path,
     }
 
 
+def _baseline_icon(tile: Image, tile_origin: list[int], rect: tuple[int, int, int, int],
+                   icon: Image) -> Image:
+    """Compose one extracted icon over its measured repeating desktop."""
+    left, top, right, bottom = rect
+    width, height = right - left, bottom - top
+    if (icon.width, icon.height) != (width, height):
+        raise ValueError(
+            f"alias badge proof icon is {icon.width}x{icon.height}; "
+            f"capture rectangle is {width}x{height}"
+        )
+    rgba = bytearray(width * height * 4)
+    for y in range(height):
+        for x in range(width):
+            background = tile.pixel(
+                (left + x - tile_origin[0]) % tile.width,
+                (top + y - tile_origin[1]) % tile.height,
+            )
+            foreground = icon.pixel(x, y)
+            alpha = foreground[3]
+            target = (y * width + x) * 4
+            for channel in range(3):
+                rgba[target + channel] = (
+                    foreground[channel] * alpha
+                    + background[channel] * (255 - alpha) + 127
+                ) // 255
+            rgba[target + 3] = 255
+    return Image(width, height, bytes(rgba))
+
+
+def _derive_alias_badge(source: Image, asset_root: Path,
+                        desktop: dict[str, Any] | None,
+                        specification: Any) -> dict[str, Any] | None:
+    """Derive Finder's alias transform from independent file-icon proofs.
+
+    The captured pixels are accepted only where multiple extracted source
+    icons independently leave the same opaque residual. This makes the output
+    a profile-scoped Finder transform, not a crop of any one desktop item.
+    """
+    if specification is None:
+        return None
+    label = "chromeAssets.aliasBadge"
+    if not isinstance(specification, dict):
+        raise ValueError(f"profile {label} extraction contract must be an object")
+    proofs = specification.get("proofs")
+    if not isinstance(proofs, list) or len(proofs) < 2:
+        raise ValueError(f"profile {label}.proofs must contain at least two items")
+    if desktop is None:
+        raise ValueError(f"profile {label} requires a proved desktopPattern")
+
+    manifest_path = asset_root / "fileicons" / "manifest.json"
+    try:
+        file_manifest = json.loads(manifest_path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read file-icon manifest: {error}") from error
+    items = file_manifest.get("items") if isinstance(file_manifest, dict) else None
+    if not isinstance(items, dict):
+        raise ValueError("file-icon manifest has no items object")
+
+    tile = load(asset_root / desktop["asset"])
+    tile_origin = desktop["tileOrigin"]
+    evidence: list[dict[str, Any]] = []
+    targets: list[list[tuple[int, int, int]]] = []
+    changed_sets: list[set[int]] = []
+    dimensions: tuple[int, int] | None = None
+    for index, proof in enumerate(proofs):
+        proof_label = f"{label}.proofs[{index}]"
+        if not isinstance(proof, dict):
+            raise ValueError(f"profile {proof_label} must be an object")
+        item_path = proof.get("path")
+        if not isinstance(item_path, str) or not item_path:
+            raise ValueError(f"profile {proof_label}.path must be non-empty")
+        row = items.get(item_path)
+        asset_value = row.get("large") if isinstance(row, dict) else None
+        asset = _relative_asset(asset_value, proof_label)
+        icon_path = asset_root / asset
+        if not icon_path.is_file():
+            raise ValueError(f"profile {proof_label} asset is absent: {asset}")
+        rect = _rect(proof.get("rect"), proof_label)
+        left, top, right, bottom = rect
+        if not (0 <= left < right <= source.width and
+                0 <= top < bottom <= source.height):
+            raise ValueError(f"profile {proof_label}.rect is outside the capture")
+        size = right - left, bottom - top
+        if dimensions is None:
+            dimensions = size
+        elif dimensions != size:
+            raise ValueError(f"profile {label} proof rectangles must have one size")
+        baseline = _baseline_icon(tile, tile_origin, rect, load(icon_path))
+        target_pixels: list[tuple[int, int, int]] = []
+        changed: set[int] = set()
+        for y in range(size[1]):
+            for x in range(size[0]):
+                pixel = source.pixel(left + x, top + y)[:3]
+                flat = y * size[0] + x
+                target_pixels.append(pixel)
+                if pixel != baseline.pixel(x, y)[:3]:
+                    changed.add(flat)
+        if not changed:
+            raise ValueError(f"profile {proof_label} has no residual pixels")
+        targets.append(target_pixels)
+        changed_sets.append(changed)
+        evidence.append({
+            "path": item_path,
+            "rect": list(rect),
+            "baseAsset": str(asset),
+            "baseAssetSha256": _sha256(icon_path),
+            "changedPixels": len(changed),
+        })
+
+    assert dimensions is not None
+    union = set().union(*changed_sets)
+    common = set.intersection(*changed_sets)
+    rgba = bytearray(dimensions[0] * dimensions[1] * 4)
+    for flat in sorted(union):
+        values = {pixels[flat] for pixels in targets}
+        if len(values) != 1:
+            x, y = flat % dimensions[0], flat // dimensions[0]
+            raise ValueError(
+                f"profile {label} residual disagrees at ({x},{y}): {sorted(values)}"
+            )
+        if sum(flat in changed for changed in changed_sets) < 2:
+            x, y = flat % dimensions[0], flat // dimensions[0]
+            raise ValueError(
+                f"profile {label} residual at ({x},{y}) has only one proof"
+            )
+        target = flat * 4
+        rgba[target : target + 3] = bytes(values.pop())
+        rgba[target + 3] = 255
+    badge = Image(dimensions[0], dimensions[1], bytes(rgba))
+    output = asset_root / "chrome" / "alias-badge.png"
+    write_png(badge, output)
+    xs = [flat % dimensions[0] for flat in union]
+    ys = [flat // dimensions[0] for flat in union]
+    return {
+        "path": str(output.relative_to(asset_root)),
+        "sha256": _sha256(output),
+        "proofs": evidence,
+        "provedPixels": sum(len(changed) for changed in changed_sets),
+        "commonPixels": len(common),
+        "outputPixels": len(union),
+        "opaqueBounds": [min(xs), min(ys), max(xs) + 1, max(ys) + 1],
+        "verdict": "cross-proof-exact",
+    }
+
+
 def extract_chrome(profile: VisualProfile, guest: Path,
                    capture_receipt: Path, base_assets: Path,
                    output: Path) -> dict[str, Any]:
@@ -225,6 +370,10 @@ def extract_chrome(profile: VisualProfile, guest: Path,
         desktop = (_prove_desktop_pattern(
             profile, source, output, desktop_specification,
         ) if desktop_specification is not None else None)
+        alias_badge = _derive_alias_badge(
+            source, output, desktop,
+            profile.raw.get("chromeAssets", {}).get("aliasBadge"),
+        )
         receipt = {
             "schema": "now-mirror-oracle-assets/v1",
             "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -236,6 +385,7 @@ def extract_chrome(profile: VisualProfile, guest: Path,
             },
             "appleMenu": apple,
             "applicationMenuIcons": applications,
+            "aliasBadge": alias_badge,
             "desktopPattern": desktop,
         }
         _write_json(chrome_dir / "provenance.json", receipt)
