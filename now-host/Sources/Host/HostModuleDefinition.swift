@@ -17,10 +17,15 @@ struct HostModuleContext {
     let agentActivity: AgentActivityModel?
     let agentCompanions: AgentCompanionModel?
     let logs: LogsModel?
+    let settings: SettingsModel?
+    let onboarding: OnboardingPortal?
     let guestScreen: @Sendable () async -> ChatSystemPrompt.Screen?
     let mirrorEngines: MirrorStateEngineRegistry?
     let selectedModuleID: () -> String
     let selectModule: (String) -> Void
+    let selectGuest: (GuestKey) -> Bool
+    let startListening: () -> Void
+    let stopListening: () -> Void
     let connectedMachineName: () -> String
 
     init(listener: GuestListener,
@@ -32,11 +37,16 @@ struct HostModuleContext {
          agentActivity: AgentActivityModel? = nil,
          agentCompanions: AgentCompanionModel? = nil,
          logs: LogsModel? = nil,
+         settings: SettingsModel? = nil,
+         onboarding: OnboardingPortal? = nil,
          guestScreen: @escaping @Sendable () async
             -> ChatSystemPrompt.Screen? = { nil },
          mirrorEngines: MirrorStateEngineRegistry? = nil,
          selectedModuleID: @escaping () -> String = { "" },
          selectModule: @escaping (String) -> Void = { _ in },
+         selectGuest: @escaping (GuestKey) -> Bool = { _ in false },
+         startListening: @escaping () -> Void = {},
+         stopListening: @escaping () -> Void = {},
          connectedMachineName: @escaping () -> String = {
             "no Mac connected"
          }) {
@@ -49,10 +59,15 @@ struct HostModuleContext {
         self.agentActivity = agentActivity
         self.agentCompanions = agentCompanions
         self.logs = logs
+        self.settings = settings
+        self.onboarding = onboarding
         self.guestScreen = guestScreen
         self.mirrorEngines = mirrorEngines
         self.selectedModuleID = selectedModuleID
         self.selectModule = selectModule
+        self.selectGuest = selectGuest
+        self.startListening = startListening
+        self.stopListening = stopListening
         self.connectedMachineName = connectedMachineName
     }
 }
@@ -271,17 +286,11 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == LogsHostModule.definition.descriptor.id {
             return LogsHostModule.definition
         }
-        return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
-            switch descriptor.id {
-            case "settings":
-                return AnyView(ConnectionsModuleView(
-                    model: state.connections, settings: state.settings,
-                    listener: state.listener, onboarding: state.onboarding,
-                    onStart: { state.startListening() },
-                    onStop: { state.stopListening() }))
-            default:
-                return AnyView(ModuleUnavailableView(reason: nil))
-            }
-        })
+        if descriptor.id == SettingsHostModule.definition.descriptor.id {
+            return SettingsHostModule.definition
+        }
+        return HostModuleDefinition(
+            descriptor: descriptor,
+            makeView: { _, _ in AnyView(ModuleUnavailableView(reason: nil)) })
     }
 }

@@ -162,19 +162,10 @@ struct ModuleRegistry {
            that would dial into it. It keeps the FOOTER placement and the
            link dot, because the state of the link is what the footer is
            for; the roster came down to it. */
-        ModuleDescriptor(
-            /* The id is a preferences key and the ⌘, target, not a name: it
-               is what a saved selection and the Settings menu item both
-               spell, so it stays put while the title says what the page is
-               about. */
-            id: "settings",
-            title: "Connections",
-            symbol: "network",
-            summary: "The port \(MachineNaming.thisMac) listens on, and "
-                + "which \(MachineNaming.properNounPlural) are on it",
-            placement: .footer,
-            showsLinkStatus: true
-        ),
+        /* The id is a preferences key and the ⌘, target, not a name: it is
+           what a saved selection and the Settings menu item both spell, so
+           it stays put while the title says what the page is about. */
+        SettingsHostModule.definition.descriptor,
     ]
 
     static let standard = ModuleRegistry(definitions:

@@ -64,6 +64,8 @@ add_application(now-guest-ppc
     src/mcp/mcp_module.c
     src/mcp/mcp_module_definition.c
     src/preferences/preferences_module.c
+    src/preferences/preferences_module_definition.c
+    src/connection/connection_module_definition.c
     src/diagnostics/diag_layout.c
     src/diagnostics/diagnostics_module.c
     src/diagnostics/diagnostics_module_definition.c

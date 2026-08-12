@@ -20,25 +20,6 @@
 #include "software_module.h"
 #include "web_module.h"
 
-static const WorkshopModuleDefinition k_preferences_definition = {
-    kWorkshopPreferences, "settings", "Preferences",
-    "How this window behaves. Rearrange the rail by Option-dragging a "
-    "row; everything here is remembered between launches.",
-    "Preferences has not moved in yet.",
-    "How this window behaves", 142, kWorkshopModuleTierCore,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    preferences_module_ops
-};
-
-static const WorkshopModuleDefinition k_connection_definition = {
-    kWorkshopConnection, "settings", "Connection",
-    "This Mac dials the other Mac and keeps one persistent connection.",
-    "Connection is still a dialog (Windows menu).",
-    NULL, 132, kWorkshopModuleTierCore,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    connection_module_ops
-};
-
 const WorkshopModuleDefinition *workshop_module_definition(
     WorkshopModuleID page_id)
 {
@@ -57,9 +38,9 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopMirror: return mirror_module_definition();
     case kWorkshopDevelopment: return development_module_definition();
     case kWorkshopWeb: return web_module_definition();
-    case kWorkshopPreferences: return &k_preferences_definition;
+    case kWorkshopPreferences: return preferences_module_definition();
     case kWorkshopLogs: return logs_module_definition();
-    case kWorkshopConnection: return &k_connection_definition;
+    case kWorkshopConnection: return connection_module_definition();
     default: return NULL;
     }
 }

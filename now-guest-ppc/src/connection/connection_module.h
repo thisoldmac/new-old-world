@@ -8,5 +8,6 @@
    itself stays owned by wire.c, read through conn_snapshot(). */
 
 const WorkshopModuleOps *connection_module_ops(void);
+const WorkshopModuleDefinition *connection_module_definition(void);
 
 #endif /* NOW_CONNECTION_MODULE_H */

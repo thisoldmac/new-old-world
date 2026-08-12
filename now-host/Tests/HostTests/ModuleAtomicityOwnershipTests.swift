@@ -486,4 +486,45 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"logs\""))
         XCTAssertTrue(definition.contains("logs_module_ops"))
     }
+
+    func testSettingsDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = SettingsHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "settings")
+        XCTAssertEqual(definition.descriptor.placement, .footer)
+        XCTAssertEqual(definition.descriptor.tier, .core)
+        XCTAssertTrue(definition.descriptor.showsLinkStatus)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testSettingsOwnershipKeepsServicesAtTheAppBoundary() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let runtime = try GateSource.hostSwift(
+            "now-host/Sources/Host/SettingsHostModule.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let preferences = try GateSource.guestC(
+            "now-guest-ppc/src/preferences/preferences_module_definition.c")
+        let connection = try GateSource.guestC(
+            "now-guest-ppc/src/connection/connection_module_definition.c")
+
+        XCTAssertTrue(state.contains("let settings: SettingsModel"))
+        XCTAssertTrue(state.contains("let onboarding: OnboardingPortal"))
+        XCTAssertFalse(state.contains("lazy var connections"))
+        XCTAssertFalse(compatibility.contains("case \"settings\""))
+        XCTAssertTrue(runtime.contains("model = ConnectionsModel("))
+        XCTAssertTrue(runtime.contains("select: context.selectGuest"))
+        XCTAssertFalse(registry.contains("k_preferences_definition"))
+        XCTAssertFalse(registry.contains("k_connection_definition"))
+        XCTAssertTrue(registry.contains("preferences_module_definition()"))
+        XCTAssertTrue(registry.contains("connection_module_definition()"))
+        XCTAssertTrue(preferences.contains("\"settings\""))
+        XCTAssertTrue(preferences.contains("preferences_module_ops"))
+        XCTAssertTrue(connection.contains("\"settings\""))
+        XCTAssertTrue(connection.contains("connection_module_ops"))
+    }
 }

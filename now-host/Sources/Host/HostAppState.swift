@@ -54,10 +54,6 @@ final class HostAppState: ObservableObject {
     /// directly, so a person choosing a row moves the whole window — the
     /// modules refocus with it — instead of moving the request plane out
     /// from under pages still showing the other Mac's rows.
-    private(set) lazy var connections = ConnectionsModel(
-        listener: listener,
-        addressing: agentIntegration,
-        select: { [weak self] key in self?.selectGuest(key) ?? false })
     /// **Show the Mirror on an already-running host, whoever asked.**
     ///
     /// The one implementation behind four faces: the Mirror page's own
@@ -154,6 +150,8 @@ final class HostAppState: ObservableObject {
             agentActivity: agentActivity,
             agentCompanions: agentCompanions,
             logs: logs,
+            settings: settings,
+            onboarding: onboarding,
             guestScreen: { [weak self] in
                 await MainActor.run {
                     self?.guestScreenIfKnown.flatMap {
@@ -164,6 +162,9 @@ final class HostAppState: ObservableObject {
             mirrorEngines: mirrorEngines,
             selectedModuleID: { [unowned self] in self.selectedModuleID },
             selectModule: { [unowned self] in self.selectedModuleID = $0 },
+            selectGuest: { [unowned self] in self.selectGuest($0) },
+            startListening: { [unowned self] in self.startListening() },
+            stopListening: { [unowned self] in self.stopListening() },
             connectedMachineName: { [unowned self] in
                 self.connectedMachineName
             }))
