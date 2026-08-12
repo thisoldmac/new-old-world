@@ -492,6 +492,15 @@ def main() -> None:
         assert available_receipt["command"][-2:] == [
             "--finder-available-bytes", "1073637376",
         ]
+        inactive_case = fixture_case()
+        inactive_case.render.update({"finderView": "name",
+                                     "finderInactive": True})
+        inactive_output = root / "renderer-inactive.png"
+        inactive_receipt = render_scene(
+            REPO, inactive_case, scene_path, inactive_output, run=fake_run)
+        assert inactive_receipt["command"][-4:] == [
+            "--finder-view", "name", "--finder-inactive", "true",
+        ]
 
         apple_profile_case = replace(
             fixture_case(), render={"openMenu": 0,
@@ -564,6 +573,17 @@ def main() -> None:
         assert list_case.render["finderAvailableBytes"] == 1073637376
         assert list_case.render["finderMetadata"]["Applications"] == {
             "modified": 3869316420,
+        }
+        inactive = load_case("finder-inactive-window")
+        assert inactive.input_actions[-12:] == [
+            "move 130 10", "down 0", "move 145 61", "up 0",
+            "move 22 10", "down 0", "move 82 123", "up 0",
+            "move 400 134", "down 0", "move 650 430", "up 0",
+        ]
+        assert inactive.render == {
+            "finderView": "name",
+            "finderInactive": True,
+            "finderAvailableBytes": 1073637376,
         }
         assert [load_case(case).render["openMenu"] for case in (
             "finder-file-menu-open", "finder-edit-menu-open",

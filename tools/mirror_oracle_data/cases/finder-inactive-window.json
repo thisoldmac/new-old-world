@@ -1,23 +1,27 @@
 {
   "id": "finder-inactive-window",
   "profile": "platinum.macos-8.6.default",
-  "title": "Inactive Finder folder behind another application",
+  "title": "Inactive Finder folder with Calculator frontmost",
   "requiredState": [
     "A Finder folder window is visible but inactive",
-    "Another application is frontmost",
+    "Calculator is frontmost and does not occlude the Finder window",
     "No menu is open"
   ],
   "inputSequence": "finder-clean-desktop",
   "inputActions": [
     "move 750 54", "down 0", "up 0",
     "keydown 55", "keydown 31", "keyup 31", "keyup 55",
-    "move 130 10", "down 0", "move 145 59", "up 0",
-    "move 752 301", "down 0", "up 0",
-    "keydown 55", "keydown 31", "keyup 31", "keyup 55"
+    "move 130 10", "down 0", "move 145 61", "up 0",
+    "move 22 10", "down 0", "move 82 123", "up 0",
+    "move 400 134", "down 0", "move 650 430", "up 0"
   ],
   "regions": [
-    {"name": "inactive-finder-window", "source": "window", "app": "Finder", "front": false, "inset": [0, 0, 0, 0]}
+    {"name": "inactive-finder-window", "source": "window", "app": "Finder", "inset": [0, 0, 0, 0]}
   ],
   "masks": [],
-  "render": {}
+  "render": {
+    "finderView": "name",
+    "finderInactive": true,
+    "finderAvailableBytes": 1073637376
+  }
 }

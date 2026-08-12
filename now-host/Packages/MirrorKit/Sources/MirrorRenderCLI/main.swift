@@ -12,6 +12,7 @@ private struct Arguments {
     var finderSelectedName: String?
     var finderMetadata: [String: Scene.FinderPresentation.ItemMetadata] = [:]
     var finderAvailableBytes: Int?
+    var finderInactive = false
     var appleMenuProfile: String?
 
     init(_ values: [String]) throws {
@@ -54,6 +55,11 @@ private struct Arguments {
                     throw ArgumentError("--finder-available-bytes must be a non-negative integer")
                 }
                 finderAvailableBytes = parsed
+            case "--finder-inactive":
+                guard let parsed = Bool(value) else {
+                    throw ArgumentError("--finder-inactive must be true or false")
+                }
+                finderInactive = parsed
             case "--apple-menu-profile":
                 guard value == "macos-8.6" else {
                     throw ArgumentError("--apple-menu-profile must be macos-8.6")
@@ -64,7 +70,7 @@ private struct Arguments {
             index += 2
         }
         guard scene != nil, output != nil else {
-            throw ArgumentError("usage: mirror-render --scene FILE --output FILE [--open-menu N] [--hovered-item N] [--finder-view VIEW] [--finder-selected-name NAME] [--finder-metadata-json JSON] [--apple-menu-profile macos-8.6]")
+            throw ArgumentError("usage: mirror-render --scene FILE --output FILE [--open-menu N] [--hovered-item N] [--finder-view VIEW] [--finder-selected-name NAME] [--finder-metadata-json JSON] [--finder-inactive true|false] [--apple-menu-profile macos-8.6]")
         }
     }
 }
@@ -108,6 +114,14 @@ private struct MirrorRenderCLI {
                     availableBytes: arguments.finderAvailableBytes)
             } else if arguments.finderSelectedName != nil {
                 throw ArgumentError("--finder-selected-name requires --finder-view")
+            }
+            if arguments.finderInactive {
+                guard let index = scene.windows.firstIndex(where: {
+                    $0.app == "Finder" && $0.visible
+                }) else {
+                    throw ArgumentError("--finder-inactive requires a visible Finder window")
+                }
+                scene.windows[index].front = false
             }
             let png = try RenderShot.png(
                 scene: scene,

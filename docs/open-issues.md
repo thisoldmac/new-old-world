@@ -103,6 +103,17 @@ companion are both frozen as explicitly host-only and tests prove neither can
 encode onto the scene wire. List dates, sizes and kinds are drawn only when the
 corresponding semantic columns exist.
 
+Inactive Finder chrome now has an unobstructed, deterministic reference:
+Calculator is opened from the Apple menu and moved clear of the folder window,
+replacing the QuickTime first-run promotion that covered the target. The host
+now uses the measured inactive header ramp, withdraws both scrollbar arrows
+and thumbs into flat troughs, and omits the grow box while leaving the folder
+contents crisp. Named-region mismatch fell from 100% to 59.4% for the header,
+45.3% to 24.4% for the vertical scrollbar, and 44.3% to 25.4% for the
+horizontal scrollbar. A distinct guard preserves dimmed arrows for a disabled
+scrollbar in an active window. This capture is still reference-only because it
+has no independent state proof.
+
 The Apple case now carries the complete observed 22-row 8.6 surface, including
 the separator and six hierarchy rows. `AppleMenuProfile.macOS86` decorates only
 known titles with explicit creator/type, System-file resource ID, or generic
@@ -112,9 +123,8 @@ undecorated. The production render therefore composes the full menu locally
 rather than cropping menu pixels from the framebuffer.
 
 The current named gaps are exact per-folder custom icons beyond the current
-extraction roots, exact catalog metadata for reference fixtures rather than
-measured transcription, and a clean inactive-window reference without a promo
-modal. `file.listing.freeBytes` now carries responder-observed volume capacity
+extraction roots and exact catalog metadata for reference fixtures rather than
+measured transcription. `file.listing.freeBytes` now carries responder-observed volume capacity
 as optional presentation metadata, and Icons, Buttons and List all derive the
 native Finder count-and-available strip locally. None of the eleven
 new captures has a validated state proof yet. Close this row only when all

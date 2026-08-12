@@ -190,6 +190,9 @@ def render_scene(repo: Path, case: OracleCase, scene: Path, output: Path,
     if case.render.get("finderAvailableBytes") is not None:
         command += ["--finder-available-bytes",
                     str(case.render["finderAvailableBytes"])]
+    if case.render.get("finderInactive") is not None:
+        command += ["--finder-inactive",
+                    "true" if case.render["finderInactive"] else "false"]
     if case.render.get("appleMenuProfile") is not None:
         command += ["--apple-menu-profile",
                     str(case.render["appleMenuProfile"])]

@@ -8,7 +8,7 @@ lifecycle: current
 authority: [AGENTS.md, docs/guest-ui-start-here.md]
 source_dependencies: [scripts/sheepshaver-86, scripts/package-sheepshaver-86, scripts/test-mirrorkit, tools/mirror-oracle, tools/mirror_oracle, tools/mirror_oracle_data, tools/extract-assets-offline, tools/asset-pack, tools/macbinary-identity.py, tools/sheepshaver-86-tests, tools/sheepshaver-package-tests, tools/mirror-oracle-tests.py, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumMenuBar.swift, docs/asset-pack.md, docs/lab-setup.md, now-guest-ppc]
 media_ids: []
-last_verified: 2026-08-11
+last_verified: 2026-08-12
 ---
 # SheepShaver 8.6 UI oracle
 
@@ -375,6 +375,18 @@ count-and-available string. Available capacity is optional semantic metadata
 from `file.listing.freeBytes`; it is rendered host-side in every Finder view
 and omitted honestly when a responder cannot report it.
 
+The inactive case opens Calculator through the Apple menu and moves its window
+clear of the Finder folder. This replaces the original QuickTime route, whose
+first-run promotion obscured the very window being measured. The unobstructed
+reference shows one activation rule spanning the whole Finder shell: column
+headers switch to the measured `BB/77/99` face, frame, and shadow ramp; both
+scrollbars withdraw their arrows and thumb into a flat `EE` trough with a `55`
+frame; and the grow box disappears. The renderer derives those states locally
+from the window's semantic `front` flag. It does not dim the folder contents
+and it does not treat a disabled scrollbar in an active window as inactive.
+The render-only `finderInactive` case overlay constructs this calibration state
+without adding a field to the scene contract or sending framebuffer pixels.
+
 The first broad comparisons are deliberately mismatch baselines rather than
 acceptance claims. Against the measured full-window regions, Icons currently
 differs in 28,573 of 101,844 pixels (28.06%), Buttons in 43,564 (42.78%), and
@@ -384,6 +396,14 @@ custom folder art and some frame/scrollbar geometry, so these
 numbers are a queue for later narrowing, not a score to optimize blindly. The
 File menu is already much closer at 10,712
 of 94,300 compared pixels (11.36%).
+
+The inactive Finder correction is measured by furniture region rather than by
+the still-broad full-window residual. Changed pixels fell from 8,547/8,547 to
+5,077/8,547 in the column-header band, from 1,255/2,771 to 677/2,771 in the
+vertical scrollbar, and from 2,772/6,256 to 1,586/6,256 in the horizontal
+scrollbar. The full named window moved from 65,728/101,844 (64.54%) to
+60,495/101,844 (59.40%). The clean capture remains reference-only until its
+required state is independently observed and attached.
 
 The shared core-menu scene now contains all measured rows, separators,
 enablement, shortcuts, checks and hierarchical arrows for File, Edit, View,

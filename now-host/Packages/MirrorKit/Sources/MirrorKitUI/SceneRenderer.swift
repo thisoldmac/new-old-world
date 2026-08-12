@@ -1296,7 +1296,8 @@ public struct SceneRenderer {
                 && !Self.groundWrapsTheChain(control, in: win)
                 && !dialogRefs.contains(control.ref) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
-                        isDefault: false, windowFace: windowFace)
+                        isDefault: false, active: active,
+                        windowFace: windowFace)
         }
         if !finderOwnsInterior, let display = win.display {
             DisplayReplay.draw(display, in: contentCtx, content: content,
@@ -1315,6 +1316,7 @@ public struct SceneRenderer {
                     || Self.isWindowFurniture(control)) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
                         isDefault: control.semantic?.isDefault == true,
+                        active: active,
                         replayed: replayCoverage,
                         windowFace: windowFace)
         }
@@ -1373,7 +1375,7 @@ public struct SceneRenderer {
             }
         }
         // Grow box sits on top of the content, at the window corner.
-        if !isDialog {
+        if !isDialog && active {
             drawGrowBox(ctx, win)
         }
     }
@@ -2131,6 +2133,7 @@ public struct SceneRenderer {
     /// every window whose face is not white.
     private func drawControl(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,
                              contentOrigin: CGPoint, isDefault: Bool,
+                             active: Bool,
                              replayed: DisplayReplay.Coverage? = nil,
                              windowFace: Color = Platinum.g0) {
         guard let local = ctl.rect else { return }   // rect is content-local
@@ -2233,11 +2236,17 @@ public struct SceneRenderer {
                     color: ctl.enabled ? Platinum.g6 : Platinum.g3)
             return
         case "columnHeader":
-            ctx.fill(Path(frame), with: .color(Platinum.g2))
-            ctx.stroke(Path(frame), with: .color(Platinum.g5), lineWidth: 1)
+            let face = active ? Platinum.g2 : Color(hex: 0xBBBBBB)
+            let frameInk = active ? Platinum.g5 : Color(hex: 0x777777)
+            ctx.fill(Path(frame), with: .color(face))
+            ctx.stroke(Path(frame), with: .color(frameInk), lineWidth: 1)
+            bevel(ctx, frame.insetBy(dx: 1, dy: 1),
+                  light: active ? Platinum.g0 : Color(hex: 0xDDDDDD),
+                  shadow: active ? Platinum.g4 : Color(hex: 0x999999))
             appText(ctl.title, ctx, x: frame.minX + 4,
                     baselineY: frame.midY + 4,
-                    color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+                    color: active && ctl.enabled
+                        ? Platinum.g6 : Color(hex: 0x777777))
             return
         case MirrorKit.DrawnCellGrid.cellKind:
             drawDrawnCell(ctx, ctl, frame)
@@ -2277,7 +2286,8 @@ public struct SceneRenderer {
            let max = ctl.max, let min = ctl.min,
            max > min {
             drawScrollbar(ctx, frame, value: ctl.value ?? min,
-                          min: min, max: max, enabled: ctl.enabled)
+                          min: min, max: max,
+                          enabled: ctl.enabled, windowActive: active)
             return
         }
         // Scrollbar-shaped but unranged (min==max, e.g. an empty document):
@@ -2286,7 +2296,7 @@ public struct SceneRenderer {
         let long = Swift.max(frame.width, frame.height)
         if ctl.title.isEmpty, narrow <= 20, long >= 3 * narrow {
             drawScrollbar(ctx, frame, value: 0, min: 0, max: 0,
-                          enabled: ctl.enabled)
+                          enabled: ctl.enabled, windowActive: active)
             return
         }
 
@@ -3189,7 +3199,17 @@ public struct SceneRenderer {
 
     private func drawScrollbar(_ ctx: GraphicsContext, _ frame: CGRect,
                                value: Int, min: Int, max: Int,
-                               enabled: Bool) {
+                               enabled: Bool, windowActive: Bool) {
+        if !windowActive {
+            // Mac OS 8.6 withdraws the arrows and thumb when a Finder window
+            // deactivates. What remains is a flat 0xEE trough inside a 0x55
+            // frame; retaining raised buttons makes the background window
+            // look actionable and is not the control state the guest draws.
+            ctx.fill(Path(frame), with: .color(Color(hex: 0xEEEEEE)))
+            ctx.stroke(Path(frame), with: .color(Color(hex: 0x555555)),
+                       lineWidth: 1)
+            return
+        }
         ctx.fill(Path(frame), with: .color(Platinum.g1))
         ctx.stroke(Path(frame),
                    with: .color(enabled ? Platinum.g6 : Platinum.g3),
