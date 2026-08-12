@@ -135,6 +135,7 @@ static void test_rest_words(void)
 {
     MirrorFacts facts;
     char out[160];
+    char tiny[8];
 
     memset(&facts, 0, sizeof facts);
 
@@ -168,6 +169,17 @@ static void test_rest_words(void)
     check(strncmp(out, "Trap patches in", 15) == 0
               && strstr(out, "restart") != NULL,
           "the one-way door leads the line and says restart");
+
+    facts.rest_state |= kNowPeekRestCursorTrackingPatched;
+    now_mirror_rest_text(&facts, out, sizeof out);
+    check(strncmp(out, "Cursor tracking patched", 23) == 0
+              && strstr(out, "act traps patched") != NULL
+              && strstr(out, "restart") != NULL,
+          "Continuity's permanent tracking hooks are named first");
+    memset(tiny, 'x', sizeof tiny);
+    now_mirror_rest_text(&facts, tiny, sizeof tiny);
+    check(tiny[sizeof tiny - 1] == '\0',
+          "a truncated permanent-hook diagnostic remains terminated");
 
     facts.rest_state |= kNowPeekRestLivenessTicking | kNowPeekRestTransport;
     now_mirror_rest_text(&facts, out, sizeof out);

@@ -81,6 +81,16 @@ QuickDraw, Process Manager, allocation, network, or logging call. It may set
 `MBState` unconditionally up for lease expiry, host departure, or physical
 guest takeover; the PPC task later reconciles that emergency release through
 the same synthetic Cursor Device.
+The timer publishes one additional resident-byte redraw debt after the point is
+complete. On the first accepted Continuity arm, the Extension lazily installs
+chain-only `_GetMouse`, `_StillDown`, and `_Button` hooks. A tracking loop calls
+those traps in its own task-time context even while it starves `GetNextEvent`,
+so a hook with debt may clear `CrsrObscure` and balance
+`HideCursor`/`ShowCursor` before tail-chaining to the incumbent. With no debt,
+each hook performs one byte test and the tail chain. They never answer a trap,
+move the pointer, change button state, or call Cursor Device Manager. The hooks
+remain installed until reboot and are reported by
+`kNowPeekRestCursorTrackingPatched`; ending authority clears any redraw debt.
 It shares one input-owner arbiter with P7 drag, so the two resident vehicles
 cannot hold the mouse together.
 
@@ -111,6 +121,10 @@ host placement. Recent points reported through its owned Cursor Device are
 excluded. Any other motion or button change ends the epoch, relinquishes the
 shared input owner, and reports `guest-input` before another host point is
 applied.
+The owned-point history spans 64 reports—more than one second at 60 Hz—and is
+searched newest-first. This covers delayed synthetic Cursor Device propagation
+without making physical takeover wait: a point absent from both owned histories
+still exits on the first sample.
 
 Leaving the Mirror, stopping it, losing host focus, switching guest, losing the
 TCP session, UDP failure, or lease expiry also releases ownership at the next
@@ -135,9 +149,11 @@ sprite remained at the press point during tracking even though the drag itself
 moved accurately; the epoch ended after mouse-up; and a second click was lost.
 The cursor visibility wake, delayed-up tolerance, and one-cycle double-click
 buffer are implemented and tested here but await another attended metal pass.
-The tracking-loop sprite requires the research spike's chain-only task-time
-tracking hooks and remains open until that global resident mechanism is
-explicitly accepted and integrated.
+The research spike's chain-only task-time tracking hooks are now integrated
+behind the first accepted Continuity arm. Their tail-chain, idle bypass,
+register preservation, bounded settle surface, and authority-exit cancellation
+are source-guarded and the Extension builds. Visible drag-sprite behavior and
+whole-system safety remain emulator and metal verification items.
 
 The raw CDM path initially reduced OS 9 menus to System 6/7-style
 hold-to-track behavior: a menu tracked while held and closed on mouse-up.
@@ -162,13 +178,29 @@ and proved only dead-man release for that row. Receipts are
 This proves the optional sleep policy did not weaken the emulator safety rows;
 it does not measure visible cadence or CPU/fairness on the PowerBook.
 
+The integrated tracking-hook candidate was then cold-booted independently on
+PMU/USB and CUDA/ADB as exact guest build `95f2428fa2f6…` and resident
+fingerprint `e51bba923373…`. The first PMU run caught a false `guest-input`
+exit at held-drag point 17: an older synthetic Cursor Device point had aged out
+of the eight-entry owned history. After expanding that history to 64 reports
+and searching newest-first, both fresh rigs passed native-device preflight,
+click, 16 rapid cycles / 32 ordered transitions, a 30-point held drag,
+lease-expiry release, native return, wire liveness, and clean release. CUDA
+also proved actual held `guest-input` takeover; PMU retained its known QMP
+limitation and proved dead-man release. On both rigs, `restState` gained the
+tracking-hook bit after the first arm, and framebuffer comparison while held
+found 93 changed pixels near the press point and 97 near the final point. The
+receipts are `/private/tmp/now-cont-track-pmu/direct-pointer-visual/` and
+`/private/tmp/now-cont-track-cuda/direct-pointer-visual/`. This is emulator
+evidence for the logical and drawn tracking paths, not metal verification.
+
 The same source was then baked into the branch-private image
-`agent-stage/now-stage-continuity-direct-pointer-next.qcow2`, SHA-256
-`ace409f65ef6ea3fa767326bde62ecd890393a43b12fe6ea7831849a1d1c7aac`.
-The guest reported the exact `e500d393…` fingerprint and all capabilities,
-survived the full 14-probe census, shut down through Finder, left the HFS
-volume cleanly unmounted, and passed `qemu-img check`. The shared oracle was
-not changed.
+`agent-stage/now-stage-continuity-tracking-hooks.qcow2`, SHA-256
+`0f8b8eaeaf00c8d13f88733d2d84346bf6d7fcd1556a5cbfd1e18a481620eec6`.
+The guest reported the exact `e51bba923373…` fingerprint and all 1023
+capabilities, survived the full 14-probe census, shut down through Finder,
+left the HFS volume cleanly unmounted, and passed `qemu-img check`. The shared
+oracle and its receipt were not changed.
 
 Secondary click, scroll, keyboard input, MCP, agent integration, the guest
 console, and NOW-68K are not Continuity surfaces.

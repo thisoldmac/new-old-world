@@ -646,8 +646,30 @@ buffers exactly one following click cycle, and offers optional per-guest epoch
 reconnect. These changes are tested, not yet metal-verified. The stale drag
 sprite is a separate cooperative-starvation problem: the preserved cursor
 research measured chain-only `GetMouse`/`StillDown`/`Button` hooks as the
-task-time redraw vehicle during tracking. Integrating permanent global trap
-patches remains an explicit safety decision, not an incidental cleanup.
+task-time redraw vehicle during tracking. Those hooks are now integrated
+lazily on the first accepted Continuity arm. They preserve registers, settle
+only a pre-published QuickDraw debt, tail-chain the incumbent, and remain until
+reboot; `rest_state` reports that one-way installation. The source guard was
+watched failing when one tail jump was mutated to a subroutine call. The
+Extension builds, but visible tracking behavior and whole-system safety still
+require emulator and attended metal verification.
+
+The first PMU hook run passed click and 16 rapid click cycles, then exited a
+held drag at point 17 as `guest-input`. Recovery worked—the button was forced
+up and the wire remained live—but the trace showed an older synthetic Cursor
+Device point had aged out of the eight-point ownership history. The history is
+now 64 reports (over one second at 60 Hz) and searched newest-first, preserving
+immediate takeover for any point absent from both owned histories. This
+correction awaits the repeated PMU/CUDA campaign below.
+
+That repeat is now green on exact guest `95f2428fa2f6…` / resident
+`e51bba923373…`. PMU/USB and CUDA/ADB each passed native preflight, click, 32
+rapid ordered edges, a 30-point held drag, dead-man release, native return,
+wire liveness, and clean button settlement. CUDA additionally exited on real
+held ADB takeover. Both reported the permanent-hook rest bit and both
+framebuffer oracles saw 93 changed pixels near the press point and 97 near the
+final point while held. The two receipts are named in `continuity-mode.md`.
+PowerBook behavior remains unverified.
 
 Fast Pump is now an optional experimental arm field. It adds armed Continuity
 to the existing one-tick cooperative sleep predicate and resets on every
@@ -686,11 +708,11 @@ limitation and is credited only for lease release. The receipts are named in
 [continuity-mode.md](continuity-mode.md). This is emulator safety evidence,
 not a claim that Fast Pump improves PowerBook cadence.
 
-The exact resident was privately baked as
-`agent-stage/now-stage-continuity-direct-pointer-next.qcow2`, SHA-256
-`ace409f65ef6ea3fa767326bde62ecd890393a43b12fe6ea7831849a1d1c7aac`.
-It reported fingerprint `e500d393…`, all 1023 capabilities, survived the full
-census, shut down through Finder, left a clean HFS volume, and passed
+The final tracking-hook resident was privately baked as
+`agent-stage/now-stage-continuity-tracking-hooks.qcow2`, SHA-256
+`0f8b8eaeaf00c8d13f88733d2d84346bf6d7fcd1556a5cbfd1e18a481620eec6`.
+It reported fingerprint `e51bba923373…`, all 1023 capabilities, survived the
+full census, shut down through Finder, left a clean HFS volume, and passed
 `qemu-img check`. No shared image or shared receipt was modified.
 
 **2026-08-11 transport and metal update:** the first resident 1.17 host handoff armed

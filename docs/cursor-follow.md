@@ -180,6 +180,14 @@ is re-checked at settlement rather than trusted from the placement,
 because time has passed and a person may have taken the mouse in exactly
 that window.
 
+Continuity has a narrower tracking-only debt. Its timer writes only
+`MouseLocation` and publishes that byte last. Once Continuity has first armed,
+chain-only `_GetMouse`, `_StillDown`, and `_Button` patches supply task-time
+redraw opportunities inside an application's tracking loop, where jGNE cannot.
+They preserve every data and address register, leave the original stack for the
+incumbent, and never enter the Cursor Device Manager. The hooks stay installed
+until reboot, while the redraw debt clears on every authority exit.
+
 **`CrsrObscure` must be cleared, because we ARE the mouse moving.**
 `ObscureCursor` is what every text application calls on every keystroke —
 hide the arrow, the person is typing, keep it hidden *until the mouse

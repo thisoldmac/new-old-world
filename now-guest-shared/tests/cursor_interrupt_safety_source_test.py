@@ -92,13 +92,19 @@ check("now_cdm_set_buttons" in ppc_ready
       and "now_cdm_units_per_inch" in ppc_ready
       and "now_cdm_dispose_device" in PPC_CURSOR,
       "PPC Cursor Device setup/cleanup is no longer failure-atomic")
-check("now_log_flush();" in ppc_move and "move begin" in ppc_move,
-      "a stuck Cursor Device call again leaves no durable guest breadcrumb")
+check(ppc_move.count("now_log_memory") >= 2
+      and "move begin" in ppc_move and "move return" in ppc_move,
+      "PPC cursor move lost its allocation-free pre/post flight recorder")
+check("now_log_flush();" not in ppc_move,
+      "PPC cursor move again flushes the disk in the live input path")
 check("now_cdm_button_down(gDevice)" in ppc_button
       and "now_cdm_button_up(gDevice)" in ppc_button,
       "PPC primary transitions no longer use the corrected synthetic device")
-check("now_log_flush();" in ppc_button and "button begin" in ppc_button,
-      "a stuck Cursor Device button call again leaves no durable breadcrumb")
+check(ppc_button.count("now_log_memory") >= 2
+      and "button begin" in ppc_button and "button return" in ppc_button,
+      "PPC cursor button lost its allocation-free pre/post flight recorder")
+check("now_log_flush();" not in ppc_button,
+      "PPC cursor button again flushes the disk in the live input path")
 
 for token in ("libCursorDevicesGlue.a", "libInterfaceLib.a"):
     check(token not in PPC_CMAKE,

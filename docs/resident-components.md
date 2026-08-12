@@ -604,8 +604,8 @@ the one that touches a shared system resource rather than only CPU.
 
 The question was whether each plane can be switched off dynamically, or
 whether it needs a restart to apply. **No plane needs the restart to
-stand down.** One needs it to fully *undo* itself, and that one is
-genuinely forced rather than merely difficult.
+stand down.** The trap-patched planes need it to fully *undo* themselves,
+which is genuinely forced rather than merely difficult.
 
 | plane | verdict | why |
 |---|---|---|
@@ -616,6 +616,7 @@ genuinely forced rather than merely difficult.
 | P3 memory | **restart-free, deferred** | ~64 KiB held from boot; lazy allocation is possible and specified below, not foreclosed |
 | P4 act | **dynamic bypass; removal is restart-only** | the one genuinely forced case — see below |
 | P6 liveness | **dynamic, and now implemented** | a Time Manager task has a sanctioned stop that a trap patch does not |
+| P9 Continuity tracking | **dynamic debt; removal is restart-only** | hooks are installed only after the first accepted arm; idle is one byte test and tail chain |
 
 ### Why P4 is the one that cannot fully undo, and why that is acceptable
 
@@ -654,6 +655,12 @@ The two planes differ in what they can undo because of *which OS
 structure each lives in*, not because of how hard anyone tried. That is
 the general rule to carry into the next plane: ask what is chained behind
 you before assuming a hook can be withdrawn.
+
+P9 follows the same chain rule as P4 but has a smaller resting surface. Its
+three tracking hooks are absent until a Continuity arm is accepted. Thereafter
+they remain until reboot; disarm clears the only work they can perform, a
+one-byte redraw debt, leaving an idle load/test/tail-jump path. `rest_state`
+reports the permanent installation separately from Continuity authority.
 
 ### How P6 stands down, and why not with `RmvTime`
 

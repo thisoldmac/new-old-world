@@ -1691,7 +1691,12 @@ enum {
     kNowPeekRestActPatched    = 1u << 5,
     /* The NewGWorld trap patch (record mode) is in. Same one-way rule as
        the act patches, and for the same reason. */
-    kNowPeekRestQDExtPatched  = 1u << 6
+    kNowPeekRestQDExtPatched  = 1u << 6,
+    /* Continuity's GetMouse, StillDown, and Button chain hooks are in.
+       Installed lazily on the first accepted Continuity arm and never
+       removed until reboot; idle hooks perform only a byte test and tail
+       jump to the incumbent. */
+    kNowPeekRestCursorTrackingPatched = 1u << 7
 };
 
 /* What the resident's own liveness channel is doing. Values are the

@@ -492,6 +492,21 @@
         "ext/src/now_ext_cursor_input.h"
       ],
       "reason": "Recovered from exact session patches for the branch-private resident already tested and baked; shared oracle promotion remains deferred to release-candidate landing."
+    },
+    {
+      "at": "2026-08-12T12:33:15-0400",
+      "branch": "codex/dev/cross-cutting/continuity-cursor-v0",
+      "extDigest": "995f8fc24f833ebcdf1bfe0f99f4bb09d1f83322",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h",
+        "ext/src/now_ext_cursor_tracking.S"
+      ],
+      "reason": "Recovered from exact session patches for the branch-private resident already tested and baked; shared promotion remains reserved for release-candidate landing."
     }
   ]
 }

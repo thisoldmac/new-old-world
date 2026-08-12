@@ -101,6 +101,7 @@ add_executable(NowExt
     # manager as TWOWORDINLINE traps this compiler ignores.
     src/now_ext_cursor.c
     src/now_ext_cursor_cdm.S
+    src/now_ext_cursor_tracking.S
     # P9 Continuity: the app owns UDP intake and every Cursor Device Manager
     # call. A held button adds one resident Time Manager vehicle whose complete
     # surface is tracking-loop MouseLocation plus dead-man MBState-up; it

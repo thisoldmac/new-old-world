@@ -3,6 +3,7 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import struct
+import tempfile
 import unittest
 
 
@@ -63,6 +64,24 @@ class ContinuityProbeCodecTests(unittest.TestCase):
         finally:
             DIRECT.next_control = original
         self.assertIs(link.sent["fastPump"], True)
+
+    def test_direct_pointer_visual_oracle_checks_both_endpoints(self):
+        def ppm(changed):
+            pixels = bytearray(12 * 12 * 3)
+            for x, y in changed:
+                offset = (y * 12 + x) * 3
+                pixels[offset:offset + 3] = b"\xff\xff\xff"
+            return b"P6\n12 12\n255\n" + bytes(pixels)
+
+        with tempfile.TemporaryDirectory() as directory:
+            before = Path(directory) / "before.ppm"
+            after = Path(directory) / "after.ppm"
+            before.write_bytes(ppm([]))
+            after.write_bytes(ppm([(2, 3), (9, 8)]))
+            self.assertEqual(
+                DIRECT.changed_near_points(
+                    str(before), str(after), ((2, 3), (9, 8)), radius=1),
+                [1, 1])
 
 
 if __name__ == "__main__":

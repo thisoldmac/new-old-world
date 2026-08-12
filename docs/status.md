@@ -217,9 +217,15 @@ parallel availability lists.
   tested candidate wakes an obscured cursor from task time, gives manager-up
   five seconds to settle, buffers one following click cycle, and adds optional
   per-guest epoch reconnect plus experimental one-tick Fast Pump. The
-  tracking-loop sprite fix remains gated on explicit acceptance of the cursor
-  research spike's permanent chain-only tracking hooks; these post-metal
-  corrections are not yet metal-verified.
+  tracking-loop sprite fix now integrates the cursor research spike's
+  permanent chain-only tracking hooks lazily on the first accepted arm. Their
+  bounded settle surface and exact tail chains are mutation-guarded; emulator
+  PMU/USB and CUDA/ADB now verify logical drag settlement, permanent-hook
+  reporting, and framebuffer changes at both held-drag endpoints. The exact
+  `e51bba923373…` resident is also verified in the clean branch-private
+  `now-stage-continuity-tracking-hooks.qcow2` bake; no shared image or receipt
+  was changed. Metal behavior remains unverified. These post-metal corrections
+  are not yet metal-verified.
   V0 hover movement uses a
   TCP-authorized, same-numbered UDP lane at a user-selected 15/30/60 Hz. The
   resident releases on host departure, focus loss, link loss, lease expiry, or

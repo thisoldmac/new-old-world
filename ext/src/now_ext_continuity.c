@@ -231,6 +231,7 @@ static void finish_locked(NowPeekContinuityCell *cell, NowPeekU32 reason,
                           NowPeekU32 ticks)
 {
     force_reset(cell, reason);
+    now_ext_cursor_cancel_task_apply();
     cell->state = (NowPeekU32)kNowPeekContinuityStateExited;
     cell->exit_reason = reason;
     cell->apply_ticks = ticks;
@@ -339,6 +340,16 @@ void now_ext_continuity_service(void)
         }
         if (!gPrimed
             && !now_input_owner_acquire(kNowInputOwnerContinuity)) {
+            cell->state = (NowPeekU32)kNowPeekContinuityStateRefused;
+            cell->exit_reason =
+                (NowPeekU32)kNowPeekContinuityExitUnavailable;
+            publish_tasktime_counters(cell);
+            service_return(cell);
+            return;
+        }
+        if (!gPrimed
+            && !now_ext_cursor_enable_continuity_tracking()) {
+            now_input_owner_release(kNowInputOwnerContinuity);
             cell->state = (NowPeekU32)kNowPeekContinuityStateRefused;
             cell->exit_reason =
                 (NowPeekU32)kNowPeekContinuityExitUnavailable;

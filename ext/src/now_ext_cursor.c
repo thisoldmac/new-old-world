@@ -104,17 +104,32 @@ static volatile UInt8 *volatile gCrsrObscure = (volatile UInt8 *)0x08D2UL;
    _QDExtensions; NGetTrapAddress masks it. */
 #define kNowCursorDeviceTrap 0xAADB
 #define kNowUnimplementedTrap 0xA89F
+#define kNowGetMouseTrap  0xA972
+#define kNowStillDownTrap 0xA973
+#define kNowButtonTrap    0xA974
 
 /* OSErr, from the assembly shims - see now_ext_cursor_cdm.S for why they
    cannot be C declarations with TWOWORDINLINE. */
 extern long now_cdm_move_to(void *device, long absX, long absY);
 extern long now_cdm_next_device(void **device);
+extern void now_cursor_getmouse_patch(void);
+extern void now_cursor_stilldown_patch(void);
+extern void now_cursor_button_patch(void);
+
+/* Assembly-visible chain state. The incumbents are captured together before
+   any trap is changed, so installation cannot leave one hook pointing at an
+   uninitialised destination. Once installed, these links live until reboot. */
+volatile unsigned char gNowCursorTrackingRedrawOwed = 0;
+void *gNowCursorOldGetMouse = NULL;
+void *gNowCursorOldStillDown = NULL;
+void *gNowCursorOldButton = NULL;
 
 static NowPeekTable *gTable = NULL;
 static CursorDevicePtr gDevice = NULL;
 static Point gLastPlaced;
 static unsigned long gForeignTicks = 0;
 static Boolean gBooted = false;
+static Boolean gContinuityTrackingInstalled = false;
 /* Has this resident ever actually moved the device? Until it has,
    gLastPlaced describes nothing and must not be compared against. */
 static Boolean gEverPlaced = false;
@@ -150,7 +165,12 @@ static Boolean gPhysicalRawValid = false;
 static Point gPhysicalReportedWhere;
 static Point gOwnedDeviceWhere;
 static Boolean gOwnedDeviceValid = false;
-enum { kOwnedHistoryCount = 8 };
+/* Cover more than one second of synthetic propagation at the maximum 60 Hz
+   rate. The PowerPC Cursor Device can publish an older requested point after a
+   tracking loop has advanced MouseLocation; eight entries aged that owned
+   point out in 267 ms at 30 Hz and falsely classified it as physical input.
+   Newest-first lookup keeps the ordinary cost near one comparison. */
+enum { kOwnedHistoryCount = 64 };
 typedef struct {
     volatile unsigned short seq;
     volatile Point point[kOwnedHistoryCount];
@@ -208,6 +228,7 @@ static Boolean owned_history_contains(const OwnedPointHistory *history,
 {
     unsigned short before = history->seq;
     unsigned short used;
+    unsigned short next;
     unsigned short i;
     Boolean matched = false;
 
@@ -217,11 +238,16 @@ static Boolean owned_history_contains(const OwnedPointHistory *history,
     if ((before & 1u) != 0)
         return true;
     used = history->used;
+    next = history->next;
     if (used > kOwnedHistoryCount)
         return true;
     for (i = 0; i < used; i++) {
-        if (history->point[i].h == pt.h
-                && history->point[i].v == pt.v) {
+        unsigned short index = (unsigned short)(
+            (next + kOwnedHistoryCount - 1u - i)
+            & (kOwnedHistoryCount - 1u));
+
+        if (history->point[index].h == pt.h
+                && history->point[index].v == pt.v) {
             matched = true;
             break;
         }
@@ -351,6 +377,58 @@ void now_ext_cursor_remember_continuity_tracking_point(NowPeekI32 h,
     pt.h = (short)h;
     pt.v = (short)v;
     remember_owned_lowmem_point(pt);
+    gNowCursorTrackingRedrawOwed = 1; /* publish after the point is complete */
+}
+
+/* Settle only the picture. This is entered from chain-only Toolbox hooks in
+   the tracked application's task-time context. Clearing first makes nested
+   GetMouse/StillDown/Button calls harmless; a timer interrupt that publishes
+   a newer point during QuickDraw leaves a fresh debt for the next hook. */
+void now_ext_cursor_settle_continuity_tracking(void)
+{
+    if (!gNowCursorTrackingRedrawOwed)
+        return;
+    gNowCursorTrackingRedrawOwed = 0;
+    if (gTable == NULL)
+        return;
+    *gCrsrObscure = 0;
+    HideCursor();
+    ShowCursor();
+}
+
+/* Install the three tracking-loop hooks lazily on the first Continuity arm.
+   They are permanent for this boot: another extension may subsequently chain
+   behind us, so removing our link later could strand its incumbent pointer. */
+int now_ext_cursor_enable_continuity_tracking(void)
+{
+    void *getmouse;
+    void *stilldown;
+    void *button;
+
+    if (gContinuityTrackingInstalled)
+        return 1;
+    if (gTable == NULL)
+        return 0;
+
+    getmouse = (void *)NGetTrapAddress(kNowGetMouseTrap, ToolTrap);
+    stilldown = (void *)NGetTrapAddress(kNowStillDownTrap, ToolTrap);
+    button = (void *)NGetTrapAddress(kNowButtonTrap, ToolTrap);
+    if (getmouse == NULL || stilldown == NULL || button == NULL)
+        return 0;
+
+    gNowCursorOldGetMouse = getmouse;
+    gNowCursorOldStillDown = stilldown;
+    gNowCursorOldButton = button;
+    NSetTrapAddress((UniversalProcPtr)now_cursor_getmouse_patch,
+                    kNowGetMouseTrap, ToolTrap);
+    NSetTrapAddress((UniversalProcPtr)now_cursor_stilldown_patch,
+                    kNowStillDownTrap, ToolTrap);
+    NSetTrapAddress((UniversalProcPtr)now_cursor_button_patch,
+                    kNowButtonTrap, ToolTrap);
+    gContinuityTrackingInstalled = true;
+    gTable->rest_state |=
+        (NowPeekU16)kNowPeekRestCursorTrackingPatched;
+    return 1;
 }
 
 /* MBState is shared with the physical driver. When Continuity deliberately
@@ -368,9 +446,10 @@ void now_ext_cursor_remember_continuity_button(unsigned down)
    point after Continuity has already reported that the guest took over. */
 void now_ext_cursor_cancel_task_apply(void)
 {
-    if (gTaskApplyOwed)
+    if (gTaskApplyOwed || gNowCursorTrackingRedrawOwed)
         gDebtCancels++;
     gTaskApplyOwed = false;
+    gNowCursorTrackingRedrawOwed = 0;
 }
 
 void now_ext_cursor_input_diagnostics(NowCursorInputDiagnostics *out)
@@ -689,6 +768,11 @@ int now_ext_cursor_boot(NowPeekTable *table)
     gOwnedTrackingHistory.seq = 0;
     gOwnedTrackingHistory.next = 0;
     gOwnedTrackingHistory.used = 0;
+    gNowCursorTrackingRedrawOwed = 0;
+    gContinuityTrackingInstalled = false;
+    gNowCursorOldGetMouse = NULL;
+    gNowCursorOldStillDown = NULL;
+    gNowCursorOldButton = NULL;
 
     /* THE CELL IS REACHED DIRECTLY HERE, and only here.
        now_ext_cursor_cell() checks `magic`, and at boot MAGIC HAS NOT
@@ -751,6 +835,7 @@ void now_ext_cursor_rollback(NowPeekTable *table)
     gBooted = false;
     gEverPlaced = false;
     gTaskApplyOwed = false;
+    gNowCursorTrackingRedrawOwed = 0;
     gTaskH = 0;
     gTaskV = 0;
     gTaskApplySeq = 0;
@@ -772,4 +857,8 @@ void now_ext_cursor_rollback(NowPeekTable *table)
     gOwnedTrackingHistory.seq = 0;
     gOwnedTrackingHistory.next = 0;
     gOwnedTrackingHistory.used = 0;
+    gContinuityTrackingInstalled = false;
+    gNowCursorOldGetMouse = NULL;
+    gNowCursorOldStillDown = NULL;
+    gNowCursorOldButton = NULL;
 }

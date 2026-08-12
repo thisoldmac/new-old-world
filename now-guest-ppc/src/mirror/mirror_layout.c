@@ -228,9 +228,18 @@ void now_mirror_rest_text(const MirrorFacts *facts, char *out, long cap)
         return;
     }
     bits = facts->rest_state;
-    if ((bits & kNowPeekRestActPatched) != 0) {
+    if ((bits & kNowPeekRestCursorTrackingPatched) != 0) {
         n += snprintf(out + n, (size_t)(cap - n),
-                      "Trap patches in (restart to clear)");
+                      "Cursor tracking patched (restart to clear)");
+    }
+    if ((bits & kNowPeekRestActPatched) != 0 && n < cap) {
+        if (n > 0) {
+            n += snprintf(out + n, (size_t)(cap - n),
+                          ", act traps patched (restart to clear)");
+        } else {
+            n += snprintf(out + n, (size_t)(cap - n),
+                          "Trap patches in (restart to clear)");
+        }
     }
     if ((bits & kNowPeekRestQDExtPatched) != 0 && n < cap) {
         n += snprintf(out + n, (size_t)(cap - n), "%sNewGWorld patched",

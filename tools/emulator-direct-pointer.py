@@ -24,15 +24,16 @@ sys.path.insert(0, os.path.join(ROOT, "scripts", "probes"))
 import nowwire  # noqa: E402
 
 
-def load_qmp():
+def load_cursor_mechanism():
     path = os.path.join(ROOT, "tools", "local-cursor-mechanism.py")
     spec = importlib.util.spec_from_file_location("cursor_mechanism", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.Qmp
+    return module
 
 
-Qmp = load_qmp()
+CURSOR_MECHANISM = load_cursor_mechanism()
+Qmp = CURSOR_MECHANISM.Qmp
 STATE = struct.Struct(">IHHIIIIhhIHHI")
 ACK = struct.Struct(">IHHIIIIIHHIII")
 VERSION = 2
@@ -42,6 +43,34 @@ PRIMARY_DOWN = 0x0002
 
 def mouseloc(link):
     return dict(link.command("mouseloc", timeout=10).get("mouseloc") or [])
+
+
+def extension_state(link):
+    return (link.command("mirror", timeout=30).get("mirror") or {}).get(
+        "extension") or {}
+
+
+def changed_near_points(before_path, after_path, points, radius=24):
+    """Count changed framebuffer pixels near each requested pointer point."""
+    before = CURSOR_MECHANISM.read_ppm(before_path)
+    after = CURSOR_MECHANISM.read_ppm(after_path)
+    if before[:2] != after[:2]:
+        raise RuntimeError("framebuffer changed size during held drag")
+    width, height, before_pixels = before
+    after_pixels = after[2]
+    counts = []
+    for point_h, point_v in points:
+        changed = 0
+        for y in range(max(0, point_v - radius),
+                       min(height, point_v + radius + 1)):
+            for x in range(max(0, point_h - radius),
+                           min(width, point_h + radius + 1)):
+                offset = (y * width + x) * 3
+                if (before_pixels[offset:offset + 3]
+                        != after_pixels[offset:offset + 3]):
+                    changed += 1
+        counts.append(changed)
+    return counts
 
 
 def row_int(rows, name):
@@ -241,10 +270,14 @@ def run_click_burst(link, udp, lease, ident, cycles=16, fast_pump=False):
             "rows": rows, "disarmed": stopped}
 
 
-def run_drag(link, udp, lease, ident, fast_pump=False):
+def run_drag(qmp, link, udp, lease, ident, artifacts, fast_pump=False):
     armed = arm(link, ident, lease, fast_pump)
+    start_point = (280, 220)
     down, down_sends, replies = send_until_applied(
-        udp, lease, 1, 280, 220, 1, True)
+        udp, lease, 1, *start_point, 1, True)
+    time.sleep(0.12)
+    before_path = qmp.screendump(os.path.join(
+        artifacts, "drag-held-start.ppm"))
     points = [(280 + i * 5, 220 + i * 3) for i in range(1, 31)]
     started = time.time()
     for sequence, point in enumerate(points, 2):
@@ -255,6 +288,15 @@ def run_drag(link, udp, lease, ident, fast_pump=False):
             time.sleep(target - time.time())
     final_sequence = len(points) + 2
     final_point = points[-1]
+    time.sleep(0.12)
+    after_path = qmp.screendump(os.path.join(
+        artifacts, "drag-held-finish.ppm"))
+    changed = changed_near_points(
+        before_path, after_path, (start_point, final_point))
+    if any(count == 0 for count in changed):
+        raise RuntimeError(
+            "held-drag framebuffer did not change around both cursor "
+            f"endpoints: start/final counts={changed}")
     up, up_sends, up_replies = send_until_applied(
         udp, lease, final_sequence, *final_point, 2, False)
     replies.extend(up_replies)
@@ -263,6 +305,11 @@ def run_drag(link, udp, lease, ident, fast_pump=False):
     return {"armed": armed, "down": down, "up": up,
             "streamedPoints": len(points), "streamAcks": len(replies),
             "sends": down_sends + len(points) + up_sends, "rows": rows,
+            "visibleTracking": {
+                "start": start_point, "finish": final_point,
+                "changedPixelsNearEndpoints": changed,
+                "radius": 24,
+            },
             "disarmed": stopped}
 
 
@@ -320,8 +367,7 @@ def main():
     build = str(link.hello.get("build") or "")
     if not build.startswith(args.expect_build_prefix):
         raise SystemExit(f"wrong guest build: {build!r}")
-    extension = (link.command("mirror", timeout=30).get("mirror") or {}).get(
-        "extension") or {}
+    extension = extension_state(link)
     capabilities = int(extension.get("capabilities") or 0)
     if not capabilities & 0x200:
         raise SystemExit(
@@ -352,8 +398,8 @@ def main():
             fast_pump=args.fast_pump)
         active_epoch = 103
         receipt["drag"] = run_drag(
-            link, udp, (nonce_hi, nonce_lo, active_epoch), 8121,
-            args.fast_pump)
+            qmp, link, udp, (nonce_hi, nonce_lo, active_epoch), 8121,
+            args.artifacts, args.fast_pump)
         receipt["nativeAfterDrag"] = native_move(qmp, link, 90, 60)
         active_epoch = 104
         receipt["leaseRelease"] = run_lease_release(
@@ -365,6 +411,10 @@ def main():
             qmp, link, udp, (nonce_hi, nonce_lo, active_epoch), 8141,
             args.fast_pump)
         receipt["wireAfterTakeover"] = mouseloc(link)
+        receipt["extensionAfter"] = extension_state(link)
+        if int(receipt["extensionAfter"].get("restState") or 0) & 0x80 == 0:
+            raise RuntimeError(
+                "Continuity armed without reporting its permanent tracking hooks")
         receipt["failure"] = None
     except Exception as error:
         receipt["failure"] = f"{type(error).__name__}: {error}"
