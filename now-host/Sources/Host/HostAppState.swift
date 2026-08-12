@@ -70,55 +70,6 @@ final class HostAppState: ObservableObject {
         listener: listener,
         addressing: agentIntegration,
         select: { [weak self] key in self?.selectGuest(key) ?? false })
-    /// The one NOW Extension lifecycle and host plane policy for this Mac.
-    /// It moves with the guest picker because every fact and policy claim is
-    /// scoped to the selected wire session.
-    private(set) lazy var mirror = MirrorControlModel(
-        guestProbe: MirrorGuestWireProbe(listener: listener))
-    /// The native data-driven Mirror source. It reads the same policy model
-    /// the page renders, so the visible toggles are the claims this source
-    /// actually makes.
-    /// Whether `mirrorSource` has actually been made. The MCP metrics read
-    /// must not be the thing that constructs the Mirror: an agent asking
-    /// what has been measured would otherwise create the measurer and get
-    /// an empty answer that reads like a quiet machine.
-    private var madeMirrorSource = false
-
-    private(set) lazy var mirrorSource: NOWMirrorSource = {
-        madeMirrorSource = true
-        let source = NOWMirrorSource(
-            listener: listener,
-            engineRegistry: mirrorEngines,
-            act: AgentIntegrationActControl(
-                listener: listener,
-                currentSessionID: { [unowned self] in
-                    self.agentIntegration.connectedSessionID()
-                }),
-            planePolicy: { [unowned self] key in
-                self.mirror.requestedPlaneIDs(for: key)
-            },
-            finderComplementPolicy: { [unowned self] key in
-                self.mirror.finderComplementsAllowed(for: key)
-            },
-            lifecycleDidChange: {
-                [weak self] in self?.mirror.refreshLifecycle()
-            })
-        mirror.bindPolicyProjection { [weak source] in
-            source?.planePolicyDidChange()
-        }
-        return source
-    }()
-    /// Where the Mirror is shown, and at what size. Persisted, so a
-    /// person finds it where they left it.
-    private(set) lazy var mirrorPresentation = MirrorPresentation(
-        defaults: defaults)
-    /// Whether it is running, which is a different question. See
-    /// `MirrorRunControl` for why they had to stop being one.
-    private(set) lazy var mirrorRun = MirrorRunControl(source: mirrorSource,
-                                                       defaults: defaults)
-    private(set) lazy var mirrorWindow = NOWMirrorWindow(
-        source: mirrorSource, presentation: mirrorPresentation)
-
     /// **Show the Mirror on an already-running host, whoever asked.**
     ///
     /// The one implementation behind four faces: the Mirror page's own
@@ -147,42 +98,8 @@ final class HostAppState: ObservableObject {
     /// front of them, and it is.
     @discardableResult
     func showMirror() -> HostSurfaceOutcome {
-        let name = connectedMachineName
-        let detached = mirrorPresentation.isDetached
-        let wasShowing = detached
-            ? mirrorWindow.isOpen
-            : selectedModuleID == "mirror"
-        let wasRunning = mirrorSource.running
-        guard wasRunning || Self.guestState(
-            from: listener.state, key: listener.activeKey).canCapture else {
-            /* Refused rather than shown-empty. A Mirror with no Mac
-               behind it publishes nothing, so a caller that opened one
-               would read an honest empty answer and have no way to tell
-               it from a quiet machine — the same trap `--open-mirror`
-               fell into before it learned to retry `start()`. */
-            return .refused(
-                code: "unavailable",
-                reason: "No Mac is connected, so there is nothing to "
-                    + "mirror yet.")
-        }
-        mirrorRun.start()
-        if detached {
-            mirrorWindow.show(title: "Mirror — \(name)")
-        } else {
-            selectedModuleID = "mirror"
-        }
-        /* **These sentences are read on the OTHER machine.** They cross
-           the wire in `host.shown` and the guest draws them verbatim in
-           its Mirror page's status line (`mirror_module.c:63-70`), so
-           they must describe an outcome a person at a classic Mac can
-           check, and must not name a host window that may not exist. */
-        let place = detached ? "in its own window" : "on the Mirror page"
-        return .showing(
-            wasAlreadyOpen: wasShowing && wasRunning,
-            detail: wasShowing && wasRunning
-                ? "The Mirror was already running; brought it to the front "
-                    + place + "."
-                : "The Mirror is running on \(name), \(place).")
+        mirrorRuntime?.show() ?? .refused(
+            code: "unavailable", reason: "The Mirror is unavailable.")
     }
 
     /// Whether `--open-mirror` has been honoured yet this launch. A guest
@@ -229,8 +146,7 @@ final class HostAppState: ObservableObject {
     /// `bindMirrorMetrics` does not: asking what has been measured must
     /// not create the measurer and then answer for it.
     var guestScreenIfKnown: MirrorKit.Scene.ScreenSize? {
-        guard madeMirrorSource else { return nil }
-        return mirrorSource.scene?.screen.known
+        existingMirrorRuntime?.guestScreenIfKnown
     }
 
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
@@ -245,7 +161,7 @@ final class HostAppState: ObservableObject {
     /// switch — the two used to be separate assignments, and a module added
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
-        [diagnostics, mirror]
+        [diagnostics]
     }
 
     private lazy var moduleRuntimes = HostModuleRuntimeStore(
@@ -264,6 +180,12 @@ final class HostAppState: ObservableObject {
                         ChatSystemPrompt.Screen(w: $0.w, h: $0.h)
                     }
                 }
+            },
+            mirrorEngines: mirrorEngines,
+            selectedModuleID: { [unowned self] in self.selectedModuleID },
+            selectModule: { [unowned self] in self.selectedModuleID = $0 },
+            connectedMachineName: { [unowned self] in
+                self.connectedMachineName
             }))
     private let moduleRegistry: ModuleRegistry
 
@@ -276,8 +198,7 @@ final class HostAppState: ObservableObject {
     @discardableResult
     func selectGuest(_ key: GuestKey) -> Bool {
         listener.selectGuest(key) { [weak self] in
-            guard let self, self.madeMirrorSource else { return }
-            self.mirrorRun.activeGuestWillChange()
+            self?.existingMirrorRuntime?.activeGuestWillChange()
         }
     }
 
@@ -376,56 +297,18 @@ final class HostAppState: ObservableObject {
             return self.showMirror()
         }
         integration.bindMirrorDriver { [weak self] request in
-            guard let self else {
+            guard let runtime = self?.mirrorRuntime else {
                 return .init(unavailable: .init(
                     code: "now-mirror-drive-unavailable",
                     message: "The host is shutting down"))
             }
-            /* Reading `mirrorSource` here DOES make it, unlike the metrics
-               reader. That is the difference between asking what has been
-               measured and asking for something to be done: a drive is a
-               request to act, and refusing it because nobody had opened a
-               window yet would be refusing the thing that was asked for. */
-            let source = self.mirrorSource
-            return MirrorDriveService(
-                /* Resolve the entity against the same immutable publication
-                   the MCP snapshot projected. `source.scene` is the rendered
-                   view and can still be independently enriched by host UI;
-                   using it here recreated two semantic authorities. */
-                scene: { source.shadowEngine?.snapshot?.scene },
-                perform: { source.perform($0, source: .mcp) },
-                journal: { source.shadowEngine?.operations },
-                cancel: { source.cancelPendingActs() })
-                .drive(request)
+            return runtime.drive(request)
         }
         integration.bindMirrorLifecycle { [weak self] in
-            guard let self, let facts = self.mirror.wireFacts else {
-                return nil
-            }
-            return .init(
-                lifecycle: facts.resident.lifecycle.rawValue,
-                residentBuild: facts.resident.buildFingerprint,
-                residentMajor: facts.resident.residentMajor,
-                residentMinor: facts.resident.residentMinor,
-                capabilities: facts.resident.capabilities,
-                requested: facts.resident.requested,
-                active: facts.resident.active,
-                reason: facts.resident.reason,
-                planes: facts.planes.map { plane in
-                    .init(id: plane.id.rawValue, title: plane.id.title,
-                          purpose: plane.purpose, format: plane.format,
-                          generation: plane.generation,
-                          requestedByHost:
-                            self.mirror.policyEnabled(plane.id))
-                })
+            self?.mirrorRuntime?.lifecycle
         }
         integration.bindMirrorMetrics { [weak self] in
-            guard let self, self.madeMirrorSource else { return nil }
-            return self.mirrorSource.actTimeline.projected(
-                cycles: self.mirrorSource.cycleTimeline,
-                running: self.mirrorSource.running,
-                scheduler: self.listener.workScheduler.snapshot(),
-                work: self.listener.workTimeline.entries)
+            self?.existingMirrorRuntime?.metrics
         }
         if settings.listenAtLaunch {
             startListening()
@@ -443,12 +326,6 @@ final class HostAppState: ObservableObject {
             model.connection = connection
         }
         moduleRuntimes.focus(on: connection)
-        /* Do not construct the Mirror merely because a connection changed.
-           Once it exists, however, its pinned GuestKey is session state and
-           must cross the same boundary as every model above. */
-        if madeMirrorSource {
-            mirrorRun.activeGuestDidChange()
-        }
         captureSmokeIfRequested(state)
         /* Re-attached at the 019 integration, when this body moved out of
            the event closure and into a method. Every connection change
@@ -491,6 +368,18 @@ final class HostAppState: ObservableObject {
         for id: String, as type: Runtime.Type
     ) -> Runtime? {
         moduleRuntimes.runtime(for: id, as: type)
+    }
+
+    private var mirrorRuntime: MirrorHostModuleRuntime? {
+        moduleRuntimes.runtime(
+            for: MirrorHostModule.definition.descriptor.id,
+            as: MirrorHostModuleRuntime.self)
+    }
+
+    private var existingMirrorRuntime: MirrorHostModuleRuntime? {
+        moduleRuntimes.existingRuntime(
+            for: MirrorHostModule.definition.descriptor.id,
+            as: MirrorHostModuleRuntime.self)
     }
 
     private var screenRuntime: ScreenHostModuleRuntime? {

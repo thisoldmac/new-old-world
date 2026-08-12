@@ -249,8 +249,10 @@ final class MultiGuestFocusTests: XCTestCase {
                        "PowerBook 1400c")
 
         let outgoingMirrorKey = try liveKey(state, "PowerBook 1400c")
-        state.mirrorRun.start()
-        XCTAssertEqual(state.mirrorSource.pinnedGuestKey, outgoingMirrorKey)
+        let mirror = try XCTUnwrap(state.moduleRuntime(
+            for: "mirror", as: MirrorHostModuleRuntime.self))
+        mirror.run.start()
+        XCTAssertEqual(mirror.source.pinnedGuestKey, outgoingMirrorKey)
 
         let incomingMirrorKey = try liveKey(state, "PowerBook 180c")
         XCTAssertTrue(state.selectGuest(incomingMirrorKey))
@@ -273,7 +275,7 @@ final class MultiGuestFocusTests: XCTestCase {
             XCTAssertEqual(label, "PowerBook 180c",
                            "a module left behind shows the wrong Mac's state")
         }
-        XCTAssertEqual(state.mirrorSource.pinnedGuestKey, incomingMirrorKey,
+        XCTAssertEqual(mirror.source.pinnedGuestKey, incomingMirrorKey,
                        "the Mirror must cross the same connection boundary")
         XCTAssertNil(state.mirrorEngines.existing(for: outgoingMirrorKey),
                      "the outgoing session engine must not survive a switch")
@@ -283,10 +285,10 @@ final class MultiGuestFocusTests: XCTestCase {
         try await waitUntil("the active disconnect promotes the remaining Mac") {
             screen.model.connection.peerLabel == "PowerBook 1400c"
         }
-        XCTAssertEqual(state.mirrorSource.pinnedGuestKey, outgoingMirrorKey,
+        XCTAssertEqual(mirror.source.pinnedGuestKey, outgoingMirrorKey,
                        "an active disconnect starts a fresh session on the "
                            + "remaining Mac")
-        XCTAssertNil(state.mirrorSource.scene)
+        XCTAssertNil(mirror.source.scene)
         XCTAssertNil(state.mirrorEngines.existing(for: incomingMirrorKey))
         XCTAssertNotNil(state.mirrorEngines.existing(for: outgoingMirrorKey))
     }

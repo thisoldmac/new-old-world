@@ -16,6 +16,10 @@ struct HostModuleContext {
     let guestFiles: GuestFilesCommandService?
     let agentActivity: AgentActivityModel?
     let guestScreen: @Sendable () async -> ChatSystemPrompt.Screen?
+    let mirrorEngines: MirrorStateEngineRegistry?
+    let selectedModuleID: () -> String
+    let selectModule: (String) -> Void
+    let connectedMachineName: () -> String
 
     init(listener: GuestListener,
          currentConnection: @escaping () -> GuestConnectionState,
@@ -25,7 +29,13 @@ struct HostModuleContext {
          guestFiles: GuestFilesCommandService? = nil,
          agentActivity: AgentActivityModel? = nil,
          guestScreen: @escaping @Sendable () async
-            -> ChatSystemPrompt.Screen? = { nil }) {
+            -> ChatSystemPrompt.Screen? = { nil },
+         mirrorEngines: MirrorStateEngineRegistry? = nil,
+         selectedModuleID: @escaping () -> String = { "" },
+         selectModule: @escaping (String) -> Void = { _ in },
+         connectedMachineName: @escaping () -> String = {
+            "no Mac connected"
+         }) {
         self.listener = listener
         self.currentConnection = currentConnection
         self.defaults = defaults
@@ -34,6 +44,10 @@ struct HostModuleContext {
         self.guestFiles = guestFiles
         self.agentActivity = agentActivity
         self.guestScreen = guestScreen
+        self.mirrorEngines = mirrorEngines
+        self.selectedModuleID = selectedModuleID
+        self.selectModule = selectModule
+        self.connectedMachineName = connectedMachineName
     }
 }
 
@@ -159,6 +173,12 @@ final class HostModuleRuntimeStore {
         return try? runtime(for: definition) as? Runtime
     }
 
+    func existingRuntime<Runtime: HostModuleRuntime>(
+        for id: String, as type: Runtime.Type
+    ) -> Runtime? {
+        runtimes[id] as? Runtime
+    }
+
     private func runtime(for definition: HostModuleDefinition) throws
         -> (any HostModuleRuntime)? {
         guard !isShutDown else { throw HostModuleRuntimeStoreError.shutDown }
@@ -233,17 +253,11 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == DevelopmentHostModule.definition.descriptor.id {
             return DevelopmentHostModule.definition
         }
+        if descriptor.id == MirrorHostModule.definition.descriptor.id {
+            return MirrorHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
-            case "mirror":
-                return AnyView(MirrorModuleView(
-                    model: state.mirror, source: state.mirrorSource,
-                    run: state.mirrorRun,
-                    presentation: state.mirrorPresentation,
-                    window: state.mirrorWindow,
-                    connectedMachineName: state.connectedMachineName,
-                    timeline: state.mirrorSource.actTimeline,
-                    cycles: state.mirrorSource.cycleTimeline))
             case "diagnostics":
                 return AnyView(DiagnosticsModuleView(model: state.diagnostics))
             case "mcp":

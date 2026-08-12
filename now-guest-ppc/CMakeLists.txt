@@ -95,6 +95,7 @@ add_application(now-guest-ppc
     src/mirror/mirror_json.c
     src/mirror/mirror_probe.c
     src/mirror/mirror_module.c
+    src/mirror/mirror_module_definition.c
     src/development/development_contract.c
     src/development/development_build.c
     src/development/development_project.c

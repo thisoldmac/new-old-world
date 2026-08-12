@@ -312,4 +312,36 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"development\""))
         XCTAssertTrue(definition.contains("development_module_ops"))
     }
+
+    func testMirrorDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = MirrorHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "mirror")
+        XCTAssertEqual(definition.descriptor.tier, .experimental)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testMirrorOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let runtime = try GateSource.hostSwift(
+            "now-host/Sources/Host/MirrorHostModule.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/mirror/mirror_module_definition.c")
+
+        XCTAssertFalse(state.contains("lazy var mirror"))
+        XCTAssertFalse(state.contains("lazy var mirrorSource"))
+        XCTAssertFalse(compatibility.contains("case \"mirror\""))
+        XCTAssertTrue(runtime.contains("run.stop()"))
+        XCTAssertTrue(runtime.contains("window.close()"))
+        XCTAssertFalse(registry.contains("k_mirror_definition"))
+        XCTAssertTrue(registry.contains("mirror_module_definition()"))
+        XCTAssertTrue(definition.contains("\"mirror\""))
+        XCTAssertTrue(definition.contains("mirror_module_ops"))
+    }
 }

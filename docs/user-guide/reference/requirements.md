@@ -38,7 +38,7 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: 69df93efc10723af0e78423486bc1a518fa3bd5e
+sources-sha1: 9bb4f390ff49b3125ae181da1c59648a65dac6f9
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -99,4 +99,5 @@ rederived: 2026-08-11T21:59:54-0400 562b4b50 sources
 rederived: 2026-08-11T22:06:35-0400 65f52bf3 sources
 rederived: 2026-08-11T22:10:48-0400 3df65dde sources
 rederived: 2026-08-11T22:15:21-0400 68853632 sources
+rederived: 2026-08-11T22:31:04-0400 a16b6a61 sources
 -->

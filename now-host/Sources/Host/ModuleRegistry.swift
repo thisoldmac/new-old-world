@@ -116,14 +116,7 @@ struct ModuleRegistry {
            somewhere else. It is also the only module that owns a live
            poll, and that poll deliberately keeps running while another
            module is showing. */
-        ModuleDescriptor(
-            id: "mirror",
-            title: "Mirror",
-            symbol: "macwindow.on.rectangle",
-            summary: "See and drive \(MachineNaming.simpleReference), "
-                + "here or in its own window",
-            tier: .experimental
-        ),
+        MirrorHostModule.definition.descriptor,
         ConsoleHostModule.definition.descriptor,
         /* Beside Console because it is the same posture — a page that DOES
            things to the machine, through a model instead of a verb table.

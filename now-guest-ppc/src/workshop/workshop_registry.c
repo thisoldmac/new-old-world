@@ -40,16 +40,6 @@ static const WorkshopModuleDefinition k_diagnostics_definition = {
     diagnostics_module_ops
 };
 
-static const WorkshopModuleDefinition k_mirror_definition = {
-    kWorkshopMirror, "mirror", "Mirror",
-    "Mirror's own extensions and agent on this Mac. NOW reads them; it "
-    "installs nothing.",
-    "Mirror has not moved in yet.",
-    "Its extensions and agent", 143, kWorkshopModuleTierExperimental,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    mirror_module_ops
-};
-
 static const WorkshopModuleDefinition k_preferences_definition = {
     kWorkshopPreferences, "settings", "Preferences",
     "How this window behaves. Rearrange the rail by Option-dragging a "
@@ -93,7 +83,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopNetworking: return network_module_definition();
     case kWorkshopCloud: return cloud_module_definition();
     case kWorkshopChat: return chat_module_definition();
-    case kWorkshopMirror: return &k_mirror_definition;
+    case kWorkshopMirror: return mirror_module_definition();
     case kWorkshopDevelopment: return development_module_definition();
     case kWorkshopWeb: return web_module_definition();
     case kWorkshopPreferences: return &k_preferences_definition;
