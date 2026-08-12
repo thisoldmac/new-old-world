@@ -41,15 +41,6 @@ static const WorkshopModuleDefinition k_files_definition = {
     files_module_ops
 };
 
-static const WorkshopModuleDefinition k_console_definition = {
-    kWorkshopConsole, "console", "Console",
-    "Commands run on this Mac. Only declared commands are available.",
-    "Console still lives in its own window (Windows menu).",
-    "Local commands", 131, kWorkshopModuleTierCore,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    console_module_ops
-};
-
 static const WorkshopModuleDefinition k_processes_definition = {
     kWorkshopProcesses, "processes", "Processes",
     "Everything running on this Mac. Quit asks politely and never forces.",
@@ -180,7 +171,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     switch (page_id) {
     case kWorkshopScreenshots: return &k_screenshots_definition;
     case kWorkshopFiles: return &k_files_definition;
-    case kWorkshopConsole: return &k_console_definition;
+    case kWorkshopConsole: return console_module_definition();
     case kWorkshopProcesses: return &k_processes_definition;
     case kWorkshopHardware: return &k_hardware_definition;
     case kWorkshopSoftware: return &k_software_definition;

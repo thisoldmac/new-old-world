@@ -27,6 +27,7 @@ add_application(now-guest-ppc
     src/console/console_model.c
     src/console/console_reply.c
     src/console/console_module.c
+    src/console/console_module_definition.c
     # Not under src/: one implementation both guests compile, the way
     # contract/ carries the headers both guests include. See its own
     # header for why the console history in particular is out here.

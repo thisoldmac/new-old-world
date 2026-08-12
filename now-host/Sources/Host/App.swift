@@ -178,7 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// list of its own, so this is the same `help` request a human types.
     @objc func askGuestForHelp() {
         show(moduleID: "console")
-        state.console.runHelp()
+        state.runConsoleHelp()
     }
 
     @objc func toggleListening() {

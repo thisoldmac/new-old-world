@@ -152,12 +152,7 @@ struct ModuleRegistry {
                 + "here or in its own window",
             tier: .experimental
         ),
-        ModuleDescriptor(
-            id: "console",
-            title: "Console",
-            symbol: "terminal",
-            summary: "A command line on \(MachineNaming.simpleReference)"
-        ),
+        ConsoleHostModule.definition.descriptor,
         /* Beside Console because it is the same posture — a page that DOES
            things to the machine, through a model instead of a verb table.
            The provider configuration lives on this page too, per the

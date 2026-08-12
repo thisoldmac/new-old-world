@@ -101,7 +101,6 @@ final class HostAppState: ObservableObject {
         listener: listener,
         addressing: agentIntegration,
         select: { [weak self] key in self?.selectGuest(key) ?? false })
-    private(set) lazy var console = ConsoleModel(listener: listener)
     /// The one NOW Extension lifecycle and host plane policy for this Mac.
     /// It moves with the guest picker because every fact and policy claim is
     /// scoped to the selected wire session.
@@ -506,15 +505,6 @@ final class HostAppState: ObservableObject {
         if madeMirrorSource {
             mirrorRun.activeGuestDidChange()
         }
-        // The console's completions came from THIS guest's `help`, and the
-        // next one may serve a different set — NOW-68K serves three commands
-        // where the Carbon guest serves fifteen. So they go with the
-        // connection rather than lingering as a list from a machine that is
-        // no longer there.
-        console.focus(on: connection)
-        if case .connected = state {} else {
-            console.forgetGuest()
-        }
         captureSmokeIfRequested(state)
         /* Re-attached at the 019 integration, when this body moved out of
            the event closure and into a method. Every connection change
@@ -545,6 +535,12 @@ final class HostAppState: ObservableObject {
         precondition(registry.modules.map(\.id) == moduleRegistry.modules.map(\.id),
                      "HostRootView must render the state registry")
         return moduleRuntimes.view(for: id, state: self)
+    }
+
+    func runConsoleHelp() {
+        moduleRuntimes.runtime(
+            for: ConsoleHostModule.definition.descriptor.id,
+            as: ConsoleHostModuleRuntime.self)?.runHelp()
     }
 
     func shutDownModules() {

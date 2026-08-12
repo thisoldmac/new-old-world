@@ -85,7 +85,7 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: ebf7024371dffb3436e2df92883fe322852d0df9
+sources-sha1: d593f88a035dd79e2600fd9e013a96fb6bd4a88e
 derive mcp-catalog sha256=dadedb438a578e94422eb5eec7337288e94e19899e6592ebaaf6d86c080258dc lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -129,4 +129,5 @@ rederived: 2026-08-11T20:08:53-0400 852b41ae sources
 rederived: 2026-08-11T20:43:59-0400 5c07bcd6 sources
 rederived: 2026-08-11T20:54:11-0400 f9ceab81 sources
 rederived: 2026-08-11T21:13:10-0400 098805ff sources
+rederived: 2026-08-11T21:20:51-0400 15514cc9 sources
 -->

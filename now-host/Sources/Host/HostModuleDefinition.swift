@@ -128,6 +128,12 @@ final class HostModuleRuntimeStore {
 
     func isConstructed(_ id: String) -> Bool { runtimes[id] != nil }
 
+    func runtime<Runtime: HostModuleRuntime>(for id: String,
+                                             as type: Runtime.Type) -> Runtime? {
+        guard let definition = registry.definition(id: id) else { return nil }
+        return try? runtime(for: definition) as? Runtime
+    }
+
     private func runtime(for definition: HostModuleDefinition) throws
         -> (any HostModuleRuntime)? {
         guard !isShutDown else { throw HostModuleRuntimeStoreError.shutDown }
@@ -172,6 +178,9 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == NetworkingHostModule.definition.descriptor.id {
             return NetworkingHostModule.definition
         }
+        if descriptor.id == ConsoleHostModule.definition.descriptor.id {
+            return ConsoleHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
             case "screen":
@@ -191,9 +200,6 @@ enum LegacyHostModuleDefinitions {
                     connectedMachineName: state.connectedMachineName,
                     timeline: state.mirrorSource.actTimeline,
                     cycles: state.mirrorSource.cycleTimeline))
-            case "console":
-                return AnyView(ConsoleModuleView(model: state.console,
-                                                 listener: state.listener))
             case "chat":
                 return AnyView(ChatModuleView(model: state.chat))
             case "web":
