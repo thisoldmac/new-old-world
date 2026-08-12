@@ -156,6 +156,7 @@ add_application(now-guest-ppc
     src/processes/proc_roster.c
     src/processes/processes_layout.c
     src/processes/processes_module.c
+    src/processes/processes_module_definition.c
     src/workshop/workshop_construct.c
     src/workshop/workshop_registry.c
     src/workshop/workshop_layout.c

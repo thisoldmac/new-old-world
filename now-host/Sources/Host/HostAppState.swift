@@ -259,19 +259,6 @@ final class HostAppState: ObservableObject {
     private(set) lazy var web = WebBridgeModel(defaults: defaults)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var cloudModule = CloudModuleModel(listener: listener)
-    private(set) lazy var processes: ProcessesModel = {
-        let model = ProcessesModel(listener: listener)
-        // "Screenshot App" shows the Screen page and asks for a
-        // window-cropped capture of the process. The guest owns the timing
-        // (front, let it repaint, crop, deliver — process.shot), so there
-        // is no delay to fake here.
-        model.onScreenshotApp = { [weak self] psnHigh, psnLow in
-            guard let self else { return }
-            self.selectedModuleID = "screen"
-            self.captureProcess(psnHigh: psnHigh, psnLow: psnLow)
-        }
-        return model
-    }()
 
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"
@@ -283,7 +270,7 @@ final class HostAppState: ObservableObject {
     /// switch — the two used to be separate assignments, and a module added
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
-        [diagnostics, processes, mirror]
+        [diagnostics, mirror]
     }
 
     private lazy var moduleRuntimes = HostModuleRuntimeStore(

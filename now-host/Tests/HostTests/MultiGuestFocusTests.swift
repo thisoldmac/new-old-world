@@ -263,10 +263,12 @@ final class MultiGuestFocusTests: XCTestCase {
             for: "software", as: SoftwareHostModuleRuntime.self))
         let files = try XCTUnwrap(state.moduleRuntime(
             for: "files", as: FilesHostModuleRuntime.self))
+        let processes = try XCTUnwrap(state.moduleRuntime(
+            for: "processes", as: ProcessesHostModuleRuntime.self))
         for label in [screen.model.connection.peerLabel,
                       files.model.connection.peerLabel,
                       census.model.connection.peerLabel,
-                      state.processes.connection.peerLabel,
+                      processes.model.connection.peerLabel,
                       software.model.connection.peerLabel] {
             XCTAssertEqual(label, "PowerBook 180c",
                            "a module left behind shows the wrong Mac's state")

@@ -105,13 +105,7 @@ struct ModuleRegistry {
                 + "\(MachineNaming.simpleReference) may browse",
             tier: .experimental
         ),
-        ModuleDescriptor(
-            id: "processes",
-            title: "Processes",
-            symbol: "cpu",
-            summary: "What is running on \(MachineNaming.simpleReference), "
-                + "and quit or raise it"
-        ),
+        ProcessesHostModule.definition.descriptor,
         /* Kept where the Mirror page has always been, and now beside
            Processes for a reason rather than by inheritance: it answers
            the next question about the same subject — Processes is what is

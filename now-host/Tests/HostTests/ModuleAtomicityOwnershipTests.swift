@@ -155,4 +155,35 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"files\""))
         XCTAssertTrue(definition.contains("files_module_ops"))
     }
+
+    func testProcessesDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = ProcessesHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "processes")
+        XCTAssertEqual(definition.descriptor.tier, .core)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testProcessesOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let model = try GateSource.hostSwift(
+            "now-host/Sources/Host/ProcessesModel.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/processes/processes_module_definition.c")
+
+        XCTAssertFalse(state.contains("lazy var processes"))
+        XCTAssertFalse(state.contains("onScreenshotApp"))
+        XCTAssertFalse(model.contains("onScreenshotApp"))
+        XCTAssertFalse(compatibility.contains("case \"processes\""))
+        XCTAssertFalse(registry.contains("k_processes_definition"))
+        XCTAssertTrue(registry.contains("processes_module_definition()"))
+        XCTAssertTrue(definition.contains("\"processes\""))
+        XCTAssertTrue(definition.contains("processes_module_ops"))
+    }
 }

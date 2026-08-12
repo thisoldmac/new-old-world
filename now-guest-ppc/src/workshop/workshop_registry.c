@@ -20,15 +20,6 @@
 #include "software_module.h"
 #include "web_module.h"
 
-static const WorkshopModuleDefinition k_processes_definition = {
-    kWorkshopProcesses, "processes", "Processes",
-    "Everything running on this Mac. Quit asks politely and never forces.",
-    "Processes has not moved in yet.",
-    "Running applications", 133, kWorkshopModuleTierCore,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    processes_module_ops
-};
-
 static const WorkshopModuleDefinition k_mcp_definition = {
     kWorkshopMCP, "mcp", "MCP",
     "Whether an agent may drive this Mac, and how far. The other Mac "
@@ -132,7 +123,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopScreenshots: return screenshots_module_definition();
     case kWorkshopFiles: return files_module_definition();
     case kWorkshopConsole: return console_module_definition();
-    case kWorkshopProcesses: return &k_processes_definition;
+    case kWorkshopProcesses: return processes_module_definition();
     case kWorkshopHardware: return census_module_definition();
     case kWorkshopSoftware: return software_module_definition();
     case kWorkshopMCP: return &k_mcp_definition;

@@ -199,21 +199,17 @@ final class ProcessesModelTests: XCTestCase {
         XCTAssertEqual(model.subject, .running(target))
     }
 
-    func testCaptureNeverRoutesThroughTheScreenModule() throws {
+    func testCaptureStaysInTheProcessesModule() throws {
         let fake = Fake()
         fake.capture = .success(try delivery())
         let target = drivable("SimpleText")
         fake.table = [target]
         let model = connected(fake)
-        // The hook the app used to navigate with must not be pulled: firing
-        // it is what took the reader to the Screen module.
-        var navigated = false
-        model.onScreenshotApp = { _, _ in navigated = true }
 
         model.screenshotApp(target)
 
-        XCTAssertFalse(navigated)
         XCTAssertNotNil(model.preview)
+        XCTAssertEqual(model.previewOf, "SimpleText")
     }
 
     func testCaptureAsksForTheDepthThisPageChose() throws {
