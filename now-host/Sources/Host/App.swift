@@ -58,18 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
            who lands on that page cannot press a control that has not been
            connected yet. The delegate owns the server object, so the pane
            reaches it through the app state rather than holding it. */
-        state.startMCPStdio = { [weak self] in
-            self?.startMCPStdio()
-        }
-        state.stopMCPStdio = { [weak self] in
-            self?.stopMCPStdio()
-        }
-        state.startMCPHTTP = { [weak self] in
-            self?.startMCPHTTP()
-        }
-        state.stopMCPHTTP = { [weak self] in
-            self?.stopMCPHTTP()
-        }
+        state.configureMCPTransports(
+            startStdio: { [weak self] in self?.startMCPStdio() },
+            stopStdio: { [weak self] in self?.stopMCPStdio() },
+            startHTTP: { [weak self] in self?.startMCPHTTP() },
+            stopHTTP: { [weak self] in self?.stopMCPHTTP() })
         /* Not the activating variant. A launch the person performed is
            activated by macOS itself, and a launch they did NOT perform — a
            background `open`, a script restarting the app while they work

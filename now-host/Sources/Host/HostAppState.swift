@@ -25,18 +25,6 @@ final class HostAppState: ObservableObject {
             notifier.announce(fileFrom: guest, url: url, bytes: bytes)
         }
 
-    /// Starting and stopping NOW's two MCP transports, set by the app delegate.
-    ///
-    /// Hooks rather than methods for the same reason as the flash above: the
-    /// server object belongs to the delegate, which is the only thing whose
-    /// lifetime matches a listening socket's, and a test or a preview that
-    /// leaves these nil gets a pane with buttons that do nothing to any real
-    /// socket instead of a host process with an endpoint it never wanted.
-    var startMCPStdio: (() -> Void)?
-    var stopMCPStdio: (() -> Void)?
-    var startMCPHTTP: (() -> Void)?
-    var stopMCPHTTP: (() -> Void)?
-
     /// Drives the menu bar's connection glyph and status line.
     private(set) lazy var guestStatus = GuestStatusMonitor(listener: listener)
     let settings: SettingsModel
@@ -174,6 +162,7 @@ final class HostAppState: ObservableObject {
             agentIntegration: agentIntegration,
             guestFiles: guestFiles,
             agentActivity: agentActivity,
+            agentCompanions: agentCompanions,
             guestScreen: { [weak self] in
                 await MainActor.run {
                     self?.guestScreenIfKnown.flatMap {
@@ -232,12 +221,13 @@ final class HostAppState: ObservableObject {
             currentSessionID: {
                 integration.connectedSessionID()
             })
-        /* Forced now rather than at first page view: a guest may ask
-           chat.models before anyone opens the Chat page, and a lazy
-           wire service would answer that with pre-family silence. The
-           runtime remains module-owned; this only admits it eagerly. */
+        /* Forced now rather than at first page view. A guest may ask
+           chat.models before anyone opens Chat, and the app delegate binds
+           MCP's transport controls before anyone opens MCP. The runtimes
+           remain module-owned; this only admits both eager services. */
         defer {
             _ = moduleRuntime(for: "chat", as: ChatHostModuleRuntime.self)
+            _ = moduleRuntime(for: "mcp", as: MCPHostModuleRuntime.self)
         }
         let stored = defaults.string(forKey: Self.selectionKey)
         /* Through the rename table, so a person whose saved selection is a
@@ -313,6 +303,21 @@ final class HostAppState: ObservableObject {
         if settings.listenAtLaunch {
             startListening()
         }
+    }
+
+    /// Bind the MCP page to the delegate-owned transport lifecycles.
+    /// The sockets remain application services; the module owns the controls
+    /// that expose them and clears those controls when its runtime shuts down.
+    func configureMCPTransports(
+        startStdio: @escaping () -> Void,
+        stopStdio: @escaping () -> Void,
+        startHTTP: @escaping () -> Void,
+        stopHTTP: @escaping () -> Void
+    ) {
+        moduleRuntime(for: "mcp", as: MCPHostModuleRuntime.self)?
+            .configureTransports(
+                startStdio: startStdio, stopStdio: stopStdio,
+                startHTTP: startHTTP, stopHTTP: stopHTTP)
     }
 
     /// One assignment per model, from one place, in one turn. The models

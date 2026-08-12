@@ -15,6 +15,7 @@ struct HostModuleContext {
     let agentIntegration: AgentIntegrationHostAdapter?
     let guestFiles: GuestFilesCommandService?
     let agentActivity: AgentActivityModel?
+    let agentCompanions: AgentCompanionModel?
     let guestScreen: @Sendable () async -> ChatSystemPrompt.Screen?
     let mirrorEngines: MirrorStateEngineRegistry?
     let selectedModuleID: () -> String
@@ -28,6 +29,7 @@ struct HostModuleContext {
          agentIntegration: AgentIntegrationHostAdapter? = nil,
          guestFiles: GuestFilesCommandService? = nil,
          agentActivity: AgentActivityModel? = nil,
+         agentCompanions: AgentCompanionModel? = nil,
          guestScreen: @escaping @Sendable () async
             -> ChatSystemPrompt.Screen? = { nil },
          mirrorEngines: MirrorStateEngineRegistry? = nil,
@@ -43,6 +45,7 @@ struct HostModuleContext {
         self.agentIntegration = agentIntegration
         self.guestFiles = guestFiles
         self.agentActivity = agentActivity
+        self.agentCompanions = agentCompanions
         self.guestScreen = guestScreen
         self.mirrorEngines = mirrorEngines
         self.selectedModuleID = selectedModuleID
@@ -256,19 +259,13 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == MirrorHostModule.definition.descriptor.id {
             return MirrorHostModule.definition
         }
+        if descriptor.id == MCPHostModule.definition.descriptor.id {
+            return MCPHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
             case "diagnostics":
                 return AnyView(DiagnosticsModuleView(model: state.diagnostics))
-            case "mcp":
-                return AnyView(MCPModuleView(
-                    model: state.agentActivity,
-                    companions: state.agentCompanions,
-                    listener: state.listener,
-                    startStdio: state.startMCPStdio,
-                    stopStdio: state.stopMCPStdio,
-                    startHTTP: state.startMCPHTTP,
-                    stopHTTP: state.stopMCPHTTP))
             case "logs":
                 return AnyView(LogsModuleView(model: state.logs,
                                               log: state.logs.log))

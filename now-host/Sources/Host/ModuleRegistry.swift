@@ -162,15 +162,7 @@ struct ModuleRegistry {
            is what the page now controls: MCP is the server this host runs
            and this side owns its lifecycle. The audit model underneath is
            deliberately NOT named that — see MCPModuleView. */
-        ModuleDescriptor(
-            id: "mcp",
-            title: "MCP",
-            symbol: "app.connected.to.app.below.fill",
-            summary: "The MCP server agents reach "
-                + "\(MachineNaming.thisMac) through",
-            placement: .footer,
-            tier: .experimental
-        ),
+        MCPHostModule.definition.descriptor,
         ModuleDescriptor(
             id: "logs",
             title: "Logs",

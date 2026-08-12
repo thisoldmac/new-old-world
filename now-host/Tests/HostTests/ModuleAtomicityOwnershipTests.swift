@@ -344,4 +344,67 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"mirror\""))
         XCTAssertTrue(definition.contains("mirror_module_ops"))
     }
+
+    func testMCPDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = MCPHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "mcp")
+        XCTAssertEqual(definition.descriptor.placement, .footer)
+        XCTAssertEqual(definition.descriptor.tier, .experimental)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testMCPRuntimeOwnsAndReleasesTransportControls() throws {
+        let runtime = try MCPHostModuleRuntime(context: HostModuleContext(
+            listener: GuestListener(
+                identity: .init(version: "test", name: "Test Host")),
+            currentConnection: { .disconnected },
+            agentActivity: AgentActivityModel(),
+            agentCompanions: AgentCompanionModel()))
+        var calls: [String] = []
+
+        runtime.configureTransports(
+            startStdio: { calls.append("start-stdio") },
+            stopStdio: { calls.append("stop-stdio") },
+            startHTTP: { calls.append("start-http") },
+            stopHTTP: { calls.append("stop-http") })
+        runtime.startStdio?()
+        runtime.stopStdio?()
+        runtime.startHTTP?()
+        runtime.stopHTTP?()
+
+        XCTAssertEqual(calls, [
+            "start-stdio", "stop-stdio", "start-http", "stop-http",
+        ])
+        runtime.shutDown()
+        XCTAssertNil(runtime.startStdio)
+        XCTAssertNil(runtime.stopStdio)
+        XCTAssertNil(runtime.startHTTP)
+        XCTAssertNil(runtime.stopHTTP)
+    }
+
+    func testMCPOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let runtime = try GateSource.hostSwift(
+            "now-host/Sources/Host/MCPHostModule.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/mcp/mcp_module_definition.c")
+
+        XCTAssertFalse(state.contains("var startMCPStdio"))
+        XCTAssertFalse(state.contains("var stopMCPStdio"))
+        XCTAssertFalse(state.contains("var startMCPHTTP"))
+        XCTAssertFalse(state.contains("var stopMCPHTTP"))
+        XCTAssertFalse(compatibility.contains("case \"mcp\""))
+        XCTAssertTrue(runtime.contains("func shutDown()"))
+        XCTAssertFalse(registry.contains("k_mcp_definition"))
+        XCTAssertTrue(registry.contains("mcp_module_definition()"))
+        XCTAssertTrue(definition.contains("\"mcp\""))
+        XCTAssertTrue(definition.contains("mcp_module_ops"))
+    }
 }

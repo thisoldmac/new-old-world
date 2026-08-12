@@ -20,16 +20,6 @@
 #include "software_module.h"
 #include "web_module.h"
 
-static const WorkshopModuleDefinition k_mcp_definition = {
-    kWorkshopMCP, "mcp", "MCP",
-    "Whether an agent may drive this Mac, and how far. The other Mac "
-    "runs the server and enforces the answer.",
-    "MCP has not moved in yet.",
-    "Who may drive this Mac", 137, kWorkshopModuleTierExperimental,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    mcp_module_ops
-};
-
 static const WorkshopModuleDefinition k_diagnostics_definition = {
     kWorkshopDiagnostics, "diagnostics", "Diagnostics",
     "What this Mac can measure about itself. Each one says what it "
@@ -78,7 +68,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopProcesses: return processes_module_definition();
     case kWorkshopHardware: return census_module_definition();
     case kWorkshopSoftware: return software_module_definition();
-    case kWorkshopMCP: return &k_mcp_definition;
+    case kWorkshopMCP: return mcp_module_definition();
     case kWorkshopDiagnostics: return &k_diagnostics_definition;
     case kWorkshopNetworking: return network_module_definition();
     case kWorkshopCloud: return cloud_module_definition();
