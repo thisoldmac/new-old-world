@@ -62,7 +62,7 @@ enum ContinuityDisplayGeometry {
     static func defaultGuestOrigin(hosts: [HostDisplayDescriptor],
                                    guestSize: CGSize,
                                    scale: GuestDisplayScale) -> CGPoint {
-        guard let host = hosts.first(where: \.isPrimary) ?? hosts.first else {
+        guard let host = hosts.max(by: { $0.frame.maxX < $1.frame.maxX }) else {
             return .zero
         }
         let height = guestSize.height * scale.rawValue

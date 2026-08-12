@@ -40,16 +40,13 @@ struct ContinuityDisplayLayoutView: View {
                 Divider().frame(height: 24)
                 Text("Layout scale")
                     .font(.headline)
-                Picker("Layout scale", selection: Binding(
-                    get: { layout.guestScale },
-                    set: { layout.selectScale($0) }
-                )) {
+                HStack(spacing: 4) {
                     ForEach(GuestDisplayScale.allCases) { scale in
-                        Text(scale.label).tag(scale)
+                        Button(scale.label) { layout.selectScale(scale) }
+                            .buttonStyle(ContinuityChoiceButtonStyle(
+                                selected: layout.guestScale == scale))
                     }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
                 .frame(maxWidth: 320)
                 Spacer()
             }
@@ -73,6 +70,7 @@ struct ContinuityDisplayLayoutView: View {
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var layoutLine: String {
@@ -90,6 +88,26 @@ struct ContinuityDisplayLayoutView: View {
         case .bottom: return "top"
         case .top: return "bottom"
         }
+    }
+}
+
+struct ContinuityChoiceButtonStyle: ButtonStyle {
+    let selected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.callout.weight(selected ? .semibold : .regular))
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(selected ? Color.accentColor
+                        : Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color(nsColor: .separatorColor))
+            }
+            .opacity(configuration.isPressed ? 0.72 : 1)
     }
 }
 
