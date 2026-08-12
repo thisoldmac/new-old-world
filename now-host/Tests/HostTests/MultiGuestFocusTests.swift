@@ -255,9 +255,11 @@ final class MultiGuestFocusTests: XCTestCase {
         try await waitUntil("the models follow") {
             state.screenshots.connection.peerLabel == "PowerBook 180c"
         }
+        let census = try XCTUnwrap(state.moduleRuntime(
+            for: "census", as: CensusHostModuleRuntime.self))
         for label in [state.screenshots.connection.peerLabel,
                       state.files.connection.peerLabel,
-                      state.census.connection.peerLabel,
+                      census.model.connection.peerLabel,
                       state.processes.connection.peerLabel,
                       state.software.connection.peerLabel] {
             XCTAssertEqual(label, "PowerBook 180c",

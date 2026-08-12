@@ -50,15 +50,6 @@ static const WorkshopModuleDefinition k_processes_definition = {
     processes_module_ops
 };
 
-static const WorkshopModuleDefinition k_hardware_definition = {
-    kWorkshopHardware, "census", "Hardware",
-    "A passive census of this Mac. Probes run on request, never at idle.",
-    "Hardware census is not built into this window yet.",
-    "Census and probes", 134, kWorkshopModuleTierCore,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    census_module_ops
-};
-
 static const WorkshopModuleDefinition k_software_definition = {
     kWorkshopSoftware, "software", "Software",
     "What is installed on this Mac, and starting it. Applications sweep "
@@ -173,7 +164,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopFiles: return &k_files_definition;
     case kWorkshopConsole: return console_module_definition();
     case kWorkshopProcesses: return &k_processes_definition;
-    case kWorkshopHardware: return &k_hardware_definition;
+    case kWorkshopHardware: return census_module_definition();
     case kWorkshopSoftware: return &k_software_definition;
     case kWorkshopMCP: return &k_mcp_definition;
     case kWorkshopDiagnostics: return &k_diagnostics_definition;

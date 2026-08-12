@@ -46,4 +46,31 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"console\""))
         XCTAssertTrue(definition.contains("console_module_ops"))
     }
+
+    func testHardwareDefinitionOwnsItsRuntimeAndMetadata() {
+        let definition = CensusHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "census")
+        XCTAssertEqual(definition.descriptor.tier, .core)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+    }
+
+    func testHardwareOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/census/census_module_definition.c")
+
+        XCTAssertFalse(state.contains("lazy var census"))
+        XCTAssertFalse(compatibility.contains("case \"census\""))
+        XCTAssertFalse(registry.contains("k_hardware_definition"))
+        XCTAssertTrue(registry.contains("census_module_definition()"))
+        XCTAssertTrue(definition.contains("\"census\""))
+        XCTAssertTrue(definition.contains("census_module_ops"))
+    }
 }

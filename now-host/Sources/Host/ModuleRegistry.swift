@@ -181,13 +181,7 @@ struct ModuleRegistry {
                 + "\(MachineNaming.simpleReference)",
             tier: .experimental
         ),
-        ModuleDescriptor(
-            id: "census",
-            title: "Hardware",
-            symbol: "cpu",
-            summary: "\(MachineNaming.properNoun)’s own account of its "
-                + "hardware, probe by probe"
-        ),
+        CensusHostModule.definition.descriptor,
         /* Immediately after Hardware, because it answers the same class of
            question by the other route: Hardware is what the machine IS, and
            this is what the machine can MEASURE about itself. A person
