@@ -127,6 +127,7 @@ OSErr now_files_mirror_deliver(const NowMirrorFileTarget *target,
 {
     AEAddressDesc address = { typeNull, NULL };
     AppleEvent event = { typeNull, NULL };
+    AppleEvent reply = { typeNull, NULL };
     AEDescList documents = { typeNull, NULL };
     AliasHandle alias = NULL;
     OSErr err;
@@ -162,12 +163,13 @@ OSErr now_files_mirror_deliver(const NowMirrorFileTarget *target,
         err = AEPutParamDesc(&event, keyDirectObject, &documents);
     }
     if (err == noErr) {
-        err = AESend(&event, NULL, kAENoReply | kAECanInteract,
+        err = AESend(&event, &reply, kAENoReply | kAECanInteract,
                      kAENormalPriority, kAEDefaultTimeout, NULL, NULL);
     }
     if (alias != NULL) DisposeHandle((Handle)alias);
     AEDisposeDesc(&documents);
     AEDisposeDesc(&event);
+    AEDisposeDesc(&reply);
     AEDisposeDesc(&address);
     return err;
 }
