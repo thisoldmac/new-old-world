@@ -169,6 +169,8 @@ public enum IconAtlas {
         if representedKind == "disk" { return nil } // procedural hard disk
         if representedKind == "folder" {
             switch item.name {
+            case "Trash" where container == "Desktop Folder":
+                return namedIcon("trash", size: size)
             case "System Folder": return namedIcon("system-folder", size: size)
             default: return namedIcon("folder", size: size)
             }

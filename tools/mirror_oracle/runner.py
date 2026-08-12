@@ -178,6 +178,11 @@ def render_scene(repo: Path, case: OracleCase, scene: Path, output: Path,
         command += ["--open-menu", str(case.render["openMenu"])]
     if case.render.get("hoveredItem") is not None:
         command += ["--hovered-item", str(case.render["hoveredItem"])]
+    if case.render.get("finderView") is not None:
+        command += ["--finder-view", str(case.render["finderView"])]
+    if case.render.get("finderSelectedName") is not None:
+        command += ["--finder-selected-name",
+                    str(case.render["finderSelectedName"])]
     completed = run(command, text=True, capture_output=True, check=True)
     receipt = {
         "schema": SCHEMA_VERSION,

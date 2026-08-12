@@ -80,12 +80,24 @@ def load_case(case_id: str) -> OracleCase:
     for key in ("profile", "title", "requiredState", "regions", "masks", "render"):
         if key not in value:
             raise ValueError(f"oracle case lacks {key}: {path}")
+    actions: list[str] = []
+    sequence = value.get("inputSequence")
+    if sequence is not None:
+        if not isinstance(sequence, str) or not sequence:
+            raise ValueError(f"oracle inputSequence must be text: {path}")
+        sequence_path = DATA_ROOT / "input-sequences" / f"{sequence}.json"
+        sequence_value = _load_json(sequence_path)
+        if sequence_value.get("id") != sequence:
+            raise ValueError(
+                f"oracle input sequence identity is invalid: {sequence_path}")
+        actions.extend(sequence_value.get("actions", []))
+    actions.extend(value.get("inputActions", []))
     case = OracleCase(
         id=case_id,
         profile=str(value["profile"]),
         title=str(value["title"]),
         required_state=list(value["requiredState"]),
-        input_actions=list(value.get("inputActions", [])),
+        input_actions=actions,
         regions=list(value["regions"]),
         masks=list(value["masks"]),
         render=dict(value["render"]),

@@ -777,8 +777,10 @@ static void menubar_complete(void)
           "a per-item enable bit survives the bridge");
     check(s.menu_items[s.menus[1].first_item + 1].cmd == '\0',
           "a cmdChar marker byte is NOT reported as a command key");
-    check(s.menu_items[s.menus[1].first_item + 1].mark == 1,
-          "but its mark character is a mark");
+    check(s.menu_items[s.menus[1].first_item + 1].mark == 0,
+          "a hierarchical id is not checkmark ink");
+    check(s.menu_items[s.menus[1].first_item + 1].submenu == 1,
+          "the marker survives as a hierarchical-menu fact");
     check(s.menubar_refused == 0, "nothing was dropped");
 }
 

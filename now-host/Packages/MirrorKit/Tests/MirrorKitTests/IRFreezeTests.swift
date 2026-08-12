@@ -103,7 +103,7 @@ final class IRFreezeTests: XCTestCase {
             menubar: .init(app: "A", menus: [
                 .init(title: "File", apple: false, left: 40, id: 128, items: [
                     .init(title: "New", index: 1, separator: false,
-                          enabled: true, mark: false, cmd: "N"),
+                          enabled: true, mark: false, cmd: "N", submenu: true),
                 ]),
             ]),
             windows: [window],

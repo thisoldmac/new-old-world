@@ -4,7 +4,7 @@ search:
 ---
 # Open issues
 
-## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle has one of six accepted target pairs (2026-08-11, `codex/sheepshaver-86-tooling`)
+## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle has one accepted pair and ten replayable breadth cases (2026-08-11, `codex/sheepshaver-86-tooling`)
 
 The repository now has one visual-oracle loop shared by SheepShaver and QEMU:
 sealed-image clone verification, disposable `.sheepvm` runs, masked
@@ -72,12 +72,32 @@ independent source icons to leave identical target pixels before deriving the
 Get QuickTime now each match their native 32×32 icon region exactly.
 
 This is **tested tooling plus one accepted pair**, not an accepted corpus. The
-other five declared cases—front icon-view window, inactive Finder window, list
-selection, File menu and Apple menu—still need validated input actions, state
-proofs and paired target/render captures from disposable clones. The tool
-continues to refuse `--apply-case-input` for an empty sequence. Close this row
-only when all six receipts name the sealed parent, state proof, source
-revision, visual profile, accepted consecutive hashes, and per-region result.
+corpus now spans eleven cases rather than six: the original desktop, inactive
+window, File and Apple cases; all three Finder folder views, with Buttons kept
+distinct from small icons; and Edit, View, Special and Help. A shared
+Command-Option-W reset makes every case replayable without depending on how
+many Finder windows the profile saved. All three view cases and all five core
+menus were stable-captured on the running 8.6 profile, and checked-in semantic
+fixtures exercise the production renderer for Icons, Buttons, List, File,
+Edit, View, Special and Help. The host's synthetic Finder menu now carries the
+measured full rows, separators, enablement, shortcuts and submenu arrows rather
+than an OS-9-shaped approximation.
+
+The broad Finder rendering pass also adds the item-count strip, light-grey
+ruled list field and folder disclosure triangles. The current named gaps are
+the list's per-item modification-date values, the available-space half of the
+info string, exact per-folder custom icons, Apple-menu item icons/rows, and a
+clean inactive-window reference without a promo modal. None of the ten new
+captures has a validated state proof yet. Close this row only when all eleven
+receipts name the sealed parent, state proof, source revision, visual profile,
+accepted consecutive hashes, and per-region result.
+
+The first full-window mismatch baselines are now reproducible: Icons
+28,573/101,844 (28.06%), Buttons 43,564/101,844 (42.78%), List
+69,640/101,844 (68.38%), and File-menu region 10,712/94,300 (11.36%). These
+are breadth measurements over the whole named regions, not acceptance
+thresholds. The large view residuals are consistent with the gaps named above
+and with generic art where the Finder uses per-folder custom icons.
 
 ## BROKEN: CodeKitten does not launch on supported Mac OS 8.6 plus CarbonLib 1.6 (2026-08-11, `codex/codekitten-os86-support`)
 

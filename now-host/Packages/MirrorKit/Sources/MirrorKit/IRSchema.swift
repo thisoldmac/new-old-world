@@ -283,6 +283,10 @@ public enum IRSchema {
     // MARK: - IR v2 semantic evidence
 
     public static let v2Additions: Set<String> = [
+        /* 2026-08-11. A Menu Manager hierarchical item's command byte is
+           hMenuCmd and its mark byte is the submenu ID. Collapsing that raw
+           mark to Bool drew checkmarks where Finder draws arrows. */
+        "menubar.menus[].items[].submenu",
         /* 2026-08-07. The process's own `modeOnlyBackground` declaration:
            it has no user interface by design, so having no windows is its
            normal state rather than an unobserved one. Additive, and
@@ -431,6 +435,7 @@ public enum IRSchema {
     ]
 
     public static let v2AdditionalProperties: Set<String> = [
+        "Scene.MenuItem.submenu",
         // See meta.theme in v2Additions.
         "Scene.Meta.theme",
         "Scene.Theme.dialogBackground", "Scene.Theme.alertBackground",

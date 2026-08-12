@@ -1320,7 +1320,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     ) -> MirrorKit.Scene.FinderPresentation.View? {
         switch title.lowercased() {
         case "as icons": return .icon
-        case "as buttons": return .smallIcon
+        case "as buttons": return .button
         case "as list": return .name
         default: return nil
         }

@@ -1076,6 +1076,11 @@ int now_scene_add_menu_item(NowScene *s, int menu, const char *title,
                             short index, int separator, int enabled,
                             int mark, char cmd)
 {
+    enum {
+        /* Menus.h hMenuCmd. Kept numeric in this Toolbox-free assembly file. */
+        kNowSceneHierarchicalCommand = 27,
+        kNowSceneFirstCommandKey = 0x20
+    };
     NowSceneMenu *m;
     NowSceneMenuItem *it;
 
@@ -1101,8 +1106,10 @@ int now_scene_add_menu_item(NowScene *s, int menu, const char *title,
     it->index = index;
     it->separator = separator ? 1 : 0;
     it->enabled = enabled ? 1 : 0;
-    it->mark = mark ? 1 : 0;
-    it->cmd = cmd;
+    it->submenu = (unsigned char)cmd == kNowSceneHierarchicalCommand;
+    /* A hierarchical item's mark byte is its submenu id, not check ink. */
+    it->mark = mark && !it->submenu ? 1 : 0;
+    it->cmd = (unsigned char)cmd >= kNowSceneFirstCommandKey ? cmd : '\0';
     ++m->item_count;
     ++s->menu_item_count;
     return 1;

@@ -541,12 +541,14 @@ public enum FinderItems {
         let oneColumn = Set(small.map(\.x)).count == 1
         if hasColumns || (small.count >= 2 && oneColumn) { return .name }
         if !placed.isEmpty && small.count == placed.count { return .smallIcon }
+        let buttons = placed.filter { ($0.w ?? 0) >= 48 && ($0.h ?? 0) >= 48 }
+        if !placed.isEmpty && buttons.count == placed.count { return .button }
         return .icon
     }
 
     /// Semantic selection targets in content-local coordinates.
     ///
-    /// Name view owns the whole visible row. Icon and small-icon views own
+    /// Name view owns the whole visible row. Icon, button, and small-icon views own
     /// the box Finder supplied plus the label area `HitTester.targetSize`
     /// defines. This is shared by hit testing and marquee selection so the
     /// pixels that light up are the same objects the pointer can select.

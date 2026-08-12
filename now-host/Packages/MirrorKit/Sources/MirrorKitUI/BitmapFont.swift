@@ -91,11 +91,23 @@ public final class BitmapFont {
         return w
     }
 
+    /// QuickDraw's synthesized italic slants a bitmap strike one pixel for
+    /// every two scanlines, with the top moving furthest right. This is a
+    /// drawing transform, not a second font: Finder's OS 8.6 desktop aliases
+    /// use the Geneva 10 strike that ordinary labels use, then ask QuickDraw
+    /// for italic. Keeping the rule here lets any acquired Geneva 10 strike
+    /// take the same route instead of baking one observed word into an asset.
+    static func syntheticItalicShift(row: Int, height: Int) -> Int {
+        max(0, (height - row) / 2)
+    }
+
     /// Draw `string` in `color` with its left baseline at (x, baselineY).
     /// One clip layer masks all glyphs, then a single fill tints them — so
-    /// any Platinum gray comes from the same black strike.
+    /// any Platinum gray comes from the same black strike. `syntheticItalic`
+    /// applies QuickDraw's row shear to that exact strike.
     public func draw(_ string: String, in ctx: GraphicsContext,
-                     x: CGFloat, baselineY: CGFloat, color: Color) {
+                     x: CGFloat, baselineY: CGFloat, color: Color,
+                     syntheticItalic: Bool = false) {
         /* **THE PEN LANDS ON A WHOLE PIXEL, and that is faithful rather
            than tidy.** QuickDraw has no sub-pixel pen: a bitmap strike on
            the real machine is blitted at an integer position, and every
@@ -115,30 +127,52 @@ public final class BitmapFont {
            because that pair is compared byte for byte. */
         var pen = x.rounded()
         let top = baselineY.rounded() - CGFloat(ascent)
-        var boxes: [(dst: CGRect, g: Glyph)] = []
+        struct Slice {
+            var dst: CGRect
+            var sourceX: Int
+            var sourceY: Int
+        }
+        var slices: [Slice] = []
         for ch in string {
             let g = glyphs[ch] ?? space
             if g.w > 0, g.h > 0 {
-                // The sheet cell's top sits (ascent) above the baseline.
-                let dst = CGRect(x: pen + CGFloat(g.left),
-                                 y: top,
-                                 width: CGFloat(g.w), height: CGFloat(g.h))
-                boxes.append((dst, g))
+                if syntheticItalic {
+                    for row in 0..<g.h {
+                        let shift = Self.syntheticItalicShift(
+                            row: row, height: g.h)
+                        slices.append(Slice(
+                            dst: CGRect(
+                                x: pen + CGFloat(g.left + shift),
+                                y: top + CGFloat(row),
+                                width: CGFloat(g.w), height: 1),
+                            sourceX: g.x, sourceY: g.y + row))
+                    }
+                } else {
+                    // The sheet cell's top sits ascent above the baseline.
+                    slices.append(Slice(
+                        dst: CGRect(x: pen + CGFloat(g.left), y: top,
+                                    width: CGFloat(g.w), height: CGFloat(g.h)),
+                        sourceX: g.x, sourceY: g.y))
+                }
             }
             pen += CGFloat(g.advance)
         }
-        guard !boxes.isEmpty else { return }
-        let union = boxes.dropFirst().reduce(boxes[0].dst) { $0.union($1.dst) }
+        guard !slices.isEmpty else { return }
+        let union = slices.dropFirst().reduce(slices[0].dst) {
+            $0.union($1.dst)
+        }
         var layer = ctx
         layer.clipToLayer { inner in
-            for (dst, g) in boxes {
+            for slice in slices {
                 var gg = inner
-                gg.clip(to: Path(dst))
-                // Position the whole sheet so this glyph's (x,y) lands at dst.
+                gg.clip(to: Path(slice.dst))
+                // Position the whole sheet so this source slice lands at dst.
                 gg.draw(Image(decorative: sheet, scale: 1)
                             .interpolation(.none),
-                        in: CGRect(x: dst.minX - CGFloat(g.x),
-                                   y: dst.minY - CGFloat(g.y),
+                        in: CGRect(x: slice.dst.minX
+                                      - CGFloat(slice.sourceX),
+                                   y: slice.dst.minY
+                                      - CGFloat(slice.sourceY),
                                    width: sheetW, height: sheetH))
             }
         }

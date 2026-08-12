@@ -95,6 +95,7 @@ NAMED_ICONS = {
     "document": -4000,
     "system-folder": -3982,
     "disk": -3998,
+    "trash": -3993,
 }
 
 # Roots swept for application/control-panel bundles. Mounting the whole

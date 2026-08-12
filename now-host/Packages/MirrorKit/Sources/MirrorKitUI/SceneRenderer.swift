@@ -322,10 +322,11 @@ public struct SceneRenderer {
     private func appText(_ s: String, _ ctx: GraphicsContext, x: CGFloat,
                          baselineY: CGFloat, color: Color, small: Bool = false,
                          italic: Bool = false) {
-        let font = italic ? FontBook.smallItalic
+        let font = italic ? FontBook.app
             : (small ? FontBook.small : FontBook.app)
         if let f = font {
-            f.draw(s, in: ctx, x: x, baselineY: baselineY, color: color)
+            f.draw(s, in: ctx, x: x, baselineY: baselineY, color: color,
+                   syntheticItalic: italic)
         } else {
             let text = Text(s).font(Platinum.appFont(small ? 10 : 12))
                 .foregroundColor(color)
@@ -395,13 +396,27 @@ public struct SceneRenderer {
     /// 32×32 icon sits at the top, the label centered beneath.
     static let iconSize: CGFloat = 32
 
-    /// Finder marks aliases by styling the label as well as badging the icon.
-    /// The pack carries Geneva 9 italic as its own NFNT strike, so choosing it
-    /// here preserves both glyph shapes and advances instead of host-shearing
-    /// the plain face.
+    /// Finder's OS 8.6 desktop uses Geneva 10 for both ordinary and alias
+    /// labels. Alias styling is QuickDraw's synthesized italic transform over
+    /// this strike, applied by `BitmapFont.draw`; it is not the separate
+    /// Geneva 9 italic NFNT that happens to be present in the suitcase.
     static func desktopLabelFont(_ item: MirrorKit.Scene.DesktopItem)
         -> BitmapFont? {
-        item.alias ? FontBook.smallItalic : FontBook.small
+        _ = item
+        return FontBook.app
+    }
+
+    /// Finder centers the advance width with integer QuickDraw coordinates.
+    /// Italic ink overhangs one pixel left of the plain pen origin.
+    static func desktopLabelTextX(_ box: CGRect, width: CGFloat,
+                                  alias: Bool) -> CGFloat {
+        floor(box.midX - width / 2) - (alias ? 1 : 0)
+    }
+
+    /// Volume labels sit one pixel below their reported 32×32 box; every
+    /// other observed desktop kind starts at the box's lower edge.
+    static func desktopLabelY(_ box: CGRect, kind: String) -> CGFloat {
+        box.maxY + (kind == "disk" ? 1 : 0)
     }
 
     private func drawDesktopIcons(_ ctx: GraphicsContext) {
@@ -450,9 +465,9 @@ public struct SceneRenderer {
             inv.fill(Path(box), with: .color(Platinum.g4))
         }
 
-        // Name label: Geneva 9 (italic for aliases), centered under the icon.
-        // Unselected it sits on a white patch; selected the patch goes black
-        // and the text white, as the Finder draws it.
+        // Name label: Geneva 10, with QuickDraw's synthetic italic for aliases,
+        // centered under the icon. Unselected it sits on Finder's translucent
+        // white plate; selected the patch goes black and the text white.
         /* A LIST ROW HAS NO LABEL OF OURS. Its name is a COLUMN the machine
            wrote, level with the row icon rather than under it; a centred
            patch there is a second name in the wrong place, over the first.
@@ -463,7 +478,7 @@ public struct SceneRenderer {
         let labelFont = Self.desktopLabelFont(item)
         let w = CGFloat(labelFont?.width(label) ?? label.count * 6)
         let ascent = CGFloat(labelFont?.ascent ?? 9)
-        let labelY = box.maxY + 1
+        let labelY = Self.desktopLabelY(box, kind: item.kind)
         let patch = CGRect(x: box.midX - w / 2 - 2, y: labelY,
                            width: w + 4, height: ascent + 3)
         /* RUNG 1 BEATS RUNG 3 FOR THE WORDS, and it is asked here rather
@@ -485,10 +500,22 @@ public struct SceneRenderer {
            replay was silent. Drawn unconditionally it was Michelle's
            "Finder item icons seem to be drawing their label twice". */
         if !selected && replayed?.textCovers(patch) == true { return }
-        ctx.fill(Path(patch), with: .color(selected ? Platinum.g6 : .white))
-        appText(label, ctx, x: box.midX - w / 2, baselineY: labelY + ascent,
-                color: selected ? .white : Platinum.g6, small: true,
-                italic: item.alias)
+        ctx.fill(Path(patch), with: .color(
+            selected ? Platinum.g6 : .white.opacity(177.0 / 255.0)))
+        if let labelFont {
+            labelFont.draw(
+                label, in: ctx,
+                x: Self.desktopLabelTextX(box, width: w, alias: item.alias),
+                baselineY: labelY + ascent,
+                color: selected ? .white : Platinum.g6,
+                syntheticItalic: item.alias)
+        } else {
+            appText(label, ctx,
+                    x: Self.desktopLabelTextX(
+                        box, width: w, alias: item.alias),
+                    baselineY: labelY + ascent,
+                    color: selected ? .white : Platinum.g6)
+        }
     }
 
     /// The item's best resource-backed bitmap (IconAtlas) when we have one,
@@ -754,8 +781,15 @@ public struct SceneRenderer {
     /// the clamp reproduces.
     public static func dropdownFrame(_ menu: MirrorKit.Scene.Menu,
                                      screenWidth: Int = 0) -> CGRect {
-        let maxLen = menu.items.map(\.title.count).max() ?? 8
-        let width = CGFloat(min(max(120, maxLen * 8 + 56), 320))
+        let titleWidth = menu.items.map {
+            FontBook.system?.width(Self.menuItemTitle($0))
+                ?? Self.menuItemTitle($0).count * 7
+        }.max() ?? 56
+        /* Finder's Apple menu reserves a 20-pixel icon gutter. Ordinary
+           menus reserve mark, shortcut, and hierarchy columns. The text is
+           measured in the same extracted system strike used to draw it. */
+        let furniture = menu.apple ? 87 : 52
+        let width = CGFloat(min(max(120, titleWidth + furniture), 320))
         /* UNREACHABLE WITH A nil LEFT, and stated rather than defaulted:
            an unplaced menu is not drawn in the strip above and the hit
            tester returns no index for one, so nothing can open its
@@ -772,9 +806,19 @@ public struct SceneRenderer {
             x = Swift.max(0, CGFloat(screenWidth) - width)
         }
         return CGRect(x: x,
-                      y: Platinum.menubarHeight + 1,
+                      y: Platinum.menubarHeight - 1,
                       width: width,
-                      height: CGFloat(menu.items.count * 16) + 4)
+                      height: CGFloat(menu.items.reduce(2) {
+                          $0 + Self.menuRowHeight($1)
+                      }))
+    }
+
+    static func menuItemTitle(_ item: MirrorKit.Scene.MenuItem) -> String {
+        String(item.title.drop(while: { $0 == "\0" }))
+    }
+
+    static func menuRowHeight(_ item: MirrorKit.Scene.MenuItem) -> Int {
+        item.separator ? 6 : 16
     }
 
     /// The item under a guest point inside the dropdown, or nil.
@@ -785,9 +829,13 @@ public struct SceneRenderer {
         let frame = dropdownFrame(menu, screenWidth: screenWidth)
         guard CGFloat(x) >= frame.minX, CGFloat(x) < frame.maxX,
               CGFloat(y) >= frame.minY + 2 else { return nil }
-        let row = (y - Int(frame.minY) - 2) / 16
-        guard row >= 0, row < menu.items.count else { return nil }
-        return menu.items[row]
+        var top = Int(frame.minY) + 2
+        for item in menu.items {
+            let bottom = top + Self.menuRowHeight(item)
+            if y >= top, y < bottom { return item }
+            top = bottom
+        }
+        return nil
     }
 
     private func drawDropdown(_ ctx: GraphicsContext,
@@ -799,21 +847,23 @@ public struct SceneRenderer {
         let frame = Self.dropdownFrame(menu, screenWidth: scene.screen.w)
         ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
                  with: .color(.black.opacity(0.35)))
-        ctx.fill(Path(frame), with: .color(Platinum.g0))
+        ctx.fill(Path(frame), with: .color(Platinum.menuFace))
         ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
 
         var y = frame.minY + 2
         for item in menu.items {
-            defer { y += 16 }
+            let rowHeight = CGFloat(Self.menuRowHeight(item))
+            defer { y += rowHeight }
             let hovered = (hoveredItem == item.index) && !item.separator
                           && item.enabled
             if hovered {
                 ctx.fill(Path(CGRect(x: frame.minX + 1, y: y,
-                                     width: frame.width - 2, height: 16)),
+                                     width: frame.width - 2,
+                                     height: rowHeight)),
                          with: .color(Platinum.g6))
             }
             if item.separator {
-                ctx.fill(Path(CGRect(x: frame.minX + 2, y: y + 7,
+                ctx.fill(Path(CGRect(x: frame.minX + 1, y: y + 1,
                                      width: frame.width - 4, height: 1)),
                          with: .color(Platinum.g3))
                 continue
@@ -829,8 +879,18 @@ public struct SceneRenderer {
                              at: CGPoint(x: frame.minX + 6, y: y + 8),
                              anchor: .center)
             }
-            sysText(item.title, clipped, x: frame.minX + 14, baselineY: y + 12,
+            sysText(Self.menuItemTitle(item), clipped,
+                    x: frame.minX + (menu.apple ? 38 : 14),
+                    baselineY: y + 11,
                     color: color)
+            if item.submenu == true {
+                var arrow = Path()
+                arrow.move(to: CGPoint(x: frame.maxX - 10, y: y + 5))
+                arrow.addLine(to: CGPoint(x: frame.maxX - 5, y: y + 8))
+                arrow.addLine(to: CGPoint(x: frame.maxX - 10, y: y + 11))
+                arrow.closeSubpath()
+                ctx.fill(arrow, with: .color(color))
+            }
             // ⌘ isn't in the bitmap strike — draw the shortcut via Text.
             if !item.cmd.isEmpty {
                 ctx.draw(ctx.resolve(Text("⌘\(item.cmd)")
@@ -1053,6 +1113,9 @@ public struct SceneRenderer {
             drawUnavailableVisual(contentCtx, content,
                                   Self.absentContentCaption(win))
         }
+        if finderOwnsInterior {
+            drawFinderFurniture(contentCtx, win, content: content)
+        }
 
         /* THE PIXEL ISLAND USED TO DRAW HERE, and it is gone (2026-08-07).
            When the poller held the guest's real framebuffer bytes for this
@@ -1264,17 +1327,29 @@ public struct SceneRenderer {
         }
     }
 
-    /// A Finder item has three measured presentations. The box always comes
-    /// from Finder; view tells us whether the name belongs below it or beside
-    /// it. Before this field existed list and small-icon views both arrived as
-    /// 16x16 boxes, so the renderer could only omit the name and hope P3 drew
-    /// the columns — exactly the dependency this slice removes.
+    /// A Finder item has four measured presentations. The box always comes
+    /// from Finder; view tells us whether the name belongs below it, beside
+    /// it, or beneath Finder's raised Buttons well. Before this field existed
+    /// list and small-icon views both arrived as 16x16 boxes, while Buttons
+    /// was collapsed into small icons, so the renderer could not reproduce
+    /// the Finder's actual presentation modes.
     private func drawFinderItem(
         _ ctx: GraphicsContext, _ item: MirrorKit.Scene.DesktopItem,
         at origin: CGPoint, view: MirrorKit.Scene.FinderPresentation.View,
         selected: Bool, renameText: String?,
         replayed: DisplayReplay.Coverage?
     ) {
+        if view == .button {
+            drawFinderButton(ctx, item, at: origin, selected: selected)
+            if let renameText {
+                let box = CGRect(origin: origin,
+                                 size: Self.iconBoxSize(item))
+                drawRenameEditor(ctx, text: renameText,
+                                 iconBox: box, beside: false)
+            }
+            return
+        }
+
         if view == .icon || view == .unknown && Self.itemDrawsItsOwnLabel(item) {
             drawIcon(ctx, item, at: origin, selected: selected,
                      replayed: replayed)
@@ -1288,6 +1363,15 @@ public struct SceneRenderer {
         }
 
         let box = CGRect(origin: origin, size: Self.iconBoxSize(item))
+        if view == .name && item.kind == "folder" {
+            var triangle = Path()
+            triangle.move(to: CGPoint(x: box.minX - 13, y: box.minY + 4))
+            triangle.addLine(to: CGPoint(x: box.minX - 7, y: box.minY + 8))
+            triangle.addLine(to: CGPoint(x: box.minX - 13, y: box.minY + 12))
+            triangle.closeSubpath()
+            ctx.fill(triangle, with: .color(Platinum.g0))
+            ctx.stroke(triangle, with: .color(Platinum.g6), lineWidth: 1)
+        }
         drawGenericIcon(ctx, box, item: item)
         if selected {
             var inverted = ctx
@@ -1305,6 +1389,105 @@ public struct SceneRenderer {
                 color: selected ? .white : Platinum.g6, small: true)
         if let renameText {
             drawRenameEditor(ctx, text: renameText, iconBox: box, beside: true)
+        }
+    }
+
+    /// Finder folder chrome is semantic furniture rather than captured
+    /// content: the item count bar exists in every measured 8.6 view, while
+    /// list view owns a ruled light-grey row field beneath its column headers.
+    /// It is drawn locally from the roster and measured control geometry; no
+    /// framebuffer pixels or screenshot crop enter the production path.
+    private func drawFinderFurniture(
+        _ ctx: GraphicsContext, _ win: MirrorKit.Scene.Window,
+        content: CGRect
+    ) {
+        let visibleControls = win.controls.compactMap { control -> Int? in
+            guard control.visible, let rect = control.rect, rect.t > 0
+            else { return nil }
+            return rect.t
+        }
+        guard let infoHeight = visibleControls.min(), infoHeight > 0 else {
+            return
+        }
+        let info = CGRect(x: content.minX, y: content.minY,
+                          width: content.width,
+                          height: CGFloat(infoHeight))
+        ctx.fill(Path(info), with: .color(Platinum.g2))
+        ctx.fill(Path(CGRect(x: info.minX, y: info.maxY - 1,
+                             width: info.width, height: 1)),
+                 with: .color(Platinum.g5))
+        let count = (win.items ?? []).filter { $0.placed && !$0.invisible }.count
+        let noun = count == 1 ? "item" : "items"
+        let label = "\(count) \(noun)"
+        let width = CGFloat(FontBook.small?.width(label) ?? label.count * 6)
+        appText(label, ctx, x: floor(info.midX - width / 2),
+                baselineY: info.minY + CGFloat(FontBook.small?.ascent ?? 9) + 3,
+                color: Platinum.g6, small: true)
+
+        guard FinderItems.presentationView(win) == .name else { return }
+        let area = FinderItems.iconArea(win)
+        let field = CGRect(x: content.minX + CGFloat(area.l),
+                           y: content.minY + CGFloat(area.t),
+                           width: CGFloat(max(0, area.r - area.l)),
+                           height: CGFloat(max(0, area.b - area.t)))
+        ctx.fill(Path(field), with: .color(Platinum.g1))
+        for item in win.items ?? [] where item.placed && !item.invisible {
+            let y = content.minY + CGFloat(item.y + 18)
+            guard y >= field.minY, y < field.maxY else { continue }
+            ctx.fill(Path(CGRect(x: field.minX, y: y,
+                                 width: field.width, height: 1)),
+                     with: .color(Platinum.g2))
+        }
+    }
+
+    /// Mac OS 8.6 Finder Buttons are a fourth presentation, not the later
+    /// small-icon list. Each item owns a raised 48-pixel well with the 32-pixel
+    /// resource icon centred inside it and a Finder label below. The semantic
+    /// item bounds are used when the guest reports the well itself; older
+    /// producers that report only an icon box are expanded symmetrically.
+    private func drawFinderButton(
+        _ ctx: GraphicsContext, _ item: MirrorKit.Scene.DesktopItem,
+        at origin: CGPoint, selected: Bool
+    ) {
+        let reported = CGRect(origin: origin, size: Self.iconBoxSize(item))
+        let well = reported.width >= 48 && reported.height >= 48
+            ? CGRect(x: reported.minX, y: reported.minY,
+                     width: 48, height: 48)
+            : CGRect(x: reported.midX - 24, y: reported.midY - 24,
+                     width: 48, height: 48)
+        ctx.fill(Path(well), with: .color(Platinum.menuFace))
+        ctx.stroke(Path(well), with: .color(Platinum.g6), lineWidth: 1)
+        bevel(ctx, well.insetBy(dx: 1, dy: 1),
+              light: Platinum.g0, shadow: Platinum.g4)
+
+        let iconBox = CGRect(x: well.midX - 16, y: well.midY - 16,
+                             width: 32, height: 32)
+        drawGenericIcon(ctx, iconBox, item: item)
+        if selected {
+            var inverted = ctx
+            inverted.blendMode = .multiply
+            inverted.fill(Path(iconBox), with: .color(Platinum.g4))
+        }
+
+        let font = Self.desktopLabelFont(item)
+        let width = CGFloat(font?.width(item.name) ?? item.name.count * 6)
+        let ascent = CGFloat(font?.ascent ?? 9)
+        let y = well.maxY + 1
+        let patch = CGRect(x: well.midX - width / 2 - 2, y: y,
+                           width: width + 4, height: ascent + 3)
+        ctx.fill(Path(patch), with: .color(selected ? Platinum.g6 : .white))
+        if let font {
+            font.draw(item.name, in: ctx,
+                      x: Self.desktopLabelTextX(
+                        well, width: width, alias: item.alias),
+                      baselineY: y + ascent,
+                      color: selected ? .white : Platinum.g6,
+                      syntheticItalic: item.alias)
+        } else {
+            appText(item.name, ctx,
+                    x: floor(well.midX - width / 2),
+                    baselineY: y + ascent,
+                    color: selected ? .white : Platinum.g6)
         }
     }
 

@@ -344,17 +344,48 @@ unless `run --report-only` was requested. Whole-screen similarity is not an
 acceptance measure. Cases that depend on window geometry resolve their region
 from the same scene JSON rendered by MirrorKit.
 
-The first profile is `platinum.macos-8.6.default`, with six Finder/menu-bar
-cases: resting desktop, front icon-view window, inactive Finder window, list
-selection, File menu, and Apple menu. `finder-desktop` now carries the first
-validated coordinate sequence: repeated clicks in a safe Finder-background
-location close the baseline's persisted window stack, then a blank-desktop
-click removes selection. Two fresh clones reached the same masked digest. The
-other five cases remain empty until each sequence is validated against the
-sealed profile; `--apply-case-input` refuses them rather than turning a guessed
-coordinate into a durable state contract. Cleanup is armed before the first
-transition and releases every mouse button and common modifier even when
-capture fails. The SheepShaver backend sends one action per renderer receipt:
+The first profile is `platinum.macos-8.6.default`, with eleven broad Finder
+and menu-bar cases: resting desktop; icon, Buttons and List folder views;
+inactive Finder chrome; and Apple, File, Edit, View, Special and Help menus.
+The shared `finder-clean-desktop` input sequence uses Finder's own
+Command-Option-W close-all gesture and then clears desktop selection. This
+replaced ten persisted-window close-box clicks and is both faster and
+independent of the saved window stack. Every case now has replayable input.
+All three view cases and the five core non-Apple menus have been captured
+against the running 8.6 profile. Only the resting desktop currently carries a
+validated state proof and accepted comparison, so the others remain
+reference-only rather than silently becoming acceptance evidence.
+
+The three view cases have checked-in semantic calibration scenes derived from
+the measured window, scrollbar, item and column-header geometry. Buttons is a
+distinct semantic view and renders its 48 by 48 raised wells; it is no longer
+collapsed into the small-icon view. The render harness applies view and
+selection as explicit test overlays because `FinderPresentation` is
+deliberately host-internal and excluded from encoded scene IR. This preserves
+the protocol boundary while making the same production `RenderShot` path
+repeatable. The list renderer now draws the Finder-owned item-count strip,
+light-grey ruled row field and folder disclosure triangles locally from the
+semantic roster. Modification-date cells and the available-space half of the
+info string remain named semantic gaps rather than invented text.
+
+The first broad comparisons are deliberately mismatch baselines rather than
+acceptance claims. Against the measured full-window regions, Icons currently
+differs in 28,573 of 101,844 pixels (28.06%), Buttons in 43,564 (42.78%), and
+List in 69,640 (68.38%). Much of the residual is structural—the incomplete
+info text, list value cells, exact custom folder art, selection fill, and some
+frame/scrollbar geometry—so these numbers are a queue for later narrowing, not
+a score to optimize blindly. The File menu is already much closer at 10,712
+of 94,300 compared pixels (11.36%).
+
+The shared core-menu scene now contains all measured rows, separators,
+enablement, shortcuts, checks and hierarchical arrows for File, Edit, View,
+Special and Help. Each case selects one menu through `render.openMenu`, so one
+scene exercises the same menu implementation as the live mirror. Apple-menu
+item icons and hierarchy are still a separate asset/semantics gap.
+
+Cleanup is armed before the first transition and releases every mouse button
+and common modifier even when capture fails. The SheepShaver backend sends one
+action per renderer receipt:
 the guest must receive the harness's settlement interval between a menu-title
 press, a drag, and a release. Batching those transitions dispatches them all
 but lets the cooperative event loop miss the gesture.

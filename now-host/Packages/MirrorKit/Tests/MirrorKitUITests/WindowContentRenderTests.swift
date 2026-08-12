@@ -66,6 +66,31 @@ final class WindowContentRenderTests: XCTestCase {
                              "the switcher dropdown must not use left == 0")
     }
 
+    func testFinderMenuRowsUseClassicSeparatorAndHierarchyGeometry() {
+        let menu = Scene.Menu(
+            title: "File", apple: false, left: 43, id: 257,
+            items: [
+                .init(title: "Open", index: 1),
+                .init(title: "-", index: 2, separator: true),
+                .init(title: "Get Info", index: 3, enabled: false,
+                      submenu: true),
+            ])
+        let frame = SceneRenderer.dropdownFrame(menu, screenWidth: 800)
+
+        XCTAssertEqual(SceneRenderer.menuRowHeight(menu.items[0]), 16)
+        XCTAssertEqual(SceneRenderer.menuRowHeight(menu.items[1]), 6)
+        XCTAssertEqual(Int(frame.height), 40,
+                       "two ordinary rows, one six-pixel separator, and borders")
+        XCTAssertEqual(
+            SceneRenderer.dropdownItem(menu, x: 50, y: 39,
+                                       screenWidth: 800)?.index,
+            2, "hit testing must walk the same variable row heights")
+        XCTAssertEqual(
+            SceneRenderer.dropdownItem(menu, x: 50, y: 44,
+                                       screenWidth: 800)?.index,
+            3)
+    }
+
     private func window(title: String, front: Bool, z: Int,
                         rect: Rect) -> Scene.Window {
         Scene.Window(id: "1.\(z)/\(title)#\(z)", app: title, psn: "1.\(z)",

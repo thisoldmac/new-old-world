@@ -1887,7 +1887,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard f.count >= 2 else { continue }
             switch f[0] {
             case "P": path = f[1]
-            case "V": view = .init(rawValue: f[1]) ?? .unknown
+            case "V": view = .finderWord(f[1])
             case "I" where f.count >= 8:
                 if f[7].lowercased() == "true" { selected.insert(f[1]) }
             default: break

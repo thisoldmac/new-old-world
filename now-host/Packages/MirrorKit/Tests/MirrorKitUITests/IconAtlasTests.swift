@@ -25,7 +25,7 @@ final class IconAtlasTests: XCTestCase {
 
     func testEveryGenericIconShipsInBothSizes() throws {
         try skipUnlessAssetPack()
-        for name in ["folder", "document", "application", "disk",
+        for name in ["folder", "document", "application", "disk", "trash",
                      "system-folder"] {
             guard let large = IconAtlas.namedIcon(name, size: .large),
                   let small = IconAtlas.namedIcon(name, size: .small) else {
@@ -136,10 +136,10 @@ final class IconAtlasTests: XCTestCase {
                      "large desktop proof cannot define list-view chrome")
     }
 
-    /// Watched to fail by routing aliases through `FontBook.small` again:
-    /// the target's three actual aliases use Geneva 9 italic while the
-    /// non-alias QuickTime document uses the plain strike.
-    func testAliasLabelsHaveTheExtractedItalicFinderStrike() throws {
+    /// The state-proven target uses Geneva 10 for both routes and synthesizes
+    /// the alias slant at draw time. Watched to fail by restoring either
+    /// Geneva 9 strike.
+    func testDesktopLabelsUseTheExtractedGeneva10Strike() throws {
         try skipUnlessAssetPack()
         let alias = MirrorKit.Scene.DesktopItem(
             name: "Mail", kind: "application", type: "adrp", creator: "aplt",
@@ -150,9 +150,38 @@ final class IconAtlasTests: XCTestCase {
             placed: true, alias: false, invisible: false)
         XCTAssertEqual(SceneRenderer.desktopLabelFont(alias)?.face.lowercased(),
                        "geneva")
-        XCTAssertEqual(SceneRenderer.desktopLabelFont(alias)?.pointSize, 9)
-        XCTAssertEqual(SceneRenderer.desktopLabelFont(alias)?.style, 2)
+        XCTAssertEqual(SceneRenderer.desktopLabelFont(alias)?.pointSize, 10)
+        XCTAssertEqual(SceneRenderer.desktopLabelFont(alias)?.style, 0)
+        XCTAssertEqual(SceneRenderer.desktopLabelFont(plain)?.pointSize, 10)
         XCTAssertEqual(SceneRenderer.desktopLabelFont(plain)?.style, 0)
+    }
+
+    func testDesktopLabelGeometryUsesFinderIntegerPlacement() {
+        let box = CGRect(x: 736, y: 220, width: 32, height: 32)
+        XCTAssertEqual(SceneRenderer.desktopLabelTextX(
+            box, width: 97, alias: true), 702)
+        XCTAssertEqual(SceneRenderer.desktopLabelTextX(
+            box, width: 90, alias: false), 707)
+        XCTAssertEqual(SceneRenderer.desktopLabelY(box, kind: "file"), 252)
+        XCTAssertEqual(SceneRenderer.desktopLabelY(box, kind: "disk"), 253)
+    }
+
+    func testQuickDrawSyntheticItalicShearsTopRowsFurthest() {
+        XCTAssertEqual(BitmapFont.syntheticItalicShift(row: 2, height: 12), 5)
+        XCTAssertEqual(BitmapFont.syntheticItalicShift(row: 3, height: 12), 4)
+        XCTAssertEqual(BitmapFont.syntheticItalicShift(row: 10, height: 12), 1)
+        XCTAssertEqual(BitmapFont.syntheticItalicShift(row: 11, height: 12), 0)
+    }
+
+    func testDesktopTrashUsesItsNamedSystemResource() throws {
+        try skipUnlessAssetPack()
+        let trash = MirrorKit.Scene.DesktopItem(
+            name: "Trash", kind: "folder", type: nil, creator: nil,
+            x: 0, y: 0, placed: true, alias: false, invisible: false)
+        let selected = try XCTUnwrap(IconAtlas.icon(
+            for: trash, size: .large, container: "Desktop Folder"))
+        let named = try XCTUnwrap(IconAtlas.namedIcon("trash", size: .large))
+        XCTAssertTrue(selected === named)
     }
 
     /// An ordinary Finder item with no creator and no exact-path custom art

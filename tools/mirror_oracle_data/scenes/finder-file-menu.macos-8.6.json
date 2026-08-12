@@ -1,0 +1,105 @@
+{
+  "version": 2,
+  "seq": 1,
+  "source": "oracle-case",
+  "capturedAt": 0,
+  "screen": {"w": 800, "h": 600},
+  "apps": [
+    {"psn": "0:1", "name": "Finder", "front": true, "error": null}
+  ],
+  "processes": [
+    {"psn": "0:1", "name": "Finder", "front": true, "signature": "MACS"}
+  ],
+  "menubar": {
+    "app": "Finder",
+    "menus": [
+      {"title": "", "apple": true, "left": 10, "id": 256, "items": []},
+      {
+        "title": "File", "apple": false, "left": 43, "id": 257,
+        "items": [
+          {"title": "New Folder", "index": 1, "separator": false, "enabled": true, "mark": false, "cmd": "N"},
+          {"title": "Open", "index": 2, "separator": false, "enabled": false, "mark": false, "cmd": "O"},
+          {"title": "Print", "index": 3, "separator": false, "enabled": false, "mark": false, "cmd": "P"},
+          {"title": "Move To Trash", "index": 4, "separator": false, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Close Window", "index": 5, "separator": false, "enabled": false, "mark": false, "cmd": "W"},
+          {"title": "-", "index": 6, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Get Info", "index": 7, "separator": false, "enabled": false, "mark": false, "cmd": "", "submenu": true},
+          {"title": "Label", "index": 8, "separator": false, "enabled": false, "mark": false, "cmd": "", "submenu": true},
+          {"title": "Duplicate", "index": 9, "separator": false, "enabled": false, "mark": false, "cmd": "D"},
+          {"title": "Make Alias", "index": 10, "separator": false, "enabled": false, "mark": false, "cmd": "M"},
+          {"title": "Add To Favorites", "index": 11, "separator": false, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Put Away", "index": 12, "separator": false, "enabled": false, "mark": false, "cmd": "Y"},
+          {"title": "-", "index": 13, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Find…", "index": 14, "separator": false, "enabled": true, "mark": false, "cmd": "F"},
+          {"title": "Show Original", "index": 15, "separator": false, "enabled": false, "mark": false, "cmd": "R"},
+          {"title": "-", "index": 16, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Page Setup…", "index": 17, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Print Desktop…", "index": 18, "separator": false, "enabled": true, "mark": false, "cmd": ""}
+        ]
+      },
+      {
+        "title": "Edit", "apple": false, "left": 78, "id": 258,
+        "items": [
+          {"title": "Undo", "index": 1, "separator": false, "enabled": false, "mark": false, "cmd": "Z"},
+          {"title": "-", "index": 2, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Cut", "index": 3, "separator": false, "enabled": false, "mark": false, "cmd": "X"},
+          {"title": "Copy", "index": 4, "separator": false, "enabled": false, "mark": false, "cmd": "C"},
+          {"title": "Paste", "index": 5, "separator": false, "enabled": false, "mark": false, "cmd": "V"},
+          {"title": "Clear", "index": 6, "separator": false, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Select All", "index": 7, "separator": false, "enabled": true, "mark": false, "cmd": "A"},
+          {"title": "Show Clipboard", "index": 8, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "-", "index": 9, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Preferences…", "index": 10, "separator": false, "enabled": true, "mark": false, "cmd": ""}
+        ]
+      },
+      {
+        "title": "View", "apple": false, "left": 116, "id": 259,
+        "items": [
+          {"title": "as Icons", "index": 1, "separator": false, "enabled": true, "mark": true, "cmd": ""},
+          {"title": "as Buttons", "index": 2, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "as List", "index": 3, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "-", "index": 4, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "as Window", "index": 5, "separator": false, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "as Pop-up Window", "index": 6, "separator": false, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "-", "index": 7, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Clean Up", "index": 8, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Arrange", "index": 9, "separator": false, "enabled": true, "mark": false, "cmd": "", "submenu": true},
+          {"title": "Reset Column Positions", "index": 10, "separator": false, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "-", "index": 11, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "View Options…", "index": 12, "separator": false, "enabled": true, "mark": false, "cmd": ""}
+        ]
+      },
+      {
+        "title": "Special", "apple": false, "left": 159, "id": 260,
+        "items": [
+          {"title": "Empty Trash…", "index": 1, "separator": false, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "-", "index": 2, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Eject", "index": 3, "separator": false, "enabled": false, "mark": false, "cmd": "E"},
+          {"title": "Erase Disk…", "index": 4, "separator": false, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "-", "index": 5, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Sleep", "index": 6, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Restart", "index": 7, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "Shut Down", "index": 8, "separator": false, "enabled": true, "mark": false, "cmd": ""}
+        ]
+      },
+      {
+        "title": "Help", "apple": false, "left": 218, "id": -16490,
+        "items": [
+          {"title": "Help Center", "index": 1, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "-", "index": 2, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Show Balloons", "index": 3, "separator": false, "enabled": true, "mark": false, "cmd": ""},
+          {"title": "-", "index": 4, "separator": true, "enabled": false, "mark": false, "cmd": ""},
+          {"title": "Mac OS Help", "index": 5, "separator": false, "enabled": true, "mark": false, "cmd": "?"}
+        ]
+      },
+      {"title": "", "apple": false, "left": 715, "id": -16489, "items": []}
+    ]
+  },
+  "windows": [],
+  "desktopItems": [],
+  "meta": {
+    "errors": [
+      "Core Finder menu geometry and item state are transcribed from five stable 2026-08-11 SheepShaver Mac OS 8.6 native framebuffers; the captures remain reference-only until state proofs are attached."
+    ]
+  }
+}

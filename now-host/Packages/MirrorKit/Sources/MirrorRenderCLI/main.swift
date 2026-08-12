@@ -8,6 +8,8 @@ private struct Arguments {
     var output: URL?
     var openMenu: Int?
     var hoveredItem: Int?
+    var finderView: Scene.FinderPresentation.View?
+    var finderSelectedName: String?
 
     init(_ values: [String]) throws {
         var index = 0
@@ -30,12 +32,19 @@ private struct Arguments {
                     throw ArgumentError("--hovered-item must be a non-negative integer")
                 }
                 hoveredItem = parsed
+            case "--finder-view":
+                let parsed = Scene.FinderPresentation.View.finderWord(value)
+                guard parsed != .unknown else {
+                    throw ArgumentError("--finder-view must be icon, button, name, or small icon")
+                }
+                finderView = parsed
+            case "--finder-selected-name": finderSelectedName = value
             default: throw ArgumentError("unknown argument \(option)")
             }
             index += 2
         }
         guard scene != nil, output != nil else {
-            throw ArgumentError("usage: mirror-render --scene FILE --output FILE [--open-menu N] [--hovered-item N]")
+            throw ArgumentError("usage: mirror-render --scene FILE --output FILE [--open-menu N] [--hovered-item N] [--finder-view VIEW] [--finder-selected-name NAME]")
         }
     }
 }
@@ -58,7 +67,19 @@ private struct MirrorRenderCLI {
                 throw ArgumentError("output already exists: \(outputURL.path)")
             }
             let sceneData = try Data(contentsOf: sceneURL)
-            let scene = try JSONDecoder().decode(Scene.self, from: sceneData)
+            var scene = try JSONDecoder().decode(Scene.self, from: sceneData)
+            if let finderView = arguments.finderView {
+                guard let index = scene.windows.firstIndex(where: {
+                    $0.app == "Finder" && $0.front && $0.visible
+                }) else {
+                    throw ArgumentError("--finder-view requires a visible front Finder window")
+                }
+                scene.windows[index].finder = .init(
+                    path: "", view: finderView,
+                    selectedNames: arguments.finderSelectedName.map { [$0] } ?? [])
+            } else if arguments.finderSelectedName != nil {
+                throw ArgumentError("--finder-selected-name requires --finder-view")
+            }
             let png = try RenderShot.png(
                 scene: scene,
                 openMenu: arguments.openMenu,

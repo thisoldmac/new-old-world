@@ -8,19 +8,8 @@
     "No desktop item is selected",
     "No modal window is present"
   ],
-  "inputActions": [
-    "move 18 35", "down 0", "up 0",
-    "move 18 35", "down 0", "up 0",
-    "move 18 35", "down 0", "up 0",
-    "move 18 35", "down 0", "up 0",
-    "move 18 35", "down 0", "up 0",
-    "move 18 35", "down 0", "up 0",
-    "move 18 35", "down 0", "up 0",
-    "move 18 35", "down 0", "up 0",
-    "move 18 35", "down 0", "up 0",
-    "move 18 35", "down 0", "up 0",
-    "move 400 550", "down 0", "up 0"
-  ],
+  "inputSequence": "finder-clean-desktop",
+  "inputActions": [],
   "regions": [
     {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 20]},
     {"name": "desktop-main", "source": "screen", "rect": [0, 20, 800, 540]},

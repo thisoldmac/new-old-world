@@ -815,7 +815,7 @@ final class HostFinderSession {
               let full = HostFinderDomain.fullPath(
                 root: window.rootLabel ?? desktopRootLabel,
                 relative: window.path) else { return }
-        let word = pending.0.rawValue
+        let word = pending.0 == .button ? "button" : pending.0.rawValue
         guard pending.0 != .unknown else { return }
         dispatchedViews[id] = pending.0
         let source = """

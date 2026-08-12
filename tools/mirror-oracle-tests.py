@@ -19,7 +19,9 @@ from mirror_oracle.backends import QMPBackend, SheepShaverBackend  # noqa: E402
 from mirror_oracle.assets import extract_chrome  # noqa: E402
 from mirror_oracle.images import (Image, compare as compare_images, load,
                                   masked_digest, transparent_crop, write_png)  # noqa: E402
-from mirror_oracle.model import OracleCase, VisualProfile, list_cases, list_profiles, resolve_regions  # noqa: E402
+from mirror_oracle.model import (OracleCase, VisualProfile, list_cases,
+                                 list_profiles, load_case,
+                                 resolve_regions)  # noqa: E402
 from mirror_oracle.runner import compare, render_scene, stable_capture  # noqa: E402
 from mirror_oracle.state import STATE_SCHEMA, state_proof_template  # noqa: E402
 
@@ -129,10 +131,12 @@ def main() -> None:
     profiles = list_profiles()
     cases = list_cases()
     assert [profile.id for profile in profiles] == ["platinum.macos-8.6.default"]
-    assert len(cases) == 6
+    assert len(cases) == 11
     assert {case.id for case in cases} == {
         "finder-desktop", "finder-front-icon-view", "finder-inactive-window",
         "finder-list-selection", "finder-file-menu-open", "finder-apple-menu-open",
+        "finder-buttons-view", "finder-edit-menu-open", "finder-view-menu-open",
+        "finder-special-menu-open", "finder-help-menu-open",
     }
 
     with tempfile.TemporaryDirectory(prefix="now-mirror-oracle-tests.") as temporary:
@@ -456,6 +460,17 @@ def main() -> None:
         assert render_receipt["render"]["sha256"]
         assert "mirror-render" in render_receipt["command"]
 
+        overlay_case = fixture_case()
+        overlay_case.render.update({"finderView": "button",
+                                    "finderSelectedName": "Applications"})
+        overlay_output = root / "renderer-overlay.png"
+        overlay_receipt = render_scene(REPO, overlay_case, scene_path,
+                                       overlay_output, run=fake_run)
+        assert overlay_receipt["command"][-4:] == [
+            "--finder-view", "button",
+            "--finder-selected-name", "Applications",
+        ]
+
         qemu = QMPBackend(REPO, root / "qmp.sock")
         assert_raises(ValueError, lambda: qemu.input(["move 1 1"]), "not implemented")
 
@@ -481,8 +496,29 @@ def main() -> None:
                                  text=True, capture_output=True, check=True).stdout
         assert "profile platinum.macos-8.6.default" in listing
         assert "case finder-file-menu-open" in listing
+        file_menu = load_case("finder-file-menu-open")
+        apple_menu = load_case("finder-apple-menu-open")
+        desktop = load_case("finder-desktop")
+        assert file_menu.input_actions[:-2] == desktop.input_actions
+        assert apple_menu.input_actions[:-2] == desktop.input_actions
+        assert file_menu.input_actions[-2:] == ["move 55 10", "down 0"]
+        assert apple_menu.input_actions[-2:] == ["move 22 10", "down 0"]
+        assert load_case("finder-buttons-view").input_actions[-4:] == [
+            "move 130 10", "down 0", "move 145 42", "up 0",
+        ]
+        assert load_case("finder-front-icon-view").render == {
+            "finderView": "icon",
+        }
+        assert load_case("finder-list-selection").render == {
+            "finderView": "name", "finderSelectedName": "Applications",
+        }
+        assert [load_case(case).render["openMenu"] for case in (
+            "finder-file-menu-open", "finder-edit-menu-open",
+            "finder-view-menu-open", "finder-special-menu-open",
+            "finder-help-menu-open",
+        )] == [1, 2, 3, 4, 5]
 
-    print("mirror-oracle: 32 capture, state, image, profile, asset, and diff behaviors passed")
+    print("mirror-oracle: 35 capture, state, image, profile, asset, and diff behaviors passed")
 
 
 if __name__ == "__main__":

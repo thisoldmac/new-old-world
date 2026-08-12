@@ -404,6 +404,11 @@ public struct FinderInteriorState: Equatable, Sendable {
                 item.x = area.l + (index / rows) * 150 + 4
                 item.y = area.t + (index % rows) * 20 + 2
                 item.w = 16; item.h = 16
+            case .button:
+                let columns = max(1, visibleWidth / 96)
+                item.x = area.l + (index % columns) * 96 + 20
+                item.y = area.t + (index / columns) * 76 + 8
+                item.w = 48; item.h = 48
             case .icon, .unknown:
                 let columns = max(1, visibleWidth / 96)
                 item.x = area.l + (index % columns) * 96 + 28

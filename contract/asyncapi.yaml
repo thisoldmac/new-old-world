@@ -339,6 +339,11 @@ channels:
       (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion —
       or, when scene.begin says delta:true, a delta against the baseline
       the request named),
+      with menu rows carrying an additive optional `submenu` boolean. Classic
+      Menu Manager records overload the hierarchical row's command byte and
+      store the submenu id in the mark byte, so `submenu:true` and
+      `mark:true` are distinct visual and interaction facts rather than two
+      readings of the same byte.
       and a cloud preview (preview.begin: raw indexed rows, top-to-bottom,
       rowBytes apart, already dithered by the HOST to the depth the guest
       asked — no palette block, because the target is the classic system

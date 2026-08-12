@@ -285,6 +285,58 @@ final class FinderItemArbitrationTests: XCTestCase {
                        "list view cannot depend on Finder P3 to supply names")
     }
 
+    func testButtonViewDrawsTheRaisedWellAndLabelBelowIt() throws {
+        var win = Self.folder(items: [
+            Self.item("Documents", x: 40, y: 50, w: 48, h: 48),
+        ])
+        win.finder = .init(path: "Macintosh HD:", view: .button)
+        let png = try RenderShot.png(scene: Self.scene([win]))
+        var icon = win
+        icon.finder?.view = .icon
+        let iconPNG = try RenderShot.png(scene: Self.scene([icon]))
+        let o = Self.contentOrigin
+        XCTAssertGreaterThan(
+            differences(png, iconPNG,
+                        in: CGRect(x: o.x + 40, y: o.y + 50,
+                                   width: 48, height: 48)),
+            100, "Buttons must own a raised well, not reuse icon view")
+        let label = CGRect(x: o.x + 20, y: o.y + 99,
+                           width: 88, height: 14)
+        XCTAssertFalse(darkPixels(png, in: label).isEmpty,
+                       "Buttons has a centred label below the raised well")
+    }
+
+    func testListViewDrawsTheCountBarAndRuledFinderField() throws {
+        var win = Self.folder(
+            items: [Self.item("Documents", x: 26, y: 44, w: 16, h: 16)],
+            controls: [
+                .init(ref: "name", role: "control", title: "Name",
+                      rect: Rect(l: 0, t: 23, r: 180, b: 43),
+                      enabled: true, visible: true,
+                      semantic: .init(knowledge: .known,
+                                      kind: "columnHeader")),
+                .init(ref: "v", role: "scrollbar", title: "",
+                      rect: Rect(l: 304, t: 43, r: 320, b: 204),
+                      enabled: true, visible: true),
+                .init(ref: "h", role: "scrollbar", title: "",
+                      rect: Rect(l: 0, t: 204, r: 304, b: 220),
+                      enabled: true, visible: true),
+            ])
+        win.finder = .init(path: "Macintosh HD:", view: .name)
+        let png = try RenderShot.png(scene: Self.scene([win]))
+        let o = Self.contentOrigin
+        let info = try XCTUnwrap(pixel(png, x: o.x + 8, y: o.y + 8))
+        XCTAssertFalse(info.0 == 255 && info.1 == 255 && info.2 == 255,
+                       "the item-count bar is Finder chrome, not bare paper")
+        let field = try XCTUnwrap(pixel(png, x: o.x + 220, y: o.y + 50))
+        XCTAssertTrue(field.0 == 238 && field.1 == 238 && field.2 == 238,
+                      "the 8.6 list field is light grey")
+        XCTAssertFalse(darkPixels(
+            png, in: CGRect(x: o.x + 12, y: o.y + 47,
+                            width: 8, height: 12)).isEmpty,
+            "folder list rows carry disclosure triangles")
+    }
+
     func testFinderSnapshotSelectionChangesTheSemanticRow() throws {
         var plain = Self.folder(items: [
             Self.item("Documents", x: 40, y: 60, w: 16, h: 16),

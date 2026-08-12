@@ -7,7 +7,8 @@
     "The File menu is open",
     "No menu item is highlighted"
   ],
-  "inputActions": [],
+  "inputSequence": "finder-clean-desktop",
+  "inputActions": ["move 55 10", "down 0"],
   "regions": [
     {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 20]},
     {"name": "file-menu", "source": "screen", "rect": [30, 20, 260, 430]}

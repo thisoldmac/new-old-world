@@ -1682,6 +1682,15 @@ final class NOWMirrorIconParsingTests: XCTestCase {
                        ["Extensions", "Finder"])
     }
 
+    func testFinderPageKeepsMacOS86ButtonsDistinctFromSmallIcons() {
+        XCTAssertEqual(NOWMirrorSource.finderPageMetadata(
+            "\"V\tbutton\rP\tMacintosh HD:\r\"").view, .button)
+        XCTAssertEqual(NOWMirrorSource.finderPageMetadata(
+            "\"V\tbuttons\rP\tMacintosh HD:\r\"").view, .button)
+        XCTAssertEqual(NOWMirrorSource.finderPageMetadata(
+            "\"V\tsmall icon\rP\tMacintosh HD:\r\"").view, .smallIcon)
+    }
+
     /// The Macintosh HD list view, exactly as the Finder answered it: rows at
     /// a 19-px pitch, each icon 16x16, while `position` for the same two files
     /// claimed 194,42 and 386,42 on a saved icon grid.

@@ -349,6 +349,13 @@ static void put_menubar(Sink *k, const NowScene *s)
                 put(k, it->enabled ? "true" : "false");
                 put(k, ",\"mark\":");
                 put(k, it->mark ? "true" : "false");
+                /* Sparse additive fact: ordinary rows omit it. Emitting
+                   false on all 512 rows consumed enough of the fixed scene
+                   ceiling to make a fully populated, still-valid scene
+                   unservable. */
+                if (it->submenu) {
+                    put(k, ",\"submenu\":true");
+                }
                 /* ALWAYS PRESENT, and this is the one place the
                    absent-key rule yields. That rule is right when the
                    producer is defining the shape: an absent key says

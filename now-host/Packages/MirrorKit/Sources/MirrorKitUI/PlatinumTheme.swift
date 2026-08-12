@@ -52,6 +52,11 @@ public enum Platinum {
     /// defect this field exists to end.
     public static let alertFace = Color(hex: 0xDDDDDD)
 
+    /// Classic Menu Manager dropdown face under the default Platinum theme.
+    /// The Mac OS 8.6 File and Apple menus both use the same #DDDDDD face;
+    /// pure white is reserved for the left/top bevel and selected text.
+    public static let menuFace = Color(hex: 0xDDDDDD)
+
     /// Fallback for `meta.theme.documentBackground`
     /// (kThemeBrushDocumentWindowBackground). A document window's content
     /// really is white under Platinum; another theme may disagree, and now

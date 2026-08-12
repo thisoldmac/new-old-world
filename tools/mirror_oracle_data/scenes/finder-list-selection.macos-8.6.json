@@ -1,0 +1,39 @@
+{
+  "version": 2, "seq": 1, "source": "oracle-case", "capturedAt": 0,
+  "screen": {"w": 800, "h": 600},
+  "apps": [{"psn": "0:1", "name": "Finder", "front": true, "error": null}],
+  "processes": [{"psn": "0:1", "name": "Finder", "front": true, "signature": "MACS"}],
+  "menubar": {"app": "Finder", "menus": [
+    {"title": "", "apple": true, "left": 10, "id": 256, "items": []},
+    {"title": "File", "apple": false, "left": 43, "id": 257, "items": []},
+    {"title": "Edit", "apple": false, "left": 78, "id": 258, "items": []},
+    {"title": "View", "apple": false, "left": 116, "id": 259, "items": []},
+    {"title": "Special", "apple": false, "left": 159, "id": 260, "items": []},
+    {"title": "Help", "apple": false, "left": 218, "id": -16490, "items": []},
+    {"title": "", "apple": false, "left": 715, "id": -16489, "items": []}
+  ]},
+  "windows": [{
+    "id": "0:1/Macintosh HD#0", "app": "Finder", "psn": "0:1", "title": "Macintosh HD", "kind": 20,
+    "rect": {"l": 9, "t": 25, "r": 423, "b": 271}, "front": true, "z": 0, "visible": true,
+    "closeBox": true, "zoomBox": true,
+    "controls": [
+      {"ref": "name-header", "role": "control", "title": "Name", "rect": {"l": 4, "t": 23, "r": 218, "b": 43}, "enabled": true, "visible": true, "semantic": {"knowledge": "known", "kind": "columnHeader"}},
+      {"ref": "modified-header", "role": "control", "title": "Date Modified", "rect": {"l": 218, "t": 23, "r": 394, "b": 43}, "enabled": true, "visible": true, "semantic": {"knowledge": "known", "kind": "columnHeader"}},
+      {"ref": "vscroll", "role": "scrollbar", "title": "", "rect": {"l": 394, "t": 43, "r": 410, "b": 208}, "enabled": true, "visible": true, "value": 0, "min": 0, "max": 1},
+      {"ref": "hscroll", "role": "scrollbar", "title": "", "rect": {"l": 3, "t": 207, "r": 394, "b": 223}, "enabled": true, "visible": true, "value": 0, "min": 0, "max": 1}
+    ],
+    "items": [
+      {"name": "Apple Extras", "kind": "folder", "x": 26, "y": 45, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 16, "h": 16},
+      {"name": "Applications", "kind": "folder", "x": 26, "y": 64, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 16, "h": 16},
+      {"name": "Assistants", "kind": "folder", "x": 26, "y": 83, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 16, "h": 16},
+      {"name": "Installer Logs", "kind": "folder", "x": 26, "y": 102, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 16, "h": 16},
+      {"name": "Internet", "kind": "folder", "x": 26, "y": 121, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 16, "h": 16},
+      {"name": "Mac OS Read Me Files", "kind": "folder", "x": 26, "y": 140, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 16, "h": 16},
+      {"name": "System Folder", "kind": "folder", "x": 26, "y": 159, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 16, "h": 16},
+      {"name": "Utilities", "kind": "folder", "x": 26, "y": 178, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 16, "h": 16},
+      {"name": "Web Pages", "kind": "folder", "x": 26, "y": 197, "placed": true, "alias": false, "invisible": false, "origin": "drawn", "w": 16, "h": 16}
+    ]
+  }],
+  "desktopItems": [],
+  "meta": {"errors": ["List header and item geometry are transcribed from the stable 2026-08-11 SheepShaver Mac OS 8.6 native framebuffer; modification-date cell values remain a named semantic gap."]}
+}

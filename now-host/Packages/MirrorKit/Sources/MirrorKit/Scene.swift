@@ -371,19 +371,23 @@ public struct Scene: Codable, Equatable, Sendable {
         public var separator: Bool
         public var enabled: Bool
         public var mark: Bool
+        /// A hierarchical menu holder. On classic Menu Manager records the
+        /// raw mark byte then contains a submenu ID, not checkmark ink.
+        public var submenu: Bool? = nil
         /// ⌘-shortcut character, or "" — actuation sends the KEYCODE, not
         /// this char (Finder matches on keycode; CONTROL-SURFACE.md).
         public var cmd: String
 
         public init(title: String, index: Int, separator: Bool = false,
                     enabled: Bool = true, mark: Bool = false,
-                    cmd: String = "") {
+                    cmd: String = "", submenu: Bool? = nil) {
             self.title = title
             self.index = index
             self.separator = separator
             self.enabled = enabled
             self.mark = mark
             self.cmd = cmd
+            self.submenu = submenu
         }
     }
 
@@ -499,8 +503,8 @@ public struct Scene: Codable, Equatable, Sendable {
         /// Dialog TextEdit content (`kind==2` windows only today).
         public var text: TextContent?
         /// Items for a Finder window, in WINDOW-LOCAL content coords — the
-        /// Finder's own live `bounds of`, which stays faithful in icon, name,
-        /// and small-icon views (`FinderItems`). nil when not fetched, or when
+        /// Finder's own live `bounds of`, which stays faithful in icon,
+        /// Buttons, name, and small-icon views (`FinderItems`). nil when not fetched, or when
         /// the window is not a resolvable Finder folder window.
         ///
         /// **Additive within IR v1** (`IRSchema.v1Additions`, lane H2
@@ -635,9 +639,26 @@ public struct Scene: Codable, Equatable, Sendable {
     public struct FinderPresentation: Equatable, Sendable {
         public enum View: String, Equatable, Sendable {
             case icon
+            case button
             case name
             case smallIcon = "small icon"
             case unknown
+
+            /// Finder's Apple event vocabulary varies across the supported
+            /// system range. Mac OS 8.6 calls the presentation `button`,
+            /// while later Finder builds may pluralize display strings. Keep
+            /// those wire spellings at the boundary instead of weakening the
+            /// semantic enum or silently treating Buttons as small icons.
+            public static func finderWord(_ raw: String) -> Self {
+                switch raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased() {
+                case "icon", "icons": return .icon
+                case "button", "buttons": return .button
+                case "name", "list": return .name
+                case "small icon", "small icons": return .smallIcon
+                default: return .unknown
+                }
+            }
         }
 
         public var path: String
