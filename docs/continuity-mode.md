@@ -835,3 +835,38 @@ apply timestamps before changing the sleep policy. The first bounded candidate
 to test is an armed-Continuity fast-pump state at one tick; it must measure CPU
 cost and fairness to other cooperative applications and must not move manager
 work back into the notifier, a Time Manager task, or global Event Manager code.
+
+### Held tracking on ADB/PMU: one point must win
+
+The first attended click-and-drag build made a narrower PowerBook-only failure
+visible. A Finder drag completed at the requested destination, but the cursor
+and dragged item alternated between the press point and the current host point.
+An open menu did the same thing without a held host button. This is not only a
+stale cursor sprite; the dragged item moving proves the application's tracking
+loop observed alternating input locations.
+
+The PowerBook's ADB/PMU path can republish its stationary physical point into
+`MouseLocation` between Continuity timer writes. The first tracking hooks only
+settled redraw debt and then called the incumbent traps, so `_GetMouse`,
+`_StillDown`, and `_Button` could expose whichever writer ran last. The
+emulators did not reproduce that hardware behavior: their stationary input
+controllers did not keep republishing the old point.
+
+The next candidate makes the held Continuity point an explicit resident source.
+The timer publishes one coherent h/v pair; while a button gesture is held, each
+of the three permanent hooks reasserts that point immediately before
+tail-chaining to the original Toolbox trap. It does not answer the trap, alter
+its Pascal stack, change `_Button` or `_StillDown` truth, allocate, post an
+event, enter the Cursor Device Manager, or log. Mouse-up, native takeover,
+lease expiry, disconnect, and disarm clear the source after first forcing the
+low-memory button state up. The hooks remain installed but idle until reboot.
+
+The exact active-source guard was watched failing when one hook's check was
+removed. Independent cold PMU/USB and CUDA/ADB runs of guest build
+`59e96d42f941…` and resident fingerprint `31b390c96132…` then passed click,
+16 rapid click cycles, a 30-point held drag with framebuffer changes at both
+endpoints, lease release, native return, and clean Finder shutdown with zero
+rejected datagrams or pending manager-up. CUDA additionally observed real
+held `guest-input` takeover; PMU retained its known lease-expiry fallback.
+This is Tested emulator evidence. Only the next attended PowerBook run can say
+whether active reassertion stops the ADB/PMU alternation.

@@ -1109,6 +1109,22 @@ Nothing shared was baked or promoted. This changes the status from “no third
 metal retest pending” to “attended metal retest candidate available”; it does
 not erase the two negative PowerBook runs or make the feature metal-verified.
 
+**Updated 2026-08-12, held tracking alternation remains metal-open:** direct
+click and Finder drag reached the PowerBook, but the tracked cursor and dragged
+item alternated between the press point and current host point. An open menu
+showed the same alternation. The shared mechanism is ADB/PMU republishing its
+stationary physical location between Continuity writes; the original
+chain-only hooks redrew but did not ensure the incumbent trap saw one sourced
+point. The next candidate keeps a coherent held point and reasserts it in all
+three hooks immediately before their unchanged tail chains. Release and every
+authority exit clear it; the hooks never replace a trap result. The exact
+active-source mutation failed its guard by name. PMU/USB and CUDA/ADB cold
+boots of guest `59e96d42f941…` / resident `31b390c96132…` passed click, rapid
+clicks, held drag, lease release, native return, wire liveness, visual endpoint
+checks, and clean shutdown; CUDA also proved held physical takeover. Those
+rigs do not reproduce stationary PowerBook ADB republishing, so this remains
+Tested and not metal-verified.
+
 ## PRE-MERGE CONSOLIDATION: Mirror is NOW-owned; the standalone product is archived (2026-08-09, `codex/mirror-session-teardown`)
 
 The production semantic model and renderer now live at

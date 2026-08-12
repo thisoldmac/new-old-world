@@ -185,8 +185,14 @@ Continuity has a narrower tracking-only debt. Its timer writes only
 chain-only `_GetMouse`, `_StillDown`, and `_Button` patches supply task-time
 redraw opportunities inside an application's tracking loop, where jGNE cannot.
 They preserve every data and address register, leave the original stack for the
-incumbent, and never enter the Cursor Device Manager. The hooks stay installed
-until reboot, while the redraw debt clears on every authority exit.
+incumbent, and never enter the Cursor Device Manager. A PowerBook metal drag
+showed that ADB/PMU can republish its stationary physical point between timer
+writes, making the tracking loop alternate between the press point and the
+current host point. During a held gesture the same chain-only hooks now
+reassert the coherently published Continuity point immediately before the
+incumbent runs; they still do not answer any trap or change its stack. Mouse-up
+and every authority exit clear that active source. The hooks stay installed
+until reboot and become an idle byte-test after release.
 
 **`CrsrObscure` must be cleared, because we ARE the mouse moving.**
 `ObscureCursor` is what every text application calls on every keystroke —

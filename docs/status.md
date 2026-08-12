@@ -280,8 +280,14 @@ parallel availability lists.
   generations. Private PMU/USB and CUDA/ADB runs passed click, a 30-point drag,
   lease-expiry release, native return, and clean shutdown with no held or
   pending button; CUDA/ADB also observed physical-input takeover and 16
-  immediate click cycles / 32 settled transitions. That is emulator-tested;
-  direct click and drag remain unverified on the PowerBook 1400c.
+  immediate click cycles / 32 settled transitions. Direct click and drag then
+  reached the PowerBook, exposing an ADB/PMU tracking alternation between the
+  press point and current host point. A new Tested candidate makes the held
+  point an explicit coherent source and reasserts it from the existing
+  chain-only `_GetMouse`, `_StillDown`, and `_Button` hooks before their
+  original traps run. PMU/USB and CUDA/ADB passed the full
+  click/rapid-click/drag/release/native-return campaign; CUDA observed real
+  held takeover. The PowerBook correction itself remains unverified.
   [continuity-mode.md](continuity-mode.md) carries the boundary.
 
 - **Mirror human work has a session-wide priority boundary and attributable

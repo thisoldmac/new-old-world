@@ -55,6 +55,10 @@ tracking_settle = body(
     "void now_ext_cursor_settle_continuity_tracking(", EXT_CURSOR)
 tracking_remember = body(
     "void now_ext_cursor_remember_continuity_tracking_point(", EXT_CURSOR)
+tracking_end = body(
+    "void now_ext_cursor_end_continuity_tracking(", EXT_CURSOR)
+release_button = body("static void release_button(", EXT_CONTINUITY)
+event_result = body("static void process_event_result(", EXT_CONTINUITY)
 continuity_finish = body("static void finish_locked(", EXT_CONTINUITY)
 
 failures = []
@@ -150,11 +154,31 @@ if TRACKING_PATCH.count("movem.l %d0-%d7/%a0-%a6,-(%sp)") != 3 \
     failures.append("tracking hooks no longer preserve every data/address register")
 if TRACKING_PATCH.count("tst.b gNowCursorTrackingRedrawOwed") != 3:
     failures.append("idle tracking hooks no longer bypass the full save/call path")
+if TRACKING_PATCH.count("tst.b gNowCursorTrackingSourceActive") != 3:
+    failures.append("held tracking hooks no longer reassert the active source")
+for trap in ("getmouse", "stilldown", "button"):
+    if f".L{trap}_settle:" not in TRACKING_PATCH:
+        failures.append(f"the {trap} hook lost its shared active/debt settle path")
 if "gNowCursorTrackingRedrawOwed = 1" not in tracking_remember:
     failures.append("the timer-owned point no longer publishes redraw debt last")
 if tracking_remember.index("gNowCursorTrackingRedrawOwed = 1") \
         < tracking_remember.index("remember_owned_lowmem_point"):
     failures.append("tracking redraw debt publishes before its point is complete")
+for field in ("gNowCursorTrackingSourceH = pt.h",
+              "gNowCursorTrackingSourceV = pt.v"):
+    if field not in tracking_remember:
+        failures.append("the held tracking source no longer publishes both axes")
+if "gNowCursorTrackingSourceActive = 1" not in tracking_remember:
+    failures.append("the timer-owned point no longer activates its tracking source")
+elif tracking_remember.index("gNowCursorTrackingSourceActive = 1") \
+        < tracking_remember.index("gNowCursorTrackingSourceV = pt.v"):
+    failures.append("the held tracking source activates before its point is complete")
+if tracking_remember.count("gNowCursorTrackingSourceSeq++") != 2:
+    failures.append("the held tracking source lost its bounded publication sequence")
+if "LMGetMouseLocation()" not in tracking_settle:
+    failures.append("tracking settlement no longer observes ADB displacement")
+if tracking_settle.count("LMSetMouseLocation(pt)") != 2:
+    failures.append("tracking settlement no longer reasserts before manager redraw and tail-chain")
 if "gNowCursorTrackingRedrawOwed = 0" not in tracking_settle:
     failures.append("tracking redraw settlement no longer clears debt")
 elif tracking_settle.index("gNowCursorTrackingRedrawOwed = 0") \
@@ -164,6 +188,20 @@ for forbidden in ("NewPtr", "DisposePtr", "WaitNextEvent", "PPostEvent",
                   "now_cdm_", "now_log"):
     if forbidden in tracking_settle:
         failures.append(f"tracking redraw reintroduced forbidden {forbidden}")
+if "gNowCursorTrackingSourceActive = 0" not in tracking_end \
+        or "gNowCursorTrackingRedrawOwed = 0" not in tracking_end:
+    failures.append("tracking authority exit no longer clears source and redraw debt")
+if "now_ext_cursor_end_continuity_tracking()" not in release_button:
+    failures.append("mouse-up no longer releases the active tracking source")
+elif release_button.index("now_ext_cursor_end_continuity_tracking()") \
+        < release_button.index("release_button_lowmem()"):
+    failures.append("tracking source clears before the unconditional low-memory release")
+if "now_ext_cursor_remember_continuity_tracking_point(" not in event_result \
+        or "cell->request_h, cell->request_v" not in event_result:
+    failures.append("button-down no longer seeds the tracking source at the press point")
+elif event_result.index("now_ext_cursor_remember_continuity_tracking_point(") \
+        > event_result.index("cell->button_down = 1"):
+    failures.append("button-down enters tracking before publishing its initial source")
 if tracking_install.count("NGetTrapAddress") < 3:
     failures.append("tracking install no longer snapshots all three incumbents")
 if tracking_install.count("NSetTrapAddress") != 3:

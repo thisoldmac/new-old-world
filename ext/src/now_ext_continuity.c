@@ -137,6 +137,7 @@ static void release_button(NowPeekContinuityCell *cell,
     /* MBState-up is first and unconditional. Everything after it is
        telemetry or task-time event debt and cannot leave the Mac held. */
     release_button_lowmem();
+    now_ext_cursor_end_continuity_tracking();
     cell->button_down = 0;
     cell->pending_mouseup = 1;
     if (release_generation == 0
@@ -195,6 +196,10 @@ static void process_event_result(NowPeekContinuityCell *cell,
         now_ext_cursor_remember_continuity_button(1u);
         gNativeInputSeq = now_ext_cursor_physical_input_seq();
         gNativeInputBaseline = gNativeInputSeq;
+        /* Publish the press point before the target enters its nested loop.
+           The timer replaces it with newer host points while held. */
+        now_ext_cursor_remember_continuity_tracking_point(
+            cell->request_h, cell->request_v);
         cell->button_down = 1;
         cell->applied_button_generation = generation;
         cell->event_down_posts++;

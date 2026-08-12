@@ -120,9 +120,13 @@ extern void now_cursor_button_patch(void);
    any trap is changed, so installation cannot leave one hook pointing at an
    uninitialised destination. Once installed, these links live until reboot. */
 volatile unsigned char gNowCursorTrackingRedrawOwed = 0;
+volatile unsigned char gNowCursorTrackingSourceActive = 0;
 void *gNowCursorOldGetMouse = NULL;
 void *gNowCursorOldStillDown = NULL;
 void *gNowCursorOldButton = NULL;
+static volatile unsigned short gNowCursorTrackingSourceSeq = 0;
+static volatile short gNowCursorTrackingSourceH = 0;
+static volatile short gNowCursorTrackingSourceV = 0;
 
 static NowPeekTable *gTable = NULL;
 static CursorDevicePtr gDevice = NULL;
@@ -221,6 +225,34 @@ static void remember_owned_device_point(Point pt)
 static void remember_owned_lowmem_point(Point pt)
 {
     remember_owned_history(&gOwnedTrackingHistory, pt);
+}
+
+/* Read the held gesture's point without returning a torn h/v pair. The timer
+   is the sole publisher; two bounded attempts cover one interrupt arriving
+   between the task-time reader's fields. */
+static Boolean continuity_tracking_source_point(Point *out)
+{
+    unsigned short attempt;
+
+    if (out == NULL)
+        return false;
+    for (attempt = 0; attempt < 2; attempt++) {
+        unsigned short before = gNowCursorTrackingSourceSeq;
+        Boolean active;
+        Point pt;
+
+        if ((before & 1u) != 0)
+            continue;
+        active = gNowCursorTrackingSourceActive != 0;
+        pt.h = gNowCursorTrackingSourceH;
+        pt.v = gNowCursorTrackingSourceV;
+        if (before == gNowCursorTrackingSourceSeq
+                && (before & 1u) == 0 && active) {
+            *out = pt;
+            return true;
+        }
+    }
+    return false;
 }
 
 static Boolean owned_history_contains(const OwnedPointHistory *history,
@@ -376,8 +408,24 @@ void now_ext_cursor_remember_continuity_tracking_point(NowPeekI32 h,
 
     pt.h = (short)h;
     pt.v = (short)v;
+    gNowCursorTrackingSourceSeq++;
+    gNowCursorTrackingSourceH = pt.h;
+    gNowCursorTrackingSourceV = pt.v;
+    gNowCursorTrackingSourceActive = 1;
+    gNowCursorTrackingSourceSeq++;
     remember_owned_lowmem_point(pt);
     gNowCursorTrackingRedrawOwed = 1; /* publish after the point is complete */
+}
+
+/* Release the held source without removing the three trap links. The links
+   are permanent for this boot because a later extension may chain behind
+   them; inactive they only test resident bytes and tail-chain. */
+void now_ext_cursor_end_continuity_tracking(void)
+{
+    gNowCursorTrackingSourceSeq++;
+    gNowCursorTrackingSourceActive = 0;
+    gNowCursorTrackingSourceSeq++;
+    gNowCursorTrackingRedrawOwed = 0;
 }
 
 /* Settle only the picture. This is entered from chain-only Toolbox hooks in
@@ -386,7 +434,24 @@ void now_ext_cursor_remember_continuity_tracking_point(NowPeekI32 h,
    a newer point during QuickDraw leaves a fresh debt for the next hook. */
 void now_ext_cursor_settle_continuity_tracking(void)
 {
-    if (!gNowCursorTrackingRedrawOwed)
+    Point pt;
+    Point live;
+    Boolean moved;
+    Boolean owed = gNowCursorTrackingRedrawOwed != 0;
+
+    if (!continuity_tracking_source_point(&pt)) {
+        if (!owed)
+            return;
+        gNowCursorTrackingRedrawOwed = 0;
+        return;
+    }
+    live = LMGetMouseLocation();
+    moved = live.h != pt.h || live.v != pt.v;
+    /* The PowerBook's ADB path can republish its stationary physical point
+       between host ticks. Reassert our held point on every tracking call,
+       then let the real Toolbox trap answer normally. */
+    LMSetMouseLocation(pt);
+    if (!owed && !moved)
         return;
     gNowCursorTrackingRedrawOwed = 0;
     if (gTable == NULL)
@@ -394,6 +459,10 @@ void now_ext_cursor_settle_continuity_tracking(void)
     *gCrsrObscure = 0;
     HideCursor();
     ShowCursor();
+    /* Hide/Show may itself enter manager glue. Put the sourced point back
+       once more immediately before the patched trap tail-chains. */
+    if (continuity_tracking_source_point(&pt))
+        LMSetMouseLocation(pt);
 }
 
 /* Install the three tracking-loop hooks lazily on the first Continuity arm.
@@ -449,7 +518,7 @@ void now_ext_cursor_cancel_task_apply(void)
     if (gTaskApplyOwed || gNowCursorTrackingRedrawOwed)
         gDebtCancels++;
     gTaskApplyOwed = false;
-    gNowCursorTrackingRedrawOwed = 0;
+    now_ext_cursor_end_continuity_tracking();
 }
 
 void now_ext_cursor_input_diagnostics(NowCursorInputDiagnostics *out)
@@ -769,6 +838,10 @@ int now_ext_cursor_boot(NowPeekTable *table)
     gOwnedTrackingHistory.next = 0;
     gOwnedTrackingHistory.used = 0;
     gNowCursorTrackingRedrawOwed = 0;
+    gNowCursorTrackingSourceActive = 0;
+    gNowCursorTrackingSourceSeq = 0;
+    gNowCursorTrackingSourceH = 0;
+    gNowCursorTrackingSourceV = 0;
     gContinuityTrackingInstalled = false;
     gNowCursorOldGetMouse = NULL;
     gNowCursorOldStillDown = NULL;
@@ -836,6 +909,10 @@ void now_ext_cursor_rollback(NowPeekTable *table)
     gEverPlaced = false;
     gTaskApplyOwed = false;
     gNowCursorTrackingRedrawOwed = 0;
+    gNowCursorTrackingSourceActive = 0;
+    gNowCursorTrackingSourceSeq = 0;
+    gNowCursorTrackingSourceH = 0;
+    gNowCursorTrackingSourceV = 0;
     gTaskH = 0;
     gTaskV = 0;
     gTaskApplySeq = 0;

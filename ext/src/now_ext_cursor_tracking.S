@@ -21,14 +21,18 @@
     .globl now_cursor_stilldown_patch
     .globl now_cursor_button_patch
     .extern gNowCursorTrackingRedrawOwed
+    .extern gNowCursorTrackingSourceActive
     .extern now_ext_cursor_settle_continuity_tracking
     .extern gNowCursorOldGetMouse
     .extern gNowCursorOldStillDown
     .extern gNowCursorOldButton
 
 now_cursor_getmouse_patch:
+    tst.b gNowCursorTrackingSourceActive
+    bne.s .Lgetmouse_settle
     tst.b gNowCursorTrackingRedrawOwed
     beq.s .Lgetmouse_chain
+.Lgetmouse_settle:
     movem.l %d0-%d7/%a0-%a6,-(%sp)
     jsr now_ext_cursor_settle_continuity_tracking
     movem.l (%sp)+,%d0-%d7/%a0-%a6
@@ -37,8 +41,11 @@ now_cursor_getmouse_patch:
     jmp (%a0)
 
 now_cursor_stilldown_patch:
+    tst.b gNowCursorTrackingSourceActive
+    bne.s .Lstilldown_settle
     tst.b gNowCursorTrackingRedrawOwed
     beq.s .Lstilldown_chain
+.Lstilldown_settle:
     movem.l %d0-%d7/%a0-%a6,-(%sp)
     jsr now_ext_cursor_settle_continuity_tracking
     movem.l (%sp)+,%d0-%d7/%a0-%a6
@@ -47,8 +54,11 @@ now_cursor_stilldown_patch:
     jmp (%a0)
 
 now_cursor_button_patch:
+    tst.b gNowCursorTrackingSourceActive
+    bne.s .Lbutton_settle
     tst.b gNowCursorTrackingRedrawOwed
     beq.s .Lbutton_chain
+.Lbutton_settle:
     movem.l %d0-%d7/%a0-%a6,-(%sp)
     jsr now_ext_cursor_settle_continuity_tracking
     movem.l (%sp)+,%d0-%d7/%a0-%a6
