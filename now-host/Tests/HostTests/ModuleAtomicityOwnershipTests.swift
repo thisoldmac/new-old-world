@@ -439,4 +439,51 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertTrue(definition.contains("\"diagnostics\""))
         XCTAssertTrue(definition.contains("diagnostics_module_ops"))
     }
+
+    func testLogsDefinitionOwnsItsRuntimeAndMetadata() throws {
+        let definition = LogsHostModule.definition
+
+        XCTAssertEqual(definition.descriptor.id, "logs")
+        XCTAssertEqual(definition.descriptor.placement, .footer)
+        XCTAssertEqual(definition.descriptor.tier, .debug)
+        XCTAssertNotNil(definition.makeRuntime)
+        XCTAssertNotNil(definition.makeView)
+
+        let listener = GuestListener(
+            identity: .init(version: "test", name: "Test Host"))
+        let suite = "LogsModuleOwnership.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(false, forKey: "logsPersistsToDisk")
+        let logs = LogsModel(log: .shared, defaults: defaults)
+        let runtime = try LogsHostModuleRuntime(context: HostModuleContext(
+            listener: listener,
+            currentConnection: { .disconnected },
+            logs: logs))
+
+        XCTAssertTrue(runtime.model === logs,
+                      "the module must reference the eager logging service")
+    }
+
+    func testLogsPageOwnershipDidNotRemainAtEitherCompositionRoot() throws {
+        let state = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostAppState.swift")
+        let compatibility = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostModuleDefinition.swift")
+        let runtime = try GateSource.hostSwift(
+            "now-host/Sources/Host/LogsHostModule.swift")
+        let registry = try GateSource.guestC(
+            "now-guest-ppc/src/workshop/workshop_registry.c")
+        let definition = try GateSource.guestC(
+            "now-guest-ppc/src/logs/logs_module_definition.c")
+
+        XCTAssertTrue(state.contains("let logs: LogsModel"),
+                      "logging remains an eager application service")
+        XCTAssertFalse(compatibility.contains("case \"logs\""))
+        XCTAssertTrue(runtime.contains("context.logs"))
+        XCTAssertFalse(registry.contains("k_logs_definition"))
+        XCTAssertTrue(registry.contains("logs_module_definition()"))
+        XCTAssertTrue(definition.contains("\"logs\""))
+        XCTAssertTrue(definition.contains("logs_module_ops"))
+    }
 }

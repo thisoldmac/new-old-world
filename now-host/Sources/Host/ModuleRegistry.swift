@@ -153,14 +153,7 @@ struct ModuleRegistry {
            and this side owns its lifecycle. The audit model underneath is
            deliberately NOT named that — see MCPModuleView. */
         MCPHostModule.definition.descriptor,
-        ModuleDescriptor(
-            id: "logs",
-            title: "Logs",
-            symbol: "text.alignleft",
-            summary: "What \(MachineNaming.thisMac) has recorded happening",
-            placement: .footer,
-            tier: .debug
-        ),
+        LogsHostModule.definition.descriptor,
         /* The link, and who is on it — one page, formerly two rows.
            "Connections" sat in the list (the roster of machines) while this
            one sat in the footer (the port and the link state), and neither

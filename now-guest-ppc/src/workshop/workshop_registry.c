@@ -30,15 +30,6 @@ static const WorkshopModuleDefinition k_preferences_definition = {
     preferences_module_ops
 };
 
-static const WorkshopModuleDefinition k_logs_definition = {
-    kWorkshopLogs, "logs", "Logs",
-    "This launch's event log. Toggle whether it also reaches the disk.",
-    "Logs has not moved in yet.",
-    "This launch's events", 135, kWorkshopModuleTierDebug,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    logs_module_ops
-};
-
 static const WorkshopModuleDefinition k_connection_definition = {
     kWorkshopConnection, "settings", "Connection",
     "This Mac dials the other Mac and keeps one persistent connection.",
@@ -67,7 +58,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopDevelopment: return development_module_definition();
     case kWorkshopWeb: return web_module_definition();
     case kWorkshopPreferences: return &k_preferences_definition;
-    case kWorkshopLogs: return &k_logs_definition;
+    case kWorkshopLogs: return logs_module_definition();
     case kWorkshopConnection: return &k_connection_definition;
     default: return NULL;
     }

@@ -16,6 +16,7 @@ struct HostModuleContext {
     let guestFiles: GuestFilesCommandService?
     let agentActivity: AgentActivityModel?
     let agentCompanions: AgentCompanionModel?
+    let logs: LogsModel?
     let guestScreen: @Sendable () async -> ChatSystemPrompt.Screen?
     let mirrorEngines: MirrorStateEngineRegistry?
     let selectedModuleID: () -> String
@@ -30,6 +31,7 @@ struct HostModuleContext {
          guestFiles: GuestFilesCommandService? = nil,
          agentActivity: AgentActivityModel? = nil,
          agentCompanions: AgentCompanionModel? = nil,
+         logs: LogsModel? = nil,
          guestScreen: @escaping @Sendable () async
             -> ChatSystemPrompt.Screen? = { nil },
          mirrorEngines: MirrorStateEngineRegistry? = nil,
@@ -46,6 +48,7 @@ struct HostModuleContext {
         self.guestFiles = guestFiles
         self.agentActivity = agentActivity
         self.agentCompanions = agentCompanions
+        self.logs = logs
         self.guestScreen = guestScreen
         self.mirrorEngines = mirrorEngines
         self.selectedModuleID = selectedModuleID
@@ -265,11 +268,11 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == DiagnosticsHostModule.definition.descriptor.id {
             return DiagnosticsHostModule.definition
         }
+        if descriptor.id == LogsHostModule.definition.descriptor.id {
+            return LogsHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
-            case "logs":
-                return AnyView(LogsModuleView(model: state.logs,
-                                              log: state.logs.log))
             case "settings":
                 return AnyView(ConnectionsModuleView(
                     model: state.connections, settings: state.settings,

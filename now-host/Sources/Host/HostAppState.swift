@@ -153,6 +153,7 @@ final class HostAppState: ObservableObject {
             guestFiles: guestFiles,
             agentActivity: agentActivity,
             agentCompanions: agentCompanions,
+            logs: logs,
             guestScreen: { [weak self] in
                 await MainActor.run {
                     self?.guestScreenIfKnown.flatMap {
