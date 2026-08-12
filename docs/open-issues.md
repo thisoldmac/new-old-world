@@ -7,6 +7,37 @@ search:
 
 # Open issues
 
+## TESTED: pre-RC repository and module foundations (2026-08-11, `chore/pre-rc-foundation-audit`)
+
+The foundation slice is locally complete without cutting or publishing an RC.
+New work uses creator-neutral Conventional Git branch and commit names; the
+pre-rewrite documentation state is retained at
+`archive/docs-pre-rewrite-2026-08-11`; every tracked Markdown file declares
+provenance; product feature policy is generated from one schema into Swift and
+C; and the module catalog carries independent tier, domain and feature
+metadata. The current taxonomy is `core`, `experimental` and `debug`; those
+labels describe maturity and do not silently disable a module.
+
+All 16 host modules and all 17 PowerPC Workshop pages now own their metadata
+and construction wiring. The central host and Workshop files contain product
+order only, not module-specific dispatch switches. Listener, logging,
+settings, onboarding and other true application services remain at the host
+composition boundary; module-owned models, views, cleanup and PowerPC ops stay
+with their definitions. New modules therefore extend the ordered catalogs and
+their own files rather than adding cases to `HostRootView`, `HostAppState` or a
+Workshop page switch.
+
+`scripts/test-all` passed at source `e6f7bda0`: documentation and mutation
+gates, release/staged-image discipline, Web Bridge, 176 native tests with 0
+failed and 0 unselected, MirrorKit, seven guest cross-build targets, and the
+host SwiftPM plus Debug/Release Xcode gate. The live-guest stage explicitly
+skipped because `NOW_GUEST_LIVE` was unset, so this result is **tested, not
+metal-verified**. The complete physical-hardware module sweep remains an RC1
+qualification item after the other planned RC1 features land. The provenance
+inventory is mechanically complete but still reports 251 generated pages and
+0 human-reviewed pages; the later editorial provenance pass must promote pages
+individually rather than treating this foundation result as review.
+
 ## UNVERIFIED: NOW Web Direct needs Classilla and MacWeb acceptance (2026-08-10, `codex/web-proxy`)
 
 The Direct implementation, host supervision, PowerPC Workshop page, semantic
