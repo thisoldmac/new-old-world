@@ -8,6 +8,8 @@ product_contract_source: session-grounded
 execution: code
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Projects and Development - Plan
 
 ## Goal Capsule

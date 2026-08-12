@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Asset-pack parsers
 
 These dependency-light Python modules decode the classic Mac resource types

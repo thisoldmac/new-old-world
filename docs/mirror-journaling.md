@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Event Manager journaling — asked, measured, closed
 
 **Date:** 2026-07-31 · **Status:** recorded knowledge, carried from the

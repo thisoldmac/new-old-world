@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror → NOW capability parity ledger
 
 **Date:** 2026-08-01. **Scope:** every capability in `timbottu/mirror` main

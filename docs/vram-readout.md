@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # VRAM readout: measured costs and the capture-stage design they set
 
 Measured 2026-07-19 on the PB1400c (Sonnet G3, OS 9.1, 800×600 16-bit,

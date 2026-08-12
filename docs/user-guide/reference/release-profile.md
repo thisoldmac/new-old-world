@@ -5,11 +5,13 @@ description: The machine-readable release profile for what is included, optional
 doc_type: reference
 audience: user
 lifecycle: current
-authority: [docs/feature-catalog.yaml]
-source_dependencies: [docs/feature-catalog.yaml]
+authority: [product/features.yaml]
+source_dependencies: [product/features.yaml, tools/product-features, now-host/Sources/Host/ProductFeaturePolicy.swift, now-guest-ppc/src/core/product_feature_policy.c]
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
 
 # Alpha features
 
@@ -25,9 +27,8 @@ criteria are deliberately advanced.
 
 <!-- release-feature-table -->
 
-The table is rendered from `docs/feature-catalog.yaml`, which also drives the
-availability notices on feature-specific pages. It is documentation authority
-today, not a claim that runtime feature flags already exist. When runtime flags
-land, their keys and release defaults must bind to this catalog or replace it
-as the single source; a second hand-maintained availability list is not
-acceptable.
+The table is rendered from `product/features.yaml`, which also drives the
+availability notices and generated host and PowerPC runtime definitions.
+Release inclusion and runtime flags are separate decisions: a runtime override
+cannot add a profile-excluded feature, and guest capability negotiation still
+decides whether a connected Macintosh can serve an admitted feature.

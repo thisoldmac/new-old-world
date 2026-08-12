@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Security
 
 ## The threat model, stated plainly

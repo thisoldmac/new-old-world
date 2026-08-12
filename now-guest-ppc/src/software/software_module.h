@@ -8,5 +8,6 @@
    and the pure geometry in software_layout.h. */
 
 const WorkshopModuleOps *software_module_ops(void);
+const WorkshopModuleDefinition *software_module_definition(void);
 
 #endif /* NOW_SOFTWARE_MODULE_H */

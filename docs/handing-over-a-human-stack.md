@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Handing a stack to a person
 
 A **human stack** is a host app and a guest VM that a *person* is going

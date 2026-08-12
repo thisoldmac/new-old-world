@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Fidelity sweep B, 2026-08-07 — the first sweep that went looking for seams
 
 **Status: SURVEY, run alone, no human co-drive.** The first sweep under

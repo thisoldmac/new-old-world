@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Who serves what
 
 Two guests speak this contract and they serve different amounts of it.
@@ -1443,10 +1445,28 @@ rederived: 2026-08-10T22:33:05-0400 e9bf9632 unchanged
 rederived: 2026-08-10T22:47:48-0400 431e7308 unchanged
 rederived: 2026-08-11T00:25:04-0400 bbab04b9 unchanged
 rederived: 2026-08-11T00:33:21-0400 4b24cc1f unchanged
-rederived: 2026-08-11T03:40:38-0400 f568213 unchanged
-rederived: 2026-08-11T03:52:02-0400 43d9691 unchanged
-rederived: 2026-08-11T04:04:47-0400 edc4294 unchanged
-rederived: 2026-08-11T04:18:28-0400 c830686 unchanged
-rederived: 2026-08-11T13:21:46-0400 181ba5a unchanged
-rederived: 2026-08-11T13:23:42-0400 181ba5a unchanged
+rederived: 2026-08-11T19:45:15-0400 065da692 unchanged
+rederived: 2026-08-11T20:08:52-0400 852b41ae unchanged
+rederived: 2026-08-11T20:43:59-0400 5c07bcd6 unchanged
+rederived: 2026-08-11T20:54:11-0400 f9ceab81 unchanged
+rederived: 2026-08-11T21:13:09-0400 098805ff unchanged
+rederived: 2026-08-11T21:20:50-0400 15514cc9 unchanged
+rederived: 2026-08-11T21:26:22-0400 7bfb617b unchanged
+rederived: 2026-08-11T21:32:38-0400 57a081ab unchanged
+rederived: 2026-08-11T21:39:36-0400 5a82bf82 unchanged
+rederived: 2026-08-11T21:49:34-0400 7dc5b09d unchanged
+rederived: 2026-08-11T21:54:54-0400 8c482312 unchanged
+rederived: 2026-08-11T21:59:53-0400 562b4b50 unchanged
+rederived: 2026-08-11T22:06:34-0400 65f52bf3 unchanged
+rederived: 2026-08-11T22:10:47-0400 3df65dde unchanged
+rederived: 2026-08-11T22:15:20-0400 68853632 unchanged
+rederived: 2026-08-11T22:31:03-0400 a16b6a61 unchanged
+rederived: 2026-08-11T22:41:38-0400 e1fc84c4 unchanged
+rederived: 2026-08-11T22:47:33-0400 9776cf7a unchanged
+rederived: 2026-08-11T23:12:01-0400 ddf740ce unchanged
+rederived: 2026-08-11T23:30:14-0400 ad4d680 unchanged
+rederived: 2026-08-11T23:30:37-0400 ad4d680 unchanged
+rederived: 2026-08-11T23:31:21-0400 ad4d680 unchanged
+rederived: 2026-08-11T23:37:05-0400 ad4d680 unchanged
+rederived: 2026-08-11T23:37:10-0400 ad4d680 unchanged
 -->

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW Web Bridge
 
 NOW Web Bridge translates a modern web page into bounded HTML for a browser on

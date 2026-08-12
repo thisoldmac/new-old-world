@@ -9,5 +9,6 @@
    - the events come from every other subsystem, not from here. */
 
 const WorkshopModuleOps *logs_module_ops(void);
+const WorkshopModuleDefinition *logs_module_definition(void);
 
 #endif /* NOW_LOGS_MODULE_H */

@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parent.parent
 def run_gate(test_root: Path, site_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["NOW_DOCS_GATE_ROOT"] = str(test_root)
+    manifest = test_root / ".tracked-markdown"
+    if manifest.exists():
+        env["NOW_DOCS_GATE_TRACKED_MARKDOWN_MANIFEST"] = str(manifest)
     command = [sys.executable, str(ROOT / "tools/docs-gate")]
     if site_dir:
         command.extend(["--site-dir", str(site_dir)])
@@ -26,6 +29,16 @@ def run_gate(test_root: Path, site_dir: Path | None = None) -> subprocess.Comple
         command,
         cwd=test_root,
         env=env,
+        text=True,
+        capture_output=True,
+    )
+
+
+def run_feature_gate(test_root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        (sys.executable, str(ROOT / "tools/product-features"), "check",
+         "--root", str(test_root)),
+        cwd=test_root,
         text=True,
         capture_output=True,
     )
@@ -72,9 +85,22 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--site-dir")
     args = parser.parse_args()
+    provenance_selftest = subprocess.run(
+        (str(ROOT / "tools/docs-provenance"), "selftest"),
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    if provenance_selftest.returncode:
+        raise RuntimeError(
+            "provenance selftest failed:\n"
+            + provenance_selftest.stdout + provenance_selftest.stderr
+        )
+    print("[docs-gate-selftest] provenance apply rollback: refused by name")
     with tempfile.TemporaryDirectory(prefix="now-docs-gate-") as raw:
         test_root = Path(raw)
         shutil.copytree(ROOT / "docs", test_root / "docs")
+        shutil.copytree(ROOT / "product", test_root / "product")
         shutil.copytree(ROOT / "contract", test_root / "contract")
         shutil.copy2(ROOT / "mkdocs.yml", test_root / "mkdocs.yml")
         for name in (
@@ -88,9 +114,74 @@ def main() -> int:
         ):
             (test_root / name).symlink_to(ROOT / name, target_is_directory=(ROOT / name).is_dir())
 
+        tracked = subprocess.run(
+            ("git", "-C", str(ROOT), "ls-files", "--", "*.md"),
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.splitlines()
+        for rel in tracked:
+            target = test_root / rel
+            if target.exists():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / rel, target)
+        (test_root / ".tracked-markdown").write_text("\n".join(tracked) + "\n")
+
         baseline = run_gate(test_root)
         if baseline.returncode:
             raise RuntimeError("baseline gate failed:\n" + baseline.stdout + baseline.stderr)
+
+        original_features = replace(
+            test_root / "product/features.yaml",
+            "    runtime_default: false\n",
+            "    runtime_default: true\n",
+        )
+        try:
+            feature_result = run_feature_gate(test_root)
+            feature_output = feature_result.stdout + feature_result.stderr
+            if (feature_result.returncode == 0
+                    or "generated definitions are stale" not in feature_output):
+                raise RuntimeError(
+                    "generated feature freshness: expected stale refusal; "
+                    f"exit={feature_result.returncode}\n{feature_output}"
+                )
+            print("[docs-gate-selftest] generated feature freshness: refused by name")
+        finally:
+            (test_root / "product/features.yaml").write_text(original_features)
+
+        marker = "<!-- now-doc-provenance: generated reviewed=false -->"
+        expect_mutation(
+            test_root, "missing provenance", test_root / "README.md",
+            marker + "\n\n", "", "missing now-doc-provenance marker",
+        )
+        expect_mutation(
+            test_root, "duplicate provenance", test_root / "README.md",
+            marker, marker + "\n" + marker,
+            "has 2 now-doc-provenance markers; exactly one is required",
+        )
+        expect_mutation(
+            test_root, "malformed provenance", test_root / "README.md",
+            marker, "<!-- now-doc-provenance: generated reviewed=pending -->",
+            "has malformed now-doc-provenance marker",
+        )
+        expect_mutation(
+            test_root, "contradictory provenance", test_root / "README.md",
+            marker, "<!-- now-doc-provenance: generated=false reviewed=false -->",
+            "generated is a presence marker; generated=false is contradictory",
+        )
+        expect_mutation(
+            test_root, "generated projection provenance",
+            test_root / "docs/generated/asyncapi.md", marker,
+            "<!-- now-doc-provenance: reviewed=false -->",
+            "generated projection or derived document must retain generated",
+        )
+        expect_mutation(
+            test_root, "derived document provenance",
+            test_root / "docs/user-guide/reference/requirements.md", marker,
+            "<!-- now-doc-provenance: reviewed=false -->",
+            "generated projection or derived document must retain generated",
+        )
 
         expect_mutation(
             test_root, "navigation coverage", test_root / "mkdocs.yml",
@@ -147,37 +238,83 @@ def main() -> int:
             "  - id: screen\n", "  - id: screen-renamed\n", "do not match host registry",
         )
         expect_mutation(
-            test_root, "host module without guide", test_root / "now-host/Sources/Host/ModuleRegistry.swift",
-            'id: "screen"', 'id: "screen-unmapped"', "do not match host registry",
+            test_root, "missing module tier", test_root / "docs/module-manifest.yaml",
+            "    tier: core\n", "", "missing fields: tier",
+        )
+        expect_mutation(
+            test_root, "invalid module tier", test_root / "docs/module-manifest.yaml",
+            "    tier: core\n", "    tier: unstable\n", "invalid tier 'unstable'",
+        )
+        expect_mutation(
+            test_root, "invalid module domains", test_root / "docs/module-manifest.yaml",
+            "    domains: []\n", "    domains: networking\n",
+            "domains must be a list of strings",
+        )
+        expect_mutation(
+            test_root, "unknown module feature", test_root / "docs/module-manifest.yaml",
+            "    feature_id: null\n", "    feature_id: classic.nope\n",
+            "unknown product feature 'classic.nope'",
+        )
+        expect_mutation(
+            test_root, "host module without guide",
+            test_root / "now-host/Sources/Host/ScreenHostModule.swift",
+            'id: "screen"', 'id: "screen-unmapped"',
+            "do not match host registry",
+        )
+        expect_mutation(
+            test_root, "definition-owned host module without guide",
+            test_root / "now-host/Sources/Host/NetworkingHostModule.swift",
+            'id: "networking"', 'id: "networking-unmapped"',
+            "do not match host registry",
+        )
+        expect_mutation(
+            test_root, "host module tier drift",
+            test_root / "now-host/Sources/Host/NetworkingHostModule.swift",
+            "            tier: .core),", "            tier: .debug),",
+            "does not match host tier 'debug'",
         )
         expect_mutation(
             test_root, "PPC page without mapping", test_root / "now-guest-ppc/src/workshop/workshop_module.h",
-            "    kWorkshopPreferences,", "    kWorkshopUnmapped,\n    kWorkshopPreferences,",
+            "    kWorkshopPreferences = 15,",
+            "    kWorkshopUnmapped = 18,\n    kWorkshopPreferences = 15,",
             "do not match live enum",
         )
         expect_mutation(
-            test_root, "release profile coverage", test_root / "docs/feature-catalog.yaml",
+            test_root, "PPC definition without guide",
+            test_root / "now-guest-ppc/src/network/network_module_definition.c",
+            '        "networking",', '        "networking-unmapped",',
+            "does not match manifest module 'networking'",
+        )
+        expect_mutation(
+            test_root, "PPC module tier drift",
+            test_root / "now-guest-ppc/src/network/network_module_definition.c",
+            "        kWorkshopModuleTierCore,",
+            "        kWorkshopModuleTierDebug,",
+            "does not match PPC page kWorkshopNetworking tier 'debug'",
+        )
+        expect_mutation(
+            test_root, "release profile coverage", test_root / "product/features.yaml",
             "      classic.pre-carbon:\n", "      classic.pre-carbon-renamed:\n",
             "active profile feature IDs differ from catalog",
         )
         expect_mutation(
-            test_root, "extension capability inventory", test_root / "docs/feature-catalog.yaml",
+            test_root, "extension capability inventory", test_root / "product/features.yaml",
             "symbols: [kNowPeekTableCapAnchors]", "symbols: []",
             "extension capability symbols differ from peek_table.h",
         )
         expect_mutation(
-            test_root, "module feature coverage", test_root / "docs/feature-catalog.yaml",
+            test_root, "module feature coverage", test_root / "product/features.yaml",
             "module_id: screen", "module_id: screen-renamed",
             "module feature coverage IDs do not match module manifest",
         )
         expect_mutation(
-            test_root, "product feature page", test_root / "docs/feature-catalog.yaml",
+            test_root, "product feature page", test_root / "product/features.yaml",
             "primary_page: user-guide/how-to/set-up-new-mac.md",
             "primary_page: user-guide/how-to/no-such-setup.md",
             "product feature guided-setup: primary page does not exist",
         )
         expect_mutation(
-            test_root, "extension feature coverage", test_root / "docs/feature-catalog.yaml",
+            test_root, "extension feature coverage", test_root / "product/features.yaml",
             "capability_ids: [structure]", "capability_ids: []",
             "feature coverage capability IDs differ from extension capability inventory",
         )
@@ -338,12 +475,29 @@ def main() -> int:
                 'class="now-release-banner"', 'class="now-release-banner-missing"',
                 "rendered feature page has 0 release banners", rendered,
             )
+            expect_mutation(
+                test_root, "rendered provenance", index,
+                'data-reviewed="false"', 'data-reviewed="true"',
+                "rendered provenance is", rendered,
+            )
             files = rendered / "user-guide/reference/modules/files/index.html"
             expect_mutation(
                 test_root, "redundant default availability banner", files,
                 '<h1 id="files-module">',
                 '<aside class="now-release-banner"></aside><h1 id="files-module">',
                 "need 0", rendered,
+            )
+            mirror = rendered / "user-guide/reference/modules/mirror/index.html"
+            expect_mutation(
+                test_root, "rendered experimental module tier", mirror,
+                'data-tier="experimental"', 'data-tier=""',
+                "rendered module tier labels are ['']", rendered,
+            )
+            logs = rendered / "user-guide/reference/modules/logs/index.html"
+            expect_mutation(
+                test_root, "rendered debug module tier", logs,
+                'data-tier="debug"', 'data-tier=""',
+                "rendered module tier labels are ['']", rendered,
             )
             deep_record = rendered / "files/index.html"
             deep_record_bytes = deep_record.read_bytes()

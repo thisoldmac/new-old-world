@@ -7,6 +7,7 @@
    the capture and streaming settings, and the peer actions. */
 
 const WorkshopModuleOps *screenshots_module_ops(void);
+const WorkshopModuleDefinition *screenshots_module_definition(void);
 
 /* The wire's running commentary on an offered screenshot
    (conn_set_shot_note). Safe before the page exists. */

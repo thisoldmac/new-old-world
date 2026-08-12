@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Scoping: the Mirror as a host module, detachable into a window
 
 **Read-only scoping pass. No implementation.** Tree read at

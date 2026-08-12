@@ -8,6 +8,8 @@ product_contract_source: ce-plan-bootstrap
 execution: code
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Semantic Finder and safe application content
 
 **Status:** Implemented and tested on the host; not yet metal-verified. The

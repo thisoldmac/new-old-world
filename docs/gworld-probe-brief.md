@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The broad-spectrum GWorld probe
 
 **One experiment, one question:** when a classic Mac application draws

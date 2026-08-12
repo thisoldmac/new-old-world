@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # How this project learned to measure things
 
 **Date:** 2026-07-31, extended 2026-08-06 · **Status:** recorded

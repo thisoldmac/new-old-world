@@ -1,8 +1,14 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 ## Change
 
 Domain: `contract | host | guest-ppc | guest-68k | resident | docs | tooling | release | cross-cutting`
 
 What changed, and why does it belong in this domain?
+
+- [ ] Branch name is creator-neutral `<type>/<kebab-slug>`, or this branch
+      predates the policy boundary.
+- [ ] PR title is `type(scope): concise outcome`; scope is optional.
 
 ## Contract and symmetry
 

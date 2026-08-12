@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Naming the guests
 
 **Status: decided and executed.** The rename landed with the `src/`

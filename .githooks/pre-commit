@@ -8,8 +8,8 @@
 #    told about it in a brief.)
 #
 #   1. main-guardrail — no direct commit on `main`. Work happens on a
-#      branch and lands through GitHub's protected pull-request path. There is
-#      no local override: local main is only a mirror of origin/main.
+#      creator-neutral branch and lands through the protected pull-request
+#      path. There is no local override.
 #      (This file was named by AGENTS.md long before it existed here: the
 #      guard lived only in the PARENT TimBotTu checkout, so a `now`
 #      worktree had documentation for enforcement it did not have.)
@@ -39,13 +39,16 @@ if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
     echo "" >&2
     echo "[main-guardrail] refusing to commit directly on '$branch'." >&2
     echo "  Branch first, then push it and merge its protected pull request:" >&2
-    echo "    git checkout -b codex/dev/<domain>/<slug>" >&2
+    echo "    git checkout -b feat/<kebab-slug>" >&2
     echo "  After GitHub merges it, update local main with tools/sync-main." >&2
     echo "" >&2
     exit 1
 fi
 
 root=$(git rev-parse --show-toplevel)
+if [ -x "$root/tools/git-policy" ]; then
+    "$root/tools/git-policy" check-current --repo "$root" || exit 1
+fi
 if [ -x "$root/tools/ext-bake-gate" ]; then
     "$root/tools/ext-bake-gate" check || exit 1
 fi
@@ -58,7 +61,7 @@ fi
 # This includes ordinary commits and conflicted merges completed by `git
 # commit`; the auto-merge path is paired in pre-merge-commit below.
 docs_changed=$(git diff --cached --name-only --diff-filter=ACMR | \
-    grep -E '^(docs/|mkdocs\.yml$|README\.md$|CONTRIBUTING\.md$|AGENTS\.md$|contract/asyncapi\.yaml$|now-host/Sources/Host/ModuleRegistry\.swift$|now-guest-ppc/src/workshop/workshop_module\.h$|now-guest-68k/src/commands/commands68\.c$|scripts/docs-|scripts/test-docs$|tools/docs-)' || true)
+    grep -E '^(docs/|mkdocs\.yml$|README\.md$|CONTRIBUTING\.md$|AGENTS\.md$|contract/asyncapi\.yaml$|now-host/Sources/Host/(ModuleRegistry|HostModuleDefinition|[^/]*HostModule)\.swift$|now-guest-ppc/src/workshop/workshop_(module\.h|registry\.[ch])$|now-guest-ppc/src/[^/]+/[^/]*_module_definition\.c$|now-guest-68k/src/commands/commands68\.c$|scripts/docs-|scripts/test-docs$|tools/docs-)' || true)
 if [ -n "$docs_changed" ]; then
     "$root/tools/docs-commit-gate" || exit 1
 fi

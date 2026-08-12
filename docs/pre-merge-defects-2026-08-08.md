@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Four defects to clear before the merge
 
 **Reported by Michelle, 2026-08-08, metal session.** Filed, not fixed.

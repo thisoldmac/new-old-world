@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The state of the Mirror, 2026-08-06
 
 **What a person sitting in front of the NOW Mirror will actually

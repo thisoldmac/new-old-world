@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Folding Mirror's residents into the NOW Extension, then Mirror into NOW
 
 **Date:** 2026-08-02 · **Status:** superseded historical roadmap ·

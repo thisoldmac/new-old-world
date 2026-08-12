@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 
 /// What a menu-bar capture ended up doing. Phrased to stand alone: the
@@ -75,30 +74,26 @@ struct QuickCaptureReadiness: Equatable {
 /// does — history, depth, and tuning stay a single source of truth, so the
 /// two surfaces can never disagree about what was captured or how.
 @MainActor
-final class QuickCaptureCommand: ObservableObject {
-    @Published private(set) var readiness =
-        QuickCaptureReadiness(isEnabled: false, reason: "No \(MachineNaming.commonNoun) is connected")
+final class QuickCaptureCommand {
 
     /// Where the outcome goes. The app wires both halves of the feedback
     /// pair here; tests and headless runs simply observe.
     var report: ((QuickCaptureOutcome) -> Void)?
 
     private let screenshots: ScreenshotModuleModel
-    private var readinessWatch: AnyCancellable?
+    private let listener: GuestListener
 
-    init(screenshots: ScreenshotModuleModel, files: FilesModuleModel) {
+    init(screenshots: ScreenshotModuleModel, listener: GuestListener) {
         self.screenshots = screenshots
-        readinessWatch = Publishers.CombineLatest4(
-            screenshots.$connection, screenshots.$isCapturing,
-            screenshots.$isStreaming, files.$transfer)
-            .map { connection, capturing, streaming, transfer in
-                QuickCaptureReadiness.evaluate(
-                    connection: connection, isCapturing: capturing,
-                    isStreaming: streaming,
-                    isTransferringFile: transfer != nil)
-            }
-            .removeDuplicates()
-            .sink { [weak self] in self?.readiness = $0 }
+        self.listener = listener
+    }
+
+    var readiness: QuickCaptureReadiness {
+        QuickCaptureReadiness.evaluate(
+            connection: screenshots.connection,
+            isCapturing: screenshots.isCapturing,
+            isStreaming: screenshots.isStreaming,
+            isTransferringFile: listener.fileTransferInFlight != nil)
     }
 
     func run() {

@@ -96,11 +96,6 @@ final class ProcessesModel: ObservableObject, GuestScopedModel {
     @Published private(set) var previewOf: String?
     @Published private(set) var isCapturing = false
 
-    /// Unused by the app now that a capture stays on this page. It remains
-    /// so `HostAppState`'s wiring still compiles; removing both is one
-    /// edit in a file this module does not own.
-    var onScreenshotApp: ((Int, Int) -> Void)?
-
     private let listener: GuestListener
     private let wire: ProcessWire
     /// The page's one push: the table changed, so re-read it.

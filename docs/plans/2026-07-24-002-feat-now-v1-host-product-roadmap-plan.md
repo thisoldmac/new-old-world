@@ -4,6 +4,8 @@ type: feat
 date: 2026-07-24
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW V1 Host Product Roadmap
 
 ## Goal Capsule

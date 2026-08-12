@@ -11,6 +11,8 @@ media_ids: []
 last_verified: 2026-08-11
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Host-owned updates
 
 The modern host is the only update provider. The guest never searches the

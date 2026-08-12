@@ -4,6 +4,8 @@ type: feat
 date: 2026-07-24
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW Host Agent-Integration Companion - Plan
 
 ## Goal Capsule

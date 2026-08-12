@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Staged images: whose image is this, and what is in it?
 
 Read this before you bake anything, and before you quote a measurement

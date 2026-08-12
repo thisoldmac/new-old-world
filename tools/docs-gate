@@ -20,6 +20,10 @@ import xml.etree.ElementTree as ET
 import yaml
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "docs/hooks"))
+from provenance import ProvenanceError, parse as parse_provenance  # noqa: E402
+
+
 ALLOWED_DOC_TYPES = {"tutorial", "how-to", "reference", "explanation"}
 ALLOWED_AUDIENCES = {"user", "developer", "operator", "agent"}
 ALLOWED_LIFECYCLES = {"current", "experimental", "reference", "historical"}
@@ -37,6 +41,7 @@ MODULE_SECTIONS = {
     "Current limitations", "For developers",
 }
 ALLOWED_RELEASE_STATES = {"included", "optional", "excluded"}
+ALLOWED_MODULE_TIERS = {"core", "experimental", "debug"}
 
 
 class DocsLoader(yaml.SafeLoader):
@@ -173,6 +178,8 @@ class SiteHTML(HTMLParser):
         self.tables = 0
         self.mermaid = 0
         self.release_banners = 0
+        self.module_tiers: list[str] = []
+        self.provenance: list[tuple[str, str]] = []
         self.json_ld: list[str] = []
         self._json = False
 
@@ -203,6 +210,13 @@ class SiteHTML(HTMLParser):
             self.mermaid += 1
         elif "now-release-banner" in (values.get("class") or "").split():
             self.release_banners += 1
+        elif "now-module-tier" in (values.get("class") or "").split():
+            self.module_tiers.append(values.get("data-tier") or "")
+        elif "now-doc-provenance" in (values.get("class") or "").split():
+            self.provenance.append((
+                values.get("data-generated") or "",
+                values.get("data-reviewed") or "",
+            ))
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "script":
@@ -214,14 +228,261 @@ class SiteHTML(HTMLParser):
 
 
 def extract_host_ids(root: Path) -> list[str]:
-    text = (root / "now-host/Sources/Host/ModuleRegistry.swift").read_text()
-    return re.findall(r"\bid:\s*\"([^\"]+)\"", text[text.index("static let standard"):])
+    sources = root / "now-host/Sources/Host"
+    registry = (sources / "ModuleRegistry.swift").read_text()
+    block = registry[
+        registry.index("private static let standardDefinitions"):
+        registry.index("static let standard =")
+    ]
+    ids: list[str] = []
+    entries = re.compile(
+        r'\bid:\s*"([^"]+)"|'
+        r'\b([A-Za-z_][A-Za-z0-9_]*)\.definition(?:\.descriptor)?'
+    )
+    definition_pattern = (
+        r"\b(?:enum|struct)\s+{symbol}\s*\{{.*?"
+        r"\bstatic\s+let\s+definition(?:\s*:\s*HostModuleDefinition)?\s*=\s*"
+        r"HostModuleDefinition\s*\(.*?\bid:\s*\"([^\"]+)\""
+    )
+    swift_sources = [path.read_text() for path in sorted(sources.glob("*.swift"))]
+    for entry in entries.finditer(block):
+        if entry.group(1):
+            ids.append(entry.group(1))
+            continue
+        symbol = entry.group(2)
+        pattern = re.compile(
+            definition_pattern.format(symbol=re.escape(symbol)), re.DOTALL
+        )
+        resolved = next(
+            (match.group(1) for source in swift_sources
+             if (match := pattern.search(source))),
+            None,
+        )
+        ids.append(resolved or f"<unresolved:{symbol}>")
+    return ids
+
+
+def _swift_call_bodies(text: str, name: str) -> list[str]:
+    """Return balanced Swift call bodies without treating strings/comments as code."""
+    marker = f"{name}("
+    bodies: list[str] = []
+    cursor = 0
+    while (found := text.find(marker, cursor)) >= 0:
+        start = found + len(marker)
+        depth = 1
+        index = start
+        string = False
+        escaped = False
+        line_comment = False
+        block_comment = False
+        while index < len(text) and depth:
+            char = text[index]
+            next_char = text[index + 1] if index + 1 < len(text) else ""
+            if line_comment:
+                line_comment = char != "\n"
+            elif block_comment:
+                if char == "*" and next_char == "/":
+                    block_comment = False
+                    index += 1
+            elif string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    string = False
+            elif char == '"':
+                string = True
+            elif char == "/" and next_char == "/":
+                line_comment = True
+                index += 1
+            elif char == "/" and next_char == "*":
+                block_comment = True
+                index += 1
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            index += 1
+        if depth:
+            break
+        bodies.append(text[start:index - 1])
+        cursor = index
+    return bodies
+
+
+def extract_host_catalog(root: Path) -> dict[str, dict[str, object]]:
+    catalog: dict[str, dict[str, object]] = {}
+    feature_cases: dict[str, str] = {}
+    generated = root / "now-host/Sources/Host/ProductFeatures.generated.swift"
+    if generated.exists():
+        feature_cases = dict(re.findall(
+            r'\bcase\s+([A-Za-z0-9_]+)\s*=\s*"([^"]+)"',
+            generated.read_text(),
+        ))
+    for path in sorted((root / "now-host/Sources/Host").glob("*.swift")):
+        for body in _swift_call_bodies(path.read_text(), "ModuleDescriptor"):
+            id_match = re.search(r'\bid:\s*"([^"]+)"', body)
+            if not id_match:
+                continue
+            module_id = id_match.group(1)
+            tier_match = re.search(r"\btier:\s*\.([A-Za-z0-9_]+)", body)
+            domains_match = re.search(r"\bdomains:\s*\[([^\]]*)\]", body, re.DOTALL)
+            feature_match = re.search(r"\bfeatureID:\s*\.([A-Za-z0-9_]+)", body)
+            domains = (re.findall(r'"([^"]+)"', domains_match.group(1))
+                       if domains_match else [])
+            feature_id = (feature_cases.get(feature_match.group(1),
+                                             f"<unresolved:{feature_match.group(1)}>")
+                          if feature_match else None)
+            catalog[module_id] = {
+                "tier": tier_match.group(1) if tier_match else "core",
+                "domains": domains,
+                "feature_id": feature_id,
+            }
+    return catalog
 
 
 def extract_ppc_pages(root: Path) -> list[str]:
     text = (root / "now-guest-ppc/src/workshop/workshop_module.h").read_text()
     block = text[text.index("typedef enum {"):text.index("} WorkshopModuleID")]
     return re.findall(r"\b(kWorkshop[A-Za-z0-9]+)\b", block)
+
+
+def _c_initializer_fields(body: str) -> list[str]:
+    """Split one positional C initializer without splitting nested values."""
+    fields: list[str] = []
+    start = 0
+    depths = {"(": 0, "[": 0, "{": 0}
+    closing = {")": "(", "]": "[", "}": "{"}
+    string = False
+    escaped = False
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                string = False
+        elif char == '"':
+            string = True
+        elif char in depths:
+            depths[char] += 1
+        elif char in closing:
+            depths[closing[char]] -= 1
+        elif char == "," and not any(depths.values()):
+            fields.append(body[start:index].strip())
+            start = index + 1
+        index += 1
+    tail = body[start:].strip()
+    if tail:
+        fields.append(tail)
+    return fields
+
+
+def _c_struct_initializers(text: str, type_name: str) -> list[str]:
+    """Return balanced initializer bodies for declarations of type_name."""
+    bodies: list[str] = []
+    cursor = 0
+    marker = re.compile(rf"\b{re.escape(type_name)}\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{{")
+    while (match := marker.search(text, cursor)):
+        start = match.end()
+        depth = 1
+        string = False
+        escaped = False
+        index = start
+        while index < len(text) and depth:
+            char = text[index]
+            if string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    string = False
+            elif char == '"':
+                string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+            index += 1
+        if depth:
+            break
+        bodies.append(text[start:index - 1])
+        cursor = index
+    return bodies
+
+
+def extract_ppc_catalog(root: Path) -> tuple[dict[str, dict[str, object]], list[str]]:
+    source_root = root / "now-guest-ppc/src"
+    paths = [source_root / "workshop/workshop_registry.c"]
+    paths.extend(sorted(source_root.glob("*/*_module_definition.c")))
+    texts = {path: path.read_text() for path in paths if path.exists()}
+    joined = "\n".join(texts.values())
+    domain_arrays = {
+        name: re.findall(r'"([^"]+)"', body)
+        for name, body in re.findall(
+            r"\bconst\s+char\s*\*\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*\[\s*\]\s*=\s*\{(.*?)\}\s*;",
+            joined,
+            re.DOTALL,
+        )
+    }
+    feature_ids = dict(re.findall(
+        r"\{\s*(kNowProductFeature[A-Za-z0-9_]+)\s*,\s*\"([^\"]+)\"",
+        (source_root / "core/product_features.generated.c").read_text(),
+    ))
+    tier_ids = {
+        "kWorkshopModuleTierCore": "core",
+        "kWorkshopModuleTierExperimental": "experimental",
+        "kWorkshopModuleTierDebug": "debug",
+    }
+    catalog: dict[str, dict[str, object]] = {}
+    problems: list[str] = []
+    for path, text in texts.items():
+        for body in _c_struct_initializers(text, "WorkshopModuleDefinition"):
+            fields = _c_initializer_fields(body)
+            if len(fields) != 13:
+                problems.append(
+                    f"{path.relative_to(root)}: WorkshopModuleDefinition has "
+                    f"{len(fields)} fields, expected 13"
+                )
+                continue
+            page_id = fields[0]
+            stable_match = re.fullmatch(r'"([^"]+)"', fields[1])
+            tier = tier_ids.get(fields[7], f"<unresolved:{fields[7]}>")
+            domain_count = fields[9]
+            if fields[8] in {"NULL", "0"}:
+                domains: list[str] = []
+            else:
+                domains = domain_arrays.get(
+                    fields[8], [f"<unresolved:{fields[8]}>"]
+                )
+            if domain_count != str(len(domains)):
+                problems.append(
+                    f"{path.relative_to(root)}: {page_id} domain_count {domain_count} "
+                    f"does not match {len(domains)} declared domains"
+                )
+            if fields[10] == "false":
+                feature_id = None
+            elif fields[10] == "true":
+                feature_id = feature_ids.get(
+                    fields[11], f"<unresolved:{fields[11]}>"
+                )
+            else:
+                feature_id = f"<unresolved-admission:{fields[10]}>"
+            if page_id in catalog:
+                problems.append(f"PPC module definition is duplicated for {page_id}")
+                continue
+            catalog[page_id] = {
+                "id": stable_match.group(1) if stable_match else f"<unresolved:{fields[1]}>",
+                "tier": tier,
+                "domains": domains,
+                "feature_id": feature_id,
+            }
+    return catalog, problems
 
 
 def local_refs(value: object) -> list[str]:
@@ -272,6 +533,17 @@ def check(root: Path, site_dir: Path | None) -> int:
     errors: list[str] = []
     notices: list[str] = []
     docs = root / "docs"
+    provenance_gate = subprocess.run(
+        [sys.executable, str(root / "tools/docs-provenance"), "check", "--root", str(root)],
+        cwd=root,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+    )
+    if provenance_gate.returncode:
+        errors.append((provenance_gate.stderr or provenance_gate.stdout).strip())
+    else:
+        notices.append(provenance_gate.stdout.strip())
     config = load_yaml(root / "mkdocs.yml", docs_loader=True)
     theme_features = config.get("theme", {}).get("features", [])
     if "navigation.instant" not in theme_features:
@@ -502,22 +774,22 @@ def check(root: Path, site_dir: Path | None) -> int:
                 f"(links={sorted(actual_paths)}, declared={sorted(declared_paths)})"
             )
 
-    feature_catalog = load_yaml(docs / "feature-catalog.yaml")
-    if feature_catalog.get("schema_version") != 1:
-        errors.append("docs/feature-catalog.yaml: schema_version must be 1")
+    feature_catalog = load_yaml(root / "product/features.yaml")
+    if feature_catalog.get("schema_version") != 2:
+        errors.append("product/features.yaml: schema_version must be 2")
     feature_defs = feature_catalog.get("features", {})
     if not isinstance(feature_defs, dict) or not feature_defs:
-        errors.append("docs/feature-catalog.yaml: features must be a non-empty mapping")
+        errors.append("product/features.yaml: features must be a non-empty mapping")
         feature_defs = {}
     active_profile_id = feature_catalog.get("active_profile")
     profiles = feature_catalog.get("profiles", {})
     active_profile = profiles.get(active_profile_id, {}) if isinstance(profiles, dict) else {}
     profile_features = active_profile.get("features", {}) if isinstance(active_profile, dict) else {}
     if not active_profile:
-        errors.append(f"docs/feature-catalog.yaml: active profile {active_profile_id!r} does not exist")
+        errors.append(f"product/features.yaml: active profile {active_profile_id!r} does not exist")
     elif set(profile_features) != set(feature_defs):
         errors.append(
-            "docs/feature-catalog.yaml: active profile feature IDs differ from catalog "
+            "product/features.yaml: active profile feature IDs differ from catalog "
             f"(profile={sorted(profile_features)}, catalog={sorted(feature_defs)})"
         )
     for feature_id, feature in feature_defs.items():
@@ -526,10 +798,20 @@ def check(root: Path, site_dir: Path | None) -> int:
             continue
         binding = feature.get("runtime_binding")
         flag_key = feature.get("flag_key")
-        if binding == "planned" and not flag_key:
-            errors.append(f"feature {feature_id}: planned runtime binding needs flag_key")
-        if binding != "planned" and flag_key:
-            errors.append(f"feature {feature_id}: flag_key requires runtime_binding: planned")
+        if binding not in {"intrinsic", "capability-negotiated", "flag"}:
+            errors.append(f"feature {feature_id}: invalid runtime binding {binding!r}")
+        if binding == "flag":
+            if not flag_key:
+                errors.append(f"feature {feature_id}: flag runtime binding needs flag_key")
+            if not isinstance(feature.get("runtime_default"), bool):
+                errors.append(
+                    f"feature {feature_id}: flag runtime binding needs boolean runtime_default"
+                )
+        elif flag_key is not None or "runtime_default" in feature:
+            errors.append(
+                f"feature {feature_id}: only flag runtime bindings declare "
+                "flag_key/runtime_default"
+            )
         entry = profile_features.get(feature_id, {})
         state = entry.get("state") if isinstance(entry, dict) else None
         if state not in ALLOWED_RELEASE_STATES:
@@ -559,11 +841,11 @@ def check(root: Path, site_dir: Path | None) -> int:
     capability_ids = [row.get("id") for row in capabilities if isinstance(row, dict)]
     capability_planes = [row.get("plane") for row in capabilities if isinstance(row, dict)]
     if len(capability_ids) != len(set(capability_ids)):
-        errors.append("docs/feature-catalog.yaml: duplicate extension capability id")
+        errors.append("product/features.yaml: duplicate extension capability id")
     expected_planes = {f"P{number}" for number in range(9)}
     if set(capability_planes) != expected_planes or len(capability_planes) != len(expected_planes):
         errors.append(
-            "docs/feature-catalog.yaml: extension capability planes must be exactly P0-P8 "
+            "product/features.yaml: extension capability planes must be exactly P0-P8 "
             f"(got={capability_planes})"
         )
     declared_symbols = [
@@ -575,12 +857,54 @@ def check(root: Path, site_dir: Path | None) -> int:
     live_symbols = re.findall(r"^\s*(kNowPeekTableCap[A-Za-z]+)\s*=", header, re.MULTILINE)
     if set(declared_symbols) != set(live_symbols) or len(declared_symbols) != len(live_symbols):
         errors.append(
-            "docs/feature-catalog.yaml: extension capability symbols differ from peek_table.h "
+            "product/features.yaml: extension capability symbols differ from peek_table.h "
             f"(catalog={declared_symbols}, live={live_symbols})"
         )
     modules = load_yaml(docs / "module-manifest.yaml")
     module_rows = modules.get("modules", [])
-    manifest_ids = [row["id"] for row in module_rows]
+    if modules.get("version") != 2:
+        errors.append("docs/module-manifest.yaml: version must be 2")
+    if not isinstance(module_rows, list):
+        errors.append("docs/module-manifest.yaml: modules must be a list")
+        module_rows = []
+    required_module_fields = {
+        "id", "title", "tier", "domains", "feature_id", "page",
+        "ppc_pages", "guest_68k",
+    }
+    for index, row in enumerate(module_rows):
+        if not isinstance(row, dict):
+            errors.append(f"docs/module-manifest.yaml: module row {index} must be a mapping")
+            continue
+        missing_fields = sorted(required_module_fields - set(row))
+        if missing_fields:
+            errors.append(
+                f"module {row.get('id', index)}: missing fields: {', '.join(missing_fields)}"
+            )
+        extra_fields = sorted(set(row) - required_module_fields)
+        if extra_fields:
+            errors.append(
+                f"module {row.get('id', index)}: unknown fields: {', '.join(extra_fields)}"
+            )
+        if row.get("tier") not in ALLOWED_MODULE_TIERS:
+            errors.append(
+                f"module {row.get('id', index)}: invalid tier {row.get('tier')!r}"
+            )
+        domains = row.get("domains")
+        if (not isinstance(domains, list)
+                or any(not isinstance(domain, str) for domain in domains)):
+            errors.append(f"module {row.get('id', index)}: domains must be a list of strings")
+        elif (len(domains) != len(set(domains))
+              or any(not re.fullmatch(r"[a-z][a-z0-9.-]*", domain)
+                     for domain in domains)):
+            errors.append(
+                f"module {row.get('id', index)}: domains must be unique lowercase identifiers"
+            )
+        feature_id = row.get("feature_id")
+        if feature_id is not None and feature_id not in feature_defs:
+            errors.append(
+                f"module {row.get('id', index)}: unknown product feature {feature_id!r}"
+            )
+    manifest_ids = [row.get("id") for row in module_rows if isinstance(row, dict)]
     module_coverage = feature_catalog.get("module_feature_coverage", [])
     module_coverage_ids = [
         row.get("module_id") for row in module_coverage if isinstance(row, dict)
@@ -588,7 +912,7 @@ def check(root: Path, site_dir: Path | None) -> int:
     if (set(module_coverage_ids) != set(manifest_ids)
             or len(module_coverage_ids) != len(manifest_ids)):
         errors.append(
-            "docs/feature-catalog.yaml: module feature coverage IDs do not match module manifest "
+            "product/features.yaml: module feature coverage IDs do not match module manifest "
             f"(coverage={module_coverage_ids}, manifest={manifest_ids})"
         )
     required_module_coverage_fields = {
@@ -596,7 +920,7 @@ def check(root: Path, site_dir: Path | None) -> int:
     }
     for row in module_coverage:
         if not isinstance(row, dict):
-            errors.append("docs/feature-catalog.yaml: module feature coverage rows must be mappings")
+            errors.append("product/features.yaml: module feature coverage rows must be mappings")
             continue
         missing_fields = sorted(required_module_coverage_fields - set(row))
         if missing_fields:
@@ -615,13 +939,13 @@ def check(root: Path, site_dir: Path | None) -> int:
         row.get("id") for row in product_coverage if isinstance(row, dict)
     ]
     if not product_coverage or len(product_coverage_ids) != len(set(product_coverage_ids)):
-        errors.append("docs/feature-catalog.yaml: product feature coverage needs unique rows")
+        errors.append("product/features.yaml: product feature coverage needs unique rows")
     required_product_coverage_fields = {
         "id", "title", "without_extension", "extension_required", "status", "primary_page",
     }
     for row in product_coverage:
         if not isinstance(row, dict):
-            errors.append("docs/feature-catalog.yaml: product feature coverage rows must be mappings")
+            errors.append("product/features.yaml: product feature coverage rows must be mappings")
             continue
         missing_fields = sorted(required_product_coverage_fields - set(row))
         if missing_fields:
@@ -643,14 +967,14 @@ def check(root: Path, site_dir: Path | None) -> int:
     extension_coverage = feature_catalog.get("extension_feature_coverage", [])
     coverage_ids = [row.get("id") for row in extension_coverage if isinstance(row, dict)]
     if not extension_coverage or len(coverage_ids) != len(set(coverage_ids)):
-        errors.append("docs/feature-catalog.yaml: extension feature coverage needs unique rows")
+        errors.append("product/features.yaml: extension feature coverage needs unique rows")
     covered_capabilities: list[str] = []
     required_coverage_fields = {
         "id", "title", "without_extension", "extension_required", "status", "capability_ids",
     }
     for row in extension_coverage:
         if not isinstance(row, dict):
-            errors.append("docs/feature-catalog.yaml: extension feature coverage rows must be mappings")
+            errors.append("product/features.yaml: extension feature coverage rows must be mappings")
             continue
         missing_fields = sorted(required_coverage_fields - set(row))
         if missing_fields:
@@ -669,7 +993,7 @@ def check(root: Path, site_dir: Path | None) -> int:
         covered_capabilities.extend(row["capability_ids"])
     if set(covered_capabilities) != set(capability_ids) or len(covered_capabilities) != len(capability_ids):
         errors.append(
-            "docs/feature-catalog.yaml: feature coverage capability IDs differ from extension "
+            "product/features.yaml: feature coverage capability IDs differ from extension "
             f"capability inventory (coverage={covered_capabilities}, inventory={capability_ids})"
         )
     release_page = docs / "user-guide/reference/release-profile.md"
@@ -681,6 +1005,8 @@ def check(root: Path, site_dir: Path | None) -> int:
     hooks = config.get("hooks", [])
     if "docs/hooks/release_features.py" not in hooks:
         errors.append("mkdocs.yml: release feature hook is not configured")
+    if "docs/hooks/module_taxonomy.py" not in hooks:
+        errors.append("mkdocs.yml: module taxonomy hook is not configured")
     orphan_media = sorted(set(by_id) - referenced_media)
     if orphan_media:
         errors.append(f"media manifest entries are unused: {', '.join(orphan_media)}")
@@ -688,10 +1014,46 @@ def check(root: Path, site_dir: Path | None) -> int:
     host_ids = extract_host_ids(root)
     if set(manifest_ids) != set(host_ids) or len(manifest_ids) != len(host_ids):
         errors.append(f"module manifest IDs do not match host registry (manifest={manifest_ids}, host={host_ids})")
+    host_catalog = extract_host_catalog(root)
+    for row in module_rows:
+        if not isinstance(row, dict) or row.get("id") not in host_catalog:
+            continue
+        live = host_catalog[row["id"]]
+        for field in ("tier", "domains", "feature_id"):
+            if row.get(field) != live[field]:
+                errors.append(
+                    f"module {row['id']}: manifest {field} {row.get(field)!r} "
+                    f"does not match host {field} {live[field]!r}"
+                )
     ppc_declared = [page for row in module_rows for page in row.get("ppc_pages", [])]
     ppc_live = extract_ppc_pages(root)
     if set(ppc_declared) != set(ppc_live) or len(ppc_declared) != len(ppc_live):
         errors.append(f"module manifest PPC pages do not match live enum (manifest={ppc_declared}, live={ppc_live})")
+    ppc_catalog, ppc_catalog_problems = extract_ppc_catalog(root)
+    errors.extend(ppc_catalog_problems)
+    if set(ppc_catalog) != set(ppc_live) or len(ppc_catalog) != len(ppc_live):
+        errors.append(
+            "PPC module definitions do not match live enum "
+            f"(definitions={list(ppc_catalog)}, live={ppc_live})"
+        )
+    for row in module_rows:
+        if not isinstance(row, dict):
+            continue
+        for ppc_page in row.get("ppc_pages", []):
+            if ppc_page not in ppc_catalog:
+                continue
+            live = ppc_catalog[ppc_page]
+            if live["id"] != row.get("id"):
+                errors.append(
+                    f"PPC page {ppc_page}: definition id {live['id']!r} "
+                    f"does not match manifest module {row.get('id')!r}"
+                )
+            for field in ("tier", "domains", "feature_id"):
+                if row.get(field) != live[field]:
+                    errors.append(
+                        f"module {row.get('id')}: manifest {field} {row.get(field)!r} "
+                        f"does not match PPC page {ppc_page} {field} {live[field]!r}"
+                    )
     for row in module_rows:
         page = docs / row["page"]
         if not page.exists():
@@ -769,7 +1131,9 @@ def check(root: Path, site_dir: Path | None) -> int:
             site_dir / "user-guide/how-to/install-68k/index.html": {"release_banners": 1},
             site_dir / "user-guide/explanation/core-features/index.html": {"tables_min": 2, "release_banners": 1},
             site_dir / "user-guide/reference/release-profile/index.html": {"table": True},
-            site_dir / "user-guide/reference/modules/files/index.html": {"images": True, "release_banners": 0},
+            site_dir / "user-guide/reference/modules/files/index.html": {"images": True, "release_banners": 0, "module_tiers": []},
+            site_dir / "user-guide/reference/modules/mirror/index.html": {"module_tiers": ["experimental"]},
+            site_dir / "user-guide/reference/modules/logs/index.html": {"module_tiers": ["debug"]},
             site_dir / "developer-guide/architecture/system-context/index.html": {"mermaid": True},
             site_dir / "developer-guide/reference/verification-levels/index.html": {"table": True, "mermaid": True},
             site_dir / "agent-guide/index.html": {},
@@ -809,6 +1173,12 @@ def check(root: Path, site_dir: Path | None) -> int:
                     f"{path}: rendered feature page has {parser.release_banners} release banners; "
                     f"need {expected['release_banners']}"
                 )
+            if ("module_tiers" in expected
+                    and parser.module_tiers != expected["module_tiers"]):
+                errors.append(
+                    f"{path}: rendered module tier labels are {parser.module_tiers}; "
+                    f"need {expected['module_tiers']}"
+                )
             json_types: set[str] = set()
             for raw in parser.json_ld:
                 try:
@@ -822,6 +1192,26 @@ def check(root: Path, site_dir: Path | None) -> int:
                 required_types.add("SoftwareApplication")
             if not required_types.issubset(json_types):
                 errors.append(f"{path}: JSON-LD types are {sorted(json_types)}, need {sorted(required_types)}")
+
+        for source in published:
+            rendered = rendered_markdown_path(site_dir, docs, source)
+            if not rendered.exists():
+                continue
+            try:
+                expected = parse_provenance(source.read_text())
+            except ProvenanceError:
+                continue
+            parser = SiteHTML()
+            parser.feed(rendered.read_text())
+            expected_attrs = [(
+                "true" if expected.generated else "false",
+                "true" if expected.reviewed else "false",
+            )]
+            if parser.provenance != expected_attrs:
+                errors.append(
+                    f"{rendered}: rendered provenance is {parser.provenance}; "
+                    f"need {expected_attrs} from {source.relative_to(root)}"
+                )
 
         for source in curated:
             for raw in LINK_RE.findall(source.read_text()):

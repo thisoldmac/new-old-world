@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror state engine
 
 **Status:** pure reduction, host session ownership, render enrichment, evidence

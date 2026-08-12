@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-04
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The headless Mirror — NOW MCP as the Mirror's second client - Plan
 
 > **This plan owns slices 0–5 and the reasoning behind them. The remaining

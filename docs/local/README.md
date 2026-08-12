@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # docs/local — the scratch half
 
 Everything in this directory **except this file** is gitignored. It never

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The QuickDraw content plane, as Mirror left it
 
 **Date:** 2026-07-31 · **Status:** recorded knowledge, carried from the

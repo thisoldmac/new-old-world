@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # New Old World (NOW)
 
 New Old World connects a native macOS host to a PowerPC Carbon application on

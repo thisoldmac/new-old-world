@@ -2,6 +2,9 @@
 search:
   exclude: true
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # iCloud — the module, both halves
 
 "Making Old World Macs a first-class member of the modern Apple

@@ -2,13 +2,47 @@
 search:
   exclude: true
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Open issues
 
-## DEFERRED: release-branch protection and private-history fleet retirement (2026-08-11, `codex/dev/tooling/protected-main`)
+## TESTED: pre-RC repository and module foundations (2026-08-11, `chore/pre-rc-foundation-audit`)
 
-GitHub `main` now has an active, bypass-free ruleset requiring pull requests,
-resolved conversations, linear history and the four repository CI jobs. The
-committed policy and local mirror guards are carried by this branch. Two
+The foundation slice is locally complete without cutting or publishing an RC.
+New work uses creator-neutral Conventional Git branch and commit names; the
+pre-rewrite documentation state is retained at
+`archive/docs-pre-rewrite-2026-08-11`; every tracked Markdown file declares
+provenance; product feature policy is generated from one schema into Swift and
+C; and the module catalog carries independent tier, domain and feature
+metadata. The current taxonomy is `core`, `experimental` and `debug`; those
+labels describe maturity and do not silently disable a module.
+
+All 16 host modules and all 17 PowerPC Workshop pages now own their metadata
+and construction wiring. The central host and Workshop files contain product
+order only, not module-specific dispatch switches. Listener, logging,
+settings, onboarding and other true application services remain at the host
+composition boundary; module-owned models, views, cleanup and PowerPC ops stay
+with their definitions. New modules therefore extend the ordered catalogs and
+their own files rather than adding cases to `HostRootView`, `HostAppState` or a
+Workshop page switch.
+
+`scripts/test-all` passed at source `e6f7bda0`: documentation and mutation
+gates, release/staged-image discipline, Web Bridge, 176 native tests with 0
+failed and 0 unselected, MirrorKit, seven guest cross-build targets, and the
+host SwiftPM plus Debug/Release Xcode gate. The live-guest stage explicitly
+skipped because `NOW_GUEST_LIVE` was unset, so this result is **tested, not
+metal-verified**. The complete physical-hardware module sweep remains an RC1
+qualification item after the other planned RC1 features land. The provenance
+inventory is mechanically complete but still reports 251 generated pages and
+0 human-reviewed pages; the later editorial provenance pass must promote pages
+individually rather than treating this foundation result as review.
+
+## DEFERRED: release-branch protection and private-history fleet retirement (2026-08-11, `chore/pre-rc-foundation-integration`)
+
+GitHub `main` has an active, bypass-free ruleset requiring pull requests,
+resolved conversations, linear history and the repository CI jobs. The
+committed policy and local mirror guards are part of the integration line. Two
 adjacent tasks are deliberately not folded into that change.
 
 No `release/v*` branch exists yet. Before the first one is cut, apply the same
@@ -17,11 +51,11 @@ strict up-to-date checks or a merge queue. Required signed commits remain
 deferred until local human, agent and GitHub-generated commits all have a
 verified signing route.
 
-The pre-public private-history checkout remains an archive with its unrelated
-root and existing worktree fleet. The 2026-08-11 census found 93 worktree-local
-`core.hooksPath` overrides. They were not rewritten underneath active work.
-Inventory, reconcile and retire that fleet separately; it is not a prerequisite
-for the canonical public clone to enforce the current GitHub policy.
+The pre-public private-history checkout remains an offline archive with its
+unrelated root and existing worktree fleet. The 2026-08-11 census found 93
+worktree-local `core.hooksPath` overrides. They were not rewritten underneath
+active work. Inventory, reconcile and retire that fleet separately; it is not
+a prerequisite for the canonical GitHub clone to enforce the current policy.
 
 ## UNVERIFIED: NOW Web Direct needs Classilla and MacWeb acceptance (2026-08-10, `codex/web-proxy`)
 
@@ -445,7 +479,7 @@ internal links, while the Mermaid initializer subscribes to each navigation
 update. User-guide navigation begins with a Getting started group: connect a
 classic Mac first, then review core features and Extension coverage. The
 coverage page now renders 15 user-facing feature rows from
-`docs/feature-catalog.yaml`, including app-only coverage, whether the Extension
+`product/features.yaml`, including app-only coverage, whether the Extension
 is required, and current maturity or evidence. The technical P0–P8 inventory
 remains in developer documentation. The docs gate maps every human-facing
 Extension row back to the complete resident capability inventory and its
@@ -507,7 +541,7 @@ metadata cannot prove that a paragraph serves the right reader.
 
 ## PLANNED RELEASE CONTROL: documentation has a feature profile; runtime flags do not yet exist (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
-`docs/feature-catalog.yaml` now declares the alpha product boundary:
+`product/features.yaml` now declares the alpha product boundary:
 the PowerPC Carbon guest is included, NOW Extension is optional, and the stale
 NOW-68K/pre-Carbon build is excluded. MkDocs renders those states on owning
 pages and generates the public release table and P0–P8 extension inventory from

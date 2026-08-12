@@ -58,18 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
            who lands on that page cannot press a control that has not been
            connected yet. The delegate owns the server object, so the pane
            reaches it through the app state rather than holding it. */
-        state.startMCPStdio = { [weak self] in
-            self?.startMCPStdio()
-        }
-        state.stopMCPStdio = { [weak self] in
-            self?.stopMCPStdio()
-        }
-        state.startMCPHTTP = { [weak self] in
-            self?.startMCPHTTP()
-        }
-        state.stopMCPHTTP = { [weak self] in
-            self?.stopMCPHTTP()
-        }
+        state.configureMCPTransports(
+            startStdio: { [weak self] in self?.startMCPStdio() },
+            stopStdio: { [weak self] in self?.stopMCPStdio() },
+            startHTTP: { [weak self] in self?.startMCPHTTP() },
+            stopHTTP: { [weak self] in self?.stopMCPHTTP() })
         /* Not the activating variant. A launch the person performed is
            activated by macOS itself, and a launch they did NOT perform — a
            background `open`, a script restarting the app while they work
@@ -81,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        state.shutDownModules()
         state.onboarding.stop()
         mcpStdioBridgeServer?.stop()
         mcpHTTPListener?.stop()
@@ -99,6 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         -> NSApplication.TerminateReply {
         guard !isTerminating else { return .terminateNow }
         isTerminating = true
+        state.shutDownModules()
         state.onboarding.stop()
         state.listener.shutDown { [weak sender] in
             sender?.reply(toApplicationShouldTerminate: true)
@@ -176,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// list of its own, so this is the same `help` request a human types.
     @objc func askGuestForHelp() {
         show(moduleID: "console")
-        state.console.runHelp()
+        state.runConsoleHelp()
     }
 
     @objc func toggleListening() {
@@ -232,7 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             item?.button?.title = $0
         }
         flash = flasher
-        state.quickCaptureFeedback = { [weak flasher] in
+        state.setQuickCaptureFeedback { [weak flasher] in
             flasher?.flash($0.flash)
         }
 
@@ -317,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     @objc func screenshotGuest() {
-        state.quickCapture.run()
+        state.runQuickCapture()
     }
 
     /// Test seam: the delegate's state is otherwise built lazily on launch.
@@ -330,7 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// delegate subscribing to anything.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard item.action == #selector(screenshotGuest) else { return true }
-        return state.quickCapture.readiness.isEnabled
+        return state.quickCaptureReadiness.isEnabled
     }
 
     /// Refresh the header the instant before it is read, so "quiet for 34s"
@@ -339,7 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         state.guestStatus.refresh()
         menu.item(withTag: Self.statusLineTag)?.title =
             statusHeaderLine(status: state.guestStatus.status,
-                             readiness: state.quickCapture.readiness)
+                             readiness: state.quickCaptureReadiness)
         if let toggle = menu.item(withTag: MainMenu.Tag.listenToggle.rawValue) {
             toggle.title = Self.listenToggleTitle(state.listener.state)
         }

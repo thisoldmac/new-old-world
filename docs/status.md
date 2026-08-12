@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Status: what works and what does not
 
 ## 2026-08-10 — NOW Web Direct is tested; classic-browser behavior is unverified
@@ -153,7 +155,7 @@ The public alpha includes the macOS host, PowerPC Carbon guest, and bundled NOW
 Extension. Installing the Extension is optional. The current NOW-68K build is
 stale and excluded from that release profile; its source evidence below remains
 useful engineering history, not a packaging or support claim. The
-machine-readable authority is `docs/feature-catalog.yaml`, rendered in the
+machine-readable authority is `product/features.yaml`, rendered in the
 [alpha feature page](user-guide/reference/release-profile.md).
 
 Runtime feature flags are not implemented yet. The catalog reserves

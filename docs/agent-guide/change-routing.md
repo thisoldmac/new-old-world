@@ -6,10 +6,12 @@ doc_type: how-to
 audience: agent
 lifecycle: current
 authority: [AGENTS.md, contract/asyncapi.yaml]
-source_dependencies: [AGENTS.md, contract/asyncapi.yaml, docs/developer-guide/index.md, docs/module-manifest.yaml, docs/feature-catalog.yaml, scripts/test-all]
+source_dependencies: [AGENTS.md, contract/asyncapi.yaml, docs/developer-guide/index.md, docs/module-manifest.yaml, product/features.yaml, scripts/test-all]
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
 
 # Route a change through its owners
 

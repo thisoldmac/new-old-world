@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+"""Generate the host and PowerPC feature-policy definitions."""
+
+from __future__ import annotations
+
+import argparse
+from copy import deepcopy
+import json
+import os
+from pathlib import Path
+import re
+import sys
+
+try:
+    import yaml
+except ModuleNotFoundError:
+    docs_python = Path(__file__).resolve().parent.parent / ".docs-venv/bin/python"
+    if docs_python.exists() and Path(sys.executable).resolve() != docs_python.resolve():
+        os.execv(str(docs_python), [str(docs_python), *sys.argv])
+    raise
+
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCE = Path("product/features.yaml")
+SWIFT_TARGET = Path("now-host/Sources/Host/ProductFeatures.generated.swift")
+C_HEADER_TARGET = Path("now-guest-ppc/src/core/product_features.generated.h")
+C_SOURCE_TARGET = Path("now-guest-ppc/src/core/product_features.generated.c")
+TARGETS = (SWIFT_TARGET, C_HEADER_TARGET, C_SOURCE_TARGET)
+ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
+STATES = {"included", "optional", "excluded"}
+BINDINGS = {"intrinsic", "capability-negotiated", "flag"}
+ACRONYMS = {"ppc": "PPC", "powerpc": "PowerPC", "mcp": "MCP", "ui": "UI"}
+
+
+def root(value: str | None = None) -> Path:
+    raw = value or os.environ.get("NOW_FEATURE_ROOT")
+    return Path(raw).resolve() if raw else ROOT
+
+
+def load_catalog(repo: Path) -> dict:
+    value = yaml.safe_load((repo / SOURCE).read_text())
+    if not isinstance(value, dict):
+        raise ValueError(f"{SOURCE}: expected a mapping")
+    validate(value)
+    return value
+
+
+def validate(catalog: dict) -> None:
+    if catalog.get("schema_version") != 2:
+        raise ValueError("product/features.yaml: schema_version must be 2")
+    features = catalog.get("features")
+    if not isinstance(features, dict) or not features:
+        raise ValueError("product/features.yaml: features must be a non-empty mapping")
+    if "classic.pre-carbon" not in features:
+        raise ValueError("product/features.yaml: reserved classic.pre-carbon feature is missing")
+
+    flag_keys: list[str] = []
+    for feature_id, feature in features.items():
+        if not ID_RE.fullmatch(str(feature_id)) or not isinstance(feature, dict):
+            raise ValueError(f"feature {feature_id!r}: invalid stable ID or definition")
+        for required in ("title", "description", "runtime_binding", "primary_pages"):
+            if not feature.get(required):
+                raise ValueError(f"feature {feature_id}: missing {required}")
+        binding = feature["runtime_binding"]
+        if binding not in BINDINGS:
+            raise ValueError(f"feature {feature_id}: invalid runtime_binding {binding!r}")
+        flag_key = feature.get("flag_key")
+        if binding == "flag":
+            if not isinstance(flag_key, str) or not ID_RE.fullmatch(flag_key):
+                raise ValueError(f"feature {feature_id}: flag binding needs a stable flag_key")
+            if not isinstance(feature.get("runtime_default"), bool):
+                raise ValueError(f"feature {feature_id}: flag binding needs boolean runtime_default")
+            flag_keys.append(flag_key)
+        elif flag_key is not None or "runtime_default" in feature:
+            raise ValueError(
+                f"feature {feature_id}: only flag bindings declare flag_key/runtime_default"
+            )
+    if len(flag_keys) != len(set(flag_keys)):
+        raise ValueError("product/features.yaml: runtime flag keys must be unique")
+
+    profiles = catalog.get("profiles")
+    active = catalog.get("active_profile")
+    if not isinstance(profiles, dict) or active not in profiles:
+        raise ValueError(f"product/features.yaml: active profile {active!r} does not exist")
+    for profile_id, profile in profiles.items():
+        entries = profile.get("features", {}) if isinstance(profile, dict) else {}
+        if set(entries) != set(features):
+            raise ValueError(
+                f"profile {profile_id}: feature IDs differ from the product catalog"
+            )
+        for feature_id, entry in entries.items():
+            if not isinstance(entry, dict) or entry.get("state") not in STATES:
+                raise ValueError(f"profile {profile_id}/{feature_id}: invalid release state")
+            if not entry.get("note"):
+                raise ValueError(f"profile {profile_id}/{feature_id}: missing release note")
+
+
+def words(value: str) -> list[str]:
+    return re.split(r"[^a-zA-Z0-9]+", value)
+
+
+def swift_case(value: str) -> str:
+    parts = words(value)
+    first = parts[0].lower()
+    rest = [ACRONYMS.get(part.lower(), part.title()) for part in parts[1:]]
+    return first + "".join(rest)
+
+
+def c_case(value: str) -> str:
+    return "".join(ACRONYMS.get(part.lower(), part.title()) for part in words(value))
+
+
+def quote(value: str) -> str:
+    return json.dumps(value, ensure_ascii=True)
+
+
+def swift(catalog: dict) -> str:
+    active_id = catalog["active_profile"]
+    profile = catalog["profiles"][active_id]
+    lines = [
+        "// Generated by tools/product-features from product/features.yaml; do not edit.",
+        "", "import Foundation", "",
+        "enum ProductFeatureID: String, CaseIterable, Sendable {",
+    ]
+    for feature_id in catalog["features"]:
+        lines.append(f"    case {swift_case(feature_id)} = {quote(feature_id)}")
+    lines.extend([
+        "}", "",
+        "enum ProductFeatureReleaseState: String, Sendable {",
+        "    case included", "    case optional", "    case excluded", "}", "",
+        "enum ProductFeatureRuntimeBinding: Equatable, Sendable {",
+        "    case intrinsic",
+        "    case capabilityNegotiated",
+        "    case flag(key: String, defaultEnabled: Bool)",
+        "}", "",
+        "struct ProductFeatureDefinition: Equatable, Sendable {",
+        "    let id: ProductFeatureID", "    let title: String",
+        "    let releaseState: ProductFeatureReleaseState",
+        "    let releaseNote: String",
+        "    let runtimeBinding: ProductFeatureRuntimeBinding", "}", "",
+        "enum GeneratedProductFeatures {",
+        f"    static let activeProfileID = {quote(active_id)}",
+        "    static let definitions: [ProductFeatureDefinition] = [",
+    ])
+    for feature_id, feature in catalog["features"].items():
+        entry = profile["features"][feature_id]
+        binding = feature["runtime_binding"]
+        if binding == "intrinsic":
+            swift_binding = ".intrinsic"
+        elif binding == "capability-negotiated":
+            swift_binding = ".capabilityNegotiated"
+        else:
+            default = "true" if feature["runtime_default"] else "false"
+            swift_binding = (
+                f".flag(key: {quote(feature['flag_key'])}, defaultEnabled: {default})"
+            )
+        lines.extend([
+            "        ProductFeatureDefinition(",
+            f"            id: .{swift_case(feature_id)},",
+            f"            title: {quote(feature['title'])},",
+            f"            releaseState: .{entry['state']},",
+            f"            releaseNote: {quote(entry['note'])},",
+            f"            runtimeBinding: {swift_binding}),",
+        ])
+    lines.extend([
+        "    ]", "",
+        "    static let byID = Dictionary(uniqueKeysWithValues:",
+        "        definitions.map { ($0.id, $0) })", "}", "",
+    ])
+    return "\n".join(lines)
+
+
+def c_header(catalog: dict) -> str:
+    lines = [
+        "/* Generated by tools/product-features from product/features.yaml; do not edit. */",
+        "#ifndef NOW_PRODUCT_FEATURES_GENERATED_H",
+        "#define NOW_PRODUCT_FEATURES_GENERATED_H", "",
+        "typedef enum {",
+    ]
+    for index, feature_id in enumerate(catalog["features"]):
+        lines.append(f"    kNowProductFeature{c_case(feature_id)} = {index},")
+    lines.extend([
+        "    kNowProductFeatureCount", "} NowProductFeatureID;", "",
+        "typedef enum {", "    kNowFeatureReleaseIncluded = 1,",
+        "    kNowFeatureReleaseOptional = 2,", "    kNowFeatureReleaseExcluded = 3",
+        "} NowFeatureReleaseState;", "",
+        "typedef enum {", "    kNowFeatureRuntimeIntrinsic = 1,",
+        "    kNowFeatureRuntimeCapability = 2,", "    kNowFeatureRuntimeFlag = 3",
+        "} NowFeatureRuntimeBinding;", "",
+        "typedef struct {", "    NowProductFeatureID id;", "    const char *stable_id;",
+        "    NowFeatureReleaseState release_state;", "    const char *release_note;",
+        "    NowFeatureRuntimeBinding runtime_binding;", "    const char *flag_key;",
+        "    int runtime_default;", "} NowProductFeatureDefinition;", "",
+        "extern const char kNowProductFeatureActiveProfile[];",
+        "extern const NowProductFeatureDefinition kNowProductFeatures[kNowProductFeatureCount];",
+        "const NowProductFeatureDefinition *now_product_feature_find(NowProductFeatureID id);",
+        "", "#endif /* NOW_PRODUCT_FEATURES_GENERATED_H */", "",
+    ])
+    return "\n".join(lines)
+
+
+def c_source(catalog: dict) -> str:
+    active_id = catalog["active_profile"]
+    profile = catalog["profiles"][active_id]
+    states = {"included": "Included", "optional": "Optional", "excluded": "Excluded"}
+    bindings = {
+        "intrinsic": "Intrinsic", "capability-negotiated": "Capability", "flag": "Flag",
+    }
+    lines = [
+        "/* Generated by tools/product-features from product/features.yaml; do not edit. */",
+        '#include "product_features.generated.h"', "",
+        f"const char kNowProductFeatureActiveProfile[] = {quote(active_id)};", "",
+        "const NowProductFeatureDefinition kNowProductFeatures[kNowProductFeatureCount] = {",
+    ]
+    for feature_id, feature in catalog["features"].items():
+        state = states[profile["features"][feature_id]["state"]]
+        binding = bindings[feature["runtime_binding"]]
+        flag_key = quote(feature["flag_key"]) if feature.get("flag_key") else "0"
+        default = 1 if feature.get("runtime_default") else 0
+        lines.append(
+            f"    {{ kNowProductFeature{c_case(feature_id)}, {quote(feature_id)}, "
+            f"kNowFeatureRelease{state}, {quote(profile['features'][feature_id]['note'])}, "
+            f"kNowFeatureRuntime{binding}, "
+            f"{flag_key}, {default} }},"
+        )
+    lines.extend([
+        "};", "",
+        "const NowProductFeatureDefinition *now_product_feature_find(NowProductFeatureID id)",
+        "{", "    if ((int)id < 0 || id >= kNowProductFeatureCount) {",
+        "        return 0;", "    }", "    return &kNowProductFeatures[(int)id];", "}", "",
+    ])
+    return "\n".join(lines)
+
+
+def outputs(catalog: dict) -> dict[Path, str]:
+    return {
+        SWIFT_TARGET: swift(catalog),
+        C_HEADER_TARGET: c_header(catalog),
+        C_SOURCE_TARGET: c_source(catalog),
+    }
+
+
+def generate(repo: Path, *, check: bool) -> int:
+    expected = outputs(load_catalog(repo))
+    stale = [path for path, text in expected.items()
+             if not (repo / path).exists() or (repo / path).read_text() != text]
+    if check:
+        if stale:
+            print("[product-features] generated definitions are stale:", file=sys.stderr)
+            for path in stale:
+                print(f"  - {path}", file=sys.stderr)
+            print("Run: tools/product-features generate", file=sys.stderr)
+            return 1
+        print(f"[product-features] {len(expected)} generated definitions are current")
+        return 0
+    for path, text in expected.items():
+        target = repo / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+        print(f"[product-features] wrote {path}")
+    return 0
+
+
+def selftest(repo: Path) -> int:
+    catalog = load_catalog(repo)
+    baseline = outputs(catalog)
+    if "classicPowerPC" not in baseline[SWIFT_TARGET]:
+        raise AssertionError("Swift stable ID lost PowerPC acronym spelling")
+    if "ClassicPowerPC" not in baseline[C_HEADER_TARGET]:
+        raise AssertionError("C stable ID lost PowerPC acronym spelling")
+    mutation = deepcopy(catalog)
+    mutation["features"]["classic.pre-carbon"]["runtime_default"] = True
+    if outputs(mutation) == baseline:
+        raise AssertionError("runtime-default mutation did not move generated definitions")
+    duplicate = deepcopy(catalog)
+    duplicate["features"]["classic.powerpc"]["runtime_binding"] = "flag"
+    duplicate["features"]["classic.powerpc"]["flag_key"] = "classic.pre-carbon"
+    duplicate["features"]["classic.powerpc"]["runtime_default"] = True
+    try:
+        validate(duplicate)
+    except ValueError as exc:
+        if "flag keys must be unique" not in str(exc):
+            raise
+    else:
+        raise AssertionError("duplicate flag key was accepted")
+    missing = deepcopy(catalog)
+    del missing["features"]["classic.pre-carbon"]["runtime_default"]
+    try:
+        validate(missing)
+    except ValueError as exc:
+        if "needs boolean runtime_default" not in str(exc):
+            raise
+    else:
+        raise AssertionError("flag without a default was accepted")
+    print("[product-features-selftest] schema and freshness mutations refused")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=("generate", "check", "selftest"))
+    parser.add_argument("--root")
+    args = parser.parse_args()
+    repo = root(args.root)
+    try:
+        if args.command == "generate":
+            return generate(repo, check=False)
+        if args.command == "check":
+            return generate(repo, check=True)
+        return selftest(repo)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        print(f"[product-features] {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

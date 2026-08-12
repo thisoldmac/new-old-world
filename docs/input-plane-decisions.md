@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Three input-plane decisions
 
 Written 2026-07-31, on the branch that folded `key` in. Two of the three

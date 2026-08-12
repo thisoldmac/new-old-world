@@ -11,6 +11,8 @@ media_ids: [overview-host, overview-workshop]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # New Old World documentation
 
 New Old World connects a modern macOS host to a classic Macintosh. The modern

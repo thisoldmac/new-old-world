@@ -12,6 +12,8 @@ media_ids: [mcp-host, mcp-ppc]
 last_verified: 2026-08-10
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # MCP module
 
 ## What it does
@@ -83,7 +85,7 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 069a1bcee531d2b423fef903b6756a6be29be7bb
+sources-sha1: edce0c1572633d120ce392605b8c111b52b3cbdb
 derive mcp-catalog sha256=dadedb438a578e94422eb5eec7337288e94e19899e6592ebaaf6d86c080258dc lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -122,11 +124,25 @@ rederived: 2026-08-10T22:33:06-0400 e9bf9632 sources
 rederived: 2026-08-10T22:47:49-0400 431e7308 sources
 rederived: 2026-08-11T00:25:05-0400 bbab04b9 sources
 rederived: 2026-08-11T00:33:22-0400 4b24cc1f sources
-rederived: 2026-08-11T02:28:08-0400 b35fac0 sources
-rederived: 2026-08-11T03:40:39-0400 f568213 sources
-rederived: 2026-08-11T03:52:03-0400 43d9691 sources
-rederived: 2026-08-11T04:04:48-0400 edc4294 sources
-rederived: 2026-08-11T04:18:29-0400 c830686 sources
-rederived: 2026-08-11T13:21:47-0400 181ba5a sources
-rederived: 2026-08-11T13:23:43-0400 181ba5a sources
+rederived: 2026-08-11T19:45:16-0400 065da692 sources
+rederived: 2026-08-11T20:08:53-0400 852b41ae sources
+rederived: 2026-08-11T20:43:59-0400 5c07bcd6 sources
+rederived: 2026-08-11T20:54:11-0400 f9ceab81 sources
+rederived: 2026-08-11T21:13:10-0400 098805ff sources
+rederived: 2026-08-11T21:20:51-0400 15514cc9 sources
+rederived: 2026-08-11T21:26:23-0400 7bfb617b sources
+rederived: 2026-08-11T21:32:39-0400 57a081ab sources
+rederived: 2026-08-11T21:39:37-0400 5a82bf82 sources
+rederived: 2026-08-11T21:49:35-0400 7dc5b09d sources
+rederived: 2026-08-11T21:54:55-0400 8c482312 sources
+rederived: 2026-08-11T21:59:54-0400 562b4b50 sources
+rederived: 2026-08-11T22:06:35-0400 65f52bf3 sources
+rederived: 2026-08-11T22:10:48-0400 3df65dde sources
+rederived: 2026-08-11T22:15:21-0400 68853632 sources
+rederived: 2026-08-11T22:31:04-0400 a16b6a61 sources
+rederived: 2026-08-11T22:41:40-0400 e1fc84c4 sources
+rederived: 2026-08-11T22:47:34-0400 9776cf7a sources
+rederived: 2026-08-11T23:12:02-0400 ddf740ce sources
+rederived: 2026-08-11T23:31:22-0400 ad4d680 sources
+rederived: 2026-08-11T23:37:12-0400 ad4d680 sources
 -->

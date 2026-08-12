@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The host app icon
 
 The macOS application icon for **New Old World** — the compact Mac on a

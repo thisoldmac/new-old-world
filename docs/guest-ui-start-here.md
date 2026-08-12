@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Start here: building guest UI
 
 For whoever touches guest UI. Everything below cost this project real

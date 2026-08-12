@@ -10,6 +10,9 @@ source_dependencies: [docs/agent-integration.md, now-host/Sources/NOWAgentIntegr
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Product agent integration
 
 This page describes a New Old World product subsystem, not instructions for a

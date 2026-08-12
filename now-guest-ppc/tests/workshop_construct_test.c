@@ -81,6 +81,28 @@ int main(void)
         assert(f.noncontrol);
         assert(f.order_len == 0);
         assert(f.create_calls == 2);
+
+        /* The instance state is part of the same transaction: failure leaves
+           it uncreated, retry commits it, and later selection reuses it. */
+        {
+            Fixture once;
+            NowWorkshopConstructOps once_ops;
+            int created = 0;
+
+            memset(&once, 0, sizeof once);
+            once.controls = 3;
+            once.fail_after = stage;
+            once_ops = ops_for(&once);
+            assert(!now_workshop_ensure_constructed(&created, &once_ops));
+            assert(!created);
+            assert(once.controls == 3);
+            once.fail_after = 99;
+            assert(now_workshop_ensure_constructed(&created, &once_ops));
+            assert(created);
+            assert(once.create_calls == 2);
+            assert(now_workshop_ensure_constructed(&created, &once_ops));
+            assert(once.create_calls == 2);
+        }
     }
     puts("workshop_construct_test ok");
     return 0;

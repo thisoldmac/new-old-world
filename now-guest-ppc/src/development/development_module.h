@@ -4,5 +4,6 @@
 #include "workshop_module.h"
 
 const WorkshopModuleOps *development_module_ops(void);
+const WorkshopModuleDefinition *development_module_definition(void);
 
 #endif

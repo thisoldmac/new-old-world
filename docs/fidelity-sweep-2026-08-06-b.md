@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Fidelity sweep B, 2026-08-06 evening — the A/B the first sweep was owed
 
 **This does not replace [the first

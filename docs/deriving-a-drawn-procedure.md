@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Deriving a drawn procedure
 
 **Date:** 2026-08-07 · **Status:** the method, proven on one case — the

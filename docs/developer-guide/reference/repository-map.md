@@ -10,6 +10,9 @@ source_dependencies: [AGENTS.md, contract/asyncapi.yaml, now-host, now-guest-ppc
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Repository map
 
 | Path | Owns |

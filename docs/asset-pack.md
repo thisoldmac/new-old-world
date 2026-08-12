@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The Platinum asset pack: a dependency, not repository content
 
 **Date:** 2026-08-06 · **Status:** decided and implemented

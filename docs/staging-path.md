@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Installing the NOW Extension, and what the guest then said
 
 Status: **ran on a mac99 emulator, 2026-08-01.** Nothing here has executed

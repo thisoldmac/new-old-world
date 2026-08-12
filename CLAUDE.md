@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 @AGENTS.md
 
 ## Claude Code

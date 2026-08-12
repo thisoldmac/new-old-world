@@ -11,6 +11,8 @@ media_ids: [setup-host-listener, setup-guest-connection, setup-connected]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Configure a connection
 
 ## Goal

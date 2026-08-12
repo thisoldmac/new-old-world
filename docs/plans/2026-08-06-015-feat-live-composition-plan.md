@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-06
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Live composition in the Mirror — Plan
 
 Successor to [014](2026-08-06-014-feat-worlds-hooked-at-birth-plan.md)

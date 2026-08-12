@@ -28,8 +28,10 @@ git -C "$root" config merge.nowreceipts.driver \
 
 echo "core.hooksPath = .githooks"
 echo "  pre-commit:       main-guardrail (no local override)"
+echo "                    creator-neutral branch policy"
 echo "                    ext-bake-gate  (TBT_DEFER_EXT_BAKE=1 + reason defers)"
 echo "                    product-version copies must agree"
+echo "  commit-msg:       Conventional Commit title policy"
 echo "  pre-push:         refuses every direct update to remote main"
 echo "  pre-merge-commit: ext-bake-gate merge-check (aborts an incoherent merge)"
 echo "  reference-transaction: local main may only fast-forward to origin/main"

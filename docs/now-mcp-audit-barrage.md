@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # NOW MCP audit and barrage
 
 > Completed audit run, 2026-08-09. Mapping, the bounded first-contact pass,

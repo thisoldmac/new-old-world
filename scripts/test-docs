@@ -16,6 +16,8 @@ if ! "$python" -c 'import mkdocs, yaml' >/dev/null 2>&1; then
 fi
 
 cd "$root"
+"$python" "$root/tools/product-features" selftest
+"$python" "$root/tools/product-features" check
 "$python" "$root/tools/docs-placeholders" --check
 "$python" "$root/tools/docs-gate"
 "$root/scripts/docs-contract" --check

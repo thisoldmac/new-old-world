@@ -8,5 +8,6 @@
    line between them. */
 
 const WorkshopModuleOps *files_module_ops(void);
+const WorkshopModuleDefinition *files_module_definition(void);
 
 #endif /* NOW_FILES_MODULE_H */

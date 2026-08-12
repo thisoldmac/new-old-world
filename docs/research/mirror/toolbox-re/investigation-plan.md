@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Reverse-engineering the Toolbox and GWorld
 
 **Started 2026-08-06, overnight.** Long-horizon research, emulator and

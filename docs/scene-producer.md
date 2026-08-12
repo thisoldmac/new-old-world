@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The scene producer
 
 **Date:** 2026-07-31 · **Status:** IR v2 coverage/identity built and natively

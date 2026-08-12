@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-05
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Closing the headless Mirror — the remaining scope - Plan
 
 > **The remaining scope moved again on 2026-08-05, to

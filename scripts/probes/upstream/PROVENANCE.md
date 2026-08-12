@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Upstream's recorded results — copied verbatim, never regenerated
 
 These are **measurements taken on a real machine by `timbottu/mirror`**, copied

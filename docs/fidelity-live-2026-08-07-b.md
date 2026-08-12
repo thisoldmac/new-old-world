@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Live-frame flicker, B side — 2026-08-07
 
 The second measurement `tools/fidelity-live.py` has ever produced.

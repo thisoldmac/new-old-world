@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Fidelity sweep A, 2026-08-07 — pricing the defects before plan 018 touches anything
 
 **Status: SURVEY. Nothing here is a fix, and nothing was fixed while it

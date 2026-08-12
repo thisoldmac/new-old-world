@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Lane C — the desktop the guest actually has
 
 **Plan:** [018 slice 5](../../plans/2026-08-06-018-feat-stable-honest-render-plan.md)

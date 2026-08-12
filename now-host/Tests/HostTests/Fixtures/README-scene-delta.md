@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The scene-delta fixtures
 
 `scene-delta-baseline.json`, `scene-delta-next-whole.json` and

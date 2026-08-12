@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The drawn cursor follows what we act on (P8)
 
 Until 2026-08-07 the guest's **sprite** sat wherever it had last really

@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Fidelity sweep, 2026-08-06 — the host render against the guest's own pixels
 
 > **THE A/B WAS TAKEN. See

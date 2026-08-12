@@ -4,6 +4,8 @@ type: feat
 date: 2026-08-07
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The surface as a foundation — Plan
 
 Successor to [018](2026-08-06-018-feat-stable-honest-render-plan.md),

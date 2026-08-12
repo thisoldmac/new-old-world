@@ -38,7 +38,9 @@ plugins:
   - search
 
 hooks:
+  - docs/hooks/provenance.py
   - docs/hooks/release_features.py
+  - docs/hooks/module_taxonomy.py
 
 markdown_extensions:
   - admonition

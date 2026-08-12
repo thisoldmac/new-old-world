@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Mirror crashes NOW on the PowerBook, and the app switcher then kills the Finder
 
 **Reported by Michelle, 2026-08-08, first metal session in weeks.**

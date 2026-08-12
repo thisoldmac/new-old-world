@@ -10,6 +10,9 @@ source_dependencies: [contract/asyncapi.yaml, now-host/Sources/Host/FrameCodec.s
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Wire contract
 
 `contract/asyncapi.yaml` is the normative source for messages, required fields, connection rules, and the command registry. [The generated page](../../generated/asyncapi.md) is a projection for reading; edit the YAML, not the projection.
@@ -91,7 +94,7 @@ state, and publishes only when the generation set is coherent and current.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
-sources-sha1: d5357cb7b4aae834da78b41d97123dfaa7812052
+sources-sha1: 29bbe59f850e3defffbac470213f50ff17529728
 derive contract-summary sha256=486fe4c5366ae4f3d1cd27b7a9381fcf7b275da681aebcf34ef3130de84fb0cd lines=6
     scripts/docs-source-group contract
 rederived: pending
@@ -138,10 +141,25 @@ rederived: 2026-08-10T22:33:05-0400 e9bf9632 sources
 rederived: 2026-08-10T22:47:48-0400 431e7308 unchanged
 rederived: 2026-08-11T00:25:05-0400 bbab04b9 unchanged
 rederived: 2026-08-11T00:33:21-0400 4b24cc1f unchanged
-rederived: 2026-08-11T03:40:38-0400 f568213 unchanged
-rederived: 2026-08-11T03:52:02-0400 43d9691 unchanged
-rederived: 2026-08-11T04:04:48-0400 edc4294 unchanged
-rederived: 2026-08-11T04:18:29-0400 c830686 unchanged
-rederived: 2026-08-11T13:21:46-0400 181ba5a sources
-rederived: 2026-08-11T13:23:42-0400 181ba5a sources
+rederived: 2026-08-11T19:45:15-0400 065da692 sources
+rederived: 2026-08-11T20:08:53-0400 852b41ae sources
+rederived: 2026-08-11T20:43:59-0400 5c07bcd6 sources
+rederived: 2026-08-11T20:54:11-0400 f9ceab81 sources
+rederived: 2026-08-11T21:13:10-0400 098805ff sources
+rederived: 2026-08-11T21:20:50-0400 15514cc9 unchanged
+rederived: 2026-08-11T21:26:22-0400 7bfb617b unchanged
+rederived: 2026-08-11T21:32:38-0400 57a081ab unchanged
+rederived: 2026-08-11T21:39:37-0400 5a82bf82 unchanged
+rederived: 2026-08-11T21:49:34-0400 7dc5b09d unchanged
+rederived: 2026-08-11T21:54:55-0400 8c482312 unchanged
+rederived: 2026-08-11T21:59:53-0400 562b4b50 unchanged
+rederived: 2026-08-11T22:06:34-0400 65f52bf3 unchanged
+rederived: 2026-08-11T22:10:48-0400 3df65dde unchanged
+rederived: 2026-08-11T22:15:20-0400 68853632 unchanged
+rederived: 2026-08-11T22:31:03-0400 a16b6a61 unchanged
+rederived: 2026-08-11T22:41:39-0400 e1fc84c4 unchanged
+rederived: 2026-08-11T22:47:33-0400 9776cf7a unchanged
+rederived: 2026-08-11T23:12:01-0400 ddf740ce sources
+rederived: 2026-08-11T23:31:21-0400 ad4d680 sources
+rederived: 2026-08-11T23:37:11-0400 ad4d680 unchanged
 -->

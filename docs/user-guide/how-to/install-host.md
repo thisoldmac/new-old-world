@@ -11,6 +11,8 @@ media_ids: [setup-host-install]
 last_verified: 2026-08-09
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Install the macOS host
 
 ## Goal

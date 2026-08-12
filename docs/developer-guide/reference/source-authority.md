@@ -10,6 +10,9 @@ source_dependencies: [AGENTS.md, contract/asyncapi.yaml, docs/module-manifest.ya
 media_ids: []
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Source authority
 
 | Claim | Authority | Projection or ledger |

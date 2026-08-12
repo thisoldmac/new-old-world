@@ -13,7 +13,7 @@ EXTENSION_MATRIX = "<!-- extension-feature-matrix -->"
 
 def _load(config):
     root = Path(config.config_file_path).resolve().parent
-    catalog = yaml.safe_load((root / "docs/feature-catalog.yaml").read_text())
+    catalog = yaml.safe_load((root / "product/features.yaml").read_text())
     active_id = catalog["active_profile"]
     profile = dict(catalog["profiles"][active_id])
     profile["id"] = active_id
@@ -41,8 +41,13 @@ def _release_table(catalog) -> str:
     ]
     for feature in catalog["active"]["features"].values():
         binding = feature["runtime_binding"]
-        if feature.get("flag_key"):
-            binding = f"Planned `{feature['flag_key']}` flag; not implemented"
+        if binding == "flag":
+            default = "enabled" if feature["runtime_default"] else "disabled"
+            binding = f"`{feature['flag_key']}` flag; default {default}"
+        elif binding == "capability-negotiated":
+            binding = "Connected-guest capability negotiation"
+        else:
+            binding = "Built in"
         rows.append(
             f"| {feature['title']} | **{feature['state'].title()}** | "
             f"{binding} | {feature['note']} |"

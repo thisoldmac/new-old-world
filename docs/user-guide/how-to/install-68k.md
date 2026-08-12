@@ -6,11 +6,13 @@ doc_type: how-to
 audience: user
 lifecycle: reference
 authority: [README.md, now-guest-68k/CMakeLists.txt]
-source_dependencies: [now-guest-68k/CMakeLists.txt, now-guest-68k/src/ui/window.c, now-guest-68k/src/connection/n68_devsettings.h, docs/feature-catalog.yaml]
+source_dependencies: [now-guest-68k/CMakeLists.txt, now-guest-68k/src/ui/window.c, now-guest-68k/src/connection/n68_devsettings.h, product/features.yaml]
 feature_ids: [classic.pre-carbon]
 media_ids: [setup-68k-install]
 last_verified: 2026-08-09
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
 
 # Install NOW-68K
 

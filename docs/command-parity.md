@@ -2,6 +2,9 @@
 search:
   exclude: true
 ---
+
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Two faces, one implementation
 
 Every guest has two faces. The **console** is what a person types into
