@@ -257,11 +257,13 @@ final class MultiGuestFocusTests: XCTestCase {
         }
         let census = try XCTUnwrap(state.moduleRuntime(
             for: "census", as: CensusHostModuleRuntime.self))
+        let software = try XCTUnwrap(state.moduleRuntime(
+            for: "software", as: SoftwareHostModuleRuntime.self))
         for label in [state.screenshots.connection.peerLabel,
                       state.files.connection.peerLabel,
                       census.model.connection.peerLabel,
                       state.processes.connection.peerLabel,
-                      state.software.connection.peerLabel] {
+                      software.model.connection.peerLabel] {
             XCTAssertEqual(label, "PowerBook 180c",
                            "a module left behind shows the wrong Mac's state")
         }
@@ -418,29 +420,31 @@ final class MultiGuestFocusTests: XCTestCase {
             jem.guest.connection.cancel()
             ess.guest.connection.cancel()
         }
+        let software = try XCTUnwrap(state.moduleRuntime(
+            for: "software", as: SoftwareHostModuleRuntime.self))
 
-        state.software.refresh()
+        software.model.refresh()
         try await waitUntil("the 1400c's inventory") {
-            state.software.rows.map(\.name) == ["SimpleText"]
+            software.model.rows.map(\.name) == ["SimpleText"]
         }
 
         XCTAssertTrue(state.selectGuest(try liveKey(state, "PowerBook 180c")))
         try await waitUntil("the switch reaches Software") {
-            state.software.connection.peerLabel == "PowerBook 180c"
+            software.model.connection.peerLabel == "PowerBook 180c"
         }
-        XCTAssertTrue(state.software.rows.isEmpty,
+        XCTAssertTrue(software.model.rows.isEmpty,
                       "the 1400c's applications are not the 180c's")
 
-        state.software.refresh()
+        software.model.refresh()
         try await waitUntil("the 180c's inventory") {
-            state.software.rows.map(\.name) == ["TeachText"]
+            software.model.rows.map(\.name) == ["TeachText"]
         }
 
         XCTAssertTrue(state.selectGuest(try liveKey(state, "PowerBook 1400c")))
         try await waitUntil("the switch back") {
-            state.software.connection.peerLabel == "PowerBook 1400c"
+            software.model.connection.peerLabel == "PowerBook 1400c"
         }
-        XCTAssertEqual(state.software.rows.map(\.name), ["SimpleText"],
+        XCTAssertEqual(software.model.rows.map(\.name), ["SimpleText"],
                        "coming back finds this machine's own inventory")
         XCTAssertEqual(jem.asked(), 1,
                        "a ~4s disk sweep is not repeated for a glance at "

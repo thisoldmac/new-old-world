@@ -290,7 +290,6 @@ final class HostAppState: ObservableObject {
     private(set) lazy var web = WebBridgeModel(defaults: defaults)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var cloudModule = CloudModuleModel(listener: listener)
-    private(set) lazy var software = SoftwareModel(listener: listener)
     private(set) lazy var processes: ProcessesModel = {
         let model = ProcessesModel(listener: listener)
         // "Screenshot App" shows the Screen page and asks for a
@@ -315,7 +314,7 @@ final class HostAppState: ObservableObject {
     /// switch — the two used to be separate assignments, and a module added
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
-        [screenshots, files, diagnostics, processes, software, mirror]
+        [screenshots, files, diagnostics, processes, mirror]
     }
 
     private lazy var moduleRuntimes = HostModuleRuntimeStore(

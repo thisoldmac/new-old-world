@@ -50,16 +50,6 @@ static const WorkshopModuleDefinition k_processes_definition = {
     processes_module_ops
 };
 
-static const WorkshopModuleDefinition k_software_definition = {
-    kWorkshopSoftware, "software", "Software",
-    "What is installed on this Mac, and starting it. Applications sweep "
-    "the disk; the rest read the System Folder.",
-    "Software has not moved in yet.",
-    "What is installed", 136, kWorkshopModuleTierCore,
-    NULL, 0, false, kNowProductFeatureClassicPowerPC,
-    software_module_ops
-};
-
 static const WorkshopModuleDefinition k_mcp_definition = {
     kWorkshopMCP, "mcp", "MCP",
     "Whether an agent may drive this Mac, and how far. The other Mac "
@@ -165,7 +155,7 @@ const WorkshopModuleDefinition *workshop_module_definition(
     case kWorkshopConsole: return console_module_definition();
     case kWorkshopProcesses: return &k_processes_definition;
     case kWorkshopHardware: return census_module_definition();
-    case kWorkshopSoftware: return &k_software_definition;
+    case kWorkshopSoftware: return software_module_definition();
     case kWorkshopMCP: return &k_mcp_definition;
     case kWorkshopDiagnostics: return &k_diagnostics_definition;
     case kWorkshopNetworking: return network_module_definition();

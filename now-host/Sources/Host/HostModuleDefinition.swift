@@ -184,6 +184,9 @@ enum LegacyHostModuleDefinitions {
         if descriptor.id == CensusHostModule.definition.descriptor.id {
             return CensusHostModule.definition
         }
+        if descriptor.id == SoftwareHostModule.definition.descriptor.id {
+            return SoftwareHostModule.definition
+        }
         return HostModuleDefinition(descriptor: descriptor, makeView: { state, _ in
             switch descriptor.id {
             case "screen":
@@ -211,8 +214,6 @@ enum LegacyHostModuleDefinitions {
                 return AnyView(DevelopmentModuleView(model: state.development))
             case "diagnostics":
                 return AnyView(DiagnosticsModuleView(model: state.diagnostics))
-            case "software":
-                return AnyView(SoftwareModuleView(model: state.software))
             case "mcp":
                 return AnyView(MCPModuleView(
                     model: state.agentActivity,

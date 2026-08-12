@@ -205,13 +205,7 @@ struct ModuleRegistry {
            Different questions, and putting them together would suggest one
            answer. */
         NetworkingHostModule.definition.descriptor,
-        ModuleDescriptor(
-            id: "software",
-            title: "Software",
-            symbol: "shippingbox",
-            summary: "What is installed on "
-                + "\(MachineNaming.simpleReference), and launching it"
-        ),
+        SoftwareHostModule.definition.descriptor,
         /* In the footer rather than the list, and above Logs, because the
            list is what you can do to the machine being driven and the
            footer is the state of this side. This page is about this host: the server an
