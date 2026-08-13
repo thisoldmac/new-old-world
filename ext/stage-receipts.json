@@ -725,6 +725,17 @@
         "ext/src/now_ext_gne.S"
       ],
       "reason": "Private V10 diagnostic bake and matched handoff bundle follow this implementation checkpoint; no shared oracle landing is requested."
+    },
+    {
+      "at": "2026-08-13T18:19:43-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "00c8a76b445b7360c39a629f0b194a151651924a",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "checkpoint before host/guest gates; bake follows with the test bundle build"
     }
   ]
 }

@@ -12,6 +12,7 @@ PPC = (ROOT / "now-guest-ppc/src/input/continuity_service.c").read_text()
 PPC_CURSOR = (ROOT / "now-guest-ppc/src/input/continuity_cursor.c").read_text()
 HOST = (ROOT / "now-host/Sources/Host/MirrorContinuityController.swift").read_text()
 CONTRACT = (ROOT / "contract/continuity_udp.h").read_text()
+WIRE = (ROOT / "now-guest-ppc/src/core/wire.c").read_text()
 EXT_CMAKE = (ROOT / "ext/CMakeLists.txt").read_text()
 TRACKING_ASM = (ROOT / "ext/src/now_ext_cursor_tracking.S").read_text()
 
@@ -155,6 +156,53 @@ check("flags.insert(.primaryDown)" in HOST
       "the host no longer sends primary state plus its generation")
 check("if pressAcknowledged { sendPrimaryRelease() }" in host_buttons,
       "the host can send release before the press acknowledgement")
+
+# Wide DoubleTime: the guest cannot recognize a double click when cooperative
+# scheduling stretches the manager-down interval past GetDblTime (measured
+# 40-45 ticks against a 32-tick DoubleTime, 2026-08-13 174816 run). While an
+# epoch runs with the host option set, the resident widens the low-memory
+# window and restores the saved value on EVERY exit, forced ones included -
+# a stale-wide DoubleTime is a behavior change that outlives its epoch.
+start_epoch = body(RESIDENT, "static void start_epoch_locked(",
+                   "static void apply_button_edge(")
+finish = body(RESIDENT, "static void finish_locked(",
+              "static void start_epoch_locked(")
+check("kNowPeekContinuityTrackingWideDoubleTime" in start_epoch
+      and "LMGetDoubleTime()" in start_epoch
+      and "LMSetDoubleTime" in start_epoch
+      and start_epoch.index("LMGetDoubleTime()")
+          < start_epoch.index("LMSetDoubleTime(")
+      and start_epoch.index("kNowPeekContinuityTrackingWideDoubleTime")
+          < start_epoch.index("LMSetDoubleTime("),
+      "arming no longer saves-then-widens DoubleTime under the host option")
+check("restore_double_time();" in finish,
+      "a normal exit no longer restores the saved DoubleTime")
+check("restore_double_time();" in release_transition,
+      "a forced release no longer restores the saved DoubleTime")
+check('"wideDoubleTime"' in WIRE
+      and "kNowPeekContinuityTrackingWideDoubleTime" in WIRE,
+      "the wire arm no longer maps wideDoubleTime onto its option bit")
+
+# A slow button-down acknowledgement is a starved cooperative guest, not a
+# dead one: the 1-second epoch teardown turned every starved double-click
+# into a full ownership bounce (three times in the 174816 run). The timeout
+# now abandons the CYCLE - forcing the wire button up inside the epoch so no
+# logical hold leaks - and never tears down or reconnects the epoch itself.
+timeout_body = body(HOST, "private func scheduleButtonAckTimeout",
+                    "private func rearmAfterConfigurationChange")
+abandon = body(HOST, "private func abandonPrimaryCycle",
+               "private func scheduleButtonAckTimeout")
+check("3_000_000_000" in timeout_body,
+      "the down acknowledgement bound no longer covers measured starvation")
+check("abandonPrimaryCycle(" in timeout_body
+      and timeout_body.index("abandonPrimaryCycle(")
+          < timeout_body.index("relinquish("),
+      "a slow down acknowledgement again ends the whole epoch")
+check("advanceButton(to: false)" in abandon
+      and "sendState(inside: true" in abandon,
+      "an abandoned cycle no longer forces the wire button up in-epoch")
+check("relinquish(" not in abandon and "scheduleReconnect(" not in abandon,
+      "abandoning a cycle again tears down or reconnects the epoch")
 
 if failures:
     for failure in failures:

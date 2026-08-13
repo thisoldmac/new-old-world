@@ -1007,7 +1007,17 @@ enum {
        held in this state, so setup gets a separate bounded grace instead of
        spending the live-input release lease before its first packet. */
     kNowPeekContinuityArmGraceTicks = 300,
-    kNowPeekContinuityTickMs = 16
+    kNowPeekContinuityTickMs = 16,
+    /* The recognition window the resident installs while an epoch runs with
+       kNowPeekContinuityTrackingWideDoubleTime set. Cooperative scheduling
+       stretches a 165 ms host double-click to 40-45 guest ticks between
+       manager downs (2026-08-13 metal run); the target compares that gap
+       against low-memory DoubleTime, so the window - not the click - is the
+       half Continuity can honestly control. One second: wide enough for the
+       measured starvation tail, narrow enough that click-pause-click still
+       reads as two clicks. The human's own value is saved and restored on
+       every epoch exit, forced ones included. */
+    kNowPeekContinuityWideDoubleTimeTicks = 60
 };
 
 enum {
@@ -1016,12 +1026,14 @@ enum {
     kNowPeekContinuityTrackingHideGuestCursor = 1u << 2,
     kNowPeekContinuityTrackingVirtualADB = 1u << 3,
     kNowPeekContinuityTrackingSettleSyntheticDevice = 1u << 4,
+    kNowPeekContinuityTrackingWideDoubleTime = 1u << 5,
     kNowPeekContinuityTrackingKnownMask =
         kNowPeekContinuityTrackingPinHeldPoint
             | kNowPeekContinuityTrackingVirtualGetMouse
             | kNowPeekContinuityTrackingHideGuestCursor
             | kNowPeekContinuityTrackingVirtualADB
             | kNowPeekContinuityTrackingSettleSyntheticDevice
+            | kNowPeekContinuityTrackingWideDoubleTime
 };
 
 enum {

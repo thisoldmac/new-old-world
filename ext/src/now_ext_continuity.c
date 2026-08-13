@@ -46,6 +46,11 @@ static ContinuityButtonTask gButtonTask;
 static Boolean gButtonTaskInstalled;
 static volatile Boolean gButtonTaskRunning;
 static volatile NowPeekU32 gReleaseSettleStarted;
+/* The human's own DoubleTime, held only while an epoch runs with the wide
+   window option. Valid-flag first: an exit path may run more than once and
+   a second restore must be a no-op, not a restore of our own wide value. */
+static NowPeekU32 gSavedDoubleTime;
+static volatile Boolean gSavedDoubleTimeValid;
 
 static NowPeekU32 native_input_sequence(const NowPeekContinuityCell *cell)
 {
@@ -168,6 +173,18 @@ static void release_button_lowmem(void)
     now_ext_cursor_remember_continuity_button(0u);
 }
 
+/* DoubleTime is borrowed, never owned: every epoch exit - normal, forced,
+   or plane rollback - puts the human's saved value back. This is one
+   low-memory word write, so any exit context including the Time Manager
+   task may call it, and calling it twice is harmless. */
+static void restore_double_time(void)
+{
+    if (!gSavedDoubleTimeValid)
+        return;
+    gSavedDoubleTimeValid = false;
+    LMSetDoubleTime((UInt32)gSavedDoubleTime);
+}
+
 static void request_button(NowPeekContinuityCell *cell,
                            NowPeekU32 generation, int down)
 {
@@ -257,6 +274,9 @@ static void release_button(NowPeekContinuityCell *cell,
     if (reason != (NowPeekU32)kNowPeekContinuityExitNone) {
         cell->button_forced_releases++;
         cell->button_release_reason = reason;
+        /* Every forced reason ends the epoch, and a timer-forced end may
+           never reach finish_locked if the application stays starved. */
+        restore_double_time();
     }
     /* Do not acknowledge this generation until CursorDeviceButtonUp returns.
        The low-memory release is already safe, but advancing the ACK here lets
@@ -357,6 +377,7 @@ static void finish_locked(NowPeekContinuityCell *cell, NowPeekU32 reason,
                           NowPeekU32 ticks)
 {
     force_reset(cell, reason);
+    restore_double_time();
     now_ext_cursor_cancel_task_apply();
     now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(0);
@@ -397,7 +418,17 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
     cell->event_timing_dropped = 0;
     cell->pending_mouseup = 0;
     cell->button_release_reason = 0;
-    cell->double_time_ticks = (NowPeekU32)LMGetDoubleTime();
+    /* Report the human's own window even if a prior epoch's wide value is
+       somehow still installed; the saved copy is the honest reading. */
+    cell->double_time_ticks = gSavedDoubleTimeValid
+        ? gSavedDoubleTime : (NowPeekU32)LMGetDoubleTime();
+    if ((cell->tracking_options
+            & (NowPeekU32)kNowPeekContinuityTrackingWideDoubleTime) != 0
+            && !gSavedDoubleTimeValid) {
+        gSavedDoubleTime = cell->double_time_ticks;
+        gSavedDoubleTimeValid = true;
+        LMSetDoubleTime((UInt32)kNowPeekContinuityWideDoubleTimeTicks);
+    }
     gDeferredPressGeneration = 0;
     now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(cell->tracking_options);
@@ -828,6 +859,7 @@ void now_ext_continuity_rollback(NowPeekTable *table)
     now_ext_adb_observer_rollback(table);
     if (table != NULL && table->continuity.button_down)
         release_button_lowmem();
+    restore_double_time();
     gButtonTaskRunning = false;
     if (gButtonTaskInstalled) {
         RmvTime((QElemPtr)&gButtonTask.task);

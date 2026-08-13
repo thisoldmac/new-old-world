@@ -2221,6 +2221,18 @@ components:
             tail-chaining. The walk is bounded, epoch-bound and guarded
             against reentry. No CursorDevice pointer crosses the resident
             contract and the experiment is inactive unless explicitly set.
+        wideDoubleTime:
+          type: boolean
+          default: false
+          description: >
+            Host-selected. While this epoch runs, the resident saves the
+            guest's low-memory DoubleTime and installs the wider recognition
+            window stated once in peek_table.h, restoring the saved value on
+            every epoch exit including forced releases. Cooperative
+            scheduling stretches a sub-200 ms host double-click to 40-45
+            guest ticks between manager downs, which a stock 32-tick
+            DoubleTime can never recognize; the recognition window is the
+            only half of that comparison Continuity can honestly control.
         hideGuestCursorWhileDragging:
           type: boolean
           default: false

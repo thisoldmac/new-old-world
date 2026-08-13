@@ -187,6 +187,7 @@ struct ContinuityArm: Codable, Equatable, Sendable {
     var pinHeldPoint: Bool?
     var virtualGetMouse: Bool?
     var settleSyntheticDevice: Bool? = nil
+    var wideDoubleTime: Bool? = nil
     var virtualADB: Bool? = nil
     var hideGuestCursorWhileDragging: Bool? = nil
 }

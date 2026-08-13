@@ -112,7 +112,7 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
-    @Published var settleSyntheticDevice = false {
+    @Published var settleSyntheticDevice = true {
         didSet {
             guard settleSyntheticDevice != oldValue else { return }
             if !loadingSettings,
@@ -123,6 +123,24 @@ final class MirrorContinuityController: ObservableObject,
             if phase != .idle {
                 rearmAfterConfigurationChange(
                     reason: "synthetic-device settlement changed")
+            }
+        }
+    }
+    /* Default on: the guest cannot recognize a double click when cooperative
+       scheduling stretches the manager-down interval past its 32-tick
+       DoubleTime (measured 40-45 ticks, 2026-08-13). The toggle remains for
+       A/B against a stock window. */
+    @Published var wideDoubleTime = true {
+        didSet {
+            guard wideDoubleTime != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(wideDoubleTime,
+                             forKey: wideDoubleTimeKey(for: machine))
+            }
+            if phase != .idle {
+                rearmAfterConfigurationChange(
+                    reason: "double-click window changed")
             }
         }
     }
@@ -491,6 +509,7 @@ final class MirrorContinuityController: ObservableObject,
             pinHeldPoint: pinHeldPoint,
             virtualGetMouse: virtualGetMouse,
             settleSyntheticDevice: settleSyntheticDevice,
+            wideDoubleTime: wideDoubleTime,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)
         guard armID != nil else {
             status = "unavailable: no Mac is connected"
@@ -984,28 +1003,65 @@ final class MirrorContinuityController: ObservableObject,
         wireButtonDown = down
     }
 
+    /* A slow down acknowledgement is a starved cooperative guest, not a
+       dead one: measured second-click downs ran 520-630 ms source-to-ack
+       while the target held task time, and the old 1-second epoch teardown
+       turned every such double-click into a full ownership bounce
+       (2026-08-13 174816 run, three times in three minutes). Abandoning
+       forces the wire button up inside the epoch - the guest applies the
+       ordered down/up pair whenever it wakes, so no logical hold can leak -
+       and unwinds only this cycle's state. The epoch lives or dies by its
+       lease and liveness, never by one late click. */
+    private func abandonPrimaryCycle(reason: String) {
+        buttonAckTimeout?.cancel()
+        buttonAckTimeout = nil
+        if wireButtonDown {
+            advanceButton(to: false)
+            sendState(inside: true, keepalive: false)
+        }
+        buttonTransitionSentUptime = nil
+        buttonTransitionSourceUptime = nil
+        buttonCycleActive = false
+        releasePending = false
+        deferredButtonPoint = nil
+        primaryDownInMenuBar = false
+        primaryCycleDragged = false
+        menuLatched = false
+        menuReleaseArmed = false
+        isMenuTracking = false
+        audit(.warn, "primary cycle abandoned: \(reason), "
+            + "generation=\(buttonGeneration), epoch=\(epoch) stays owned")
+        startBufferedPrimaryCycleIfNeeded()
+    }
+
     private func scheduleButtonAckTimeout(
         generation: UInt32, down: Bool
     ) {
         buttonAckTimeout?.cancel()
         buttonAckTimeout = Task { @MainActor [weak self] in
-            /* Down must settle quickly before a hold is considered live. Up
-               is already safe in low memory and can wait for a starved NOW
-               task to regain cooperative time after the target tracking loop
-               unwinds. */
-            let timeout: UInt64 = down ? 1_000_000_000 : 5_000_000_000
+            /* Three seconds covers the measured starvation tail of a target
+               holding task time after a click. Up is already safe in low
+               memory and can wait longer for a starved NOW task to regain
+               cooperative time after the target tracking loop unwinds. */
+            let timeout: UInt64 = down ? 3_000_000_000 : 5_000_000_000
             try? await Task.sleep(nanoseconds: timeout)
             guard let self, !Task.isCancelled,
                   self.phase == .active, self.buttonCycleActive,
                   self.wireButtonDown == down,
                   self.buttonGeneration == generation,
                   !down || !self.pressAcknowledged else { return }
-            let transition = down ? "down" : "up"
-            self.audit(.error, "primary \(transition) was not acknowledged; "
+            if down {
+                self.audit(.error, "primary down was not acknowledged; "
+                    + "abandoning cycle generation=\(generation)")
+                self.abandonPrimaryCycle(
+                    reason: "down acknowledgement timeout")
+                return
+            }
+            self.audit(.error, "primary up was not acknowledged; "
                 + "ending epoch=\(self.epoch), generation=\(generation)")
-            self.relinquish(reason: "button \(transition) acknowledgement timed out",
+            self.relinquish(reason: "button up acknowledgement timed out",
                             keepEnabled: true)
-            self.scheduleReconnect(reason: "button \(transition) timeout")
+            self.scheduleReconnect(reason: "button up timeout")
         }
     }
 
@@ -1213,8 +1269,14 @@ final class MirrorContinuityController: ObservableObject,
         fastPump = defaults.bool(forKey: fastPumpKey(for: machine))
         pinHeldPoint = defaults.bool(forKey: pinHeldPointKey(for: machine))
         virtualGetMouse = defaults.bool(forKey: virtualGetMouseKey(for: machine))
-        settleSyntheticDevice = defaults.bool(
-            forKey: settleSyntheticDeviceKey(for: machine))
+        /* Default-true settings use the object-nil pattern so a machine the
+           human explicitly opted out of stays opted out. */
+        let settleKey = settleSyntheticDeviceKey(for: machine)
+        settleSyntheticDevice = defaults.object(forKey: settleKey) == nil
+            ? true : defaults.bool(forKey: settleKey)
+        let wideKey = wideDoubleTimeKey(for: machine)
+        wideDoubleTime = defaults.object(forKey: wideKey) == nil
+            ? true : defaults.bool(forKey: wideKey)
         hideGuestCursorWhileDragging = defaults.bool(
             forKey: hideGuestCursorKey(for: machine))
         let keyboardKey = keyboardForwardingKey(for: machine)
@@ -1255,6 +1317,10 @@ final class MirrorContinuityController: ObservableObject,
 
     private func hideGuestCursorKey(for machine: GuestID) -> String {
         "mirror.continuity.hideGuestCursorWhileDragging.\(machine.slug)"
+    }
+
+    private func wideDoubleTimeKey(for machine: GuestID) -> String {
+        "mirror.continuity.wideDoubleTime.\(machine.slug)"
     }
 
     private func keyboardForwardingKey(for machine: GuestID) -> String {
