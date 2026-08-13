@@ -69,5 +69,14 @@ int main(void)
     if (now_update_offer_status(kNowUpdateExtension, "1.2", offer.build)
         != kNowUpdateOfferMatches)
         return fail("resident ABI prefix did not match full extension build");
+    if (!now_update_extension_pending_activation(other_build, offer.build))
+        return fail("different resident cleared a pending activation");
+    memcpy(other_build, offer.build, 40);
+    if (now_update_extension_pending_activation(other_build, offer.build))
+        return fail("matching resident prefix still required a restart");
+    if (now_update_extension_pending_activation("", offer.build))
+        return fail("empty activation receipt required a restart");
+    if (!now_update_extension_pending_activation(other_build, ""))
+        return fail("missing resident rounded pending activation up to success");
     return 0;
 }

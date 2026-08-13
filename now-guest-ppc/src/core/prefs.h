@@ -131,6 +131,15 @@ typedef struct {
     unsigned short web_proxy_port;
     short web_profile;        /* NowWebProfile; stored raw, model sanitizes */
     short web_lens;           /* NowWebLens; stored raw, model sanitizes */
+
+    /* An Extension exchange is complete before its resident code can be.
+       Keep the full release identity across application relaunches; startup
+       clears it only after the active table reports the same 160-bit prefix. */
+    char pending_extension_build[65];
+
+    /* CarbonLib warnings are advisory and may be dismissed permanently on a
+       machine whose owner has deliberately chosen an older runtime. */
+    Boolean carbon_warning_suppressed;
 } NowPrefs;
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
@@ -144,8 +153,9 @@ typedef struct {
    density, and renumbers the pinned group again for the Preferences
    page), v20 (the collapsed sidebar), v21 (Mirror's module-id
    renumbering), v22 (the four Mirror policy domains), and v23
-   (Development roots plus its module-id renumbering), and v24 (Web's port,
-   browser profile and lens plus its module-id renumbering). */
+   (Development roots plus its module-id renumbering), v24 (Web's port,
+   browser profile and lens plus its module-id renumbering), and v25 (pending
+   Extension activation identity and the CarbonLib warning choice). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 
