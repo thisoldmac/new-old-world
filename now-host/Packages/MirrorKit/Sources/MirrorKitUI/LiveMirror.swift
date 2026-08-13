@@ -209,14 +209,16 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// `ItemDragSession` in the core; this view feeds it a pointer and draws
     /// what it says.
     @State private var itemDrag: ItemDragSession?
-    @State private var hostFileCandidate: HostFileCandidate?
+    @State private var guestFileDragReference: GuestFileDragReference?
 
-    private struct HostFileCandidate {
+    /// A reference to the guest file itself. `source` is what the guest will
+    /// resolve and validate when the promise is redeemed; `subject` exists
+    /// only for selection geometry and the original icon shown by AppKit.
+    private struct GuestFileDragReference {
         var subject: DragTargeting.Subject
         var source: CrossMachineFileTargeting.Source
+        var writer: NSPasteboardWriting
         var start: (x: Int, y: Int)
-        var attemptedInternalDrag = false
-        var beganInternalDrag = false
     }
 
     /// A button the person is pressing. Same split as `itemDrag` above and
@@ -340,28 +342,30 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                     guard let guest = continuityGuestPoint(
                                         point, scene: scene, size: geo.size)
                                     else { return false }
-                                    // A promised guest file owns this whole
-                                    // gesture. Letting the raw pointer driver
-                                    // press first leaves the source selected on
-                                    // the guest, but no host drag can attach to
-                                    // it when the pointer crosses the Mirror.
-                                    if hostFilePromise != nil,
+                                    let pointerDriver =
+                                        controller.continuityInputDriver
+                                    if HostFileDragPolicy.claimsPress(
+                                        filePromiseAvailable:
+                                            hostFilePromise != nil,
+                                        mirrorCursorActive:
+                                            pointerDriver != nil),
                                        case .success(let subject) =
                                         DragTargeting.subject(
                                             scene, x: guest.x, y: guest.y),
                                        case .success(let source) =
                                         CrossMachineFileTargeting.source(
-                                            subject, in: scene) {
+                                            subject, in: scene),
+                                       let writer = hostFilePromise?(source) {
                                         if case .sharesWindow = keyboard {
                                             keyboardEngaged = true
                                         }
-                                        hostFileCandidate = .init(
+                                        guestFileDragReference = .init(
                                             subject: subject, source: source,
+                                            writer: writer,
                                             start: guest)
                                         return true
                                     }
-                                    if let driver =
-                                            controller.continuityInputDriver {
+                                    if let driver = pointerDriver {
                                         let consumed = driver.primaryDown(
                                             at: .init(x: guest.x, y: guest.y),
                                             inMenuBar: guest.y
@@ -380,29 +384,21 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                     return false
                                 },
                                 onLeftDragged: { point, _ in
-                                    if var candidate = hostFileCandidate {
+                                    if let reference = guestFileDragReference {
                                         guard let guest = continuityGuestPoint(
                                             point, scene: scene, size: geo.size,
                                             clampToEdge: true)
-                                        else { return true }
-                                        let moved = abs(guest.x
-                                            - candidate.start.x)
-                                            + abs(guest.y - candidate.start.y)
-                                        guard moved >= 6 else { return true }
-                                        if !candidate.attemptedInternalDrag {
-                                            candidate.attemptedInternalDrag = true
-                                            dragStart = candidate.start
-                                            dragMode = beginItemDrag(
-                                                scene, at: candidate.start,
-                                                now: guest)
-                                            if case .item = dragMode {
-                                                candidate.beganInternalDrag = true
-                                            }
-                                            hostFileCandidate = candidate
-                                        } else {
-                                            moveItemDrag(to: guest)
-                                        }
-                                        return true
+                                        else { return nil }
+                                        guard HostFileDragPolicy.hasBegun(
+                                            from: reference.start, to: guest)
+                                        else { return nil }
+                                        selectGuestFile(reference, in: scene)
+                                        guestFileDragReference = nil
+                                        controller.note("copying "
+                                            + "\(reference.source.file.name) "
+                                            + "to this Mac on release")
+                                        return hostDragItem(
+                                            for: reference, in: scene)
                                     }
                                     guard let guest = continuityGuestPoint(
                                         point, scene: scene, size: geo.size,
@@ -410,40 +406,35 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                     else {
                                         controller.continuityInputDriver?
                                             .cancel(reason: "guest screen unavailable")
-                                        return true
+                                        return nil
                                     }
                                     guard let driver =
                                             controller.continuityInputDriver
-                                    else { return false }
+                                    else { return nil }
                                     let consumed = driver.primaryDragged(
                                         to: .init(x: guest.x, y: guest.y))
                                     if consumed {
                                         syncContinuityMenu(
                                             scene, at: guest, driver: driver)
                                     }
-                                    return consumed
+                                    return nil
                                 },
                                 onLeftUp: { point, _ in
-                                    if let candidate = hostFileCandidate {
-                                        hostFileCandidate = nil
+                                    if let reference = guestFileDragReference {
+                                        guestFileDragReference = nil
                                         defer {
                                             dragMode = nil
                                             dragOutline = nil
                                         }
-                                        guard let guest = guestPoint(
-                                            point, scene: scene, size: geo.size)
+                                        guard guestPoint(
+                                            point, scene: scene,
+                                            size: geo.size) != nil
                                         else { return true }
-                                        if candidate.beganInternalDrag {
-                                            endItemDrag(
-                                                scene, from: candidate.start,
-                                                to: guest)
-                                        } else {
-                                            handleFinderAwareClick(
-                                                scene, at: candidate.start,
-                                                count: clickCount(
-                                                    at: candidate.start),
-                                                mods: pointerMods)
-                                        }
+                                        handleFinderAwareClick(
+                                            scene, at: reference.start,
+                                            count: clickCount(
+                                                at: reference.start),
+                                            mods: pointerMods)
                                         return true
                                     }
                                     guard let guest = continuityGuestPoint(
@@ -465,51 +456,10 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                     }
                                     return consumed
                                 },
-                                onBeginExternalDrag: { _ in
-                                    guard let candidate = hostFileCandidate,
-                                          let writer = hostFilePromise?(
-                                            candidate.source)
-                                    else { return nil }
-                                    if candidate.beganInternalDrag {
-                                        controller.itemDragDriver?
-                                            .dragRelease(nil) { _ in }
-                                    }
-                                    itemDrag = nil
-                                    dragMode = nil
-                                    dragOutline = nil
-                                    hostFileCandidate = nil
-                                    let container: String?
-                                    switch candidate.subject {
-                                    case .desktopItem:
-                                        container = "Desktop Folder"
-                                    case .windowItem(let id, _):
-                                        container = scene.windows.first {
-                                            $0.id == id
-                                        }?.finder?.path
-                                    }
-                                    let image = IconAtlas.icon(
-                                        for: candidate.subject.item,
-                                        container: container).map {
-                                            NSImage(cgImage: $0,
-                                                size: NSSize(width: 32,
-                                                             height: 32))
-                                        } ?? NSWorkspace.shared.icon(
-                                            for: .data)
-                                    controller.note("copying "
-                                        + "\(candidate.source.file.name) "
-                                        + "to this Mac on release")
-                                    return HostFileDragItem(
-                                        writer: writer, image: image)
-                                },
                                 onCancel: {
                                     controller.continuityInputDriver?
                                         .cancel(reason: "host focus changed")
-                                    if hostFileCandidate?
-                                        .beganInternalDrag == true {
-                                        controller.itemDragDriver?
-                                            .dragRelease(nil) { _ in }
-                                    }
-                                    hostFileCandidate = nil
+                                    guestFileDragReference = nil
                                     itemDrag = nil
                                     dragMode = nil
                                     closeContinuityMenu()
@@ -1179,6 +1129,52 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                        to end: (x: Int, y: Int)) -> Rect {
         Rect(l: min(start.x, end.x), t: min(start.y, end.y),
              r: max(start.x, end.x) + 1, b: max(start.y, end.y) + 1)
+    }
+
+    // MARK: - Copying a guest file out
+
+    /// Match native Finder drag selection before AppKit takes the gesture.
+    /// This changes guest selection only; it never presses or moves the guest
+    /// pointer and never enters the resident-backed item-drag lane.
+    private func selectGuestFile(_ reference: GuestFileDragReference,
+                                 in scene: MirrorKit.Scene) {
+        switch reference.subject {
+        case .windowItem(let id, let item):
+            guard let window = scene.windows.first(where: { $0.id == id }),
+                  !finderInterior.isSelected(item.name, in: window)
+            else { return }
+            let names = finderInterior.select(
+                item.name, in: window, mode: .replace)
+            sendFinderSelection(names, in: window)
+        case .desktopItem(let item):
+            guard !finderInterior.selectedDesktopNames.contains(item.name)
+            else { return }
+            let desktop = scene.desktopItems ?? []
+            let names = finderInterior.selectDesktop(
+                item.name, items: desktop, mode: .replace)
+            sendFinderSelection(
+                names, in: .desktop, orderedBy: desktop,
+                at: Point(x: reference.start.x, y: reference.start.y))
+        }
+    }
+
+    /// The promise writer is the real guest-file reference. The scene item is
+    /// consulted only to give AppKit the icon the guest presented.
+    private func hostDragItem(for reference: GuestFileDragReference,
+                              in scene: MirrorKit.Scene) -> HostFileDragItem {
+        let container: String?
+        switch reference.subject {
+        case .desktopItem:
+            container = "Desktop Folder"
+        case .windowItem(let id, _):
+            container = scene.windows.first { $0.id == id }?.finder?.path
+        }
+        let image = IconAtlas.icon(
+            for: reference.subject.item, container: container).map {
+                NSImage(cgImage: $0,
+                        size: NSSize(width: 32, height: 32))
+            } ?? NSWorkspace.shared.icon(for: .data)
+        return HostFileDragItem(writer: reference.writer, image: image)
     }
 
     // MARK: - Dragging an item

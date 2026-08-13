@@ -14,6 +14,24 @@ public struct HostFileDragItem {
     }
 }
 
+/// The host owns a cross-machine file drag only on the semantic Mirror
+/// surface. Mirror Cursor is a different input owner, so an active raw
+/// pointer lane leaves the gesture to the guest.
+enum HostFileDragPolicy {
+    static let movementThreshold = 6
+
+    static func claimsPress(filePromiseAvailable: Bool,
+                            mirrorCursorActive: Bool) -> Bool {
+        filePromiseAvailable && !mirrorCursorActive
+    }
+
+    static func hasBegun(from start: (x: Int, y: Int),
+                         to current: (x: Int, y: Int)) -> Bool {
+        abs(current.x - start.x) + abs(current.y - start.y)
+            >= movementThreshold
+    }
+}
+
 /// Pointer events SwiftUI's `DragGesture` does not expose: mouse-button
 /// identity, press-time modifiers, and scroll-wheel deltas. The view draws
 /// nothing and observes only events inside its own mirror surface.
@@ -21,9 +39,10 @@ struct PointerCaptureView: NSViewRepresentable {
     var onMove: (CGPoint) -> Void
     var onExit: () -> Void
     var onLeftDown: (CGPoint, Int) -> Bool
-    var onLeftDragged: (CGPoint, Int) -> Bool
+    /// Returns a native file-promise item at the moment the host should take
+    /// ownership. Nil keeps the captured guest gesture in progress.
+    var onLeftDragged: (CGPoint, Int) -> HostFileDragItem?
     var onLeftUp: (CGPoint, Int) -> Bool
-    var onBeginExternalDrag: (CGPoint) -> HostFileDragItem?
     var onCancel: () -> Void
     var onRightDown: (CGPoint, Int) -> Void
     var onScroll: (CGPoint, Int) -> Void
@@ -51,9 +70,8 @@ struct PointerCaptureView: NSViewRepresentable {
         private var move: ((CGPoint) -> Void)?
         private var exit: (() -> Void)?
         private var leftDown: ((CGPoint, Int) -> Bool)?
-        private var leftDragged: ((CGPoint, Int) -> Bool)?
+        private var leftDragged: ((CGPoint, Int) -> HostFileDragItem?)?
         private var leftUp: ((CGPoint, Int) -> Bool)?
-        private var beginExternalDrag: ((CGPoint) -> HostFileDragItem?)?
         private var cancel: (() -> Void)?
         private var right: ((CGPoint, Int) -> Void)?
         private var scroll: ((CGPoint, Int) -> Void)?
@@ -67,7 +85,6 @@ struct PointerCaptureView: NSViewRepresentable {
             leftDown = owner.onLeftDown
             leftDragged = owner.onLeftDragged
             leftUp = owner.onLeftUp
-            beginExternalDrag = owner.onBeginExternalDrag
             cancel = owner.onCancel
             right = owner.onRightDown
             scroll = owner.onScroll
@@ -107,25 +124,15 @@ struct PointerCaptureView: NSViewRepresentable {
                     return self.capturedLeft ? nil : event
                 case .leftMouseDragged:
                     guard self.capturedLeft else { return event }
-                    if !isInside,
-                       let item = self.beginExternalDrag?(point) {
+                    if let item = self.leftDragged?(point, mods) {
                         self.capturedLeft = false
-                        self.pointerInside = false
-                        self.exit?()
-                        let dragging = NSDraggingItem(
-                            pasteboardWriter: item.writer)
-                        let size = item.image.size
-                        dragging.setDraggingFrame(
-                            NSRect(x: point.x - size.width / 2,
-                                   y: point.y - size.height / 2,
-                                   width: size.width, height: size.height),
-                            contents: item.image)
-                        let session = self.beginDraggingSession(
-                            with: [dragging], event: event, source: self)
-                        session.animatesToStartingPositionsOnCancelOrFail = true
+                        if !isInside {
+                            self.pointerInside = false
+                            self.exit?()
+                        }
+                        self.beginHostDrag(item, at: point, event: event)
                         return nil
                     }
-                    _ = self.leftDragged?(point, mods)
                     return nil
                 case .leftMouseUp:
                     guard self.capturedLeft else { return event }
@@ -182,6 +189,24 @@ struct PointerCaptureView: NSViewRepresentable {
             pointerInside = false
             capturedLeft = false
             cancel?()
+        }
+
+        /// AppKit owns the gesture from this call onward. In particular, the
+        /// Mirror edge is not part of initiation: the first threshold-crossing
+        /// drag event may still be well inside this view.
+        private func beginHostDrag(_ item: HostFileDragItem, at point: CGPoint,
+                                   event: NSEvent) {
+            let dragging = NSDraggingItem(pasteboardWriter: item.writer)
+            let size = item.image.size
+            dragging.setDraggingFrame(
+                NSRect(x: point.x - size.width / 2,
+                       y: point.y - size.height / 2,
+                       width: size.width, height: size.height),
+                contents: item.image)
+            let session = beginDraggingSession(
+                with: [dragging], event: event, source: self)
+            session.draggingFormation = .none
+            session.animatesToStartingPositionsOnCancelOrFail = true
         }
 
         func draggingSession(_ session: NSDraggingSession,
