@@ -7,6 +7,28 @@
     "allow_auto_merge": true,
     "delete_branch_on_merge": true
   },
+  "code_qa": {
+    "required_status_checks": [
+      "Emulator QA",
+      "Metal QA"
+    ],
+    "human_override_actors": [
+      "mishyjari"
+    ],
+    "product_code": {
+      "path_prefixes": [
+        "contract/",
+        "ext/",
+        "now-guest-68k/",
+        "now-guest-ppc/",
+        "now-host/",
+        "web-bridge/"
+      ],
+      "exact_paths": [
+        "product/features.yaml"
+      ]
+    }
+  },
   "ruleset": {
     "name": "Protected main",
     "target": "branch",
@@ -59,6 +81,12 @@
             },
             {
               "context": "No lab configuration in the tree"
+            },
+            {
+              "context": "Emulator QA"
+            },
+            {
+              "context": "Metal QA"
             }
           ],
           "strict_required_status_checks_policy": false
