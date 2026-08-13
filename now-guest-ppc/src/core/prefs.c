@@ -145,6 +145,12 @@ typedef struct {
     short log_retention;
 } PrefsRecordV25;
 
+typedef struct {
+    PrefsRecordV25 v25;               /* format = 26 */
+    char pending_extension_build[65];
+    short carbon_warning_suppressed;
+} PrefsRecordV26;
+
 /* Format 16 reuses the V15 layout, bumping only the number to mark that
    Networking joined as nav id 9 (Logs and Connection shifted down
    again). It adds no persisted field, like formats 10, 11 and 14 before
@@ -267,7 +273,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV25);
+    long count = sizeof(PrefsRecordV26);
+    PrefsRecordV26 v26;
     PrefsRecordV25 v25;
     PrefsRecordV24 v24;
     PrefsRecordV23 v23;
@@ -289,9 +296,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v25, 0, sizeof v25);
-    err = FSRead(ref, &count, &v25);
+    memset(&v26, 0, sizeof v26);
+    err = FSRead(ref, &count, &v26);
     FSClose(ref);
+    v25 = v26.v25;
     v24 = v25.v24;
     v23 = v24.v23;
     v22 = v23.v22;
@@ -533,6 +541,15 @@ void now_prefs_load(NowPrefs *prefs)
             prefs->log_retention =
                 (short)now_log_retention_sanitize(v25.log_retention);
         }
+        if (record.format >= 26 && count >= (long)sizeof(PrefsRecordV26)) {
+            v26.pending_extension_build[
+                sizeof v26.pending_extension_build - 1] = '\0';
+            strncpy(prefs->pending_extension_build,
+                    v26.pending_extension_build,
+                    sizeof prefs->pending_extension_build - 1);
+            prefs->carbon_warning_suppressed =
+                v26.carbon_warning_suppressed != 0;
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -545,7 +562,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV25);
+    long count = sizeof(PrefsRecordV26);
+    PrefsRecordV26 v26;
     PrefsRecordV25 v25;
     PrefsRecordV24 v24;
     PrefsRecordV23 v23;
@@ -561,7 +579,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 25;               /* bounded launch-log retention */
+    record.format = 26;               /* launch logs + activation receipt */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -643,7 +661,13 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     v25.v24 = v24;
     v25.log_retention =
         (short)now_log_retention_sanitize(prefs->log_retention);
-    err = FSWrite(ref, &count, &v25);
+    memset(&v26, 0, sizeof v26);
+    v26.v25 = v25;
+    strncpy(v26.pending_extension_build, prefs->pending_extension_build,
+            sizeof v26.pending_extension_build - 1);
+    v26.carbon_warning_suppressed =
+        prefs->carbon_warning_suppressed ? 1 : 0;
+    err = FSWrite(ref, &count, &v26);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }

@@ -39,6 +39,7 @@
 #include "wire_sleep.h"
 #include "sha256.h"
 #include "update_install.h"
+#include "update_activation.h"
 #include "update_model.h"
 #include "update_status.h"
 
@@ -239,12 +240,20 @@ static struct {
        active until a cold boot. Keep this distinct from `pending`: the
        transfer is over, and offering the button again would install the
        same bytes twice while telling the person nothing about the one
-       remaining action. Reset only by conn_init, which runs after restart. */
+       remaining action. The disk receipt survives app relaunch and is
+       cleared only when a later boot exposes the installed fingerprint. */
     Boolean restart_required;
     long id;
     NowUpdateComponent component;
     char build[65];
 } g_update;
+
+static void update_transfer_reset(void)
+{
+    Boolean restart_required = g_update.restart_required;
+    memset(&g_update, 0, sizeof g_update);
+    g_update.restart_required = restart_required;
+}
 
 static unsigned long wide_delta_us(const UnsignedWide *then,
                                    const UnsignedWide *now)
@@ -1099,7 +1108,7 @@ static int on_hello(const char *reply)
     }
     g.phase = kConnConnected;
     now_update_model_reset();
-    memset(&g_update, 0, sizeof g_update);
+    update_transfer_reset();
     g.connected_tick = TickCount();
     /* **Published here and not one step earlier.** The resident cannot
        report a failed dial to anybody - it has no UI, no log and no
@@ -5196,7 +5205,13 @@ static void finish_put(const char *reply)
                  "\"action\":\"%s\"}", g_put.id, component, action);
         send_control(update_reply);
         if (g_put.update_component == kNowUpdateExtension) {
+            OSErr receipt_err = now_update_activation_record(g_update.build);
             g_update.restart_required = true;
+            if (receipt_err != noErr) {
+                now_log(kLogWarn, "update",
+                        "Extension installed but activation receipt could "
+                        "not be saved (%d)", (int)receipt_err);
+            }
         } else {
             g_update.relaunch_required = true;
         }
@@ -7479,6 +7494,7 @@ void conn_init(void)
     memset(&g, 0, sizeof g);
     now_update_model_reset();
     memset(&g_update, 0, sizeof g_update);
+    g_update.restart_required = now_update_activation_reconcile();
     g.ep = kOTInvalidEndpointRef;
     g.last_rtt_ms = -1;
     loopstat_reset(&g_pass_stat);

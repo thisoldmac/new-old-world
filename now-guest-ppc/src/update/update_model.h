@@ -43,4 +43,10 @@ void now_update_offer_line(NowUpdateComponent component,
                            const char *installed_build,
                            char *out, long cap);
 
+/* True until the resident table reports the prefix of the exact Extension
+   build that was placed on disk. An empty receipt means no activation is
+   pending; an absent resident does not round up to success. */
+int now_update_extension_pending_activation(const char *pending_build,
+                                            const char *active_build);
+
 #endif

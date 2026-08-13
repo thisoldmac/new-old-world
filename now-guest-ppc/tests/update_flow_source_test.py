@@ -21,6 +21,10 @@ connection = (
     ROOT / "now-guest-ppc/src/connection/connection_module.c"
 ).read_text()
 install = (ROOT / "now-guest-ppc/src/update/update_install.c").read_text()
+activation = (
+    ROOT / "now-guest-ppc/src/update/update_activation.c"
+).read_text()
+prefs = (ROOT / "now-guest-ppc/src/core/prefs.c").read_text()
 main = (ROOT / "now-guest-ppc/src/main.c").read_text()
 
 # A bare remote command must not stand in for consent. The only remote path
@@ -71,8 +75,22 @@ assert "Application installed - quit and relaunch NOW" in connection
 # A successful extension exchange ends in a stable restart-required state,
 # not the stale "Downloading..." sentence or another enabled install button.
 ordered(wire, "now_update_install(g_put.update_component",
+        "now_update_activation_record(g_update.build)",
         "g_update.restart_required = true;",
         "g_update.pending = false;")
+ordered(activation, "now_prefs_load(&prefs);",
+        "now_update_current_identity(kNowUpdateExtension",
+        "now_update_extension_pending_activation(",
+        "prefs.pending_extension_build[0] = '\\0';",
+        "now_prefs_save(&prefs)")
+# The continuity branch already owns V25 for bounded launch-log retention.
+# Activation receipts must extend that record instead of reusing the same
+# format number with a different binary layout.
+assert "PrefsRecordV25 v25;               /* format = 26 */" in prefs
+assert "record.format = 26;" in prefs
+assert "pending_extension_build" in prefs
+assert "g_update.restart_required = now_update_activation_reconcile();" in wire
+assert "update_transfer_reset();" in wire
 assert "now_wire_update_restart_required()" in connection
 assert "Extension installed - restart this Mac" in connection
 assert "Extension installed. Restart this Mac to activate it." in connection

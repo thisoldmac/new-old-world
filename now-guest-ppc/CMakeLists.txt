@@ -144,6 +144,7 @@ add_application(now-guest-ppc
     src/update/sha256.c
     src/update/update_model.c
     src/update/update_install.c
+    src/update/update_activation.c
     src/update/update_status.c
     src/peek/peek.c
     src/peek/peek_lease.c
