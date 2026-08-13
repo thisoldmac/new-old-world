@@ -30,6 +30,16 @@ static unsigned long gMoveCount;
 static unsigned long gButtonCount;
 static unsigned long gLastMoveBeginTicks;
 static int gLastMoveBeginValid;
+/* Manager button ledger. On this OS the Cursor Device record is upstream
+   of low memory: a manager down whose up was lost keeps re-asserting
+   MBState down after the epoch is gone, and the machine drags a phantom
+   until real device input rewrites it (observed across a reconnect,
+   2026-08-13 185037). The ledger survives epochs so the debt can be
+   settled wherever task time next exists. */
+static int gLedgerDown;
+static long gLastMovePointH;
+static long gLastMovePointV;
+static int gLastMovePointValid;
 static NowContinuityCursorDiagnostics gDiagnostics;
 
 static int device_point(Point *out)
@@ -81,14 +91,35 @@ int now_continuity_cursor_ready(void)
 
 void now_continuity_cursor_begin_epoch(unsigned long epoch)
 {
+    /* A prior epoch's unbalanced manager down is settled before this
+       epoch takes over; the device outlives epochs and so does its debt. */
+    (void)now_continuity_cursor_ensure_released("arm");
     gEpoch = epoch;
     gMoveCount = 0;
     gButtonCount = 0;
     gLastMoveBeginTicks = 0;
     gLastMoveBeginValid = 0;
+    gLastMovePointValid = 0;
     memset(&gDiagnostics, 0, sizeof gDiagnostics);
     now_log(kLogInfo, "mirror", "CDM PPC epoch=%lu begin", epoch);
     now_log_flush();
+}
+
+/* Settle an unbalanced manager down wherever task time exists. Safe to
+   call at any frequency: it is a no-op unless the ledger says down. */
+long now_continuity_cursor_ensure_released(const char *reason)
+{
+    OSErr err;
+
+    if (gDevice == NULL || !gLedgerDown)
+        return 0;
+    err = now_cdm_button_up(gDevice);
+    now_log(err == noErr ? kLogWarn : kLogError, "mirror",
+            "CDM PPC corrective up reason=%s err=%d",
+            reason != NULL ? reason : "?", (int)err);
+    if (err == noErr)
+        gLedgerDown = 0;
+    return (long)err;
 }
 
 long now_continuity_cursor_button(unsigned long epoch,
@@ -110,6 +141,8 @@ long now_continuity_cursor_button(unsigned long epoch,
                    epoch, gButtonCount, generation, down ? 1 : 0);
     err = down ? now_cdm_button_down(gDevice)
                : now_cdm_button_up(gDevice);
+    if (err == noErr)
+        gLedgerDown = down ? 1 : 0;
     if (err == noErr) {
         now_log_memory(kLogInfo, "mirror",
                        "CDM PPC button return epoch=%lu n=%lu generation=%lu down=%d err=%d",
@@ -159,7 +192,27 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
             gDiagnostics.interval_max_sequence = sequence;
             gDiagnostics.interval_max_begin_ticks = move_begin;
         }
+        /* The hitch question needs gaps between moves that actually went
+           somewhere. A stationary pointer and a starved pump read the
+           same in the raw ring; only motion-to-motion gaps are cadence. */
+        if (gLastMovePointValid
+                && (h != gLastMovePointH || v != gLastMovePointV)) {
+            unsigned long bucket = gap <= 2 ? 0ul
+                : gap <= 5 ? 1ul
+                : gap <= 11 ? 2ul
+                : gap <= 29 ? 3ul : 4ul;
+
+            gDiagnostics.motion_gap_hist[bucket]++;
+            gDiagnostics.motion_gap_samples++;
+            if (gap > gDiagnostics.motion_gap_max_ticks) {
+                gDiagnostics.motion_gap_max_ticks = gap;
+                gDiagnostics.motion_gap_max_begin_ticks = move_begin;
+            }
+        }
     }
+    gLastMovePointH = h;
+    gLastMovePointV = v;
+    gLastMovePointValid = 1;
     gLastMoveBeginTicks = move_begin;
     gLastMoveBeginValid = 1;
     gMoveCount++;
@@ -235,6 +288,7 @@ void now_continuity_cursor_shutdown(void)
 
     if (gDevice == NULL)
         return;
+    (void)now_continuity_cursor_ensure_released("shutdown");
     err = now_cdm_dispose_device(gDevice);
     now_log(err == noErr ? kLogInfo : kLogError, "mirror",
             "CDM PPC device dispose err=%d", (int)err);

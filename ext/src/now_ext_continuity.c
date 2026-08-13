@@ -722,6 +722,9 @@ void now_ext_continuity_tick(TMTaskPtr task)
     NowPeekU32 position_seq;
     NowPeekU32 button_generation;
     NowPeekU32 flags;
+    NowPeekU32 previous_button_generation;
+    NowPeekU32 previous_button_flags;
+    NowPeekU32 release_generation;
     NowPeekU32 arrival;
     NowPeekI32 h;
     NowPeekI32 v;
@@ -765,6 +768,8 @@ void now_ext_continuity_tick(TMTaskPtr task)
     v = cell->want_v;
     button_generation = cell->button_generation;
     flags = cell->flags;
+    previous_button_generation = cell->previous_button_generation;
+    previous_button_flags = cell->previous_button_flags;
     arrival = cell->arrival_ticks;
     if (before != cell->packet_seq) {
         PrimeTime((QElemPtr)&gButtonTask.task,
@@ -804,10 +809,18 @@ void now_ext_continuity_tick(TMTaskPtr task)
             & (NowPeekU32)kNowPeekContinuityTrackingPinHeldPoint) != 0
             && now_ext_cursor_reassert_continuity_tracking())
         cell->tracking_pin_writes++;
-    if (now_continuity_button_action(
-            cell->applied_button_generation, 1,
-            button_generation, flags) == kNowContinuityButtonRelease) {
-        release_button(cell, button_generation,
+    /* An up in EITHER edge slot must reach MBState from here. Under rapid
+       clicking the current edge is already the next press by the time this
+       timer looks, and the release it needs is in the previous slot -
+       which only task time applied, while the press's own target starved
+       task time (302 ticks, epoch 11, 2026-08-13 185037). The press that
+       follows stays pending for the service's ordered task-time apply. */
+    release_generation = now_continuity_release_due(
+        cell->applied_button_generation, 1,
+        previous_button_generation, previous_button_flags,
+        button_generation, flags);
+    if (release_generation != 0) {
+        release_button(cell, release_generation,
                        (NowPeekU32)kNowPeekContinuityExitNone);
         return;
     }

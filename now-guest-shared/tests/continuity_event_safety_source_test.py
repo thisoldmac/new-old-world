@@ -204,6 +204,38 @@ check("advanceButton(to: false)" in abandon
 check("relinquish(" not in abandon and "scheduleReconnect(" not in abandon,
       "abandoning a cycle again tears down or reconnects the epoch")
 
+# The interrupt-time release must consider BOTH v4 edge slots. With only the
+# current edge visible, spam clicking hides the release in `previous` behind
+# the drag its own press started (302-tick starvation, epoch 11, 2026-08-13
+# 185037) and the machine drag-locks until physical input.
+check("now_continuity_release_due(" in tick
+      and "previous_button_generation, previous_button_flags" in tick
+      and "button_generation, flags" in tick,
+      "the timer release no longer reads both edge slots")
+
+# The manager button ledger must never outlive its epoch asserting a hold.
+# The Cursor Device record is upstream of low memory: an unbalanced manager
+# down kept a reconnected guest dragging a phantom until physical trackpad
+# input rewrote it (2026-08-13 185037). The ledger is settled at every task
+# time boundary a dead epoch can reach: the next arm, the service pump when
+# the epoch is not active, and shutdown.
+check("gLedgerDown = down ? 1 : 0" in PPC_CURSOR,
+      "the manager ledger no longer records successful button transitions")
+cursor_epoch = body(PPC_CURSOR, "void now_continuity_cursor_begin_epoch(",
+                    "long now_continuity_cursor_ensure_released(")
+cursor_shutdown = PPC_CURSOR[
+    PPC_CURSOR.index("void now_continuity_cursor_shutdown("):]
+check("now_continuity_cursor_ensure_released(\"arm\")" in cursor_epoch,
+      "a new arm no longer settles the previous epoch's manager hold")
+check("now_continuity_cursor_ensure_released(\"shutdown\")"
+      in cursor_shutdown,
+      "shutdown no longer settles an unbalanced manager hold")
+invoke_head = PPC[PPC.index("int now_continuity_service_invoke("):]
+invoke_head = invoke_head[:invoke_head.index("for (round = 0;")]
+check("now_continuity_cursor_ensure_released(\"inactive\")" in invoke_head
+      and "kNowPeekContinuityStateActive" in invoke_head,
+      "a dead epoch's pump no longer settles the manager ledger")
+
 if failures:
     for failure in failures:
         print("FAIL:", failure)

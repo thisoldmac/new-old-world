@@ -324,6 +324,13 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
     if (cell == NULL || gInvoking)
         return cell != NULL;
     gInvoking = 1;
+    /* A dead epoch must not leave the manager ledger asserting a phantom
+       hold: the Cursor Device record is upstream of low memory and keeps
+       republishing MBState down until real input rewrites it. This is the
+       first task time after any exit path, including lease death with no
+       re-arm. No-op while the epoch is live or the ledger is balanced. */
+    if (cell->state != (NowPeekU32)kNowPeekContinuityStateActive)
+        (void)now_continuity_cursor_ensure_released("inactive");
     for (round = 0; round < kNowContinuityServiceApplyRounds; ++round) {
         if (!invoke_resident(cell)) {
             gInvoking = 0;

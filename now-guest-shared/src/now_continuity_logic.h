@@ -18,6 +18,12 @@ int now_continuity_button_action(NowPeekU32 applied_generation,
                                  int button_down,
                                  NowPeekU32 incoming_generation,
                                  NowPeekU32 flags);
+NowPeekU32 now_continuity_release_due(NowPeekU32 applied_generation,
+                                      int button_down,
+                                      NowPeekU32 previous_generation,
+                                      NowPeekU32 previous_flags,
+                                      NowPeekU32 current_generation,
+                                      NowPeekU32 current_flags);
 NowPeekU32 now_continuity_exit_due(
     NowPeekU32 ticks, NowPeekU32 last_arrival, NowPeekU32 lease,
     int have_physical, int expected_valid,

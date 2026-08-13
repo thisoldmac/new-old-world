@@ -607,6 +607,16 @@ int now_continuity_disarm(long id, unsigned long epoch)
             epoch, cursor.interval_samples, cursor.interval_used,
             cursor.interval_max_ticks, cursor.interval_max_sequence,
             cursor.interval_max_begin_ticks);
+    /* Gaps counted only between moves whose points differ: the cadence a
+       human perceives as hitching, with stationary intervals excluded. */
+    now_log(kLogInfo, "mirror",
+            "CDM motion epoch=%lu samples=%lu le2=%lu le5=%lu le11=%lu "
+            "le29=%lu ge30=%lu max=%lu max-at=%lu",
+            epoch, cursor.motion_gap_samples,
+            cursor.motion_gap_hist[0], cursor.motion_gap_hist[1],
+            cursor.motion_gap_hist[2], cursor.motion_gap_hist[3],
+            cursor.motion_gap_hist[4], cursor.motion_gap_max_ticks,
+            cursor.motion_gap_max_begin_ticks);
     for (interval_index = 0; interval_index < cursor.interval_used;
          interval_index++) {
         unsigned long slot =

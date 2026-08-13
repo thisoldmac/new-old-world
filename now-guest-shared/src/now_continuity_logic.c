@@ -55,6 +55,30 @@ int now_continuity_button_action(NowPeekU32 applied_generation,
     return kNowContinuityButtonNothing;
 }
 
+/* The interrupt-time release must see an up wherever it sits in the v4
+   edge pair. Under rapid clicking the packet's current edge is already
+   the NEXT press by the time the bounded timer looks, and the release
+   the machine needs most is in the previous slot - previously visible
+   only to task time, which the press's own target starves. Returns the
+   generation to release with, newest first, or 0 when nothing is due. */
+NowPeekU32 now_continuity_release_due(NowPeekU32 applied_generation,
+                                      int button_down,
+                                      NowPeekU32 previous_generation,
+                                      NowPeekU32 previous_flags,
+                                      NowPeekU32 current_generation,
+                                      NowPeekU32 current_flags)
+{
+    if (now_continuity_button_action(applied_generation, button_down,
+                                     current_generation, current_flags)
+            == kNowContinuityButtonRelease)
+        return current_generation;
+    if (now_continuity_button_action(applied_generation, button_down,
+                                     previous_generation, previous_flags)
+            == kNowContinuityButtonRelease)
+        return previous_generation;
+    return 0;
+}
+
 NowPeekU32 now_continuity_exit_due(
     NowPeekU32 ticks, NowPeekU32 last_arrival, NowPeekU32 lease,
     int have_physical, int expected_valid,

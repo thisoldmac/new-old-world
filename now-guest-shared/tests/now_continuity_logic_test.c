@@ -41,6 +41,33 @@ int main(void)
               2, 0, 1, kNowPeekContinuityPrimaryDown)
           == kNowContinuityButtonNothing);
 
+    /* Interrupt-time release must see an up wherever it sits. Under rapid
+       clicking the wire's current edge is already the next press by the
+       time the bounded timer looks, and the release the machine needs is
+       in the previous slot (measured 302-tick starvation, epoch 11 of the
+       2026-08-13 185037 run). */
+    /* Current edge is the release: prefer the newest generation. */
+    CHECK(now_continuity_release_due(
+              1, 1, 1, kNowPeekContinuityPrimaryDown, 2, 0) == 2);
+    /* Current edge is already the NEXT press; the release hides in
+       previous. This is the spam-click drag-lock case. */
+    CHECK(now_continuity_release_due(
+              1, 1, 2, 0, 3, kNowPeekContinuityPrimaryDown) == 2);
+    /* Nothing held: no release regardless of edges. */
+    CHECK(now_continuity_release_due(
+              1, 0, 2, 0, 3, kNowPeekContinuityPrimaryDown) == 0);
+    /* Both edges already applied: nothing due. */
+    CHECK(now_continuity_release_due(
+              3, 1, 2, 0, 3, kNowPeekContinuityPrimaryDown) == 0);
+    /* Previous is an old up from before the applied press: not newer,
+       must not release the currently-held gesture. */
+    CHECK(now_continuity_release_due(
+              5, 1, 4, 0, 6, kNowPeekContinuityPrimaryDown) == 0);
+    /* Held with only newer presses visible: nothing to release. */
+    CHECK(now_continuity_release_due(
+              5, 1, 6, kNowPeekContinuityPrimaryDown,
+              7, kNowPeekContinuityPrimaryDown) == 0);
+
     CHECK(now_continuity_exit_due(
         100, 90, 90, 1, 1, 11, 20, 0, 10, 20, 0)
         == kNowPeekContinuityExitGuestInput);

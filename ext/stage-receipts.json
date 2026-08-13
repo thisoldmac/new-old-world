@@ -736,6 +736,16 @@
         "ext/src/now_ext_continuity.c"
       ],
       "reason": "checkpoint before host/guest gates; bake follows with the test bundle build"
+    },
+    {
+      "at": "2026-08-13T19:18:42-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "76d485c73ac9467c166189538c95687eb1d074ad",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "mid-bundle checkpoint; bake follows with the click-reliability stack build"
     }
   ]
 }
