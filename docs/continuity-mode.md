@@ -2,18 +2,20 @@
 
 # Continuity mode
 
-Continuity is an optional input mode on top of Mirror. It does not replace
-Mirror's semantic scene or act planes. When enabled, moving the host pointer
-over the Mirror asks the PowerPC guest for temporary ownership of its pointer;
-after the guest accepts, direct-pointer mode mirrors movement and sends primary
-down, held movement, and primary up through one synthetic guest input device.
-Mirror's semantic click path is bypassed only while that raw lane is active.
+Continuity is the Mirror module's screen-edge input mode. Selecting it removes
+the live Mirror render and shows an arrangement editor containing the read-only
+host displays plus one movable, scaled guest display. Crossing outward through
+a real shared edge asks the PowerPC guest for temporary pointer ownership;
+after the guest accepts, relative host motion drives the guest pointer until
+the pointer crosses back or native guest input takes over. Primary down, held
+movement, and primary up use the same owned input epoch.
 
 It is off by default and its enable switch is session-only. The update rate is
 user-selectable at 15, 30, or 60 Hz; 30 Hz is the default, and the selection is
-remembered per stable guest identity. Two separately optional preferences are
-also remembered per guest: automatic recovery of an interrupted pointer epoch,
-and experimental Fast Pump. Fast Pump reuses the guest event loop's existing
+remembered per stable guest identity. Automatic recovery of an interrupted
+pointer epoch and experimental Fast Pump are also remembered per guest.
+Keyboard forwarding defaults on, and its host-owned return shortcut is
+configurable and remembered per guest. Fast Pump reuses the guest event loop's
 one-tick work-in-flight sleep while an epoch is armed; it does not move any
 manager or drawing work into the Open Transport notifier or resident timer.
 
@@ -53,11 +55,11 @@ The destination chain and its existing pieces are recorded in
 
 The existing wire port is used in both protocol namespaces:
 
-- TCP on port N carries `continuity.arm`, `continuity.report`, and
-  `continuity.disarm`. The arm grants a random 64-bit nonce and a monotonically
-  changing epoch. All three messages carry control-contract version `2`; a
-  missing or different version is refused as `wrong-version`. UDP alone can
-  never create authority.
+- TCP on port N carries `continuity.arm`, `continuity.report`,
+  `continuity.disarm`, `continuity.key`, and `continuity.keyReport`. The arm
+  grants a random 64-bit nonce and a monotonically changing epoch. All five
+  messages carry control-contract version `3`; a missing or different version
+  is refused as `wrong-version`. UDP alone can never create authority.
 - UDP on port N carries fixed 40-byte latest-state datagrams and fixed 44-byte
   acknowledgements. A QEMU run forwards TCP/N and UDP/N separately. The host
   uses an ephemeral UDP source port, so it does not compete with its TCP
@@ -204,8 +206,34 @@ capabilities, survived the full 14-probe census, shut down through Finder,
 left the HFS volume cleanly unmounted, and passed `qemu-img check`. The shared
 oracle and its receipt were not changed.
 
-Secondary click, scroll, keyboard input, MCP, agent integration, the guest
-console, and NOW-68K are not Continuity surfaces.
+Secondary click, scroll, MCP, agent integration, the guest console, and NOW-68K
+are not Continuity surfaces.
+
+## Keyboard ownership
+
+While the guest owns the pointer, a macOS session event tap captures key-down,
+key-up, and repeat events. **Send keyboard input to guest** defaults on. The
+selected **Return all controls** chord is matched first, remains host-owned,
+and is never enqueued; it releases pointer and keyboard ownership together.
+Turning forwarding off leaves ordinary keys on the host but keeps that escape
+chord active. Key codes outside the classic 0–127 table are also left on the
+host rather than sent as malformed guest input.
+
+Keys travel on the reliable TCP conversation, not the coalescing UDP pointer
+lane. The PPC application verifies the live epoch, resolves the foreground
+process and its A5 world, and publishes into a fixed 16-entry V8 resident queue.
+The NOW Extension drains at most four entries from the target process's global
+jGNE pass, calls `PPostEvent`, and stamps `evtQModifiers` on the returned queue
+element. A front-process mismatch flushes the queue before posting. Disarm,
+disconnect, lease loss, guest takeover, resident epoch end, and a new target
+also flush or abandon pending input.
+
+This first slice models Event Manager input, including modifiers on ordinary
+key events. It does not synthesize `GetKeys`, physical ADB keyboard state, or
+hardware-level repeat. `continuity.keyReport` means the event was accepted by
+the bounded queue; resident applied/failed/dropped counters remain the evidence
+for delivery on the guest. The implementation is Tested locally and requires
+an attended PowerBook run before it is metal-verified.
 
 ## Evidence and remaining work
 

@@ -7,6 +7,36 @@ search:
 
 # Open issues
 
+## TESTED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
+
+While the guest owns the pointer, the host now captures key-down, key-up, and
+repeat events behind a per-guest **Send keyboard input to guest** toggle that
+defaults on. A per-guest **Return all controls** chord is configurable from four
+explicit Control-Option combinations. It is matched before forwarding, never
+sent to the guest, and returns pointer and keyboard ownership together. The
+capture exists only for an active screen-edge ownership session; turning
+forwarding off leaves ordinary keys host-owned while preserving the return
+chord. Unsupported host key codes outside the classic 0–127 table also remain
+on the host.
+
+The reliable contract is version 3 and adds `continuity.key` plus the immediate
+queued/refused `continuity.keyReport`. The PowerPC application verifies the
+epoch, resolves the foreground process and A5 world, and writes a bounded
+16-entry V8 resident queue. The NOW Extension drains at most four entries from
+that process's target-context jGNE pass, uses `PPostEvent`, and stamps classic
+modifiers on the returned event element. It flushes on a foreground-process
+mismatch, and the application/resident boundaries flush on disarm, disconnect,
+lease loss, guest takeover, target change, and epoch end. The queue reports
+resident applied/failed/dropped/flush counters in the guest log.
+
+The escape guard, target-context drain, queue bound, and process-switch fence
+were each mutation-checked against the regression they name. Focused host,
+native, and guest/extension cross-build gates pass. This is **Tested, not
+metal-verified**. The first slice covers Event Manager consumers and modifier
+bits; it deliberately does not synthesize `GetKeys`, physical ADB key state, or
+hardware repeat. A `queued` report is not an applied acknowledgement, so the
+PowerBook run must check the resident counters as well as visible typing.
+
 ## METAL-VERIFIED CORE; LAYOUT HARDENING TESTED: Mirror Cursor and Continuity Mode are separate host surfaces (2026-08-12, `feat/continuity-screen-edge`)
 
 The Mirror module now names its rendered-screen pointer option **Mirror

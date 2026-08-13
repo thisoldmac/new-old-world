@@ -296,6 +296,29 @@ final class GuestWireConformanceTests: XCTestCase {
         "X.end": ["file.end", "capture.end", "scene.end"],
     ]
 
+    /// `%s` fields whose contract values are closed enums. The generic
+    /// template scanner uses `X` for string substitutions; naming a real
+    /// member here keeps the decoder strict while still exercising the C
+    /// template. A new dynamic enum field must become an explicit entry.
+    private static let enumFieldPlaceholders: [String: [String: String]] = [
+        "continuity.keyReport": [
+            "state": "queued",
+            "reason": "malformed",
+        ],
+    ]
+
+    private func replacingKnownEnumPlaceholders(in json: String) -> String {
+        guard let typeStart = json.range(of: "\"type\":\"")?.upperBound,
+              let typeEnd = json[typeStart...].firstIndex(of: "\"")
+        else { return json }
+        let type = String(json[typeStart..<typeEnd])
+        guard let fields = Self.enumFieldPlaceholders[type] else { return json }
+        return fields.reduce(json) { result, field in
+            result.replacingOccurrences(of: "\"\(field.key)\":\"X\"",
+                                        with: "\"\(field.key)\":\"\(field.value)\"")
+        }
+    }
+
     /// Every whole message the guest can send decodes on this side.
     ///
     /// **This used to forgive any undecodable type that was not `file.*`.**
@@ -313,7 +336,8 @@ final class GuestWireConformanceTests: XCTestCase {
         var checked = 0
         for (file, text) in try guestSources() {
             for template in messageTemplates(in: text).whole {
-                let json = instantiate(template)
+                let json = replacingKnownEnumPlaceholders(
+                    in: instantiate(template))
                 checked += 1
                 do {
                     _ = try ControlMessageCodec.decode(Data(json.utf8))
