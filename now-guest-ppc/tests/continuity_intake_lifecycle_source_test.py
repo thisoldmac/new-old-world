@@ -259,16 +259,22 @@ if "gNowCursorTrackingRedrawOwed = 0" not in tracking_settle:
 elif tracking_settle.index("gNowCursorTrackingRedrawOwed = 0") \
         > tracking_settle.index("HideCursor"):
     failures.append("tracking redraw can recurse before its debt is cleared")
-if "settle_continuity_tracking_device(cell, pt)" not in tracking_settle:
+if "if (gNowCursorTrackingSettleSyntheticDevice)\n" \
+        "        settle_continuity_tracking_device(cell, pt);" \
+        not in tracking_settle:
     failures.append("tracking settlement no longer reaches the opt-in device probe")
 for forbidden in ("NewPtr", "DisposePtr", "WaitNextEvent", "PPostEvent",
                   "now_cdm_", "now_log"):
     if forbidden in tracking_settle:
         failures.append(f"tracking redraw reintroduced forbidden {forbidden}")
+# The option gate moved to the call sites when the settle body grew a second
+# caller: the gesture hook gates on SettleSyntheticDevice (0x10) and the idle
+# spike gates on SettleIdleCursor (0x40) inside its own body. The shared body
+# stays epoch/state bound and reentrancy-guarded either way.
 if "kNowPeekContinuityTrackingSettleSyntheticDevice" \
         not in tracking_configure \
-        or "gNowCursorTrackingSettleSyntheticDevice" \
-        not in tracking_device_settle:
+        or "if (gNowCursorTrackingSettleSyntheticDevice)" \
+        not in tracking_settle:
     failures.append("synthetic-device settlement lost its explicit option gate")
 if "gNowCursorTrackingDeviceActive" not in tracking_device_settle \
         or "tracking_device_reentries++" not in tracking_device_settle:

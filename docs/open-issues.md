@@ -294,6 +294,48 @@ paused run), the missing per-epoch human visual report for settle-device,
 and the fresh-press-while-starved case, which now degrades to a late click
 instead of an epoch death.
 
+**2026-08-13 18:50 attended run and the click-reliability redesign
+(`claude/mirror-continuity-input-47eb68`):** the operator confirmed the
+dual-position cursor is FIXED during drags and menus with settle-device on —
+that mechanism is now metal-verified (73,652 settles in one epoch, zero
+errors, press-point returns at 0-1 per epoch). Two remaining failures were
+measured precisely enough to replace the click machinery rather than patch
+it again:
+
+- **Spam-click drag pile-up:** epoch 11's gen-20 up arrived in the same tick
+  as its press and was not exposed for 302 ticks, because the interrupt
+  timer read only the packet's current edge — which under rapid clicking is
+  already the next press, leaving the needed release in the previous slot
+  that only starved task time could apply. The release path now reads both
+  v4 edge slots (`now_continuity_release_due`, timer-side).
+- **Stuck drag across reconnect:** the manager button ledger outlived its
+  epoch asserting a hold, and the Cursor Device record — upstream of low
+  memory, same law as the press-point jitter — kept republishing MBState
+  down until physical trackpad input rewrote it. The PPC side now records
+  the ledger on every manager transition and settles it at arm, at the
+  service pump whenever the epoch is not active, and at shutdown.
+- **Host declassification:** the buffered-cycle and AppKit-clickCount
+  machinery is deleted; the host streams numbered edges immediately,
+  including the release, which no longer waits for the press
+  acknowledgement. Ordering belongs to generations, the v4
+  previous/current pair, and the resident's two-slot release. A burst
+  beyond two in-flight edges degrades to a missed click, never a stuck
+  drag.
+
+Ordinary-motion hitching is unchanged by the human's report, with one sharp
+observation now driving the plan: motion is smooth during drags and menus —
+exactly where the settle machinery drives the device from the pumping
+process's task time — and hitches only where the sprite rides the PPC
+application's own scheduling. Two additions target it: a motion-aware gap
+histogram (gaps counted only between moves whose points differ, because
+stationary and starved read identically in the raw interval ring), and a
+default-off **Settle device while idle** spike (`settleIdleCursor`, bit
+0x40): the jGNE pass settles the NOWc device to the freshest wire point
+when the application is provably behind, in whatever process is pumping.
+All of this is **tested, not metal-verified**; the histogram has not yet
+been read against a run with human-reported hitch timing, and the spike's
+smoothness claim is exactly what the next attended pass exists to answer.
+
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
 While the guest owns the pointer, the host now captures key-down, key-up, and

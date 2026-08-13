@@ -429,7 +429,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertTrue(rig.controller.status.contains("direct pointer connected"))
     }
 
-    func testDirectClickWaitsForPressAckBeforeSendingRelease()
+    func testDirectClickStreamsReleaseWithoutWaitingForPressAck()
         async throws {
         let rig = try await makeActiveRig()
         defer { rig.udp.stop() }
@@ -446,14 +446,11 @@ final class MirrorContinuityControllerTests: XCTestCase {
             $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
         })
         XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 46, y: 56)))
-        try await Task.sleep(nanoseconds: 100_000_000)
-        XCTAssertFalse(rig.udp.packets.contains {
-            $0.buttonGeneration != 0
-                && $0.buttonGeneration != down.buttonGeneration
-        }, "release must not outrun the press acknowledgement")
-
-        rig.udp.acknowledge(down)
-        try await waitUntil("primary release") {
+        /* No acknowledgement was given: the release must stream anyway,
+           carrying the unacknowledged press beside it in the v4 pair.
+           Ordering belongs to generations and the resident's two-slot
+           release, not to host-side pacing. */
+        try await waitUntil("streamed release") {
             rig.udp.packets.contains {
                 $0.buttonGeneration != down.buttonGeneration
                     && !$0.flags.contains(.primaryDown)
@@ -464,10 +461,15 @@ final class MirrorContinuityControllerTests: XCTestCase {
             $0.buttonGeneration != down.buttonGeneration
                 && !$0.flags.contains(.primaryDown)
         })
+        XCTAssertEqual(up.previousButtonGeneration, down.buttonGeneration,
+                       "the streamed release must carry the press beside it")
+        XCTAssertTrue(up.previousButtonDown)
+
+        rig.udp.acknowledge(down)
         rig.udp.acknowledge(up)
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 50, y: 60)),
-                      "an acknowledged release opens the next click cycle")
+                      "a completed cycle opens the next click")
     }
 
     func testDirectDragPinsToPressUntilAckThenStreamsAndReleases()
@@ -612,7 +614,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertTrue(rig.controller.isActive)
     }
 
-    func testSecondClickIsBufferedUntilFirstReleaseSettles()
+    func testSecondClickStreamsWithoutWaitingForFirstReleaseAck()
         async throws {
         let rig = try await makeActiveRig()
         defer { rig.udp.stop() }
@@ -641,17 +643,14 @@ final class MirrorContinuityControllerTests: XCTestCase {
                 && !$0.flags.contains(.primaryDown)
         })
 
+        /* The first up is never acknowledged, and the second click must
+           stream anyway: each edge is a new generation, ordered by the v4
+           previous/current pair, never by host-side pacing. Holding it for
+           the manager-up is what a starved target turned into piled-up
+           drags (2026-08-13 185037). */
         XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 42, y: 52)))
         XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 42, y: 52)))
-        try await Task.sleep(nanoseconds: 100_000_000)
-        XCTAssertFalse(rig.udp.packets.contains {
-            $0.buttonGeneration != 0
-                && $0.buttonGeneration != firstDown.buttonGeneration
-                && $0.buttonGeneration != firstUp.buttonGeneration
-        }, "the second click must wait for the first manager-up")
-
-        rig.udp.acknowledge(firstUp)
-        try await waitUntil("second press") {
+        try await waitUntil("second press streams") {
             rig.udp.packets.contains {
                 $0.buttonGeneration != firstDown.buttonGeneration
                     && $0.buttonGeneration != firstUp.buttonGeneration
@@ -663,8 +662,10 @@ final class MirrorContinuityControllerTests: XCTestCase {
                 && $0.buttonGeneration != firstUp.buttonGeneration
                 && $0.flags.contains(.primaryDown)
         })
-        rig.udp.acknowledge(secondDown)
-        try await waitUntil("second release") {
+        XCTAssertEqual(secondDown.previousButtonGeneration,
+                       firstUp.buttonGeneration,
+                       "the second press must carry the first up beside it")
+        try await waitUntil("second release streams") {
             rig.udp.packets.contains {
                 $0.buttonGeneration != firstDown.buttonGeneration
                     && $0.buttonGeneration != firstUp.buttonGeneration

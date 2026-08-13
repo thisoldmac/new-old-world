@@ -212,6 +212,25 @@ wire button up inside the epoch so no logical hold can leak, because the
 bounce. Both changes are tested against source guards and cross-builds;
 neither is metal-verified.
 
+The 18:50 attended pass then confirmed the dual-position cursor fixed on
+metal and replaced the click machinery outright. The host no longer
+classifies clicks at all: every AppKit edge streams as the next wire
+generation immediately — the release included, which no longer waits for
+the press acknowledgement — and ordering belongs to generations, the v4
+previous/current pair, and the resident. The resident's interrupt-time
+release reads both edge slots, because rapid clicking otherwise hides the
+needed up in the previous slot behind the drag its own press started; and
+the PPC side keeps a manager button ledger, settled at arm, at the pump
+while the epoch is inactive, and at shutdown, so a dead epoch can never
+leave the Cursor Device record asserting a phantom hold that low memory
+keeps inheriting. For the remaining ordinary-motion hitches, epoch
+teardown now logs a motion-aware gap histogram (`CDM motion`) that
+excludes stationary intervals, and a default-off **Settle device while
+idle** spike lets the jGNE pass settle the synthetic device from whatever
+process is pumping whenever the application is behind the wire. The
+redesign is tested; nothing in it is metal-verified until the next
+attended pass.
+
 The post-metal candidate was then cold-booted independently on
 `mac99,via=pmu` and `mac99,via=cuda` with Fast Pump enabled. Both guests
 reported build `582abf3ee6e2…`, resident fingerprint `e500d393bf76…`, and all

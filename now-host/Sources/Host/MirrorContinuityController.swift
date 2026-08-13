@@ -13,14 +13,6 @@ final class MirrorContinuityController: ObservableObject,
                                       ContinuityEdgeDriving {
     typealias Audit = (HostLog.LogLevel, String) -> Void
 
-    private struct BufferedPrimaryCycle {
-        var press: MirrorKit.Point
-        var latest: MirrorKit.Point
-        var release: MirrorKit.Point?
-        var sourceUptime: TimeInterval?
-        var clickCount: Int
-    }
-
     enum Phase: Equatable {
         case idle
         case arming
@@ -144,6 +136,22 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
+    /* Spike, default off: extend the settle machinery to idle motion so a
+       starved pump's frames are drawn from whichever process holds the CPU. */
+    @Published var settleIdleCursor = false {
+        didSet {
+            guard settleIdleCursor != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(settleIdleCursor,
+                             forKey: settleIdleCursorKey(for: machine))
+            }
+            if phase != .idle {
+                rearmAfterConfigurationChange(
+                    reason: "idle settle spike changed")
+            }
+        }
+    }
     @Published var hideGuestCursorWhileDragging = false {
         didSet {
             guard hideGuestCursorWhileDragging != oldValue else { return }
@@ -228,8 +236,6 @@ final class MirrorContinuityController: ObservableObject,
     private var pressAcknowledged = false
     private var releasePending = false
     private var deferredButtonPoint: MirrorKit.Point?
-    private var bufferedButtonCycle: BufferedPrimaryCycle?
-    private var capturingBufferedCycle = false
     private var primaryDownInMenuBar = false
     private var primaryCycleDragged = false
     private var menuLatched = false
@@ -353,27 +359,16 @@ final class MirrorContinuityController: ObservableObject,
             menuReleaseArmed = true
             return true
         }
-        /* A human double-click can begin while the first manager-up is still
-           settling on a cooperatively scheduled guest. Buffer exactly one
-           complete following cycle instead of dropping that second click or
-           letting it fall through to Mirror's semantic plane. */
-        if buttonCycleActive {
-            if clickCount >= 2, !wireButtonDown {
-                audit(.info, "starting AppKit-confirmed click \(clickCount) "
-                    + "before the preceding manager-up acknowledgement")
-                beginPrimaryCycle(at: point, inMenuBar: inMenuBar,
-                                  sourceUptime: eventUptime)
-                return true
-            }
-            guard bufferedButtonCycle == nil,
-                  releasePending || !wireButtonDown else {
-                audit(.warn, "ignored primary down while button is held")
-                return true
-            }
-            bufferedButtonCycle = BufferedPrimaryCycle(
-                press: point, latest: point, release: nil,
-                sourceUptime: sourceUptime, clickCount: clickCount)
-            capturingBufferedCycle = true
+        /* The host streams edges; it does not classify clicks. Every AppKit
+           down becomes the next wire generation immediately, whatever the
+           acknowledgement state of the cycle before it: the v4 packet
+           carries the preceding edge beside it, the resident's interrupt
+           release reads both slots, and the guest's widened DoubleTime owns
+           recognition. Classification lived here once - one buffered cycle
+           plus an AppKit clickCount fast path - and its interactions with a
+           starved guest piled clicks into drags (2026-08-13 185037). */
+        if buttonCycleActive, wireButtonDown {
+            audit(.warn, "ignored primary down while button is held")
             return true
         }
         beginPrimaryCycle(at: point, inMenuBar: inMenuBar,
@@ -414,10 +409,6 @@ final class MirrorContinuityController: ObservableObject,
     @discardableResult
     func primaryDragged(to point: MirrorKit.Point) -> Bool {
         guard phase == .active else { return false }
-        if capturingBufferedCycle, bufferedButtonCycle != nil {
-            bufferedButtonCycle?.latest = point
-            return true
-        }
         guard buttonCycleActive else { return false }
         if !primaryCycleDragged {
             audit(.info, "primary drag began: generation=\(buttonGeneration), "
@@ -439,12 +430,6 @@ final class MirrorContinuityController: ObservableObject,
     @discardableResult
     func primaryUp(at point: MirrorKit.Point) -> Bool {
         guard phase == .active else { return false }
-        if capturingBufferedCycle, bufferedButtonCycle != nil {
-            bufferedButtonCycle?.latest = point
-            bufferedButtonCycle?.release = point
-            capturingBufferedCycle = false
-            return true
-        }
         guard buttonCycleActive else { return false }
         if menuLatched {
             guard menuReleaseArmed else { return true }
@@ -463,7 +448,12 @@ final class MirrorContinuityController: ObservableObject,
         isMenuTracking = false
         deferredButtonPoint = point
         releasePending = true
-        if pressAcknowledged { sendPrimaryRelease() }
+        /* The release streams immediately: the wire's previous/current pair
+           carries it beside an unacknowledged down, and the resident's
+           interrupt-time release path reads both slots. Holding it for the
+           press acknowledgement serialized cycles against guest scheduling
+           and is what a starved target turned into held drags. */
+        sendPrimaryRelease()
         return true
     }
 
@@ -510,6 +500,7 @@ final class MirrorContinuityController: ObservableObject,
             virtualGetMouse: virtualGetMouse,
             settleSyntheticDevice: settleSyntheticDevice,
             wideDoubleTime: wideDoubleTime,
+            settleIdleCursor: settleIdleCursor,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)
         guard armID != nil else {
             status = "unavailable: no Mac is connected"
@@ -930,9 +921,7 @@ final class MirrorContinuityController: ObservableObject,
             pressAcknowledged = true
             buttonAckTimeout?.cancel()
             buttonAckTimeout = nil
-            if releasePending {
-                sendPrimaryRelease()
-            } else if let deferredButtonPoint {
+            if let deferredButtonPoint {
                 point = deferredButtonPoint
                 self.deferredButtonPoint = nil
                 positionDirty = true
@@ -949,26 +938,6 @@ final class MirrorContinuityController: ObservableObject,
             primaryCycleDragged = false
             menuLatched = false
             menuReleaseArmed = false
-            startBufferedPrimaryCycleIfNeeded()
-        }
-    }
-
-    private func startBufferedPrimaryCycleIfNeeded() {
-        guard let bufferedButtonCycle else { return }
-        self.bufferedButtonCycle = nil
-        capturingBufferedCycle = false
-        beginPrimaryCycle(at: bufferedButtonCycle.press,
-                          releasedAt: bufferedButtonCycle.release,
-                          sourceUptime: bufferedButtonCycle.sourceUptime)
-        if let source = bufferedButtonCycle.sourceUptime {
-            audit(.info, String(
-                format: "buffered click %d settled %.1f ms after AppKit delivery",
-                bufferedButtonCycle.clickCount,
-                max(0, ProcessInfo.processInfo.systemUptime - source) * 1_000))
-        }
-        if bufferedButtonCycle.release == nil,
-           bufferedButtonCycle.latest != bufferedButtonCycle.press {
-            deferredButtonPoint = bufferedButtonCycle.latest
         }
     }
 
@@ -991,9 +960,6 @@ final class MirrorContinuityController: ObservableObject,
         buttonTransitionSourceUptime = sent
         buttonTransitionSentUptime = sent
         scheduleButtonAckTimeout(generation: buttonGeneration, down: false)
-        if bufferedButtonCycle?.clickCount ?? 0 >= 2 {
-            startBufferedPrimaryCycleIfNeeded()
-        }
     }
 
     private func advanceButton(to down: Bool) {
@@ -1013,6 +979,8 @@ final class MirrorContinuityController: ObservableObject,
        and unwinds only this cycle's state. The epoch lives or dies by its
        lease and liveness, never by one late click. */
     private func abandonPrimaryCycle(reason: String) {
+        /* Streaming edges means there is no buffered cycle to resume; the
+           next AppKit down simply becomes the next generation. */
         buttonAckTimeout?.cancel()
         buttonAckTimeout = nil
         if wireButtonDown {
@@ -1031,7 +999,6 @@ final class MirrorContinuityController: ObservableObject,
         isMenuTracking = false
         audit(.warn, "primary cycle abandoned: \(reason), "
             + "generation=\(buttonGeneration), epoch=\(epoch) stays owned")
-        startBufferedPrimaryCycleIfNeeded()
     }
 
     private func scheduleButtonAckTimeout(
@@ -1241,8 +1208,6 @@ final class MirrorContinuityController: ObservableObject,
         pressAcknowledged = false
         releasePending = false
         deferredButtonPoint = nil
-        bufferedButtonCycle = nil
-        capturingBufferedCycle = false
         primaryDownInMenuBar = false
         primaryCycleDragged = false
         menuLatched = false
@@ -1277,6 +1242,8 @@ final class MirrorContinuityController: ObservableObject,
         let wideKey = wideDoubleTimeKey(for: machine)
         wideDoubleTime = defaults.object(forKey: wideKey) == nil
             ? true : defaults.bool(forKey: wideKey)
+        settleIdleCursor = defaults.bool(
+            forKey: settleIdleCursorKey(for: machine))
         hideGuestCursorWhileDragging = defaults.bool(
             forKey: hideGuestCursorKey(for: machine))
         let keyboardKey = keyboardForwardingKey(for: machine)
@@ -1321,6 +1288,10 @@ final class MirrorContinuityController: ObservableObject,
 
     private func wideDoubleTimeKey(for machine: GuestID) -> String {
         "mirror.continuity.wideDoubleTime.\(machine.slug)"
+    }
+
+    private func settleIdleCursorKey(for machine: GuestID) -> String {
+        "mirror.continuity.settleIdleCursor.\(machine.slug)"
     }
 
     private func keyboardForwardingKey(for machine: GuestID) -> String {

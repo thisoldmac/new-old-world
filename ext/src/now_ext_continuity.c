@@ -140,6 +140,18 @@ void now_ext_continuity_trace_keyboard_result(
                 (NowPeekU32)TickCount(), (NowPeekI32)generation, packed);
 }
 
+void now_ext_continuity_trace_idle_settle(
+    NowPeekU32 count, NowPeekU32 position_seq)
+{
+    NowPeekContinuityCell *cell = continuity_cell(gTable);
+
+    if (cell == NULL || !cell->enabled)
+        return;
+    trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceIdleSettle,
+                (NowPeekU32)TickCount(), (NowPeekI32)count,
+                (NowPeekI32)position_seq);
+}
+
 static void service_return(NowPeekContinuityCell *cell)
 {
     status_end(cell);

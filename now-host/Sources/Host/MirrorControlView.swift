@@ -375,6 +375,9 @@ private struct ContinuityControlCard: View {
                 Toggle("Widen double-click window while connected",
                        isOn: $controller.wideDoubleTime)
                     .disabled(!controller.isEnabled || !mirrorRunning)
+                Toggle("Settle device while idle (spike)",
+                       isOn: $controller.settleIdleCursor)
+                    .disabled(!controller.isEnabled || !mirrorRunning)
                 Toggle("Hide guest cursor during drag (experimental)",
                        isOn: $controller.hideGuestCursorWhileDragging)
                     .disabled(!controller.isEnabled || !mirrorRunning)

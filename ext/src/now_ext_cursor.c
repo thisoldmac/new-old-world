@@ -72,6 +72,7 @@
 #include <CursorDevices.h>
 
 #include "peek_table.h"
+#include "now_continuity_logic.h"
 #include "now_cursor_logic.h"
 #include "now_ext_continuity_trace.h"
 #include "now_ext_cursor_input.h"
@@ -125,6 +126,9 @@ volatile unsigned char gNowCursorTrackingSourceActive = 0;
 volatile unsigned char gNowCursorTrackingVirtualGetMouse = 0;
 static volatile unsigned char gNowCursorTrackingHideGuestCursor = 0;
 static volatile unsigned char gNowCursorTrackingSettleSyntheticDevice = 0;
+static volatile unsigned char gNowCursorSettleIdleCursor = 0;
+static NowPeekU32 gNowCursorIdleSettledSeq = 0;
+static NowPeekU32 gNowCursorIdleSettleCount = 0;
 static volatile unsigned char gNowCursorTrackingCursorHidden = 0;
 void *gNowCursorOldGetMouse = NULL;
 void *gNowCursorOldStillDown = NULL;
@@ -475,6 +479,12 @@ void now_ext_cursor_configure_continuity_tracking(NowPeekU32 options)
         (options
             & (NowPeekU32)kNowPeekContinuityTrackingSettleSyntheticDevice)
             != 0;
+    gNowCursorSettleIdleCursor =
+        (options
+            & (NowPeekU32)kNowPeekContinuityTrackingSettleIdleCursor)
+            != 0;
+    gNowCursorIdleSettledSeq = 0;
+    gNowCursorIdleSettleCount = 0;
     gNowCursorTrackingDeviceActive = 0;
     gNowCursorTrackingDeviceEpoch = 0;
     gNowCursorTrackingDeviceSearchEpoch = 0;
@@ -560,7 +570,9 @@ static void settle_continuity_tracking_device(
     Point after;
     long err;
 
-    if (cell == NULL || !gNowCursorTrackingSettleSyntheticDevice)
+    /* The caller has already proved its own option bit; this shared body
+       serves both the gesture hooks (0x10) and the idle spike (0x40). */
+    if (cell == NULL)
         return;
     if (!cell->enabled
             || cell->state != (NowPeekU32)kNowPeekContinuityStateActive
@@ -598,6 +610,52 @@ static void settle_continuity_tracking_device(
     else
         cell->tracking_device_failures++;
     gNowCursorTrackingDeviceActive = 0;
+}
+
+/* The idle-settle spike. Ordinary motion is smooth exactly where the settle
+   machinery drives the device from a foreign process's task time (drags and
+   menus, ~1400 settles/s in the 185037 run) and hitches where the sprite
+   rides the PPC application's own scheduling. This runs on every jGNE pass
+   in whatever process is pumping, and settles the NOWc device to the
+   freshest wire point ONLY when the application is provably behind - so a
+   healthy pump sees no double-driving, and a starved one gets its frames
+   drawn from whoever holds the CPU. The notifier writes want/position_seq
+   at interrupt time, so freshness needs no application cooperation. */
+static void settle_continuity_idle_cursor(void)
+{
+    NowPeekContinuityCell *cell;
+    NowPeekU32 position_seq;
+    Point want;
+
+    if (!gNowCursorSettleIdleCursor || gNowCursorTrackingSourceActive)
+        return;
+    if (gTable == NULL
+            || gTable->length
+                < (NowPeekU32)(offsetof(NowPeekTable, continuity)
+                                + sizeof(NowPeekContinuityCell))
+            || gTable->continuity_format
+                != (NowPeekU32)NOW_CONTINUITY_FORMAT_CURRENT)
+        return;
+    cell = &gTable->continuity;
+    position_seq = cell->position_seq;
+    if (!now_continuity_sequence_newer(position_seq,
+                                       cell->applied_position_seq)
+            || !now_continuity_sequence_newer(position_seq,
+                                             gNowCursorIdleSettledSeq))
+        return;
+    want.h = (short)cell->want_h;
+    want.v = (short)cell->want_v;
+    settle_continuity_tracking_device(cell, want);
+    gNowCursorIdleSettledSeq = position_seq;
+    gNowCursorIdleSettleCount++;
+    /* jGNE is task time: one balanced redraw so the settled point is also
+       the drawn point, exactly as the gesture hooks settle their frame. */
+    *gCrsrObscure = 0;
+    HideCursor();
+    ShowCursor();
+    if ((gNowCursorIdleSettleCount & 31u) == 1u)
+        now_ext_continuity_trace_idle_settle(gNowCursorIdleSettleCount,
+                                             position_seq);
 }
 
 static void record_continuity_tracking_conflict(
@@ -691,7 +749,8 @@ void now_ext_cursor_settle_continuity_tracking(void)
     LMSetMouseLocation(pt);
     if (cell != NULL)
         cell->tracking_settle_reasserts++;
-    settle_continuity_tracking_device(cell, pt);
+    if (gNowCursorTrackingSettleSyntheticDevice)
+        settle_continuity_tracking_device(cell, pt);
     if (gNowCursorTrackingCursorHidden) {
         gNowCursorTrackingRedrawOwed = 0;
         return;
@@ -1065,6 +1124,7 @@ void now_ext_cursor_gne(NowPeekTable *table)
        performed only by NOW cannot protect a Finder/Menu Manager tracking loop. */
     if (gNowCursorTrackingSourceActive)
         (void)now_ext_cursor_enable_continuity_tracking();
+    settle_continuity_idle_cursor();
     if (!gNowCursorTrackingSourceActive
             && gNowCursorTrackingCursorHidden) {
         /* A timer may revoke a starved release source, but it may not enter

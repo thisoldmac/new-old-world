@@ -746,6 +746,19 @@
         "ext/src/now_ext_continuity.c"
       ],
       "reason": "mid-bundle checkpoint; bake follows with the click-reliability stack build"
+    },
+    {
+      "at": "2026-08-13T19:34:23-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "499b97ce90bd43d2955d50926180b369d363adb6",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_trace.h",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "redesign checkpoint; bake follows with the stack build"
     }
   ]
 }

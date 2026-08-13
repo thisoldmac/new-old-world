@@ -707,6 +707,7 @@ final class GuestListener: ObservableObject {
                        virtualGetMouse: Bool = false,
                        settleSyntheticDevice: Bool = false,
                        wideDoubleTime: Bool = false,
+                       settleIdleCursor: Bool = false,
                        virtualADB: Bool = false,
                        hideGuestCursorWhileDragging: Bool = false) -> Int? {
         guard let session else { return nil }
@@ -720,6 +721,7 @@ final class GuestListener: ObservableObject {
             virtualGetMouse: virtualGetMouse,
             settleSyntheticDevice: settleSyntheticDevice,
             wideDoubleTime: wideDoubleTime,
+            settleIdleCursor: settleIdleCursor,
             virtualADB: virtualADB,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)))
         return id

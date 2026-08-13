@@ -2233,6 +2233,18 @@ components:
             guest ticks between manager downs, which a stock 32-tick
             DoubleTime can never recognize; the recognition window is the
             only half of that comparison Continuity can honestly control.
+        settleIdleCursor:
+          type: boolean
+          default: false
+          description: >
+            Spike, host-selected, off by default. On every jGNE pass, in
+            whatever process is pumping, the resident settles the NOWc
+            synthetic device to the freshest wire point when the PPC
+            application is provably behind it, with one balanced redraw.
+            Ordinary motion hitches exactly where the sprite rides the
+            application's own cooperative scheduling and is smooth where
+            the settle machinery drives it; this extends that machinery to
+            idle motion to test the remaining hitch attribution.
         hideGuestCursorWhileDragging:
           type: boolean
           default: false

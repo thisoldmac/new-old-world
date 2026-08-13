@@ -1027,6 +1027,12 @@ enum {
     kNowPeekContinuityTrackingVirtualADB = 1u << 3,
     kNowPeekContinuityTrackingSettleSyntheticDevice = 1u << 4,
     kNowPeekContinuityTrackingWideDoubleTime = 1u << 5,
+    /* Spike: ordinary motion is smooth exactly where the settle machinery
+       drives the device (drags, menus) and hitches where it rides the PPC
+       application's own scheduling. When set, the jGNE pass settles the
+       NOWc device to the freshest wire point whenever the application is
+       behind, in whatever process is pumping. Off by default. */
+    kNowPeekContinuityTrackingSettleIdleCursor = 1u << 6,
     kNowPeekContinuityTrackingKnownMask =
         kNowPeekContinuityTrackingPinHeldPoint
             | kNowPeekContinuityTrackingVirtualGetMouse
@@ -1034,6 +1040,7 @@ enum {
             | kNowPeekContinuityTrackingVirtualADB
             | kNowPeekContinuityTrackingSettleSyntheticDevice
             | kNowPeekContinuityTrackingWideDoubleTime
+            | kNowPeekContinuityTrackingSettleIdleCursor
 };
 
 enum {
@@ -1051,6 +1058,9 @@ enum {
     /* arg0 is the key generation. arg1 packs action in the high 16 bits and
        the kNowPeekContinuityKeyError* result in the low 16 bits. */
     kNowPeekContinuityTraceKeyboardResult = 9,
+    /* Sampled from the jGNE idle-settle spike: arg0 is the cumulative
+       settle count, arg1 the position sequence settled. */
+    kNowPeekContinuityTraceIdleSettle = 10,
     kNowPeekContinuityTraceCapacity = 8
 };
 

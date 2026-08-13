@@ -154,8 +154,19 @@ check("guard phase == .active" in host_buttons,
 check("flags.insert(.primaryDown)" in HOST
       and "buttonGeneration: buttonGeneration" in HOST,
       "the host no longer sends primary state plus its generation")
-check("if pressAcknowledged { sendPrimaryRelease() }" in host_buttons,
-      "the host can send release before the press acknowledgement")
+# The host streams edges and does not classify clicks. The classification
+# machinery (a buffered cycle, an AppKit clickCount fast path, release gated
+# on the press acknowledgement) serialized cycles against guest scheduling,
+# and a starved target turned that into piled-up drags (2026-08-13 185037).
+# Correct ordering is the v4 previous/current pair plus the resident's
+# two-slot interrupt release, not host-side pacing.
+check("releasePending = true\n        /*" in host_buttons
+      and "sendPrimaryRelease()\n        return true" in host_buttons,
+      "the host again gates the release on the press acknowledgement")
+check("bufferedButtonCycle" not in HOST
+      and "capturingBufferedCycle" not in HOST
+      and "clickCount >= 2" not in HOST,
+      "the host again classifies clicks instead of streaming edges")
 
 # Wide DoubleTime: the guest cannot recognize a double click when cooperative
 # scheduling stretches the manager-down interval past GetDblTime (measured
@@ -235,6 +246,20 @@ invoke_head = invoke_head[:invoke_head.index("for (round = 0;")]
 check("now_continuity_cursor_ensure_released(\"inactive\")" in invoke_head
       and "kNowPeekContinuityStateActive" in invoke_head,
       "a dead epoch's pump no longer settles the manager ledger")
+
+# The idle-settle spike may run only from task-time jGNE passes, only when
+# the host selected it, never during a held gesture (the hooks own those
+# frames), and only when the application is provably behind the wire.
+idle_settle = body(CURSOR, "static void settle_continuity_idle_cursor(",
+                   "static void record_continuity_tracking_conflict(")
+check("settle_continuity_idle_cursor();" in tracking_gne,
+      "the jGNE pass no longer runs the idle settle spike")
+check("!gNowCursorSettleIdleCursor || gNowCursorTrackingSourceActive"
+      in idle_settle,
+      "the idle settle spike lost its option or held-gesture guard")
+check("applied_position_seq" in idle_settle
+      and "gNowCursorIdleSettledSeq" in idle_settle,
+      "the idle settle spike no longer proves the application is behind")
 
 if failures:
     for failure in failures:

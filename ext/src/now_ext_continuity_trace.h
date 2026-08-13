@@ -10,5 +10,7 @@ void now_ext_continuity_trace_tracking_conflict(
     NowPeekI32 source_h, NowPeekI32 source_v);
 void now_ext_continuity_trace_keyboard_result(
     NowPeekU32 generation, NowPeekU32 action, NowPeekU32 error);
+void now_ext_continuity_trace_idle_settle(
+    NowPeekU32 count, NowPeekU32 position_seq);
 
 #endif /* NOW_EXT_CONTINUITY_TRACE_H */
