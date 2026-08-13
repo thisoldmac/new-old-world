@@ -146,7 +146,9 @@ def assemble(args: argparse.Namespace) -> None:
         raise ReleaseRefusal(f"output already exists: {output}")
     licensed = LicensedInput.load(args.carbonlib_descriptor)
 
-    with tempfile.TemporaryDirectory(prefix="now-release-") as raw_workspace:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+            prefix=".now-release-", dir=output.parent) as raw_workspace:
         workspace = Path(raw_workspace)
         if args.application or args.extension:
             if not args.application or not args.extension:
@@ -200,8 +202,11 @@ def assemble(args: argparse.Namespace) -> None:
             licensed_inputs=[licensed.manifest_row()], outputs=payloads)
         checksums = publication / profile.filename("release_checksums")
         write_checksums(checksums, payloads + [manifest])
-        output.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(publication), output)
+        try:
+            os.replace(publication, output)
+        except OSError as exc:
+            raise ReleaseRefusal(
+                f"could not publish release atomically: {exc}") from exc
     print(output)
 
 
@@ -224,6 +229,9 @@ def parse_args() -> argparse.Namespace:
         parser.error("--adhoc and --sign-identity are mutually exclusive")
     if args.channel == "release" and args.adhoc:
         parser.error("release channel cannot use ad-hoc signing")
+    if args.channel == "release" and (
+            args.application or args.extension or args.host_app):
+        parser.error("release channel cannot use prepared inputs")
     return args
 
 

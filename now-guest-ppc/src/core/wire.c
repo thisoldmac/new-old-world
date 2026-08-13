@@ -5181,11 +5181,40 @@ static void finish_put(const char *reply)
             g_put.update_component);
         const char *action = g_put.update_component == kNowUpdateApplication
             ? "relaunch-required" : "restart-required";
+        Boolean extension_update =
+            g_put.update_component == kNowUpdateExtension;
 
         install_reason[0] = '\0';
+        if (extension_update) {
+            OSErr receipt_err = now_update_activation_record(g_update.build);
+
+            if (receipt_err != noErr) {
+                snprintf(install_reason, sizeof install_reason,
+                         "could not save restart receipt (%d)",
+                         (int)receipt_err);
+                put_done(false, "receipt-failed", install_reason,
+                         "download-retained");
+                snprintf(update_reply, sizeof update_reply,
+                         "{\"type\":\"update.result\",\"id\":%ld,"
+                         "\"component\":\"%s\",\"ok\":false,"
+                         "\"code\":\"receipt-failed\","
+                         "\"reason\":\"could not save restart receipt\"}",
+                         g_put.id, component);
+                send_control(update_reply);
+                g_update.pending = false;
+                return;
+            }
+        }
         if (!now_update_install(g_put.update_component, &g_put.rx.final,
                                 install_reason, sizeof install_reason)) {
             char esc[240];
+
+            if (extension_update
+                && now_update_activation_clear() != noErr) {
+                now_log(kLogWarn, "update",
+                        "failed Extension exchange left its activation "
+                        "receipt on disk");
+            }
             now_json_escape(install_reason, esc, sizeof esc);
             put_done(false, "install-failed", install_reason,
                      "download-retained");
@@ -5204,14 +5233,8 @@ static void finish_put(const char *reply)
                  "\"component\":\"%s\",\"ok\":true,"
                  "\"action\":\"%s\"}", g_put.id, component, action);
         send_control(update_reply);
-        if (g_put.update_component == kNowUpdateExtension) {
-            OSErr receipt_err = now_update_activation_record(g_update.build);
+        if (extension_update) {
             g_update.restart_required = true;
-            if (receipt_err != noErr) {
-                now_log(kLogWarn, "update",
-                        "Extension installed but activation receipt could "
-                        "not be saved (%d)", (int)receipt_err);
-            }
         } else {
             g_update.relaunch_required = true;
         }

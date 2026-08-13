@@ -85,7 +85,11 @@ class MacBinaryFile:
         )
 
     def write_native(self, directory: Path, name: str | None = None) -> Path:
-        output = directory / (name or self.name)
+        native_name = name or self.name
+        if (native_name in {".", ".."} or "/" in native_name
+                or "\\" in native_name or Path(native_name).name != native_name):
+            raise ReleaseRefusal("classic filename must not contain a path")
+        output = directory / native_name
         output.write_bytes(self.data_fork)
         if self.resource_fork:
             resource_path = Path(str(output) + "/..namedfork/rsrc")
@@ -115,9 +119,11 @@ def populate_generic(directory: Path, application: Path, extension: Path,
     dependencies = directory / "Dependencies"
     dependencies.mkdir()
     try:
-        MacBinaryFile.decode(carbonlib.read_bytes()).write_native(dependencies)
+        carbonlib_file = MacBinaryFile.decode(carbonlib.read_bytes())
     except ReleaseRefusal:
         copy_exact(carbonlib, dependencies / carbonlib.name)
+    else:
+        carbonlib_file.write_native(dependencies)
     licenses = dependencies / "License Material"
     licenses.mkdir()
     for path in license_files:
