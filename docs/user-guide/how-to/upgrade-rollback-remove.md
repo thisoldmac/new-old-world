@@ -6,9 +6,9 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/naming.md, docs/resident-components.md]
-source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/naming.md, docs/resident-components.md, now-host/Sources/Host/UpdateProvider.swift, now-guest-ppc/src/update]
+source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/naming.md, docs/resident-components.md, docs/distribution-profile.yaml, now-host/Sources/Host/UpdateProvider.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c]
 media_ids: []
-last_verified: 2026-08-10
+last_verified: 2026-08-13
 ---
 
 # Upgrade, roll back, or remove NOW
@@ -20,8 +20,9 @@ the optional resident component.
 
 ## Update the PowerPC application
 
-1. Install or build the modern host together with the PowerPC artifact it
-   should publish.
+1. Install a release host or build the modern host together with the PowerPC
+   artifact it should publish. A release host uses the exact guest assets
+   embedded inside its app before signing; a development override is explicit.
 2. Connect the PowerPC guest and open its **Connection** page.
 3. Read the Application row under **Updates from the other Mac**. The row
    compares both release version and exact build identity, so a different
@@ -48,6 +49,16 @@ the optional resident component.
 4. Reopen NOW and confirm that the mismatch warning is gone and the resident
    capabilities you use are available.
 
+The Extension receipt is durable. Quitting or replacing the guest application
+does not erase **restart required**; the receipt clears only after a later boot
+reports the installed Extension build as the active resident.
+
+Application and Extension are separate buttons and separate results. For a
+release, update the application first, let it relaunch and reconnect, then
+update the Extension and restart. During iterative development you may update
+the Extension first, update the application second, and perform one final
+restart. NOW does not enforce either order or combine the actions.
+
 The previous resident bytes are retained under the staging name and changed
 to a non-INIT Finder type, so they cannot load alongside the replacement.
 
@@ -56,6 +67,10 @@ to a non-INIT Finder type, so they cannot load alongside the replacement.
 The in-app updater is host-owned publication, not internet update discovery.
 If the host has no validated update sidecar, Connections honestly says there
 is no update; use the setup portal or manual MacBinary deployment instead.
+If the connected host carries an older component than the one installed, NOW
+reports it as older and leaves its Install button unavailable. It never treats
+that condition as permission to downgrade. Host self-update remains future
+work until canonical deployed releases have a trust and channel policy.
 
 To roll back, quit NOW, remove the replacement, and restore the retained
 application or Extension under its canonical name and Finder type. Restart

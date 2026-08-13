@@ -6,9 +6,9 @@ doc_type: tutorial
 audience: user
 lifecycle: current
 authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md]
-source_dependencies: [scripts/build-host-app, now-guest-ppc/CMakeLists.txt, docs/naming.md, docs/feature-catalog.yaml, docs/onboarding.md, now-host/Sources/Host/OnboardingPortal.swift]
+source_dependencies: [scripts/build-host-app, scripts/assemble-release, now-guest-ppc/CMakeLists.txt, docs/naming.md, docs/feature-catalog.yaml, docs/distribution-profile.yaml, docs/onboarding.md, now-host/Sources/Host/OnboardingPortal.swift]
 media_ids: [setup-artifacts, setup-host-listener, setup-guest-connection, setup-connected]
-last_verified: 2026-08-09
+last_verified: 2026-08-13
 ---
 
 # Connect your first classic Mac
@@ -22,8 +22,8 @@ uses the normal applications and leaves the Extension uninstalled.
 - A Mac running macOS 13 or later.
 - A PowerPC Mac running Mac OS 8.6–9.2.2 with CarbonLib 1.6.
 - Both machines on a local network you control.
-- The alpha bundle containing the host app, PowerPC guest, and optional NOW
-  Extension.
+- The alpha bundle containing the host app, PowerPC guest, optional NOW
+  Extension, and Apple CarbonLib installer/license package.
 
 ![The alpha bundle with the host, PowerPC guest, and bundled optional Extension identified](../../assets/screenshots/getting-started/artifacts.svg){ .now-placeholder }
 
@@ -34,6 +34,10 @@ Install **New Old World.app** on the modern Mac. The guided alpha path is
 Mac](../how-to/set-up-new-mac.md) to build and download a personalized setup
 disk. That flow has host and emulator evidence but is not yet end-to-end
 verified through a classic browser on hardware.
+
+The same release's generic `.img.bin` can instead be downloaded directly on
+the old Mac or moved manually. It has no saved host address, so enter the
+modern Mac's address in Connection after mounting it.
 
 For the manual fallback, transfer **New Old World.bin** and let the transfer
 tool restore its forks, then [configure the connection](../how-to/configure-connection.md).

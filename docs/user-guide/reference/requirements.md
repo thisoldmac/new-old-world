@@ -5,17 +5,17 @@ description: Operating-system, architecture, network, and artifact requirements 
 doc_type: reference
 audience: user
 lifecycle: current
-authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md]
-source_dependencies: [now-host/Package.swift, now-host/NewOldWorld.xcodeproj/project.pbxproj, now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, SECURITY.md, docs/feature-catalog.yaml, docs/onboarding.md]
+authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md, docs/developer-guide/reference/distribution-standard.md]
+source_dependencies: [now-host/Package.swift, now-host/NewOldWorld.xcodeproj/project.pbxproj, now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, SECURITY.md, docs/feature-catalog.yaml, docs/distribution-profile.yaml, docs/onboarding.md, docs/developer-guide/reference/distribution-standard.md]
 media_ids: []
-last_verified: 2026-08-09
+last_verified: 2026-08-13
 ---
 
 # Requirements
 
 | Component | Requirement | Canonical artifact |
 |---|---|---|
-| macOS host | macOS 13 or later | `New Old World.app` |
+| macOS host | macOS 13 or later | `New Old World.app` inside the release DMG |
 | PowerPC guest | PowerPC, Mac OS 8.6–9.2.2, CarbonLib 1.6 | `New Old World.bin` |
 | Bundled, optional NOW Extension | PowerPC classic range only; restart and disable-Extensions recovery available | `NOW Extension` in the alpha bundle |
 | Pre-Carbon/NOW-68K | Excluded from alpha; retained target was 68030, System 7.1, MacTCP | No alpha artifact |
@@ -27,6 +27,11 @@ be exposed to the internet.
 The guided [Set Up a New Mac](../how-to/set-up-new-mac.md) path additionally
 needs a classic web browser and Disk Copy 6.3.3. Those are requirements of the
 guided disk-image path, not of a manual fork-preserving installation.
+
+The release also publishes a generic `new-old-world-classic-VERSION.img.bin`
+for direct old-browser download or manual transfer. It contains no saved host
+address. Configuring Ethernet, Wi-Fi, MacTCP/Open Transport, or an external
+bridge so the classic Mac can reach the LAN remains outside NOW's scope.
 
 The [alpha feature profile](release-profile.md) is the release-facing
 authority until a concrete bundle is cut. The release bundle then becomes

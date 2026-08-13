@@ -4,6 +4,44 @@ search:
 ---
 # Open issues
 
+## TESTED, NOT RELEASED OR METAL-VERIFIED: recorded bundle and update slice (2026-08-13, `codex/bundle-update-slice`)
+
+The alpha distribution now has one machine-readable profile and one curated
+standard. A fail-closed assembler takes committed PPC app and Extension
+artifacts plus an external checksum-pinned CarbonLib descriptor, preserves the
+Apple installer and license files byte-for-byte, embeds that exact catalog in
+the unsigned Release host before final signing, and emits a DMG, generic
+MacBinary-wrapped HFS image, loose app/Extension update pairs, release manifest,
+and `SHA256SUMS`. CodeKitten and NOW-68K are excluded from this profile. A
+synthetic end-to-end assembly produced all eight public files; the DMG passed
+`hdiutil imageinfo`, every checksum verified, and the generic image's actual
+HFS/NDIF construction passed. This is release-tool evidence, not a real signed
+release with Apple's CarbonLib bytes.
+
+The host now treats its sealed `Contents/Resources/Onboarding` catalog as the
+release baseline. A stale Application Support app, Extension, or same-named
+dependency cannot mask the embedded copy, while writable-only dependencies
+still augment it and `NOW_ONBOARDING_ASSETS` remains an explicit single-root
+development override. Generic release images omit preferences and CodeKitten;
+host-created personalized images carry the selected host/port.
+
+The existing host-owned updater remains two independent classic-Mac actions.
+Application-first, reconnect, Extension-second, reboot is the canonical release
+sequence; Extension-first, application-second, one reboot is supported for
+iteration. Older host artifacts warn and cannot arm an implicit downgrade.
+After Extension exchange the guest now persists the offered full build identity
+and retains **restart required** across application relaunch and wire reconnect;
+only a later boot whose resident fingerprint matches clears it. CarbonLib below
+1.6 produces an advisory launch warning with a durable **Don't Warn Again**
+choice. Both new decisions were mutation-tested and all guest targets
+cross-built. Neither UI has been driven in QEMU or on a physical Macintosh.
+
+Still open: a real release assembly using the intended Apple installer and
+signing identity; notarization and website publication; classic-browser direct
+download of the generic image; rollback and low-disk acceptance; host
+self-update after canonical deployed releases have a trust/channel policy; and
+the full lifecycle on the PowerBook 1400c.
+
 ## UNVERIFIED: NOW Web Direct needs Classilla and MacWeb acceptance (2026-08-10, `codex/web-proxy`)
 
 The Direct implementation, host supervision, PowerPC Workshop page, semantic
@@ -386,6 +424,13 @@ rollback-file recovery also remain suite-tested rather than emulator-accepted.
 Physical-hardware acceptance still owes the whole lifecycle on the PowerBook
 1400c.
 
+**Updated 2026-08-13:** restart-required is no longer only an in-memory state.
+The guest records the offered full Extension build after exchange, retains the
+receipt across application relaunch and reconnect, and clears it only when a
+subsequent boot's active resident reports the matching fingerprint prefix. The
+model and source wiring were mutation-tested and the guest cross-built; the
+durable path has not yet been re-driven in the emulator or on hardware.
+
 Product release 0.2.0 is stated coherently in the shared guest header, PPC
 `vers` resource, host catalog and both host build paths; the wire-contract
 revision remains independent. Main-reference hooks reject incoherent copies,
@@ -572,6 +617,14 @@ The replacement content-fit guard was then watched fail when the old 8 MiB
 floor and 2.6 MiB free-space allowance were restored together: it named the
 8,388,608-byte carrier as exceeding the sub-6-MiB bound.
 
+**Updated 2026-08-13:** release precedence is now the opposite of the original
+development-store rule above. `Contents/Resources/Onboarding` is the sealed
+baseline for app, Extension and same-named dependencies; Application Support
+may add dependencies but cannot replace those release bytes. The environment
+override remains single-root. The focused catalog test was watched fail when
+the writable app, Extension and dependency won, then passed with bundled
+precedence.
+
 `scripts/test-all` exits 0 after the HFS/NDIF checkpoint: staged-image
 discipline 28/28,
 native tests 149/149, MirrorKit, all guest/resident/instrument cross-builds,
@@ -598,6 +651,13 @@ established Apple redistribution permission. The builder can use open-source
 by carrying a locally prepared native `CarbonLib.bin`; a release-pinned helper
 bundle and its update policy remain unverified. The product intentionally does
 not create StuffIt: the HFS/NDIF disk is the single-package carrier instead.
+
+**Updated 2026-08-13:** the source repository still does not contain
+CarbonLib, but the distribution policy now permits a release to bundle the
+exact checksum-pinned Apple installer with its provenance and license material.
+The assembler never extracts or substitutes it, and records that the user must
+accept Apple's installer license. That policy and a synthetic descriptor are
+tested; the intended Apple bytes have not yet been used to cut a real release.
 
 **There is a third category, and it is not on this page.**
 [known-wrong.md](known-wrong.md) is the register of things NOW knowingly

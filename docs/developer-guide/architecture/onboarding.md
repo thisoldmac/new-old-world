@@ -6,9 +6,9 @@ doc_type: explanation
 audience: developer
 lifecycle: current
 authority: [docs/onboarding.md]
-source_dependencies: [docs/onboarding.md, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingPage.swift, now-host/Sources/Host/OnboardingAssets.swift, now-host/Sources/Host/OnboardingDependencies.swift, now-host/Sources/Host/OnboardingPreferences.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-host/Sources/Host/NDIFImage.swift, now-host/Sources/Host/MacBinaryEncoder.swift]
+source_dependencies: [docs/onboarding.md, docs/distribution-profile.yaml, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingPage.swift, now-host/Sources/Host/OnboardingAssets.swift, now-host/Sources/Host/OnboardingDependencies.swift, now-host/Sources/Host/OnboardingPreferences.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-host/Sources/Host/NDIFImage.swift, now-host/Sources/Host/MacBinaryEncoder.swift]
 media_ids: []
-last_verified: 2026-08-09
+last_verified: 2026-08-13
 ---
 
 # Onboarding and setup media
@@ -20,7 +20,7 @@ temporary HTTP server makes that media reachable to old browsers.
 
 ```mermaid
 flowchart LR
-  UI["Connections setup UI"] --> CAT["Package catalog\nApplication Support then bundle"]
+  UI["Connections setup UI"] --> CAT["Package catalog\nsealed bundle then local additions"]
   UI --> PREF["Generated New Old World Prefs"]
   CAT --> DEP["Dependency acquisition and checksum gate"]
   DEP --> IMG["HFS Plus setup volume"]
@@ -34,9 +34,10 @@ flowchart LR
   GUEST --> HELLO["Normal NOW hello"]
 ```
 
-Text equivalent: the setup UI resolves packages from the user store before
-the app bundle, generates preferences, and passes accepted assets through the
-HFS Plus, NDIF, and MacBinary builders. The temporary HTTP portal serves the
+Text equivalent: the setup UI uses the app bundle as the release baseline,
+augments it with non-conflicting user-store dependencies, generates
+preferences, and passes accepted assets through the HFS Plus, NDIF, and
+MacBinary builders. The temporary HTTP portal serves the
 result to a classic browser; Disk Copy mounts it, and the installed guest uses
 the ordinary NOW connection handshake.
 
@@ -50,11 +51,15 @@ the ordinary NOW connection handshake.
   schema.
 - The volume is tight HFS Plus inside an uncompressed NDIF image, optionally
   wrapped in MacBinary so transport can preserve its classic metadata.
-- User Application Support packages override bundled packages. Known acquired
-  dependencies are accepted only after their recorded checksum matches.
-- CarbonLib redistribution remains a licensing decision, not something the
-  acquisition code can silently settle. Archive extraction may use a local
-  `unar` prerequisite when the source format requires it.
+- The sealed app bundle is the release baseline: a stale writable application
+  or Extension cannot mask it. Application Support may add dependencies that
+  the release does not contain. `NOW_ONBOARDING_ASSETS` remains a deliberate
+  single-root development override.
+- CarbonLib is admitted to a release only as the checksum-pinned Apple
+  installer named by the distribution profile, with provenance and license
+  material preserved. Source acquisition cannot silently turn another file
+  into that release input. Archive extraction may still use a local `unar`
+  prerequisite for operator-provided development dependencies.
 
 ## Verification boundary
 

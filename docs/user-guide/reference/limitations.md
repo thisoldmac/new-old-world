@@ -8,17 +8,20 @@ lifecycle: current
 authority: [docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md]
 source_dependencies: [docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md, docs/feature-catalog.yaml, docs/onboarding.md, docs/development.md]
 media_ids: []
-last_verified: 2026-08-10
+last_verified: 2026-08-13
 ---
 
 # Current limitations
 
 - **Trusted network only.** The classic wire is plaintext and unauthenticated;
   the host listener must not be internet-facing.
-- **Alpha packaging.** The exact release bundle and website integration
-  must be reviewed at the release commit. The connected host can now publish
-  validated guest and Extension artifacts, but they remain unsigned and the
-  flow is not an internet updater, notarization flow, or download service.
+- **Alpha packaging.** A fail-closed assembler now produces the signed host
+  DMG, embedded classic catalog, generic `.img.bin`, loose update pairs,
+  release manifest, and checksums from one recorded component set. A real
+  release still needs its licensed CarbonLib descriptor, signing identity, and
+  release-commit review. Classic updates remain unsigned, and website
+  integration, notarization, internet update discovery, and host self-update
+  are not implemented.
 - **Guided setup is not yet metal-verified.** Its routes and media builders are
   tested and the image mounts in Mac OS 9.1 QEMU, but a classic-browser
   download, automatic decoding, and first physical-hardware hello have not

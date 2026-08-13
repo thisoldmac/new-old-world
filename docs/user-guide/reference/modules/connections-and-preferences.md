@@ -9,7 +9,7 @@ authority: [docs/architecture.md, docs/naming.md, docs/onboarding.md, contract/a
 module_ids: [settings]
 source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-guest-ppc/src/connection, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
 media_ids: [settings-host, settings-ppc]
-last_verified: 2026-08-10
+last_verified: 2026-08-13
 ---
 
 # Connections and preferences
@@ -80,13 +80,19 @@ Updates retain no-offer, busy-transfer, identity mismatch, checksum mismatch,
 disk-space, Finder-identity, exchange, and relaunch/restart states rather than
 presenting a downloaded file as installed.
 
+Extension restart state survives an application relaunch and clears only when
+a later boot reports the installed resident identity active. On launch,
+PowerPC also warns when it detects CarbonLib below the supported 1.6 floor;
+**Don't Warn Again** suppresses that advisory without changing CarbonLib.
+
 ## Current limitations
 
 Guest display name is the current connection identity. Two live machines with
 the same name collide intentionally rather than being guessed apart.
 
-Update signing and automatic update discovery are not implemented. The
-connected host is the only provider, and the flow is not yet metal-verified.
+Classic update signing, internet discovery, and host self-update are not
+implemented. The connected host is the only provider, and the flow is not yet
+metal-verified.
 
 ## For developers
 

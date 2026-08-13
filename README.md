@@ -12,6 +12,7 @@ Use a classic Macintosh from a modern Mac without turning either interface into 
 
 - [Connect your first classic Mac](docs/user-guide/tutorials/first-connection.md)
 - [Set up a new PowerPC Mac](docs/user-guide/how-to/set-up-new-mac.md)
+- [Install or update the two guest components](docs/user-guide/how-to/upgrade-rollback-remove.md)
 - [Compare core features and NOW Extension coverage](docs/user-guide/explanation/core-features.md)
 - [Review the alpha feature profile](docs/user-guide/reference/release-profile.md)
 - [Browse every module](docs/user-guide/reference/modules/index.md)
@@ -19,6 +20,13 @@ Use a classic Macintosh from a modern Mac without turning either interface into 
 - [See the generated protocol reference](docs/generated/asyncapi.md)
 
 The web documentation is built from `mkdocs.yml` at the `/docs/` base path. Run `scripts/docs-serve` for a local preview.
+
+The release DMG carries a finalized host app with its classic setup assets
+sealed inside it, so copying the app to Applications does not break those
+assets. The same release also publishes a generic classic setup `.img.bin`
+and loose MacBinary app and Extension downloads. NOW assumes the classic Mac
+already has IP connectivity to the trusted local network; getting an old Mac
+online is a separate prerequisite, not a feature of the bundle.
 
 ## Product shape
 
@@ -57,9 +65,9 @@ The short table is navigation, not a claim of parity. The [module reference](doc
 ## Important limitations
 
 - The listener is for a trusted local network; secure transport is not available yet.
-- Distribution is not a signed installer flow. In-app updates verify SHA-256
-  but are explicitly unsigned and require local confirmation; classic artifacts
-  still require fork-preserving transfer.
+- The macOS app can be signed as part of release assembly, but classic in-app
+  updates are still explicitly unsigned. They verify SHA-256, require local
+  confirmation on the classic Mac, and still require fork-preserving transfer.
 - Resume-by-offset and some large-transfer behavior remain unreliable.
 - Web Direct has not yet been exercised by Classilla or MacWeb on an emulator
   or physical Mac; guest-local relay is not implemented, and the optional
@@ -79,6 +87,14 @@ scripts/test-all
 ```
 
 `scripts/test-all` is the repository gate. It runs host-only checks first, the documentation gate, both guest cross-builds when Retro68 is installed, the host suites and app builds, and an optional live-guest stage. Green means **tested**, not metal-verified.
+
+CarbonLib is a runtime dependency on the classic Mac, not a source dependency
+of the macOS build. The repository does not check Apple's installer into Git.
+Source builds must arrange CarbonLib 1.6 on the target Mac themselves; the
+guest warns at launch when it detects an older version and can remember a
+person's choice not to warn again. Release assembly may bundle the exact
+checksum-pinned Apple installer and its license material through an external
+descriptor; see the [distribution standard](docs/developer-guide/reference/distribution-standard.md#assemble-a-release).
 
 For docs only:
 

@@ -6,9 +6,9 @@ doc_type: explanation
 audience: developer
 lifecycle: current
 authority: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/resident-components.md, docs/developer-guide/reference/distribution-standard.md]
-source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/developer-guide/reference/distribution-standard.md, docs/distribution-profile.yaml, tools/write-update-manifest.py, tools/product-version-gate, tools/ext-bake-gate, tools/land-main, now-guest-ppc/cmake/buildstamp.cmake, ext/cmake/build_identity.cmake, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/GuestListener.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/wire.c]
+source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/developer-guide/reference/distribution-standard.md, docs/distribution-profile.yaml, tools/write-update-manifest.py, tools/product-version-gate, tools/ext-bake-gate, tools/land-main, now-guest-ppc/cmake/buildstamp.cmake, ext/cmake/build_identity.cmake, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/OnboardingAssets.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/wire.c, now-guest-ppc/src/core/prefs.c]
 media_ids: []
-last_verified: 2026-08-10
+last_verified: 2026-08-13
 ---
 
 # Host-owned updates
@@ -126,6 +126,20 @@ identity: `APPL/NOWo` for the application and `INIT/NOWx` for the Extension.
 The guest compares the active table's resident major/minor with the version it
 compiled against and warns when they differ. Capability bits, not version, still
 govern which resident planes the application may use.
+
+After a successful Extension exchange, the guest writes the offered full build
+identity into its accretive preference record. Application relaunch and wire
+reconnection retain `restart-required`. On startup, the guest compares the
+active resident table's 160-bit identity prefix with that receipt; only a match
+clears it. An absent or different resident remains pending rather than being
+rounded up to activation.
+
+The host deployment helper and the guest UI deliberately own different halves.
+The host publishes the exact bundle catalog and serves requests. The classic
+Connection page displays deployed-versus-bundled status and owns the separate
+**Install App** and **Install Extension** buttons. Moving those buttons to a
+second host control path would bypass the local unsigned-artifact confirmation;
+signed automation requires the future trust policy described below.
 
 ## Trust boundary
 
