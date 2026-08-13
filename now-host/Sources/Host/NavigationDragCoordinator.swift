@@ -59,7 +59,7 @@ struct NavigationDragCoordinator {
                 return nil
             }
             if case .shelf(let shelfID) = dragged,
-               zone == .drawer, !shelfID.canEnterDrawer {
+               !shelfID.canOccupy(zone) {
                 return nil
             }
             return .move(dragged, to: zone, index: index)
@@ -96,7 +96,7 @@ extension NavigationLayout {
                 throw NavigationLayoutCommandError.missingSource
             }
             if case .shelf(let shelfID) = dragged,
-               zone == .drawer, !shelfID.canEnterDrawer {
+               !shelfID.canOccupy(zone) {
                 throw NavigationLayoutCommandError.invalidTarget
             }
             let origin = changed.topLevelLocation(of: dragged)

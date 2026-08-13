@@ -142,12 +142,23 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertNotNil(changed.shelf(id: .machine))
     }
 
+    func testSpecialShelvesCannotMoveIntoThePinnedUtilityArea() {
+        let layout = NavigationLayout.standard(for: .standard)
+
+        for shelfID in [NavigationShelfID.machine, .network] {
+            XCTAssertNil(NavigationDragCoordinator.command(
+                for: .shelf(shelfID),
+                droppingOn: .zone(.lower, index: 0),
+                in: layout, makeShelfID: { shelfUUID }))
+        }
+    }
+
     func testDrawerSummaryCountsContainedLeavesAndSurfacesNetworkStatus() {
         var layout = NavigationLayout.standard(for: .standard)
-        let networkIndex = layout.lower.firstIndex {
+        let networkIndex = layout.upper.firstIndex {
             $0.id == NavigationShelfID.network.rawValue
         }!
-        layout.drawer.append(layout.lower.remove(at: networkIndex))
+        layout.drawer.append(layout.upper.remove(at: networkIndex))
         layout.drawer.append(.module("chat"))
         layout.upper.removeAll { $0 == .module("chat") }
 

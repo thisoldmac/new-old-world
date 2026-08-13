@@ -161,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     /// Application appearance is a native window. Connection settings retain
-    /// their stable module identity and later become Network's hero.
+    /// their stable module identity and later become Connections' hero.
     @objc func showSettings() {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(

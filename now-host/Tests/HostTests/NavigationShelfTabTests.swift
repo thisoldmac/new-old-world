@@ -71,6 +71,33 @@ final class NavigationShelfTabTests: XCTestCase {
         XCTAssertFalse(sidebar.contains("Text(\"Navigation\")"))
     }
 
+    func testConnectionsShelfUsesTheMainListAndItsProductName() throws {
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostSidebarView.swift")
+
+        XCTAssertTrue(sidebar.contains("case .network: \"Connections\""))
+        XCTAssertFalse(sidebar.contains("case .network: \"Network\""))
+    }
+
+    func testDropTargetsOverlayRowsInsteadOfBecomingEmptyListRows() throws {
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostSidebarView.swift")
+
+        XCTAssertTrue(sidebar.contains("SidebarNavigationListRow("))
+        XCTAssertTrue(sidebar.contains(".overlay(alignment: .top)"))
+        XCTAssertFalse(sidebar.contains(".listRowInsets(EdgeInsets())"))
+    }
+
+    func testGlassChromeOverlaysTheScrollingSidebarContent() throws {
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostSidebarView.swift")
+
+        XCTAssertTrue(sidebar.contains(".safeAreaInset(edge: .top"))
+        XCTAssertTrue(sidebar.contains(".safeAreaInset(edge: .bottom"))
+        XCTAssertEqual(sidebar.components(separatedBy: ".nowGlassBar()").count,
+                       3)
+    }
+
     func testExpandedDrawerCarriesAPersistentLabel() throws {
         let drawer = try GateSource.hostSwift(
             "now-host/Sources/Host/ModuleDrawerView.swift")

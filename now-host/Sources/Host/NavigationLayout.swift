@@ -33,8 +33,15 @@ enum NavigationShelfID: Hashable, Sendable {
         self == .machine || self == .network
     }
 
-    var canEnterDrawer: Bool {
-        self != .machine
+    func canOccupy(_ zone: NavigationZone) -> Bool {
+        switch self {
+        case .machine:
+            zone == .upper
+        case .network:
+            zone != .lower
+        case .screen, .files, .user:
+            true
+        }
     }
 
     var fixedModuleHeroID: String? {
@@ -241,12 +248,11 @@ struct NavigationLayout: Codable, Equatable, Sendable {
                 .shelf(NavigationShelf(
                     id: .files,
                     moduleIDs: present(Self.members(of: .files)))),
-            ] + present(["chat", "development"]).map(NavigationItem.module),
-            lower: [
                 .shelf(NavigationShelf(
                     id: .network,
                     moduleIDs: present(Self.members(of: .network)))),
-            ] + present(["console", "logs"]).map(NavigationItem.module),
+            ] + present(["chat", "development"]).map(NavigationItem.module),
+            lower: present(["console", "logs"]).map(NavigationItem.module),
             drawer: [])
         let placed = Set(layout.allModuleIDs)
         layout.upper.append(contentsOf: registry.modules
@@ -305,8 +311,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
                         }
                         continue
                     }
-                    let repairedZone: NavigationZone =
-                        shelf.id.canEnterDrawer ? zone : (zone == .drawer ? .upper : zone)
+                    let repairedZone = shelf.id.canOccupy(zone) ? zone : .upper
                     output.append(.shelf(shelf), to: repairedZone)
                 }
             }
@@ -320,7 +325,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         }
 
         output.ensurePermanentShelf(.machine, in: .upper, seen: &seenShelves)
-        output.ensurePermanentShelf(.network, in: .lower, seen: &seenShelves)
+        output.ensurePermanentShelf(.network, in: .upper, seen: &seenShelves)
 
         for id in registry.modules.map(\.id) where !seenModules.contains(id) {
             if id == "continuity" {

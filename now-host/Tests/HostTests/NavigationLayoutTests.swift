@@ -9,10 +9,10 @@ final class NavigationLayoutTests: XCTestCase {
             [NavigationShelfID.machine.rawValue,
              NavigationShelfID.screen.rawValue,
              NavigationShelfID.files.rawValue,
+             NavigationShelfID.network.rawValue,
              "module.chat", "module.development"])
         XCTAssertEqual(layout.lower.map(\.id),
-            [NavigationShelfID.network.rawValue,
-             "module.console", "module.logs"])
+            ["module.console", "module.logs"])
         XCTAssertEqual(layout.shelf(id: .machine)?.hero, .overview)
         XCTAssertEqual(layout.shelf(id: .network)?.hero, .module("settings"))
         XCTAssertTrue(layout.drawer.isEmpty)
@@ -69,6 +69,28 @@ final class NavigationLayoutTests: XCTestCase {
 
         XCTAssertEqual(repaired.zone(of: .machine), .upper)
         XCTAssertEqual(repaired.zone(of: .network), .drawer)
+        assertTotalPartition(repaired, registry: .standard)
+    }
+
+    func testSpecialShelvesCannotBeSanitisedIntoThePinnedUtilityArea() {
+        let stored = NavigationLayout(
+            upper: [.module("chat")],
+            lower: [
+                .shelf(NavigationShelf(id: .machine,
+                    moduleIDs: ["census"])),
+                .shelf(NavigationShelf(id: .network,
+                    moduleIDs: ["settings", "networking", "mcp", "web"])),
+                .module("console"),
+                .module("logs"),
+            ],
+            drawer: [])
+
+        let repaired = stored.sanitised(for: .standard)
+
+        XCTAssertEqual(repaired.zone(of: .machine), .upper)
+        XCTAssertEqual(repaired.zone(of: .network), .upper)
+        XCTAssertEqual(repaired.lower.map(\.id),
+                       ["module.console", "module.logs"])
         assertTotalPartition(repaired, registry: .standard)
     }
 

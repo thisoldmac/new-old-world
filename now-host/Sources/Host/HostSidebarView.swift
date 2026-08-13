@@ -12,7 +12,20 @@ struct HostSidebarView: View {
     @State private var drawerPresented = false
 
     var body: some View {
-        VStack(spacing: 0) {
+        List {
+            SidebarNavigationItems(
+                items: sidebar.layout.upper,
+                zone: .upper,
+                registry: registry,
+                status: monitor.status,
+                compact: sidebar.compact,
+                collapsed: sidebar.collapsed,
+                selection: selection,
+                dragActions: dragActions,
+                select: select)
+        }
+        .listStyle(.sidebar)
+        .safeAreaInset(edge: .top, spacing: 0) {
             HostSidebarHeader(
                 listener: listener,
                 collapsed: sidebar.collapsed,
@@ -22,21 +35,8 @@ struct HostSidebarView: View {
                     select(NavigationSelection.selecting(
                         moduleID: "settings", in: sidebar.layout))
                 })
-
-            List {
-                SidebarNavigationItems(
-                    items: sidebar.layout.upper,
-                    zone: .upper,
-                    registry: registry,
-                    status: monitor.status,
-                    compact: sidebar.compact,
-                    collapsed: sidebar.collapsed,
-                    selection: selection,
-                    dragActions: dragActions,
-                    select: select)
-            }
-            .listStyle(.sidebar)
-
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             SidebarUtilityArea(
                 items: sidebar.layout.lower,
                 drawerItems: sidebar.layout.drawer,
@@ -48,6 +48,7 @@ struct HostSidebarView: View {
                 drawerPresented: $drawerPresented,
                 dragActions: dragActions,
                 select: select)
+                .nowGlassBar()
         }
         .navigationTitle("Modules")
         .modifier(SidebarWidth(collapsed: sidebar.collapsed))
@@ -166,11 +167,11 @@ struct SidebarNavigationItems: View {
 
     var body: some View {
         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-            SidebarNavigationDropSlot(
-                target: .zone(zone, index: index),
-                dragActions: dragActions)
-            SidebarNavigationItemView(
+            SidebarNavigationListRow(
+                index: index,
+                isLast: index == items.index(before: items.endIndex),
                 item: item,
+                zone: zone,
                 registry: registry,
                 status: status,
                 compact: compact,
@@ -180,11 +181,54 @@ struct SidebarNavigationItems: View {
                 select: select)
                 .listRowInsets(EdgeInsets(top: 3, leading: 7,
                                           bottom: 3, trailing: 7))
+                .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
         }
-        SidebarNavigationDropSlot(
-            target: .zone(zone, index: items.endIndex),
-            dragActions: dragActions)
+        if items.isEmpty {
+            SidebarNavigationDropSlot(
+                target: .zone(zone, index: 0),
+                dragActions: dragActions)
+        }
+    }
+}
+
+private struct SidebarNavigationListRow: View {
+    let index: Int
+    let isLast: Bool
+    let item: NavigationItem
+    let zone: NavigationZone
+    let registry: ModuleRegistry
+    let status: GuestStatus
+    let compact: Bool
+    let collapsed: Bool
+    let selection: NavigationSelection
+    let dragActions: SidebarNavigationDragActions
+    let select: (NavigationSelection) -> Void
+
+    var body: some View {
+        SidebarNavigationItemView(
+            item: item,
+            registry: registry,
+            status: status,
+            compact: compact,
+            collapsed: collapsed,
+            selection: selection,
+            dragActions: dragActions,
+            select: select)
+            .overlay(alignment: .top) {
+                SidebarNavigationDropSlot(
+                    target: .zone(zone, index: index),
+                    dragActions: dragActions)
+                    .offset(y: -5)
+            }
+            .overlay(alignment: .bottom) {
+                if isLast {
+                    SidebarNavigationDropSlot(
+                        target: .zone(zone, index: index + 1),
+                        dragActions: dragActions)
+                        .offset(y: 5)
+                }
+            }
     }
 }
 
@@ -194,14 +238,12 @@ private struct SidebarNavigationDropSlot: View {
 
     var body: some View {
         Color.clear
-            .frame(height: 5)
+            .frame(height: 10)
             .overlay(SidebarNativeDragSurface(
                 payload: nil,
                 target: target,
                 canDrop: dragActions.canDrop,
                 performDrop: dragActions.performDrop))
-            .listRowInsets(EdgeInsets())
-            .listRowSeparator(.hidden)
     }
 }
 
@@ -259,10 +301,13 @@ private struct SidebarLooseModuleRow: View {
     var body: some View {
         Button(action: select) {
             if collapsed {
-                Image(systemName: module.symbol)
-                    .frame(maxWidth: .infinity, minHeight: 26)
+                SidebarNavigationIcon(symbol: module.symbol,
+                                      isSelected: isSelected)
+                    .frame(maxWidth: .infinity, minHeight: 32)
             } else {
-                Label {
+                HStack(spacing: 10) {
+                    SidebarNavigationIcon(symbol: module.symbol,
+                                          isSelected: isSelected)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(module.title)
                         if !compact {
@@ -272,25 +317,20 @@ private struct SidebarLooseModuleRow: View {
                                 .lineLimit(2)
                         }
                     }
-                } icon: {
-                    Image(systemName: module.symbol)
+                    Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
-                .padding(.vertical, compact ? 5 : 7)
+                .padding(.horizontal, 10)
+                .padding(.vertical, compact ? 7 : 9)
             }
         }
         .buttonStyle(.plain)
-        .background(selectionBackground)
+        .background(SidebarNavigationRowBackground(isSelected: isSelected))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityLabel(module.title)
         .help(collapsed || compact ? module.summary : "")
     }
 
-    private var selectionBackground: some View {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .fill(Color.accentColor.opacity(isSelected ? 0.18 : 0))
-    }
 }
 
 private struct SidebarShelfRow: View {
@@ -303,11 +343,13 @@ private struct SidebarShelfRow: View {
 
     var body: some View {
         let shelfSelection = NavigationSelection.selectingHero(of: shelf)
+        let isSelected = selection.containingShelfID == shelf.id
         Button { select(shelfSelection) } label: {
             if collapsed {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: symbol)
-                        .frame(maxWidth: .infinity, minHeight: 28)
+                    SidebarNavigationIcon(symbol: symbol,
+                                          isSelected: isSelected)
+                        .frame(maxWidth: .infinity, minHeight: 32)
                     if shelf.id == .network {
                         ConnectionStatusDot(status: status)
                             .scaleEffect(0.72)
@@ -315,10 +357,11 @@ private struct SidebarShelfRow: View {
                     }
                 }
             } else {
-                HStack(spacing: 8) {
-                    Image(systemName: symbol)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    SidebarNavigationIcon(symbol: symbol,
+                                          isSelected: isSelected)
                     Text(title)
+                        .fontWeight(.medium)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     if shelf.id == .network {
@@ -326,15 +369,12 @@ private struct SidebarShelfRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 10)
                 .padding(.vertical, 7)
             }
         }
         .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.accentColor.opacity(
-                    selection.containingShelfID == shelf.id ? 0.18 : 0)))
+        .background(SidebarNavigationRowBackground(isSelected: isSelected))
         .accessibilityAddTraits(
             selection.containingShelfID == shelf.id ? [.isSelected] : [])
         .accessibilityLabel(title)
@@ -352,7 +392,7 @@ private struct SidebarShelfRow: View {
         case .machine: status.machineShelfTitle
         case .screen: "Screen"
         case .files: "Files"
-        case .network: "Network"
+        case .network: "Connections"
         case .user: shelf.title ?? "Shelf"
         }
     }
@@ -365,6 +405,35 @@ private struct SidebarShelfRow: View {
         case .network: "network"
         case .user: "square.stack.3d.up"
         }
+    }
+}
+
+private struct SidebarNavigationIcon: View {
+    let symbol: String
+    let isSelected: Bool
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.body.weight(.medium))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+            .frame(width: 22, height: 22)
+    }
+}
+
+private struct SidebarNavigationRowBackground: View {
+    let isSelected: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(isSelected
+                  ? Color.accentColor.opacity(0.17)
+                  : Color.primary.opacity(0.035))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(isSelected ? 0 : 0.055),
+                                  lineWidth: 0.5)
+            }
     }
 }
 

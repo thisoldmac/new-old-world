@@ -110,7 +110,7 @@ private struct DrawerConnectionStatusDot: View {
             .frame(width: 7, height: 7)
             .overlay(Circle().strokeBorder(.primary.opacity(0.15), lineWidth: 0.5))
             .help(status.menuLine)
-            .accessibilityLabel("Network: \(status.menuLine)")
+            .accessibilityLabel("Connections: \(status.menuLine)")
     }
 
     private var tint: Color {

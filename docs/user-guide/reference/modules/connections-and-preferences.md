@@ -19,7 +19,7 @@ last_verified: 2026-08-13
 ## What it does
 
 Connections owns the host listener, named sessions, and **Set Up a New Mac…**
-portal. On the macOS host it is the landing page of the Network shelf. The
+portal. On the macOS host it is the landing page of the Connections shelf. The
 PowerPC Workshop separately provides Preferences and Connection pages, and
 NOW-68K keeps connection controls in its main window.
 

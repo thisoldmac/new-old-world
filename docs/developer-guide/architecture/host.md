@@ -52,31 +52,32 @@ Shelves are shell composition, not feature modules. `NavigationLayout` is a
 versioned total partition of the live registry: every registered leaf appears
 exactly once in the upper sidebar, lower sidebar, or drawer. It stores stable
 IDs and user-shelf metadata, while labels, summaries, drawer counts, and the
-Network connection indicator are derived presentation.
+Connections status indicator are derived presentation.
 
 The default machine shelf has an Overview hero plus `census`, `software`,
 `processes`, and `diagnostics`. Screen contains `screen` and `mirror`; Files
-contains `files` and `icloud`. The lower Network shelf uses `settings` as its
-Connections hero, followed by `networking`, `mcp`, and `web`; `web` keeps its
-wire and preference identity while presenting the title **Web Proxy**. Console
-and Logs are lower standalone modules. There is no registered `continuity`
-descriptor in this revision, so the Screen shelf does not manufacture one.
+contains `files` and `icloud`. The main Connections shelf (internally
+`shelf.network`) uses `settings` as its hero, followed by `networking`, `mcp`,
+and `web`; `web` keeps its wire and preference identity while presenting the
+title **Web Proxy**. Console and Logs are lower standalone modules. There is no
+registered `continuity` descriptor in this revision, so the Screen shelf does
+not manufacture one.
 
 The sidebar renders one row per shelf, not one row per shelf member.
 `NavigationShelfTab` derives the stable tabs for that shelf, and
 `ShelfDetailView` renders them as a centered pill strip above the existing
 module view. The synthetic machine Overview remains window-local; every other
-pill retains its real module ID. The lower Network shelf, Console, and Logs are
-collected in the sidebar's compact pinned utility area, immediately above the
+pill retains its real module ID. Connections stays in the main scrolling list;
+Console and Logs occupy the compact pinned utility area immediately above the
 labeled drawer. The primary destinations use SwiftUI's native sidebar `List`;
 the shell does not recreate list scrolling or row layout.
 
 `NavigationLayoutStore` migrates the earlier flat order and sanitizes stored
-layouts against the current registry. The machine and Network shelves remain
-structurally present; the machine shelf cannot enter the drawer, while Network
-can and carries its status indicator there. User shelves decompose at one
-module. New registry leaves are adopted into their known family or appended as
-a standalone upper item.
+layouts against the current registry. The machine and Connections shelves
+remain structurally present and out of the pinned utility area; the machine
+shelf cannot enter the drawer, while Connections can and carries its status
+indicator there. User shelves decompose at one module. New registry leaves are
+adopted into their known family or appended as a standalone upper item.
 
 `SidebarNativeDragSurface` is the AppKit drag surface used from SwiftUI,
 including on the detail-pane pills so a shelf member can still be reordered or

@@ -27,28 +27,29 @@ is:
 | Upper sidebar | This Mac | Overview, Hardware, Software, Processes, Diagnostics |
 | Upper sidebar | Screen | Screen, Mirror |
 | Upper sidebar | Files | Files, iCloud |
+| Upper sidebar | Connections | Connections, Networking, MCP, Web Proxy |
 | Upper sidebar | Chat | Chat |
 | Upper sidebar | Development | Development |
-| Lower sidebar | Network | Connections, Networking, MCP, Web Proxy |
 | Lower sidebar | Console | Console |
 | Lower sidebar | Logs | Logs |
 
 Each shelf is one sidebar item. Selecting it opens a shelf page with its pages
 as centered pill tabs at the top of the main area; the selected module renders
-under that strip. Network, Console, and Logs form a compact group pinned to the
-bottom of the sidebar. The labeled Drawer sits directly beneath them.
+under that strip. Console and Logs form a compact group pinned to the bottom
+of the sidebar. The labeled Drawer sits directly beneath them.
 
 **Overview** is the landing page for the This Mac shelf. It summarizes the
 selected classic Mac; it is not another module. When no guest is attached,
 that shelf reads **No Mac Connected** without changing the selected page or
-the saved layout. **Connections** is the Network shelf's landing page.
+the saved layout. **Connections** is also the landing page and visible name of
+the Connections shelf.
 
 Drag normally to reorder modules, move them between the upper and lower
 sidebar, or put them in the drawer at the bottom. Dropping one module on
 another creates a shelf; a user-created shelf returns to a standalone module
 when only one item remains. This Mac is permanent and cannot enter the drawer.
-Network is permanent but can be put away; its live connection dot then appears
-on the drawer beside the drawer's module count. The current Screen shelf
+Connections is permanent but can be put away; its live connection dot then
+appears on the drawer beside the drawer's module count. The current Screen shelf
 contains Screen and Mirror; there is no placeholder Continuity page.
 
 Losing the guest does not remove or navigate away from modules. Host-owned
