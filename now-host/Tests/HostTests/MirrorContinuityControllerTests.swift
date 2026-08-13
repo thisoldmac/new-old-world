@@ -678,6 +678,11 @@ final class MirrorContinuityControllerTests: XCTestCase {
         async throws {
         let rig = try await makeActiveRig()
         defer { rig.udp.stop() }
+        /* The scenario under test is a starved application with a live
+           resident: acknowledgements stall while liveness keeps answering.
+           Without this, the silence lane ends ownership first and the
+           cycle-abandon path below can never be observed. */
+        rig.controller.machineIsAnsweringOverride = { _ in true }
 
         let source = ProcessInfo.processInfo.systemUptime
         XCTAssertTrue(rig.controller.primaryDown(
@@ -726,12 +731,24 @@ final class MirrorContinuityControllerTests: XCTestCase {
                        firstUp.buttonGeneration)
         XCTAssertFalse(secondDown.previousButtonDown,
                        "v4 must carry the intervening up beside the second down")
-        try await waitUntil("unacknowledged deferred press fails closed",
-                            timeout: 1.5) {
-            !rig.controller.isActive
+        /* The second cycle rides guest task time that the click's own target
+           may hold for hundreds of milliseconds; a slow acknowledgement is a
+           starved cooperative guest, not a dead one. The timeout abandons
+           only this cycle - forcing the wire button up inside the epoch so
+           no logical hold can leak - and ownership survives. */
+        try await waitUntil("unacknowledged press abandons its cycle",
+                            timeout: 4.5) {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != 0
+                    && $0.buttonGeneration != firstDown.buttonGeneration
+                    && $0.buttonGeneration != firstUp.buttonGeneration
+                    && $0.buttonGeneration != secondDown.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+            }
         }
-        XCTAssertTrue(rig.controller.isEnabled,
-                      "the timeout ends only this ownership epoch")
+        XCTAssertTrue(rig.controller.isActive,
+                      "a late down acknowledgement must not end ownership")
+        XCTAssertTrue(rig.controller.isEnabled)
     }
 
     func testIndependentKeepaliveContinuesWhileMainActorIsBusy() async throws {
