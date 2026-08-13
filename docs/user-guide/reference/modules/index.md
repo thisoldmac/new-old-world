@@ -1,19 +1,61 @@
 ---
 page_id: module-index-reference
 title: Module reference
-description: Map every macOS host module to the alpha PowerPC Workshop and retained pre-Carbon source posture.
+description: Find every stable module and understand how the macOS host arranges modules into shelves and a drawer.
 doc_type: reference
 audience: user
 lifecycle: current
-authority: [docs/module-manifest.yaml, docs/contract-coverage.md]
-source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
+authority: [docs/module-manifest.yaml, docs/contract-coverage.md, now-host/Sources/Host/NavigationLayout.swift]
+source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
 media_ids: []
-last_verified: 2026-08-09
+last_verified: 2026-08-13
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
 
 # Module reference
+
+## Navigation on the macOS host
+
+Each row in this reference remains a first-class module with a stable identity.
+The host groups related modules into **shelves** for navigation; a shelf does
+not merge or replace the module implementations inside it. The initial layout
+is:
+
+| Area | Shelf or module | Pages |
+|---|---|---|
+| Upper sidebar | This Mac | Overview, Hardware, Software, Processes, Diagnostics |
+| Upper sidebar | Screen | Screen, Mirror |
+| Upper sidebar | Files | Files, iCloud |
+| Upper sidebar | Chat | Chat |
+| Upper sidebar | Development | Development |
+| Lower sidebar | Network | Connections, Networking, MCP, Web Proxy |
+| Lower sidebar | Console | Console |
+| Lower sidebar | Logs | Logs |
+
+**Overview** is the landing page for the This Mac shelf. It summarizes the
+selected classic Mac; it is not another module. When no guest is attached,
+that shelf reads **No Mac Connected** without changing the selected page or
+the saved layout. **Connections** is the Network shelf's landing page.
+
+Drag normally to reorder modules, move them between the upper and lower
+sidebar, or put them in the drawer at the bottom. Dropping one module on
+another creates a shelf; a user-created shelf returns to a standalone module
+when only one item remains. This Mac is permanent and cannot enter the drawer.
+Network is permanent but can be put away; its live connection dot then appears
+on the drawer beside the drawer's module count. The current Screen shelf
+contains Screen and Mirror; there is no placeholder Continuity page.
+
+Losing the guest does not remove or navigate away from modules. Host-owned
+tools remain usable, cached machine information is marked offline where it can
+be shown honestly, and live-only pages offer **Start Listening** or a route to
+Connections. Reconnecting restores live behavior in place.
+
+Application appearance is separate from Connections. Choose **New Old World >
+Settings…** or press **Command-,** for System, Light, or Dark theme and the
+Off, Clear, or Regular Liquid Glass setting. macOS 13–25 and macOS accessibility
+settings that reduce transparency or increase contrast use the native material
+fallback instead of glass.
 
 | Module | PowerPC Workshop | Pre-Carbon source (excluded from alpha) |
 |---|---|---|
@@ -24,14 +66,14 @@ last_verified: 2026-08-09
 | [Mirror](mirror.md) | Mirror | unavailable |
 | [Console](console.md) | Console | supported |
 | [Chat](chat.md) | Chat | unavailable |
-| [Web](web.md) | unavailable; use the host Direct listener | unavailable |
+| [Web Proxy](web.md) | unavailable; use the host Direct listener | unavailable |
 | [Hardware](hardware.md) | Hardware | supported subset |
 | [Diagnostics](diagnostics.md) | Diagnostics | console-only diagnostics |
 | [Networking](networking.md) | Networking | main-window summary |
 | [Software](software.md) | Software | supported subset |
 | [MCP](mcp.md) | MCP | unavailable |
 | [Logs](logs.md) | Logs | console-only evidence |
-| [Connections and preferences](connections-and-preferences.md) | Preferences + Connection | main window |
+| [Connections](connections-and-preferences.md) | Preferences + Connection | main window |
 
 This table is a reader-facing projection of the machine-readable module
 manifest. Capability coverage and proof remain separate questions; each page

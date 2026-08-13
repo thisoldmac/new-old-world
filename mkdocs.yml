@@ -130,7 +130,7 @@ nav:
               - Mirror: user-guide/reference/modules/mirror.md
               - Console: user-guide/reference/modules/console.md
               - Chat: user-guide/reference/modules/chat.md
-              - Web: user-guide/reference/modules/web.md
+              - Web Proxy: user-guide/reference/modules/web.md
               - Development: user-guide/reference/modules/development.md
               - Hardware: user-guide/reference/modules/hardware.md
               - Diagnostics: user-guide/reference/modules/diagnostics.md
@@ -138,7 +138,7 @@ nav:
               - Software: user-guide/reference/modules/software.md
               - MCP: user-guide/reference/modules/mcp.md
               - Logs: user-guide/reference/modules/logs.md
-              - Connections and preferences: user-guide/reference/modules/connections-and-preferences.md
+              - Connections: user-guide/reference/modules/connections-and-preferences.md
   - Developer guide:
       - Overview: developer-guide/index.md
       - Orientation: developer-guide/orientation.md

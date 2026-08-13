@@ -46,4 +46,4 @@ required merely to launch the host.
 ## Related reference
 
 [Requirements](../reference/requirements.md) and
-[Connections and preferences](../reference/modules/connections-and-preferences.md).
+[Connections](../reference/modules/connections-and-preferences.md).

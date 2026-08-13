@@ -1,27 +1,33 @@
 ---
 page_id: settings-module-reference
-title: Connections and preferences
-description: Configure the listener, select named guest sessions, and manage host or guest preferences without mixing machine identity with network reachability.
+title: Connections
+description: Configure the listener and select named guest sessions without mixing machine identity with network reachability or application appearance.
 doc_type: reference
 audience: user
 lifecycle: current
 authority: [docs/architecture.md, docs/naming.md, docs/onboarding.md, contract/asyncapi.yaml]
 module_ids: [settings]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-guest-ppc/src/connection, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-guest-ppc/src/connection, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
 media_ids: [settings-host, settings-ppc]
 last_verified: 2026-08-13
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
 
-# Connections and preferences
+# Connections
 
 ## What it does
 
 Connections owns the host listener, named sessions, and **Set Up a New Mac…**
-portal. Preferences owns local application choices. The PowerPC Workshop
-separates Preferences and Connection; the host presents one settings module,
-and NOW-68K uses its main window.
+portal. On the macOS host it is the landing page of the Network shelf. The
+PowerPC Workshop separately provides Preferences and Connection pages, and
+NOW-68K keeps connection controls in its main window.
+
+The macOS application's own appearance no longer lives in this module. Choose
+**New Old World > Settings…** or press **Command-,** to open the separate
+Settings window for System, Light, or Dark theme and Off, Clear, or Regular
+Liquid Glass. The glass choices fall back to native material on macOS 13–25
+and when Reduce Transparency or Increase Contrast is enabled.
 
 ![The macOS Connections module](../../../assets/screenshots/modules/settings/host.svg){ .now-placeholder }
 
@@ -30,6 +36,11 @@ and NOW-68K uses its main window.
 All three applications expose the connection state they own. Preference depth
 differs; NOW-68K intentionally keeps its compact connection UI rather than the
 PowerPC preference model.
+
+The host keeps the sidebar arrangement and selected module when a guest
+disconnects. Host-owned pages remain available, pages with retained machine
+information identify it as offline, and live-only pages route recovery here or
+offer **Start Listening**.
 
 ## On the modern Mac
 

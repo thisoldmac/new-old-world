@@ -1,6 +1,6 @@
 ---
 page_id: web-module-reference
-title: Web module
+title: Web Proxy module
 description: Run the host-side compatibility gateway used by Classilla, MacWeb, and conservative 68K browser profiles.
 doc_type: reference
 audience: user
@@ -9,21 +9,21 @@ authority: [web-bridge/README.md, docs/status.md, SECURITY.md]
 module_ids: [web]
 source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/web/web_model.c, now-guest-ppc/src/web/web_module.c, SECURITY.md]
 media_ids: [web-host, web-ppc]
-last_verified: 2026-08-10
+last_verified: 2026-08-13
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
 
-# Web module
+# Web Proxy module
 
 ## What it does
 
-Web runs a host-side compatibility gateway for a browser already installed on
+Web Proxy runs a host-side compatibility gateway for a browser already installed on
 a classic Macintosh. The host fetches HTTP and HTTPS pages, optionally runs
 their contemporary JavaScript through Playwright, and returns bounded ASCII
 HTML selected for Classilla, MacWeb, or a conservative 68K profile.
 
-![The macOS Web module](../../../assets/screenshots/modules/web/host.svg){ .now-placeholder }
+![The macOS Web Proxy module](../../../assets/screenshots/modules/web/host.svg){ .now-placeholder }
 
 ## Availability
 

@@ -62,7 +62,7 @@ modules:
     ppc_pages: [kWorkshopChat]
     guest_68k: unavailable
   - id: web
-    title: Web
+    title: Web Proxy
     tier: experimental
     domains: []
     feature_id: null
@@ -126,7 +126,7 @@ modules:
     ppc_pages: [kWorkshopLogs]
     guest_68k: console-only
   - id: settings
-    title: Connections and preferences
+    title: Connections
     tier: core
     domains: []
     feature_id: null
