@@ -5,8 +5,8 @@ description: Operating-system, architecture, network, and artifact requirements 
 doc_type: reference
 audience: user
 lifecycle: current
-authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md]
-source_dependencies: [now-host/Package.swift, now-host/NewOldWorld.xcodeproj/project.pbxproj, now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, SECURITY.md, product/features.yaml, docs/onboarding.md]
+authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md, docs/developer-guide/reference/distribution-standard.md]
+source_dependencies: [now-host/Package.swift, now-host/NewOldWorld.xcodeproj/project.pbxproj, now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, SECURITY.md, product/features.yaml, docs/distribution-profile.yaml, docs/onboarding.md, docs/developer-guide/reference/distribution-standard.md]
 media_ids: []
 last_verified: 2026-08-09
 ---
@@ -38,7 +38,7 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: 3ff67aae3a557479fb3553c8e0bd4fbdd29b7a6a
+sources-sha1: 290d0024374acd6705800e4f212715cbf159cab7
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -148,4 +148,5 @@ rederived: 2026-08-14T04:03:19-0400 908215de unchanged
 rederived: 2026-08-14T04:36:36-0400 e66db808 unchanged
 rederived: 2026-08-14T12:32:39-0400 7742eab5 sources
 rederived: 2026-08-14T12:35:45-0400 49e6dd98 unchanged
+rederived: 2026-08-14T12:44:43-0400 4d52ba1a sources
 -->

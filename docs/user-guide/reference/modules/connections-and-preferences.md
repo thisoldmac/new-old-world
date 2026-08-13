@@ -9,7 +9,7 @@ authority: [docs/architecture.md, docs/naming.md, docs/onboarding.md, contract/a
 module_ids: [settings]
 source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-guest-ppc/src/connection, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
 media_ids: [settings-host, settings-ppc]
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -37,9 +37,6 @@ The host starts and stops the listener, names simultaneous guests, selects the
 active session, and reports duplicate-name or capacity refusals. Its setup
 sheet can generate preferences, assemble a fork-preserving setup disk from
 selected packages, and serve it temporarily over old-browser-compatible HTTP.
-When its validated application or Extension differs from the selected guest,
-Connections shows separate replacement buttons. Application replacement asks
-for a quit and relaunch; Extension replacement asks for a restart.
 
 ## On the classic Mac
 
@@ -69,8 +66,8 @@ than uploads or directory listings; stop it when onboarding is complete.
 
 Update artifacts are currently **unsigned**. The host recomputes their SHA-256
 before advertising them and the guest verifies the transferred bytes, but that
-proves integrity against the host's manifest, not publisher authenticity. An
-explicit confirmation on either Mac is required; unattended console and remote
+proves integrity against the host's manifest, not publisher authenticity. The
+local Connection page requires an explicit confirmation; console and remote
 command paths cannot bypass it.
 
 ## Failure states
@@ -82,16 +79,22 @@ build, archive-tool, and server-start failures instead of offering a partial
 disk as complete.
 
 Updates retain no-offer, busy-transfer, identity mismatch, checksum mismatch,
-disk-space, Finder-identity, Trash/replace, and relaunch/restart states rather than
+disk-space, Finder-identity, exchange, and relaunch/restart states rather than
 presenting a downloaded file as installed.
+
+Extension restart state survives an application relaunch and clears only when
+a later boot reports the installed resident identity active. On launch,
+PowerPC also warns when it detects CarbonLib below the supported 1.6 floor;
+**Don't Warn Again** suppresses that advisory without changing CarbonLib.
 
 ## Current limitations
 
 Guest display name is the current connection identity. Two live machines with
 the same name collide intentionally rather than being guessed apart.
 
-Update signing and automatic update discovery are not implemented. The
-connected host is the only provider, and the flow is not yet metal-verified.
+Classic update signing, internet discovery, and host self-update are not
+implemented. The connected host is the only provider, and the flow is not yet
+metal-verified.
 
 ## For developers
 

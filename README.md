@@ -2,95 +2,132 @@
 
 # New Old World (NOW)
 
-New Old World connects a native macOS host to a PowerPC Carbon application on
-Mac OS 8.6–9.2.2. It provides files, console, screenshots, processes, hardware
-facts, development tools, and an experimental native Mirror without turning
-either machine into a web replica. The optional NOW Extension enables deeper
-observation and interaction. A 68K sibling remains in source but is not part of
-the initial release profile.
+Use a classic Macintosh from a modern Mac without turning either interface into a web replica. New Old World is a native macOS host and a PowerPC Carbon guest for Mac OS 8.6–9.2.2. The alpha centers that pair and includes the NOW Extension in the bundle as an optional installation. A pre-Carbon 68K sibling remains in source, but its current build is stale and excluded from the alpha.
 
-> **Pre-alpha:** the repository is tested and substantial paths have emulator
-> or targeted hardware evidence, but the complete release candidate has not
-> passed its physical-hardware matrix. The wire is plaintext and unauthenticated
-> for use on a trusted LAN only.
+> **Alpha:** useful paths exist, compatibility is deliberately narrow, and several features are tested or emulator-verified rather than proven on physical hardware. The guided setup flow is not yet end-to-end hardware verified. Read [current limitations](docs/user-guide/reference/limitations.md) before relying on it.
 
-Start with the [published documentation](https://docs.newoldworldmac.com/),
-[developer orientation](https://docs.newoldworldmac.com/developer-guide/orientation/),
-or [current limitations](https://docs.newoldworldmac.com/user-guide/reference/limitations/). Release
-branches, immutable numbered candidates, and promotion are defined in
+![Placeholder for the macOS host overview](docs/assets/screenshots/overview/host.svg)
+
+![Placeholder for the PowerPC Workshop overview](docs/assets/screenshots/overview/workshop.svg)
+
+## Start here
+
+- [Connect your first classic Mac](docs/user-guide/tutorials/first-connection.md)
+- [Set up a new PowerPC Mac](docs/user-guide/how-to/set-up-new-mac.md)
+- [Install or update the two guest components](docs/user-guide/how-to/upgrade-rollback-remove.md)
+- [Compare core features and NOW Extension coverage](docs/user-guide/explanation/core-features.md)
+- [Review the alpha feature profile](docs/user-guide/reference/release-profile.md)
+- [Browse every module](docs/user-guide/reference/modules/index.md)
+- [Read the developer orientation](docs/developer-guide/orientation.md)
+- [See the generated protocol reference](docs/generated/asyncapi.md)
+
+The web documentation is built from `mkdocs.yml` at the `/docs/` base path. Run `scripts/docs-serve` for a local preview.
+Release branches, immutable numbered candidates, and promotion are defined in
 [RELEASING.md](RELEASING.md).
+
+The release DMG carries a finalized host app with its classic setup assets
+sealed inside it, so copying the app to Applications does not break those
+assets. The same release also publishes a generic classic setup `.img.bin`
+and loose MacBinary app and Extension downloads. NOW assumes the classic Mac
+already has IP connectivity to the trusted local network; getting an old Mac
+online is a separate prerequisite, not a feature of the bundle.
+
+## Product shape
+
+```text
+PowerPC Carbon guest ─ guest-initiated TCP, framed control + bulk ─ macOS host
+
+bundled, optional NOW Extension ─ versioned memory table ─ PowerPC guest
+
+pre-Carbon NOW-68K ─ retained in source; excluded from alpha
+```
+
+- The host accepts several named guest sessions and drives one selected machine.
+- The PowerPC guest is one Workshop window with native module pages.
+- The bundled, optional NOW Extension adds deeper Mirror observation and interaction,
+  including live interface structure, guarded controls, modal-loop reachability,
+  drag sessions, and visible cursor following; ordinary NOW features remain
+  available without it.
+- NOW-68K implements an explicit subset of the same contract without shaping the PowerPC codebase, but is not an alpha release artifact.
+- Agent access is a bounded projection of host capabilities, not a second route to the guest socket.
+
+## Capability summary
+
+| Area | PowerPC alpha | Bundled, optional NOW Extension | Pre-Carbon/NOW-68K |
+|---|---|---|---|
+| Connection, console, files, processes, software, hardware facts | included | not required | excluded from release |
+| Screenshots and streaming | included with stated limitations | not required | excluded from release |
+| [Web compatibility bridge](docs/user-guide/reference/modules/web.md): host-side TLS/JS handling, classic HTML profiles, Reader and optional local AI layout | included; tested, not classic-browser verified | not required | Direct mode usable through browser settings; guest UI excluded |
+| [Projects and Development](docs/user-guide/reference/modules/development.md): host-owned project history, guest-native MPW builds, verified candidates, and exact-product launch | included; host-home loop metal-verified, varied autonomous loops emulator-verified | not required | unavailable |
+| Deeper Mirror observation and interaction | experimental | provides the required classic-process access | unavailable |
+| In-context interaction, transitions, modal-safe liveness, drag, and cursor following | experimental | provides resident vehicles | unavailable |
+| [Guided PowerPC setup portal](docs/user-guide/how-to/set-up-new-mac.md) and fork-preserving HFS install image | included; tested, not metal-verified | bundled optional package selection | unavailable |
+| Host-published in-app updates | tested; not metal-verified | installs separately and requires restart | unavailable |
+
+The short table is navigation, not a claim of parity. The [module reference](docs/user-guide/reference/modules/index.md) states availability, safety, data movement, and failures per module. `docs/contract-coverage.md` keeps **served** separate from **proven**.
+
+## Important limitations
+
+- The listener is for a trusted local network; secure transport is not available yet.
+- The macOS app can be signed as part of release assembly, but classic in-app
+  updates are still explicitly unsigned. They verify SHA-256, require local
+  confirmation on the classic Mac, and still require fork-preserving transfer.
+- Resume-by-offset and some large-transfer behavior remain unreliable.
+- Web Direct has not yet been exercised by Classilla or MacWeb on an emulator
+  or physical Mac; guest-local relay is not implemented, and the optional
+  model weights are not distributed.
+- Development is PowerPC-only. The host-owned MPW build/run loop is metal-verified; guest-home promotion, typed tests, positive CodeKitten handoff receipts, semantic settlement, and authenticated HTTP MCP loops are tested or emulator-verified but have not been repeated together on metal. A redistributable MPW starter payload remains blocked on license/provenance.
+- Pre-Carbon/NOW-68K support is excluded from the alpha; its source and contributor documentation remain for later feature-flagged work.
+- Mirror is experimental. Drawing-content tracing remains off by default and has caused Finder instability on a PowerBook 1400c.
+- The documentation currently contains clearly labeled screenshot placeholders; captures must be privacy-reviewed and replace them at the declared dimensions.
+
+See [current limitations](docs/user-guide/reference/limitations.md), [known wrong](docs/known-wrong.md), and the [open issues ledger](docs/open-issues.md) for the full, non-promotional record.
 
 ## Build and test
 
-The modern host builds on macOS 13 or later. A complete development setup uses:
-
-- Xcode and its command-line tools, with Swift 6 support;
-- Python 3 and [uv](https://docs.astral.sh/uv/);
-- CMake and Ninja;
-- a host C compiler, supplied by the Xcode command-line tools; and
-- [Retro68](https://github.com/autc04/Retro68) PowerPC RetroCarbon and 68K
-  toolchains when building the classic applications and Extension.
-
-Install the pinned documentation environment, configure repository hooks, and
-run the integrated gate:
-
 ```sh
-uv venv .docs-venv
-uv pip install --python .docs-venv/bin/python -r docs/requirements.txt
 tools/setup-hooks
 scripts/test-all
 ```
 
-`scripts/test-all` runs documentation and policy checks, native C sanitizer
-tests, MirrorKit, both classic cross-builds, Swift package tests, and Debug and
-Release Xcode builds. Metal tests are opt-in. Green means **tested**, not
-metal-verified. Ordinary test builds are unsigned so a contributor or CI runner
-does not need the owner's Apple credential. Release qualification separately
-runs `NOW_HOST_SIGNING=release scripts/test-host`, which requires and verifies
-the selected Apple team, application identifier, and Keychain access group.
+`scripts/test-all` is the repository gate. It runs host-only checks first, the documentation gate, both guest cross-builds when Retro68 is installed, the host suites and app builds, and an optional live-guest stage. Green means **tested**, not metal-verified.
 
-Retro68 is optional for host-only contribution, but the guest build stage will
-report **SKIPPED** without it. To run that stage, copy the local configuration
-template and set the two toolchain-file paths:
+CarbonLib is a runtime dependency on the classic Mac, not a source dependency
+of the macOS build. The repository does not check Apple's installer into Git.
+Source builds must arrange CarbonLib 1.6 on the target Mac themselves; the
+guest warns at launch when it detects an older version and can remember a
+person's choice not to warn again. Release assembly may bundle the exact
+checksum-pinned Apple installer and its license material through an external
+descriptor; see the [distribution standard](docs/developer-guide/reference/distribution-standard.md#assemble-a-release).
+
+For docs only:
 
 ```sh
-cp .env.lab.example .env.lab
-
-# In .env.lab:
-NOW_PPC_TOOLCHAIN=/path/to/Retro68-build/toolchain/powerpc-apple-macos/cmake/retrocarbon.toolchain.cmake
-NOW68K_TOOLCHAIN=/path/to/Retro68-build-68k/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
-
-scripts/build-guests
+uv venv .docs-venv
+uv pip install --python .docs-venv/bin/python -r docs/requirements.txt
+scripts/test-docs
 ```
 
-CarbonLib is a target-Mac runtime dependency, not a source-build dependency.
-The repository and GitHub releases do not redistribute it; see
-[CarbonLib 1.6.1 on Macintosh Repository](https://www.macintoshrepository.org/17069-carbonlib)
-and the [PowerPC installation guide](docs/user-guide/how-to/install-ppc.md).
+The docs gate validates structure, links, source dependencies, images, live module inventories, AsyncAPI references, generated pages, rendered accessibility landmarks, and declared derivations. Its mutation self-test proves each named failure class is refused for the reason it claims.
 
-Focused commands and emulator/metal setup are documented in
-[Build and test](docs/developer-guide/workflows/build-and-test.md),
-[Lab setup](docs/lab-setup.md), and [CONTRIBUTING.md](CONTRIBUTING.md).
+## Repository map
 
-## Repository shape
+| Path | Purpose |
+|---|---|
+| `contract/` | Wire and resident-memory authorities |
+| `now-host/` | Native macOS application |
+| `now-guest-ppc/` | PowerPC CarbonLib guest |
+| `now-guest-68k/` | 68K Toolbox/MacTCP guest |
+| `ext/` | Optional resident extension |
+| `docs/user-guide/` | Public task and module documentation |
+| `docs/developer-guide/` | Architecture, code-reading, debugging, and contribution guide |
+| `docs/agent-guide/` | Coding-agent operating, routing, evidence, and handoff guide |
 
-- `contract/` — wire and resident-memory authorities
-- `now-host/` — macOS host and Swift packages
-- `now-guest-ppc/` — PowerPC CarbonLib guest
-- `now-guest-68k/` — experimental 68K Toolbox/MacTCP guest
-- `ext/` — optional resident NOW Extension
-- `docs/` — user, developer, agent, protocol, and evidence documentation
+Contributors start with [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents start
+with [the agent guide](docs/agent-guide/index.md), with `AGENTS.md` as the
+complete repository instruction. Technical architecture is explained once in
+the developer guide and linked from the agent path.
 
-The complete protocol is [contract/asyncapi.yaml](contract/asyncapi.yaml). See
-the [repository map](docs/developer-guide/reference/repository-map.md) and
-[generated protocol reference](docs/generated/asyncapi.md) for the detailed
-tour.
+## Security
 
-## Security and project status
-
-Read [SECURITY.md](SECURITY.md) before connecting a machine. Do not expose the
-listener to the internet or an untrusted LAN. Availability, proof level, known
-wrong behavior, and deferred work live in the
-[release profile](docs/user-guide/reference/release-profile.md),
-[status](docs/status.md), [known-wrong ledger](docs/known-wrong.md), and
-[open-issues ledger](docs/open-issues.md).
+Read [SECURITY.md](SECURITY.md). Do not expose the listener directly to an untrusted network. The release documentation gate will refuse publication until the canonical website origin, website repository, and vulnerability-reporting contact are configured; those values are intentionally not guessed in this branch.

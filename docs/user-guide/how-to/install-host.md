@@ -5,10 +5,10 @@ description: Place and launch the alpha New Old World host on macOS 13 or later.
 doc_type: how-to
 audience: user
 lifecycle: current
-authority: [README.md, docs/naming.md]
-source_dependencies: [scripts/build-host-app, scripts/verify-host-signature, now-host/Package.swift]
+authority: [README.md, docs/naming.md, docs/developer-guide/reference/distribution-standard.md]
+source_dependencies: [scripts/build-host-app, scripts/assemble-release, scripts/verify-host-signature, now-host/Package.swift, docs/developer-guide/reference/distribution-standard.md]
 media_ids: [setup-host-install]
-last_verified: 2026-08-09
+last_verified: 2026-08-13
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -22,12 +22,15 @@ Install the host app without mixing it with a source-build staging directory.
 ## Prerequisites
 
 - macOS 13 or later.
-- A `New Old World.app` artifact from the alpha release bundle.
+- The New Old World release DMG.
 
 ## Steps
 
 1. Quit any older copy of New Old World.
-2. Move `New Old World.app` to Applications or another stable local folder.
+2. Open the DMG and move `New Old World.app` to Applications or another stable
+   local folder. The classic app, Extension, update sidecars, CarbonLib
+   installer, and license material are embedded inside the host app; they move
+   with it and do not depend on the mounted DMG remaining available.
 3. Launch that copy and open **Connections**.
 4. If macOS refuses the build, retain the exact Gatekeeper message and verify
    the artifact source. Do not strip signatures or quarantine attributes as a

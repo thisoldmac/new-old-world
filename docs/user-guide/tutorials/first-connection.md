@@ -6,7 +6,7 @@ doc_type: tutorial
 audience: user
 lifecycle: current
 authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md]
-source_dependencies: [scripts/build-host-app, now-guest-ppc/CMakeLists.txt, docs/naming.md, product/features.yaml, docs/onboarding.md, now-host/Sources/Host/OnboardingPortal.swift]
+source_dependencies: [scripts/build-host-app, scripts/assemble-release, now-guest-ppc/CMakeLists.txt, docs/naming.md, product/features.yaml, docs/distribution-profile.yaml, docs/onboarding.md, now-host/Sources/Host/OnboardingPortal.swift]
 media_ids: [setup-artifacts, setup-host-listener, setup-guest-connection, setup-connected]
 last_verified: 2026-08-09
 ---

@@ -5,8 +5,8 @@ description: The machine-readable release profile for what is included, optional
 doc_type: reference
 audience: user
 lifecycle: current
-authority: [product/features.yaml]
-source_dependencies: [product/features.yaml, tools/product-features, now-host/Sources/Host/ProductFeaturePolicy.swift, now-guest-ppc/src/core/product_feature_policy.c]
+authority: [product/features.yaml, docs/distribution-profile.yaml]
+source_dependencies: [product/features.yaml, docs/distribution-profile.yaml, docs/developer-guide/reference/distribution-standard.md, tools/product-features, now-host/Sources/Host/ProductFeaturePolicy.swift, now-guest-ppc/src/core/product_feature_policy.c]
 media_ids: []
 last_verified: 2026-08-09
 ---
@@ -32,3 +32,8 @@ availability notices and generated host and PowerPC runtime definitions.
 Release inclusion and runtime flags are separate decisions: a runtime override
 cannot add a profile-excluded feature, and guest capability negotiation still
 decides whether a connected Macintosh can serve an admitted feature.
+
+The separate [distribution standard](../../developer-guide/reference/distribution-standard.md)
+maps those feature decisions to the DMG, embedded host resources, generic
+classic image, loose update pairs, manifest, and checksums. CodeKitten and the
+retained NOW-68K source are not part of that bundle profile.

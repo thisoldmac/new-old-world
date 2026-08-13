@@ -6,7 +6,7 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/naming.md, docs/resident-components.md]
-source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/naming.md, docs/resident-components.md, scripts/build-continuity-stack, tools/continuity-stack-gate, now-host/Sources/Host/UpdateProvider.swift, now-guest-ppc/src/update]
+source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/naming.md, docs/resident-components.md, docs/distribution-profile.yaml, scripts/assemble-release, scripts/build-continuity-stack, tools/continuity-stack-gate, now-host/Sources/Host/UpdateProvider.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c]
 media_ids: []
 last_verified: 2026-08-13
 ---
@@ -22,10 +22,11 @@ the optional resident component.
 
 ## Update the PowerPC application
 
-1. Install or build the modern host together with the PowerPC artifact it
-   should publish. A development handoff should contain `NOW-stack.json`; it
-   proves the host, application, and Extension were assembled with one
-   Continuity compatibility tuple.
+1. Install a release host or build the modern host together with the PowerPC
+   artifact it should publish. A release host seals the exact guest assets
+   inside its app before signing. A development handoff should contain
+   `NOW-stack.json`; it proves the host, application, and Extension were
+   assembled with one Continuity compatibility tuple.
 2. Connect the PowerPC guest and select it in the host's **Connections** page.
 3. Read the Guest application row under **Software Updates**. The row
    compares both release version and exact build identity, so a different
@@ -59,6 +60,13 @@ resident until that cold activation boundary has passed.
 
 The previous resident is moved to that volume's Trash before the replacement
 takes its canonical name, so it cannot load alongside the replacement.
+
+The Extension receipt is durable. Quitting or replacing the guest application
+does not erase **restart required**; the receipt clears only after a later boot
+reports the installed Extension build as the active resident. Application and
+Extension remain separate actions. A release normally updates the application,
+reconnects, updates the Extension, and then restarts; iterative development may
+update the Extension first and perform one final restart after both transfers.
 
 ## Manual fallback and rollback
 

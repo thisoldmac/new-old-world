@@ -7,6 +7,40 @@ search:
 
 # Open issues
 
+## TESTED, NOT RELEASED OR METAL-VERIFIED: recorded bundle and update slice (2026-08-13, `codex/bundle-update-slice`)
+
+The alpha distribution now has one machine-readable profile and one curated
+standard. A fail-closed assembler takes committed PPC app and Extension
+artifacts plus an external checksum-pinned CarbonLib descriptor, preserves the
+Apple installer and license files byte-for-byte, embeds that exact catalog in
+the unsigned Release host before final signing, and emits a DMG, generic
+MacBinary-wrapped HFS image, loose app/Extension update pairs, release manifest,
+and `SHA256SUMS`. CodeKitten and NOW-68K are excluded from this profile. A
+synthetic end-to-end assembly produced all eight public files; the DMG passed
+`hdiutil imageinfo`, every checksum verified, and the generic image's actual
+HFS/NDIF construction passed. This is release-tool evidence, not a real signed
+release with Apple's CarbonLib bytes.
+
+The host treats its sealed `Contents/Resources/Onboarding` catalog as the
+release baseline. A stale Application Support app, Extension, or same-named
+dependency cannot mask the embedded copy, while writable-only dependencies
+still augment it and `NOW_ONBOARDING_ASSETS` remains an explicit single-root
+development override. Generic release images omit preferences and CodeKitten;
+host-created personalized images carry the selected host and port.
+
+Application and Extension remain independent update actions. After Extension
+exchange the guest persists the offered full build identity and retains
+**restart required** across application relaunch and wire reconnect; only a
+later boot whose resident fingerprint matches clears it. CarbonLib below 1.6
+produces an advisory launch warning with a durable **Don't Warn Again** choice.
+The integrated continuity branch stores these additions in preference format
+26 because format 25 already owns launch-log retention.
+
+Still open: a real assembly using the intended Apple installer and signing
+identity; notarization and website publication; classic-browser download of
+the generic image; rollback and low-disk acceptance; host self-update; and the
+full lifecycle on the PowerBook 1400c.
+
 ## TESTED, EMULATOR SAFETY PASSED, NOT METAL-VERIFIED: the Continuity resident is consolidated to one product path (2026-08-14, `refactor/continuity-consolidation`)
 
 The experiment surface has been reduced after the attended evidence below
