@@ -6,24 +6,24 @@
 #include "update_model.h"
 #include "update_status.h"
 
-Boolean now_update_activation_reconcile(void)
+Boolean now_update_activation_reconcile(NowPrefs *prefs)
 {
-    NowPrefs prefs;
     char version[24];
     char active_build[65];
 
-    now_prefs_load(&prefs);
-    if (prefs.pending_extension_build[0] == '\0') return false;
+    if (prefs == NULL || prefs->pending_extension_build[0] == '\0') {
+        return false;
+    }
     now_update_current_identity(kNowUpdateExtension,
                                 version, sizeof version,
                                 active_build, sizeof active_build);
     if (now_update_extension_pending_activation(
-            prefs.pending_extension_build, active_build)) {
+            prefs->pending_extension_build, active_build)) {
         return true;
     }
 
-    prefs.pending_extension_build[0] = '\0';
-    (void)now_prefs_save(&prefs);
+    prefs->pending_extension_build[0] = '\0';
+    (void)now_prefs_save(prefs);
     return false;
 }
 

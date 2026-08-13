@@ -19,12 +19,25 @@ def sha256(path: Path) -> str:
 
 
 def copy_exact(source: Path, destination: Path) -> None:
-    if not source.is_file():
-        raise ReleaseRefusal(f"missing input: {source}")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, destination)
-    if sha256(source) != sha256(destination):
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+        source_digest = sha256(source)
+        destination_digest = sha256(destination)
+    except OSError as exc:
+        raise ReleaseRefusal(f"could not copy {source}: {exc}") from exc
+    if source_digest != destination_digest:
         raise ReleaseRefusal(f"copy changed bytes: {source}")
+
+
+def load_json_object(path: Path, label: str) -> dict:
+    try:
+        document = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReleaseRefusal(f"{path}: {label}: {exc}") from exc
+    if not isinstance(document, dict):
+        raise ReleaseRefusal(f"{path}: {label}: top level must be an object")
+    return document
 
 
 @dataclass(frozen=True)
@@ -39,10 +52,7 @@ class ComponentArtifact:
              source_revision: str) -> "ComponentArtifact":
         path = path.resolve()
         sidecar = path.with_name(path.name + ".now-update.json")
-        try:
-            metadata = json.loads(sidecar.read_text())
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ReleaseRefusal(f"{sidecar}: missing or invalid sidecar: {exc}")
+        metadata = load_json_object(sidecar, "missing or invalid sidecar")
         expected_keys = {
             "schema", "component", "version", "build", "sha256", "bytes",
             "channel", "signed",
@@ -92,10 +102,7 @@ class LicensedInput:
     @classmethod
     def load(cls, descriptor_path: Path) -> "LicensedInput":
         descriptor_path = descriptor_path.resolve()
-        try:
-            document = json.loads(descriptor_path.read_text())
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ReleaseRefusal(f"{descriptor_path}: invalid descriptor: {exc}")
+        document = load_json_object(descriptor_path, "invalid descriptor")
         required = {
             "schema", "id", "artifact", "sha256", "provenance",
             "licenseFiles", "licenseAcceptance",

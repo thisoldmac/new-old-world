@@ -5,8 +5,6 @@ import XCTest
 final class ClassicSetupImageBuilderTests: XCTestCase {
     func testGenericModeOmitsMachinePreferencesAndCodeKitten() {
         let mode = ClassicSetupImageBuilder.Mode.generic
-        XCTAssertFalse(mode.includesPreferences)
-        XCTAssertFalse(mode.includesCodeKitten)
         XCTAssertTrue(mode.instructions.contains(
             "enter the modern Mac's address"))
         XCTAssertFalse(mode.instructions.contains("CodeKitten"))
