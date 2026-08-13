@@ -340,6 +340,26 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                     guard let guest = continuityGuestPoint(
                                         point, scene: scene, size: geo.size)
                                     else { return false }
+                                    // A promised guest file owns this whole
+                                    // gesture. Letting the raw pointer driver
+                                    // press first leaves the source selected on
+                                    // the guest, but no host drag can attach to
+                                    // it when the pointer crosses the Mirror.
+                                    if hostFilePromise != nil,
+                                       case .success(let subject) =
+                                        DragTargeting.subject(
+                                            scene, x: guest.x, y: guest.y),
+                                       case .success(let source) =
+                                        CrossMachineFileTargeting.source(
+                                            subject, in: scene) {
+                                        if case .sharesWindow = keyboard {
+                                            keyboardEngaged = true
+                                        }
+                                        hostFileCandidate = .init(
+                                            subject: subject, source: source,
+                                            start: guest)
+                                        return true
+                                    }
                                     if let driver =
                                             controller.continuityInputDriver {
                                         let consumed = driver.primaryDown(
@@ -357,21 +377,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                         }
                                         if consumed { return true }
                                     }
-                                    guard hostFilePromise != nil,
-                                          case .success(let subject) =
-                                            DragTargeting.subject(
-                                                scene, x: guest.x, y: guest.y),
-                                          case .success(let source) =
-                                            CrossMachineFileTargeting.source(
-                                                subject, in: scene)
-                                    else { return false }
-                                    if case .sharesWindow = keyboard {
-                                        keyboardEngaged = true
-                                    }
-                                    hostFileCandidate = .init(
-                                        subject: subject, source: source,
-                                        start: guest)
-                                    return true
+                                    return false
                                 },
                                 onLeftDragged: { point, _ in
                                     if var candidate = hostFileCandidate {

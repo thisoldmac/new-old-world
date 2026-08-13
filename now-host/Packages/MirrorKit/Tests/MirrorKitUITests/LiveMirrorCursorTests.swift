@@ -269,6 +269,36 @@ final class LiveMirrorCursorTests: XCTestCase {
             "a remote exit must close the projected menu without another pointer event")
     }
 
+    /// Mirror Cursor is allowed to consume a primary press for direct guest
+    /// input, but a guest file being copied out has a narrower claim: it must
+    /// bind its source before any raw pointer press enters the guest. Reversing
+    /// these blocks selects the file without ever creating the AppKit drag.
+    func testGuestFilePromiseClaimsPressBeforeDirectPointerDriver() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources")
+        let live = try String(
+            contentsOf: sources.appendingPathComponent(
+                "MirrorKitUI/LiveMirror.swift"), encoding: .utf8)
+        let downStart = try XCTUnwrap(
+            live.range(of: "onLeftDown:")).lowerBound
+        let downEnd = try XCTUnwrap(
+            live.range(of: "onLeftDragged:",
+                       range: downStart..<live.endIndex)).lowerBound
+        let down = String(live[downStart..<downEnd])
+        let fileClaim = try XCTUnwrap(
+            down.range(of: "hostFilePromise != nil"))
+        let rawPress = try XCTUnwrap(
+            down.range(of: "driver.primaryDown("))
+
+        XCTAssertLessThan(fileClaim.lowerBound, rawPress.lowerBound,
+                          "a transferable guest file must claim the press "
+                            + "before Mirror Cursor can consume it")
+        XCTAssertTrue(down.contains("hostFileCandidate = .init("))
+        XCTAssertTrue(down.contains("if consumed { return true }"),
+                      "non-file presses must retain direct pointer input")
+    }
+
     /// The pointer and the act must name the same object, which they do
     /// by both being handed the resolver's answer for the same point.
     /// Asserted over a real scene rather than over the source, because
