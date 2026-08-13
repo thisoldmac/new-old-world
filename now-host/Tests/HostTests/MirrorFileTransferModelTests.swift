@@ -60,4 +60,16 @@ final class MirrorFileTransferModelTests: XCTestCase {
         XCTAssertFalse(adapter.contains("MainActor.assumeIsolated"))
         XCTAssertTrue(adapter.contains("monitorGeneration == generation"))
     }
+
+    func testStalePreparationCannotClearTheCurrentGuestWorker() throws {
+        let source = try GateSource.hostSwift(
+            "now-host/Sources/Host/MirrorFileTransferModel.swift")
+        let completion = try XCTUnwrap(source.range(
+            of: "guard let self,\n                  generation == self.transferGeneration else { return }"))
+        let stateMutation = try XCTUnwrap(source.range(
+            of: "self.hostFilePreparationInFlight = false",
+            range: completion.lowerBound..<source.endIndex))
+        XCTAssertLessThan(completion.lowerBound, stateMutation.lowerBound,
+                          "generation must be checked before worker state changes")
+    }
 }

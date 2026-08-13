@@ -141,12 +141,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
 
     func activeGuestWillChange() {
         transferGeneration &+= 1
-        queue.removeAll()
-        for batch in promiseBatches {
-            batch.invalidate()
-            try? FileManager.default.removeItem(at: batch.root)
-        }
-        promiseBatches.removeAll()
+        discardQueuedHostFiles()
         if isBusy {
             notice = "The file copy ended because the active Mac changed."
         }
@@ -481,13 +476,13 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
                         url: sourceURL, data: data, convertText: true), modified)
                 }
             }.value
-            guard let self else { return }
+            guard let self,
+                  generation == self.transferGeneration else { return }
             self.hostFilePreparationInFlight = false
             item.promiseBatch?.fileFinished()
             if let batch = item.promiseBatch {
                 self.finishPromiseBatchIfPossible(batch)
             }
-            guard generation == self.transferGeneration else { return }
             switch outcome {
             case .failure:
                 self.notice = TransferError.unreadable(
