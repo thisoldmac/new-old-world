@@ -254,7 +254,7 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertEqual(controller.state, .ready)
         XCTAssertEqual(driver.leftCount, 1)
         XCTAssertEqual(environment.fileDrags.count, 1)
-        XCTAssertEqual(environment.fileDrags[0].point.x, 1439)
+        XCTAssertEqual(environment.fileDrags.first?.point.x, 1439)
         XCTAssertTrue(controller.status.contains("guest file"))
     }
 
