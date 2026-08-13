@@ -163,6 +163,7 @@ nav:
           - Verification levels: developer-guide/reference/verification-levels.md
           - Source authority: developer-guide/reference/source-authority.md
           - Repository map: developer-guide/reference/repository-map.md
+          - Distribution and bundle standard: developer-guide/reference/distribution-standard.md
           - Documentation standard: developer-guide/reference/documentation-standard.md
           - Generated AsyncAPI reference: generated/asyncapi.md
   - Engineering records:

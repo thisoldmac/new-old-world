@@ -5,8 +5,8 @@ description: How the host publishes exact classic artifacts and the PowerPC gues
 doc_type: explanation
 audience: developer
 lifecycle: current
-authority: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/resident-components.md]
-source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, tools/write-update-manifest.py, tools/product-version-gate, tools/ext-bake-gate, tools/land-main, now-guest-ppc/cmake/buildstamp.cmake, ext/cmake/build_identity.cmake, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/GuestListener.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/wire.c]
+authority: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/resident-components.md, docs/developer-guide/reference/distribution-standard.md]
+source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/developer-guide/reference/distribution-standard.md, docs/distribution-profile.yaml, tools/write-update-manifest.py, tools/product-version-gate, tools/ext-bake-gate, tools/land-main, now-guest-ppc/cmake/buildstamp.cmake, ext/cmake/build_identity.cmake, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/GuestListener.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/wire.c]
 media_ids: []
 last_verified: 2026-08-10
 ---
@@ -96,6 +96,13 @@ forced local ref moves. Extension build inputs follow the parallel non-rollback
 and exact shared-bake gate.
 
 ## Transfer and install
+
+Application and Extension replacement are independent actions. Application
+first is the canonical release flow, but the guest must also support Extension
+first, application second, and one final reboot for iterative development. An
+older host artifact warns and remains unavailable; it is not an implicit
+downgrade path. The distribution-level authority for these choices is the
+[bundle standard](../reference/distribution-standard.md).
 
 The guest requests the exact offered build and artifact SHA-256. The host
 requires both to still name its published artifact before serving it through

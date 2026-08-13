@@ -173,6 +173,54 @@ def main() -> int:
             "primary page user-guide/how-to/install-extension.md does not declare feature_ids",
         )
         expect_mutation(
+            test_root, "distribution feature authority", test_root / "docs/distribution-profile.yaml",
+            "path: docs/feature-catalog.yaml", "path: docs/not-the-feature-catalog.yaml",
+            "feature authority must be docs/feature-catalog.yaml with profile: active",
+        )
+        expect_mutation(
+            test_root, "excluded feature distribution", test_root / "docs/distribution-profile.yaml",
+            "    output_ids: []\n    omission_reason:",
+            "    output_ids: [loose_ppc_application]\n    omission_reason:",
+            "component now_68k maps excluded feature classic.pre-carbon but has outputs",
+        )
+        expect_mutation(
+            test_root, "feature catalog distribution authority",
+            test_root / "docs/feature-catalog.yaml",
+            "      classic.pre-carbon:\n        state: excluded",
+            "      classic.pre-carbon:\n        state: included",
+            "component now_68k maps included feature classic.pre-carbon but has no outputs",
+        )
+        expect_mutation(
+            test_root, "CarbonLib byte preservation", test_root / "docs/distribution-profile.yaml",
+            "preserve_original_bytes: true", "preserve_original_bytes: false",
+            "CarbonLib must remain an unchanged, external-only, user-licensed installer",
+        )
+        expect_mutation(
+            test_root, "generic image personalization", test_root / "docs/distribution-profile.yaml",
+            "    personalized: false", "    personalized: true",
+            "generic_classic_image must be a non-personalized .img.bin",
+        )
+        expect_mutation(
+            test_root, "independent update actions", test_root / "docs/distribution-profile.yaml",
+            "  actions: independent", "  actions: combined",
+            "guest update actions must remain independent",
+        )
+        expect_mutation(
+            test_root, "extension-first iterative order", test_root / "docs/distribution-profile.yaml",
+            "    - [now_extension, ppc_application]\n", "",
+            "supported_orders must include canonical and Extension-first flows",
+        )
+        expect_mutation(
+            test_root, "older bundle downgrade", test_root / "docs/distribution-profile.yaml",
+            "older_bundle: warn-no-downgrade", "older_bundle: install",
+            "older bundles must warn without offering an implicit downgrade",
+        )
+        expect_mutation(
+            test_root, "host self-update deferral", test_root / "docs/distribution-profile.yaml",
+            "host_self_update: deferred", "host_self_update: enabled",
+            "host self-update must remain deferred",
+        )
+        expect_mutation(
             test_root, "AsyncAPI reference", test_root / "contract/asyncapi.yaml",
             '#/components/messages/fileProgress', '#/components/messages/doesNotExist',
             "dangling local $ref",

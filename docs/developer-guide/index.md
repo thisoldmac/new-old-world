@@ -35,6 +35,9 @@ it does not duplicate the architecture.
 The [documentation standard](reference/documentation-standard.md) records the web-facing choices: Diátaxis, AsyncAPI 3.0, Mermaid with text equivalents, a WCAG 2.2 AA target, Schema.org metadata, and RFC 9116 release assets.
 The [alpha feature profile](../user-guide/reference/release-profile.md)
 is machine-readable and drives feature-page availability notices.
+The [distribution and bundle standard](reference/distribution-standard.md)
+maps that feature authority into release artifacts, licensed inputs, and guest
+deployment policy without copying the feature states.
 
 ## Change map
 
