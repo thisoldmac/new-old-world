@@ -1,6 +1,12 @@
 import Foundation
 import Combine
 
+enum SidebarPreferenceKeys {
+    static let compact = "sidebarCompact"
+    static let collapsed = "sidebarCollapsed"
+    static let legacyOrder = "sidebarOrder"
+}
+
 /// How the sidebar is arranged and how much of each row it shows.
 ///
 /// The same three choices the guest's rail carries — order, density, and
@@ -24,50 +30,48 @@ final class SidebarPreferences: ObservableObject {
 
     /// One line per row instead of a title and a summary.
     @Published var compact: Bool {
-        didSet { defaults.set(compact, forKey: Self.compactKey) }
+        didSet { defaults.set(compact, forKey: SidebarPreferenceKeys.compact) }
     }
 
     /// Folded down to icons. Separate from `compact` rather than a third
     /// value of it, so unfolding gives back the density that was chosen.
     @Published var collapsed: Bool {
-        didSet { defaults.set(collapsed, forKey: Self.collapsedKey) }
+        didSet { defaults.set(collapsed, forKey: SidebarPreferenceKeys.collapsed) }
     }
 
     /// The person's arrangement of the LIST modules, by id. Footer modules
     /// are not in here: the foot of the sidebar is the state of this side,
     /// and it stays where it is put.
     @Published private(set) var order: [String] {
-        didSet { defaults.set(order, forKey: Self.orderKey) }
+        didSet { defaults.set(order, forKey: SidebarPreferenceKeys.legacyOrder) }
     }
 
     private let defaults: UserDefaults
     private let layoutStore: NavigationLayoutStore
-    private static let compactKey = "sidebarCompact"
-    private static let collapsedKey = "sidebarCollapsed"
-    private static let orderKey = "sidebarOrder"
-
     init(defaults: UserDefaults = ProductIdentity.defaults, registry: ModuleRegistry) {
         self.defaults = defaults
         layoutStore = NavigationLayoutStore(defaults: defaults,
                                             registry: registry)
         layout = layoutStore.load()
-        compact = defaults.bool(forKey: Self.compactKey)
-        collapsed = defaults.bool(forKey: Self.collapsedKey)
-        order = Self.sanitised(defaults.stringArray(forKey: Self.orderKey) ?? [],
+        compact = defaults.bool(forKey: SidebarPreferenceKeys.compact)
+        collapsed = defaults.bool(forKey: SidebarPreferenceKeys.collapsed)
+        order = Self.sanitised(defaults.stringArray(
+            forKey: SidebarPreferenceKeys.legacyOrder) ?? [],
                                against: registry.listModules.map(\.id))
     }
 
-    func replaceLayout(_ proposed: NavigationLayout,
-                       registry: ModuleRegistry) {
-        layout = proposed.sanitised(for: registry)
-        layoutStore.save(layout)
+    func replaceLayout(_ proposed: NavigationLayout) {
+        let canonical = layoutStore.save(proposed)
+        guard canonical != layout else { return }
+        layout = canonical
     }
 
     /// A stored order made whole against what exists today.
     ///
     /// Pure and static so it can be tested without a defaults suite — the
     /// part worth testing is this rule, not the plumbing around it.
-    static func sanitised(_ stored: [String], against known: [String]) -> [String] {
+    nonisolated static func sanitised(_ stored: [String],
+                                      against known: [String]) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
         /* Through the rename table first, for the same reason the saved

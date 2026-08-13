@@ -213,21 +213,20 @@ struct NavigationLayout: Codable, Equatable, Sendable {
             upper: [
                 .shelf(NavigationShelf(
                     id: .machine,
-                    moduleIDs: present(["census", "software", "processes",
-                                        "diagnostics"]))),
+                    moduleIDs: present(Self.members(of: .machine)))),
                 .shelf(NavigationShelf(
                     id: .screen,
-                    moduleIDs: present(["screen", "mirror", "continuity"]))),
+                    moduleIDs: present(Self.members(of: .screen)))),
                 .shelf(NavigationShelf(
                     id: .files,
-                    moduleIDs: present(["files", "icloud"]))),
+                    moduleIDs: present(Self.members(of: .files)))),
                 .module("chat"),
                 .module("development"),
             ],
             lower: [
                 .shelf(NavigationShelf(
                     id: .network,
-                    moduleIDs: present(["settings", "networking", "mcp", "web"]))),
+                    moduleIDs: present(Self.members(of: .network)))),
                 .module("console"),
                 .module("logs"),
             ],
@@ -251,18 +250,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
                                      registry: ModuleRegistry) -> NavigationLayout {
         var layout = standard(for: registry)
         let known = registry.modules.map(\.id)
-        var seen = Set<String>()
-        var order: [String] = []
-        for storedID in stored {
-            let id = known.contains(storedID)
-                ? storedID
-                : ModuleRegistry.renamedIDs[storedID].flatMap {
-                    known.contains($0) ? $0 : nil
-                }
-            guard let id, seen.insert(id).inserted else { continue }
-            order.append(id)
-        }
-        order.append(contentsOf: known.filter { seen.insert($0).inserted })
+        let order = SidebarPreferences.sanitised(stored, against: known)
         let rank = Dictionary(uniqueKeysWithValues: order.enumerated().map {
             ($0.element, $0.offset)
         })
@@ -284,10 +272,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         var output = NavigationLayout(upper: [], lower: [], drawer: [])
 
         func resolved(_ stored: String) -> String? {
-            if known.contains(stored) { return stored }
-            guard let renamed = ModuleRegistry.renamedIDs[stored],
-                  known.contains(renamed) else { return nil }
-            return renamed
+            registry.resolvingRenames(id: stored)?.id
         }
 
         for zone in NavigationZone.allCases {
@@ -345,14 +330,27 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         return output
     }
 
+    private struct ShelfSpecification {
+        let id: NavigationShelfID
+        let moduleIDs: [String]
+    }
+
+    private static let shelfSpecifications = [
+        ShelfSpecification(id: .machine,
+            moduleIDs: ["census", "software", "processes", "diagnostics"]),
+        ShelfSpecification(id: .screen,
+            moduleIDs: ["screen", "mirror", "continuity"]),
+        ShelfSpecification(id: .files, moduleIDs: ["files", "icloud"]),
+        ShelfSpecification(id: .network,
+            moduleIDs: ["settings", "networking", "mcp", "web"]),
+    ]
+
+    private static func members(of shelfID: NavigationShelfID) -> [String] {
+        shelfSpecifications.first { $0.id == shelfID }?.moduleIDs ?? []
+    }
+
     private static func defaultShelf(for moduleID: String) -> NavigationShelfID? {
-        switch moduleID {
-        case "census", "software", "processes", "diagnostics": .machine
-        case "screen", "mirror", "continuity": .screen
-        case "files", "icloud": .files
-        case "settings", "networking", "mcp", "web": .network
-        default: nil
-        }
+        shelfSpecifications.first { $0.moduleIDs.contains(moduleID) }?.id
     }
 
     private mutating func append(_ item: NavigationItem, to zone: NavigationZone) {
@@ -399,9 +397,10 @@ struct NavigationLayout: Codable, Equatable, Sendable {
     }
 
     private mutating func enforceSpecialHeroes(known: Set<String>) {
-        for (shelfID, heroID) in [(NavigationShelfID.screen, "screen"),
-                                  (.files, "files"),
-                                  (.network, "settings")] where known.contains(heroID) {
+        for shelfID in [NavigationShelfID.screen, .files, .network] {
+            guard case .module(let heroID) = NavigationShelf(
+                id: shelfID, moduleIDs: []).hero,
+                known.contains(heroID) else { continue }
             guard shelf(id: shelfID) != nil else { continue }
             removeModule(heroID)
             _ = prepend(heroID, toShelf: shelfID)

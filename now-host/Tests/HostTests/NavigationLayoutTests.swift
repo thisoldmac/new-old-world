@@ -162,6 +162,21 @@ final class NavigationLayoutStoreTests: XCTestCase {
         XCTAssertEqual(layout, NavigationLayout.standard(for: .standard))
     }
 
+    func testFutureVersionIsNotOverwrittenByAnOlderApp() throws {
+        let defaults = try defaults()
+        var future = NavigationLayout.standard(for: .standard)
+        future.version = NavigationLayout.currentVersion + 1
+        let data = try JSONEncoder().encode(future)
+        defaults.set(data, forKey: NavigationLayoutStore.layoutKey)
+
+        let layout = NavigationLayoutStore(defaults: defaults,
+            registry: .standard).load()
+
+        XCTAssertEqual(layout, NavigationLayout.standard(for: .standard))
+        XCTAssertEqual(defaults.data(forKey: NavigationLayoutStore.layoutKey),
+                       data)
+    }
+
     func testLayoutSurvivesRelaunch() throws {
         let defaults = try defaults()
         let store = NavigationLayoutStore(defaults: defaults, registry: .standard)
