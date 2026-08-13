@@ -46,13 +46,55 @@ def artifact(root: Path, name: str, component: str, version: str,
 
 def mini_source(root: Path) -> None:
     files = {
-        "contract/continuity_udp.h": "#define NOW_CONTINUITY_VERSION 3u\n",
+        "contract/continuity_udp.h": (
+            "#define NOW_CONTINUITY_VERSION 3u\n"
+            "#define NOW_CONTINUITY_STATE_MAGIC 0x4E574331UL /* NWC1 */\n"
+            "#define NOW_CONTINUITY_STATE_BYTES 40u\n"
+            "#define NOW_CONTINUITY_FLAG_INSIDE 0x0001u\n"
+            "#define NOW_CONTINUITY_FLAG_PRIMARY_DOWN 0x0002u\n"
+            "#define NOW_CONTINUITY_FLAG_KEEPALIVE 0x0004u\n"
+            "#define NOW_CONTINUITY_ACK_MAGIC 0x4E574131UL /* NWA1 */\n"
+            "#define NOW_CONTINUITY_ACK_BYTES 44u\n"
+            "#define NOW_CONTINUITY_ACK_INACTIVE 0u\n"
+            "#define NOW_CONTINUITY_ACK_ARMED 1u\n"
+            "#define NOW_CONTINUITY_ACK_ACTIVE 2u\n"
+            "#define NOW_CONTINUITY_EXIT_NONE 0u\n"
+            "#define NOW_CONTINUITY_EXIT_HOST_LEFT 1u\n"
+            "#define NOW_CONTINUITY_EXIT_GUEST_INPUT 2u\n"
+            "#define NOW_CONTINUITY_EXIT_LEASE_EXPIRED 3u\n"
+            "#define NOW_CONTINUITY_EXIT_DISARMED 4u\n"),
         "contract/peek_table.h": "#define NOW_CONTINUITY_FORMAT_CURRENT 8u\n",
         "contract/resident_version.h": (
             "#define NOW_RESIDENT_VERSION_MAJOR 1\n"
             "#define NOW_RESIDENT_VERSION_MINOR 3\n"),
         "now-host/Sources/Host/ContinuityDatagram.swift": (
-            "static let version: UInt16 = 3\n"),
+            "struct ContinuityStateDatagram {\n"
+            "  static let byteCount = 40\n"
+            "  static let magic: UInt32 = 0x4E57_4331 // NWC1\n"
+            "  static let version: UInt16 = 3\n"
+            "  struct Flags {\n"
+            "    static let inside = Flags(rawValue: 1 << 0)\n"
+            "    static let primaryDown = Flags(rawValue: 1 << 1)\n"
+            "    static let keepalive = Flags(rawValue: 1 << 2)\n"
+            "  }\n"
+            "}\n"
+            "struct ContinuityAckDatagram {\n"
+            "  static let byteCount = 44\n"
+            "  static let magic: UInt32 = 0x4E57_4131 // NWA1\n"
+            "  enum State {\n"
+            "    case inactive = 0\n"
+            "    case armed = 1\n"
+            "    case active = 2\n"
+            "  }\n"
+            "  enum ExitReason {\n"
+            "    case none = 0\n"
+            "    case hostLeft = 1\n"
+            "    case guestInput = 2\n"
+            "    case leaseExpired = 3\n"
+            "    case disarmed = 4\n"
+            "  }\n"
+            "}\n"
+            "enum ContinuityDatagramError {}\n"),
         "now-host/Sources/Host/ContractMessages.swift": (
             "static let residentTableVersion = 8\n"
             'static let residentVersion = "1.3"\n'),
@@ -62,10 +104,14 @@ def mini_source(root: Path) -> None:
             "NOW_CONTINUITY_FORMAT_CURRENT\n"),
         "tools/continuity-probe.py": (
             "from continuity_contract import values\n"
-            "CONTINUITY_VERSION = values(ROOT)['continuityWire']\n"),
+            "def arm():\n"
+            "    return {\"type\": \"continuity.arm\", "
+            "\"version\": CONTINUITY.version}\n"),
         "tools/emulator-direct-pointer.py": (
             "from continuity_contract import values\n"
-            "VERSION = values(ROOT)['continuityWire']\n"),
+            "def arm():\n"
+            "    return {\"type\": \"continuity.arm\", "
+            "\"version\": CONTINUITY.version}\n"),
     }
     for relative, body in files.items():
         path = root / relative
@@ -109,16 +155,29 @@ def main() -> int:
         if coherent.returncode:
             raise AssertionError(coherent.stderr)
         datagram = root / "now-host/Sources/Host/ContinuityDatagram.swift"
-        datagram.write_text("static let version: UInt16 = 2\n")
+        coherent_datagram = datagram.read_text()
+        datagram.write_text(coherent_datagram.replace(
+            "static let version: UInt16 = 3",
+            "static let version: UInt16 = 2"))
         drift = run("source", root=root)
         if drift.returncode == 0 or "host Continuity wire 2" not in drift.stderr:
             raise AssertionError("the exact host-wire drift mutation passed")
-        datagram.write_text("static let version: UInt16 = 3\n")
-        probe = root / "tools/continuity-probe.py"
-        probe.write_text("CONTINUITY_VERSION = 2\n")
+        datagram.write_text(coherent_datagram)
+        speaker = root / "tools/new-continuity-speaker.py"
+        speaker.write_text(
+            'def arm():\n    return {"type":"continuity.arm","version":2}\n')
         copied = run("source", root=root)
-        if copied.returncode == 0 or "copies rather than reads" not in copied.stderr:
-            raise AssertionError("a driving instrument copied wire V2 again")
+        if copied.returncode == 0 or "inline control version" not in copied.stderr:
+            raise AssertionError("a newly discovered speaker copied wire V2 again")
+        speaker.write_text(
+            "from continuity_contract import load\n"
+            "import struct\n"
+            "STATE = struct.Struct(\">IHHIIIIhhIHHI\")\n"
+            'def arm():\n    return {"type": "continuity.arm", '
+            '"version": CONTINUITY.version}\n')
+        layout = run("source", root=root)
+        if layout.returncode == 0 or "local state layout" not in layout.stderr:
+            raise AssertionError("a newly discovered speaker copied packet layout")
 
     with tempfile.TemporaryDirectory(prefix="now-continuity-handoff-") as tmp:
         output = Path(tmp) / "existing"
@@ -131,7 +190,7 @@ def main() -> int:
         if reused.returncode == 0 or "new or empty directory" not in reused.stderr:
             raise AssertionError("a non-empty handoff directory was reused")
 
-    print("continuity stack: 6 compatibility/assembly mutations passed")
+    print("continuity stack: 7 compatibility/assembly mutations passed")
     return 0
 
 

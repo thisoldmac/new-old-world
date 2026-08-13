@@ -68,6 +68,15 @@ tuple. Do not construct a test stack by copying three files from remembered
 build directories. A valid application plus a valid older Extension is an
 invalid stack.
 
+The source half of that gate also discovers Python Continuity speakers by
+behavior. Any tool under `tools/` or `scripts/probes/` that emits
+`continuity.arm` or carries the datagram signature must import
+`tools/continuity_contract.py`; it may not declare the control version, packet
+magic, packet layout, ACK states, or exit reasons locally. This is discovery,
+not a filename inventory, so adding a new speaker cannot silently evade it.
+The Swift host cannot import a C header directly, so its checked copies of the
+same values are compared with `contract/continuity_udp.h` by the same gate.
+
 `contract/product_version.h` owns the host/PPC application-family release
 version. The classic `vers` resource, Swift identity, Xcode marketing version,
 and fallback host `Info.plist` remain checked copies because their build systems

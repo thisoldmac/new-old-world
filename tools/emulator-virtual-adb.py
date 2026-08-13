@@ -15,10 +15,13 @@ import select
 import socket
 import sys
 import time
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts", "probes"))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
 import nowwire  # noqa: E402
+from continuity_contract import load as load_continuity_contract  # noqa: E402
 
 
 def load_direct_pointer():
@@ -30,12 +33,13 @@ def load_direct_pointer():
 
 
 DP = load_direct_pointer()
+CONTINUITY = load_continuity_contract(Path(ROOT))
 
 
 def arm(link, ident, lease):
     nonce_hi, nonce_lo, epoch = lease
     link._send({
-        "type": "continuity.arm", "version": DP.VERSION, "id": ident,
+        "type": "continuity.arm", "version": CONTINUITY.version, "id": ident,
         "nonceHi": nonce_hi, "nonceLo": nonce_lo, "epoch": epoch,
         "requestedHz": 30, "leaseTicks": 180, "fastPump": True,
         "virtualADB": True,
@@ -69,9 +73,9 @@ def drive_target(qmp, link, udp, lease, sequence, target,
             ack = DP.decode_ack(udp.recv(DP.ACK.size))
             if (ack["nonceHi"], ack["nonceLo"], ack["epoch"]) == lease:
                 acknowledgements.append(ack)
-                if ack["exitReason"] != 0:
+                if ack["exitReason"] != CONTINUITY.exit_none:
                     raise RuntimeError(f"virtual ADB exited early: {ack}")
-                if (ack["state"] == 2
+                if (ack["state"] == CONTINUITY.ack_active
                         and ack["positionSequence"] >= sequence
                         and ack["buttonGeneration"] == generation):
                     return {

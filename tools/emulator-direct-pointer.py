@@ -15,7 +15,6 @@ import json
 import os
 import select
 import socket
-import struct
 import sys
 import time
 from pathlib import Path
@@ -24,7 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts", "probes"))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import nowwire  # noqa: E402
-from continuity_contract import values as continuity_values  # noqa: E402
+from continuity_contract import load as load_continuity_contract  # noqa: E402
 
 
 def load_cursor_mechanism():
@@ -37,11 +36,9 @@ def load_cursor_mechanism():
 
 CURSOR_MECHANISM = load_cursor_mechanism()
 Qmp = CURSOR_MECHANISM.Qmp
-STATE = struct.Struct(">IHHIIIIhhIHHI")
-ACK = struct.Struct(">IHHIIIIIHHIII")
-VERSION = continuity_values(Path(ROOT))["continuityWire"]
-INSIDE = 0x0001
-PRIMARY_DOWN = 0x0002
+CONTINUITY = load_continuity_contract(Path(ROOT))
+VERSION = CONTINUITY.version
+ACK = CONTINUITY.ack_struct
 
 
 def mouseloc(link):
@@ -107,26 +104,15 @@ def next_exit(link, reason=None, timeout=20):
 
 def encode_state(nonce_hi, nonce_lo, epoch, sequence, h, v,
                  button_generation, down, inside=True):
-    flags = (INSIDE if inside else 0) | (PRIMARY_DOWN if down else 0)
-    return STATE.pack(
-        0x4E574331, VERSION, flags, nonce_hi, nonce_lo, epoch, sequence,
-        h, v, button_generation, 30, 0,
-        int(time.monotonic() * 60) & 0xFFFFFFFF)
+    flags = (CONTINUITY.flag_inside if inside else 0) | (
+        CONTINUITY.flag_primary_down if down else 0)
+    return CONTINUITY.encode_state(
+        nonce_hi, nonce_lo, epoch, sequence, h, v, button_generation, 30,
+        int(time.monotonic() * 60) & 0xFFFFFFFF, flags)
 
 
 def decode_ack(raw):
-    if len(raw) != ACK.size:
-        raise ValueError(f"ack is {len(raw)} bytes, expected {ACK.size}")
-    values = ACK.unpack(raw)
-    if values[0] != 0x4E574131 or values[1] != VERSION:
-        raise ValueError(f"bad ack header {values[:2]}")
-    return {
-        "state": values[2], "nonceHi": values[3], "nonceLo": values[4],
-        "epoch": values[5], "positionSequence": values[6],
-        "buttonGeneration": values[7], "acceptedHz": values[8],
-        "exitReason": values[9], "arrivalTicks": values[10],
-        "applyTicks": values[11], "rejectedPackets": values[12],
-    }
+    return CONTINUITY.decode_ack(raw)
 
 
 def drain_acks(udp, lease):
@@ -135,7 +121,7 @@ def drain_acks(udp, lease):
         ack = decode_ack(udp.recv(ACK.size))
         if (ack["nonceHi"], ack["nonceLo"], ack["epoch"]) != lease:
             raise RuntimeError(f"mismatched acknowledgement: {ack}")
-        if ack["exitReason"] != 0:
+        if ack["exitReason"] != CONTINUITY.exit_none:
             raise RuntimeError(f"guest exited during active stream: {ack}")
         replies.append(ack)
     return replies
@@ -161,9 +147,9 @@ def send_until_applied(udp, lease, sequence, h, v, generation, down,
             # UDP is absolute state. A delayed ACK from the just-retired
             # epoch is expected and the product host ignores it by lease.
             continue
-        if ack["exitReason"] != 0:
+        if ack["exitReason"] != CONTINUITY.exit_none:
             raise RuntimeError(f"guest exited before transition settled: {ack}")
-        if (ack["state"] == 2
+        if (ack["state"] == CONTINUITY.ack_active
                 and ack["positionSequence"] >= sequence
                 and ack["buttonGeneration"] == generation):
             return ack, sends, replies

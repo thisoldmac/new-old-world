@@ -27,14 +27,10 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 from wire_limits import (CHANNEL_CONTROL as CONTROL,  # noqa: E402
                          FLAG_END as END,
                          WIRE_CONTRACT_REVISION as CONTRACT)
-from continuity_contract import values as continuity_values  # noqa: E402
+from continuity_contract import load as load_continuity_contract  # noqa: E402
 
 
-STATE_MAGIC = 0x4E574331
-ACK_MAGIC = 0x4E574131
-CONTINUITY_VERSION = continuity_values(Path(ROOT))["continuityWire"]
-STATE_INSIDE = 0x0001
-ACK_BYTES = 44
+CONTINUITY = load_continuity_contract(Path(ROOT))
 
 
 def frame(payload):
@@ -43,33 +39,13 @@ def frame(payload):
 
 def encode_state(nonce_hi, nonce_lo, epoch, sequence, h=100, v=100,
                  requested_hz=15):
-    return struct.pack(
-        ">IHHIIIIhhIHHI", STATE_MAGIC, CONTINUITY_VERSION, STATE_INSIDE,
-        nonce_hi, nonce_lo, epoch, sequence, h, v, 0, requested_hz, 0,
-        int(time.monotonic() * 60) & 0xFFFFFFFF)
+    return CONTINUITY.encode_state(
+        nonce_hi, nonce_lo, epoch, sequence, h, v, 0, requested_hz,
+        int(time.monotonic() * 60) & 0xFFFFFFFF, CONTINUITY.flag_inside)
 
 
 def decode_ack(payload):
-    if len(payload) != ACK_BYTES:
-        raise ValueError(f"ack is {len(payload)} bytes, expected {ACK_BYTES}")
-    values = struct.unpack(">IHHIIIIIHHIII", payload)
-    if values[0] != ACK_MAGIC or values[1] != CONTINUITY_VERSION:
-        raise ValueError(
-            f"ack magic or version does not match Continuity "
-            f"v{CONTINUITY_VERSION}")
-    return {
-        "state": values[2],
-        "nonceHi": values[3],
-        "nonceLo": values[4],
-        "epoch": values[5],
-        "positionSequence": values[6],
-        "buttonGeneration": values[7],
-        "acceptedHz": values[8],
-        "exitReason": values[9],
-        "arrivalTicks": values[10],
-        "applyTicks": values[11],
-        "rejectedPackets": values[12],
-    }
+    return CONTINUITY.decode_ack(payload)
 
 
 class FramedGuest:
@@ -159,7 +135,8 @@ def main():
     arm_id = 7001
     disarm_id = 7002
     lease = {"nonceHi": nonce_hi, "nonceLo": nonce_lo, "epoch": epoch}
-    guest.send({"type": "continuity.arm", "version": 2, "id": arm_id,
+    guest.send({"type": "continuity.arm", "version": CONTINUITY.version,
+                "id": arm_id,
                 **lease, "requestedHz": 15, "leaseTicks": 120})
     arm = receive_control(guest, arm_id, time.monotonic() + args.timeout)
     if arm.get("state") != "armed" or not arm.get("udpPort"):
@@ -175,7 +152,7 @@ def main():
         raise RuntimeError("guest did not accept the probe state: "
                            + json.dumps(ack))
 
-    guest.send({"type": "continuity.disarm", "version": 2,
+    guest.send({"type": "continuity.disarm", "version": CONTINUITY.version,
                 "id": disarm_id, "epoch": epoch, "reason": "disabled"})
     disarm = receive_control(guest, disarm_id,
                              time.monotonic() + args.timeout)

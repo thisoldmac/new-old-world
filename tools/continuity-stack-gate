@@ -27,7 +27,8 @@ class Refusal(Exception):
 def numeric_macro(path: Path, name: str) -> int:
     match = re.search(
         rf"^\s*#define\s+{re.escape(name)}\s+"
-        r"(0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]*\s*$",
+        r"(0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]*\s*"
+        r"(?:/\*.*\*/)?\s*$",
         path.read_text(), re.MULTILINE)
     if not match:
         raise Refusal(f"{path}: no numeric {name} definition")
@@ -52,6 +53,91 @@ def swift_string(path: Path, name: str) -> str:
     return match.group(1)
 
 
+def swift_block(path: Path, start: str, end: str | None) -> str:
+    text = path.read_text()
+    begin = text.find(start)
+    if begin < 0:
+        raise Refusal(f"{path}: no Swift declaration {start!r}")
+    finish = text.find(end, begin + len(start)) if end else len(text)
+    if finish < 0:
+        raise Refusal(f"{path}: no Swift declaration {end!r}")
+    return text[begin:finish]
+
+
+def swift_block_number(text: str, name: str) -> int:
+    match = re.search(
+        rf"^\s*static let {re.escape(name)}(?:\s*:\s*\w+)?\s*=\s*"
+        r"(0x[0-9a-fA-F_]+|[0-9]+)\s*(?://.*)?$",
+        text, re.MULTILINE)
+    if not match:
+        raise Refusal(f"Swift Continuity declaration has no numeric {name}")
+    return int(match.group(1).replace("_", ""), 0)
+
+
+def swift_flag(text: str, name: str) -> int:
+    match = re.search(
+        rf"^\s*static let {re.escape(name)}\s*=\s*Flags\(rawValue:\s*"
+        r"1\s*<<\s*([0-9]+)\)\s*$", text, re.MULTILINE)
+    if not match:
+        raise Refusal(f"Swift Continuity flags have no derived {name}")
+    return 1 << int(match.group(1))
+
+
+def swift_case(text: str, name: str) -> int:
+    match = re.search(
+        rf"^\s*case\s+{re.escape(name)}\s*=\s*([0-9]+)\s*$",
+        text, re.MULTILINE)
+    if not match:
+        raise Refusal(f"Swift Continuity enum has no numeric case {name}")
+    return int(match.group(1))
+
+
+def continuity_instruments(root: Path) -> list[Path]:
+    """Discover speakers by behavior, so a new tool cannot evade a list."""
+    found: list[Path] = []
+    for relative in ("tools", "scripts/probes"):
+        directory = root / relative
+        if not directory.exists():
+            continue
+        for path in directory.rglob("*.py"):
+            if path == root / "tools/continuity_contract.py":
+                continue
+            text = path.read_text(errors="replace")
+            if (re.search(
+                    r'["\']type["\']\s*:\s*["\']continuity\.arm["\']',
+                    text)
+                    or "0x4E574331" in text or "0x4E574131" in text
+                    or "IHHIIIIhhIHHI" in text
+                    or "IHHIIIIIHHIII" in text):
+                found.append(path)
+    return sorted(found)
+
+
+def check_continuity_instruments(root: Path) -> None:
+    offenders: list[str] = []
+    patterns = (
+        (r'["\']version["\']\s*:\s*[0-9]+', "inline control version"),
+        (r"0x4E574331|0x4E574131", "inline datagram magic"),
+        (r"struct\.Struct\([\"\']>IHHIIIIhhIHHI[\"\']\)",
+         "local state layout"),
+        (r"struct\.Struct\([\"\']>IHHIIIIIHHIII[\"\']\)",
+         "local acknowledgement layout"),
+        (r'\["exitReason"\]\s*!=\s*0\b', "inline exit state"),
+        (r'\["state"\]\s*==\s*2\b', "inline active state"),
+    )
+    for path in continuity_instruments(root):
+        text = path.read_text(errors="replace")
+        relative = path.relative_to(root)
+        if "continuity_contract" not in text:
+            offenders.append(f"{relative}: does not import continuity_contract")
+        for pattern, reason in patterns:
+            if re.search(pattern, text):
+                offenders.append(f"{relative}: {reason}")
+    if offenders:
+        raise Refusal("Continuity speakers copy shared constants:\n  "
+                      + "\n  ".join(offenders))
+
+
 def source_contract(root: Path) -> dict[str, object]:
     wire = numeric_macro(root / "contract/continuity_udp.h",
                          "NOW_CONTINUITY_VERSION")
@@ -63,8 +149,63 @@ def source_contract(root: Path) -> dict[str, object]:
                                    "NOW_RESIDENT_VERSION_MINOR")
     resident = f"{resident_major}.{resident_minor}"
 
-    host_datagram = swift_int(
-        root / "now-host/Sources/Host/ContinuityDatagram.swift", "version")
+    datagram_path = root / "now-host/Sources/Host/ContinuityDatagram.swift"
+    host_datagram = swift_int(datagram_path, "version")
+    state_block = swift_block(
+        datagram_path, "struct ContinuityStateDatagram", "struct ContinuityAckDatagram")
+    ack_block = swift_block(
+        datagram_path, "struct ContinuityAckDatagram", "enum ContinuityDatagramError")
+    host_pairs = (
+        (swift_block_number(state_block, "byteCount"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_STATE_BYTES"), "state byte count"),
+        (swift_block_number(state_block, "magic"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_STATE_MAGIC"), "state magic"),
+        (swift_flag(state_block, "inside"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_FLAG_INSIDE"), "inside flag"),
+        (swift_flag(state_block, "primaryDown"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_FLAG_PRIMARY_DOWN"), "primary-down flag"),
+        (swift_flag(state_block, "keepalive"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_FLAG_KEEPALIVE"), "keepalive flag"),
+        (swift_block_number(ack_block, "byteCount"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_ACK_BYTES"), "ack byte count"),
+        (swift_block_number(ack_block, "magic"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_ACK_MAGIC"), "ack magic"),
+        (swift_case(ack_block, "inactive"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_ACK_INACTIVE"), "inactive state"),
+        (swift_case(ack_block, "armed"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_ACK_ARMED"), "armed state"),
+        (swift_case(ack_block, "active"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_ACK_ACTIVE"), "active state"),
+        (swift_case(ack_block, "none"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_EXIT_NONE"), "no-exit state"),
+        (swift_case(ack_block, "hostLeft"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_EXIT_HOST_LEFT"), "host-left state"),
+        (swift_case(ack_block, "guestInput"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_EXIT_GUEST_INPUT"), "guest-input state"),
+        (swift_case(ack_block, "leaseExpired"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_EXIT_LEASE_EXPIRED"), "lease-expired state"),
+        (swift_case(ack_block, "disarmed"),
+         numeric_macro(root / "contract/continuity_udp.h",
+                       "NOW_CONTINUITY_EXIT_DISARMED"), "disarmed state"),
+    )
+    for host_value, shared_value, label in host_pairs:
+        if host_value != shared_value:
+            raise Refusal(
+                f"host Continuity {label} {host_value} != shared {shared_value}")
     host_contract = root / "now-host/Sources/Host/ContractMessages.swift"
     host_table = swift_int(host_contract, "residentTableVersion")
     host_resident = swift_string(host_contract, "residentVersion")
@@ -85,16 +226,7 @@ def source_contract(root: Path) -> dict[str, object]:
         if "NOW_CONTINUITY_FORMAT_CURRENT" not in (root / relative).read_text():
             raise Refusal(
                 f"{relative}: bypasses the shared current Continuity format")
-    for relative in (
-        "tools/continuity-probe.py",
-        "tools/emulator-direct-pointer.py",
-    ):
-        instrument = (root / relative).read_text()
-        if "continuity_contract" not in instrument:
-            raise Refusal(f"{relative}: copies rather than reads the contract")
-        if re.search(r"^(?:CONTINUITY_VERSION|VERSION)\s*=\s*[0-9]+\s*$",
-                     instrument, re.MULTILINE):
-            raise Refusal(f"{relative}: hard-codes the Continuity wire version")
+    check_continuity_instruments(root)
     return {
         "continuityWire": wire,
         "continuityTable": table,

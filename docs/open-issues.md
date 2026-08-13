@@ -1229,6 +1229,19 @@ accepted private image is
 `ae30b4a11e99611ca9b3af649f7fad3b738cf33bb11fd11de0b7e0913db15dee`.
 The shared oracle was not changed.
 
+**2026-08-13 hard-coded-speaker correction:** the first atomic-stack gate
+named two known Python instruments and checked only their assigned version
+constant. That was not the defect shape. `continuity-probe.py` still put the
+literal version 2 directly into its arm and disarm messages, and
+`emulator-continuity-fault.py` was an unlisted third speaker with local copies
+of version 2, both magics, both packet layouts, flags, ACK states and exit
+reasons. The gate now discovers speakers by behavior and refuses inline
+control versions, datagram magic, packet layouts, and state values. All Python
+speakers use one header-reading codec; the host's unavoidable Swift copies of
+version, sizes, magic, flags, ACK states and exit reasons are checked against
+the same C header. Mutations add an entirely new speaker with an inline V2 arm
+and then a copied packet layout; both fail without changing an allowlist.
+
 The C/Swift wire codecs, pure takeover/lease logic, owner arbitration, TCP
 routing, explicit control-contract version, and real loopback TCP+UDP
 press/ACK/release sequence pass. A private scrap-image bake cold-booted

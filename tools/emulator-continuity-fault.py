@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise movement safety for Continuity V2 on a private mac99 clone.
+"""Exercise movement safety for current Continuity on a private mac99 clone.
 
 This is deliberately not a product client. It drives the same versioned TCP
 authority message and fixed-size UDP state datagrams as the host, records every
@@ -14,13 +14,15 @@ import json
 import os
 import select
 import socket
-import struct
 import sys
 import time
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts", "probes"))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
 import nowwire  # noqa: E402
+from continuity_contract import load as load_continuity_contract  # noqa: E402
 
 
 def load_qmp():
@@ -32,8 +34,8 @@ def load_qmp():
 
 
 Qmp = load_qmp()
-STATE = struct.Struct(">IHHIIIIhhIHHI")
-ACK = struct.Struct(">IHHIIIIIHHIII")
+CONTINUITY = load_continuity_contract(Path(ROOT))
+ACK = CONTINUITY.ack_struct
 
 
 def mouseloc(link):
@@ -62,24 +64,13 @@ def next_unsolicited_exit(link, reason, timeout=20):
 
 
 def state_packet(nonce_hi, nonce_lo, epoch, seq, h, v, stamp):
-    flags = 0x0001
-    return STATE.pack(0x4E574331, 2, flags, nonce_hi, nonce_lo, epoch,
-                      seq, h, v, 0, 30, 0, stamp)
+    return CONTINUITY.encode_state(
+        nonce_hi, nonce_lo, epoch, seq, h, v, 0, 30, stamp,
+        CONTINUITY.flag_inside)
 
 
 def decode_ack(raw):
-    if len(raw) != ACK.size:
-        raise ValueError(f"ack is {len(raw)} bytes, expected {ACK.size}")
-    values = ACK.unpack(raw)
-    if values[0] != 0x4E574131 or values[1] != 2:
-        raise ValueError(f"bad ack header {values[:2]}")
-    return {
-        "state": values[2], "nonceHi": values[3], "nonceLo": values[4],
-        "epoch": values[5], "positionSequence": values[6],
-        "buttonGeneration": values[7], "acceptedHz": values[8],
-        "exitReason": values[9], "arrivalTicks": values[10],
-        "applyTicks": values[11], "rejectedPackets": values[12],
-    }
+    return CONTINUITY.decode_ack(raw)
 
 
 def send_until_applied(udp, nonce_hi, nonce_lo, epoch, seq, h, v,
@@ -110,13 +101,13 @@ def send_until_applied(udp, nonce_hi, nonce_lo, epoch, seq, h, v,
                 raise TimeoutError(
                     f"position {seq} received only stale lease ACKs: {ack}")
             continue
-        if ack["exitReason"] != 0:
+        if ack["exitReason"] != CONTINUITY.exit_none:
             raise RuntimeError(f"resident exited at {seq}: {ack}")
         position_done = ack["positionSequence"] >= seq
         if ack["buttonGeneration"] != 0:
             raise RuntimeError(
                 f"movement-only epoch unexpectedly applied a button: {ack}")
-        if position_done and ack["state"] == 2:
+        if position_done and ack["state"] == CONTINUITY.ack_active:
             return ack, attempts
         attempts += 1
         if time.time() >= deadline:
@@ -143,13 +134,14 @@ def drain_acks(udp, nonce_hi, nonce_lo, epoch):
         if (ack["nonceHi"], ack["nonceLo"], ack["epoch"]) != (
                 nonce_hi, nonce_lo, epoch):
             raise RuntimeError(f"mismatched streamed ACK: {ack}")
-        if ack["exitReason"] != 0:
+        if ack["exitReason"] != CONTINUITY.exit_none:
             raise RuntimeError(f"resident exited during stream: {ack}")
         out.append(ack)
 
 
 def arm(link, ident, nonce_hi, nonce_lo, epoch):
-    link._send({"type": "continuity.arm", "version": 2, "id": ident,
+    link._send({"type": "continuity.arm", "version": CONTINUITY.version,
+                "id": ident,
                 "nonceHi": nonce_hi, "nonceLo": nonce_lo, "epoch": epoch,
                 "requestedHz": 30, "leaseTicks": 90})
     report = next_control(link, "continuity.report", ident)
@@ -159,7 +151,7 @@ def arm(link, ident, nonce_hi, nonce_lo, epoch):
 
 
 def disarm(link, ident, epoch):
-    link._send({"type": "continuity.disarm", "version": 2,
+    link._send({"type": "continuity.disarm", "version": CONTINUITY.version,
                 "id": ident, "epoch": epoch, "reason": "disabled"})
     return next_control(link, "continuity.report", ident)
 
