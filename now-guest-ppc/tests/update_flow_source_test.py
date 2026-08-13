@@ -62,9 +62,11 @@ ordered(main, "now_log_close();", "now_update_relaunch();")
 # A successful extension exchange ends in a stable restart-required state,
 # not the stale "Downloading..." sentence or another enabled install button.
 ordered(wire, "now_update_install(g_put.update_component",
-        "now_update_activation_record(g_update.build)",
         "g_update.restart_required = true;",
         "g_update.pending = false;")
+ordered(wire, "now_update_activation_record(g_update.build)",
+        "now_update_install(g_put.update_component")
+assert "now_update_activation_clear()" in wire
 ordered(activation, "now_update_current_identity(kNowUpdateExtension",
         "now_update_extension_pending_activation(",
         "prefs->pending_extension_build[0] = '\\0';",
