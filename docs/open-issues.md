@@ -7,6 +7,55 @@ search:
 
 # Open issues
 
+## INTEGRATED CANDIDATE: Continuity, keyboard, screen-edge and Mirror file dragging share one continuation point (2026-08-12, `feat/continuity-integration-candidate`)
+
+The parked screen-edge lane through `a5211f98` and metal-verified keyboard lane
+through `ede337d0` were already ancestors of the direct-pointer tree. The
+Mirror file-drag lane through `11a72dde` was merged as `aeaf750a`. Its host
+composition conflict was resolved by preserving both ownership boundaries:
+ordinary screen-edge pointer ownership hides the host cursor and begins V8
+keyboard capture, while a host-file drag crossing the same edge does neither.
+The shared pointer wire, V8 resident table, Extension input mechanism and
+guest file-transfer contract did not acquire a second implementation.
+
+The complete local gate passed with the documented test-only override for this
+private clone's unarmed shared hooks: documentation and mutation gates, release
+and image discipline, Web Bridge, 190 native tests, MirrorKit, both guests and
+all resident/instrument cross-builds, the host suites, isolated socket test,
+and Debug and Release app builds. The gate's live-guest stage skipped because
+`NOW_GUEST_LIVE` was not requested. The override does not repair the clone's
+hook configuration; `tools/hooks-doctor --fix` would rewrite shared Git
+configuration and remains an explicit operator action.
+
+A private clone of SheepShaver seal
+`os86-carbon16-now020-codekitten-5d404f7-rgbv2` was made under the build
+handoff rather than modifying the sealed profile. The exact integrated
+`New Old World` artifact was installed, Mac OS 8.6 plus CarbonLib 1.6 booted,
+the Workshop opened, the app quit, Finder remained responsive, and the guest
+shut down cleanly. That is an emulator-observed application/lifecycle result,
+not Continuity transport evidence: no second host was launched while another
+NOW instance owned the normal listener, and the clone's saved network endpoint
+did not establish the matched host session.
+
+The drive exposed a useful harness boundary. A batch containing move, down and
+up can receive a successful native-renderer receipt while Finder misses the
+selection. One action per receipt, with the tool's normal settlement interval,
+reliably selected icons, opened folders, launched NOW and invoked Command-Q.
+Future Continuity automation should preserve that paced primitive and add an
+observable matched-session prerequisite before attempting pointer ownership.
+
+No additional drag-position writer or experimental toggle was added during
+integration. The current PowerBook evidence already rules out the passive ADB
+service routine as the snap-back path, and the rejected virtual-ADB carrier
+lacks an idle clock. The integrated diagnostic instead measures the synthetic
+Cursor Device record immediately before and after `CursorDeviceMoveTo`; it
+needs one attended log before the investigation can move outward to Event
+Manager/tracking state. Until then the accepted product status is explicit:
+cursor, click, keyboard and logical drag work on metal, but held drags may
+flicker between origin and current position, double-click is intermittent, and
+cooperative scheduling produces periodic motion hitches. Mirror guest-to-host
+native file drag and Continuity edge file drag remain metal-unverified.
+
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
 While the guest owns the pointer, the host now captures key-down, key-up, and
