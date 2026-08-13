@@ -57,7 +57,9 @@ cooperative scheduling produces periodic motion hitches. Those hitches have
 not been observed while a drag is held, which is a useful discriminator for
 the input-pump investigation rather than evidence that cooperative scheduling
 alone is the cause. Mirror guest-to-host native file drag and Continuity edge
-file drag remain metal-unverified.
+file drag do not share one status: the revised Mirror-native drag remains
+metal-unverified, while attended testing has established that Continuity edge
+file dragging does not work in either direction.
 
 **2026-08-13 metal follow-up — open regressions and interaction debt:**
 
@@ -75,6 +77,12 @@ file drag remain metal-unverified.
   motion away from the configured edge should cancel the pending handoff
   immediately. Apply the same cancellation guest-side only if it does not add
   meaningful work to the already constrained guest input path.
+
+**Closed in the same metal follow-up:** guest-native menu opening and
+semantic Mirror-only menu opening now remain synchronized in both directions.
+The earlier transport-gap entry in `docs/continuity-mode.md` is superseded.
+This does not close the separate direct-pointer regression above, where a menu
+title can still close on mouse-up.
 
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
@@ -161,10 +169,11 @@ PowerBook-input return were not separately called out in the report, and the
 new snapping/collision/button-retention corrections remain host-tested until the
 next packaged run. The run also exposed one resident-side defect: if the guest
 cursor was already hidden, acquiring it across the edge drove its position but
-did not redraw it. That task-time reveal correction belongs to the active
-resident/input lane and is not contained in this host-only branch.
+did not redraw it. The integrated candidate now includes the task-time reveal
+correction from the resident/input lane. It is tested in the emulator and still
+needs a PowerBook rerun before the visibility case is metal-verified.
 
-## TESTED; METAL UNVERIFIED: Continuity carries file drags through its configured screen edge (2026-08-12, `feat/mirror-drag-drop`)
+## BROKEN ON METAL: Continuity edge file dragging does not complete (2026-08-13, `feat/continuity-integration-candidate`)
 
 Continuity Mode now gives the configured shared display boundary a two-point,
 transparent AppKit drag destination. A native macOS file URL or file promise
@@ -191,10 +200,13 @@ routing an inbound host pasteboard as a guest held-item gesture produced an
 unexpected guest dragged point. After restoring both guards, the 15-test
 Continuity suite, MirrorKit gate, both 2,232-test host asset modes (56 and 73
 expected skips), isolated socket test, and unsigned Debug and Release app
-builds pass. This is therefore **tested, not metal-verified**. A real host and
-PowerBook run still has to establish AppKit delivery to the transparent edge,
-native drag-session continuation from an already-held guest gesture, icon
-placement, and both release targets.
+builds pass. Those tests establish internal ownership boundaries only; they do
+not establish the product behavior. Attended PowerBook testing subsequently
+found that neither host-to-guest nor guest-to-host Continuity edge dragging
+completes. The feature is therefore **broken on metal**, not merely unverified.
+The next investigation must separately establish AppKit delivery to the
+transparent edge, native drag-session continuation from an already-held guest
+gesture, icon placement, and both release targets before changing this status.
 
 ## TESTED: Mirror mode has a copy-on-drop file lane (2026-08-12, `feat/mirror-drag-drop`)
 
@@ -1734,11 +1746,10 @@ new Tested candidate, not PowerBook evidence.
 
 The same slice synchronizes the menu state the host actually knows: a title
 press consumed by Continuity opens Mirror's dropdown, title crossing switches
-it, and selection/exit/cancel closes it. Independently opened guest menus and
-semantic Mirror-only menu opening remain unsynchronized. That is not a missing
-scene key: `MenuSelect` starves NOW's cooperative scene transport while the menu
-is open, and the resident may not send network traffic from its trap/interrupt
-contexts. A safe live guest-to-host menu signal is separate transport work.
+it, and selection/exit/cancel closes it. **Corrected by the 2026-08-13 metal
+follow-up:** independently opened guest menus and semantic Mirror-only menu
+opening now synchronize as well. The earlier conclusion that this required a
+new resident-to-host transport is superseded and is no longer open work.
 
 ## PRE-MERGE CONSOLIDATION: Mirror is NOW-owned; the standalone product is archived (2026-08-09, `codex/mirror-session-teardown`)
 

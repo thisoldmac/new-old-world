@@ -1107,7 +1107,7 @@ failure should establish whether the guest sees the second down too late before
 choosing between an atomic queued-edge contract and event-timestamp assistance;
 changing a delay without that measurement would only move the flaky boundary.
 
-### Menu visibility: one synchronized path and one missing transport
+### Menu visibility: synchronized across guest and Mirror
 
 Mirror's pre-existing dropdown is host-local state. Before this slice a menu
 title pressed through Continuity opened the guest's real `MenuSelect` loop but
@@ -1118,13 +1118,8 @@ on the consumed title press, switches as the held pointer crosses titles, and
 closes on selection, pointer exit, capture cancellation, or authority loss.
 This uses no new guest claim; it is the same host gesture shown in both places.
 
-A menu opened independently by the guest's trackpad is still not observable
-live. `MenuSelect` accepts no pump callback and starves NOW's cooperative TCP
-scene producer for the duration of tracking. The resident can observe work in
-that process, but it cannot perform Open Transport sends from the trap or Time
-Manager contexts without recreating the notifier/interrupt failures that wedged
-the guest. Full two-way menu visibility therefore needs a separately designed
-resident-to-host signal with a safe task-time transport owner, not another scene
-field whose producer cannot run. Semantic Mirror menu opening also remains
-host-local; choosing a row still dispatches the addressed guest command. Both
-are explicit open work rather than claims made by this candidate.
+**Metal correction, 2026-08-13:** guest-native menu opening and semantic
+Mirror-only menu opening now remain synchronized in both directions. The
+earlier conclusion that this required a new resident-to-host transport is
+superseded and is no longer open work. The direct-pointer click-open regression
+is separate: a menu title may still open on mouse-down and close on mouse-up.
