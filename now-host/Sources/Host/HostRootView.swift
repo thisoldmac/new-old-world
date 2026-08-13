@@ -31,6 +31,7 @@ struct HostRootView: View {
                 registry: registry,
                 layout: sidebar.layout,
                 state: state,
+                monitor: state.guestStatus,
                 selectModule: selectModule)
                 // A module may wrap at any size, but may not ask the window
                 // to grow to an unbounded ideal width.
@@ -71,14 +72,15 @@ struct HostRootView: View {
     }
 }
 
-/// Shelves route into the existing module runtime rather than duplicating
-/// the registry's rendering switch. The machine overview is the one true
-/// shelf-owned detail surface; every module keeps its established owner.
+/// Shelves and availability policy wrap the existing module runtime; they do
+/// not duplicate the registry's rendering switch or take ownership from a
+/// module definition.
 private struct HostDetailView: View {
     let destination: NavigationDestination
     let registry: ModuleRegistry
     let layout: NavigationLayout
     @ObservedObject var state: HostAppState
+    @ObservedObject var monitor: GuestStatusMonitor
     let selectModule: (String) -> Void
 
     var body: some View {
@@ -91,8 +93,22 @@ private struct HostDetailView: View {
         case .shelfHero:
             unavailable
         case .module(let moduleID):
-            state.moduleView(registry: registry, id: moduleID)
+            module(moduleID)
         }
+    }
+
+    private func module(_ moduleID: String) -> some View {
+        let presentation = ModuleAvailabilityPresentation.resolve(
+            moduleID: moduleID,
+            status: monitor.status)
+        return ModuleAvailabilityShell(
+            presentation: presentation,
+            moduleTitle: registry.module(id: moduleID)?.title ?? "This Module",
+            status: monitor.status,
+            showConnections: { selectModule("settings") },
+            startListening: { state.startListening() }) {
+                state.moduleView(registry: registry, id: moduleID)
+            }
     }
 
     private var machineModules: [ModuleDescriptor] {
