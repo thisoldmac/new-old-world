@@ -943,6 +943,13 @@ enum {
     kNowPeekContinuityStateRefused = 4
 };
 
+/* The application and resident must compare against one named current
+   format.  Spelling V8 independently in both halves allowed a handoff to
+   contain a new application and an older resident while every artifact was
+   individually well formed.  The update manifests also publish this value,
+   so a stack assembler can reject that pair before it reaches a Macintosh. */
+#define NOW_CONTINUITY_FORMAT_CURRENT 8u
+
 enum {
     kNowPeekContinuityExitNone = 0,
     kNowPeekContinuityExitHostLeft = 1,

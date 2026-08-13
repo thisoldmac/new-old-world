@@ -55,8 +55,8 @@ def check(ok: bool, message: str) -> None:
 
 check("#define NOW_CONTINUITY_VERSION 3u" in CONTRACT,
       "the direct-pointer wire is not versioned independently from v0")
-check("kNowPeekContinuityFormatV8" in RESIDENT,
-      "the resident no longer requires the V6 ADB observer table tail")
+check("NOW_CONTINUITY_FORMAT_CURRENT" in RESIDENT,
+      "the resident no longer requires the shared current table format")
 check("now_ext_continuity_tm.S" in EXT_CMAKE,
       "the held-button release vehicle is not linked")
 check("now_continuity_cursor_button(" in PPC,
@@ -150,4 +150,4 @@ if failures:
         print("FAIL:", failure)
     raise SystemExit(1)
 
-print("continuity v2 event/interrupt safety source guard: ok")
+print("continuity event/interrupt safety source guard: ok")

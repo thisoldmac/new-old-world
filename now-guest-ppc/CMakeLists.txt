@@ -446,6 +446,16 @@ if(PYTHON3_EXECUTABLE)
                 --lifecycle-number-define NOW_PRODUCT_LIFECYCLE_NUMBER
                 --identity-header "${_buildstamp_header}"
                 --identity-define NOW_BUILD_ID
+                --continuity-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/continuity_udp.h"
+                --continuity-version-define NOW_CONTINUITY_VERSION
+                --peek-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/peek_table.h"
+                --continuity-format-define NOW_CONTINUITY_FORMAT_CURRENT
+                --resident-version-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/resident_version.h"
+                --resident-version-major NOW_RESIDENT_VERSION_MAJOR
+                --resident-version-minor NOW_RESIDENT_VERSION_MINOR
                 --channel ${NOW_UPDATE_CHANNEL}
                 ${_update_candidate_args}
                 --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/.."

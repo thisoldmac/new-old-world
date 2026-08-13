@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise Continuity V2 primary input on one private mac99 clone.
+"""Exercise current Continuity primary input on one private mac99 clone.
 
 This is a fault instrument, not a product client. It drives the same TCP
 authority and fixed-size UDP latest-state lane as NOW, and records five
@@ -18,10 +18,13 @@ import socket
 import struct
 import sys
 import time
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts", "probes"))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
 import nowwire  # noqa: E402
+from continuity_contract import values as continuity_values  # noqa: E402
 
 
 def load_cursor_mechanism():
@@ -36,7 +39,7 @@ CURSOR_MECHANISM = load_cursor_mechanism()
 Qmp = CURSOR_MECHANISM.Qmp
 STATE = struct.Struct(">IHHIIIIhhIHHI")
 ACK = struct.Struct(">IHHIIIIIHHIII")
-VERSION = 2
+VERSION = continuity_values(Path(ROOT))["continuityWire"]
 INSIDE = 0x0001
 PRIMARY_DOWN = 0x0002
 

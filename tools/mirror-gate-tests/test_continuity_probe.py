@@ -26,12 +26,13 @@ class ContinuityProbeCodecTests(unittest.TestCase):
             h=0x1234, v=-2, requested_hz=30)
         self.assertEqual(len(packet), 40)
         self.assertEqual(packet[:36].hex(),
-            "4e57433100020001010203040506070811121314212223241234fffe"
+            "4e57433100030001010203040506070811121314212223241234fffe"
             "00000000001e0000")
 
     def test_ack_decoder_rejects_wrong_lease_bytes(self):
         payload = struct.pack(
-            ">IHHIIIIIHHIII", PROBE.ACK_MAGIC, 2, 2,
+            ">IHHIIIIIHHIII", PROBE.ACK_MAGIC,
+            PROBE.CONTINUITY_VERSION, 2,
             1, 2, 3, 4, 0, 15, 0, 10, 11, 0)
         ack = PROBE.decode_ack(payload)
         self.assertEqual(ack["state"], 2)
@@ -44,7 +45,7 @@ class ContinuityProbeCodecTests(unittest.TestCase):
         payload = DIRECT.encode_state(
             1, 2, 3, 4, 320, 240, 9, True)
         fields = DIRECT.STATE.unpack(payload)
-        self.assertEqual(fields[1], 2)
+        self.assertEqual(fields[1], PROBE.CONTINUITY_VERSION)
         self.assertEqual(fields[2], DIRECT.INSIDE | DIRECT.PRIMARY_DOWN)
         self.assertEqual(fields[9], 9)
 

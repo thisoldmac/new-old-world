@@ -24,7 +24,7 @@ static NowPeekContinuityCell *keyboard_cell(NowPeekTable *table)
                                      + sizeof(NowPeekContinuityCell)))
         return NULL;
     if (table->continuity_format
-            != (NowPeekU32)kNowPeekContinuityFormatV8)
+            != (NowPeekU32)NOW_CONTINUITY_FORMAT_CURRENT)
         return NULL;
     if (!(table->caps & (NowPeekU32)kNowPeekTableCapContinuity))
         return NULL;

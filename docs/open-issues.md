@@ -1186,6 +1186,49 @@ clamped dead-man and yields immediately to physical guest movement; delayed
 button bookkeeping is diagnostic until button-only takeover is proven;
 P7 drag and P9 Continuity arbitrate one resident input owner.
 
+**2026-08-13 atomic-stack correction:** repeated handoffs paired a newly built
+PowerPC application with an older active NOW Extension. The first combination
+reported a control-version mismatch; replacing only the application advanced
+that failure to generic `unsupported`, because the application required the V8
+resident table and the loaded Extension did not publish it. Both files were
+individually valid, so the existing product, component-build, signing, and
+update-manifest gates all passed. The missing unit was the stack.
+
+The emulator instruments were also stale in the opposite direction:
+`continuity-probe.py` and `emulator-direct-pointer.py` still emitted wire V2,
+and their focused test asserted the literal V2 bytes even though the product
+contract was V3. That green test therefore proved only that two stale copies
+agreed. Both instruments now read `contract/continuity_udp.h` through
+`tools/continuity_contract.py`; the focused fixture asserts the derived current
+version rather than another handwritten number.
+
+Application and Extension update manifests now carry the same Continuity wire,
+resident-table, and resident-release tuple. `tools/continuity-stack-gate`
+compares both artifacts with the host source/signing identity and refuses the
+exact V8-application/V7-Extension mutation; `scripts/build-continuity-stack`
+assembles into a new directory and writes `NOW-stack.json`. The guest refusal
+is now `resident-unavailable`, which the host renders with the Extension
+replacement and restart recovery. The Extension release identity advances from
+1.2 to 1.3 at this integration boundary. Development fingerprints may still
+distinguish builds within a release, but a packaged resident-format generation
+must no longer remain hidden behind the previous human-facing version. This
+closes silent mixed-pack assembly. It
+does not prove what resident a PowerBook loaded: the exact stack still needs an
+Extension replacement, restart, and post-boot identity observation before its
+Continuity behavior becomes metal-verified.
+
+The 1.3 private bake was identity-checked rather than inferred from copied
+files. After a cold boot, the mac99/OS 9.1 guest reported application build
+`f3d0f61dbb43…`, Extension 1.3 build `520a93277726…`, lifecycle `active`, table
+length 7920 and capability word 1023. The full census completed and the guest
+event loop still answered. The first attempt was correctly refused because its
+fallback shutdown left HFS dirty; a clean-base retry used Finder shutdown at
+both reboot boundaries, passed `qemu-img check`, and left HFS clean. The
+accepted private image is
+`agent-stage/now-stage-continuity-stack-atomic-1.3.qcow2`, SHA-256
+`ae30b4a11e99611ca9b3af649f7fad3b738cf33bb11fd11de0b7e0913db15dee`.
+The shared oracle was not changed.
+
 The C/Swift wire codecs, pure takeover/lease logic, owner arbitration, TCP
 routing, explicit control-contract version, and real loopback TCP+UDP
 press/ACK/release sequence pass. A private scrap-image bake cold-booted

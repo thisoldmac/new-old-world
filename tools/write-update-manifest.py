@@ -25,7 +25,10 @@ def define(path: Path, name: str) -> str:
     )
     if not match:
         raise SystemExit(f"{path}: no {name} definition")
-    return match.group(1).removesuffix("UL")
+    value = match.group(1)
+    if re.fullmatch(r"(?:0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]*", value):
+        value = re.sub(r"[uUlL]+$", "", value)
+    return value
 
 
 def git(root: Path, *args: str) -> str:
@@ -87,6 +90,13 @@ def main() -> None:
     parser.add_argument("--identity-header", required=True, type=Path)
     parser.add_argument("--identity-define")
     parser.add_argument("--identity-word-prefix")
+    parser.add_argument("--continuity-header", required=True, type=Path)
+    parser.add_argument("--continuity-version-define", required=True)
+    parser.add_argument("--peek-header", required=True, type=Path)
+    parser.add_argument("--continuity-format-define", required=True)
+    parser.add_argument("--resident-version-header", required=True, type=Path)
+    parser.add_argument("--resident-version-major", required=True)
+    parser.add_argument("--resident-version-minor", required=True)
     parser.add_argument("--channel", default="development",
                         choices=("development", "candidate", "release"))
     parser.add_argument("--candidate-number", type=int)
@@ -147,6 +157,20 @@ def main() -> None:
         # There is no release key yet.  This explicit false prevents an
         # integrity digest from being presented as an artifact signature.
         "signed": False,
+        "compatibility": {
+            "continuityWire": int(define(
+                args.continuity_header,
+                args.continuity_version_define), 0),
+            "continuityTable": int(define(
+                args.peek_header,
+                args.continuity_format_define), 0),
+            "resident": ".".join((
+                str(int(define(args.resident_version_header,
+                               args.resident_version_major), 0)),
+                str(int(define(args.resident_version_header,
+                               args.resident_version_minor), 0)),
+            )),
+        },
     }
     if lifecycle is not None and lifecycle_number is not None:
         document.update({

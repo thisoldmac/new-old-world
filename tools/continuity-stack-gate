@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Refuse a Continuity handoff whose three compatibility faces disagree.
+
+An application, extension, and host can each be valid on their own and still
+form an unusable stack.  This gate reads the shared source contract and the
+two immutable update sidecars, then writes one manifest for the assembled
+handoff.  It is packaging evidence, not proof that a Macintosh loaded the
+extension; a cold-boot observation remains the final layer.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import plistlib
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+class Refusal(Exception):
+    pass
+
+
+def numeric_macro(path: Path, name: str) -> int:
+    match = re.search(
+        rf"^\s*#define\s+{re.escape(name)}\s+"
+        r"(0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]*\s*$",
+        path.read_text(), re.MULTILINE)
+    if not match:
+        raise Refusal(f"{path}: no numeric {name} definition")
+    return int(match.group(1), 0)
+
+
+def swift_int(path: Path, name: str) -> int:
+    match = re.search(
+        rf"^\s*static let {re.escape(name)}(?:\s*:\s*\w+)?\s*=\s*([0-9]+)\s*$",
+        path.read_text(), re.MULTILINE)
+    if not match:
+        raise Refusal(f"{path}: no integer Swift constant {name}")
+    return int(match.group(1))
+
+
+def swift_string(path: Path, name: str) -> str:
+    match = re.search(
+        rf'^\s*static let {re.escape(name)}\s*=\s*"([^"]+)"\s*$',
+        path.read_text(), re.MULTILINE)
+    if not match:
+        raise Refusal(f"{path}: no String Swift constant {name}")
+    return match.group(1)
+
+
+def source_contract(root: Path) -> dict[str, object]:
+    wire = numeric_macro(root / "contract/continuity_udp.h",
+                         "NOW_CONTINUITY_VERSION")
+    table = numeric_macro(root / "contract/peek_table.h",
+                          "NOW_CONTINUITY_FORMAT_CURRENT")
+    resident_major = numeric_macro(root / "contract/resident_version.h",
+                                   "NOW_RESIDENT_VERSION_MAJOR")
+    resident_minor = numeric_macro(root / "contract/resident_version.h",
+                                   "NOW_RESIDENT_VERSION_MINOR")
+    resident = f"{resident_major}.{resident_minor}"
+
+    host_datagram = swift_int(
+        root / "now-host/Sources/Host/ContinuityDatagram.swift", "version")
+    host_contract = root / "now-host/Sources/Host/ContractMessages.swift"
+    host_table = swift_int(host_contract, "residentTableVersion")
+    host_resident = swift_string(host_contract, "residentVersion")
+    if host_datagram != wire:
+        raise Refusal(
+            f"host Continuity wire {host_datagram} != shared wire {wire}")
+    if host_table != table:
+        raise Refusal(
+            f"host resident table {host_table} != shared table {table}")
+    if host_resident != resident:
+        raise Refusal(
+            f"host resident release {host_resident} != shared {resident}")
+
+    for relative in (
+        "now-guest-ppc/src/input/continuity_intake.c",
+        "ext/src/now_ext_continuity.c",
+    ):
+        if "NOW_CONTINUITY_FORMAT_CURRENT" not in (root / relative).read_text():
+            raise Refusal(
+                f"{relative}: bypasses the shared current Continuity format")
+    for relative in (
+        "tools/continuity-probe.py",
+        "tools/emulator-direct-pointer.py",
+    ):
+        instrument = (root / relative).read_text()
+        if "continuity_contract" not in instrument:
+            raise Refusal(f"{relative}: copies rather than reads the contract")
+        if re.search(r"^(?:CONTINUITY_VERSION|VERSION)\s*=\s*[0-9]+\s*$",
+                     instrument, re.MULTILINE):
+            raise Refusal(f"{relative}: hard-codes the Continuity wire version")
+    return {
+        "continuityWire": wire,
+        "continuityTable": table,
+        "resident": resident,
+    }
+
+
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_artifact(path: Path, component: str,
+                  expected: dict[str, object]) -> dict[str, object]:
+    sidecar = path.with_name(path.name + ".now-update.json")
+    try:
+        manifest = json.loads(sidecar.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise Refusal(f"{sidecar}: unreadable update manifest: {error}")
+    if manifest.get("component") != component:
+        raise Refusal(
+            f"{sidecar}: component {manifest.get('component')!r}, expected {component}")
+    if manifest.get("compatibility") != expected:
+        raise Refusal(
+            f"{sidecar}: compatibility {manifest.get('compatibility')!r}, "
+            f"expected {expected!r}")
+    if manifest.get("bytes") != path.stat().st_size:
+        raise Refusal(f"{path}: byte count does not match its manifest")
+    actual = digest(path)
+    if manifest.get("sha256") != actual:
+        raise Refusal(f"{path}: SHA-256 does not match its manifest")
+    build = manifest.get("build")
+    if not isinstance(build, str) or not re.fullmatch(r"[0-9a-f]{64}", build):
+        raise Refusal(f"{sidecar}: invalid full build identity")
+    if component == "extension" and manifest.get("version") != expected["resident"]:
+        raise Refusal(
+            f"{sidecar}: release {manifest.get('version')!r}, expected resident "
+            f"{expected['resident']}")
+    return manifest
+
+
+def host_identity(app: Path, application_version: str) -> dict[str, object]:
+    plist_path = app / "Contents/Info.plist"
+    try:
+        with plist_path.open("rb") as stream:
+            plist = plistlib.load(stream)
+    except (OSError, plistlib.InvalidFileException) as error:
+        raise Refusal(f"{plist_path}: unreadable host identity: {error}")
+    bundle_id = plist.get("CFBundleIdentifier")
+    version = plist.get("CFBundleShortVersionString")
+    if bundle_id != "dev.newoldworld.now.continuity":
+        raise Refusal(f"{app}: bundle id {bundle_id!r} is not the Continuity profile")
+    if version != application_version:
+        raise Refusal(
+            f"{app}: host version {version!r} != guest version {application_version!r}")
+    result = subprocess.run(
+        ("codesign", "-d", "--verbose=4", str(app)), text=True,
+        capture_output=True)
+    signing = result.stdout + result.stderr
+    if result.returncode:
+        raise Refusal(f"{app}: codesign could not read the host signature")
+    team = re.search(r"^TeamIdentifier=(.+)$", signing, re.MULTILINE)
+    cdhash = re.search(r"^CDHash=(.+)$", signing, re.MULTILINE)
+    if team is None or team.group(1) != "B93A9CG7F9":
+        raise Refusal(f"{app}: wrong or missing signing team")
+    if cdhash is None:
+        raise Refusal(f"{app}: missing code-directory hash")
+    return {
+        "bundleIdentifier": bundle_id,
+        "version": version,
+        "teamIdentifier": team.group(1),
+        "codeDirectoryHash": cdhash.group(1),
+    }
+
+
+def revision(root: Path) -> tuple[str, bool]:
+    head = subprocess.run(
+        ("git", "-C", str(root), "rev-parse", "HEAD"), text=True,
+        capture_output=True)
+    status = subprocess.run(
+        ("git", "-C", str(root), "status", "--porcelain",
+         "--untracked-files=no"), text=True, capture_output=True)
+    if head.returncode or status.returncode:
+        raise Refusal("could not read source revision")
+    return head.stdout.strip(), bool(status.stdout.strip())
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=Path,
+                        default=Path(__file__).resolve().parent.parent)
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("source")
+    verify = sub.add_parser("verify")
+    verify.add_argument("--application", required=True, type=Path)
+    verify.add_argument("--extension", required=True, type=Path)
+    verify.add_argument("--host-app", type=Path)
+    verify.add_argument("--output", type=Path)
+    args = parser.parse_args()
+
+    root = args.root.resolve()
+    compatibility = source_contract(root)
+    if args.command == "source":
+        print(json.dumps(compatibility, sort_keys=True))
+        return 0
+
+    application = load_artifact(args.application.resolve(), "application",
+                                compatibility)
+    extension = load_artifact(args.extension.resolve(), "extension",
+                              compatibility)
+    if application["compatibility"] != extension["compatibility"]:
+        raise Refusal("application and extension compatibility differ")
+    head, dirty = revision(root)
+    document: dict[str, object] = {
+        "schema": 1,
+        "sourceRevision": head,
+        "sourceDirty": dirty,
+        "compatibility": compatibility,
+        "application": application,
+        "extension": extension,
+    }
+    if args.host_app:
+        document["host"] = host_identity(
+            args.host_app.resolve(), str(application["version"]))
+    rendered = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    if args.output:
+        args.output.write_text(rendered)
+    else:
+        print(rendered, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (Refusal, OSError) as error:
+        print(f"continuity-stack-gate: REFUSED: {error}", file=sys.stderr)
+        raise SystemExit(1)

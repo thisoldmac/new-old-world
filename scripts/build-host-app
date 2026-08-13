@@ -74,6 +74,7 @@ mkdir -p "$output_root"
 
 if [ "$signing" = developer ] && [ "$profile" = continuity ]; then
     "$repo_root/tools/host-handoff-path" "$output_root"
+    "$repo_root/tools/continuity-stack-gate" source >/dev/null
 fi
 
 identity="$repo_root/tools/host-build-identity"

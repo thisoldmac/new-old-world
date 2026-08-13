@@ -474,8 +474,7 @@ final class MirrorContinuityController: ObservableObject,
             guard report.state == "armed", let port = report.udpPort,
                   port > 0, port <= Int(UInt16.max) else {
                 guestEnded(reason: reportDescription(report),
-                           retryable: report.reason != "unsupported"
-                               && report.reason != "wrong-version",
+                           retryable: isRetryable(report.reason),
                            retryImmediately: report.reason != "guest-input")
                 return
             }
@@ -492,8 +491,7 @@ final class MirrorContinuityController: ObservableObject,
         if report.id == nil,
            report.state == "exited" || report.state == "refused" {
             guestEnded(reason: reportDescription(report),
-                       retryable: report.reason != "unsupported"
-                           && report.reason != "wrong-version",
+                       retryable: isRetryable(report.reason),
                        retryImmediately: report.reason != "guest-input")
         }
     }
@@ -987,6 +985,9 @@ final class MirrorContinuityController: ObservableObject,
         let reason: String
         switch report.reason {
         case "wrong-version": reason = "the Continuity control versions differ"
+        case "resident-unavailable":
+            reason = "the installed NOW Extension is incompatible or not active; "
+                + "replace it and restart the Mac"
         case "guest-input": reason = "the guest mouse moved"
         case "lease-expired": reason = "the input lease expired"
         case "host-left": reason = "the host pointer left"
@@ -1000,6 +1001,11 @@ final class MirrorContinuityController: ObservableObject,
         let malformed = report.malformedPackets ?? 0
         return "\(reason) (\(accepted) accepted, \(stale) stale, "
             + "\(malformed) malformed)"
+    }
+
+    private func isRetryable(_ reason: String?) -> Bool {
+        reason != "unsupported" && reason != "wrong-version"
+            && reason != "resident-unavailable"
     }
 
     private func resetTransport() {

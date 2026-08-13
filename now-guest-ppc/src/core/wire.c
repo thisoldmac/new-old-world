@@ -6884,7 +6884,7 @@ static void serve_continuity_arm(const char *request)
     result = now_continuity_arm(id, g.port, nonce_hi, nonce_lo, epoch,
                                 hz, lease, fast_pump, tracking_options);
     if (result == kNowContinuityArmUnsupported)
-        (void)continuity_refuse(id, epoch, "unsupported");
+        (void)continuity_refuse(id, epoch, "resident-unavailable");
     else if (result == kNowContinuityArmTransportUnavailable)
         (void)continuity_refuse(id, epoch, "unavailable");
 }

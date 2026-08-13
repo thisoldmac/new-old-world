@@ -75,6 +75,22 @@ final class UpdateProviderTests: XCTestCase {
         XCTAssertTrue(provider.offers.isEmpty)
     }
 
+    func testArtifactForAnotherResidentFormatFailsClosed() throws {
+        let asset = try makeAsset(
+            name: "NOW Extension.bin", bytes: Data("old resident".utf8),
+            component: "extension", build: Self.build,
+            compatibility: [
+                "continuityWire": ContinuityContract.version,
+                "continuityTable": 7,
+                "resident": "1.3",
+            ])
+
+        let provider = UpdateProvider(snapshot: .init(
+            application: nil, codeKitten: nil,
+            extensionComponent: asset, dependencies: []))
+        XCTAssertTrue(provider.offers.isEmpty)
+    }
+
     func testApplicationAvailabilityUsesVersionAndExactBuild() throws {
         let bytes = Data("application".utf8)
         let asset = try makeAsset(name: "New Old World.bin", bytes: bytes,
@@ -105,13 +121,13 @@ final class UpdateProviderTests: XCTestCase {
         let bytes = Data("extension".utf8)
         let asset = try makeAsset(name: "NOW Extension.bin", bytes: bytes,
                                   component: "extension",
-                                  build: Self.build, version: "1.2")
+                                  build: Self.build, version: "1.3")
         let provider = UpdateProvider(snapshot: .init(
             application: nil, codeKitten: nil,
             extensionComponent: asset, dependencies: []))
 
         guard case .current = provider.availability(
-            for: .extensionComponent, installedVersion: "1.2",
+            for: .extensionComponent, installedVersion: "1.3",
             installedBuild: String(Self.build.prefix(40))) else {
             return XCTFail("the table's 160-bit prefix should match")
         }
@@ -121,7 +137,7 @@ final class UpdateProviderTests: XCTestCase {
             return XCTFail("an unreported resident must remain unknown")
         }
         guard case .replacement = provider.availability(
-            for: .extensionComponent, installedVersion: "1.2",
+            for: .extensionComponent, installedVersion: "1.3",
             installedBuild: String(Self.build.prefix(12))) else {
             return XCTFail("a truncated resident identity is not proof of a match")
         }
@@ -180,7 +196,13 @@ final class UpdateProviderTests: XCTestCase {
     private func makeAsset(name: String, bytes: Data,
                            component: String, build: String,
                            version: String = "0.1.0",
-                           signed: Bool = false) throws
+                           signed: Bool = false,
+                           compatibility: [String: Any] = [
+                               "continuityWire": ContinuityContract.version,
+                               "continuityTable":
+                                   ContinuityContract.residentTableVersion,
+                               "resident": ContinuityContract.residentVersion,
+                           ]) throws
         -> OnboardingAsset {
         let url = root.appendingPathComponent(name)
         try bytes.write(to: url)
@@ -189,6 +211,7 @@ final class UpdateProviderTests: XCTestCase {
             "build": build, "sha256": Self.sha256(bytes),
             "bytes": bytes.count, "channel": "development",
             "signed": signed,
+            "compatibility": compatibility,
         ]
         try JSONSerialization.data(withJSONObject: manifest)
             .write(to: url.appendingPathExtension("now-update.json"))

@@ -42,9 +42,9 @@ def check(ok: bool, message: str) -> None:
         failures.append(message)
 
 
-check("kNowPeekContinuityFormatV8" in CONTRACT
-      and "kNowPeekContinuityFormatV8" in CONTINUITY,
-      "the active observer tail is no longer gated by one V7 format")
+check("NOW_CONTINUITY_FORMAT_CURRENT" in CONTRACT
+      and "NOW_CONTINUITY_FORMAT_CURRENT" in CONTINUITY,
+      "the active observer tail is no longer gated by the current format")
 check("now_ext_adb_observer.c" in CMAKE
       and "now_ext_adb_observer.S" in CMAKE,
       "the observer and its register shim are not linked together")

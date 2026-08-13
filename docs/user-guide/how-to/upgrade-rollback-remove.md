@@ -6,9 +6,9 @@ doc_type: how-to
 audience: operator
 lifecycle: current
 authority: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/naming.md, docs/resident-components.md]
-source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/naming.md, docs/resident-components.md, now-host/Sources/Host/UpdateProvider.swift, now-guest-ppc/src/update]
+source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/naming.md, docs/resident-components.md, scripts/build-continuity-stack, tools/continuity-stack-gate, now-host/Sources/Host/UpdateProvider.swift, now-guest-ppc/src/update]
 media_ids: []
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -23,7 +23,9 @@ the optional resident component.
 ## Update the PowerPC application
 
 1. Install or build the modern host together with the PowerPC artifact it
-   should publish.
+   should publish. A development handoff should contain `NOW-stack.json`; it
+   proves the host, application, and Extension were assembled with one
+   Continuity compatibility tuple.
 2. Connect the PowerPC guest and select it in the host's **Connections** page.
 3. Read the Guest application row under **Software Updates**. The row
    compares both release version and exact build identity, so a different
@@ -49,6 +51,11 @@ the optional resident component.
    not active until boot; do not judge resident behavior before restarting.
 4. Reopen NOW and confirm that the mismatch warning is gone and the resident
    capabilities you use are available.
+
+If Continuity says the installed NOW Extension is incompatible or not active,
+do not replace the guest application again. Replace the Extension from the
+separate row and restart the classic Mac. The file on disk is not the active
+resident until that cold activation boundary has passed.
 
 The previous resident is moved to that volume's Trash before the replacement
 takes its canonical name, so it cannot load alongside the replacement.

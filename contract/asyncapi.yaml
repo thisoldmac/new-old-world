@@ -2250,7 +2250,7 @@ components:
         acceptedHz: { enum: [15, 30, 60] }
         udpPort: { type: integer, minimum: 1, maximum: 65535 }
         reason:
-          enum: [unsupported, unavailable, wrong-version, guest-input,
+          enum: [unsupported, unavailable, wrong-version, resident-unavailable, guest-input,
                  lease-expired, host-left, disarmed, bad-epoch]
         acceptedPackets: { type: integer, minimum: 0 }
         stalePackets: { type: integer, minimum: 0 }

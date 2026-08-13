@@ -303,6 +303,26 @@ final class MirrorContinuityControllerTests: XCTestCase {
                 + "expected \(ContinuityContract.version)")
     }
 
+    func testResidentMismatchNamesTheExtensionAndRestartRecovery()
+        async throws {
+        let rig = try await makeArmingRig()
+        try rig.guest.send(.continuityReport(.init(
+            version: ContinuityContract.version, id: rig.arm.id,
+            epoch: rig.arm.epoch, state: "refused", acceptedHz: nil,
+            udpPort: nil, reason: "resident-unavailable",
+            acceptedPackets: 0, stalePackets: 0, malformedPackets: 0,
+            appliedPositionSequence: 0,
+            appliedButtonGeneration: 0)))
+
+        try await waitUntil("resident refusal") {
+            !rig.controller.isEnabled
+        }
+        XCTAssertEqual(
+            rig.controller.status,
+            "Continuity ended on the Mac: the installed NOW Extension is "
+                + "incompatible or not active; replace it and restart the Mac")
+    }
+
     func testUncorrelatedTerminalSnapshotCannotOutrunArmReply()
         async throws {
         let port = try XCTUnwrap(listener.boundPort)

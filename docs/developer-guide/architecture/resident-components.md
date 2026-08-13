@@ -46,7 +46,7 @@ deferral may permit a branch checkpoint but never the landing.
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 80af102402d32c1295d10006e3e1e9fe6dd82250
+sources-sha1: a5f32565d10bc9ebfd39126e56c8482e47bbf809
 derive resident-contract sha256=94aa1ceb2d2998a0973bc7f381405e008f6bcfcd416bac1a70e2b26d14ef97f8 lines=12
     scripts/docs-source-group resident
 rederived: pending
@@ -131,4 +131,6 @@ rederived: 2026-08-12T20:45:45-0400 a0878023 unchanged
 rederived: 2026-08-12T22:18:36-0400 18d0d3c4 unchanged
 rederived: 2026-08-12T23:59:06-0400 e5b16a71 unchanged
 rederived: 2026-08-13T00:21:45-0400 e5b16a71 unchanged
+rederived: 2026-08-13T00:58:12-0400 9f5139cf sources
+rederived: 2026-08-13T01:23:45-0400 9f5139cf unchanged
 -->

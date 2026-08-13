@@ -113,6 +113,8 @@ echo "==> [2/8] release and staged-image discipline gates"
     || fail "component build identity gate"
 "$script_dir/../tools/update-manifest-tests" \
     || fail "update manifest release gate"
+"$script_dir/../tools/continuity-stack-gate-tests" \
+    || fail "Continuity atomic-stack gate"
 "$script_dir/../tools/host-signing-policy-tests" \
     || fail "host signing policy gate"
 "$script_dir/../tools/main-policy-tests" \

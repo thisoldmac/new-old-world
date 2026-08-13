@@ -12,6 +12,17 @@ struct UpdateProvider {
     }
 
     struct Manifest: Codable, Equatable, Sendable {
+        struct Compatibility: Codable, Equatable, Sendable {
+            let continuityWire: Int
+            let continuityTable: Int
+            let resident: String
+
+            static let current = Compatibility(
+                continuityWire: ContinuityContract.version,
+                continuityTable: ContinuityContract.residentTableVersion,
+                resident: ContinuityContract.residentVersion)
+        }
+
         let schema: Int
         let component: Component
         let version: String
@@ -20,6 +31,7 @@ struct UpdateProvider {
         let bytes: Int
         let channel: String
         let signed: Bool
+        let compatibility: Compatibility
     }
 
     struct Artifact {
@@ -127,6 +139,7 @@ struct UpdateProvider {
                 Manifest.self, from: manifestData),
               manifest.schema == 1,
               manifest.component == expected,
+              manifest.compatibility == .current,
               !manifest.signed,
               Int64(manifest.bytes) == asset.byteCount,
               manifest.sha256.range(

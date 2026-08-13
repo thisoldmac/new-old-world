@@ -2,7 +2,7 @@
 """Exercise one real guest's Continuity control and UDP lanes.
 
 The guest dials this instrument over NOW's ordinary framed TCP wire. The
-instrument grants one short movement-only V2 epoch, sends one fixed-size UDP
+instrument grants one short movement-only epoch, sends one fixed-size UDP
 state to the port the guest reports (never the requested port by assumption),
 requires a matching acknowledgement, and disarms before closing.
 
@@ -19,17 +19,20 @@ import socket
 import struct
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "contract"))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "contract"))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
 from wire_limits import (CHANNEL_CONTROL as CONTROL,  # noqa: E402
                          FLAG_END as END,
                          WIRE_CONTRACT_REVISION as CONTRACT)
+from continuity_contract import values as continuity_values  # noqa: E402
 
 
 STATE_MAGIC = 0x4E574331
 ACK_MAGIC = 0x4E574131
-CONTINUITY_VERSION = 2
+CONTINUITY_VERSION = continuity_values(Path(ROOT))["continuityWire"]
 STATE_INSIDE = 0x0001
 ACK_BYTES = 44
 
@@ -51,7 +54,9 @@ def decode_ack(payload):
         raise ValueError(f"ack is {len(payload)} bytes, expected {ACK_BYTES}")
     values = struct.unpack(">IHHIIIIIHHIII", payload)
     if values[0] != ACK_MAGIC or values[1] != CONTINUITY_VERSION:
-        raise ValueError("ack magic or version does not match Continuity v2")
+        raise ValueError(
+            f"ack magic or version does not match Continuity "
+            f"v{CONTINUITY_VERSION}")
     return {
         "state": values[2],
         "nonceHi": values[3],

@@ -6,9 +6,9 @@ doc_type: explanation
 audience: developer
 lifecycle: current
 authority: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/resident-components.md]
-source_dependencies: [RELEASING.md, .github/repository-policy.json, contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, tools/write-update-manifest.py, tools/product-version-gate, tools/ext-bake-gate, tools/sync-main, tools/github-policy-check, now-guest-ppc/cmake/buildstamp.cmake, ext/cmake/build_identity.cmake, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/wire.c]
+source_dependencies: [RELEASING.md, .github/repository-policy.json, contract/asyncapi.yaml, contract/continuity_udp.h, contract/peek_table.h, contract/product_version.h, contract/resident_version.h, scripts/build-continuity-stack, tools/continuity-stack-gate, tools/write-update-manifest.py, tools/product-version-gate, tools/ext-bake-gate, tools/sync-main, tools/github-policy-check, now-guest-ppc/cmake/buildstamp.cmake, ext/cmake/build_identity.cmake, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/wire.c]
 media_ids: []
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -51,10 +51,22 @@ the Extension becomes active.
 `tools/write-update-manifest.py` writes an adjacent
 `.now-update.json` sidecar for each canonical MacBinary. It contains the
 component, release version, exact build identity, byte count, SHA-256, channel,
-and signature state. A loose artifact without a valid sidecar may still serve
+signature state, and one compatibility tuple: Continuity wire version,
+resident-table format, and resident release version. A loose artifact without a valid sidecar may still serve
 onboarding, but `UpdateProvider` will not advertise it. The provider reads the
 normal onboarding catalog, then recomputes byte count and SHA-256 before every
-catalog snapshot becomes an offer.
+catalog snapshot becomes an offer. It also refuses a valid artifact whose
+compatibility tuple differs from the host it is running in.
+
+`scripts/build-continuity-stack HOST_ROOT OUTPUT` is the supported development
+assembler. It builds both classic artifacts and the signed Continuity host,
+requires a new or empty output directory, and writes `NOW-stack.json` only
+after `tools/continuity-stack-gate` has checked all three faces. The manifest
+records the host bundle/signing identity, exact application and Extension
+identities, artifact digests, source revision, dirty state, and compatibility
+tuple. Do not construct a test stack by copying three files from remembered
+build directories. A valid application plus a valid older Extension is an
+invalid stack.
 
 `contract/product_version.h` owns the host/PPC application-family release
 version. The classic `vers` resource, Swift identity, Xcode marketing version,
@@ -124,7 +136,13 @@ identity: `APPL/NOWo` for the application and `INIT/NOWx` for the Extension.
 
 The guest compares the active table's resident major/minor with the version it
 compiled against and warns when they differ. Capability bits, not version, still
-govern which resident planes the application may use.
+govern which resident planes the application may use. Continuity additionally
+requires the exact current table format. If the new application finds an older
+or inactive resident, it refuses with `resident-unavailable`; the host names the
+NOW Extension and restart recovery instead of collapsing this into
+`unsupported`. Resident 1.3 is the first release under this rule: it identifies
+the V8 Continuity-table integration boundary, while the build fingerprint still
+distinguishes exact development builds within that release.
 
 ## Trust boundary
 
@@ -145,7 +163,9 @@ untrusted network.
 ## Verification boundary
 
 Native tests cover SHA-256, exact-build comparison, trust labels, provider
-validation, contract round trips, and critical source ordering. Guest
+validation, compatibility-tuple parity, contract round trips, and critical
+source ordering. The stack gate's mutation suite specifically proves that a V8
+application plus a V7 Extension is refused before packaging. Guest
 cross-builds prove the Carbon and Toolbox APIs compile. Emulator acceptance
 must still prove Trash-first replacement, a manual application relaunch,
 Extension replacement, restart activation, and rollback. Only physical
