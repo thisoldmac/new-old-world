@@ -133,6 +133,13 @@ for field in ("adb_observer_state", "adb_observer_callbacks",
     if field not in disarm:
         failures.append(
             f"disarm log no longer persists ADB observer boundary field {field}")
+for field in ("tracking_options", "tracking_pin_writes",
+              "tracking_getmouse_answers", "at_h", "at_v",
+              "native_input_h", "native_input_v", "native_owned_h",
+              "native_owned_v"):
+    if field not in disarm:
+        failures.append(
+            f"disarm log no longer persists tracking diagnostic field {field}")
 if "now_log_flush();" not in arm or "now_log_flush();" not in disarm:
     failures.append("ADB observer boundary can be lost before a wedge reboot")
 if "if (!prepare_ack(shared))" not in try_ack:

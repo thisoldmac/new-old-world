@@ -421,17 +421,24 @@ int now_continuity_arm(long id, unsigned short port,
        empty ADB trace is otherwise ambiguous between "no physical packets"
        and "the wrapper never installed". */
     now_log(kLogInfo, "mirror",
-            "arm epoch=%lu hz=%lu lease=%lu fast=%d tracking=0x%lx "
-            "adb=%lu addr=%ld handler=%ld devices=%lu err=%ld installs=%lu "
-            "callbacks=%lu trace=%lu",
-            epoch, requested_hz, lease_ticks, gFastPump, tracking_options,
+            "arm epoch=%lu hz=%lu lease=%lu fast=%d tracking=0x%lx",
+            epoch, requested_hz, lease_ticks, gFastPump, tracking_options);
+    now_log(kLogInfo, "adb",
+            "observer epoch=%lu state=%lu addr=%ld handler=%ld devices=%lu "
+            "err=%ld",
+            epoch,
             (unsigned long)shared->adb_observer_state,
             (long)shared->adb_observer_address,
             (long)shared->adb_observer_handler_id,
             (unsigned long)shared->adb_observer_device_count,
-            (long)shared->adb_observer_install_result,
+            (long)shared->adb_observer_install_result);
+    now_log(kLogInfo, "adb",
+            "counters epoch=%lu installs=%lu callbacks=%lu reentries=%lu "
+            "trace=%lu",
+            epoch,
             (unsigned long)shared->adb_observer_installs,
             (unsigned long)shared->adb_observer_callbacks,
+            (unsigned long)shared->adb_observer_reentries,
             (unsigned long)shared->adb_trace_write_seq);
     now_log_flush();
     return kNowContinuityArmOK;
@@ -457,13 +464,25 @@ int now_continuity_disarm(long id, unsigned long epoch)
     gAckPending = false;
     gAckRetrying = false;
     (void)now_continuity_service_invoke(shared);
-    now_log(kLogInfo, "mirror",
-            "disarm epoch=%lu reset requested adb=%lu callbacks=%lu "
-            "reentries=%lu trace=%lu",
+    now_log(kLogInfo, "mirror", "disarm epoch=%lu reset requested", epoch);
+    now_log(kLogInfo, "adb",
+            "observer epoch=%lu state=%lu callbacks=%lu reentries=%lu "
+            "trace=%lu",
             epoch, (unsigned long)shared->adb_observer_state,
             (unsigned long)shared->adb_observer_callbacks,
             (unsigned long)shared->adb_observer_reentries,
             (unsigned long)shared->adb_trace_write_seq);
+    now_log(kLogInfo, "mirror",
+            "tracking epoch=%lu options=0x%lx pin=%lu getmouse=%lu",
+            epoch, (unsigned long)shared->tracking_options,
+            (unsigned long)shared->tracking_pin_writes,
+            (unsigned long)shared->tracking_getmouse_answers);
+    now_log(kLogInfo, "mirror",
+            "tracking points epoch=%lu at=%ld,%ld native=%ld,%ld "
+            "owned=%ld,%ld",
+            epoch, (long)shared->at_h, (long)shared->at_v,
+            (long)shared->native_input_h, (long)shared->native_input_v,
+            (long)shared->native_owned_h, (long)shared->native_owned_v);
     now_log_flush();
     /* The endpoint is transport, not authority. Keep the asynchronous OT
        endpoint bound for this TCP session and reject every packet while the
