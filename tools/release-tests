@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -87,6 +88,18 @@ class ReleaseTests(unittest.TestCase):
             "licenseAcceptance": "user",
         }))
         return descriptor
+
+    def resident_version(self) -> str:
+        source = (ROOT / "contract/resident_version.h").read_text()
+        major = re.search(
+            r"^#define NOW_RESIDENT_VERSION_MAJOR (\d+)$", source,
+            re.MULTILINE)
+        minor = re.search(
+            r"^#define NOW_RESIDENT_VERSION_MINOR (\d+)$", source,
+            re.MULTILINE)
+        self.assertIsNotNone(major)
+        self.assertIsNotNone(minor)
+        return f"{major.group(1)}.{minor.group(1)}"
 
     def test_live_profile_is_the_alpha_contract(self) -> None:
         profile = DistributionProfile.load(ROOT)
@@ -278,7 +291,8 @@ class ReleaseTests(unittest.TestCase):
         ], check=True, text=True, capture_output=True).stdout.strip()
         application = self.component(revision=revision)
         extension = self.component(
-            "NOW Extension.bin", "extension", "1.0", revision)
+            "NOW Extension.bin", "extension", self.resident_version(),
+            revision)
         descriptor = self.licensed()
         host = self.root / "New Old World.app"
         executable = host / "Contents/MacOS/New Old World"
