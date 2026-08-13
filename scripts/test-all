@@ -133,6 +133,8 @@ PYTHONPYCACHEPREFIX="${TMPDIR:-/tmp}/now-mirror-oracle-pycache" \
     || fail "Mirror visual-oracle tooling gate"
 python3 "$script_dir/../tools/macbinary-identity-tests.py" \
     || fail "MacBinary artifact identity gate"
+"$script_dir/../tools/release-tests" \
+    || fail "distribution assembler gate"
 
 echo
 echo "==> [3/8] Web Bridge gate"

@@ -172,6 +172,9 @@ def main() -> None:
             )),
         },
     }
+    if args.repo_root is not None:
+        document["sourceRevision"] = git(
+            args.repo_root.resolve(), "rev-parse", "HEAD")
     if lifecycle is not None and lifecycle_number is not None:
         document.update({
             "displayVersion": display_version,
