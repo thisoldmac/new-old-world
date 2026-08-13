@@ -1,6 +1,42 @@
 import Foundation
 
 struct ClassicSetupImageBuilder: Sendable {
+    enum Mode: Sendable {
+        case personalized(host: String, wirePort: UInt16)
+        case generic
+
+        var includesPreferences: Bool {
+            if case .personalized = self { return true }
+            return false
+        }
+
+        var includesCodeKitten: Bool { includesPreferences }
+
+        var instructions: String {
+            let connection: String
+            let codeKitten: String
+            switch self {
+            case .personalized(let host, let port):
+                connection = "2. Put New Old World Prefs in System Folder:Preferences.\r3. Open New Old World. It will connect to \(host):\(port)."
+                codeKitten = "CodeKitten is a standalone IDE; copy it wherever you keep applications.\r"
+            case .generic:
+                connection = "2. Open New Old World and enter the modern Mac's address in Connection."
+                codeKitten = ""
+            }
+            return """
+            NEW OLD WORLD SETUP\r
+            \r
+            1. Copy New Old World anywhere on your hard disk.\r
+            \(connection)\r
+            \r
+            OPTIONAL\r
+            \(codeKitten)Put NOW Extension in System Folder:Extensions and restart.\r
+            Dependencies downloaded by the host are in the Dependencies folder.\r
+            Run the CarbonLib installer if CarbonLib 1.6 is not installed.\r
+            """
+        }
+    }
+
     enum BuildError: LocalizedError {
         case missingApplication
         case packageTooLarge
@@ -36,13 +72,18 @@ struct ClassicSetupImageBuilder: Sendable {
 
     func build(host: String, wirePort: UInt16,
                assets: OnboardingAssetSnapshot) async throws -> Data {
+        try await build(mode: .personalized(host: host, wirePort: wirePort),
+                        assets: assets)
+    }
+
+    func build(mode: Mode, assets: OnboardingAssetSnapshot) async throws
+        -> Data {
         try await Task.detached(priority: .userInitiated) {
-            try buildSynchronously(host: host, wirePort: wirePort,
-                                   assets: assets)
+            try buildSynchronously(mode: mode, assets: assets)
         }.value
     }
 
-    private func buildSynchronously(host: String, wirePort: UInt16,
+    private func buildSynchronously(mode: Mode,
                                     assets: OnboardingAssetSnapshot)
         throws -> Data {
         guard assets.application != nil else {
@@ -62,8 +103,7 @@ struct ClassicSetupImageBuilder: Sendable {
             "contents", isDirectory: true)
         try fileManager.createDirectory(
             at: contents, withIntermediateDirectories: true)
-        try populate(destination: contents, host: host,
-                     wirePort: wirePort, assets: assets,
+        try populate(destination: contents, mode: mode, assets: assets,
                      dependencies: selectedDependencies)
 
         let fittedImage = workspace.appendingPathComponent(
@@ -80,7 +120,7 @@ struct ClassicSetupImageBuilder: Sendable {
         return image
     }
 
-    private func populate(destination: URL, host: String, wirePort: UInt16,
+    private func populate(destination: URL, mode: Mode,
                           assets: OnboardingAssetSnapshot,
                           dependencies selectedDependencies:
                             [OnboardingAsset]) throws {
@@ -88,15 +128,17 @@ struct ClassicSetupImageBuilder: Sendable {
             throw BuildError.missingApplication
         }
         try writeMacBinary(application.fileURL, to: destination)
-        if let codeKitten = assets.codeKitten {
+        if mode.includesCodeKitten, let codeKitten = assets.codeKitten {
             try writeMacBinary(codeKitten.fileURL, to: destination,
                                nameOverride: "CodeKitten")
         }
-        guard let preferences = OnboardingPreferences.macBinary(
-            host: host, port: wirePort) else {
-            throw BuildError.couldNotEncode
+        if case .personalized(let host, let wirePort) = mode {
+            guard let preferences = OnboardingPreferences.macBinary(
+                host: host, port: wirePort) else {
+                throw BuildError.couldNotEncode
+            }
+            _ = try MacBinaryFile.decode(preferences).write(to: destination)
         }
-        _ = try MacBinaryFile.decode(preferences).write(to: destination)
         if let extensionComponent = assets.extensionComponent {
             try writeMacBinary(extensionComponent.fileURL, to: destination,
                                nameOverride: "NOW Extension")
@@ -115,7 +157,7 @@ struct ClassicSetupImageBuilder: Sendable {
         let readMe = MacBinaryFile(
             name: "Read Me First", type: "TEXT", creator: "ttxt",
             finderFlags: 0,
-            dataFork: instructions(host: host, port: wirePort)
+            dataFork: mode.instructions
                 .data(using: .macOSRoman) ?? Data(),
             resourceFork: Data())
         _ = try readMe.write(to: destination)
@@ -315,19 +357,4 @@ struct ClassicSetupImageBuilder: Sendable {
         return stdout
     }
 
-    private func instructions(host: String, port: UInt16) -> String {
-        """
-        NEW OLD WORLD SETUP\r
-        \r
-        1. Copy New Old World anywhere on your hard disk.\r
-        2. Put New Old World Prefs in System Folder:Preferences.\r
-        3. Open New Old World. It will connect to \(host):\(port).\r
-        \r
-        OPTIONAL\r
-        CodeKitten is a standalone IDE; copy it wherever you keep applications.\r
-        Put NOW Extension in System Folder:Extensions and restart.\r
-        Dependencies downloaded by the host are in the Dependencies folder.\r
-        CarbonLib belongs in System Folder:Extensions; restart after adding it.\r
-        """
-    }
 }
