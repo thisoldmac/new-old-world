@@ -6,6 +6,9 @@ typedef struct {
     unsigned long before_request_mismatches;
     unsigned long press_reversions;
     unsigned long after_request_mismatches;
+    unsigned long after_lag_caught_up;
+    unsigned long after_lag_persisted;
+    unsigned long after_lag_pending;
     long press_h;
     long press_v;
     long requested_h;

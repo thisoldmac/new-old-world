@@ -43,6 +43,11 @@ int now_continuity_decode_state(const NowCU8 *bytes, NowCU32 length,
         return kNowContinuityWireReservedBits;
     if (read_u16(bytes + NOW_CONTINUITY_STATE_RESERVED_OFFSET) != 0)
         return kNowContinuityWireReservedField;
+    if ((read_u16(bytes + NOW_CONTINUITY_STATE_PREVIOUS_BUTTON_FLAGS_OFFSET)
+            & ~NOW_CONTINUITY_PREVIOUS_BUTTON_KNOWN_FLAGS) != 0)
+        return kNowContinuityWireReservedBits;
+    if (read_u16(bytes + NOW_CONTINUITY_STATE_TAIL_RESERVED_OFFSET) != 0)
+        return kNowContinuityWireReservedField;
 
     out->flags = flags;
     out->nonce_hi = read_u32(bytes + NOW_CONTINUITY_STATE_NONCE_HI_OFFSET);
@@ -58,6 +63,10 @@ int now_continuity_decode_state(const NowCU8 *bytes, NowCU32 length,
         read_u16(bytes + NOW_CONTINUITY_STATE_REQUESTED_HZ_OFFSET);
     out->host_stamp =
         read_u32(bytes + NOW_CONTINUITY_STATE_HOST_STAMP_OFFSET);
+    out->previous_button_generation = read_u32(
+        bytes + NOW_CONTINUITY_STATE_PREVIOUS_BUTTON_GENERATION_OFFSET);
+    out->previous_button_flags = read_u16(
+        bytes + NOW_CONTINUITY_STATE_PREVIOUS_BUTTON_FLAGS_OFFSET);
     return kNowContinuityWireOK;
 }
 
@@ -83,6 +92,11 @@ void now_continuity_encode_state(const NowContinuityStatePacket *packet,
     write_u16(out + NOW_CONTINUITY_STATE_RESERVED_OFFSET, 0);
     write_u32(out + NOW_CONTINUITY_STATE_HOST_STAMP_OFFSET,
               packet->host_stamp);
+    write_u32(out + NOW_CONTINUITY_STATE_PREVIOUS_BUTTON_GENERATION_OFFSET,
+              packet->previous_button_generation);
+    write_u16(out + NOW_CONTINUITY_STATE_PREVIOUS_BUTTON_FLAGS_OFFSET,
+              packet->previous_button_flags);
+    write_u16(out + NOW_CONTINUITY_STATE_TAIL_RESERVED_OFFSET, 0);
 }
 
 int now_continuity_decode_ack(const NowCU8 *bytes, NowCU32 length,

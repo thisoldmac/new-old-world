@@ -2159,7 +2159,7 @@ components:
       properties:
         type: { const: continuity.arm }
         version:
-          const: 3
+          const: 4
           description: >
             Continuity control-contract version. This matches the fixed-size
             UDP lane's version; a receiver refuses a missing or different
@@ -2239,7 +2239,7 @@ components:
       additionalProperties: false
       properties:
         type: { const: continuity.disarm }
-        version: { const: 3 }
+        version: { const: 4 }
         id: { type: integer }
         epoch: { type: integer, minimum: 1, maximum: 4294967295 }
         reason:
@@ -2250,7 +2250,7 @@ components:
       additionalProperties: false
       properties:
         type: { const: continuity.report }
-        version: { const: 3 }
+        version: { const: 4 }
         id:
           type: integer
           description: Echoed for an arm or disarm answer; absent for takeover.
@@ -2284,7 +2284,7 @@ components:
       additionalProperties: false
       properties:
         type: { const: continuity.key }
-        version: { const: 3 }
+        version: { const: 4 }
         id: { type: integer }
         epoch: { type: integer, minimum: 1, maximum: 4294967295 }
         generation: { type: integer, minimum: 1, maximum: 4294967295 }
@@ -2310,7 +2310,7 @@ components:
       additionalProperties: false
       properties:
         type: { const: continuity.keyReport }
-        version: { const: 3 }
+        version: { const: 4 }
         id: { type: integer }
         epoch: { type: integer, minimum: 0, maximum: 4294967295 }
         generation: { type: integer, minimum: 0, maximum: 4294967295 }

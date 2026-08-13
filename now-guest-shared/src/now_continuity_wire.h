@@ -28,6 +28,8 @@ typedef struct NowContinuityStatePacket {
     NowCU16 flags;
     NowCU16 requested_hz;
     NowCU32 host_stamp;
+    NowCU32 previous_button_generation;
+    NowCU16 previous_button_flags;
 } NowContinuityStatePacket;
 
 typedef struct NowContinuityAckPacket {

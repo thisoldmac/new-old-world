@@ -975,7 +975,7 @@ static void handle_continuity_unsupported(const char *json, long len)
     (void)now68k_json_find_int(json, (size_t)len, "id", &id);
     (void)now68k_json_find_int(json, (size_t)len, "epoch", &epoch);
     ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-        "{\"type\":\"continuity.report\",\"version\":3,\"id\":");
+        "{\"type\":\"continuity.report\",\"version\":4,\"id\":");
     ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload,
                                        &pos, id);
     ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,

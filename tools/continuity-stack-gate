@@ -107,7 +107,7 @@ def continuity_instruments(root: Path) -> list[Path]:
                     r'["\']type["\']\s*:\s*["\']continuity\.arm["\']',
                     text)
                     or "0x4E574331" in text or "0x4E574131" in text
-                    or "IHHIIIIhhIHHI" in text
+                    or "IHHIIIIhhIHHIIHH" in text
                     or "IHHIIIIIHHIII" in text):
                 found.append(path)
     return sorted(found)
@@ -118,7 +118,7 @@ def check_continuity_instruments(root: Path) -> None:
     patterns = (
         (r'["\']version["\']\s*:\s*[0-9]+', "inline control version"),
         (r"0x4E574331|0x4E574131", "inline datagram magic"),
-        (r"struct\.Struct\([\"\']>IHHIIIIhhIHHI[\"\']\)",
+        (r"struct\.Struct\([\"\']>IHHIIIIhhIHHIIHH[\"\']\)",
          "local state layout"),
         (r"struct\.Struct\([\"\']>IHHIIIIIHHIII[\"\']\)",
          "local acknowledgement layout"),

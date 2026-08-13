@@ -30,6 +30,10 @@ static volatile NowPeekU32 gNativeInputBaseline;
 static volatile NowPeekU32 gForcedResets;
 static volatile NowPeekU32 gEventResetGeneration;
 static volatile NowPeekU32 gTasktimeCursorApplies;
+/* One press may wait behind the manager-up that precedes it in a v4 UDP
+   packet. A second distinct deferred press is a protocol overflow and is
+   counted rather than silently replacing the first. */
+static volatile NowPeekU32 gDeferredPressGeneration;
 
 typedef struct {
     TMTask task;                /* first: the Time Manager owns this */
@@ -253,6 +257,12 @@ static int process_event_result(NowPeekContinuityCell *cell,
         /* MBState is already up. A manager refusal exits the epoch rather
            than retrying forever or acknowledging an unsettled transition. */
         cell->pending_mouseup = 0;
+        if (cell->event_result_err == noErr
+                && gDeferredPressGeneration != 0) {
+            NowPeekU32 deferred = gDeferredPressGeneration;
+            gDeferredPressGeneration = 0;
+            request_button(cell, deferred, 1);
+        }
         return cell->event_result_err == noErr;
     }
     return 0;
@@ -260,6 +270,7 @@ static int process_event_result(NowPeekContinuityCell *cell,
 
 static void force_reset(NowPeekContinuityCell *cell, NowPeekU32 reason)
 {
+    gDeferredPressGeneration = 0;
     release_button(cell, cell->button_generation, reason);
     gForcedResets++;
     gEventResetGeneration++;
@@ -305,6 +316,7 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
     cell->event_result_err = 0;
     cell->pending_mouseup = 0;
     cell->button_release_reason = 0;
+    gDeferredPressGeneration = 0;
     now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(cell->tracking_options);
     gNativeInputSeq = native_input_sequence(cell);
@@ -314,6 +326,33 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
         cell->tracking_options
             & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB);
     publish_tasktime_counters(cell);
+}
+
+static void apply_button_edge(NowPeekContinuityCell *cell,
+                              NowPeekU32 generation, NowPeekU32 flags)
+{
+    switch (now_continuity_button_action(
+                cell->applied_button_generation,
+                cell->button_down != 0, generation, flags)) {
+        case kNowContinuityButtonPress:
+            if (cell->pending_mouseup) {
+                if (gDeferredPressGeneration == 0) {
+                    gDeferredPressGeneration = generation;
+                    cell->button_edge_deferrals++;
+                } else if (gDeferredPressGeneration != generation) {
+                    cell->button_edge_overflows++;
+                }
+            } else {
+                request_button(cell, generation, 1);
+            }
+            break;
+        case kNowContinuityButtonRelease:
+            release_button(cell, generation,
+                           (NowPeekU32)kNowPeekContinuityExitNone);
+            break;
+        default:
+            break;
+    }
 }
 
 /* Raw 68K entry published in the V3 cell. It is not a PPC function pointer:
@@ -328,6 +367,9 @@ void now_ext_continuity_service(void)
     NowPeekU32 packet_epoch;
     NowPeekU32 position_seq;
     NowPeekU32 flags;
+    NowPeekU32 button_generation;
+    NowPeekU32 previous_button_generation;
+    NowPeekU32 previous_button_flags;
     NowPeekU32 arrival;
     NowPeekI32 h;
     NowPeekI32 v;
@@ -502,6 +544,9 @@ void now_ext_continuity_service(void)
         h = cell->want_h;
         v = cell->want_v;
         flags = cell->flags;
+        button_generation = cell->button_generation;
+        previous_button_generation = cell->previous_button_generation;
+        previous_button_flags = cell->previous_button_flags;
         arrival = cell->arrival_ticks;
         if (before != cell->packet_seq) {
             publish_tasktime_counters(cell);
@@ -532,22 +577,12 @@ void now_ext_continuity_service(void)
                             (NowPeekU32)kNowPeekContinuityTraceRequest,
                             ticks, (NowPeekI32)position_seq, h);
             }
-            switch (now_continuity_button_action(
-                        cell->applied_button_generation,
-                        cell->button_down != 0,
-                        cell->button_generation, flags)) {
-                case kNowContinuityButtonPress:
-                    request_button(cell, cell->button_generation, 1);
-                    break;
-                case kNowContinuityButtonRelease:
-                    /* Task-time fast path. The timer performs this same
-                       release when a tracking loop has starved the app. */
-                    release_button(cell, cell->button_generation,
-                                   (NowPeekU32)kNowPeekContinuityExitNone);
-                    break;
-                default:
-                    break;
-            }
+            /* History is older by construction and therefore applies first.
+               If it releases a held first click, the current second-click
+               press waits behind that manager-up without being discarded. */
+            apply_button_edge(cell, previous_button_generation,
+                              previous_button_flags);
+            apply_button_edge(cell, button_generation, flags);
         }
     }
     publish_tasktime_counters(cell);
@@ -730,5 +765,6 @@ void now_ext_continuity_rollback(NowPeekTable *table)
     gForcedResets = 0;
     gEventResetGeneration = 0;
     gTasktimeCursorApplies = 0;
+    gDeferredPressGeneration = 0;
     gReleaseSettleStarted = 0;
 }

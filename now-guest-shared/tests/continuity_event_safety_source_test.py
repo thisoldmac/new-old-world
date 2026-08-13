@@ -32,6 +32,8 @@ release_transition = body(RESIDENT, "static void release_button(",
                           "static int process_event_result(")
 result = body(RESIDENT, "static int process_event_result(",
               "static void force_reset(")
+edge = body(RESIDENT, "static void apply_button_edge(",
+            "void now_ext_continuity_service(")
 service = body(RESIDENT, "void now_ext_continuity_service(",
                "void now_ext_continuity_tick(")
 reveal = body(CURSOR, "void now_ext_cursor_reveal_continuity(",
@@ -53,7 +55,7 @@ def check(ok: bool, message: str) -> None:
         failures.append(message)
 
 
-check("#define NOW_CONTINUITY_VERSION 3u" in CONTRACT,
+check("#define NOW_CONTINUITY_VERSION 4u" in CONTRACT,
       "the direct-pointer wire is not versioned independently from v0")
 check("NOW_CONTINUITY_FORMAT_CURRENT" in RESIDENT,
       "the resident no longer requires the shared current table format")
@@ -108,8 +110,17 @@ check("kNowPeekContinuityExitLeaseExpired" in tick
       and "kNowPeekContinuityExitGuestInput" in tick
       and "kNowPeekContinuityExitHostLeft" in tick,
       "the timer no longer covers every forced-release boundary")
-check("now_continuity_button_action" in service,
-      "the resident no longer consumes the v2 primary transition")
+check("now_continuity_button_action" in edge
+      and "apply_button_edge(cell, previous_button_generation" in service
+      and "apply_button_edge(cell, button_generation" in service,
+      "the resident no longer consumes v4 button history in order")
+check("gDeferredPressGeneration" in edge
+      and "button_edge_deferrals++" in edge
+      and "button_edge_overflows++" in edge,
+      "the resident no longer bounds a press deferred behind manager-up")
+check("gDeferredPressGeneration" in result
+      and "request_button(cell, deferred, 1)" in result,
+      "a settled manager-up no longer releases the deferred second press")
 check("now_ext_cursor_reveal_continuity();" in service,
       "task-time synthetic movement no longer reveals an obscured cursor")
 check("now_ext_cursor_reveal_continuity" not in tick,
@@ -135,7 +146,7 @@ check("now_ext_cursor_end_continuity_tracking();" in tracking_complete
 check("!gNowCursorTrackingSourceActive" in tracking_gne
       and "ShowCursor();" in tracking_gne,
       "the task-time watchdog recovery no longer balances a hidden cursor")
-check("applied_button_generation" in service,
+check("applied_button_generation" in result,
       "the resident no longer acknowledges button transitions")
 check("guard phase == .active" in host_buttons,
       "the host bypasses Mirror before the raw lane is active")

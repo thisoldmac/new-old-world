@@ -936,6 +936,10 @@ enum {
        from that process's target-context jGNE pass, where PPostEvent is legal.
        This is Event Manager delivery, not ADB or GetKeys state synthesis. */
     kNowPeekContinuityFormatV8 = 8,
+    /* V9 appends the preceding wire button transition and resident-owned
+       deferral/tracking telemetry. It preserves an intervening mouse-up when
+       the lossy lane has already advanced to the next double-click down. */
+    kNowPeekContinuityFormatV9 = 9,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -944,11 +948,11 @@ enum {
 };
 
 /* The application and resident must compare against one named current
-   format.  Spelling V8 independently in both halves allowed a handoff to
+   format.  Spelling V9 independently in both halves would allow a handoff to
    contain a new application and an older resident while every artifact was
    individually well formed.  The update manifests also publish this value,
    so a stack assembler can reject that pair before it reaches a Macintosh. */
-#define NOW_CONTINUITY_FORMAT_CURRENT 8u
+#define NOW_CONTINUITY_FORMAT_CURRENT 9u
 
 enum {
     kNowPeekContinuityExitNone = 0,
@@ -1208,6 +1212,20 @@ typedef struct {
     NowPeekU32 key_dropped;
     NowPeekU32 key_flushes;
     NowPeekContinuityKeyEntry key_queue[kNowPeekContinuityKeyQueueCapacity];
+    /* V9 latest-state edge history. The application writes the preceding
+       transition before packet_seq; the resident consumes it before the
+       current button_generation and may defer one press behind a pending up. */
+    NowPeekU32 previous_button_generation;
+    NowPeekU32 previous_button_flags;
+    NowPeekU32 button_edge_deferrals;
+    NowPeekU32 button_edge_overflows;
+    /* V9 tracking-settle evidence. These counters distinguish a tracking-loop
+       redraw/reassertion from cursor-record lag that self-settled by the next
+       task-time service pass. */
+    NowPeekU32 tracking_settle_calls;
+    NowPeekU32 tracking_settle_moved;
+    NowPeekU32 tracking_settle_redraws;
+    NowPeekU32 tracking_settle_reasserts;
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -2129,7 +2147,7 @@ _Static_assert(sizeof(NowPeekADBTraceEntry) == 84,
                "ADB observer trace ABI drift");
 _Static_assert(sizeof(NowPeekContinuityKeyEntry) == 36,
                "continuity key entry ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 1792,
+_Static_assert(sizeof(NowPeekContinuityCell) == 1824,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -2165,6 +2183,10 @@ _Static_assert(offsetof(NowPeekContinuityCell, key_write_seq) == 1160,
                "continuity V8 keyboard queue offset");
 _Static_assert(offsetof(NowPeekContinuityCell, key_queue) == 1216,
                "continuity V8 keyboard entries offset");
+_Static_assert(offsetof(NowPeekContinuityCell, previous_button_generation) == 1792,
+               "continuity V9 previous button edge offset");
+_Static_assert(offsetof(NowPeekContinuityCell, tracking_settle_calls) == 1808,
+               "continuity V9 tracking-settle counter offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

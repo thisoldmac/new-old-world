@@ -6,10 +6,10 @@
    struct. The host is little-endian and the classic guest is big-endian,
    so sharing native layout here would only hide a protocol bug. */
 
-#define NOW_CONTINUITY_VERSION 3u
+#define NOW_CONTINUITY_VERSION 4u
 
 #define NOW_CONTINUITY_STATE_MAGIC 0x4E574331UL /* NWC1 */
-#define NOW_CONTINUITY_STATE_BYTES 40u
+#define NOW_CONTINUITY_STATE_BYTES 48u
 
 #define NOW_CONTINUITY_STATE_MAGIC_OFFSET 0u
 #define NOW_CONTINUITY_STATE_VERSION_OFFSET 4u
@@ -24,14 +24,22 @@
 #define NOW_CONTINUITY_STATE_REQUESTED_HZ_OFFSET 32u
 #define NOW_CONTINUITY_STATE_RESERVED_OFFSET 34u
 #define NOW_CONTINUITY_STATE_HOST_STAMP_OFFSET 36u
+#define NOW_CONTINUITY_STATE_PREVIOUS_BUTTON_GENERATION_OFFSET 40u
+#define NOW_CONTINUITY_STATE_PREVIOUS_BUTTON_FLAGS_OFFSET 44u
+#define NOW_CONTINUITY_STATE_TAIL_RESERVED_OFFSET 46u
 
 #define NOW_CONTINUITY_FLAG_INSIDE 0x0001u
 /* Version 2 activates the button state and generation fields that version 1
    reserved. A transition is applied once, acknowledged by generation, and a
-   held button is released by the resident even when the PPC app is starved. */
+   held button is released by the resident even when the PPC app is starved.
+   Version 4 appends the immediately preceding button transition. Latest-state
+   delivery can therefore carry an intervening mouse-up beside a newer down,
+   preserving an AppKit-confirmed double click when either datagram is lost. */
 #define NOW_CONTINUITY_FLAG_PRIMARY_DOWN 0x0002u
 #define NOW_CONTINUITY_FLAG_KEEPALIVE 0x0004u
 #define NOW_CONTINUITY_KNOWN_FLAGS 0x0007u
+#define NOW_CONTINUITY_PREVIOUS_BUTTON_KNOWN_FLAGS \
+    NOW_CONTINUITY_FLAG_PRIMARY_DOWN
 
 #define NOW_CONTINUITY_ACK_MAGIC 0x4E574131UL /* NWA1 */
 #define NOW_CONTINUITY_ACK_BYTES 44u

@@ -136,7 +136,10 @@ for field in ("adb_observer_state", "adb_observer_callbacks",
 for field in ("tracking_options", "tracking_pin_writes",
               "tracking_getmouse_answers", "at_h", "at_v",
               "native_input_h", "native_input_v", "native_owned_h",
-              "native_owned_v"):
+              "native_owned_v", "tracking_settle_calls",
+              "tracking_settle_moved", "tracking_settle_redraws",
+              "tracking_settle_reasserts", "button_edge_deferrals",
+              "button_edge_overflows"):
     if field not in disarm:
         failures.append(
             f"disarm log no longer persists tracking diagnostic field {field}")
@@ -145,7 +148,9 @@ if "now_continuity_cursor_diagnostics(&cursor)" not in disarm:
 for field in ("before_request_mismatches", "press_reversions",
               "after_request_mismatches", "press_h", "press_v",
               "requested_h", "requested_v", "before_h", "before_v",
-              "after_h", "after_v", "press_valid", "requested_valid"):
+              "after_h", "after_v", "press_valid", "requested_valid",
+              "after_lag_caught_up", "after_lag_persisted",
+              "after_lag_pending"):
     if f"cursor.{field}" not in disarm:
         failures.append(
             f"disarm log no longer persists Cursor Device diagnostic {field}")
@@ -190,6 +195,9 @@ if "gDiagnostics.press_reversions++" not in cursor_move:
     failures.append("cursor movement no longer identifies drag-origin record returns")
 if "gDiagnostics.after_request_mismatches++" not in cursor_move:
     failures.append("cursor movement no longer checks the record after MoveTo")
+if "gDiagnostics.after_lag_caught_up++" not in cursor_move \
+        or "gDiagnostics.after_lag_persisted++" not in cursor_move:
+    failures.append("cursor movement no longer classifies immediate record lag")
 if "gDiagnostics.press_h = gDiagnostics.requested_h" not in cursor_button \
         or "gDiagnostics.press_v = gDiagnostics.requested_v" not in cursor_button:
     failures.append("button-down no longer binds the synthetic-device press point")
@@ -229,6 +237,11 @@ if tracking_remember.count("gNowCursorTrackingSourceSeq++") != 2:
     failures.append("the held tracking source lost its bounded publication sequence")
 if "LMGetMouseLocation()" not in tracking_settle:
     failures.append("tracking settlement no longer observes ADB displacement")
+for field in ("tracking_settle_calls", "tracking_settle_moved",
+              "tracking_settle_redraws", "tracking_settle_reasserts"):
+    if field not in tracking_settle:
+        failures.append(
+            f"tracking settlement no longer publishes diagnostic {field}")
 if tracking_settle.count("LMSetMouseLocation(pt)") != 2:
     failures.append("tracking settlement no longer reasserts before manager redraw and tail-chain")
 if "gNowCursorTrackingRedrawOwed = 0" not in tracking_settle:

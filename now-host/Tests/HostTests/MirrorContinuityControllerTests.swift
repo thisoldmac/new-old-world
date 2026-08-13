@@ -402,6 +402,31 @@ final class MirrorContinuityControllerTests: XCTestCase {
             "Continuity ended on the Mac: UDP acknowledgements stopped")
     }
 
+    func testResidentLivenessKeepsModalStarvationAttachedUntilAckRecovers()
+        async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.15) {
+                audit.append(($0, $1))
+            }
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+
+        try await Task.sleep(nanoseconds: 350_000_000)
+        XCTAssertTrue(rig.controller.isActive)
+        XCTAssertTrue(rig.controller.status.contains("busy"))
+        XCTAssertTrue(audit.contains {
+            $0.1.contains("resident liveness is still answering")
+        })
+
+        rig.udp.acknowledge(try XCTUnwrap(rig.udp.packets.last))
+        try await waitUntil("acknowledgement recovery") {
+            audit.contains { $0.1.contains("acknowledgements recovered") }
+        }
+        XCTAssertTrue(rig.controller.isActive)
+        XCTAssertTrue(rig.controller.status.contains("direct pointer connected"))
+    }
+
     func testDirectClickWaitsForPressAckBeforeSendingRelease()
         async throws {
         let rig = try await makeActiveRig()
@@ -643,6 +668,77 @@ final class MirrorContinuityControllerTests: XCTestCase {
                     && $0.buttonGeneration != firstUp.buttonGeneration
                     && $0.buttonGeneration != secondDown.buttonGeneration
                     && !$0.flags.contains(.primaryDown)
+            }
+        }
+    }
+
+    func testAppKitConfirmedSecondClickCarriesPrecedingUpWithoutWaitingForAck()
+        async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+
+        let source = ProcessInfo.processInfo.systemUptime
+        XCTAssertTrue(rig.controller.primaryDown(
+            at: .init(x: 40, y: 50), inMenuBar: false,
+            sourceUptime: source, clickCount: 1))
+        try await waitUntil("first confirmed press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+            }
+        }
+        let firstDown = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        })
+        rig.udp.acknowledge(firstDown)
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 40, y: 50)))
+        try await waitUntil("first confirmed release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != 0
+                    && $0.buttonGeneration != firstDown.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+            }
+        }
+        let firstUp = try XCTUnwrap(rig.udp.packets.last {
+            $0.buttonGeneration != 0
+                && $0.buttonGeneration != firstDown.buttonGeneration
+                && !$0.flags.contains(.primaryDown)
+        })
+
+        XCTAssertTrue(rig.controller.primaryDown(
+            at: .init(x: 42, y: 52), inMenuBar: false,
+            sourceUptime: source + 0.12, clickCount: 2))
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 42, y: 52)))
+        try await waitUntil("second press before first release ack") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != firstDown.buttonGeneration
+                    && $0.buttonGeneration != firstUp.buttonGeneration
+                    && $0.flags.contains(.primaryDown)
+            }
+        }
+        let secondDown = try XCTUnwrap(rig.udp.packets.last {
+            $0.buttonGeneration != firstDown.buttonGeneration
+                && $0.buttonGeneration != firstUp.buttonGeneration
+                && $0.flags.contains(.primaryDown)
+        })
+        XCTAssertEqual(secondDown.previousButtonGeneration,
+                       firstUp.buttonGeneration)
+        XCTAssertFalse(secondDown.previousButtonDown,
+                       "v4 must carry the intervening up beside the second down")
+    }
+
+    func testIndependentKeepaliveContinuesWhileMainActorIsBusy() async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+        try await waitUntil("initial state") { !rig.udp.packets.isEmpty }
+        rig.udp.acknowledge(try XCTUnwrap(rig.udp.packets.last))
+        let baseline = rig.udp.packets.count
+
+        let end = Date().addingTimeInterval(0.7)
+        while Date() < end { _ = 1 + 1 }
+
+        try await waitUntil("independent keepalive") {
+            rig.udp.packets.dropFirst(baseline).contains {
+                $0.flags.contains(.keepalive)
             }
         }
     }

@@ -15,7 +15,7 @@ Mirror file-drag lane through `11a72dde` was merged as `aeaf750a`. Its host
 composition conflict was resolved by preserving both ownership boundaries:
 ordinary screen-edge pointer ownership hides the host cursor and begins V8
 keyboard capture, while a host-file drag crossing the same edge does neither.
-The shared pointer wire, V8 resident table, Extension input mechanism and
+The shared pointer wire, current resident table, Extension input mechanism and
 guest file-transfer contract did not acquire a second implementation.
 
 The complete local gate passed with the documented test-only override for this
@@ -83,6 +83,41 @@ semantic Mirror-only menu opening now remain synchronized in both directions.
 The earlier transport-gap entry in `docs/continuity-mode.md` is superseded.
 This does not close the separate direct-pointer regression above, where a menu
 title can still close on mouse-up.
+
+**2026-08-13 host-tested retest candidate (`codex/pr27-continuity-retest`):**
+
+- Continuity Mode now classifies a driven point against the guest menu-bar
+  height, matching Mirror Cursor instead of hard-coding every edge click as
+  content. The existing OS 8/9 click-open latch therefore receives edge-mode
+  menu clicks. The exact hard-coded-false mutation fails the edge ownership
+  test; this remains metal-unverified until the next bundle is tried.
+- Continuity wire V4 appends the immediately preceding button generation and
+  direction. An AppKit-confirmed second click may now follow the first up
+  without waiting for its delayed manager acknowledgement; the lossy latest
+  state still carries that intervening up. Resident table V9 consumes history
+  oldest-first, defers one second press behind the manager-up, and counts a
+  second distinct deferral as overflow. Ordinary rapid clicks that AppKit does
+  not classify together retain the previous settle-before-next-click policy.
+- The 500 ms lease keepalive now runs on the serial UDP queue independently of
+  the main actor. When UDP acknowledgements stop but the existing resident
+  liveness channel proves the same machine is answering, the host names guest
+  application starvation and keeps the safety lease armed. A recovered ACK is
+  logged with the starvation duration. Edge-mode arm timeout also preserves
+  opt-in and directs the person to dismiss the busy interaction or alert before
+  crossing again, rather than presenting a permanent attachment refusal.
+- Drag diagnosis remains one-writer. The PPC Cursor Device log now separates
+  immediate record lag into caught-up-by-next-sample, persisted, and still
+  pending. The same V9 resident tail counts target tracking-loop calls,
+  displacement, cursor redraws and held-point reassertions, plus button-edge
+  deferral/overflow. The next attended log can therefore distinguish delayed
+  Cursor Device record publication from outward tracking/redraw behavior; it
+  does not yet claim the held-drag flicker or either Continuity file drag fixed.
+
+The wire vector, ordered edge consumption, bounded deferral, independent
+heartbeat, resident-liveness recovery, menu classification, AppKit-confirmed
+double click, and drag telemetry are covered by focused host/native tests and
+both guests plus the Extension cross-build. They are **tested, not
+metal-verified** pending the fresh stack bundle.
 
 **2026-08-13 pre-PR review:** the full integration diff received local
 correctness, reliability, contract, security, performance, test, Swift and

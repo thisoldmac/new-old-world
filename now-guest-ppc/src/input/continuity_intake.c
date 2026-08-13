@@ -201,6 +201,8 @@ static void accept_datagram(const NowContinuityStatePacket *packet)
     shared->want_v = packet->v;
     shared->button_generation = packet->button_generation;
     shared->flags = packet->flags;
+    shared->previous_button_generation = packet->previous_button_generation;
+    shared->previous_button_flags = packet->previous_button_flags;
     shared->arrival_ticks = (NowPeekU32)TickCount();
     bump_nonzero(&shared->packet_seq);       /* publish last */
     publish_ack_request();
@@ -397,6 +399,12 @@ int now_continuity_arm(long id, unsigned short port,
         & (NowPeekU32)kNowPeekContinuityTrackingKnownMask;
     shared->tracking_pin_writes = 0;
     shared->tracking_getmouse_answers = 0;
+    shared->button_edge_deferrals = 0;
+    shared->button_edge_overflows = 0;
+    shared->tracking_settle_calls = 0;
+    shared->tracking_settle_moved = 0;
+    shared->tracking_settle_redraws = 0;
+    shared->tracking_settle_reasserts = 0;
     bump_nonzero(&shared->control_seq);
     gPendingReplyID = id;
     gPendingControlSeq = shared->control_seq;
@@ -475,10 +483,21 @@ int now_continuity_disarm(long id, unsigned long epoch)
             (unsigned long)shared->adb_observer_reentries,
             (unsigned long)shared->adb_trace_write_seq);
     now_log(kLogInfo, "mirror",
-            "tracking epoch=%lu options=0x%lx pin=%lu getmouse=%lu",
+            "tracking epoch=%lu options=0x%lx pin=%lu getmouse=%lu "
+            "settle=%lu moved=%lu redraw=%lu reassert=%lu",
             epoch, (unsigned long)shared->tracking_options,
             (unsigned long)shared->tracking_pin_writes,
-            (unsigned long)shared->tracking_getmouse_answers);
+            (unsigned long)shared->tracking_getmouse_answers,
+            (unsigned long)shared->tracking_settle_calls,
+            (unsigned long)shared->tracking_settle_moved,
+            (unsigned long)shared->tracking_settle_redraws,
+            (unsigned long)shared->tracking_settle_reasserts);
+    now_log(kLogInfo, "mirror",
+            "button edges epoch=%lu deferred=%lu overflow=%lu previous=%lu/%lu",
+            epoch, (unsigned long)shared->button_edge_deferrals,
+            (unsigned long)shared->button_edge_overflows,
+            (unsigned long)shared->previous_button_generation,
+            (unsigned long)shared->previous_button_flags);
     now_log(kLogInfo, "mirror",
             "tracking points epoch=%lu at=%ld,%ld native=%ld,%ld "
             "owned=%ld,%ld",
@@ -492,6 +511,12 @@ int now_continuity_disarm(long id, unsigned long epoch)
             "press-return=%lu after-diff=%lu",
             epoch, cursor.samples, cursor.before_request_mismatches,
             cursor.press_reversions, cursor.after_request_mismatches);
+    now_log(kLogInfo, "mirror",
+            "CDM settle epoch=%lu immediate-lag=%lu caught-up=%lu "
+            "persisted=%lu pending=%lu",
+            epoch, cursor.after_request_mismatches,
+            cursor.after_lag_caught_up, cursor.after_lag_persisted,
+            cursor.after_lag_pending);
     now_log(kLogInfo, "mirror",
             "CDM points epoch=%lu press=%ld,%ld request=%ld,%ld valid=%d/%d",
             epoch, cursor.press_h, cursor.press_v,

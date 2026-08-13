@@ -63,10 +63,13 @@ class ContinuityContract:
 
     def encode_state(self, nonce_hi: int, nonce_lo: int, epoch: int,
                      sequence: int, h: int, v: int, button_generation: int,
-                     requested_hz: int, host_stamp: int, flags: int) -> bytes:
+                     requested_hz: int, host_stamp: int, flags: int,
+                     previous_button_generation: int = 0,
+                     previous_button_flags: int = 0) -> bytes:
         return self.state_struct.pack(
             self.state_magic, self.version, flags, nonce_hi, nonce_lo, epoch,
-            sequence, h, v, button_generation, requested_hz, 0, host_stamp)
+            sequence, h, v, button_generation, requested_hz, 0, host_stamp,
+            previous_button_generation, previous_button_flags, 0)
 
     def decode_ack(self, raw: bytes) -> dict[str, int]:
         if len(raw) != self.ack_bytes:
@@ -88,7 +91,7 @@ class ContinuityContract:
 def load(repo_root: Path) -> ContinuityContract:
     header = repo_root / "contract/continuity_udp.h"
     number = lambda name: _number(header, name)
-    state = struct.Struct(">IHHIIIIhhIHHI")
+    state = struct.Struct(">IHHIIIIhhIHHIIHH")
     ack = struct.Struct(">IHHIIIIIHHIII")
     state_bytes = number("NOW_CONTINUITY_STATE_BYTES")
     ack_bytes = number("NOW_CONTINUITY_ACK_BYTES")

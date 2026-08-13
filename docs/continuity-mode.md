@@ -58,12 +58,13 @@ The existing wire port is used in both protocol namespaces:
 - TCP on port N carries `continuity.arm`, `continuity.report`,
   `continuity.disarm`, `continuity.key`, and `continuity.keyReport`. The arm
   grants a random 64-bit nonce and a monotonically changing epoch. All five
-  messages carry control-contract version `3`; a missing or different version
+  messages carry control-contract version `4`; a missing or different version
   is refused as `wrong-version`. UDP alone can never create authority.
-- UDP on port N carries fixed 40-byte latest-state datagrams and fixed 44-byte
+- UDP on port N carries fixed 48-byte latest-state datagrams and fixed 44-byte
   acknowledgements. A QEMU run forwards TCP/N and UDP/N separately. The host
   uses an ephemeral UDP source port, so it does not compete with its TCP
-  listener.
+  listener. The V4 state tail carries the immediately preceding button
+  transition so a coalesced second-click down cannot erase its first-click up.
 
 The PowerPC application's Open Transport notifier performs only bounded,
 preallocated decode, shared-cell publication, and publication of one pending
@@ -151,8 +152,13 @@ positive bounded metal result. The pass also exposed four correctness gaps:
 an obscured OS 9 cursor did not reappear on synthetic movement; the drawn
 sprite remained at the press point during tracking even though the drag itself
 moved accurately; the epoch ended after mouse-up; and a second click was lost.
-The cursor visibility wake, delayed-up tolerance, and one-cycle double-click
-buffer are implemented and tested here but await another attended metal pass.
+The cursor visibility wake and delayed-up tolerance are implemented and tested
+here but await another attended metal pass. The first one-cycle double-click
+buffer preserved events but still waited for the preceding manager-up
+acknowledgement, which the 2026-08-13 log showed could outlive the classic
+double-click interval. Wire V4 and resident table V9 now carry and consume the
+preceding up beside an AppKit-confirmed second down; this correction is tested
+and awaits the next attended bundle.
 The research spike's chain-only task-time tracking hooks are now integrated
 behind the first accepted Continuity arm. Their tail-chain, idle bypass,
 register preservation, bounded settle surface, and authority-exit cancellation

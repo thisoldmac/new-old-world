@@ -661,6 +661,18 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "Private 1.3 bake verified exact resident; shared oracle promotion is deferred until this feature branch is selected for a release candidate."
+    },
+    {
+      "at": "2026-08-13T14:05:32-0400",
+      "branch": "fix/continuity-retest-inputs",
+      "extDigest": "8b74cabd93255c0e2b98440e83e456248fb5e78a",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Private PR #27 retest bake verified; shared oracle remains unchanged until the attended hardware retest is accepted."
     }
   ]
 }

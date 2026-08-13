@@ -13,8 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 GATE = ROOT / "tools/continuity-stack-gate"
 COMPATIBILITY = {
-    "continuityWire": 3,
-    "continuityTable": 8,
+    "continuityWire": 4,
+    "continuityTable": 9,
     "resident": "1.3",
 }
 
@@ -47,9 +47,9 @@ def artifact(root: Path, name: str, component: str, version: str,
 def mini_source(root: Path) -> None:
     files = {
         "contract/continuity_udp.h": (
-            "#define NOW_CONTINUITY_VERSION 3u\n"
+            "#define NOW_CONTINUITY_VERSION 4u\n"
             "#define NOW_CONTINUITY_STATE_MAGIC 0x4E574331UL /* NWC1 */\n"
-            "#define NOW_CONTINUITY_STATE_BYTES 40u\n"
+            "#define NOW_CONTINUITY_STATE_BYTES 48u\n"
             "#define NOW_CONTINUITY_FLAG_INSIDE 0x0001u\n"
             "#define NOW_CONTINUITY_FLAG_PRIMARY_DOWN 0x0002u\n"
             "#define NOW_CONTINUITY_FLAG_KEEPALIVE 0x0004u\n"
@@ -63,15 +63,15 @@ def mini_source(root: Path) -> None:
             "#define NOW_CONTINUITY_EXIT_GUEST_INPUT 2u\n"
             "#define NOW_CONTINUITY_EXIT_LEASE_EXPIRED 3u\n"
             "#define NOW_CONTINUITY_EXIT_DISARMED 4u\n"),
-        "contract/peek_table.h": "#define NOW_CONTINUITY_FORMAT_CURRENT 8u\n",
+        "contract/peek_table.h": "#define NOW_CONTINUITY_FORMAT_CURRENT 9u\n",
         "contract/resident_version.h": (
             "#define NOW_RESIDENT_VERSION_MAJOR 1\n"
             "#define NOW_RESIDENT_VERSION_MINOR 3\n"),
         "now-host/Sources/Host/ContinuityDatagram.swift": (
             "struct ContinuityStateDatagram {\n"
-            "  static let byteCount = 40\n"
+            "  static let byteCount = 48\n"
             "  static let magic: UInt32 = 0x4E57_4331 // NWC1\n"
-            "  static let version: UInt16 = 3\n"
+            "  static let version: UInt16 = 4\n"
             "  struct Flags {\n"
             "    static let inside = Flags(rawValue: 1 << 0)\n"
             "    static let primaryDown = Flags(rawValue: 1 << 1)\n"
@@ -96,7 +96,7 @@ def mini_source(root: Path) -> None:
             "}\n"
             "enum ContinuityDatagramError {}\n"),
         "now-host/Sources/Host/ContractMessages.swift": (
-            "static let residentTableVersion = 8\n"
+            "static let residentTableVersion = 9\n"
             'static let residentVersion = "1.3"\n'),
         "now-guest-ppc/src/input/continuity_intake.c": (
             "NOW_CONTINUITY_FORMAT_CURRENT\n"),
@@ -139,7 +139,7 @@ def main() -> int:
         mismatch = run("verify", "--application", str(app),
                        "--extension", str(ext))
         if mismatch.returncode == 0 or "compatibility" not in mismatch.stderr:
-            raise AssertionError("a V8 application plus V7 extension passed")
+            raise AssertionError("a V9 application plus V7 extension passed")
 
         artifact(directory, "NOW Extension.bin", "extension", "1.3")
         ext.write_bytes(b"changed after publication")
@@ -157,10 +157,10 @@ def main() -> int:
         datagram = root / "now-host/Sources/Host/ContinuityDatagram.swift"
         coherent_datagram = datagram.read_text()
         datagram.write_text(coherent_datagram.replace(
-            "static let version: UInt16 = 3",
-            "static let version: UInt16 = 2"))
+            "static let version: UInt16 = 4",
+            "static let version: UInt16 = 3"))
         drift = run("source", root=root)
-        if drift.returncode == 0 or "host Continuity wire 2" not in drift.stderr:
+        if drift.returncode == 0 or "host Continuity wire 3" not in drift.stderr:
             raise AssertionError("the exact host-wire drift mutation passed")
         datagram.write_text(coherent_datagram)
         speaker = root / "tools/new-continuity-speaker.py"
@@ -172,7 +172,7 @@ def main() -> int:
         speaker.write_text(
             "from continuity_contract import load\n"
             "import struct\n"
-            "STATE = struct.Struct(\">IHHIIIIhhIHHI\")\n"
+            "STATE = struct.Struct(\">IHHIIIIhhIHHIIHH\")\n"
             'def arm():\n    return {"type": "continuity.arm", '
             '"version": CONTINUITY.version}\n')
         layout = run("source", root=root)

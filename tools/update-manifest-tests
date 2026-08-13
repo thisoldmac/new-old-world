@@ -64,9 +64,9 @@ def main() -> int:
             '#define NOW_PRODUCT_LIFECYCLE "prealpha"\n'
             "#define NOW_PRODUCT_LIFECYCLE_NUMBER 4\n")
         (repo / "contract/continuity_udp.h").write_text(
-            "#define NOW_CONTINUITY_VERSION 3u\n")
+            "#define NOW_CONTINUITY_VERSION 4u\n")
         (repo / "contract/peek_table.h").write_text(
-            "#define NOW_CONTINUITY_FORMAT_CURRENT 8u\n")
+            "#define NOW_CONTINUITY_FORMAT_CURRENT 9u\n")
         (repo / "contract/resident_version.h").write_text(
             "#define NOW_RESIDENT_VERSION_MAJOR 1\n"
             "#define NOW_RESIDENT_VERSION_MINOR 3\n")
@@ -95,8 +95,8 @@ def main() -> int:
                 or manifest["lifecycleNumber"] != 4):
             raise AssertionError("development sidecar lost product lifecycle")
         if manifest["compatibility"] != {
-                "continuityWire": 3,
-                "continuityTable": 8,
+                "continuityWire": 4,
+                "continuityTable": 9,
                 "resident": "1.3",
         }:
             raise AssertionError("development sidecar lost stack compatibility")

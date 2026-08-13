@@ -137,6 +137,15 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
         gDiagnostics.device_point_valid = 1;
         gDiagnostics.before_h = device_before.h;
         gDiagnostics.before_v = device_before.v;
+        if (gDiagnostics.after_lag_pending) {
+            if (gDiagnostics.requested_valid
+                    && device_before.h == (short)gDiagnostics.requested_h
+                    && device_before.v == (short)gDiagnostics.requested_v)
+                gDiagnostics.after_lag_caught_up++;
+            else
+                gDiagnostics.after_lag_persisted++;
+            gDiagnostics.after_lag_pending = 0;
+        }
         if (gDiagnostics.requested_valid
                 && (device_before.h != (short)gDiagnostics.requested_h
                     || device_before.v != (short)gDiagnostics.requested_v)) {
@@ -163,8 +172,10 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
         gDiagnostics.device_point_valid = 1;
         gDiagnostics.after_h = device_after.h;
         gDiagnostics.after_v = device_after.v;
-        if (device_after.h != (short)h || device_after.v != (short)v)
+        if (device_after.h != (short)h || device_after.v != (short)v) {
             gDiagnostics.after_request_mismatches++;
+            gDiagnostics.after_lag_pending = 1;
+        }
     }
     gDiagnostics.requested_h = h;
     gDiagnostics.requested_v = v;

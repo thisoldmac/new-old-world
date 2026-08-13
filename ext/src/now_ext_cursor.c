@@ -505,6 +505,17 @@ void now_ext_cursor_settle_continuity_tracking(void)
     Point live;
     Boolean moved;
     Boolean owed = gNowCursorTrackingRedrawOwed != 0;
+    NowPeekContinuityCell *cell = NULL;
+
+    if (gTable != NULL
+            && gTable->length
+                >= (NowPeekU32)(offsetof(NowPeekTable, continuity)
+                                 + sizeof(NowPeekContinuityCell))
+            && gTable->continuity_format
+                == (NowPeekU32)NOW_CONTINUITY_FORMAT_CURRENT) {
+        cell = &gTable->continuity;
+        cell->tracking_settle_calls++;
+    }
 
     if (!continuity_tracking_source_point(&pt)) {
         if (!owed)
@@ -514,11 +525,15 @@ void now_ext_cursor_settle_continuity_tracking(void)
     }
     live = LMGetMouseLocation();
     moved = live.h != pt.h || live.v != pt.v;
+    if (moved && cell != NULL)
+        cell->tracking_settle_moved++;
     /* The PowerBook's ADB path can republish its stationary physical point
        between host ticks. Reassert our held point on every tracking call.
        The baseline mode then lets the real Toolbox trap answer normally;
        Virtual GetMouse may answer its out parameter directly afterwards. */
     LMSetMouseLocation(pt);
+    if (cell != NULL)
+        cell->tracking_settle_reasserts++;
     if (gNowCursorTrackingCursorHidden) {
         gNowCursorTrackingRedrawOwed = 0;
         return;
@@ -526,15 +541,18 @@ void now_ext_cursor_settle_continuity_tracking(void)
     if (!owed && !moved)
         return;
     gNowCursorTrackingRedrawOwed = 0;
-    if (gTable == NULL)
+    if (cell == NULL)
         return;
     *gCrsrObscure = 0;
     HideCursor();
     ShowCursor();
+    cell->tracking_settle_redraws++;
     /* Hide/Show may itself enter manager glue. Put the sourced point back
        once more immediately before the patched trap tail-chains. */
-    if (continuity_tracking_source_point(&pt))
+    if (continuity_tracking_source_point(&pt)) {
         LMSetMouseLocation(pt);
+        cell->tracking_settle_reasserts++;
+    }
 }
 
 /* Normal mouse-up keeps the held source alive until the PPC application's

@@ -3,9 +3,9 @@ import Foundation
 /// The UDP lane carries latest state, never commands. Its fixed-size,
 /// big-endian representation is shared with contract/continuity_udp.h.
 struct ContinuityStateDatagram: Equatable, Sendable {
-    static let byteCount = 40
+    static let byteCount = 48
     static let magic: UInt32 = 0x4E57_4331 // NWC1
-    static let version: UInt16 = 3
+    static let version: UInt16 = 4
 
     struct Flags: OptionSet, Equatable, Sendable {
         let rawValue: UInt16
@@ -26,6 +26,8 @@ struct ContinuityStateDatagram: Equatable, Sendable {
     var flags: Flags
     var requestedHz: UInt16
     var hostStamp: UInt32
+    var previousButtonGeneration: UInt32 = 0
+    var previousButtonDown = false
 }
 
 struct ContinuityAckDatagram: Equatable, Sendable {
@@ -86,6 +88,11 @@ enum ContinuityDatagramCodec {
         put(packet: packet.requestedHz, at: 32, in: &bytes)
         put(packet: UInt16(0), at: 34, in: &bytes)
         put(packet: packet.hostStamp, at: 36, in: &bytes)
+        put(packet: packet.previousButtonGeneration, at: 40, in: &bytes)
+        put(packet: packet.previousButtonDown
+                ? ContinuityStateDatagram.Flags.primaryDown.rawValue : 0,
+            at: 44, in: &bytes)
+        put(packet: UInt16(0), at: 46, in: &bytes)
         return Data(bytes)
     }
 
@@ -112,6 +119,16 @@ enum ContinuityDatagramCodec {
         guard reserved == 0 else {
             throw ContinuityDatagramError.reservedField(reserved)
         }
+        let previousButtonFlags = getU16(bytes, 44)
+        let unknownPrevious = previousButtonFlags
+            & ~ContinuityStateDatagram.Flags.primaryDown.rawValue
+        guard unknownPrevious == 0 else {
+            throw ContinuityDatagramError.reservedFlags(unknownPrevious)
+        }
+        let tailReserved = getU16(bytes, 46)
+        guard tailReserved == 0 else {
+            throw ContinuityDatagramError.reservedField(tailReserved)
+        }
         return ContinuityStateDatagram(
             nonceHi: getU32(bytes, 8), nonceLo: getU32(bytes, 12),
             epoch: getU32(bytes, 16), positionSequence: getU32(bytes, 20),
@@ -119,7 +136,10 @@ enum ContinuityDatagramCodec {
             v: Int16(bitPattern: getU16(bytes, 26)),
             buttonGeneration: getU32(bytes, 28),
             flags: .init(rawValue: rawFlags), requestedHz: getU16(bytes, 32),
-            hostStamp: getU32(bytes, 36))
+            hostStamp: getU32(bytes, 36),
+            previousButtonGeneration: getU32(bytes, 40),
+            previousButtonDown: previousButtonFlags
+                == ContinuityStateDatagram.Flags.primaryDown.rawValue)
     }
 
     static func encode(_ packet: ContinuityAckDatagram) -> Data {

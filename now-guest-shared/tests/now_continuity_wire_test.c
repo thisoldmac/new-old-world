@@ -30,6 +30,8 @@ int main(void)
         | NOW_CONTINUITY_FLAG_PRIMARY_DOWN;
     state.requested_hz = 30;
     state.host_stamp = 0x55667788UL;
+    state.previous_button_generation = 2;
+    state.previous_button_flags = 0;
     now_continuity_encode_state(&state, state_bytes);
 
     CHECK(state_bytes[0] == 'N' && state_bytes[1] == 'W'
@@ -44,6 +46,9 @@ int main(void)
           "state vector decodes");
     CHECK(memcmp(&state, &decoded_state, sizeof(state)) == 0,
           "state vector round trips");
+    CHECK(state_bytes[NOW_CONTINUITY_STATE_PREVIOUS_BUTTON_GENERATION_OFFSET + 3]
+              == 2,
+          "previous button generation is encoded after the V3 state");
 
     state_bytes[NOW_CONTINUITY_STATE_RESERVED_OFFSET + 1] = 1;
     CHECK(now_continuity_decode_state(state_bytes, sizeof(state_bytes),

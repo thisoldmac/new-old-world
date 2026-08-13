@@ -8,13 +8,15 @@ final class ContinuityDatagramTests: XCTestCase {
             epoch: 0x1020_3040, positionSequence: 7,
             h: -2, v: 342, buttonGeneration: 3,
             flags: [.inside, .primaryDown], requestedHz: 30,
-            hostStamp: 0x5566_7788)
+            hostStamp: 0x5566_7788,
+            previousButtonGeneration: 2, previousButtonDown: false)
         let data = ContinuityDatagramCodec.encode(packet)
 
-        XCTAssertEqual(data.count, 40)
+        XCTAssertEqual(data.count, 48)
         XCTAssertEqual(Array(data.prefix(8)),
-                       [0x4E, 0x57, 0x43, 0x31, 0, 3, 0, 3])
+                       [0x4E, 0x57, 0x43, 0x31, 0, 4, 0, 3])
         XCTAssertEqual(Array(data[24..<28]), [0xFF, 0xFE, 0x01, 0x56])
+        XCTAssertEqual(Array(data[40..<48]), [0, 0, 0, 2, 0, 0, 0, 0])
         XCTAssertEqual(try ContinuityDatagramCodec.decodeState(data), packet)
     }
 
@@ -37,6 +39,13 @@ final class ContinuityDatagramTests: XCTestCase {
                 XCTAssertEqual(error as? ContinuityDatagramError,
                                .reservedField(1))
             }
+        packet[35] = 0
+        packet[45] = 4
+        XCTAssertThrowsError(
+            try ContinuityDatagramCodec.decodeState(Data(packet))) { error in
+                XCTAssertEqual(error as? ContinuityDatagramError,
+                               .reservedFlags(4))
+            }
     }
 
     func testAckRoundTripsAndCarriesAppliedGeneration() throws {
@@ -54,9 +63,9 @@ final class ContinuityDatagramTests: XCTestCase {
     func testDatagramsAreExactSize() {
         XCTAssertThrowsError(
             try ContinuityDatagramCodec.decodeState(Data(repeating: 0,
-                                                          count: 39))) { error in
+                                                          count: 47))) { error in
                 XCTAssertEqual(error as? ContinuityDatagramError,
-                               .wrongSize(expected: 40, actual: 39))
+                               .wrongSize(expected: 48, actual: 47))
             }
     }
 }

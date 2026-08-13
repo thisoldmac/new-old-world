@@ -193,6 +193,33 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertEqual(environment.moves.last?.displayID, host.id)
     }
 
+    func testContinuityEdgeClassifiesGuestMenuBarAndPreservesClickCount() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 0, y: 440),
+                               buttonsDown: false))
+
+        environment.emit(.init(kind: .primaryDown,
+                               location: CGPoint(x: 1439, y: 890),
+                               delta: .zero, buttonsDown: true,
+                               eventUptime: 123, clickCount: 2))
+
+        XCTAssertEqual(driver.downPoints.last, MirrorKit.Point(x: 0, y: 10))
+        XCTAssertEqual(driver.menuBarDowns.last, true)
+        XCTAssertEqual(driver.clickCounts.last, 2)
+    }
+
     func testHeldHostMotionDragsOnGuestWithoutRelinquishingControl() {
         let layout = makeLayout()
         let driver = Driver()
@@ -397,6 +424,8 @@ private extension ContinuityDisplayLayoutTests {
         var points: [MirrorKit.Point] = []
         var leftCount = 0
         var downPoints: [MirrorKit.Point] = []
+        var menuBarDowns: [Bool] = []
+        var clickCounts: [Int] = []
         var draggedPoints: [MirrorKit.Point] = []
         var upPoints: [MirrorKit.Point] = []
         var keys: [HostKeySample] = []
@@ -404,9 +433,12 @@ private extension ContinuityDisplayLayoutTests {
         func pointerMoved(to point: MirrorKit.Point) { points.append(point) }
         func pointerLeft() { leftCount += 1 }
         func primaryDown(at point: MirrorKit.Point,
-                         inMenuBar: Bool) -> Bool {
-            _ = inMenuBar
+                         inMenuBar: Bool,
+                         sourceUptime: TimeInterval?, clickCount: Int) -> Bool {
+            _ = sourceUptime
             downPoints.append(point)
+            menuBarDowns.append(inMenuBar)
+            clickCounts.append(clickCount)
             return true
         }
         func primaryDragged(to point: MirrorKit.Point) -> Bool {

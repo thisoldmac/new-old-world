@@ -17,6 +17,8 @@ final class MirrorContinuityController: ObservableObject,
         var press: MirrorKit.Point
         var latest: MirrorKit.Point
         var release: MirrorKit.Point?
+        var sourceUptime: TimeInterval?
+        var clickCount: Int
     }
 
     enum Phase: Equatable {
@@ -167,6 +169,9 @@ final class MirrorContinuityController: ObservableObject,
     private let listener: GuestListener
     private let defaults: UserDefaults
     private let audit: Audit
+    /// Test seam for the resident liveness answer. Production always reads the
+    /// listener's exact one-machine match.
+    var machineIsAnsweringOverride: ((GuestKey) -> Bool)?
     /// Longer than the resident's 1.5-second lease: one delayed ack does not
     /// churn ownership, but a dead receive path cannot leave the UI active.
     private let acknowledgementTimeout: TimeInterval
@@ -180,6 +185,8 @@ final class MirrorContinuityController: ObservableObject,
     private var point = MirrorKit.Point(x: 0, y: 0)
     private var positionDirty = false
     private var buttonGeneration: UInt32 = 0
+    private var previousButtonGeneration: UInt32 = 0
+    private var previousButtonDown = false
     private var keyGeneration: UInt32 = 0
     private var buttonCycleActive = false
     private var wireButtonDown = false
@@ -201,6 +208,7 @@ final class MirrorContinuityController: ObservableObject,
        state on the wire before handing presentation back to the main actor. */
     private let udpQueue = DispatchQueue(
         label: "dev.newoldworld.mirror.continuity.udp")
+    private lazy var keepaliveClock = ContinuityKeepaliveClock(queue: udpQueue)
     private var timer: DispatchSourceTimer?
     private var armTimeout: Task<Void, Never>?
     private var buttonAckTimeout: Task<Void, Never>?
@@ -214,6 +222,7 @@ final class MirrorContinuityController: ObservableObject,
     private var sentDatagrams: UInt32 = 0
     private var validAcks: UInt32 = 0
     private var lastAcknowledgementUptime: TimeInterval?
+    private var acknowledgementStarvedSince: TimeInterval?
     private var lastAuditedButtonGeneration: UInt32 = 0
     private var lastPrimaryDownUptime: TimeInterval?
     private var buttonTransitionSentUptime: TimeInterval?
@@ -281,13 +290,23 @@ final class MirrorContinuityController: ObservableObject,
     @discardableResult
     func primaryDown(at point: MirrorKit.Point,
                      inMenuBar: Bool = false) -> Bool {
+        primaryDown(at: point, inMenuBar: inMenuBar,
+                    sourceUptime: nil, clickCount: 1)
+    }
+
+    @discardableResult
+    func primaryDown(at point: MirrorKit.Point, inMenuBar: Bool,
+                     sourceUptime: TimeInterval?, clickCount: Int) -> Bool {
         guard phase == .active else { return false }
         let now = ProcessInfo.processInfo.systemUptime
+        let eventUptime = sourceUptime ?? now
         if let lastPrimaryDownUptime {
-            audit(.info, String(format: "primary down interval %.1f ms",
-                                (now - lastPrimaryDownUptime) * 1_000))
+            audit(.info, String(
+                format: "primary down source interval %.1f ms, clickCount=%d, deliveryAge=%.1f ms",
+                (eventUptime - lastPrimaryDownUptime) * 1_000,
+                clickCount, max(0, now - eventUptime) * 1_000))
         }
-        lastPrimaryDownUptime = now
+        lastPrimaryDownUptime = eventUptime
         if menuLatched, buttonCycleActive, wireButtonDown {
             self.point = point
             positionDirty = true
@@ -300,13 +319,20 @@ final class MirrorContinuityController: ObservableObject,
            complete following cycle instead of dropping that second click or
            letting it fall through to Mirror's semantic plane. */
         if buttonCycleActive {
+            if clickCount >= 2, !wireButtonDown {
+                audit(.info, "starting AppKit-confirmed click \(clickCount) "
+                    + "before the preceding manager-up acknowledgement")
+                beginPrimaryCycle(at: point, inMenuBar: inMenuBar)
+                return true
+            }
             guard bufferedButtonCycle == nil,
                   releasePending || !wireButtonDown else {
                 audit(.warn, "ignored primary down while button is held")
                 return true
             }
             bufferedButtonCycle = BufferedPrimaryCycle(
-                press: point, latest: point, release: nil)
+                press: point, latest: point, release: nil,
+                sourceUptime: sourceUptime, clickCount: clickCount)
             capturingBufferedCycle = true
             return true
         }
@@ -320,9 +346,8 @@ final class MirrorContinuityController: ObservableObject,
         self.point = point
         positionDirty = true
         advancePositionIfNeeded()
-        buttonGeneration = nextNonzero(buttonGeneration)
+        advanceButton(to: true)
         buttonCycleActive = true
-        wireButtonDown = true
         pressAcknowledged = false
         releasePending = releasedAt != nil
         deferredButtonPoint = releasedAt
@@ -446,9 +471,16 @@ final class MirrorContinuityController: ObservableObject,
                   self.phase == .arming, self.epoch == armedEpoch else {
                 return
             }
-            self.relinquish(reason: "arm timed out", keepEnabled: false)
-            self.setEnabledWithoutTeardown(false)
-            self.status = "Continuity is unavailable"
+            if self.maintainsOptInAfterGuestExit {
+                self.relinquish(reason: "arm timed out", keepEnabled: true)
+                self.status = "The Mac is busy in another interaction and did "
+                    + "not schedule its pointer service. Dismiss any alert, "
+                    + "then cross the shared edge again."
+            } else {
+                self.relinquish(reason: "arm timed out", keepEnabled: false)
+                self.setEnabledWithoutTeardown(false)
+                self.status = "Continuity is unavailable"
+            }
         }
     }
 
@@ -579,6 +611,10 @@ final class MirrorContinuityController: ObservableObject,
                     self.phase = .active
                     self.status = "direct pointer connected at "
                         + "\(self.acceptedHz) Hz"
+                    self.keepaliveClock.start(
+                        connection: connection,
+                        payload: self.encodedState(
+                            inside: true, keepalive: true))
                     self.startTimer()
                     self.receiveAck()
                 case .failed(let error):
@@ -661,8 +697,22 @@ final class MirrorContinuityController: ObservableObject,
             if let last = self.lastAcknowledgementUptime,
                ProcessInfo.processInfo.systemUptime - last
                     > self.acknowledgementTimeout {
-                self.guestEnded(reason: "UDP acknowledgements stopped")
-                return
+                let silence = ProcessInfo.processInfo.systemUptime - last
+                if let key = self.target?.key,
+                   self.machineIsAnsweringOverride?(key)
+                    ?? self.listener.machineIsAnswering(sessionKey: key) {
+                    if self.acknowledgementStarvedSince == nil {
+                        self.acknowledgementStarvedSince = last
+                        self.audit(.warn, String(
+                            format: "guest application acknowledgements starved for %.1f s; resident liveness is still answering and the independent lease clock remains armed",
+                            silence))
+                        self.status = "The Mac is busy in another interaction; "
+                            + "pointer safety remains armed"
+                    }
+                } else {
+                    self.guestEnded(reason: "UDP acknowledgements stopped")
+                    return
+                }
             }
             if self.positionDirty {
                 self.advancePositionIfNeeded()
@@ -670,10 +720,6 @@ final class MirrorContinuityController: ObservableObject,
                 return
             }
             self.idleIntervals += 1
-            if self.idleIntervals >= max(1, self.acceptedHz / 2) {
-                self.idleIntervals = 0
-                self.sendState(inside: true, keepalive: true)
-            }
         }
         self.timer = timer
         timer.resume()
@@ -709,6 +755,8 @@ final class MirrorContinuityController: ObservableObject,
 
     private func sendState(inside: Bool, keepalive: Bool) {
         guard let udp, phase == .active else { return }
+        keepaliveClock.update(payload: encodedState(
+            inside: inside, keepalive: true))
         sentDatagrams &+= 1
         udp.send(content: encodedState(inside: inside, keepalive: keepalive),
                  completion: .idempotent)
@@ -726,7 +774,9 @@ final class MirrorContinuityController: ObservableObject,
             buttonGeneration: buttonGeneration, flags: flags,
             requestedHz: UInt16(requestedHz),
             hostStamp: UInt32(truncatingIfNeeded:
-                Int(ProcessInfo.processInfo.systemUptime * 60)))
+                Int(ProcessInfo.processInfo.systemUptime * 60)),
+            previousButtonGeneration: previousButtonGeneration,
+            previousButtonDown: previousButtonDown)
         return ContinuityDatagramCodec.encode(packet)
     }
 
@@ -758,6 +808,14 @@ final class MirrorContinuityController: ObservableObject,
                             return
                         }
                         self.validAcks &+= 1
+                        if let starved = self.acknowledgementStarvedSince {
+                            self.audit(.info, String(
+                                format: "guest application acknowledgements recovered after %.1f s",
+                                ProcessInfo.processInfo.systemUptime - starved))
+                            self.acknowledgementStarvedSince = nil
+                            self.status = "direct pointer connected at "
+                                + "\(self.acceptedHz) Hz"
+                        }
                         self.lastAcknowledgementUptime =
                             ProcessInfo.processInfo.systemUptime
                         if self.validAcks == 1
@@ -840,6 +898,12 @@ final class MirrorContinuityController: ObservableObject,
         capturingBufferedCycle = false
         beginPrimaryCycle(at: bufferedButtonCycle.press,
                           releasedAt: bufferedButtonCycle.release)
+        if let source = bufferedButtonCycle.sourceUptime {
+            audit(.info, String(
+                format: "buffered click %d settled %.1f ms after AppKit delivery",
+                bufferedButtonCycle.clickCount,
+                max(0, ProcessInfo.processInfo.systemUptime - source) * 1_000))
+        }
         if bufferedButtonCycle.release == nil,
            bufferedButtonCycle.latest != bufferedButtonCycle.press {
             deferredButtonPoint = bufferedButtonCycle.latest
@@ -856,14 +920,23 @@ final class MirrorContinuityController: ObservableObject,
         deferredButtonPoint = nil
         positionDirty = true
         advancePositionIfNeeded()
-        buttonGeneration = nextNonzero(buttonGeneration)
-        wireButtonDown = false
+        advanceButton(to: false)
         releasePending = false
         buttonAckTimeout?.cancel()
         buttonAckTimeout = nil
         sendState(inside: true, keepalive: false)
         buttonTransitionSentUptime = ProcessInfo.processInfo.systemUptime
         scheduleButtonAckTimeout(generation: buttonGeneration, down: false)
+        if bufferedButtonCycle?.clickCount ?? 0 >= 2 {
+            startBufferedPrimaryCycleIfNeeded()
+        }
+    }
+
+    private func advanceButton(to down: Bool) {
+        previousButtonGeneration = buttonGeneration
+        previousButtonDown = wireButtonDown
+        buttonGeneration = nextNonzero(buttonGeneration)
+        wireButtonDown = down
     }
 
     private func scheduleButtonAckTimeout(generation: UInt32, down: Bool) {
@@ -932,19 +1005,20 @@ final class MirrorContinuityController: ObservableObject,
         let oldPhase = phase
         let oldSent = sentDatagrams
         let oldAcks = validAcks
+        let clock = keepaliveClock.stop()
         if phase == .active, buttonCycleActive, wireButtonDown {
             if let deferredButtonPoint { point = deferredButtonPoint }
             positionDirty = true
             advancePositionIfNeeded()
-            buttonGeneration = nextNonzero(buttonGeneration)
-            wireButtonDown = false
+            advanceButton(to: false)
             sendState(inside: false, keepalive: false)
         }
         clearTransportState()
         if wasOwned {
             audit(.info, "ending locally: reason=\(reason), "
                 + "phase=\(oldPhase), epoch=\(oldEpoch), "
-                + "sent=\(oldSent), validAcks=\(oldAcks)")
+                + "sent=\(oldSent), validAcks=\(oldAcks), "
+                + clockDescription(clock))
             _ = listener.disarmContinuity(
                 epoch: oldEpoch, reason: wireDisarmReason(for: reason))
         }
@@ -954,9 +1028,10 @@ final class MirrorContinuityController: ObservableObject,
 
     private func guestEnded(reason: String, retryable: Bool = true,
                             retryImmediately: Bool = true) {
+        let clock = keepaliveClock.stop()
         audit(.warn, "guest ended Continuity: reason=\(reason), "
             + "epoch=\(epoch), sent=\(sentDatagrams), "
-            + "validAcks=\(validAcks)")
+            + "validAcks=\(validAcks), " + clockDescription(clock))
         resetTransport()
         onOwnershipEnded?(reason)
         if maintainsOptInAfterGuestExit && retryable && isEnabled {
@@ -1000,6 +1075,16 @@ final class MirrorContinuityController: ObservableObject,
             + "\(malformed) malformed)"
     }
 
+    private func clockDescription(_ stats: ContinuityKeepaliveClock.Stats)
+        -> String {
+        let age = stats.lastSendAge.map {
+            String(format: "%.0f", $0 * 1_000)
+        } ?? "none"
+        return String(format:
+            "leaseClockSent=%u, delayedTicks=%u, maxGapMs=%.0f, lastAgeMs=%@",
+            stats.sent, stats.delayedTicks, stats.maxGap * 1_000, age)
+    }
+
     private func isRetryable(_ reason: String?) -> Bool {
         reason != "unsupported" && reason != "wrong-version"
             && reason != "resident-unavailable"
@@ -1014,6 +1099,7 @@ final class MirrorContinuityController: ObservableObject,
     /// particular, click timing cannot cross an epoch boundary and masquerade
     /// as evidence about the next guest double-click.
     private func clearTransportState() {
+        _ = keepaliveClock.stop()
         timer?.cancel()
         timer = nil
         armTimeout?.cancel()
@@ -1035,9 +1121,12 @@ final class MirrorContinuityController: ObservableObject,
         sentDatagrams = 0
         validAcks = 0
         lastAcknowledgementUptime = nil
+        acknowledgementStarvedSince = nil
         lastAuditedButtonGeneration = 0
         lastPrimaryDownUptime = nil
         buttonTransitionSentUptime = nil
+        previousButtonGeneration = 0
+        previousButtonDown = false
         resetButtonState()
         keyGeneration = 0
     }

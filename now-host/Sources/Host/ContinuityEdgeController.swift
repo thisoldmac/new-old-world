@@ -17,6 +17,20 @@ struct HostPointerSample: Equatable, Sendable {
     /// Mouse motion expressed in the same positive-Y-up coordinate space.
     let delta: CGPoint
     let buttonsDown: Bool
+    /// AppKit's event-time clock (seconds since system startup), captured
+    /// before a global monitor hops to the main actor.
+    let eventUptime: TimeInterval
+    let clickCount: Int
+
+    init(kind: Kind, location: CGPoint, delta: CGPoint, buttonsDown: Bool,
+         eventUptime: TimeInterval = 0, clickCount: Int = 0) {
+        self.kind = kind
+        self.location = location
+        self.delta = delta
+        self.buttonsDown = buttonsDown
+        self.eventUptime = eventUptime
+        self.clickCount = clickCount
+    }
 }
 
 @MainActor
@@ -171,7 +185,8 @@ private final class AppKitContinuityPointerEnvironment:
         return HostPointerSample(
             kind: kind, location: NSEvent.mouseLocation,
             delta: CGPoint(x: event.deltaX, y: -event.deltaY),
-            buttonsDown: NSEvent.pressedMouseButtons != 0)
+            buttonsDown: NSEvent.pressedMouseButtons != 0,
+            eventUptime: event.timestamp, clickCount: event.clickCount)
     }
 }
 
@@ -181,7 +196,8 @@ protocol ContinuityEdgeDriving: AnyObject {
     var escapeShortcut: ContinuityEscapeShortcut { get }
     func pointerMoved(to point: MirrorKit.Point)
     func pointerLeft()
-    func primaryDown(at point: MirrorKit.Point, inMenuBar: Bool) -> Bool
+    func primaryDown(at point: MirrorKit.Point, inMenuBar: Bool,
+                     sourceUptime: TimeInterval?, clickCount: Int) -> Bool
     func primaryDragged(to point: MirrorKit.Point) -> Bool
     func primaryUp(at point: MirrorKit.Point) -> Bool
     func keyboardEvent(_ sample: HostKeySample) -> Bool
@@ -364,7 +380,10 @@ final class ContinuityEdgeController: ObservableObject {
             let point = mirrorPoint(ownership.guestPoint)
             guestFileCandidate = guestFileAtPoint?(point)
             let consumed = driver?.primaryDown(at: point,
-                                               inMenuBar: false) ?? false
+                inMenuBar: point.y < HitTester.menubarHeight,
+                sourceUptime: sample.eventUptime > 0
+                    ? sample.eventUptime : nil,
+                clickCount: sample.clickCount) ?? false
             if !consumed { guestFileCandidate = nil }
             pinHostCursor(for: ownership)
             return
