@@ -902,6 +902,32 @@ replacement remain unverified. This is forward repair: a guest predating
 bootstrap itself. Artifact injection into the signed host bundle also remains
 packaging work; a validated Application Support catalog is supported now.
 
+**2026-08-13 attended bundle-integration observation:** the signed host from the
+Continuity retest stack was launched against the preceding guest application
+and Extension. Connections displayed both installed versions and build
+identities correctly, so guest identity reporting and host comparison were
+present. Both Software Updates rows nevertheless said `No validated artifact
+is installed on this host.` and exposed no replacement action.
+
+This is the observed consequence of an unformalized bundle, not an updater
+defect: the current output is a checked handoff set, not yet an installation or
+publication unit. `scripts/build-continuity-stack` places the two canonical
+MacBinary artifacts and their sidecars beside `NOW Continuity.app.zip`, but
+`OnboardingAssetCatalog.live()` searches only the app's signed
+`Contents/Resources/Onboarding` directory and
+`~/Library/Application Support/New Old World/Onboarding`. The sibling handoff
+directory is intentionally not a catalog root, and no formal bundle step
+populates either searched location. GitHub
+[issue #13](https://github.com/thisoldmac/new-old-world/issues/13) owns the
+formal bundle work. That host/bundle round must deliberately choose between
+embedding validated artifacts before signing and importing them into
+Application Support through an explicit host-owned flow. Its acceptance test
+is an ordinary freshly installed host, with no environment override or manual
+catalog seeding, offering both exact replacements when connected to a guest
+whose reported application and Extension identities differ. The test must
+also prove that each offered artifact was revalidated against its adjacent
+sidecar rather than merely discovered by filename.
+
 Product release 0.2.0 is stated coherently in the shared guest header, PPC
 `vers` resource, host catalog and both host build paths; the wire-contract
 revision remains independent. Main-reference hooks reject incoherent copies,
