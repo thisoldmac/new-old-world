@@ -9,7 +9,7 @@
 enum {
     kWidth = 340,
     kHeight = 156,
-    kButtonWidth = 84,
+    kButtonWidth = 116,
     kButtonHeight = 20,
     kMargin = 16
 };
@@ -57,14 +57,14 @@ static void draw(void)
     draw_wrapped(g_detail, 56, 108);
 }
 
-Boolean now_confirm(const char *heading, const char *detail,
-                    const char *action)
+NowChoice now_choose(const char *heading, const char *detail,
+                     const char *action, const char *alternative)
 {
     EventRecord event;
     Rect bounds;
     Str255 text;
     Boolean done = false;
-    Boolean answer = false;
+    NowChoice answer = kNowChoiceDismissed;
 
     SetRect(&bounds, 100, 120, 100 + kWidth, 120 + kHeight);
     /* NO kWindowStandardHandlerAttribute. It installs HIToolbox's
@@ -77,7 +77,7 @@ Boolean now_confirm(const char *heading, const char *detail,
     CreateNewWindow(kMovableModalWindowClass, kWindowNoAttributes,
                     &bounds, &g_window);
     if (g_window == NULL) {
-        return false;                 /* cannot ask: do not assume yes */
+        return kNowChoiceDismissed;   /* cannot ask: do not assume yes */
     }
     g_heading = heading;
     g_detail = detail;
@@ -107,7 +107,7 @@ Boolean now_confirm(const char *heading, const char *detail,
     SetRect(&bounds, kWidth - kMargin - 12 - kButtonWidth * 2,
             kHeight - kMargin - kButtonHeight,
             kWidth - kMargin - 12 - kButtonWidth, kHeight - kMargin);
-    CopyCStringToPascal("Cancel", text);
+    CopyCStringToPascal(alternative, text);
     g_cancel = now_control_new(g_window, &bounds, text, true, 0, 0, 1,
                           pushButProc, 0);
     ShowWindow(g_window);
@@ -163,7 +163,8 @@ Boolean now_confirm(const char *heading, const char *detail,
                     && control != NULL
                     && TrackControl(control, local,
                                     now_pump_action()) != 0) {
-                    answer = (control == g_action);
+                    answer = control == g_action
+                        ? kNowChoiceAction : kNowChoiceAlternative;
                     done = true;
                 }
             }
@@ -173,7 +174,7 @@ Boolean now_confirm(const char *heading, const char *detail,
             char c = (char)(event.message & charCodeMask);
 
             if (c == '\r' || c == 3) {          /* Return, Enter */
-                answer = true;
+                answer = kNowChoiceAction;
                 done = true;
             } else if (c == 27                  /* Escape */
                        || ((event.modifiers & cmdKey) && c == '.')
@@ -182,7 +183,7 @@ Boolean now_confirm(const char *heading, const char *detail,
                 /* Escape, Cmd-period and Cmd-Q all mean "not this".
                    A modal with no keyboard way out is one bug away
                    from being unrecoverable. */
-                answer = false;
+                answer = kNowChoiceDismissed;
                 done = true;
             }
             break;
@@ -193,4 +194,11 @@ Boolean now_confirm(const char *heading, const char *detail,
     now_control_dispose_window(g_window);
     g_window = NULL;
     return answer;
+}
+
+Boolean now_confirm(const char *heading, const char *detail,
+                    const char *action)
+{
+    return now_choose(heading, detail, action, "Cancel")
+        == kNowChoiceAction;
 }

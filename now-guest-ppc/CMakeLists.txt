@@ -138,6 +138,8 @@ add_application(now-guest-ppc
     ../now-guest-shared/src/log_retention_classic.c
     src/core/wire.c
     src/core/prefs.c
+    src/core/carbon_warning_model.c
+    src/core/carbon_warning.c
     src/connection/conn_fields.c
     src/connection/conn_edit_dialog.c
     src/connection/connection_module.c

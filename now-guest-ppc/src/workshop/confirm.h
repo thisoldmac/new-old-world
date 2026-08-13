@@ -18,8 +18,18 @@
    opened from a network callback nests inside whatever loop is already
    running. Wire code raises a flag; the event loop asks the question. */
 
-/* True if the action button was pressed, false for Cancel. `action` is
-   the verb ("Replace"), which is also the default button. */
+typedef enum {
+    kNowChoiceDismissed = 0,
+    kNowChoiceAction,
+    kNowChoiceAlternative
+} NowChoice;
+
+/* `action` is the default button. Dismissal remains distinct from choosing
+   the alternative so Escape can never persist a preference by accident. */
+NowChoice now_choose(const char *heading, const char *detail,
+                     const char *action, const char *alternative);
+
+/* The ordinary destructive-confirmation spelling. */
 Boolean now_confirm(const char *heading, const char *detail,
                     const char *action);
 
