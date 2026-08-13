@@ -114,6 +114,9 @@ def main() -> None:
         # integrity digest from being presented as an artifact signature.
         "signed": False,
     }
+    if args.repo_root is not None:
+        document["sourceRevision"] = git(
+            args.repo_root.resolve(), "rev-parse", "HEAD")
     if args.channel == "release":
         if args.repo_root is None:
             raise SystemExit("release channel requires --repo-root")

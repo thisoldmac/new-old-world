@@ -65,7 +65,10 @@ def main() -> int:
             raise AssertionError(development.stdout + development.stderr)
         manifest = json.loads(
             (repo / "New Old World.bin.now-update.json").read_text())
-        if manifest["build"] != BUILD or manifest["sha256"] != digest:
+        if (manifest["build"] != BUILD or manifest["sha256"] != digest
+                or manifest["sourceRevision"]
+                != run("git", "rev-parse", "HEAD", cwd=repo,
+                       check=True).stdout.strip()):
             raise AssertionError("development sidecar lost exact identities")
 
         no_tag = invoke(repo, "release")

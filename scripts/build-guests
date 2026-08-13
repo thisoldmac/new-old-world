@@ -103,7 +103,9 @@ build_guest() {
     # non-zero, because "cmake failed" with no output is a bug report
     # nobody can act on.
     if ! cmake -S "$repo_root/$src" -B "$dir" -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="$toolchain" >"$log" 2>&1 \
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" \
+            -DNOW_UPDATE_CHANNEL="${NOW_UPDATE_CHANNEL:-development}" \
+            >"$log" 2>&1 \
         || ! cmake --build "$dir" >>"$log" 2>&1; then
         echo "== $label: FAILED"
         tail -30 "$log"

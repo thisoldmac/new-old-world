@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from tools.release.artifacts import (  # noqa: E402
+    ComponentArtifact,
+    LicensedInput,
+    copy_exact,
+    sha256,
+)
+from tools.release.manifest import write_checksums, write_manifest  # noqa: E402
+from tools.release.image import (  # noqa: E402
+    MacBinaryFile,
+    build_generic_image,
+    ndif_macbinary,
+    populate_generic,
+)
+from tools.release.profile import DistributionProfile, ReleaseRefusal  # noqa: E402
+
+
+class ReleaseTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory(prefix="now-release-test-")
+        self.root = Path(self.temp.name)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def component(self, name: str = "New Old World.bin",
+                  component: str = "application") -> Path:
+        artifact = self.root / name
+        artifact.write_bytes(b"component bytes")
+        sidecar = {
+            "schema": 1,
+            "component": component,
+            "version": "0.2.0",
+            "build": "b" * 64,
+            "sha256": sha256(artifact),
+            "bytes": artifact.stat().st_size,
+            "channel": "development",
+            "signed": False,
+            "sourceRevision": "a" * 40,
+        }
+        artifact.with_name(artifact.name + ".now-update.json").write_text(
+            json.dumps(sidecar))
+        return artifact
+
+    def licensed(self) -> Path:
+        artifact = self.root / "CarbonLib 1.6 Installer.bin"
+        artifact.write_bytes(b"original apple installer")
+        license_file = self.root / "Apple License.txt"
+        license_file.write_text("license")
+        descriptor = self.root / "carbonlib.json"
+        descriptor.write_text(json.dumps({
+            "schema": 1,
+            "id": "carbonlib_1_6_installer",
+            "artifact": artifact.name,
+            "sha256": sha256(artifact),
+            "provenance": {
+                "url": "https://support.apple.com/",
+                "retrievedAt": "2026-08-13",
+            },
+            "licenseFiles": [license_file.name],
+            "licenseAcceptance": "user",
+        }))
+        return descriptor
+
+    def test_live_profile_is_the_alpha_contract(self) -> None:
+        profile = DistributionProfile.load(ROOT)
+        self.assertEqual(profile.product_version, "0.2.0")
+        self.assertEqual(profile.filename("generic_classic_image"),
+                         "new-old-world-classic-0.2.0.img.bin")
+
+    def test_component_sidecar_binds_exact_bytes(self) -> None:
+        artifact = self.component()
+        loaded = ComponentArtifact.load(artifact, "application", "0.2.0",
+                                        "a" * 40)
+        self.assertEqual(loaded.metadata["build"], "b" * 64)
+        artifact.write_bytes(b"mutated")
+        with self.assertRaisesRegex(ReleaseRefusal, "stale artifact identity"):
+            ComponentArtifact.load(artifact, "application", "0.2.0",
+                                   "a" * 40)
+
+    def test_component_refuses_mixed_recorded_revision(self) -> None:
+        artifact = self.component()
+        sidecar = artifact.with_name(artifact.name + ".now-update.json")
+        document = json.loads(sidecar.read_text())
+        document["sourceRevision"] = "f" * 40
+        sidecar.write_text(json.dumps(document))
+        with self.assertRaisesRegex(ReleaseRefusal, "does not match HEAD"):
+            ComponentArtifact.load(artifact, "application", "0.2.0",
+                                   "a" * 40)
+
+    def test_carbonlib_requires_original_checksum_and_license(self) -> None:
+        descriptor = self.licensed()
+        loaded = LicensedInput.load(descriptor)
+        copied = self.root / "copy" / loaded.artifact.name
+        copy_exact(loaded.artifact, copied)
+        self.assertEqual(copied.read_bytes(), b"original apple installer")
+        loaded.artifact.write_bytes(b"repacked")
+        with self.assertRaisesRegex(ReleaseRefusal, "checksum mismatch"):
+            LicensedInput.load(descriptor)
+
+    def test_carbonlib_descriptor_refuses_unknown_fields(self) -> None:
+        descriptor = self.licensed()
+        document = json.loads(descriptor.read_text())
+        document["codekitten"] = "convenience"
+        descriptor.write_text(json.dumps(document))
+        with self.assertRaisesRegex(ReleaseRefusal, "fields must be exactly"):
+            LicensedInput.load(descriptor)
+
+    def test_manifest_and_checksum_projection_bind_outputs(self) -> None:
+        first = self.root / "first.bin"
+        second = self.root / "second.dmg"
+        first.write_bytes(b"first")
+        second.write_bytes(b"second")
+        manifest = self.root / "release-manifest.json"
+        checksums = self.root / "SHA256SUMS"
+        old = os.environ.get("SOURCE_DATE_EPOCH")
+        os.environ["SOURCE_DATE_EPOCH"] = "0"
+        try:
+            write_manifest(
+                manifest, version="0.2.0", channel="development",
+                source_revision="a" * 40, components=[], licensed_inputs=[],
+                outputs=[second, first])
+        finally:
+            if old is None:
+                os.environ.pop("SOURCE_DATE_EPOCH", None)
+            else:
+                os.environ["SOURCE_DATE_EPOCH"] = old
+        write_checksums(checksums, [manifest, first, second])
+        document = json.loads(manifest.read_text())
+        self.assertEqual(document["sourceDate"], "1970-01-01T00:00:00Z")
+        self.assertEqual([row["filename"] for row in document["outputs"]],
+                         ["first.bin", "second.dmg"])
+        self.assertIn(sha256(manifest), checksums.read_text())
+
+    def test_generic_image_payload_has_no_preferences_or_codekitten(self) -> None:
+        app = self.root / "New Old World.bin"
+        extension = self.root / "NOW Extension.bin"
+        carbon = self.root / "CarbonLib.bin"
+        license_file = self.root / "Apple License.txt"
+        app.write_bytes(MacBinaryFile(
+            "New Old World", b"APPL", b"NOWo", 0,
+            b"app", b"app resources").encode())
+        extension.write_bytes(MacBinaryFile(
+            "NowExt", b"INIT", b"NOWx", 0,
+            b"", b"extension resources").encode())
+        carbon.write_bytes(MacBinaryFile(
+            "CarbonLib Installer", b"APPL", b"appl", 0,
+            b"installer", b"").encode())
+        license_file.write_text("license")
+        contents = self.root / "contents"
+        populate_generic(contents, app, extension, carbon, (license_file,))
+        self.assertTrue((contents / "New Old World").is_file())
+        self.assertTrue((contents / "NOW Extension").is_file())
+        self.assertTrue((contents / "Dependencies/CarbonLib Installer").is_file())
+        self.assertFalse((contents / "New Old World Prefs").exists())
+        self.assertFalse((contents / "CodeKitten").exists())
+
+    def test_ndif_envelope_records_the_complete_raw_disk(self) -> None:
+        disk = bytes(1024)
+        envelope = ndif_macbinary("New Old World Setup.img", "NOW Setup", disk)
+        decoded = MacBinaryFile.decode(envelope)
+        self.assertEqual(decoded.file_type, b"rohd")
+        self.assertEqual(decoded.creator, b"ddsk")
+        self.assertEqual(decoded.data_fork, disk)
+        self.assertIn(b"bcem", decoded.resource_fork)
+
+    def test_generic_image_builder_produces_ndif_macbinary(self) -> None:
+        app = self.root / "New Old World.bin"
+        extension = self.root / "NOW Extension.bin"
+        carbon = self.root / "CarbonLib.bin"
+        license_file = self.root / "Apple License.txt"
+        app.write_bytes(MacBinaryFile(
+            "New Old World", b"APPL", b"NOWo", 0, b"app", b"").encode())
+        extension.write_bytes(MacBinaryFile(
+            "NowExt", b"INIT", b"NOWx", 0, b"", b"ext").encode())
+        carbon.write_bytes(MacBinaryFile(
+            "CarbonLib Installer", b"APPL", b"appl", 0,
+            b"installer", b"").encode())
+        license_file.write_text("license")
+        output = self.root / "classic.img.bin"
+        build_generic_image(output, app, extension, carbon, (license_file,))
+        decoded = MacBinaryFile.decode(output.read_bytes())
+        self.assertEqual(decoded.name, "New Old World Setup.img")
+        self.assertGreaterEqual(len(decoded.data_fork), 2 * 1024 * 1024)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

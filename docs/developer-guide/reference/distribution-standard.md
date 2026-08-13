@@ -6,7 +6,7 @@ doc_type: reference
 audience: developer
 lifecycle: current
 authority: [docs/feature-catalog.yaml, docs/distribution-profile.yaml]
-source_dependencies: [docs/feature-catalog.yaml, docs/distribution-profile.yaml, docs/developer-guide/architecture/updating.md, docs/resident-components.md, tools/docs-gate, tools/write-update-manifest.py]
+source_dependencies: [docs/feature-catalog.yaml, docs/distribution-profile.yaml, docs/developer-guide/architecture/updating.md, docs/resident-components.md, scripts/assemble-release, scripts/build-host-app, scripts/build-guests, tools/docs-gate, tools/release-tests, tools/release/artifacts.py, tools/release/image.py, tools/release/manifest.py, tools/release/profile.py, tools/write-update-manifest.py]
 media_ids: []
 last_verified: 2026-08-13
 ---
@@ -109,14 +109,53 @@ application requires the replacement to relaunch and identify itself before
 the host treats that action as complete. The detailed transfer, consent,
 identity, and exchange rules live in [Host-owned updates](../architecture/updating.md).
 
+## Assemble a release
+
+Prepare a CarbonLib descriptor outside the repository beside the original
+installer and license files:
+
+```json
+{
+  "schema": 1,
+  "id": "carbonlib_1_6_installer",
+  "artifact": "CarbonLib 1.6 Installer.bin",
+  "sha256": "<sha256 of the exact installer file>",
+  "provenance": {
+    "url": "https://support.apple.com/...",
+    "retrievedAt": "2026-08-13"
+  },
+  "licenseFiles": ["Apple Software License.txt"],
+  "licenseAcceptance": "user"
+}
+```
+
+Then assemble from a clean, committed checkout:
+
+```console
+scripts/assemble-release \
+  --output /absolute/path/New-Old-World-0.2.0 \
+  --carbonlib-descriptor /absolute/path/carbonlib-1.6.json \
+  --sign-identity "Apple Development: Your Name (TEAMID)"
+```
+
+`SOURCE_DATE_EPOCH` may be set explicitly; otherwise the assembler uses the
+commit timestamp. `--adhoc` creates a local development fixture and is refused
+for the release channel. `--application`, `--extension`, and `--host-app`
+admit explicit prepared inputs for controlled development runs; both component
+artifacts and their sidecars are still validated against the current checkout.
+
+The assembler builds both guest components, stages the unsigned Release host,
+embeds the exact catalog, signs only after embedding, creates the generic HFS
+image and DMG, and finally writes the manifest and checksum projection. Run
+`tools/release-tests` for its focused validation and image-construction gate.
+
 ## Evidence and refusal
 
-The future release assembler must fail closed on unknown inputs, unexpected
-files, stale or mismatched sidecars, altered licensed bytes, missing license
-material, mixed source revisions, and mutation after signing. The manifest
-must make each input's source class, filename, version/build identity, artifact
-digest, provenance, and license-acceptance requirement inspectable.
+The release assembler fails closed on unknown inputs, unexpected files, stale
+or mismatched sidecars, altered licensed bytes, missing license material,
+mixed source revisions, mutation after signing, and output-directory reuse.
+The manifest makes each input's source class, filename, version/build identity,
+artifact digest, provenance, and license-acceptance requirement inspectable.
 
-This standard defines that acceptance contract. It does not claim the release
-assembler, static classic image, signing pipeline, or host self-updater already
-exists.
+The assembler, static classic image, and signing pipeline are implemented. A
+host self-updater remains deferred.

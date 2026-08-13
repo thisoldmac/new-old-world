@@ -112,6 +112,8 @@ echo "==> [2/8] release and staged-image discipline gates"
     || fail "component build identity gate"
 "$script_dir/../tools/update-manifest-tests" \
     || fail "update manifest release gate"
+"$script_dir/../tools/release-tests" \
+    || fail "distribution assembler gate"
 "$script_dir/../tools/land-main-tests" \
     || fail "checked-out main landing gate"
 

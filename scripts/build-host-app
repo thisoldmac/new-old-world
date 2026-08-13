@@ -2,13 +2,16 @@
 set -eu
 
 signing=developer
-if [ "${1:-}" = "--adhoc" ]; then
+if [ "${1:-}" = "--unsigned-release" ]; then
+    signing=unsigned-release
+    shift
+elif [ "${1:-}" = "--adhoc" ]; then
     signing=adhoc
     shift
 fi
 
 if [ "$#" -ne 1 ]; then
-    echo "usage: $0 [--adhoc] /absolute/output/directory" >&2
+    echo "usage: $0 [--adhoc|--unsigned-release] /absolute/output/directory" >&2
     exit 64
 fi
 
@@ -52,17 +55,27 @@ mkdir -p "$output_root"
 
 bundle="$output_root/New Old World.app"
 
-if [ "$signing" = developer ]; then
+if [ "$signing" = developer ] || [ "$signing" = unsigned-release ]; then
     rm -rf "$bundle"
+    configuration=Debug
+    signing_args=""
+    if [ "$signing" = unsigned-release ]; then
+        configuration=Release
+        signing_args="CODE_SIGNING_ALLOWED=NO"
+    fi
+    # shellcheck disable=SC2086 -- one optional xcodebuild assignment
     xcodebuild \
         -project "$repo_root/now-host/NewOldWorld.xcodeproj" \
         -scheme "New Old World" \
-        -configuration Debug \
+        -configuration "$configuration" \
         -derivedDataPath "$output_root/xcode-derived" \
         -allowProvisioningUpdates \
         CONFIGURATION_BUILD_DIR="$output_root" \
+        $signing_args \
         build
-    "$script_dir/verify-host-signature" "$bundle"
+    if [ "$signing" = developer ]; then
+        "$script_dir/verify-host-signature" "$bundle"
+    fi
 else
     scratch="$output_root/swift-build"
     binary="$scratch/debug/Host"
