@@ -5,13 +5,6 @@ struct ClassicSetupImageBuilder: Sendable {
         case personalized(host: String, wirePort: UInt16)
         case generic
 
-        var includesPreferences: Bool {
-            if case .personalized = self { return true }
-            return false
-        }
-
-        var includesCodeKitten: Bool { includesPreferences }
-
         var instructions: String {
             let connection: String
             let codeKitten: String
@@ -128,7 +121,7 @@ struct ClassicSetupImageBuilder: Sendable {
             throw BuildError.missingApplication
         }
         try writeMacBinary(application.fileURL, to: destination)
-        if mode.includesCodeKitten, let codeKitten = assets.codeKitten {
+        if case .personalized = mode, let codeKitten = assets.codeKitten {
             try writeMacBinary(codeKitten.fileURL, to: destination,
                                nameOverride: "CodeKitten")
         }

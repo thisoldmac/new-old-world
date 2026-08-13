@@ -7494,7 +7494,6 @@ void conn_init(void)
     memset(&g, 0, sizeof g);
     now_update_model_reset();
     memset(&g_update, 0, sizeof g_update);
-    g_update.restart_required = now_update_activation_reconcile();
     g.ep = kOTInvalidEndpointRef;
     g.last_rtt_ms = -1;
     loopstat_reset(&g_pass_stat);
@@ -7503,6 +7502,7 @@ void conn_init(void)
        time and GetCurrentProcess is not a call to be making there. */
     g_self_psn_known = (GetCurrentProcess(&g_self_psn) == noErr);
     now_prefs_load(&prefs);
+    g_update.restart_required = now_update_activation_reconcile(&prefs);
     strncpy(g.host, prefs.host, sizeof g.host - 1);
     g.port = prefs.port;
     strcpy(g.status, "Not connected");

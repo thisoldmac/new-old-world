@@ -24,6 +24,7 @@ from tools.release.image import (  # noqa: E402
     build_generic_image,
     ndif_macbinary,
     populate_generic,
+    write_ndif_macbinary,
 )
 from tools.release.profile import DistributionProfile, ReleaseRefusal  # noqa: E402
 
@@ -101,6 +102,14 @@ class ReleaseTests(unittest.TestCase):
             ComponentArtifact.load(artifact, "application", "0.2.0",
                                    "a" * 40)
 
+    def test_component_refuses_non_object_sidecar(self) -> None:
+        artifact = self.component()
+        artifact.with_name(artifact.name + ".now-update.json").write_text("[]")
+        with self.assertRaisesRegex(ReleaseRefusal,
+                                    "top level must be an object"):
+            ComponentArtifact.load(artifact, "application", "0.2.0",
+                                   "a" * 40)
+
     def test_carbonlib_requires_original_checksum_and_license(self) -> None:
         descriptor = self.licensed()
         loaded = LicensedInput.load(descriptor)
@@ -117,6 +126,13 @@ class ReleaseTests(unittest.TestCase):
         document["codekitten"] = "convenience"
         descriptor.write_text(json.dumps(document))
         with self.assertRaisesRegex(ReleaseRefusal, "fields must be exactly"):
+            LicensedInput.load(descriptor)
+
+    def test_carbonlib_descriptor_refuses_non_object(self) -> None:
+        descriptor = self.licensed()
+        descriptor.write_text('"not an object"')
+        with self.assertRaisesRegex(ReleaseRefusal,
+                                    "top level must be an object"):
             LicensedInput.load(descriptor)
 
     def test_manifest_and_checksum_projection_bind_outputs(self) -> None:
@@ -176,6 +192,17 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(decoded.creator, b"ddsk")
         self.assertEqual(decoded.data_fork, disk)
         self.assertIn(b"bcem", decoded.resource_fork)
+
+    def test_streamed_ndif_envelope_matches_in_memory_encoder(self) -> None:
+        disk = bytes(range(256)) * 4
+        raw_disk = self.root / "disk.raw"
+        output = self.root / "disk.img.bin"
+        raw_disk.write_bytes(disk)
+        write_ndif_macbinary(
+            output, "New Old World Setup.img", "NOW Setup", raw_disk)
+        self.assertEqual(
+            output.read_bytes(),
+            ndif_macbinary("New Old World Setup.img", "NOW Setup", disk))
 
     def test_generic_image_builder_produces_ndif_macbinary(self) -> None:
         app = self.root / "New Old World.bin"

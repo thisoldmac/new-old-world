@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import binascii
 import plistlib
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -12,17 +14,33 @@ from .profile import ReleaseRefusal
 
 
 def _crc16(data: bytes) -> int:
-    crc = 0
-    for byte in data:
-        crc ^= byte << 8
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (
-                crc << 1) & 0xFFFF
-    return crc
+    return binascii.crc_hqx(data, 0)
 
 
 def _padded(length: int) -> int:
     return (length + 127) // 128 * 128
+
+
+def _macbinary_header(name: str, file_type: bytes, creator: bytes,
+                      finder_flags: int, data_length: int,
+                      resource_length: int) -> bytes:
+    name_bytes = name.encode("mac_roman")
+    if (not 1 <= len(name_bytes) <= 63 or len(file_type) != 4
+            or len(creator) != 4):
+        raise ReleaseRefusal("classic filename, type, or creator is invalid")
+    header = bytearray(128)
+    header[1] = len(name_bytes)
+    header[2:2 + len(name_bytes)] = name_bytes
+    header[65:69] = file_type
+    header[69:73] = creator
+    header[73] = finder_flags >> 8
+    header[101] = finder_flags & 0xFF
+    struct.pack_into(">I", header, 83, data_length)
+    struct.pack_into(">I", header, 87, resource_length)
+    header[122] = 129
+    header[123] = 129
+    struct.pack_into(">H", header, 124, _crc16(header[:124]))
+    return bytes(header)
 
 
 @dataclass(frozen=True)
@@ -57,22 +75,10 @@ class MacBinaryFile:
         )
 
     def encode(self) -> bytes:
-        name = self.name.encode("mac_roman")
-        if not 1 <= len(name) <= 63 or len(self.file_type) != 4 or len(self.creator) != 4:
-            raise ReleaseRefusal("classic filename, type, or creator is invalid")
-        header = bytearray(128)
-        header[1] = len(name)
-        header[2:2 + len(name)] = name
-        header[65:69] = self.file_type
-        header[69:73] = self.creator
-        header[73] = self.finder_flags >> 8
-        header[101] = self.finder_flags & 0xFF
-        struct.pack_into(">I", header, 83, len(self.data_fork))
-        struct.pack_into(">I", header, 87, len(self.resource_fork))
-        header[122] = 129
-        header[123] = 129
-        struct.pack_into(">H", header, 124, _crc16(header[:124]))
-        return bytes(header) + self.data_fork + bytes(
+        header = _macbinary_header(
+            self.name, self.file_type, self.creator, self.finder_flags,
+            len(self.data_fork), len(self.resource_fork))
+        return header + self.data_fork + bytes(
             _padded(len(self.data_fork)) - len(self.data_fork)
         ) + self.resource_fork + bytes(
             _padded(len(self.resource_fork)) - len(self.resource_fork)
@@ -162,17 +168,43 @@ def build_generic_image(output: Path, application: Path, extension: Path,
             ])
         finally:
             _run(["/usr/bin/hdiutil", "detach", device])
-        output.write_bytes(ndif_macbinary(
-            "New Old World Setup.img", "NOW Setup", raw_disk.read_bytes()))
+        write_ndif_macbinary(
+            output, "New Old World Setup.img", "NOW Setup", raw_disk)
 
 
 def ndif_macbinary(name: str, volume_name: str, disk: bytes) -> bytes:
-    if not disk or len(disk) % 512 or len(disk) > 0xFFFFFFFF:
+    resource = _ndif_resource(volume_name, len(disk))
+    return MacBinaryFile(
+        name=name, file_type=b"rohd", creator=b"ddsk", finder_flags=0,
+        data_fork=disk, resource_fork=resource,
+    ).encode()
+
+
+def write_ndif_macbinary(output: Path, name: str, volume_name: str,
+                         raw_disk: Path) -> None:
+    try:
+        disk_length = raw_disk.stat().st_size
+        resource = _ndif_resource(volume_name, disk_length)
+        header = _macbinary_header(
+            name, b"rohd", b"ddsk", 0, disk_length, len(resource))
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with raw_disk.open("rb") as source, output.open("wb") as destination:
+            destination.write(header)
+            shutil.copyfileobj(source, destination, length=1024 * 1024)
+            destination.write(bytes(_padded(disk_length) - disk_length))
+            destination.write(resource)
+            destination.write(bytes(_padded(len(resource)) - len(resource)))
+    except OSError as exc:
+        raise ReleaseRefusal(f"could not wrap raw setup image: {exc}") from exc
+
+
+def _ndif_resource(volume_name: str, disk_length: int) -> bytes:
+    if not disk_length or disk_length % 512 or disk_length > 0xFFFFFFFF:
         raise ReleaseRefusal("raw HFS disk must contain complete 512-byte sectors")
     name_bytes = volume_name.encode("mac_roman")
     if not 1 <= len(name_bytes) <= 63:
         raise ReleaseRefusal("NDIF volume name is invalid")
-    sectors = len(disk) // 512
+    sectors = disk_length // 512
     block_map = bytearray(128)
     struct.pack_into(">H", block_map, 0, 11)
     block_map[4] = len(name_bytes)
@@ -180,13 +212,9 @@ def ndif_macbinary(name: str, volume_name: str, disk: bytes) -> bytes:
     struct.pack_into(">I", block_map, 68, sectors)
     struct.pack_into(">I", block_map, 72, 0x201)
     struct.pack_into(">I", block_map, 124, 2)
-    block_map.extend(struct.pack(">III", 0x02, 0, len(disk)))
+    block_map.extend(struct.pack(">III", 0x02, 0, disk_length))
     block_map.extend(struct.pack(">III", (sectors << 8) | 0xFF, 0, 0))
-    resource = _single_resource(b"bcem", 128, volume_name, bytes(block_map))
-    return MacBinaryFile(
-        name=name, file_type=b"rohd", creator=b"ddsk", finder_flags=0,
-        data_fork=disk, resource_fork=resource,
-    ).encode()
+    return _single_resource(b"bcem", 128, volume_name, bytes(block_map))
 
 
 def _single_resource(resource_type: bytes, resource_id: int, name: str,
