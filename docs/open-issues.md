@@ -7,7 +7,7 @@ search:
 
 # Open issues
 
-## TESTED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
+## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
 While the guest owns the pointer, the host now captures key-down, key-up, and
 repeat events behind a per-guest **Send keyboard input to guest** toggle that
@@ -31,11 +31,13 @@ resident applied/failed/dropped/flush counters in the guest log.
 
 The escape guard, target-context drain, queue bound, and process-switch fence
 were each mutation-checked against the regression they name. Focused host,
-native, and guest/extension cross-build gates pass. This is **Tested, not
-metal-verified**. The first slice covers Event Manager consumers and modifier
-bits; it deliberately does not synthesize `GetKeys`, physical ADB key state, or
-hardware repeat. A `queued` report is not an applied acknowledgement, so the
-PowerBook run must check the resident counters as well as visible typing.
+native, and guest/extension cross-build gates pass. An attended PowerBook run
+of the exact `2207f3da` host, guest, and resident package then confirmed the
+keyboard-control slice end to end; the user reported that it worked correctly.
+This establishes the real macOS capture, reliable wire, PPC queue, resident
+target-context post, and host-owned return path as **metal-verified**. The first
+slice covers Event Manager consumers and modifier bits; it deliberately does
+not synthesize `GetKeys`, physical ADB key state, or hardware repeat.
 
 ## METAL-VERIFIED CORE; LAYOUT HARDENING TESTED: Mirror Cursor and Continuity Mode are separate host surfaces (2026-08-12, `feat/continuity-screen-edge`)
 

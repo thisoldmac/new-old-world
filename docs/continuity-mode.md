@@ -232,8 +232,10 @@ This first slice models Event Manager input, including modifiers on ordinary
 key events. It does not synthesize `GetKeys`, physical ADB keyboard state, or
 hardware-level repeat. `continuity.keyReport` means the event was accepted by
 the bounded queue; resident applied/failed/dropped counters remain the evidence
-for delivery on the guest. The implementation is Tested locally and requires
-an attended PowerBook run before it is metal-verified.
+for delivery on the guest. An attended PowerBook run of the exact `2207f3da`
+host, guest, and resident package confirmed the keyboard-control slice end to
+end, including return of control to the host. The route is metal-verified for
+the Event Manager scope above.
 
 ## Evidence and remaining work
 
