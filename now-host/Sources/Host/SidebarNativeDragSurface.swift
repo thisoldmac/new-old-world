@@ -123,7 +123,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
             feedback = NavigationDragFeedbackState()
             return []
         }
-        feedback.enter(target, eligible: true)
+        feedback.enter(target)
         showDropHighlight(true)
         sender.numberOfValidItemsForDrop = 1
         return .move
@@ -232,7 +232,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
             .withAlphaComponent(0.28).cgColor
         animation.duration = 0.13
         animation.autoreverses = true
-        animation.repeatCount = 2
+        animation.repeatCount = NavigationSpringLoadFlash.animationRepeatCount
         layer.add(animation, forKey: "navigation-double-flash")
     }
 }

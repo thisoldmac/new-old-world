@@ -25,9 +25,4 @@ final class SettingsWindowController: NSWindowController {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is unavailable")
     }
-
-    override func showWindow(_ sender: Any?) {
-        super.showWindow(sender)
-        window?.makeKeyAndOrderFront(sender)
-    }
 }

@@ -132,6 +132,8 @@ final class NavigationLayoutTests: XCTestCase {
 
 @MainActor
 final class NavigationLayoutStoreTests: XCTestCase {
+    private let known = ["screen", "files", "console", "chat"]
+
     private func defaults() throws -> UserDefaults {
         let suite = "NavigationLayoutStoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -150,6 +152,27 @@ final class NavigationLayoutStoreTests: XCTestCase {
         let data = try XCTUnwrap(defaults.data(forKey: "navigationLayout"))
         let decoded = try JSONDecoder().decode(NavigationLayout.self, from: data)
         XCTAssertEqual(decoded.version, NavigationLayout.currentVersion)
+    }
+
+    func testLegacyOrderNormalizationKeepsKnownOrderAndAppendsNewModules() {
+        XCTAssertEqual(
+            LegacySidebarOrder.normalised(
+                ["chat", "screen", "files"], against: known),
+            ["chat", "screen", "files", "console"])
+    }
+
+    func testLegacyOrderNormalizationDropsUnknownsAndDuplicates() {
+        XCTAssertEqual(
+            LegacySidebarOrder.normalised(
+                ["chat", "gone", "chat", "screen"], against: known),
+            ["chat", "screen", "files", "console"])
+    }
+
+    func testLegacyOrderNormalizationPreservesRenamedModulePosition() {
+        XCTAssertEqual(
+            LegacySidebarOrder.normalised(
+                ["screenshots", "chat", "screen", "files"], against: known),
+            ["screen", "chat", "files", "console"])
     }
 
     func testCorruptDataRepairsToTheAcceptedDefault() throws {

@@ -170,10 +170,6 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         NavigationZone.allCases.flatMap { items(in: $0).flatMap(\.moduleIDs) }
     }
 
-    var drawerModuleCount: Int {
-        drawer.reduce(0) { $0 + $1.moduleIDs.count }
-    }
-
     func items(in zone: NavigationZone) -> [NavigationItem] {
         switch zone {
         case .upper: upper
@@ -250,7 +246,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
                                      registry: ModuleRegistry) -> NavigationLayout {
         var layout = standard(for: registry)
         let known = registry.modules.map(\.id)
-        let order = SidebarPreferences.sanitised(stored, against: known)
+        let order = LegacySidebarOrder.normalised(stored, against: known)
         let rank = Dictionary(uniqueKeysWithValues: order.enumerated().map {
             ($0.element, $0.offset)
         })
@@ -456,8 +452,8 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         }
     }
 
-    private mutating func setItems(_ items: [NavigationItem],
-                                   in zone: NavigationZone) {
+    mutating func setItems(_ items: [NavigationItem],
+                           in zone: NavigationZone) {
         switch zone {
         case .upper: upper = items
         case .lower: lower = items

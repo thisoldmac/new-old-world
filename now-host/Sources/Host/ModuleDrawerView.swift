@@ -13,8 +13,7 @@ struct ModuleDrawerView: View {
     @State private var hovering = false
 
     private var summary: NavigationDrawerSummary {
-        NavigationDrawerSummary(layout: NavigationLayout(
-            upper: [], lower: [], drawer: items))
+        NavigationDrawerSummary(items: items)
     }
 
     var body: some View {

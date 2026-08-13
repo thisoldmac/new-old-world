@@ -1,11 +1,5 @@
 import SwiftUI
 
-enum GlassRendering: Equatable {
-    case material
-    case clear
-    case regular
-}
-
 /// Pure policy behind the visual modifiers. Keeping runtime and accessibility
 /// fallback here makes the macOS 13 path testable without pretending a build
 /// has exercised an older OS.
@@ -13,15 +7,11 @@ enum GlassSelection {
     static func resolve(preference: LiquidGlassPreference,
                         supportsLiquidGlass: Bool,
                         reduceTransparency: Bool,
-                        increasedContrast: Bool) -> GlassRendering {
+                        increasedContrast: Bool) -> LiquidGlassPreference {
         guard supportsLiquidGlass,
               !reduceTransparency,
               !increasedContrast else { return .material }
-        return switch preference {
-        case .material: .material
-        case .clear: .clear
-        case .regular: .regular
-        }
+        return preference
     }
 }
 

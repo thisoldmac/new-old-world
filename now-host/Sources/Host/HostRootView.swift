@@ -51,7 +51,7 @@ struct HostRootView: View {
            let shelf = sidebar.layout.shelf(id: selectedHeroShelfID) {
             return NavigationSelection.selectingHero(of: shelf)
         }
-        return NavigationSelection.restoring(
+        return NavigationSelection.selecting(
             moduleID: state.selectedModuleID,
             in: sidebar.layout)
     }

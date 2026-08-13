@@ -67,21 +67,4 @@ final class ModuleAvailabilityPresentationTests: XCTestCase {
             .unavailable)
     }
 
-    func testConnectionPresentationDoesNotMoveTheCurrentSelection() {
-        let layout = NavigationLayout.standard(for: .standard)
-        let selection = NavigationSelection.selecting(
-            moduleID: "software", in: layout)
-
-        _ = ModuleAvailabilityPresentation.resolve(
-            moduleID: "software",
-            status: .connected(name: "PowerBook", quietFor: 0))
-        _ = ModuleAvailabilityPresentation.resolve(
-            moduleID: "software", status: .waiting(port: 5250))
-        _ = ModuleAvailabilityPresentation.resolve(
-            moduleID: "software",
-            status: .connected(name: "PowerBook", quietFor: 0))
-
-        XCTAssertEqual(selection.destination, .module("software"))
-        XCTAssertEqual(selection.containingShelfID, .machine)
-    }
 }

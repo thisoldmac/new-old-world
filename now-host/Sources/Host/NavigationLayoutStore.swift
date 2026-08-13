@@ -1,5 +1,29 @@
 import Foundation
 
+/// Read-only compatibility for the flat sidebar order used before shelves.
+/// New writes go exclusively through `NavigationLayoutStore`.
+enum LegacySidebarOrder {
+    static func normalised(_ stored: [String],
+                           against known: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+
+        for storedID in stored {
+            let id = known.contains(storedID)
+                ? storedID
+                : ModuleRegistry.renamedIDs[storedID].flatMap {
+                    known.contains($0) ? $0 : nil
+                }
+            guard let id, seen.insert(id).inserted else { continue }
+            result.append(id)
+        }
+        for id in known where seen.insert(id).inserted {
+            result.append(id)
+        }
+        return result
+    }
+}
+
 struct NavigationLayoutStore {
     static let layoutKey = "navigationLayout"
 

@@ -232,15 +232,14 @@ private struct SidebarNavigationItemView: View {
         switch item {
         case .module(let moduleID):
             if let module = registry.module(id: moduleID) {
+                let moduleSelection = NavigationSelection
+                    .selectingLooseModule(moduleID)
                 SidebarLooseModuleRow(
                     module: module,
                     compact: compact,
                     collapsed: collapsed,
                     isSelected: selection.destination == .module(moduleID)) {
-                        select(NavigationSelection.selecting(
-                            moduleID: moduleID,
-                            in: NavigationLayout(
-                                upper: [item], lower: [], drawer: [])))
+                        select(moduleSelection)
                     }
                     .overlay(SidebarNativeDragSurface(
                         payload: .module(moduleID),
@@ -248,10 +247,7 @@ private struct SidebarNavigationItemView: View {
                         canDrop: dragActions.canDrop,
                         performDrop: dragActions.performDrop,
                         activate: {
-                            select(NavigationSelection.selecting(
-                                moduleID: moduleID,
-                                in: NavigationLayout(
-                                    upper: [item], lower: [], drawer: [])))
+                            select(moduleSelection)
                         }))
             }
         case .shelf(let shelf):

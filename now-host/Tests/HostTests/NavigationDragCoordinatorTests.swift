@@ -120,20 +120,25 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         layout.drawer.append(.module("chat"))
         layout.upper.removeAll { $0 == .module("chat") }
 
-        XCTAssertEqual(NavigationDrawerSummary(layout: layout),
+        XCTAssertEqual(NavigationDrawerSummary(items: layout.drawer),
                        NavigationDrawerSummary(moduleCount: 5,
                                                containsNetworkShelf: true))
     }
 
-    func testSpringLoadingFeedbackArmsOnceAndRequestsTwoFlashes() {
+    func testSpringLoadingFeedbackArmsOnlyOncePerEntry() {
         var feedback = NavigationDragFeedbackState()
         let target = NavigationDropTarget.zone(.drawer, index: 0)
 
-        feedback.enter(target, eligible: true)
+        feedback.enter(target)
         XCTAssertTrue(feedback.activateSpringLoading(for: target))
-        XCTAssertEqual(feedback.flashCount, 2)
         XCTAssertFalse(feedback.activateSpringLoading(for: target))
         feedback.exit(target)
         XCTAssertNil(feedback.target)
+    }
+
+    func testSpringLoadingUsesTheDoubleFlashSpec() {
+        XCTAssertEqual(NavigationSpringLoadFlash.count, 2)
+        XCTAssertEqual(NavigationSpringLoadFlash.animationRepeatCount,
+                       Float(NavigationSpringLoadFlash.count))
     }
 }

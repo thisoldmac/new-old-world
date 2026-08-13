@@ -54,7 +54,8 @@ struct NavigationDragCoordinator {
             guard (0...layout.items(in: zone).count).contains(index) else {
                 return nil
             }
-            if case .shelf(.machine) = dragged, zone == .drawer {
+            if case .shelf(let shelfID) = dragged,
+               zone == .drawer, !shelfID.canEnterDrawer {
                 return nil
             }
             return .move(dragged, to: zone, index: index)
@@ -90,7 +91,8 @@ extension NavigationLayout {
             guard let movingItem = changed.navigationItem(for: dragged) else {
                 throw NavigationLayoutCommandError.missingSource
             }
-            if case .shelf(.machine) = dragged, zone == .drawer {
+            if case .shelf(let shelfID) = dragged,
+               zone == .drawer, !shelfID.canEnterDrawer {
                 throw NavigationLayoutCommandError.invalidTarget
             }
             let origin = changed.topLevelLocation(of: dragged)
@@ -124,7 +126,7 @@ extension NavigationLayout {
             var items = changed.items(in: target.zone)
             items[target.index] = .shelf(NavigationShelf(
                 id: shelfID, moduleIDs: [targetID, moduleID]))
-            changed.set(items, in: target.zone)
+            changed.setItems(items, in: target.zone)
 
         case .insert(let moduleID, let shelfID, let beforeModuleID):
             guard changed.contains(.module(moduleID)) else {
@@ -149,7 +151,7 @@ extension NavigationLayout {
             destination.moduleIDs.insert(moduleID, at: index)
             var items = changed.items(in: location.zone)
             items[location.index] = .shelf(destination)
-            changed.set(items, in: location.zone)
+            changed.setItems(items, in: location.zone)
         }
         return changed
     }
@@ -213,14 +215,14 @@ extension NavigationLayout {
             }
             var items = items(in: location.zone)
             items.remove(at: location.index)
-            set(items, in: location.zone)
+            setItems(items, in: location.zone)
             return true
 
         case .module(let moduleID):
             if let location = looseModuleLocation(moduleID) {
                 var items = items(in: location.zone)
                 items.remove(at: location.index)
-                set(items, in: location.zone)
+                setItems(items, in: location.zone)
                 return true
             }
             for zone in NavigationZone.allCases {
@@ -235,15 +237,15 @@ extension NavigationLayout {
                 if case .user = shelf.id, shelf.moduleIDs.count < 2 {
                     if let remaining = shelf.moduleIDs.first {
                         items[itemIndex] = .module(remaining)
-                        set(items, in: zone)
+                        setItems(items, in: zone)
                         return false
                     }
                     items.remove(at: itemIndex)
-                    set(items, in: zone)
+                    setItems(items, in: zone)
                     return true
                 }
                 items[itemIndex] = .shelf(shelf)
-                set(items, in: zone)
+                setItems(items, in: zone)
                 return false
             }
             throw NavigationLayoutCommandError.missingSource
@@ -255,16 +257,7 @@ extension NavigationLayout {
                                  at index: Int) {
         var items = items(in: zone)
         items.insert(item, at: index)
-        set(items, in: zone)
-    }
-
-    private mutating func set(_ items: [NavigationItem],
-                              in zone: NavigationZone) {
-        switch zone {
-        case .upper: upper = items
-        case .lower: lower = items
-        case .drawer: drawer = items
-        }
+        setItems(items, in: zone)
     }
 }
 
@@ -277,9 +270,9 @@ struct NavigationDrawerSummary: Equatable, Sendable {
         self.containsNetworkShelf = containsNetworkShelf
     }
 
-    init(layout: NavigationLayout) {
-        moduleCount = layout.drawerModuleCount
-        containsNetworkShelf = layout.drawer.contains {
+    init(items: [NavigationItem]) {
+        moduleCount = items.reduce(0) { $0 + $1.moduleIDs.count }
+        containsNetworkShelf = items.contains {
             guard case .shelf(let shelf) = $0 else { return false }
             return shelf.id == .network
         }
@@ -288,20 +281,17 @@ struct NavigationDrawerSummary: Equatable, Sendable {
 
 struct NavigationDragFeedbackState: Equatable, Sendable {
     private(set) var target: NavigationDropTarget?
-    private(set) var flashCount = 0
     private var activated = false
 
-    mutating func enter(_ target: NavigationDropTarget, eligible: Bool) {
-        self.target = eligible ? target : nil
+    mutating func enter(_ target: NavigationDropTarget) {
+        self.target = target
         activated = false
-        flashCount = 0
     }
 
     mutating func activateSpringLoading(for target: NavigationDropTarget)
         -> Bool {
         guard self.target == target, !activated else { return false }
         activated = true
-        flashCount = 2
         return true
     }
 
@@ -309,6 +299,10 @@ struct NavigationDragFeedbackState: Equatable, Sendable {
         guard self.target == target else { return }
         self.target = nil
         activated = false
-        flashCount = 0
     }
+}
+
+enum NavigationSpringLoadFlash {
+    static let count = 2
+    static var animationRepeatCount: Float { Float(count) }
 }

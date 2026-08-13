@@ -14,16 +14,16 @@ struct NavigationSelection: Equatable, Sendable {
     let destination: NavigationDestination
     let containingShelfID: NavigationShelfID?
 
-    static func restoring(moduleID: String,
-                          in layout: NavigationLayout) -> NavigationSelection {
-        selecting(moduleID: moduleID, in: layout)
-    }
-
     static func selecting(moduleID: String,
                           in layout: NavigationLayout) -> NavigationSelection {
         NavigationSelection(
             destination: .module(moduleID),
             containingShelfID: containingShelf(for: moduleID, in: layout))
+    }
+
+    static func selectingLooseModule(_ moduleID: String) -> NavigationSelection {
+        NavigationSelection(destination: .module(moduleID),
+                            containingShelfID: nil)
     }
 
     static func selectingHero(of shelf: NavigationShelf) -> NavigationSelection {

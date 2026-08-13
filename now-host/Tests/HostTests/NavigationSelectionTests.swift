@@ -10,7 +10,7 @@ final class NavigationSelectionTests: XCTestCase {
         defaults.set("software", forKey: "selectedModuleID")
 
         let state = HostAppState(registry: .standard, defaults: defaults)
-        let selection = NavigationSelection.restoring(
+        let selection = NavigationSelection.selecting(
             moduleID: state.selectedModuleID,
             in: .standard(for: .standard))
 
@@ -20,7 +20,7 @@ final class NavigationSelectionTests: XCTestCase {
     }
 
     func testPersistedModuleSelectionRestoresInsideItsShelf() {
-        let selection = NavigationSelection.restoring(
+        let selection = NavigationSelection.selecting(
             moduleID: "software",
             in: .standard(for: .standard))
 
@@ -62,10 +62,8 @@ final class NavigationSelectionTests: XCTestCase {
     }
 
     func testLooseModuleSelectionHasNoContainingShelf() {
-        let layout = NavigationLayout.standard(for: .standard)
-
         XCTAssertEqual(
-            NavigationSelection.selecting(moduleID: "chat", in: layout),
+            NavigationSelection.selectingLooseModule("chat"),
             NavigationSelection(destination: .module("chat"),
                                 containingShelfID: nil))
     }
