@@ -42,7 +42,7 @@ private enum MirrorStateProjectionReach {
            so naming the container would name the lesser half. The window
            hosts this same view; the view is the face. */
         .appUI: .reached(file: "MirrorPaneView.swift",
-                         symbol: "LiveMirrorView(controller: source"),
+                         symbol: "LiveMirrorView(controller: source,"),
         .mcp: .reachedByRegistry,
         .appIntents: .appIntentsFaceNotBuiltYet,
     ]

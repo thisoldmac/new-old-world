@@ -1013,6 +1013,13 @@ struct FileGet: Codable, Equatable, Sendable {
     var path: String
     var container: String?
     var developmentProject: String? = nil
+    var mirrorSource: MirrorFileSource? = nil
+}
+
+struct MirrorFileSource: Codable, Equatable, Sendable {
+    var kind: String
+    var name: String
+    var path: String? = nil
 }
 
 /// Ask the other machine for its running processes. Read-only and
@@ -1203,6 +1210,17 @@ struct FileOffer: Codable, Equatable, Sendable {
     /// Private Development coordinator destination. No agent-facing file
     /// request can set this field.
     var developmentCandidate: String? = nil
+    /// Human-authored release over Mirror. Closed and receiver-resolved: it
+    /// cannot express an arbitrary destination as a side effect of a put.
+    var mirrorDrop: MirrorFileDrop? = nil
+}
+
+struct MirrorFileDrop: Codable, Equatable, Sendable {
+    var kind: String
+    var path: String? = nil
+    var psn: String? = nil
+    var creator: String? = nil
+    var name: String? = nil
 }
 
 struct FileAccept: Codable, Equatable, Sendable {

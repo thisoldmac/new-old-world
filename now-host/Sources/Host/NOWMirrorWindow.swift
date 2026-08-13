@@ -28,6 +28,7 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
     private var didFit = false
     private let source: NOWMirrorSource
     private let presentation: MirrorPresentation
+    private let fileTransfer: MirrorFileTransferModel
     /// The guest's screen, when something already knows it. Normally
     /// nothing does at this point — the window opens before the first
     /// scene arrives — and `fitToGuestScreen` corrects the window once
@@ -39,11 +40,13 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
 
     init(source: NOWMirrorSource,
          presentation: MirrorPresentation,
+         fileTransfer: MirrorFileTransferModel,
          screen: MirrorKit.Scene.ScreenSize? = nil,
          launchOptions: MirrorLaunchOptions = .parse(
             ProcessInfo.processInfo.arguments)) {
         self.source = source
         self.presentation = presentation
+        self.fileTransfer = fileTransfer
         self.screen = screen
         requestedScale = launchOptions.scale
     }
@@ -64,6 +67,7 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
             let controller = NSHostingController(
                 rootView: MirrorPaneView(source: source,
                                          presentation: presentation,
+                                         fileTransfer: fileTransfer,
                                          container: .detachedWindow))
             /* The WINDOW owns its size, not the scene inside it. Without
                this an arriving scene republishes its own ideal size as a

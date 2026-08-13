@@ -48,6 +48,7 @@ struct MirrorModuleView: View {
     @ObservedObject var run: MirrorRunControl
     @ObservedObject var presentation: MirrorPresentation
     @ObservedObject var window: NOWMirrorWindow
+    @ObservedObject var fileTransfer: MirrorFileTransferModel
     let connectedMachineName: String
     @ObservedObject var timeline: MirrorActTimeline
     @ObservedObject var cycles: MirrorCycleTimeline
@@ -82,6 +83,7 @@ struct MirrorModuleView: View {
                 VStack(spacing: 0) {
                     content
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    transferStatus
                     if !presentation.isDetached {
                         eventDrawer
                     }
@@ -135,7 +137,54 @@ struct MirrorModuleView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             MirrorPaneView(source: source, presentation: presentation,
+                           fileTransfer: fileTransfer,
                            container: .modulePane)
+        }
+    }
+
+    @ViewBuilder
+    private var transferStatus: some View {
+        if let activity = fileTransfer.activity {
+            Divider()
+            HStack(spacing: 10) {
+                Text(activity.label)
+                    .font(.caption)
+                    .lineLimit(1)
+                if activity.expected > 0 && !activity.awaitingSettlement {
+                    ProgressView(value: Double(activity.received),
+                                 total: Double(activity.expected))
+                        .progressViewStyle(.linear)
+                        .frame(maxWidth: 180)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                if activity.awaitingSettlement {
+                    Text("finishing on the other Mac…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.bar)
+        } else if let notice = fileTransfer.notice {
+            Divider()
+            HStack(spacing: 8) {
+                Text(notice).font(.caption).lineLimit(2)
+                Spacer(minLength: 0)
+                Button {
+                    fileTransfer.clearNotice()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss file transfer status")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.bar)
         }
     }
 

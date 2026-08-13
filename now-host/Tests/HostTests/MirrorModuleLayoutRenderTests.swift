@@ -80,6 +80,7 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
                                      run: rig.run,
                                      presentation: rig.presentation,
                                      window: rig.window,
+                                     fileTransfer: rig.fileTransfer,
                                      connectedMachineName: "Power Mac G4",
                                      timeline: rig.source.actTimeline,
                                      cycles: rig.source.cycleTimeline)
@@ -105,6 +106,7 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
                              run: rig.run,
                              presentation: rig.presentation,
                              window: rig.window,
+                             fileTransfer: rig.fileTransfer,
                              connectedMachineName: "Power Mac G4",
                              timeline: rig.source.actTimeline,
                              cycles: rig.source.cycleTimeline)
@@ -183,6 +185,7 @@ extension MirrorModuleLayoutRenderTests {
         let run: MirrorRunControl
         let presentation: MirrorPresentation
         let window: NOWMirrorWindow
+        let fileTransfer: MirrorFileTransferModel
     }
 
     /// A probe that answers with facts rather than with a connection.
@@ -247,10 +250,14 @@ extension MirrorModuleLayoutRenderTests {
                                        defaults: defaults)
         model.connection = .connected(name: "Power Mac G4", key: key)
         model.refreshLifecycle()
+        let fileTransfer = MirrorFileTransferModel(listener: listener)
+        fileTransfer.connection = model.connection
         return Rig(model: model, source: source, run: run,
                    presentation: presentation,
                    window: NOWMirrorWindow(source: source,
-                                           presentation: presentation))
+                                           presentation: presentation,
+                                           fileTransfer: fileTransfer),
+                   fileTransfer: fileTransfer)
     }
 
     /// Acts and cycles a drive would actually have produced: a couple

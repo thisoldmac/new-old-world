@@ -95,6 +95,72 @@ cursor was already hidden, acquiring it across the edge drove its position but
 did not redraw it. That task-time reveal correction belongs to the active
 resident/input lane and is not contained in this host-only branch.
 
+## TESTED; METAL UNVERIFIED: Continuity carries file drags through its configured screen edge (2026-08-12, `feat/mirror-drag-drop`)
+
+Continuity Mode now gives the configured shared display boundary a two-point,
+transparent AppKit drag destination. A native macOS file URL or file promise
+entering that edge retains its host pasteboard while the existing relative
+pointer lane drives the visible guest target; release resolves the current
+guest desktop, exact Finder folder, or application identity before reusing the
+existing symmetric copy contract. In the other direction, mouse-down on an
+exact guest regular file retains that source while the normal Continuity
+pointer performs the guest drag. Crossing back through the shared edge
+releases the guest button and begins a native `NSFilePromiseProvider` drag at
+the corresponding host point with the guest icon when available. Finder, the
+host desktop, or the host application under release then owns the destination.
+
+No new wire field, guest handler, resident table, Extension code, ADB path, or
+keyboard feature is involved. Both directions converge on
+`MirrorFileTransferModel`, so they retain copy-only behavior, conversion,
+single-lane progress, exact source/target refusal, and the existing PowerPC-only
+and regular-file-only limits. Ordinary Continuity pointer gestures retain their
+existing path when mouse-down does not resolve a transferable guest item.
+
+The two ownership tests were watched failing against their exact mutations:
+disabling takeover at the guest return edge produced no host native drag, and
+routing an inbound host pasteboard as a guest held-item gesture produced an
+unexpected guest dragged point. After restoring both guards, the 15-test
+Continuity suite, MirrorKit gate, both 2,232-test host asset modes (56 and 73
+expected skips), isolated socket test, and unsigned Debug and Release app
+builds pass. This is therefore **tested, not metal-verified**. A real host and
+PowerBook run still has to establish AppKit delivery to the transparent edge,
+native drag-session continuation from an already-held guest gesture, icon
+placement, and both release targets.
+
+## TESTED: Mirror mode has a copy-on-drop file lane (2026-08-12, `feat/mirror-drag-drop`)
+
+With Mirror Cursor off, the host now binds the resolved guest file to a native
+file promise at mouse-down and begins an AppKit drag as soon as movement crosses
+the six-pixel threshold, without waiting for the Mirror edge. It also accepts
+host file URLs released over the mirrored desktop, exact Finder folder, or
+application. The PPC guest independently resolves the closed source or
+destination identity, then reuses the checked symmetric file bulk lane. Text
+and MacBinary conversion, original icon when available, progress, and explicit
+application refusal are carried through the existing host services. This
+version copies regular files only: no folder traversal, move, overwrite,
+NOW-68K, or Continuity screen-edge drop is implied.
+
+The resolver was watched failing when an exact Finder path was mutated to a
+window title, the application-settlement guard was watched failing when
+`kAEOpenDocuments` was mutated, and the app-UI reachability guard was watched
+failing when the Mirror call-site token was removed. The complete repository
+gate passes locally: 186 native tests, MirrorKit, every guest and resident
+cross-build, 2,225 host tests in asset mode (56 expected skips), honest-
+degradation mode, the isolated socket test, and unsigned Debug and Release app
+builds. An attended PowerBook pass on `d44491f5` proved host-to-guest copy, then
+found guest-to-host could not attach to its source; the `b8fc1bb2` input-order
+correction did not change that result. That exposed the mistaken prerequisite:
+the copy path was trying to begin a resident-backed guest item drag and only
+converted it to an AppKit drag after crossing the Mirror edge, while Mirror's
+own item dragging has not been established as working. `23bc0610` removes that
+dependency. The promise writer retains the exact guest source; the scene item
+only supplies selection geometry and its original icon. At drag threshold the
+host selects the guest item and gives the writer directly to AppKit. Mirror
+Cursor still owns its own gestures, and no guest item-drag, ADB, direct-pointer,
+or resident path participates. The mode guard and edge-independence guard were
+each watched failing against their exact mutations, and the MirrorKit gate
+passes; guest-to-host now needs the attended metal retest.
+
 ## TESTED: Continuity now sits on the atomic module foundation (2026-08-12, `feat/continuity-direct-pointer`)
 
 The Continuity and SheepShaver work has been merged with the public pre-RC

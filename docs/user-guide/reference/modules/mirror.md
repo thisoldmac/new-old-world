@@ -7,9 +7,9 @@ audience: user
 lifecycle: experimental
 authority: [docs/mirror-knowledge.md, docs/mirror-drive-loop.md]
 module_ids: [mirror]
-source_dependencies: [docs/mirror-knowledge.md, docs/mirror-drive-loop.md, now-host/Packages/MirrorKit, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/MirrorStateProjectionService.swift, now-guest-ppc/src/mirror, contract/asyncapi.yaml, contract/peek_table.h]
+source_dependencies: [docs/mirror-knowledge.md, docs/mirror-drive-loop.md, now-host/Packages/MirrorKit, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/MirrorStateProjectionService.swift, now-host/Sources/Host/MirrorFileTransferModel.swift, now-guest-ppc/src/mirror, now-guest-ppc/src/files/files_drop.c, contract/asyncapi.yaml, contract/peek_table.h]
 media_ids: [mirror-host, mirror-ppc, mirror-detail]
-last_verified: 2026-08-09
+last_verified: 2026-08-12
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -52,6 +52,13 @@ application.
 
 - Observe before enabling act controls.
 - Read provenance and Extension status before interpreting an empty interior.
+- In Mirror mode, drag a host file onto the guest desktop, a Finder folder
+  window or folder icon, or an application window or icon. The copy and any
+  text/MacBinary conversion begin on release; the Mirror status strip reports
+  transfer progress and final settlement.
+- Drag a guest file out of the desktop or an observed Finder window. The host
+  shows a native file-promise stub using the guest icon when available, and
+  transfers only when the Finder or a host application accepts the drop.
 
 ![A settled Mirror action followed by an authoritative reread](../../../assets/screenshots/modules/mirror/detail.svg){ .now-placeholder }
 
@@ -76,6 +83,18 @@ a rendering claim.
 Queued human work does not preempt a guest traversal already running. The new
 scheduler and coherent publication path are tested locally, but the PowerBook
 1400c ambient-wait target is not metal-verified.
+
+Cross-machine drag is PowerPC-only in this first version. It works both over
+the rendered Mirror and through the configured Continuity display edge. A
+native host file can continue onto the guest display and settle on its desktop,
+an exact Finder folder, or an application. A guest file dragged back through
+the shared edge becomes an ordinary macOS file-promise drag, with the guest
+icon when available, so the host Finder, desktop, or application under release
+owns the destination. It copies regular files one at a time; folders, move
+semantics, overwrite, and NOW-68K are not included. A Finder target must carry
+an exact guest HFS path, and an application target must still accept the
+delivered document; either uncertainty is reported rather than replaced with a
+nearby guess. The Continuity edge lane is tested locally but not metal-verified.
 
 ## For developers
 

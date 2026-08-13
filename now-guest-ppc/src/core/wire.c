@@ -12,6 +12,7 @@
 #include "capture.h"
 #include "cloud_preview.h"
 #include "fileshare.h"
+#include "files_drop.h"
 #include "commands.h"
 #include "census.h"
 #include "console_model.h"   /* the exec plane runs the Console's dispatch */
@@ -4339,7 +4340,66 @@ static struct {
     NowUpdateComponent update_component;
     NowSHA256 update_sha;
     char update_sha256[65];
+    Boolean mirror_drop;
+    NowMirrorFileTarget drop_target;
 } g_put;
+
+/* A nested target is copied out before flat lookup. Without that boundary,
+   mirrorDrop.name and file.offer.name are the same key to this guest's
+   allocation-free scanner, and whichever appeared first would silently win. */
+static int mirror_file_target(const char *request, const char *key,
+                              Boolean source, NowMirrorFileTarget *out)
+{
+    const char *value = now_json_value(request, key);
+    char object[512];
+    char kind[40];
+    char psn[48];
+    char creator[8];
+    unsigned long hi, lo;
+    char trailing;
+
+    memset(out, 0, sizeof *out);
+    if (value == NULL) return 0;
+    if (now_json_next_object(value, object, sizeof object) == NULL
+        || !now_json_find_string(object, "kind", kind, sizeof kind)) {
+        return -1;
+    }
+    now_json_find_text(object, "name", out->name, sizeof out->name);
+    now_json_find_text(object, "path", out->path, sizeof out->path);
+    if (source) {
+        if (out->name[0] == '\0') return -1;
+        if (strcmp(kind, "desktop") == 0) {
+            out->kind = kNowMirrorFileDesktop;
+        } else if (strcmp(kind, "finder-window") == 0
+                   && out->path[0] != '\0') {
+            out->kind = kNowMirrorFileFinderWindow;
+        } else {
+            return -1;
+        }
+        return 1;
+    }
+    if (strcmp(kind, "desktop") == 0) {
+        out->kind = kNowMirrorFileDesktop;
+    } else if (strcmp(kind, "finder-folder") == 0
+               && out->path[0] != '\0') {
+        out->kind = kNowMirrorFileFinderFolder;
+    } else if (strcmp(kind, "application-process") == 0
+               && now_json_find_string(object, "psn", psn, sizeof psn)
+               && sscanf(psn, "%lu:%lu%c", &hi, &lo, &trailing) == 2) {
+        out->kind = kNowMirrorFileApplicationProcess;
+        out->psn.highLongOfPSN = (long)hi;
+        out->psn.lowLongOfPSN = (unsigned long)lo;
+    } else if (strcmp(kind, "application-creator") == 0
+               && now_json_find_string(object, "creator", creator,
+                                       sizeof creator)
+               && strlen(creator) == 4) {
+        out->kind = kNowMirrorFileApplicationCreator;
+        memcpy(&out->creator, creator, 4);
+    } else {
+        return -1;
+    }
+    return 1;
+}
 
 static Boolean wire_busy(void)
 {
@@ -4655,6 +4715,8 @@ static void serve_file_offer(const char *request)
     NowUpdateComponent update_component = kNowUpdateApplication;
     char purpose[32];
     long have;
+    NowMirrorFileTarget mirror_drop;
+    int mirror_drop_state;
     int rc;
 
     note[0] = '\0';
@@ -4713,6 +4775,13 @@ static void serve_file_offer(const char *request)
     now_json_find_string(request, "developmentCandidate",
                          development_candidate,
                          sizeof development_candidate);
+    mirror_drop_state = mirror_file_target(
+        request, "mirrorDrop", false, &mirror_drop);
+    if (mirror_drop_state < 0) {
+        file_refuse(id, "bad-target",
+                    "the Mirror drop target was incomplete or malformed");
+        return;
+    }
 
     memset(&g_put, 0, sizeof g_put);
     g_put.id = id;
@@ -4729,6 +4798,10 @@ static void serve_file_offer(const char *request)
     g_put.modified = modified;
     g_put.create_parents = create_parents;
     g_put.overwrite = overwrite;
+    if (mirror_drop_state > 0) {
+        g_put.mirror_drop = true;
+        g_put.drop_target = mirror_drop;
+    }
 
     if (update_born) {
         NowUpdateOffer offered;
@@ -4784,6 +4857,16 @@ static void serve_file_offer(const char *request)
             g_put.dest_vref, g_put.dest_dir, path, name, container, bytes,
             file_type, creator, (unsigned long)modified, overwrite,
             &g_put.rx);
+    } else if (mirror_drop_state > 0) {
+        /* A local human released over Mirror. The closed target is resolved
+           by the receiver before acceptance; it never becomes a general
+           absolute path on the Files surface. */
+        g_put.at_dest = true;
+        g_put.token[0] = '\0';
+        have = 0;
+        rc = now_files_mirror_receive_begin(
+            &g_put.drop_target, name, container, bytes, file_type, creator,
+            (unsigned long)modified, overwrite, &g_put.rx);
     } else if (cloud_born && g_cget_dest.set) {
         /* The person chose where THIS delivery lands. Guest-side only,
            no contract change, and deliberately so: the contract's
@@ -5040,6 +5123,15 @@ static void finish_put(const char *reply)
                     : "could not finish writing the file",
                  "temp-discarded");
         note_shot("Incoming file failed");
+        return;
+    }
+    if (g_put.mirror_drop
+        && now_files_mirror_deliver(&g_put.drop_target,
+                                    &g_put.rx.final) != noErr) {
+        put_done(false, "target-refused",
+                 "the file arrived but the target application did not accept it",
+                 "download-retained");
+        note_shot("Incoming file retained; application drop failed");
         return;
     }
     if (g_put.update) {
@@ -5855,6 +5947,8 @@ static void serve_file_get(const char *request)
     short pace_ms;
     Boolean pack_unused;
     unsigned short xfer;
+    NowMirrorFileTarget mirror_source;
+    int mirror_source_state;
     int rc;
 
     if (wire_busy()) {
@@ -5866,6 +5960,13 @@ static void serve_file_get(const char *request)
     now_json_find_text(request, "path", path, sizeof path);
     now_json_find_string(request, "developmentProject", development_project,
                          sizeof development_project);
+    mirror_source_state = mirror_file_target(
+        request, "mirrorSource", true, &mirror_source);
+    if (mirror_source_state < 0) {
+        file_refuse(id, "bad-source",
+                    "the Mirror drag source was incomplete or malformed");
+        return;
+    }
 
     /* Resuming a PULL is not offered yet: the guest does not compute a
        token for its own files, so it can never prove the file it would
@@ -5888,7 +5989,9 @@ static void serve_file_get(const char *request)
             want = kContainerData;
         }
     }
-    if (development_project[0] != '\0') {
+    if (mirror_source_state > 0) {
+        rc = now_files_mirror_stage(&mirror_source, want, &stage);
+    } else if (development_project[0] != '\0') {
         FSSpec folder;
         long project_dir;
         char hfs_path[224];

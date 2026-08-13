@@ -6,7 +6,7 @@ doc_type: explanation
 audience: developer
 lifecycle: experimental
 authority: [docs/mirror-drive-loop.md, docs/mirror-knowledge.md]
-source_dependencies: [docs/mirror-drive-loop.md, docs/mirror-knowledge.md, docs/asset-pack.md, contract/asyncapi.yaml, tools/mirror-oracle, tools/mirror_oracle, tools/mirror_oracle_data, tools/extract-assets-offline, tools/asset-pack, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumMenuBar.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/MirrorStateProjectionService.swift, now-host/Sources/Host/MirrorDriveService.swift, now-host/Sources/Host/MirrorWorkClocks.swift, now-guest-ppc/src/mirror, now-guest-ppc/src/peek]
+source_dependencies: [docs/mirror-drive-loop.md, docs/mirror-knowledge.md, docs/asset-pack.md, contract/asyncapi.yaml, tools/mirror-oracle, tools/mirror_oracle, tools/mirror_oracle_data, tools/extract-assets-offline, tools/asset-pack, now-host/Packages/MirrorKit/Sources/MirrorRenderCLI, now-host/Packages/MirrorKit/Sources/MirrorKitUI/PlatinumMenuBar.swift, now-host/Packages/MirrorKit/Sources/MirrorKit/CrossMachineFileTargeting.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/MirrorStateProjectionService.swift, now-host/Sources/Host/MirrorDriveService.swift, now-host/Sources/Host/MirrorWorkClocks.swift, now-host/Sources/Host/MirrorFileTransferModel.swift, now-guest-ppc/src/mirror, now-guest-ppc/src/files/files_drop.c, now-guest-ppc/src/peek]
 media_ids: []
 last_verified: 2026-08-11
 ---
@@ -48,6 +48,34 @@ the fallback when hints are absent. The host publishes only a coherent,
 current generation set and refuses stale enrichment.
 
 Any measurement must prove the content plane armed in the stored artifact. An invocation log or an empty capture is not evidence that observation occurred.
+
+## Cross-machine file ownership
+
+File dragging is a host-owned native drag around the semantic scene; it does
+not travel through ADB or the resident item-drag path. A guest item crossing
+the Mirror or Continuity display edge becomes an `NSFilePromiseProvider`,
+using its original Mirror icon when the asset atlas has one. The promise
+redeems only after a host Finder or application drop. A host URL released over
+the Mirror, or carried through the configured Continuity edge, is resolved at
+that exact guest coordinate before bytes are offered.
+
+`CrossMachineFileTargeting` converts scene hits to closed identities: desktop,
+an exact Finder HFS path, a live process serial number, or an application
+creator. `MirrorFileTransferModel` maps those identities onto optional
+`mirrorSource` and `mirrorDrop` fields on the existing symmetric `file.get`
+and `file.offer` family. The PPC guest independently resolves the source or
+destination before accepting, stages application drops in Downloads, and uses
+`kAEOpenDocuments` only after the checked receive has settled. A refused
+application retains the copied file and reports that outcome explicitly.
+
+The first contract is copy-only, file-only, no-overwrite, and PowerPC-only.
+Mirror installs AppKit ownership directly on `LiveMirrorView`. Continuity
+installs a two-point transparent AppKit destination along the configured shared
+edge: native host drags retain their pasteboard while relative movement drives
+the guest target, and a held guest file crossing back releases the guest button
+before AppKit assumes the drag. Both modes converge on the same
+`MirrorFileTransferModel`; Continuity's ordinary non-file pointer gestures are
+unchanged when the mouse-down did not resolve an exact guest file.
 
 ## Visual truth and profiles
 
