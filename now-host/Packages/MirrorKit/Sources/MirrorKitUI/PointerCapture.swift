@@ -1,5 +1,6 @@
 #if canImport(AppKit)
 import AppKit
+import MirrorKit
 import SwiftUI
 
 /// One host-owned drag stub. The pasteboard writer is normally an
@@ -11,6 +12,29 @@ public struct HostFileDragItem {
     public init(writer: NSPasteboardWriting, image: NSImage) {
         self.writer = writer
         self.image = image
+    }
+
+    /// Builds the native drag image from the exact guest item which supplied
+    /// the promise. Continuity Mode has no rendered Mirror surface of its own,
+    /// so this initializer is also the one place its edge handoff asks for the
+    /// same icon that an in-Mirror drag presents.
+    @MainActor
+    public init(writer: NSPasteboardWriting,
+                subject: DragTargeting.Subject,
+                scene: MirrorKit.Scene) {
+        let container: String?
+        switch subject {
+        case .desktopItem:
+            container = "Desktop Folder"
+        case .windowItem(let id, _):
+            container = scene.windows.first { $0.id == id }?.finder?.path
+        }
+        image = IconAtlas.icon(
+            for: subject.item, container: container).map {
+                NSImage(cgImage: $0,
+                        size: NSSize(width: 32, height: 32))
+            } ?? NSWorkspace.shared.icon(for: .data)
+        self.writer = writer
     }
 }
 

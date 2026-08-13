@@ -1,4 +1,5 @@
 import MirrorKit
+import MirrorKitUI
 import NOWAgentIntegration
 import SwiftUI
 
@@ -38,6 +39,39 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
             },
             lifecycleDidChange: { [weak self] in
                 self?.model.refreshLifecycle()
+            })
+        source.continuity.edge.configureFileDragging(
+            guestFileAtPoint: {
+                [weak source, weak fileTransfer = self.fileTransfer] point in
+                guard let source, let fileTransfer,
+                      let scene = source.scene else { return nil }
+                guard case .success(let subject) = DragTargeting.subject(
+                    scene, x: point.x, y: point.y) else { return nil }
+                switch CrossMachineFileTargeting.source(subject, in: scene) {
+                case .failure(let refusal):
+                    source.note(refusal.message)
+                    return nil
+                case .success(let guestFile):
+                    guard let promise = fileTransfer.promise(for: guestFile)
+                    else { return nil }
+                    return HostFileDragItem(
+                        writer: promise, subject: subject, scene: scene)
+                }
+            },
+            hostFilesDropped: {
+                [weak source, weak fileTransfer = self.fileTransfer]
+                                pasteboard, point in
+                guard let source, let fileTransfer,
+                      let scene = source.scene else { return false }
+                switch CrossMachineFileTargeting.destination(
+                    scene, x: point.x, y: point.y) {
+                case .failure(let refusal):
+                    source.note(refusal.message)
+                    return false
+                case .success(let target):
+                    return fileTransfer.copyHostPasteboard(
+                        pasteboard, to: target)
+                }
             })
         model.bindPolicyProjection { [weak source] in
             source?.planePolicyDidChange()

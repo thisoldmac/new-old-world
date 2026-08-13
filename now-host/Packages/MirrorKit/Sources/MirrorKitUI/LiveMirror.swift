@@ -1162,19 +1162,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// consulted only to give AppKit the icon the guest presented.
     private func hostDragItem(for reference: GuestFileDragReference,
                               in scene: MirrorKit.Scene) -> HostFileDragItem {
-        let container: String?
-        switch reference.subject {
-        case .desktopItem:
-            container = "Desktop Folder"
-        case .windowItem(let id, _):
-            container = scene.windows.first { $0.id == id }?.finder?.path
-        }
-        let image = IconAtlas.icon(
-            for: reference.subject.item, container: container).map {
-                NSImage(cgImage: $0,
-                        size: NSSize(width: 32, height: 32))
-            } ?? NSWorkspace.shared.icon(for: .data)
-        return HostFileDragItem(writer: reference.writer, image: image)
+        HostFileDragItem(writer: reference.writer,
+                         subject: reference.subject, scene: scene)
     }
 
     // MARK: - Dragging an item

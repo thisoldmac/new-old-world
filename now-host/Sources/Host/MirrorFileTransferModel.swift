@@ -35,6 +35,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     private struct PendingHostFile {
         var url: URL
         var target: CrossMachineFileTargeting.Destination
+        var cleanupRoot: URL?
     }
 
     enum TransferError: LocalizedError {
@@ -94,7 +95,9 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     var isBusy: Bool { activity != nil || promiseInFlight }
 
     func activeGuestWillChange() {
+        let stagingRoots = Set(queue.compactMap(\.cleanupRoot))
         queue.removeAll()
+        for root in stagingRoots { try? FileManager.default.removeItem(at: root) }
         if isBusy {
             notice = "The file copy ended because the active Mac changed."
         }
@@ -108,15 +111,68 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     /// file URLs. Multiple files retain release order over the single lane.
     func copyHostFiles(_ urls: [URL],
                        to target: CrossMachineFileTargeting.Destination) {
+        enqueueHostFiles(urls, to: target, cleanupRoot: nil)
+    }
+
+    /// Accepts the same AppKit payload Finder and document applications put
+    /// on a native drag. URLs are consumed directly; promised files are first
+    /// materialized in a private staging directory, then enter the same copy
+    /// queue. Returning true means this process accepted ownership of the
+    /// drop, not that the guest has finished writing it.
+    func copyHostPasteboard(
+        _ pasteboard: NSPasteboard,
+        to target: CrossMachineFileTargeting.Destination
+    ) -> Bool {
         guard case .connected = connection else {
             notice = "No classic Mac is connected."
+            return false
+        }
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true,
+        ]
+        let urls = (pasteboard.readObjects(
+            forClasses: [NSURL.self], options: options) ?? []).compactMap {
+                ($0 as? NSURL).map { $0 as URL }
+            }
+        if !urls.isEmpty {
+            copyHostFiles(urls, to: target)
+            return true
+        }
+
+        let receivers = (pasteboard.readObjects(
+            forClasses: [NSFilePromiseReceiver.self], options: nil) ?? [])
+            .compactMap { $0 as? NSFilePromiseReceiver }
+        guard !receivers.isEmpty else {
+            notice = "That drag did not contain a file the classic Mac can copy."
+            return false
+        }
+        guard receivers.count <= 32 else {
+            notice = "That is \(receivers.count) files; 32 at a time is the Mirror limit."
+            return false
+        }
+        for receiver in receivers {
+            receivePromisedHostFile(receiver, target: target)
+        }
+        return true
+    }
+
+    private func enqueueHostFiles(
+        _ urls: [URL],
+        to target: CrossMachineFileTargeting.Destination,
+        cleanupRoot: URL?
+    ) {
+        guard case .connected = connection else {
+            notice = "No classic Mac is connected."
+            if let cleanupRoot { try? FileManager.default.removeItem(at: cleanupRoot) }
             return
         }
         guard !urls.isEmpty else { return }
         guard urls.count <= 32 else {
             notice = "That is \(urls.count) files; 32 at a time is the Mirror limit."
+            if let cleanupRoot { try? FileManager.default.removeItem(at: cleanupRoot) }
             return
         }
+        var enqueued = false
         for url in urls {
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path,
@@ -131,9 +187,41 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
                     .localizedDescription
                 continue
             }
-            queue.append(.init(url: url, target: target))
+            queue.append(.init(url: url, target: target,
+                               cleanupRoot: cleanupRoot))
+            enqueued = true
+        }
+        if !enqueued, let cleanupRoot {
+            try? FileManager.default.removeItem(at: cleanupRoot)
         }
         startNextHostFile()
+    }
+
+    private func receivePromisedHostFile(
+        _ receiver: NSFilePromiseReceiver,
+        target: CrossMachineFileTargeting.Destination
+    ) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-continuity-drop-\(UUID().uuidString)",
+                                    isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: root, withIntermediateDirectories: true)
+        } catch {
+            notice = error.localizedDescription
+            return
+        }
+        receiver.receivePromisedFiles(
+            atDestination: root, options: [:], operationQueue: .main
+        ) { [weak self] url, error in
+            guard let self else { return }
+            if let error {
+                self.notice = error.localizedDescription
+                try? FileManager.default.removeItem(at: root)
+                return
+            }
+            self.enqueueHostFiles([url], to: target, cleanupRoot: root)
+        }
     }
 
     /// A native file promise is the host-side stub. It carries the original
@@ -271,8 +359,14 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
         guard let data = try? Data(contentsOf: item.url) else {
             notice = TransferError.unreadable(item.url.lastPathComponent)
                 .localizedDescription
+            if let root = item.cleanupRoot {
+                try? FileManager.default.removeItem(at: root)
+            }
             startNextHostFile()
             return
+        }
+        if let root = item.cleanupRoot {
+            try? FileManager.default.removeItem(at: root)
         }
         let plan = OutboundFile.plan(url: item.url, data: data,
                                      convertText: true)

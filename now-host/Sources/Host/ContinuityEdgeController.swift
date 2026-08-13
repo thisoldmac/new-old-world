@@ -1,6 +1,8 @@
 import AppKit
+import Combine
 import Foundation
 import MirrorKit
+import MirrorKitUI
 
 struct HostPointerSample: Equatable, Sendable {
     enum Kind: Equatable, Sendable {
@@ -25,6 +27,13 @@ protocol ContinuityPointerEnvironment: AnyObject {
     func hideCursor(on displayID: UInt32)
     func showCursor(on displayID: UInt32)
     func moveCursor(on displayID: UInt32, to point: CGPoint)
+    func showFileEdge(_ edge: ContinuitySharedEdge,
+                      callbacks: ContinuityFileEdge.Callbacks) -> AnyObject
+    func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
+                        callbacks: ContinuityFileEdge.Callbacks)
+    func hideFileEdge(_ token: AnyObject)
+    func beginFileDrag(_ item: HostFileDragItem,
+                       at screenPoint: CGPoint) -> Bool
 }
 
 @MainActor
@@ -35,6 +44,8 @@ private final class AppKitContinuityPointerEnvironment:
         var global: Any?
     }
 
+    private var currentEvent: NSEvent?
+
     func start(_ handler: @escaping @MainActor (HostPointerSample) -> Void)
         -> AnyObject {
         let monitors = Monitors()
@@ -42,13 +53,13 @@ private final class AppKitContinuityPointerEnvironment:
             .mouseMoved, .leftMouseDragged, .leftMouseDown, .leftMouseUp,
         ]
         monitors.local = NSEvent.addLocalMonitorForEvents(matching: mask) {
-            event in
-            handler(Self.sample(event))
+            [weak self] event in
+            self?.deliver(event, to: handler)
             return event
         }
         monitors.global = NSEvent.addGlobalMonitorForEvents(matching: mask) {
-            event in
-            MainActor.assumeIsolated { handler(Self.sample(event)) }
+            [weak self] event in
+            MainActor.assumeIsolated { self?.deliver(event, to: handler) }
         }
         return monitors
     }
@@ -71,6 +82,44 @@ private final class AppKitContinuityPointerEnvironment:
 
     func moveCursor(on displayID: UInt32, to point: CGPoint) {
         CGDisplayMoveCursorToPoint(CGDirectDisplayID(displayID), point)
+    }
+
+    func showFileEdge(_ edge: ContinuitySharedEdge,
+                      callbacks: ContinuityFileEdge.Callbacks) -> AnyObject {
+        let fileEdge = ContinuityFileEdge(edge: edge, callbacks: callbacks)
+        activeFileEdge = fileEdge
+        return fileEdge
+    }
+
+    func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
+                        callbacks: ContinuityFileEdge.Callbacks) {
+        guard let edgeWindow = token as? ContinuityFileEdge else { return }
+        edgeWindow.update(edge: edge)
+        edgeWindow.update(callbacks: callbacks)
+    }
+
+    func hideFileEdge(_ token: AnyObject) {
+        let fileEdge = token as? ContinuityFileEdge
+        fileEdge?.close()
+        if activeFileEdge === fileEdge { activeFileEdge = nil }
+    }
+
+    func beginFileDrag(_ item: HostFileDragItem,
+                       at screenPoint: CGPoint) -> Bool {
+        guard let edge = activeFileEdge else { return false }
+        return edge.beginFileDrag(item, at: screenPoint,
+                                  sourceEvent: currentEvent)
+    }
+
+    private weak var activeFileEdge: ContinuityFileEdge?
+
+    private func deliver(
+        _ event: NSEvent,
+        to handler: @escaping @MainActor (HostPointerSample) -> Void
+    ) {
+        currentEvent = event
+        handler(Self.sample(event))
+        currentEvent = nil
     }
 
     private static func sample(_ event: NSEvent) -> HostPointerSample {
@@ -125,9 +174,16 @@ final class ContinuityEdgeController: ObservableObject {
     private weak var driver: ContinuityEdgeDriving?
     private let environment: ContinuityPointerEnvironment
     private var monitor: AnyObject?
+    private var fileEdge: AnyObject?
+    private var layoutSubscription: AnyCancellable?
     private var pending: Ownership?
     private var ownership: Ownership?
     private var cursorHiddenOn: UInt32?
+    private var hostFileDrag = false
+    private var guestFileCandidate: HostFileDragItem?
+    private var guestFileAtPoint: ((MirrorKit.Point) -> HostFileDragItem?)?
+    private var hostFilesDropped:
+        ((NSPasteboard, MirrorKit.Point) -> Bool)?
 
     init(layout: ContinuityDisplayLayout,
          driver: ContinuityEdgeDriving,
@@ -136,6 +192,27 @@ final class ContinuityEdgeController: ObservableObject {
         self.driver = driver
         self.environment = environment
             ?? AppKitContinuityPointerEnvironment()
+        layoutSubscription = layout.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in
+                await Task.yield()
+                self?.refreshFileEdge()
+                self?.refreshReadyStatus()
+            }
+        }
+    }
+
+    /// Installs the copy-only file seam without changing pointer or wire
+    /// ownership. The guest resolver binds one exact scene item at mouse-down;
+    /// the host callback resolves the live guest target at native drop time.
+    func configureFileDragging(
+        guestFileAtPoint:
+            @escaping (MirrorKit.Point) -> HostFileDragItem?,
+        hostFilesDropped:
+            @escaping (NSPasteboard, MirrorKit.Point) -> Bool
+    ) {
+        self.guestFileAtPoint = guestFileAtPoint
+        self.hostFilesDropped = hostFilesDropped
+        refreshFileEdge()
     }
 
     func start() {
@@ -146,6 +223,7 @@ final class ContinuityEdgeController: ObservableObject {
         monitor = environment.start { [weak self] sample in
             self?.received(sample)
         }
+        refreshFileEdge()
         state = .ready
         refreshReadyStatus()
     }
@@ -155,8 +233,12 @@ final class ContinuityEdgeController: ObservableObject {
         restoreHostCursor(from: ownership ?? pending)
         pending = nil
         ownership = nil
+        hostFileDrag = false
+        guestFileCandidate = nil
         if let monitor { environment.stop(monitor) }
         monitor = nil
+        if let fileEdge { environment.hideFileEdge(fileEdge) }
+        fileEdge = nil
         state = .disabled
         status = reason
     }
@@ -167,14 +249,18 @@ final class ContinuityEdgeController: ObservableObject {
             guard let pending else { return }
             self.pending = nil
             ownership = pending
-            hideHostCursor(for: pending)
+            if !hostFileDrag { hideHostCursor(for: pending) }
             state = .active
-            status = "Pointer is on the guest display"
+            status = hostFileDrag
+                ? "Dragging a host file on the guest display"
+                : "Pointer is on the guest display"
         case .idle:
             guard state == .arming || state == .active else { return }
             restoreHostCursor(from: ownership ?? pending)
             pending = nil
             ownership = nil
+            hostFileDrag = false
+            guestFileCandidate = nil
             state = monitor == nil ? .disabled : .ready
             refreshReadyStatus()
         case .arming:
@@ -186,6 +272,8 @@ final class ContinuityEdgeController: ObservableObject {
         restoreHostCursor(from: ownership ?? pending)
         pending = nil
         ownership = nil
+        hostFileDrag = false
+        guestFileCandidate = nil
         state = monitor == nil ? .disabled : .ready
         status = "Guest returned pointer control: \(reason)"
     }
@@ -222,14 +310,22 @@ final class ContinuityEdgeController: ObservableObject {
 
     private func driveGuest(with sample: HostPointerSample) {
         guard var ownership else { return }
+        if hostFileDrag,
+           sample.kind == .primaryDown || sample.kind == .primaryUp {
+            return
+        }
         if sample.kind == .primaryDown {
-            _ = driver?.primaryDown(at: mirrorPoint(ownership.guestPoint),
-                                    inMenuBar: false)
+            let point = mirrorPoint(ownership.guestPoint)
+            guestFileCandidate = guestFileAtPoint?(point)
+            let consumed = driver?.primaryDown(at: point,
+                                               inMenuBar: false) ?? false
+            if !consumed { guestFileCandidate = nil }
             pinHostCursor(for: ownership)
             return
         }
         if sample.kind == .primaryUp {
             _ = driver?.primaryUp(at: mirrorPoint(ownership.guestPoint))
+            guestFileCandidate = nil
             pinHostCursor(for: ownership)
             return
         }
@@ -241,7 +337,11 @@ final class ContinuityEdgeController: ObservableObject {
             next, through: ownership.edge.guestSide,
             guestPixels: layout.guestSize) {
             ownership.guestPoint = next
-            returnToHost(ownership, reason: "shared edge crossed")
+            if sample.buttonsDown, let item = guestFileCandidate {
+                returnGuestFileToHost(item, from: ownership)
+            } else {
+                returnToHost(ownership, reason: "shared edge crossed")
+            }
             return
         }
         ownership.guestPoint = CGPoint(
@@ -249,12 +349,14 @@ final class ContinuityEdgeController: ObservableObject {
             y: min(max(0, next.y), max(0, layout.guestSize.height - 1)))
         self.ownership = ownership
         let point = mirrorPoint(ownership.guestPoint)
-        if sample.buttonsDown {
+        if hostFileDrag {
+            driver?.pointerMoved(to: point)
+        } else if sample.buttonsDown {
             _ = driver?.primaryDragged(to: point)
         } else {
             driver?.pointerMoved(to: point)
         }
-        pinHostCursor(for: ownership)
+        if !hostFileDrag { pinHostCursor(for: ownership) }
     }
 
     private func mirrorPoint(_ point: CGPoint) -> MirrorKit.Point {
@@ -266,8 +368,28 @@ final class ContinuityEdgeController: ObservableObject {
         restoreHostCursor(from: ownership)
         self.ownership = nil
         pending = nil
+        hostFileDrag = false
+        guestFileCandidate = nil
         state = .ready
         status = "Returned at the shared edge (\(reason))"
+    }
+
+    private func returnGuestFileToHost(_ item: HostFileDragItem,
+                                       from ownership: Ownership) {
+        let returnPoint = ContinuityDisplayGeometry.hostReturnPoint(
+            for: ownership.guestPoint, edge: ownership.edge,
+            guestFrame: layout.guestFrame, scale: layout.guestScale)
+        driver?.pointerLeft()
+        restoreHostCursor(from: ownership)
+        self.ownership = nil
+        pending = nil
+        guestFileCandidate = nil
+        state = .ready
+        if environment.beginFileDrag(item, at: returnPoint) {
+            status = "Copying the guest file to this Mac on release"
+        } else {
+            status = "Could not start the host file drag"
+        }
     }
 
     private func isCrossingOutward(_ sample: HostPointerSample,
@@ -325,6 +447,68 @@ final class ContinuityEdgeController: ObservableObject {
         cursorHiddenOn = nil
     }
 
+    private var fileEdgeCallbacks: ContinuityFileEdge.Callbacks {
+        .init(
+            entered: { [weak self] point in
+                self?.hostFileEntered(at: point) ?? false
+            },
+            exited: { [weak self] in self?.hostFileExited() },
+            dropped: { [weak self] pasteboard in
+                self?.hostFileDropped(pasteboard) ?? false
+            })
+    }
+
+    private func refreshFileEdge() {
+        guard monitor != nil, guestFileAtPoint != nil,
+              hostFilesDropped != nil, let edge = layout.sharedEdge else {
+            if let fileEdge { environment.hideFileEdge(fileEdge) }
+            fileEdge = nil
+            return
+        }
+        if let fileEdge {
+            environment.updateFileEdge(fileEdge, edge: edge,
+                                       callbacks: fileEdgeCallbacks)
+        } else {
+            fileEdge = environment.showFileEdge(
+                edge, callbacks: fileEdgeCallbacks)
+        }
+    }
+
+    private func hostFileEntered(at hostPoint: CGPoint) -> Bool {
+        if hostFileDrag { return state == .arming || state == .active }
+        guard state == .ready, let edge = layout.sharedEdge else {
+            return false
+        }
+        let guest = ContinuityDisplayGeometry.guestEntryPoint(
+            at: hostPoint, edge: edge, guestFrame: layout.guestFrame,
+            guestPixels: layout.guestSize, scale: layout.guestScale)
+        let anchor = ContinuityDisplayGeometry.hostReturnPoint(
+            for: guest, edge: edge, guestFrame: layout.guestFrame,
+            scale: layout.guestScale)
+        pending = Ownership(edge: edge, guestPoint: guest,
+                            hostAnchor: anchor)
+        hostFileDrag = true
+        state = .arming
+        status = "Connecting the guest file target…"
+        driver?.pointerMoved(to: mirrorPoint(guest))
+        return true
+    }
+
+    private func hostFileExited() {
+        guard hostFileDrag, let current = ownership ?? pending else { return }
+        returnToHost(current, reason: "host file left the shared edge")
+    }
+
+    private func hostFileDropped(_ pasteboard: NSPasteboard) -> Bool {
+        guard hostFileDrag, let current = ownership ?? pending,
+              let hostFilesDropped else { return false }
+        let accepted = hostFilesDropped(
+            pasteboard, mirrorPoint(current.guestPoint))
+        returnToHost(current, reason: accepted
+                     ? "host file released" : "guest target refused the file")
+        return accepted
+    }
+
     private func refreshReadyStatus() {
         guard state != .disabled else { return }
         if let edge = layout.sharedEdge {
@@ -346,6 +530,7 @@ final class ContinuityEdgeController: ObservableObject {
     deinit {
         MainActor.assumeIsolated {
             if let monitor { environment.stop(monitor) }
+            if let fileEdge { environment.hideFileEdge(fileEdge) }
             if let id = cursorHiddenOn { environment.showCursor(on: id) }
         }
     }

@@ -1,5 +1,6 @@
 import AppKit
 import MirrorKit
+import MirrorKitUI
 import XCTest
 @testable import Host
 
@@ -220,6 +221,75 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertTrue(environment.shown.isEmpty)
     }
 
+    func testGuestFileCrossingBackStartsNativeCopyDrag() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.configureFileDragging(
+            guestFileAtPoint: { _ in
+                HostFileDragItem(writer: NSPasteboardItem(),
+                                 image: NSImage(size: NSSize(width: 32,
+                                                            height: 32)))
+            },
+            hostFilesDropped: { _, _ in false })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        environment.emit(.init(kind: .primaryDown,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: .zero, buttonsDown: true))
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 50, y: 0), buttonsDown: true))
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: -60, y: 0), buttonsDown: true))
+
+        XCTAssertEqual(controller.state, .ready)
+        XCTAssertEqual(driver.leftCount, 1)
+        XCTAssertEqual(environment.fileDrags.count, 1)
+        XCTAssertEqual(environment.fileDrags[0].point.x, 1439)
+        XCTAssertTrue(controller.status.contains("guest file"))
+    }
+
+    func testHostFileAtEdgeDrivesGuestTargetAndCopiesOnRelease() throws {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        var droppedAt: MirrorKit.Point?
+        controller.configureFileDragging(
+            guestFileAtPoint: { _ in nil },
+            hostFilesDropped: { _, point in
+                droppedAt = point
+                return true
+            })
+        controller.start()
+
+        let callbacks = try XCTUnwrap(environment.fileCallbacks)
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450)))
+        XCTAssertEqual(controller.state, .arming)
+        controller.transportPhaseChanged(.active)
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 100, y: -50),
+                               buttonsDown: true))
+
+        XCTAssertTrue(callbacks.dropped(.init(name: .drag)))
+        XCTAssertEqual(droppedAt, MirrorKit.Point(x: 100, y: 500))
+        XCTAssertEqual(controller.state, .ready)
+        XCTAssertEqual(driver.leftCount, 1)
+        XCTAssertTrue(driver.draggedPoints.isEmpty,
+                      "a host file moves the target cursor, not a guest item")
+    }
+
     func testMirrorCursorAndContinuityExposeMutuallyExclusiveEntrySurfaces()
         throws {
         let rig = try MirrorModuleLayoutRenderTests.sharedRig()
@@ -280,6 +350,8 @@ private extension ContinuityDisplayLayoutTests {
         var hidden: [UInt32] = []
         var shown: [UInt32] = []
         var moves: [(displayID: UInt32, point: CGPoint)] = []
+        var fileCallbacks: ContinuityFileEdge.Callbacks?
+        var fileDrags: [(item: HostFileDragItem, point: CGPoint)] = []
 
         func start(_ handler: @escaping @MainActor (HostPointerSample) -> Void)
             -> AnyObject {
@@ -291,6 +363,29 @@ private extension ContinuityDisplayLayoutTests {
         func showCursor(on displayID: UInt32) { shown.append(displayID) }
         func moveCursor(on displayID: UInt32, to point: CGPoint) {
             moves.append((displayID, point))
+        }
+        func showFileEdge(_ edge: ContinuitySharedEdge,
+                          callbacks: ContinuityFileEdge.Callbacks)
+            -> AnyObject {
+            _ = edge
+            fileCallbacks = callbacks
+            return Token()
+        }
+        func updateFileEdge(_ token: AnyObject,
+                            edge: ContinuitySharedEdge,
+                            callbacks: ContinuityFileEdge.Callbacks) {
+            _ = token
+            _ = edge
+            fileCallbacks = callbacks
+        }
+        func hideFileEdge(_ token: AnyObject) {
+            _ = token
+            fileCallbacks = nil
+        }
+        func beginFileDrag(_ item: HostFileDragItem,
+                           at screenPoint: CGPoint) -> Bool {
+            fileDrags.append((item, screenPoint))
+            return true
         }
         func emit(_ sample: HostPointerSample) { handler?(sample) }
     }
