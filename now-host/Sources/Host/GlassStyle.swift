@@ -1,5 +1,53 @@
 import SwiftUI
 
+enum GlassRendering: Equatable {
+    case material
+    case clear
+    case regular
+}
+
+/// Pure policy behind the visual modifiers. Keeping runtime and accessibility
+/// fallback here makes the macOS 13 path testable without pretending a build
+/// has exercised an older OS.
+enum GlassSelection {
+    static func resolve(preference: LiquidGlassPreference,
+                        supportsLiquidGlass: Bool,
+                        reduceTransparency: Bool,
+                        increasedContrast: Bool) -> GlassRendering {
+        guard supportsLiquidGlass,
+              !reduceTransparency,
+              !increasedContrast else { return .material }
+        return switch preference {
+        case .material: .material
+        case .clear: .clear
+        case .regular: .regular
+        }
+    }
+}
+
+private struct LiquidGlassPreferenceKey: EnvironmentKey {
+    static let defaultValue = LiquidGlassPreference.regular
+}
+
+extension EnvironmentValues {
+    var nowLiquidGlassPreference: LiquidGlassPreference {
+        get { self[LiquidGlassPreferenceKey.self] }
+        set { self[LiquidGlassPreferenceKey.self] = newValue }
+    }
+}
+
+/// Re-publishes a changed preference into SwiftUI's value environment without
+/// requiring feature views to know where host settings are stored.
+struct GlassPreferenceScope<Content: View>: View {
+    @ObservedObject var preferences: AppearancePreferences
+    let content: Content
+
+    var body: some View {
+        content.environment(\.nowLiquidGlassPreference,
+                            preferences.liquidGlass)
+    }
+}
+
 /// The app's glass vocabulary — three words, stated once.
 ///
 /// macOS 26 draws chrome in Liquid Glass, and the temptation is to sprinkle
@@ -61,28 +109,31 @@ extension View {
 /// Deliberately says nothing about the OS version — that is the other
 /// switch, and a helper that answered both would make it impossible to see
 /// at a call site which one refused.
-private struct GlassSuppressed {
-    static func value(reduceTransparency: Bool,
-                      contrast: ColorSchemeContrast) -> Bool {
-        reduceTransparency || contrast == .increased
-    }
-}
-
 private struct NowGlassPanel: ViewModifier {
     let cornerRadius: CGFloat
 
     @Environment(\.accessibilityReduceTransparency) private var reduce
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.nowLiquidGlassPreference) private var preference
 
     @ViewBuilder
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius,
                                      style: .continuous)
-        #if compiler(>=6.2)
-        if #available(macOS 26, *),
-           !GlassSuppressed.value(reduceTransparency: reduce,
-                                  contrast: contrast) {
-            content.glassEffect(.regular, in: shape)
+#if compiler(>=6.2)
+        if #available(macOS 26, *) {
+            switch GlassSelection.resolve(
+                preference: preference,
+                supportsLiquidGlass: true,
+                reduceTransparency: reduce,
+                increasedContrast: contrast == .increased) {
+            case .material:
+                content.background(.regularMaterial, in: shape)
+            case .clear:
+                content.glassEffect(.clear, in: shape)
+            case .regular:
+                content.glassEffect(.regular, in: shape)
+            }
         } else {
             // The same shape, so the card's silhouette does not change when
             // only its material does.
@@ -99,6 +150,7 @@ private struct NowGlassPanel: ViewModifier {
 private struct NowGlassBar: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduce
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.nowLiquidGlassPreference) private var preference
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -110,10 +162,19 @@ private struct NowGlassBar: ViewModifier {
            Both arms are backgrounds, never nothing: this modifier's callers
            are safe-area insets with rows scrolling under them. */
 #if compiler(>=6.2)
-        if #available(macOS 26, *),
-           !GlassSuppressed.value(reduceTransparency: reduce,
-                                  contrast: contrast) {
-            content.glassEffect(.regular, in: Rectangle())
+        if #available(macOS 26, *) {
+            switch GlassSelection.resolve(
+                preference: preference,
+                supportsLiquidGlass: true,
+                reduceTransparency: reduce,
+                increasedContrast: contrast == .increased) {
+            case .material:
+                content.background(.bar)
+            case .clear:
+                content.glassEffect(.clear, in: Rectangle())
+            case .regular:
+                content.glassEffect(.regular, in: Rectangle())
+            }
         } else {
             content.background(.bar)
         }
@@ -126,6 +187,7 @@ private struct NowGlassBar: ViewModifier {
 private struct NowGlassButton: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduce
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.nowLiquidGlassPreference) private var preference
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -136,8 +198,14 @@ private struct NowGlassButton: ViewModifier {
            harder to click. */
 #if compiler(>=6.2)
         if #available(macOS 26, *),
-           !GlassSuppressed.value(reduceTransparency: reduce,
-                                  contrast: contrast) {
+           GlassSelection.resolve(
+                preference: preference,
+                supportsLiquidGlass: true,
+                reduceTransparency: reduce,
+                increasedContrast: contrast == .increased) != .material {
+            /* SwiftUI's native glass button style does not expose the
+               clear/regular material choice. It still follows Off versus On;
+               panels and bars show the two SDK-supported glass materials. */
             content.buttonStyle(.glass)
         } else {
             content.buttonStyle(.bordered)

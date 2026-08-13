@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// on 2026-08-05 by running two suites at once: one run's port guard
     /// named the other's `xctest` holding 5250 (docs/open-issues.md).
     private let defaults: UserDefaults
+    private lazy var appearancePreferences = AppearancePreferences(
+        defaults: defaults)
     private lazy var state = HostAppState(registry: registry,
                                           defaults: defaults)
     /* The same defaults the rest of the delegate writes to, so the
@@ -43,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
     private var statusItem: NSStatusItem?
     private var window: NSWindow?
+    private(set) var settingsWindowController: SettingsWindowController?
     private var flash: StatusItemFlash?
     private var statusWatch: AnyCancellable?
     private var mcpStdioBridgeServer: AgentIntegrationLocalServer?
@@ -52,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Appearance is application-wide and must be set before either
+        // hosting controller creates its first view hierarchy.
+        _ = appearancePreferences
         installMainMenu()
         installStatusItem()
         /* The MCP pane's buttons, wired before the window opens so a person
@@ -154,11 +160,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         NSApp.orderFrontStandardAboutPanel(nil)
     }
 
-    /// Settings are a page in the window, not a separate panel: the wire's
-    /// port and state belong beside the modules that run over it. ⌘, opens
-    /// the window on that page, which is what the standard item promises.
+    /// Application appearance is a native window. Connection settings retain
+    /// their stable module identity and later become Network's hero.
     @objc func showSettings() {
-        show(moduleID: "settings")
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(
+                preferences: appearancePreferences)
+        }
+        settingsWindowController?.showWindow(self)
     }
 
     @objc func showModule(_ sender: NSMenuItem) {
@@ -415,8 +424,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     @objc func openMainWindow() {
         if window == nil {
-            let root = HostRootView(registry: registry, state: state,
-                                    sidebar: sidebarPreferences)
+            let root = GlassPreferenceScope(
+                preferences: appearancePreferences,
+                content: HostRootView(registry: registry, state: state,
+                                      sidebar: sidebarPreferences))
             let controller = NSHostingController(rootView: root)
             /* The WINDOW owns its size, not whichever pane is showing.
                NSHostingController defaults to .preferredContentSize, which
