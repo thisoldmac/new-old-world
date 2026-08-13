@@ -1588,6 +1588,8 @@ static void run_update(const char *request_json, long id, char *out, long cap)
 {
     char component_word[24];
     NowUpdateComponent component;
+    Boolean host_approved = request_json != NULL
+        && now_json_find_bool(request_json, "hostApproved", 0);
 
     now_cmd_arg_word(request_json, "component", component_word,
                      sizeof component_word);
@@ -1600,11 +1602,13 @@ static void run_update(const char *request_json, long id, char *out, long cap)
                      "\"message\":\"use application or extension\"}}", id);
             return;
         }
-        /* The command is shared by the local console and remote wire, so it
-           cannot stand in for the modal consent the Connections page owns.
-           Signed release artifacts may become automatable; today's unsigned
-           development artifacts deliberately stop here. */
-        if (now_wire_update_request(component, false, err, sizeof err) != 0) {
+        /* The command is shared by the local console and remote wire. A bare
+           command therefore cannot stand in for consent. hostApproved is the
+           native host Connections button's explicit human action; the host
+           still cannot choose arbitrary bytes because the guest binds this
+           request to the exact offer it already validated. */
+        if (now_wire_update_request(component, host_approved,
+                                    err, sizeof err) != 0) {
             now_json_escape(err, esc, sizeof esc);
             snprintf(out, (size_t)cap,
                      "{\"type\":\"command.result\",\"id\":%ld,"

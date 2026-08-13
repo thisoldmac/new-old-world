@@ -58,6 +58,10 @@ final class GuestListener: ObservableObject {
         /// standing in, because two builds sharing a version is the whole
         /// reason this is here (docs/open-issues.md, 2026-07-30).
         var guestBuild: String? = nil
+        /// Active NOW Extension identity as observed by the guest app.
+        /// Nil remains unknown: it can mean no resident or an older guest.
+        var extensionVersion: String? = nil
+        var extensionBuild: String? = nil
         /// What this machine answered at `hello` about agents driving it.
         /// Nil is "did not say" — a guest older than the field — and is
         /// not consent; the machine that means no says `.disabled`.
@@ -437,6 +441,8 @@ final class GuestListener: ObservableObject {
                 address: live.guestAddress,
                 version: record.guestVersion,
                 build: record.guestBuild,
+                extensionVersion: record.extensionVersion,
+                extensionBuild: record.extensionBuild,
                 agentAccess: record.guestAgentAccess,
                 operatingSystem: record.guestOS,
                 connectedAt: record.connectedAt,
@@ -761,6 +767,45 @@ final class GuestListener: ObservableObject {
                     completion: @escaping (CommandResult) -> Void) {
         runCommand(name, typed: args?.mapValues(CommandArg.text),
                    line: line, completion: completion)
+    }
+
+    func updateAvailability(_ component: UpdateProvider.Component,
+                            installedVersion: String?,
+                            installedBuild: String?)
+        -> UpdateProvider.Availability {
+        updateProvider.availability(
+            for: component, installedVersion: installedVersion,
+            installedBuild: installedBuild)
+    }
+
+    /// The host-side human update action. It addresses the active session
+    /// explicitly and never turns an unknown/current/older artifact into an
+    /// install. The guest binds the command back to the exact offer before
+    /// it accepts any bytes.
+    func installUpdate(_ component: UpdateProvider.Component,
+                       for key: GuestKey,
+                       installedVersion: String?, installedBuild: String?,
+                       completion: @escaping (CommandResult) -> Void) {
+        guard activeKey == key, sessions[key] != nil else {
+            completion(.init(
+                id: 0, ok: false,
+                error: .init(code: "not-addressed",
+                             message: "Drive this Mac before replacing its software.")))
+            return
+        }
+        guard case .replacement = updateProvider.availability(
+            for: component, installedVersion: installedVersion,
+            installedBuild: installedBuild) else {
+            completion(.init(
+                id: 0, ok: false,
+                error: .init(code: "not-available",
+                             message: "No different validated build is available.")))
+            return
+        }
+        runCommand("update", typed: [
+            "component": .text(component.rawValue),
+            "hostApproved": .flag(true),
+        ], completion: completion)
     }
 
     /// **The bound, and why it is this one.**
@@ -3319,6 +3364,9 @@ final class GuestListener: ObservableObject {
                           area: "update",
                           level: result.ok ? .info : .warn,
                           session: guest.guestKey)
+                if let key = guest.guestKey {
+                    self.events.publish(.updateFinished(key, result))
+                }
             },
             onProcessListing: { [weak self] listing in
                 guard fromActive() else { return }

@@ -247,6 +247,9 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     /// The build this machine reported at `hello`, when it reported one.
     /// Nil is "did not say", not "same as the last one".
     var build: String? = nil
+    /// Active resident identity observed by the guest application.
+    var extensionVersion: String? = nil
+    var extensionBuild: String? = nil
     /// This machine's answer at `hello` about being driven by an agent.
     /// Nil is "did not say", which is not the same as a yes.
     var agentAccess: AgentIntegrationGuestAccess? = nil

@@ -54,6 +54,17 @@ final class ContractMessageTests: XCTestCase {
             .updateResult(result))
     }
 
+    func testHelloCarriesTheActiveResidentIdentityWhenKnown() throws {
+        let hello = Hello(
+            contract: Contract.revision, side: "guest", version: "0.2.0",
+            build: String(repeating: "a", count: 64),
+            extensionVersion: "1.2",
+            extensionBuild: String(repeating: "b", count: 40),
+            name: "PowerBook", os: "9.1", chunk: 8192)
+        XCTAssertEqual(try ControlMessageCodec.decode(
+            ControlMessageCodec.encode(.hello(hello))), .hello(hello))
+    }
+
     func testContinuityOwnershipMessagesRoundTrip() throws {
         let arm = ContinuityArm(version: ContinuityContract.version,
                                 id: 9, nonceHi: 0x0123_4567,

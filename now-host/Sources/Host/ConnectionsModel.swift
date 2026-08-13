@@ -131,6 +131,8 @@ struct ConnectionRow: Identifiable, Equatable, Sendable {
     let since: Date
     let version: String?
     let build: String?
+    let extensionVersion: String?
+    let extensionBuild: String?
     let operatingSystem: String?
     /// The machine's own `hello` answer about being driven by an agent.
     /// Nil is "this build never said", which is not a yes.
@@ -264,6 +266,8 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 since: guest.connectedAt,
                 version: guest.version,
                 build: guest.build,
+                extensionVersion: guest.extensionVersion,
+                extensionBuild: guest.extensionBuild,
                 operatingSystem: guest.operatingSystem,
                 agentAccess: guest.agentAccess,
                 idIsAutoAssigned: guest.idIsAutoAssigned,
@@ -293,6 +297,8 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 since: record.lastSeen,
                 version: nil,
                 build: nil,
+                extensionVersion: nil,
+                extensionBuild: nil,
                 operatingSystem: nil,
                 agentAccess: nil,
                 idIsAutoAssigned: record.autoAssigned,
@@ -340,6 +346,13 @@ final class ConnectionsModel: ObservableObject {
     /// Cleared by the next attempt, so a stale complaint never outlives
     /// the field it is about.
     @Published private(set) var renameProblem: String?
+    @Published private(set) var pendingUpdates: Set<UpdateKey> = []
+    @Published private(set) var updateNotices: [UpdateKey: String] = [:]
+
+    struct UpdateKey: Hashable {
+        let guest: GuestKey
+        let component: UpdateProvider.Component
+    }
 
     private let listener: GuestListener
     private let resolve: (String) -> AgentIntegrationUnavailable?
@@ -375,9 +388,14 @@ final class ConnectionsModel: ObservableObject {
            after one. */
         watch = listener.events.subscribe { [weak self] event in
             switch event {
-            case .rosterChanged, .linkStateChanged, .focusChanged,
-                 .guestConnected, .guestDisconnected, .guestRenamed:
+            case .guestDisconnected(let key, _):
+                self?.abandonUpdates(for: key)
                 self?.refresh()
+            case .rosterChanged, .linkStateChanged, .focusChanged,
+                 .guestConnected, .guestRenamed:
+                self?.refresh()
+            case .updateFinished(let key, let result):
+                self?.finishUpdate(key: key, result: result)
             default:
                 break
             }
@@ -492,6 +510,69 @@ final class ConnectionsModel: ObservableObject {
 
     func clearRenameProblem() {
         renameProblem = nil
+    }
+
+    func updateAvailability(for row: ConnectionRow,
+                            component: UpdateProvider.Component)
+        -> UpdateProvider.Availability {
+        let installed = component == .application
+            ? (row.version, row.build)
+            : (row.extensionVersion, row.extensionBuild)
+        return listener.updateAvailability(
+            component, installedVersion: installed.0,
+            installedBuild: installed.1)
+    }
+
+    func installUpdate(for row: ConnectionRow,
+                       component: UpdateProvider.Component) {
+        guard let guest = row.key else { return }
+        let key = UpdateKey(guest: guest, component: component)
+        pendingUpdates.insert(key)
+        updateNotices[key] = "Downloading and installing…"
+        let installed = component == .application
+            ? (row.version, row.build)
+            : (row.extensionVersion, row.extensionBuild)
+        listener.installUpdate(
+            component, for: guest, installedVersion: installed.0,
+            installedBuild: installed.1) { [weak self] result in
+                guard let self, !result.ok else { return }
+                self.pendingUpdates.remove(key)
+                self.updateNotices[key] = result.error?.message
+                    ?? "The guest refused the update."
+            }
+    }
+
+    func updateNotice(for row: ConnectionRow,
+                      component: UpdateProvider.Component) -> String? {
+        guard let guest = row.key else { return nil }
+        return updateNotices[UpdateKey(guest: guest, component: component)]
+    }
+
+    func updateIsPending(for row: ConnectionRow,
+                         component: UpdateProvider.Component) -> Bool {
+        guard let guest = row.key else { return false }
+        return pendingUpdates.contains(
+            UpdateKey(guest: guest, component: component))
+    }
+
+    private func finishUpdate(key guest: GuestKey, result: UpdateResult) {
+        guard let component = UpdateProvider.Component(
+            rawValue: result.component) else { return }
+        let key = UpdateKey(guest: guest, component: component)
+        pendingUpdates.remove(key)
+        if result.ok {
+            updateNotices[key] = component == .application
+                ? "Installed. Quit NOW on the guest, then launch it again."
+                : "Installed. Restart the guest Mac to activate it."
+        } else {
+            updateNotices[key] = result.reason ?? result.code
+                ?? "The guest could not install the update."
+        }
+    }
+
+    private func abandonUpdates(for guest: GuestKey) {
+        pendingUpdates = pendingUpdates.filter { $0.guest != guest }
+        updateNotices = updateNotices.filter { $0.key.guest != guest }
     }
 
     /// The failure in the words of what to do about it. `taken` names the

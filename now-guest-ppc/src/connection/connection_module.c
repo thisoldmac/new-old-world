@@ -769,7 +769,11 @@ static void conn_idle(void)
                                     build, sizeof build);
         now_update_offer_line((NowUpdateComponent)i, version, build,
                               line, sizeof line);
-        if (i == kNowUpdateExtension
+        if (i == kNowUpdateApplication
+            && now_wire_update_relaunch_required()) {
+            snprintf(line, sizeof line,
+                     "Application installed - quit and relaunch NOW");
+        } else if (i == kNowUpdateExtension
             && now_wire_update_restart_required()) {
             snprintf(line, sizeof line,
                      "Extension installed - restart this Mac");
@@ -796,7 +800,9 @@ static void conn_idle(void)
         update_changed = now_update_offer_differs(
             kNowUpdateApplication, version, build);
         HiliteControl(g_update_app,
-                      update_changed ? kControlNoPart
+                      update_changed
+                          && !now_wire_update_relaunch_required()
+                      ? kControlNoPart
                                      : kControlInactivePart);
         now_update_current_identity(kNowUpdateExtension, version,
                                     sizeof version, build, sizeof build);
@@ -814,7 +820,10 @@ static void conn_idle(void)
 
 static void conn_status_text(char *out, long cap)
 {
-    if (now_wire_update_restart_required()) {
+    if (now_wire_update_relaunch_required()) {
+        snprintf(out, (size_t)cap,
+                 "Application installed. Quit NOW, then launch it again.");
+    } else if (now_wire_update_restart_required()) {
         snprintf(out, (size_t)cap,
                  "Extension installed. Restart this Mac to activate it.");
     } else if (g_status[0] != '\0') {

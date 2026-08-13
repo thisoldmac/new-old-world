@@ -23,9 +23,12 @@ connection = (
 install = (ROOT / "now-guest-ppc/src/update/update_install.c").read_text()
 main = (ROOT / "now-guest-ppc/src/main.c").read_text()
 
-# A remote command must not silently spend the local confirmation the
-# Connections page collected. Mutating false to true reopens exactly that gap.
-assert "now_wire_update_request(component, false" in commands
+# A bare remote command must not stand in for consent. The only remote path
+# that may install an unsigned development artifact carries the native host
+# button's explicit Boolean approval; the guest's own button still confirms
+# locally. Removing the parse or hard-coding true breaks this distinction.
+assert 'now_json_find_bool(request_json, "hostApproved", 0)' in commands
+assert "now_wire_update_request(component, host_approved" in commands
 ordered(connection, "now_confirm(\"Install unsigned update?\"",
         "now_wire_update_request(component, true")
 assert r'\"sha256\":\"%s\"' in wire
@@ -42,18 +45,28 @@ ordered(wire, "now_sha256_update(&g_put.update_sha, bytes, len)",
         "now_files_receive_finish(&g_put.rx)",
         "now_update_install(g_put.update_component")
 
-# Finder identity is checked before either component is exchanged. The old
-# resident is made non-INIT after a successful exchange so it cannot double
-# load on the next boot.
+# Finder identity is checked before either component is installed. The old
+# item is renamed to a collision-free recovery name and moved to that volume's
+# Trash before the verified staged item takes the canonical name. There is no
+# exchange: the running app deliberately remains alive from the trashed file
+# long enough to report that a relaunch is required.
 ordered(install, "finder_identity(staged, 'APPL', 'NOWo')",
-        "FSpExchangeFiles(staged, &current)")
+        'replace_to_trash(staged, &current, "application"')
 ordered(install, "finder_identity(staged, 'INIT', 'NOWx')",
-        "FSpExchangeFiles(staged, &current)",
-        "if (err == noErr) make_inert(staged)")
+        'replace_to_trash(staged, &current, "NOW Extension"')
+ordered(install, "FindFolder(spec->vRefNum, kTrashFolderType",
+        "FSpRename(spec, pname)", "move_to_directory(spec, trash_dir)")
+ordered(install, "move_old_to_trash(&old", "FSpRename(&replacement",
+        "restore_from_trash(&old")
+assert "FSpExchangeFiles" not in install
 
-# Relaunch happens after the application's normal teardown and log close, not
-# from inside the nested receive callback.
-ordered(main, "now_log_close();", "now_update_relaunch();")
+# The update callback never quits or relaunches the running application. It
+# reports the required human action on the existing connection instead.
+assert "now_update_relaunch" not in main
+assert '"relaunch-required"' in wire
+assert "g_update.relaunch_required = true;" in wire
+assert "now_wire_update_relaunch_required()" in connection
+assert "Application installed - quit and relaunch NOW" in connection
 
 # A successful extension exchange ends in a stable restart-required state,
 # not the stale "Downloading..." sentence or another enabled install button.

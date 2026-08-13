@@ -231,9 +231,13 @@ final class GuestListenerTests: XCTestCase {
         name: String = "PowerBook 1400",
         contract: Int = Contract.revision,
         build: String? = nil,
+        extensionVersion: String? = nil,
+        extensionBuild: String? = nil,
         agent: AgentIntegrationGuestAccess? = nil) -> ControlMessage {
         .hello(Hello(contract: contract, side: "guest", version: "0.1.0",
-                     build: build, agent: agent, name: name, os: "9.1",
+                     build: build, extensionVersion: extensionVersion,
+                     extensionBuild: extensionBuild, agent: agent,
+                     name: name, os: "9.1",
                      chunk: 8192))
     }
 
@@ -414,6 +418,20 @@ final class GuestListenerTests: XCTestCase {
         XCTAssertEqual(listener.health?.guestVersion, "0.1.0")
         XCTAssertEqual(listener.guests.first?.build, stamp,
                        "the roster row carries it too")
+    }
+
+    func testHelloResidentIdentityReachesHealthAndRoster() async throws {
+        let residentBuild = String(repeating: "c", count: 40)
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(extensionVersion: "1.2",
+                                  extensionBuild: residentBuild))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertEqual(listener.health?.extensionVersion, "1.2")
+        XCTAssertEqual(listener.health?.extensionBuild, residentBuild)
+        XCTAssertEqual(listener.guests.first?.extensionVersion, "1.2")
+        XCTAssertEqual(listener.guests.first?.extensionBuild, residentBuild)
     }
 
     /// A guest that reports no build leaves it absent.

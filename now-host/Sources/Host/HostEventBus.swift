@@ -205,6 +205,8 @@ enum HostEvent {
     /// of the three is the business of whoever was awaiting it; this says
     /// only that the bar is over.
     case transferEnded(GuestKey?)
+    /// A guest finished installing one exact host-published component.
+    case updateFinished(GuestKey, UpdateResult)
 
     // MARK: Files
 
@@ -254,6 +256,7 @@ enum HostEvent {
         case .streamStateChanged(let key, _): return key
         case .transferProgressed(let key, _, _): return key
         case .transferEnded(let key): return key
+        case .updateFinished(let key, _): return key
         case .fileReceived(let key, _, _, _): return key
         case .fileTreeChanged(let key, _, _): return key
         case .processListChanged(let key): return key

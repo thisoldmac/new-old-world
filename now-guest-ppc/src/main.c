@@ -43,11 +43,6 @@ enum {
 static Boolean g_running = true;
 static Rect g_screen_bounds;
 
-static void request_update_quit(void)
-{
-    g_running = false;
-}
-
 static const unsigned char k_file_menu_title[] = {
     4, 'F', 'i', 'l', 'e'
 };
@@ -489,7 +484,6 @@ int main(void)
        will be at the first request, and the seed is the whole reason a
        reference cannot be computed from what a caller can see. */
     now_observe_init();
-    now_update_set_quit_request(request_update_quit);
     conn_init();
     conn_set_shot_note(screenshots_module_note);
     conn_set_file_note(files_share_note);
@@ -641,6 +635,5 @@ int main(void)
 
     now_log(kLogInfo, "app", "quit: clean");
     now_log_close();
-    (void)now_update_relaunch();
     return 0;
 }

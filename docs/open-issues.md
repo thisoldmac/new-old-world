@@ -778,6 +778,32 @@ rollback-file recovery also remain suite-tested rather than emulator-accepted.
 Physical-hardware acceptance still owes the whole lifecycle on the PowerBook
 1400c.
 
+**2026-08-12 host-repair update:** repeated handoff packs exposed that the
+guest-only update controls could not repair the mismatch from the Mac where it
+was diagnosed, and automatic application relaunch hid the last recoverable
+state from the person testing it. Connections now compares the selected
+guest's application version/full build and active Extension version/160-bit
+build against the host's validated artifacts. A difference produces two
+separate, explicit buttons: **Replace Guest App…** and **Replace NOW
+Extension…**. Their command carries `hostApproved:true`; absent/false remains a
+refusal. The product host emits true only from the confirmed UI action, but the
+plaintext trusted-LAN wire cannot authenticate that claim and a hostile raw
+peer could forge it. The PPC hello now reports the active resident identity
+when it can read one.
+
+Both installers now move the old canonical item to that volume's Trash under a
+collision-free recovery name before the verified staged item takes its exact
+place. The running application stays connected and reports
+`relaunch-required`; the person quits and relaunches it. Extension replacement
+reports `restart-required`. Failure attempts to restore the original name and
+reports whether the old item instead remains recoverable under its recovery
+name. Host unit/loopback tests, the critical C source-ordering test, and all
+guest cross-builds pass at the working checkpoint; emulator and PowerBook
+replacement remain unverified. This is forward repair: a guest predating
+`hostApproved` needs one manual upgrade before future host-side repair can
+bootstrap itself. Artifact injection into the signed host bundle also remains
+packaging work; a validated Application Support catalog is supported now.
+
 Product release 0.2.0 is stated coherently in the shared guest header, PPC
 `vers` resource, host catalog and both host build paths; the wire-contract
 revision remains independent. Main-reference hooks reject incoherent copies,

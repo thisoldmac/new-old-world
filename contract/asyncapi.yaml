@@ -367,7 +367,10 @@ operations:
       application artifact and one optional resident-extension artifact.
       Offers are facts about exact published bytes, not an instruction to
       install; the guest compares version AND build and keeps the decision
-      human-owned. An absent offer means the host has no validated artifact.
+      human-owned. A person may approve the offered artifact from either
+      machine: the guest Connections page confirms locally, while the host
+      Connections page sends the `update` command with `hostApproved:true`.
+      An absent offer means the host has no validated artifact.
   guestRequestsUpdate:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -379,8 +382,9 @@ operations:
       the ordinary file.offer/file.accept/bulk/file.end lane, with purpose
       update.application or update.extension and SHA-256 over the exact
       MacBinary stream. The guest sends update.result after installation,
-      not merely after download. Applications relaunch; extensions require
-      a cold restart. NOW-68K does not implement this additive family.
+      not merely after download. Applications remain connected and report
+      relaunch-required; extensions require a cold restart. NOW-68K does not
+      implement this additive family.
   hostExecutesLine:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -1606,6 +1610,22 @@ components:
             the same as any other. A receiver shows nothing rather than
             guessing, and must not fall back to `version` — a version equal
             across two builds is exactly the failure this field exists for.
+        extensionVersion:
+          type: string
+          description: >
+            Version of the active NOW Extension observed by a normal PPC
+            guest application. Absent means the sender cannot establish an
+            active resident; it is not a claim that no Extension is on disk.
+            Resident-role connections omit it because they describe
+            themselves through `version`.
+        extensionBuild:
+          type: string
+          pattern: "^[0-9a-f]{40}$"
+          description: >
+            First 160 bits of the active NOW Extension's deterministic build
+            identity, as carried by the resident table ABI. It is compared
+            with the prefix of an offered full build identity. Absent stays
+            unknown and is never inferred from extensionVersion.
         agent:
           enum: [disabled, read-only, full]
           description: >
@@ -3526,7 +3546,7 @@ components:
         id: { type: integer }
         component: { enum: [application, extension] }
         ok: { type: boolean }
-        action: { enum: [relaunch, restart-required] }
+        action: { enum: [relaunch, relaunch-required, restart-required] }
         code: { type: string }
         reason: { type: string }
     FileAccept:
@@ -4430,12 +4450,22 @@ components:
         has published. With `application` or `extension`, asks for that
         offered build; download, verification, installation and the terminal
         update.result remain one guest-owned operation. The application
-        relaunches only after its replacement is complete. An extension
-        install reports restart-required and never restarts the Mac itself.
+        remains running from its trashed rollback copy after replacement and
+        reports relaunch-required. An extension install reports
+        restart-required and never restarts the Mac itself.
       args:
         type: object
         properties:
           component: { enum: [application, extension] }
+          hostApproved:
+            type: boolean
+            description: >
+              The native host emits true only after a person presses its
+              install button. It permits today's unsigned development
+              artifact to take the same path as confirmation in the guest
+              Connections page. Omitted or false remains inspect-only/refused.
+              This is product authorization, not authentication: the trusted-
+              LAN wire is plaintext and a hostile raw peer could forge it.
       x-line: Empty shows status; application or extension installs it.
       output:
         type: object

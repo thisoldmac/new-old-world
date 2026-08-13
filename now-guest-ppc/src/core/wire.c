@@ -40,6 +40,7 @@
 #include "sha256.h"
 #include "update_install.h"
 #include "update_model.h"
+#include "update_status.h"
 
 enum {
     /* Room for the one field whose VALUE is not known until the sizing
@@ -230,6 +231,10 @@ static long g_idle_sleep_ticks = 6;
 
 static struct {
     Boolean pending;
+    /* The replacement is canonical on disk, but this process is still the
+       old file executing from the Trash. Keep the link alive so both Macs
+       can say what remains: quit this instance, then launch NOW again. */
+    Boolean relaunch_required;
     /* The new INIT is on disk, while the old table necessarily remains
        active until a cold boot. Keep this distinct from `pending`: the
        transfer is over, and offering the button again would install the
@@ -744,14 +749,33 @@ static void service_connecting(void)
     }
 }
 
+static void hello_extension_fields(char *out, long cap)
+{
+    char version[24];
+    char build[65];
+
+    now_update_current_identity(kNowUpdateExtension,
+                                version, sizeof version,
+                                build, sizeof build);
+    if (version[0] != '\0' && strlen(build) == 40) {
+        snprintf(out, (size_t)cap,
+                 ",\"extensionVersion\":\"%s\","
+                 "\"extensionBuild\":\"%s\"",
+                 version, build);
+    } else if (cap > 0) {
+        out[0] = '\0';
+    }
+}
+
 static void send_hello(void)
 {
-    char json[640];
+    char json[896];
     char name[64];
     char esc[256];
     char model[64];
     char model_esc[160];
     char sysver[kNowIdentityVersionCap];
+    char extension_fields[160];
 
     /* This machine's name, not the product's: the other side puts it on
        screen ("Connected: Quadra 950"), and the product name is the one
@@ -773,6 +797,7 @@ static void send_hello(void)
     now_machine_model(model, sizeof model);
     now_json_escape(model, model_esc, sizeof model_esc);
     now_system_version(sysver, sizeof sysver);
+    hello_extension_fields(extension_fields, sizeof extension_fields);
     /* build carries what version cannot: two builds of one release version
        deliberately share a string, so a stale build on a machine otherwise
        looks current and a host has no way to tell them apart. It cost a misdiagnosis on
@@ -788,10 +813,10 @@ static void send_hello(void)
     snprintf(json, sizeof json,
              "{\"type\":\"hello\",\"contract\":%d,\"side\":\"guest\","
              "\"version\":\"%s\",\"build\":\"%s\",\"agent\":\"%s\","
-             "\"name\":\"%s\",\"os\":\"%s\","
+             "\"name\":\"%s\",\"os\":\"%s\"%s,"
              "\"machine\":{\"id\":%ld,\"model\":\"%s\"},\"chunk\":%d}",
              kNowContractRevision, PRODUCT_VERSION, now_build_stamp(),
-             now_agent_access(), esc, sysver,
+             now_agent_access(), esc, sysver, extension_fields,
              now_machine_type(), model_esc, kNowDefaultChunk);
     if (!send_control(json)) {
         fail("Sending hello failed");
@@ -4464,6 +4489,11 @@ Boolean now_wire_update_restart_required(void)
     return g_update.restart_required;
 }
 
+Boolean now_wire_update_relaunch_required(void)
+{
+    return g_update.relaunch_required;
+}
+
 /* The inbound receive, read-only, for whoever wants to draw it moving
    — now_wire_get_active's shape, one lane over: that one watches a
    pull (file.get), this one watches an offered receive (file.offer),
@@ -5140,7 +5170,7 @@ static void finish_put(const char *reply)
         const char *component = now_update_component_name(
             g_put.update_component);
         const char *action = g_put.update_component == kNowUpdateApplication
-            ? "relaunch" : "restart-required";
+            ? "relaunch-required" : "restart-required";
 
         install_reason[0] = '\0';
         if (!now_update_install(g_put.update_component, &g_put.rx.final,
@@ -5166,10 +5196,12 @@ static void finish_put(const char *reply)
         send_control(update_reply);
         if (g_put.update_component == kNowUpdateExtension) {
             g_update.restart_required = true;
+        } else {
+            g_update.relaunch_required = true;
         }
         g_update.pending = false;
         note_shot(g_put.update_component == kNowUpdateApplication
-                  ? "Update installed - relaunching"
+                  ? "Update installed - quit and relaunch NOW"
                   : "Extension installed - restart this Mac");
         return;
     }
