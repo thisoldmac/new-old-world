@@ -355,7 +355,7 @@ private struct ContinuityControlCard: View {
                               || controller.virtualADB)
                 Toggle("Virtual ADB pointer (experimental)",
                        isOn: $controller.virtualADB)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
+                    .disabled(!mirrorRunning)
                 Toggle("Hide guest cursor during drag (experimental)",
                        isOn: $controller.hideGuestCursorWhileDragging)
                     .disabled(!controller.isEnabled || !mirrorRunning
