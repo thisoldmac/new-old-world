@@ -121,6 +121,20 @@ if "now_continuity_service_ready(shared)" not in arm:
 if arm.index("gEpoch = (NowCU32)epoch") < arm.index(
         "now_continuity_service_invoke(shared)"):
     failures.append("arm publishes UDP authority before resident acceptance")
+for field in ("adb_observer_state", "adb_observer_address",
+              "adb_observer_handler_id", "adb_observer_device_count",
+              "adb_observer_install_result", "adb_observer_installs",
+              "adb_observer_callbacks", "adb_trace_write_seq"):
+    if field not in arm:
+        failures.append(
+            f"arm log no longer persists ADB observer boundary field {field}")
+for field in ("adb_observer_state", "adb_observer_callbacks",
+              "adb_observer_reentries", "adb_trace_write_seq"):
+    if field not in disarm:
+        failures.append(
+            f"disarm log no longer persists ADB observer boundary field {field}")
+if "now_log_flush();" not in arm or "now_log_flush();" not in disarm:
+    failures.append("ADB observer boundary can be lost before a wedge reboot")
 if "if (!prepare_ack(shared))" not in try_ack:
     failures.append("UDP ACK send no longer requires a stable resident snapshot")
 if "HideCursor" in SOURCE or "ShowCursor" in SOURCE:
