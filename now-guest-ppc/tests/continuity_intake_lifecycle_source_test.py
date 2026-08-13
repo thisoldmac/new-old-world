@@ -21,6 +21,7 @@ WIRE = (ROOT / "now-guest-ppc/src/core/wire.c").read_text()
 CURSOR = (ROOT / "now-guest-ppc/src/input/continuity_cursor.c").read_text()
 EXT_CURSOR = (ROOT / "ext/src/now_ext_cursor.c").read_text()
 EXT_CONTINUITY = (ROOT / "ext/src/now_ext_continuity.c").read_text()
+SERVICE = (ROOT / "now-guest-ppc/src/input/continuity_service.c").read_text()
 TRACKING_PATCH = (ROOT / "ext/src/now_ext_cursor_tracking.S").read_text()
 
 
@@ -66,6 +67,7 @@ tracking_complete = body(
 release_button = body("static void release_button(", EXT_CONTINUITY)
 event_result = body("static int process_event_result(", EXT_CONTINUITY)
 continuity_finish = body("static void finish_locked(", EXT_CONTINUITY)
+service_invoke = body("int now_continuity_service_invoke(", SERVICE)
 
 failures = []
 if "gEpoch = 0" not in disarm:
@@ -308,6 +310,15 @@ if "kOwnedHistoryCount = 64" not in EXT_CURSOR:
     failures.append("owned Cursor Device propagation can age out before one second")
 if "next + kOwnedHistoryCount - 1u - i" not in EXT_CURSOR:
     failures.append("owned-point lookup no longer checks newest reports first")
+if "kNowContinuityServiceApplyRounds = 4" not in SERVICE:
+    failures.append("the PPC resident handshake lost its explicit drain bound")
+if "for (round = 0; round < kNowContinuityServiceApplyRounds; ++round)" \
+        not in service_invoke:
+    failures.append("the PPC service no longer drains resident-emitted edge chains")
+if service_invoke.count("invoke_resident(cell)") < 2:
+    failures.append("the PPC service no longer commits every applied result")
+if "if (!published_result)" not in service_invoke:
+    failures.append("the bounded PPC drain no longer stops when the handshake is quiet")
 
 if failures:
     for failure in failures:

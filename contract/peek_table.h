@@ -1025,6 +1025,13 @@ enum {
     kNowPeekContinuityTraceApplyError = 5,
     kNowPeekContinuityTraceExit = 6,
     kNowPeekContinuityTraceReentry = 7,
+    /* Task-time evidence from the target process. Coordinates are packed as
+       signed 16-bit h/v pairs: arg0 is the live MouseLocation observed on
+       entry, arg1 is the held source that the hook restores. */
+    kNowPeekContinuityTraceTrackingConflict = 8,
+    /* arg0 is the key generation. arg1 packs action in the high 16 bits and
+       the kNowPeekContinuityKeyError* result in the low 16 bits. */
+    kNowPeekContinuityTraceKeyboardResult = 9,
     kNowPeekContinuityTraceCapacity = 8
 };
 

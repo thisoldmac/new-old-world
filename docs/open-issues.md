@@ -157,6 +157,37 @@ starvation but does not claim resident-only arm while an alert owns the
 application event loop. Continuity file dragging and held-drag visual fidelity
 also remain open and unchanged.
 
+**2026-08-13 second attended retest and next candidate:** Command-O/Command-W
+now reach the guest and no false edge return was observed, so those two repairs
+are metal-verified for the attended cases. Menus also remain corrected. The
+remaining failures became more specific:
+
+- The host delivered the second down about 174 ms after the first, and the
+  resident correctly deferred it behind the preceding manager-up. The PPC
+  bridge applied that up, re-entered the resident, and then returned without
+  reading the down request the resident had just emitted. Its generation was
+  never acknowledged, so the host absorbed following clicks for the
+  candidate's five-second exception. The bridge now drains up to four
+  application-result rounds and performs the final resident commit in the same
+  cooperative call. Every down again has the ordinary one-second fail-safe;
+  the exact one-round and five-second mutations fail their guards.
+- Dragging does not exhibit the periodic non-drag pause. Instead the visible
+  guest cursor jitters between the current host point and another point while
+  the logical gesture continues. An open menu shows the same dual-position
+  jitter between the current point and its opening click. The synthetic Cursor
+  Device record did not return to the press point in the attended log, so the
+  new bounded resident trace records the live point inherited by each target
+  tracking hook beside the source it reasserts. This is diagnostic only.
+- The keyboard queue reported four events accepted but only two applied and
+  two failed. Each target-context keyboard result now records generation,
+  action and error in the resident flight recorder, so the next log identifies
+  which edge failed rather than leaving only aggregate counts.
+
+The bounded edge drain, prompt fail-safe, cursor-conflict trace and keyboard
+result trace build in both classic artifacts and pass their focused guards.
+They are **tested, not metal-verified** pending the next matched bundle. Modal
+attachment and Continuity file dragging remain open and unchanged.
+
 **2026-08-13 pre-PR review:** the full integration diff received local
 correctness, reliability, contract, security, performance, test, Swift and
 maintainability review. The bounded defects were repaired in the candidate:

@@ -724,17 +724,12 @@ final class MirrorContinuityControllerTests: XCTestCase {
                        firstUp.buttonGeneration)
         XCTAssertFalse(secondDown.previousButtonDown,
                        "v4 must carry the intervening up beside the second down")
-        try await Task.sleep(nanoseconds: 1_200_000_000)
-        XCTAssertTrue(
-            rig.controller.isActive,
-            "a resident-deferred second press must outlive the ordinary deadline")
-        rig.udp.acknowledge(secondDown)
-        try await waitUntil("confirmed second release") {
-            rig.udp.packets.contains {
-                $0.buttonGeneration != secondDown.buttonGeneration
-                    && !$0.flags.contains(.primaryDown)
-            }
+        try await waitUntil("unacknowledged deferred press fails closed",
+                            timeout: 1.5) {
+            !rig.controller.isActive
         }
+        XCTAssertTrue(rig.controller.isEnabled,
+                      "the timeout ends only this ownership epoch")
     }
 
     func testIndependentKeepaliveContinuesWhileMainActorIsBusy() async throws {

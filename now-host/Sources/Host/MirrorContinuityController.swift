@@ -328,8 +328,7 @@ final class MirrorContinuityController: ObservableObject,
             if clickCount >= 2, !wireButtonDown {
                 audit(.info, "starting AppKit-confirmed click \(clickCount) "
                     + "before the preceding manager-up acknowledgement")
-                beginPrimaryCycle(at: point, inMenuBar: inMenuBar,
-                                  residentMayDeferPress: true)
+                beginPrimaryCycle(at: point, inMenuBar: inMenuBar)
                 return true
             }
             guard bufferedButtonCycle == nil,
@@ -349,8 +348,7 @@ final class MirrorContinuityController: ObservableObject,
 
     private func beginPrimaryCycle(at point: MirrorKit.Point,
                                    releasedAt: MirrorKit.Point? = nil,
-                                   inMenuBar: Bool = false,
-                                   residentMayDeferPress: Bool = false) {
+                                   inMenuBar: Bool = false) {
         self.point = point
         positionDirty = true
         advancePositionIfNeeded()
@@ -365,10 +363,10 @@ final class MirrorContinuityController: ObservableObject,
         menuReleaseArmed = false
         isMenuTracking = inMenuBar
         sendState(inside: true, keepalive: false)
+        audit(.info, "primary down sent: generation=\(buttonGeneration), "
+            + "clickPoint=\(point.x),\(point.y), menu=\(inMenuBar)")
         buttonTransitionSentUptime = ProcessInfo.processInfo.systemUptime
-        scheduleButtonAckTimeout(
-            generation: buttonGeneration, down: true,
-            residentMayDeferPress: residentMayDeferPress)
+        scheduleButtonAckTimeout(generation: buttonGeneration, down: true)
     }
 
     @discardableResult
@@ -379,6 +377,11 @@ final class MirrorContinuityController: ObservableObject,
             return true
         }
         guard buttonCycleActive else { return false }
+        if !primaryCycleDragged {
+            audit(.info, "primary drag began: generation=\(buttonGeneration), "
+                + "from=\(self.point.x),\(self.point.y), "
+                + "to=\(point.x),\(point.y)")
+        }
         primaryCycleDragged = true
         if pressAcknowledged {
             self.point = point
@@ -950,8 +953,7 @@ final class MirrorContinuityController: ObservableObject,
     }
 
     private func scheduleButtonAckTimeout(
-        generation: UInt32, down: Bool,
-        residentMayDeferPress: Bool = false
+        generation: UInt32, down: Bool
     ) {
         buttonAckTimeout?.cancel()
         buttonAckTimeout = Task { @MainActor [weak self] in
@@ -959,8 +961,7 @@ final class MirrorContinuityController: ObservableObject,
                is already safe in low memory and can wait for a starved NOW
                task to regain cooperative time after the target tracking loop
                unwinds. */
-            let timeout: UInt64 = down && !residentMayDeferPress
-                ? 1_000_000_000 : 5_000_000_000
+            let timeout: UInt64 = down ? 1_000_000_000 : 5_000_000_000
             try? await Task.sleep(nanoseconds: timeout)
             guard let self, !Task.isCancelled,
                   self.phase == .active, self.buttonCycleActive,

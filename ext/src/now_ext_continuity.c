@@ -14,6 +14,7 @@
 #include "now_ext_core_logic.h"
 #include "now_ext_adb_observer.h"
 #include "now_ext_continuity_keyboard.h"
+#include "now_ext_continuity_trace.h"
 #include "now_ext_cursor_input.h"
 #include "now_input_owner.h"
 
@@ -97,6 +98,40 @@ static void trace_event(NowPeekContinuityCell *cell, NowPeekU32 event,
     entry->arg1 = arg1;
     entry->seq = seq;                 /* commit the entry last */
     cell->trace_write_seq = seq;
+}
+
+static NowPeekI32 pack_point(NowPeekI32 h, NowPeekI32 v)
+{
+    return (NowPeekI32)((((NowPeekU32)h & 0xFFFFu) << 16)
+        | ((NowPeekU32)v & 0xFFFFu));
+}
+
+void now_ext_continuity_trace_tracking_conflict(
+    NowPeekI32 live_h, NowPeekI32 live_v,
+    NowPeekI32 source_h, NowPeekI32 source_v)
+{
+    NowPeekContinuityCell *cell = continuity_cell(gTable);
+
+    if (cell == NULL || !cell->enabled)
+        return;
+    trace_event(cell,
+                (NowPeekU32)kNowPeekContinuityTraceTrackingConflict,
+                (NowPeekU32)TickCount(), pack_point(live_h, live_v),
+                pack_point(source_h, source_v));
+}
+
+void now_ext_continuity_trace_keyboard_result(
+    NowPeekU32 generation, NowPeekU32 action, NowPeekU32 error)
+{
+    NowPeekContinuityCell *cell = continuity_cell(gTable);
+    NowPeekI32 packed;
+
+    if (cell == NULL || !cell->enabled)
+        return;
+    packed = (NowPeekI32)(((action & 0xFFFFu) << 16)
+                          | (error & 0xFFFFu));
+    trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceKeyboardResult,
+                (NowPeekU32)TickCount(), (NowPeekI32)generation, packed);
 }
 
 static void service_return(NowPeekContinuityCell *cell)

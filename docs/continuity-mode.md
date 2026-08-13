@@ -110,9 +110,12 @@ protects a held live button.
 A cooperatively scheduled tracking loop may delay the PPC application's
 manager-up result even after the resident has made low-memory button-up safe.
 The host therefore allows five seconds for up to settle, while retaining the
-one-second down bound. A second complete primary cycle may wait behind that
-single outstanding up; the host never waits to classify a single versus double
-click. Cursor button breadcrumbs are memory-only, because the earlier
+one-second down bound. An AppKit-confirmed second press can arrive beside that
+outstanding up. One bounded PPC service call now drains the ordered
+up-result → deferred-down-request → down-result chain before returning; a down
+that still has no acknowledgement after one second is a real failure and ends
+only that ownership epoch. The host never waits to classify a single versus
+double click. Cursor button breadcrumbs are memory-only, because the earlier
 `FlushVol` before each manager transition stretched that acknowledgement far
 enough to destroy double-click timing. The bounded cycle preserves a human
 double-click without permitting an unbounded click queue; its corrected timing
@@ -155,10 +158,14 @@ moved accurately; the epoch ended after mouse-up; and a second click was lost.
 The cursor visibility wake and delayed-up tolerance are implemented and tested
 here but await another attended metal pass. The first one-cycle double-click
 buffer preserved events but still waited for the preceding manager-up
-acknowledgement, which the 2026-08-13 log showed could outlive the classic
-double-click interval. Wire V4 and resident table V9 now carry and consume the
-preceding up beside an AppKit-confirmed second down; this correction is tested
-and awaits the next attended bundle.
+acknowledgement, which the first 2026-08-13 log showed could outlive the classic
+double-click interval. Wire V4 and resident table V9 carry and consume the
+preceding up beside an AppKit-confirmed second down. A later attended log proved
+the resident emitted that deferred down only after the PPC bridge's final
+snapshot, leaving it uncommitted until the host's five-second exception
+expired. The bridge now drains the complete bounded chain synchronously and
+the host has removed that lock-like exception. This correction is tested and
+awaits the next attended bundle.
 The research spike's chain-only task-time tracking hooks are now integrated
 behind the first accepted Continuity arm. Their tail-chain, idle bypass,
 register preservation, bounded settle surface, and authority-exit cancellation
@@ -1086,32 +1093,27 @@ either tracking experiment merely failing to run. They do not prove that the
 physical baseline itself was read by Finder: that field is deliberately the
 last accepted native point, not a live attribution trace.
 
-The next diagnostic therefore samples the PPC application's own synthetic
-Cursor Device record immediately before and after every `CursorDeviceMoveTo`.
-It counts divergence from the preceding request, exact returns to the bound
-press point, and failures to leave the record at the new request. The samples
-are resident-free scalar reads and are persisted only at disarm. If the record
-returns to the press point between successful moves, the second authority is
-inside Cursor Device Manager reconciliation. If it remains coherent, the next
-probe moves outward to Event Manager/tracking state rather than adding another
-position writer.
+The PPC application's synthetic Cursor Device record was then sampled before
+and after every `CursorDeviceMoveTo`. The attended log found no exact return to
+the press point while the visible guest cursor still jittered between the
+current source and the gesture/menu-open point. The next diagnostic therefore
+moves outward to the target's tracking traps: each hook records the live
+`MouseLocation` it inherited and the held source it reasserted, retaining a
+bounded power-of-two progression plus every exact return to the press point.
+This is evidence only; it does not add another position writer or claim the
+visual jitter fixed.
 
 ### Double-click timing is measured at both scheduling boundaries
 
-The host already buffers exactly one second primary cycle while the first
-manager-up is pending. That preserves edge order and avoids overwriting the
-guest's owed Cursor Device transition, but attended testing still finds double
-clicks intermittent. The likely variable is elapsed down-to-down time: the
-second press cannot be issued until the first manager-up settles, and a
-cooperative hitch can stretch that interval beyond the guest application's
-double-click threshold.
-
-The host now records the observed host down-to-down interval and each down/up
-acknowledgement latency. The resident's existing flight recorder supplies the
-guest apply ticks. This is diagnostic, not a claimed fix. The next attended
-failure should establish whether the guest sees the second down too late before
-choosing between an atomic queued-edge contract and event-timestamp assistance;
-changing a delay without that measurement would only move the flaky boundary.
+The host carries one AppKit-confirmed second cycle beside the first manager-up,
+preserving both edge order and native down-to-down timing. The 2026-08-13
+follow-up showed that the resident correctly deferred the second down, but the
+PPC bridge committed only the preceding up and returned before reading the new
+request. That missing manager-down acknowledgement produced the apparent drag
+lock. The bounded synchronous drain now settles both transitions in one bridge
+call, and the host's ordinary one-second down fail-safe applies to every press.
+Host source intervals, per-transition acknowledgement latency, and resident
+apply ticks remain logged. The corrected chain is tested, not metal-verified.
 
 ### Menu visibility: synchronized across guest and Mirror
 

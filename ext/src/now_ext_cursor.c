@@ -73,6 +73,7 @@
 
 #include "peek_table.h"
 #include "now_cursor_logic.h"
+#include "now_ext_continuity_trace.h"
 #include "now_ext_cursor_input.h"
 
 /* CrsrNew and CrsrCouple are past where this toolchain's LowMem.h stops
@@ -130,6 +131,9 @@ void *gNowCursorOldButton = NULL;
 static volatile unsigned short gNowCursorTrackingSourceSeq = 0;
 static volatile short gNowCursorTrackingSourceH = 0;
 static volatile short gNowCursorTrackingSourceV = 0;
+static Point gNowCursorTrackingPressPoint;
+static Boolean gNowCursorTrackingPressValid = false;
+static NowPeekU32 gNowCursorTrackingConflictCount = 0;
 
 static NowPeekTable *gTable = NULL;
 static CursorDevicePtr gDevice = NULL;
@@ -408,9 +412,15 @@ void now_ext_cursor_remember_continuity_tracking_point(NowPeekI32 h,
                                                        NowPeekI32 v)
 {
     Point pt;
+    Boolean beginning = gNowCursorTrackingSourceActive == 0;
 
     pt.h = (short)h;
     pt.v = (short)v;
+    if (beginning) {
+        gNowCursorTrackingPressPoint = pt;
+        gNowCursorTrackingPressValid = true;
+        gNowCursorTrackingConflictCount = 0;
+    }
     gNowCursorTrackingSourceSeq++;
     gNowCursorTrackingSourceH = pt.h;
     gNowCursorTrackingSourceV = pt.v;
@@ -442,6 +452,7 @@ void now_ext_cursor_end_continuity_tracking(void)
     gNowCursorTrackingSourceActive = 0;
     gNowCursorTrackingSourceSeq++;
     gNowCursorTrackingRedrawOwed = 0;
+    gNowCursorTrackingPressValid = false;
 }
 
 /* Epoch configuration is copied into one resident byte for the assembly hot
@@ -525,8 +536,24 @@ void now_ext_cursor_settle_continuity_tracking(void)
     }
     live = LMGetMouseLocation();
     moved = live.h != pt.h || live.v != pt.v;
-    if (moved && cell != NULL)
+    if (moved && cell != NULL) {
         cell->tracking_settle_moved++;
+        gNowCursorTrackingConflictCount++;
+        /* Preserve a bounded progression when NOW cannot drain the ring
+           during a target's nested tracking loop. Powers of two retain the
+           conflict's duration; every return to the press point is retained
+           because that is the observed menu/drag jitter signature. */
+        if (gNowCursorTrackingConflictCount <= 4u
+                || (gNowCursorTrackingConflictCount
+                    & (gNowCursorTrackingConflictCount - 1u)) == 0
+                || (gNowCursorTrackingPressValid
+                    && live.h == gNowCursorTrackingPressPoint.h
+                    && live.v == gNowCursorTrackingPressPoint.v)) {
+            now_ext_continuity_trace_tracking_conflict(
+                (NowPeekI32)live.h, (NowPeekI32)live.v,
+                (NowPeekI32)pt.h, (NowPeekI32)pt.v);
+        }
+    }
     /* The PowerBook's ADB path can republish its stationary physical point
        between host ticks. Reassert our held point on every tracking call.
        The baseline mode then lets the real Toolbox trap answer normally;

@@ -13,6 +13,7 @@
 #include <Processes.h>
 
 #include "now_continuity_keyboard_logic.h"
+#include "now_ext_continuity_trace.h"
 
 enum { kNowContinuityKeyDrainPerPass = 4 };
 
@@ -67,6 +68,9 @@ void now_ext_continuity_keyboard_gne(NowPeekTable *table)
         if (peek == kNowContinuityKeyPeekInvalid) {
             now_continuity_keyboard_commit(
                 cell, &event, kNowPeekContinuityKeyErrorInvalid);
+            now_ext_continuity_trace_keyboard_result(
+                event.generation, event.action,
+                (NowPeekU32)kNowPeekContinuityKeyErrorInvalid);
             continue;
         }
         if (GetFrontProcess(&front) != noErr
@@ -90,9 +94,15 @@ void now_ext_continuity_keyboard_gne(NowPeekTable *table)
             element->evtQModifiers = (short)event.modifiers;
             now_continuity_keyboard_commit(
                 cell, &event, kNowPeekContinuityKeyErrorNone);
+            now_ext_continuity_trace_keyboard_result(
+                event.generation, event.action,
+                (NowPeekU32)kNowPeekContinuityKeyErrorNone);
         } else {
             now_continuity_keyboard_commit(
                 cell, &event, kNowPeekContinuityKeyErrorPostFailed);
+            now_ext_continuity_trace_keyboard_result(
+                event.generation, event.action,
+                (NowPeekU32)kNowPeekContinuityKeyErrorPostFailed);
         }
     }
 }

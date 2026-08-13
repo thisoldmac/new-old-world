@@ -40,6 +40,8 @@ static NowPeekU32 gLastTraceSeq;
 static NowPeekU32 gLastADBTraceSeq;
 static int gInvoking;
 
+enum { kNowContinuityServiceApplyRounds = 4 };
+
 static int resolve_call_upp(void)
 {
     CFragConnectionID conn = 0;
@@ -153,6 +155,31 @@ static void drain_trace(const NowPeekContinuityCell *cell)
                         (unsigned long)entry->event,
                         (unsigned long)entry->ticks, (long)entry->arg0,
                         (long)entry->arg1);
+            } else if (entry->event
+                        == kNowPeekContinuityTraceTrackingConflict) {
+                short live_h = (short)(((NowPeekU32)entry->arg0 >> 16)
+                                       & 0xFFFFu);
+                short live_v = (short)((NowPeekU32)entry->arg0 & 0xFFFFu);
+                short source_h = (short)(((NowPeekU32)entry->arg1 >> 16)
+                                         & 0xFFFFu);
+                short source_v = (short)((NowPeekU32)entry->arg1 & 0xFFFFu);
+                now_log_memory(kLogInfo, "mirror",
+                    "tracking conflict seq=%lu ticks=%lu live=%ld,%ld source=%ld,%ld",
+                    (unsigned long)entry->seq,
+                    (unsigned long)entry->ticks,
+                    (long)live_h, (long)live_v,
+                    (long)source_h, (long)source_v);
+            } else if (entry->event
+                        == kNowPeekContinuityTraceKeyboardResult) {
+                NowPeekU32 packed = (NowPeekU32)entry->arg1;
+                now_log_memory(
+                    (packed & 0xFFFFu) == kNowPeekContinuityKeyErrorNone
+                        ? kLogInfo : kLogError,
+                    "mirror",
+                    "keyboard apply generation=%lu action=%lu error=%lu",
+                    (unsigned long)(NowPeekU32)entry->arg0,
+                    (unsigned long)((packed >> 16) & 0xFFFFu),
+                    (unsigned long)(packed & 0xFFFFu));
             } else {
                 now_log_memory(kLogInfo, "mirror",
                                "resident trace seq=%lu event=%lu ticks=%lu arg=%ld,%ld",
@@ -260,62 +287,65 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
     NowPeekI32 h;
     NowPeekI32 v;
     long err;
-    int published_result = 0;
+    int published_result;
+    int round;
 
     if (cell == NULL || gInvoking)
         return cell != NULL;
     gInvoking = 1;
-    if (!invoke_resident(cell)) {
-        gInvoking = 0;
-        return 0;
-    }
-    drain_trace(cell);
-    drain_adb_trace(cell);
-    status_seq = cell->status_seq;
-    if ((status_seq & 1u) != 0) {
-        gInvoking = 0;
-        return 1;
-    }
-    request_seq = cell->request_position_seq;
-    h = cell->request_h;
-    v = cell->request_v;
-    event_generation = cell->event_request_generation;
-    event_down = cell->event_request_down;
-    if (status_seq != cell->status_seq) {
-        gInvoking = 0;
-        return 1;
-    }
+    for (round = 0; round < kNowContinuityServiceApplyRounds; ++round) {
+        if (!invoke_resident(cell)) {
+            gInvoking = 0;
+            return 0;
+        }
+        drain_trace(cell);
+        drain_adb_trace(cell);
+        status_seq = cell->status_seq;
+        if ((status_seq & 1u) != 0)
+            break;
+        request_seq = cell->request_position_seq;
+        h = cell->request_h;
+        v = cell->request_v;
+        event_generation = cell->event_request_generation;
+        event_down = cell->event_request_down;
+        if (status_seq != cell->status_seq)
+            break;
 
-    if (cell->enabled
-            && cell->state == (NowPeekU32)kNowPeekContinuityStateActive
-            && request_seq != 0
-            && now_continuity_sequence_newer(request_seq,
-                                               cell->apply_result_seq)) {
-        err = now_continuity_cursor_move((unsigned long)cell->epoch,
-                                         (unsigned long)request_seq,
-                                         (long)h, (long)v);
-        cell->apply_result_err = (NowPeekI32)err;
-        cell->apply_result_seq = request_seq;    /* publish result last */
-        published_result = 1;
-    }
+        published_result = 0;
+        if (cell->enabled
+                && cell->state == (NowPeekU32)kNowPeekContinuityStateActive
+                && request_seq != 0
+                && now_continuity_sequence_newer(
+                    request_seq, cell->apply_result_seq)) {
+            err = now_continuity_cursor_move((unsigned long)cell->epoch,
+                                             (unsigned long)request_seq,
+                                             (long)h, (long)v);
+            cell->apply_result_err = (NowPeekI32)err;
+            cell->apply_result_seq = request_seq; /* publish result last */
+            published_result = 1;
+        }
 
-    /* The same synthetic Cursor Device owns position and button transitions.
-       This corrected PPC transition is the input-device API; PostEvent and a
-       resident pretending to be the physical ADB driver are both excluded.
-       An up request survives an exited state because the resident's dead-man
-       may have lifted MBState first and the manager still needs reconciling. */
-    if (event_generation != 0
-            && (event_generation != cell->event_result_generation
-                || event_down != cell->event_result_down)) {
-        err = now_continuity_cursor_button(
-            (unsigned long)cell->epoch, (unsigned long)event_generation,
-            event_down != 0);
-        cell->event_result_down = event_down;
-        cell->event_result_err = (NowPeekI32)err;
-        cell->event_result_generation = event_generation; /* commit last */
-        published_result = 1;
+        /* One resident commit can expose the next edge in the same ordered
+           packet: applying the preceding up releases its deferred down. Keep
+           draining this synchronous task-time handshake until it is quiet. */
+        if (event_generation != 0
+                && (event_generation != cell->event_result_generation
+                    || event_down != cell->event_result_down)) {
+            err = now_continuity_cursor_button(
+                (unsigned long)cell->epoch,
+                (unsigned long)event_generation, event_down != 0);
+            cell->event_result_down = event_down;
+            cell->event_result_err = (NowPeekI32)err;
+            cell->event_result_generation = event_generation;
+            published_result = 1;
+        }
+        if (!published_result)
+            break;
     }
-    if (published_result) {
+    /* Every application result needs one resident entry that commits it. A
+       fourth result is already abnormal, but still settle it before returning
+       rather than leaving the manager and wire acknowledgement divergent. */
+    if (round == kNowContinuityServiceApplyRounds) {
         if (!invoke_resident(cell)) {
             gInvoking = 0;
             return 0;

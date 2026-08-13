@@ -683,6 +683,20 @@
         "ext/src/now_ext_continuity.c"
       ],
       "reason": "Private PR #27 retest bake verified exact resident d19c192cba60; shared oracle remains unchanged until the attended hardware retest accepts this candidate."
+    },
+    {
+      "at": "2026-08-13T15:28:15-0400",
+      "branch": "fix/continuity-retest-inputs",
+      "extDigest": "dc50e060f94df385bf1b11b2f4e25bc7df759300",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_keyboard.c",
+        "ext/src/now_ext_continuity_trace.h",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "private verified retest bundle; shared oracle bake is due when this branch is promoted"
     }
   ]
 }
