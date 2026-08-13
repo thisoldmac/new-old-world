@@ -60,9 +60,11 @@ final class ContractMessageTests: XCTestCase {
             build: String(repeating: "a", count: 64),
             extensionVersion: "1.2",
             extensionBuild: String(repeating: "b", count: 40),
+            mirrorTransfer: true,
             name: "PowerBook", os: "9.1", chunk: 8192)
         XCTAssertEqual(try ControlMessageCodec.decode(
             ControlMessageCodec.encode(.hello(hello))), .hello(hello))
+        XCTAssertTrue(hello.mirrorTransfer == true)
     }
 
     func testContinuityOwnershipMessagesRoundTrip() throws {
@@ -186,6 +188,8 @@ final class ContractMessageTests: XCTestCase {
                 + "optional field and the 68K guest sends none, so absence "
                 + "has to reach the host as absence rather than as a "
                 + "decode failure.")
+        XCTAssertNil(hello.mirrorTransfer,
+                     "an older hello must remain explicitly unsupported")
     }
 
     /// The whole point of the field: two builds of one version are told

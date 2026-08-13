@@ -1676,6 +1676,12 @@ final class GuestListener: ObservableObject {
                                       message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
+        guard session.mirrorTransfer == true else {
+            completion(.failure(.init(
+                code: "unsupported",
+                message: "The connected guest does not support Mirror file transfer; replace and restart the guest application.")))
+            return
+        }
         guard pendingFile == nil else {
             completion(.failure(.init(
                 code: "busy",
@@ -1749,6 +1755,18 @@ final class GuestListener: ObservableObject {
         modified: Int? = nil,
         completion: @escaping (Result<Void, FileFailure>) -> Void
     ) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(
+                code: "disconnected",
+                message: "No classic Mac is connected")))
+            return
+        }
+        guard session.mirrorTransfer == true else {
+            completion(.failure(.init(
+                code: "unsupported",
+                message: "The connected guest does not support Mirror file transfer; replace and restart the guest application.")))
+            return
+        }
         let checksum = TransferIdentity.crc32(bytes)
         startPut(
             name: name, into: "", container: container,

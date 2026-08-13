@@ -175,7 +175,7 @@ enum FileConverter {
 /// Turning a modern file into one the classic Mac can hold: a name HFS
 /// accepts, and bytes in the form that machine expects.
 enum OutboundFile {
-    struct Plan {
+    struct Plan: Sendable {
         var name: String
         var container: String       // "data" | "macbinary"
         var bytes: Data

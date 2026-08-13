@@ -35,7 +35,40 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     private struct PendingHostFile {
         var url: URL
         var target: CrossMachineFileTargeting.Destination
-        var cleanupRoot: URL?
+        var promiseBatch: PromiseBatch?
+    }
+
+    /// One AppKit promise receiver may materialize several sibling files in
+    /// one directory. The directory belongs to the batch, not to its first
+    /// callback; deleting it after the first read used to discard every
+    /// sibling that had not yet entered the wire lane.
+    final class PromiseBatch {
+        let root: URL
+        let generation: UInt64
+        private(set) var callbacksRemaining: Int
+        private(set) var filesOutstanding = 0
+        private(set) var invalidated = false
+
+        init(root: URL, generation: UInt64, expectedCallbacks: Int) {
+            self.root = root
+            self.generation = generation
+            callbacksRemaining = max(1, expectedCallbacks)
+        }
+
+        func callbackFinished(enqueued: Bool) {
+            callbacksRemaining = max(0, callbacksRemaining - 1)
+            if enqueued { filesOutstanding += 1 }
+        }
+
+        func fileFinished() {
+            filesOutstanding = max(0, filesOutstanding - 1)
+        }
+
+        func invalidate() { invalidated = true }
+
+        var isFinished: Bool {
+            invalidated || (callbacksRemaining == 0 && filesOutstanding == 0)
+        }
     }
 
     enum TransferError: LocalizedError {
@@ -62,9 +95,19 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     var connection: GuestConnectionState = .disconnected
 
     private let listener: GuestListener
+    private let promiseQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "dev.newoldworld.mirror.file-promises"
+        queue.maxConcurrentOperationCount = 2
+        queue.qualityOfService = .userInitiated
+        return queue
+    }()
     private var watch: HostEventSubscription?
     private var queue: [PendingHostFile] = []
+    private var promiseBatches: [PromiseBatch] = []
     private var promiseInFlight = false
+    private var hostFilePreparationInFlight = false
+    private var transferGeneration: UInt64 = 0
 
     init(listener: GuestListener) {
         self.listener = listener
@@ -92,17 +135,24 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
         }
     }
 
-    var isBusy: Bool { activity != nil || promiseInFlight }
+    var isBusy: Bool {
+        activity != nil || promiseInFlight || hostFilePreparationInFlight
+    }
 
     func activeGuestWillChange() {
-        let stagingRoots = Set(queue.compactMap(\.cleanupRoot))
+        transferGeneration &+= 1
         queue.removeAll()
-        for root in stagingRoots { try? FileManager.default.removeItem(at: root) }
+        for batch in promiseBatches {
+            batch.invalidate()
+            try? FileManager.default.removeItem(at: batch.root)
+        }
+        promiseBatches.removeAll()
         if isBusy {
             notice = "The file copy ended because the active Mac changed."
         }
         activity = nil
         promiseInFlight = false
+        hostFilePreparationInFlight = false
     }
 
     func clearNotice() { notice = nil }
@@ -111,7 +161,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     /// file URLs. Multiple files retain release order over the single lane.
     func copyHostFiles(_ urls: [URL],
                        to target: CrossMachineFileTargeting.Destination) {
-        enqueueHostFiles(urls, to: target, cleanupRoot: nil)
+        enqueueHostFiles(urls, to: target, promiseBatch: nil)
     }
 
     /// Accepts the same AppKit payload Finder and document applications put
@@ -159,17 +209,23 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     private func enqueueHostFiles(
         _ urls: [URL],
         to target: CrossMachineFileTargeting.Destination,
-        cleanupRoot: URL?
+        promiseBatch: PromiseBatch?
     ) {
         guard case .connected = connection else {
             notice = "No classic Mac is connected."
-            if let cleanupRoot { try? FileManager.default.removeItem(at: cleanupRoot) }
+            if let promiseBatch {
+                promiseBatch.callbackFinished(enqueued: false)
+                finishPromiseBatchIfPossible(promiseBatch)
+            }
             return
         }
         guard !urls.isEmpty else { return }
         guard urls.count <= 32 else {
             notice = "That is \(urls.count) files; 32 at a time is the Mirror limit."
-            if let cleanupRoot { try? FileManager.default.removeItem(at: cleanupRoot) }
+            if let promiseBatch {
+                promiseBatch.callbackFinished(enqueued: false)
+                finishPromiseBatchIfPossible(promiseBatch)
+            }
             return
         }
         var enqueued = false
@@ -188,11 +244,12 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
                 continue
             }
             queue.append(.init(url: url, target: target,
-                               cleanupRoot: cleanupRoot))
+                               promiseBatch: promiseBatch))
             enqueued = true
         }
-        if !enqueued, let cleanupRoot {
-            try? FileManager.default.removeItem(at: cleanupRoot)
+        if let promiseBatch {
+            promiseBatch.callbackFinished(enqueued: enqueued)
+            finishPromiseBatchIfPossible(promiseBatch)
         }
         startNextHostFile()
     }
@@ -211,17 +268,45 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
             notice = error.localizedDescription
             return
         }
+        let batch = PromiseBatch(
+            root: root, generation: transferGeneration,
+            expectedCallbacks: receiver.fileNames.count)
+        promiseBatches.append(batch)
         receiver.receivePromisedFiles(
-            atDestination: root, options: [:], operationQueue: .main
-        ) { [weak self] url, error in
-            guard let self else { return }
-            if let error {
-                self.notice = error.localizedDescription
-                try? FileManager.default.removeItem(at: root)
-                return
+            atDestination: root, options: [:], operationQueue: promiseQueue
+        ) { [weak self, batch] url, error in
+            Task { @MainActor in
+                guard let self else { return }
+                guard batch.generation == self.transferGeneration,
+                      !batch.invalidated else {
+                    try? FileManager.default.removeItem(at: batch.root)
+                    return
+                }
+                if let error {
+                    self.notice = error.localizedDescription
+                    batch.callbackFinished(enqueued: false)
+                    self.finishPromiseBatchIfPossible(batch)
+                    return
+                }
+                self.enqueueHostFiles([url], to: target,
+                                      promiseBatch: batch)
             }
-            self.enqueueHostFiles([url], to: target, cleanupRoot: root)
         }
+    }
+
+    private func finishPromiseBatchIfPossible(_ batch: PromiseBatch) {
+        guard batch.isFinished else { return }
+        try? FileManager.default.removeItem(at: batch.root)
+        promiseBatches.removeAll { $0 === batch }
+    }
+
+    private func discardQueuedHostFiles() {
+        queue.removeAll()
+        for batch in promiseBatches {
+            batch.invalidate()
+            try? FileManager.default.removeItem(at: batch.root)
+        }
+        promiseBatches.removeAll()
     }
 
     /// A native file promise is the host-side stub. It carries the original
@@ -254,7 +339,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     }
 
     func operationQueue(for provider: NSFilePromiseProvider)
-        -> OperationQueue { .main }
+        -> OperationQueue { promiseQueue }
 
     nonisolated func filePromiseProvider(
         _ provider: NSFilePromiseProvider,
@@ -286,6 +371,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
             return
         }
         promiseInFlight = true
+        let generation = transferGeneration
         notice = nil
         activity = Activity(name: source.file.name, direction: .toHost,
                             received: 0, expected: 0)
@@ -295,30 +381,52 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
             stagingDirectory: url.deletingLastPathComponent()
         ) { [weak self] result in
             guard let self else { return }
-            self.promiseInFlight = false
-            self.activity = nil
+            guard generation == self.transferGeneration else {
+                completion.finish(TransferError.wire(
+                    "The active Mac changed during the file copy."))
+                return
+            }
             switch result {
             case .failure(let failure):
+                self.promiseInFlight = false
+                self.activity = nil
                 self.notice = failure.message
                 completion.finish(TransferError.wire(failure.message))
             case .success(let file):
-                do {
-                    let conversion = try FileConverter.materialize(
-                        name: file.name, container: file.container,
-                        fileType: file.fileType, staged: file.staged, to: url)
-                    if let modified = file.modified,
-                       let date = ClassicDate.date(from: modified) {
-                        try? FileManager.default.setAttributes(
-                            [.modificationDate: date],
-                            ofItemAtPath: url.path)
+                Task { [weak self] in
+                    let outcome = await Task.detached(priority: .userInitiated) {
+                        Result {
+                            let conversion = try FileConverter.materialize(
+                                name: file.name, container: file.container,
+                                fileType: file.fileType, staged: file.staged,
+                                to: url)
+                            if let modified = file.modified,
+                               let date = ClassicDate.date(from: modified) {
+                                try? FileManager.default.setAttributes(
+                                    [.modificationDate: date],
+                                    ofItemAtPath: url.path)
+                            }
+                            return conversion
+                        }
+                    }.value
+                    guard let self else { return }
+                    guard generation == self.transferGeneration else {
+                        completion.finish(TransferError.wire(
+                            "The active Mac changed during the file copy."))
+                        return
                     }
-                    self.notice = conversion.map {
-                        "Copied \(source.file.name) to this Mac (\($0))."
-                    } ?? "Copied \(source.file.name) to this Mac."
-                    completion.finish(nil)
-                } catch {
-                    self.notice = error.localizedDescription
-                    completion.finish(error)
+                    self.promiseInFlight = false
+                    self.activity = nil
+                    switch outcome {
+                    case .success(let conversion):
+                        self.notice = conversion.map {
+                            "Copied \(source.file.name) to this Mac (\($0))."
+                        } ?? "Copied \(source.file.name) to this Mac."
+                        completion.finish(nil)
+                    case .failure(let error):
+                        self.notice = error.localizedDescription
+                        completion.finish(error)
+                    }
                 }
             }
         }
@@ -354,45 +462,63 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     }
 
     private func startNextHostFile() {
-        guard activity == nil, !promiseInFlight, !queue.isEmpty else { return }
+        guard activity == nil, !promiseInFlight,
+              !hostFilePreparationInFlight, !queue.isEmpty else { return }
         let item = queue.removeFirst()
-        guard let data = try? Data(contentsOf: item.url) else {
-            notice = TransferError.unreadable(item.url.lastPathComponent)
-                .localizedDescription
-            if let root = item.cleanupRoot {
-                try? FileManager.default.removeItem(at: root)
-            }
-            startNextHostFile()
-            return
-        }
-        if let root = item.cleanupRoot {
-            try? FileManager.default.removeItem(at: root)
-        }
-        let plan = OutboundFile.plan(url: item.url, data: data,
-                                     convertText: true)
-        let modified = (try? item.url.resourceValues(
-            forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            .flatMap(ClassicDate.guestWireSeconds(from:))
-        notice = plan.note
-        activity = Activity(name: plan.name, direction: .toGuest,
-                            received: 0, expected: plan.bytes.count)
-        listener.putMirrorFile(
-            name: plan.name, target: Self.wireTarget(item.target),
-            container: plan.container, bytes: plan.bytes,
-            fileType: plan.fileType, creator: plan.creator,
-            modified: modified
-        ) { [weak self] result in
+        let generation = transferGeneration
+        let sourceURL = item.url
+        hostFilePreparationInFlight = true
+        Task { [weak self] in
+            let outcome = await Task.detached(priority: .userInitiated) {
+                Result {
+                    let modified = (try? sourceURL.resourceValues(
+                        forKeys: [.contentModificationDateKey]))?
+                        .contentModificationDate
+                        .flatMap(ClassicDate.guestWireSeconds(from:))
+                    let data = try Data(contentsOf: sourceURL,
+                                        options: [.mappedIfSafe])
+                    return (OutboundFile.plan(
+                        url: sourceURL, data: data, convertText: true), modified)
+                }
+            }.value
             guard let self else { return }
-            self.activity = nil
-            switch result {
-            case .success:
-                self.notice = plan.note.map {
-                    "Copied \(plan.name) to the classic Mac (\($0))."
-                } ?? "Copied \(plan.name) to the classic Mac."
+            self.hostFilePreparationInFlight = false
+            item.promiseBatch?.fileFinished()
+            if let batch = item.promiseBatch {
+                self.finishPromiseBatchIfPossible(batch)
+            }
+            guard generation == self.transferGeneration else { return }
+            switch outcome {
+            case .failure:
+                self.notice = TransferError.unreadable(
+                    item.url.lastPathComponent).localizedDescription
                 self.startNextHostFile()
-            case .failure(let failure):
-                self.notice = failure.message
-                self.queue.removeAll()
+            case .success(let prepared):
+                let (plan, modified) = prepared
+                self.notice = plan.note
+                self.activity = Activity(
+                    name: plan.name, direction: .toGuest,
+                    received: 0, expected: plan.bytes.count)
+                self.listener.putMirrorFile(
+                    name: plan.name, target: Self.wireTarget(item.target),
+                    container: plan.container, bytes: plan.bytes,
+                    fileType: plan.fileType, creator: plan.creator,
+                    modified: modified
+                ) { [weak self] result in
+                    guard let self,
+                          generation == self.transferGeneration else { return }
+                    self.activity = nil
+                    switch result {
+                    case .success:
+                        self.notice = plan.note.map {
+                            "Copied \(plan.name) to the classic Mac (\($0))."
+                        } ?? "Copied \(plan.name) to the classic Mac."
+                        self.startNextHostFile()
+                    case .failure(let failure):
+                        self.notice = failure.message
+                        self.discardQueuedHostFiles()
+                    }
+                }
             }
         }
     }

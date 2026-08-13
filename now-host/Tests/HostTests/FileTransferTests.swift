@@ -37,17 +37,52 @@ final class FileWireTests: XCTestCase {
         }
     }
 
-    private func connectedGuest() async throws -> FakeGuest {
+    private func connectedGuest(mirrorTransfer: Bool? = true) async throws
+        -> FakeGuest {
         let guest = FakeGuest(port: listener.boundPort ?? 0)
         guest.start()
         try guest.send(.hello(Hello(
             contract: Contract.revision, side: "guest", version: "0.1.0",
+            mirrorTransfer: mirrorTransfer,
             name: "PowerBook 1400", os: "9.1", chunk: 8192)))
         try await waitUntil("connected") {
             if case .connected = self.listener.state { return true }
             return false
         }
         return guest
+    }
+
+    func testOlderGuestIsNotSentMirrorFileDescriptors() async throws {
+        let guest = try await connectedGuest(mirrorTransfer: nil)
+        var getFailure: GuestListener.FileFailure?
+        var putFailure: GuestListener.FileFailure?
+
+        listener.getMirrorFile(
+            source: .init(kind: "desktop", name: "Read Me")) { result in
+                if case .failure(let failure) = result {
+                    getFailure = failure
+                }
+            }
+        listener.putMirrorFile(
+            name: "Read Me", target: .init(kind: "desktop"),
+            container: "data", bytes: Data("hello".utf8)
+        ) { result in
+            if case .failure(let failure) = result {
+                putFailure = failure
+            }
+        }
+
+        XCTAssertEqual(getFailure?.code, "unsupported")
+        XCTAssertEqual(putFailure?.code, "unsupported")
+        XCTAssertFalse(guest.received.contains { message in
+            if case .fileGet(let get) = message {
+                return get.mirrorSource != nil
+            }
+            if case .fileOffer(let offer) = message {
+                return offer.mirrorDrop != nil
+            }
+            return false
+        })
     }
 
     func testListingPagesThroughTheShare() async throws {

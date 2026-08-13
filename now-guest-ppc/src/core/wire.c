@@ -812,7 +812,8 @@ static void send_hello(void)
        either — now_agent_access() returns one of three contract tokens. */
     snprintf(json, sizeof json,
              "{\"type\":\"hello\",\"contract\":%d,\"side\":\"guest\","
-             "\"version\":\"%s\",\"build\":\"%s\",\"agent\":\"%s\","
+             "\"version\":\"%s\",\"build\":\"%s\","
+             "\"mirrorTransfer\":true,\"agent\":\"%s\","
              "\"name\":\"%s\",\"os\":\"%s\"%s,"
              "\"machine\":{\"id\":%ld,\"model\":\"%s\"},\"chunk\":%d}",
              kNowContractRevision, PRODUCT_VERSION, now_build_stamp(),

@@ -1626,6 +1626,15 @@ components:
             identity, as carried by the resident table ABI. It is compared
             with the prefix of an offered full build identity. Absent stays
             unknown and is never inferred from extensionVersion.
+        mirrorTransfer:
+          type: boolean
+          description: >
+            Whether this peer understands the Mirror-specific `mirrorSource`
+            and `mirrorDrop` descriptors on the existing file family. A PPC
+            guest that implements both directions sends true. ABSENT or false
+            means the receiver must not send either descriptor: an older guest
+            can otherwise ignore the optional field, perform an ordinary share
+            transfer, and report success for the wrong destination.
         agent:
           enum: [disabled, read-only, full]
           description: >

@@ -209,6 +209,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         pinHeldPoint: Bool = false,
         virtualGetMouse: Bool = false,
         hideGuestCursorWhileDragging: Bool = false,
+        acknowledgementTimeout: TimeInterval = 3,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ArmingRig {
         let guest = FakeGuest(port: try XCTUnwrap(listener.boundPort))
@@ -220,7 +221,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         try await waitUntil("host hello") { !guest.received.isEmpty }
 
         let controller = MirrorContinuityController(
-            listener: listener, defaults: defaults, audit: audit)
+            listener: listener, defaults: defaults,
+            acknowledgementTimeout: acknowledgementTimeout, audit: audit)
         controller.autoReconnect = autoReconnect
         controller.fastPump = fastPump
         controller.pinHeldPoint = pinHeldPoint
@@ -246,6 +248,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         initial: MirrorKit.Point = .init(x: 40, y: 50),
         autoReconnect: Bool = false,
         fastPump: Bool = false,
+        acknowledgementTimeout: TimeInterval = 3,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ActiveRig {
         let port = try XCTUnwrap(listener.boundPort)
@@ -254,7 +257,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         try await waitUntil("UDP listener") { udp.ready }
         let rig = try await makeArmingRig(
             initial: initial, autoReconnect: autoReconnect,
-            fastPump: fastPump, audit: audit)
+            fastPump: fastPump,
+            acknowledgementTimeout: acknowledgementTimeout, audit: audit)
         try rig.guest.send(.continuityReport(.init(
             version: ContinuityContract.version,
             id: rig.arm.id, epoch: rig.arm.epoch, state: "armed",
@@ -383,6 +387,19 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertGreaterThan(latest.positionSequence,
                              initial.positionSequence)
         XCTAssertEqual(latest.buttonGeneration, 0)
+    }
+
+    func testSilentAcknowledgementLaneEndsOwnership() async throws {
+        let rig = try await makeActiveRig(acknowledgementTimeout: 0.15)
+        defer { rig.udp.stop() }
+
+        try await waitUntil("acknowledgement silence teardown", timeout: 1) {
+            !rig.controller.isEnabled
+        }
+        XCTAssertFalse(rig.controller.isActive)
+        XCTAssertEqual(
+            rig.controller.status,
+            "Continuity ended on the Mac: UDP acknowledgements stopped")
     }
 
     func testDirectClickWaitsForPressAckBeforeSendingRelease()

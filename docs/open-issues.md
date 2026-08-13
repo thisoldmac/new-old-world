@@ -84,6 +84,37 @@ The earlier transport-gap entry in `docs/continuity-mode.md` is superseded.
 This does not close the separate direct-pointer regression above, where a menu
 title can still close on mouse-up.
 
+**2026-08-13 pre-PR review:** the full integration diff received local
+correctness, reliability, contract, security, performance, test, Swift and
+maintainability review. The bounded defects were repaired in the candidate:
+UDP acknowledgement loss now ends ownership, old guests are refused before a
+Mirror-specific file descriptor is sent, promise batches retain their shared
+staging root until every sibling is consumed, guest switches invalidate late
+promise callbacks, file conversion and reads leave the main actor, modification
+dates are captured before cleanup, and the global pointer monitor returns to
+the main actor through an invalidatable generation instead of asserting actor
+isolation.
+
+Three review findings deliberately remain open rather than being hidden in an
+overnight refactor:
+
+- Mirror file identity is still authorized by the current rendered scene and
+  host gesture only. The guest resolves the host-provided desktop/Finder item
+  but does not yet require a short-lived, guest-issued scene/gesture token.
+  Adding one changes the security and wire authority model and needs an owned
+  design decision before implementation.
+- `MirrorContinuityController` still combines preference/UI state, TCP
+  authority, UDP transport, button/menu state and keyboard/edge orchestration.
+  Split transport and input-state ownership before the feature grows again;
+  do not perform that high-risk rewrite in the same change that stabilizes the
+  integrated candidate.
+- The PPC Mirror drop resolver's closed target table is covered indirectly by
+  host contract tests and cross-builds, not by an executable guest-native
+  decision-table test. Extract a Toolbox-free resolver seam before extending
+  its target kinds. The host's validated update availability is likewise not
+  yet projected read-only through MCP; installation must remain human-only
+  when that observability is added.
+
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
 While the guest owns the pointer, the host now captures key-down, key-up, and

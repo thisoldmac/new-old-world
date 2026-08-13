@@ -578,6 +578,9 @@ struct Hello: Codable, Equatable, Sendable {
     /// nil when the guest predates this report or no active table can be read.
     var extensionVersion: String? = nil
     var extensionBuild: String? = nil
+    /// True only when the peer understands both Mirror file descriptors.
+    /// Absence is an older peer, not permission to degrade into the share.
+    var mirrorTransfer: Bool? = nil
     /// The sending machine's own answer to whether a companion agent may
     /// drive it. Nil means it never said — a sender that predates the
     /// field — and that is NOT consent, never `.fullAccess` filled in

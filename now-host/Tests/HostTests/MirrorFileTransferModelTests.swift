@@ -2,6 +2,7 @@ import MirrorKit
 import XCTest
 @testable import Host
 
+@MainActor
 final class MirrorFileTransferModelTests: XCTestCase {
     func testDesktopAndFinderSourcesStayDistinctOnTheWire() {
         let file = CrossMachineFileTargeting.FileIdentity(
@@ -32,5 +33,31 @@ final class MirrorFileTransferModelTests: XCTestCase {
             .applicationCreator(creator: "ttxt", name: "SimpleText")),
             MirrorFileDrop(kind: "application-creator", creator: "ttxt",
                            name: "SimpleText"))
+    }
+
+    func testPromiseBatchKeepsSharedRootUntilEverySiblingFinishes() {
+        let batch = MirrorFileTransferModel.PromiseBatch(
+            root: URL(fileURLWithPath: "/tmp/promise-batch"),
+            generation: 7, expectedCallbacks: 2)
+
+        batch.callbackFinished(enqueued: true)
+        batch.fileFinished()
+        XCTAssertFalse(batch.isFinished,
+                       "the second promise callback still owns the root")
+
+        batch.callbackFinished(enqueued: true)
+        XCTAssertFalse(batch.isFinished,
+                       "the second materialized file still owns the root")
+        batch.fileFinished()
+        XCTAssertTrue(batch.isFinished)
+    }
+
+    func testStoppedGlobalMonitorCannotUseAssumeIsolated() throws {
+        let source = try GateSource.hostSwift(
+            "now-host/Sources/Host/ContinuityEdgeController.swift")
+        let adapter = try XCTUnwrap(source.components(
+            separatedBy: "@MainActor\nprotocol ContinuityEdgeDriving").first)
+        XCTAssertFalse(adapter.contains("MainActor.assumeIsolated"))
+        XCTAssertTrue(adapter.contains("monitorGeneration == generation"))
     }
 }

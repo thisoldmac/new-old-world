@@ -40,15 +40,28 @@ protocol ContinuityPointerEnvironment: AnyObject {
 private final class AppKitContinuityPointerEnvironment:
     ContinuityPointerEnvironment {
     private final class Monitors {
+        let generation: UInt64
         var local: Any?
         var global: Any?
+
+        init(generation: UInt64) { self.generation = generation }
+    }
+
+    /// AppKit does not declare NSEvent Sendable, although this reference is
+    /// immutable and is consumed only after returning to the main actor.
+    private final class EventBox: @unchecked Sendable {
+        let event: NSEvent
+        init(_ event: NSEvent) { self.event = event }
     }
 
     private var currentEvent: NSEvent?
+    private var monitorGeneration: UInt64 = 0
 
     func start(_ handler: @escaping @MainActor (HostPointerSample) -> Void)
         -> AnyObject {
-        let monitors = Monitors()
+        monitorGeneration &+= 1
+        let generation = monitorGeneration
+        let monitors = Monitors(generation: generation)
         let mask: NSEvent.EventTypeMask = [
             .mouseMoved, .leftMouseDragged, .leftMouseDown, .leftMouseUp,
         ]
@@ -59,13 +72,23 @@ private final class AppKitContinuityPointerEnvironment:
         }
         monitors.global = NSEvent.addGlobalMonitorForEvents(matching: mask) {
             [weak self] event in
-            MainActor.assumeIsolated { self?.deliver(event, to: handler) }
+            let sample = Self.sample(event)
+            let eventBox = EventBox(event)
+            Task { @MainActor [weak self] in
+                guard let self, self.monitorGeneration == generation else {
+                    return
+                }
+                self.deliver(sample, sourceEvent: eventBox.event, to: handler)
+            }
         }
         return monitors
     }
 
     func stop(_ token: AnyObject) {
         guard let monitors = token as? Monitors else { return }
+        if monitors.generation == monitorGeneration {
+            monitorGeneration &+= 1
+        }
         if let local = monitors.local { NSEvent.removeMonitor(local) }
         if let global = monitors.global { NSEvent.removeMonitor(global) }
         monitors.local = nil
@@ -117,12 +140,21 @@ private final class AppKitContinuityPointerEnvironment:
         _ event: NSEvent,
         to handler: @escaping @MainActor (HostPointerSample) -> Void
     ) {
-        currentEvent = event
-        handler(Self.sample(event))
+        deliver(Self.sample(event), sourceEvent: event, to: handler)
+    }
+
+    private func deliver(
+        _ sample: HostPointerSample,
+        sourceEvent: NSEvent,
+        to handler: @escaping @MainActor (HostPointerSample) -> Void
+    ) {
+        currentEvent = sourceEvent
+        handler(sample)
         currentEvent = nil
     }
 
-    private static func sample(_ event: NSEvent) -> HostPointerSample {
+    nonisolated private static func sample(_ event: NSEvent)
+        -> HostPointerSample {
         let kind: HostPointerSample.Kind
         switch event.type {
         case .leftMouseDown:

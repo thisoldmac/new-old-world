@@ -165,6 +165,9 @@ final class Session {
     private(set) var machineFingerprint: String?
     private var closed = false
     private(set) var guestName = "guest"
+    /// Set from the peer's hello. Nil is deliberately distinct from true:
+    /// older guests ignore Mirror descriptors and must not receive them.
+    private(set) var mirrorTransfer: Bool?
     /// What a guest that sent no name is called. One constant, because
     /// GuestKey folds by it too and a second spelling would let an
     /// unnamed guest be admitted twice under two different keys.
@@ -1772,6 +1775,7 @@ final class Session {
             return
         }
         helloed = true
+        mirrorTransfer = hello.mirrorTransfer
         /* **What a resident channel is associated BY.** Not the minted
            GuestID: `mintSessionKey` deliberately hands a second dial from
            a live name+address a DIFFERENT machine id (the emulator

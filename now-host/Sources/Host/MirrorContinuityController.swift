@@ -167,6 +167,9 @@ final class MirrorContinuityController: ObservableObject,
     private let listener: GuestListener
     private let defaults: UserDefaults
     private let audit: Audit
+    /// Longer than the resident's 1.5-second lease: one delayed ack does not
+    /// churn ownership, but a dead receive path cannot leave the UI active.
+    private let acknowledgementTimeout: TimeInterval
     private weak var localNetworkAccess: LocalNetworkAccessController?
     private var target: GuestListener.ContinuityTarget?
     private var armID: Int?
@@ -210,6 +213,7 @@ final class MirrorContinuityController: ObservableObject,
     private var acceptedHz = 30
     private var sentDatagrams: UInt32 = 0
     private var validAcks: UInt32 = 0
+    private var lastAcknowledgementUptime: TimeInterval?
     private var lastAuditedButtonGeneration: UInt32 = 0
     private var lastPrimaryDownUptime: TimeInterval?
     private var buttonTransitionSentUptime: TimeInterval?
@@ -219,11 +223,13 @@ final class MirrorContinuityController: ObservableObject,
     init(listener: GuestListener,
          defaults: UserDefaults = ProductIdentity.defaults,
          localNetworkAccess: LocalNetworkAccessController? = nil,
+         acknowledgementTimeout: TimeInterval = 3,
          audit: Audit? = nil) {
         self.listener = listener
         self.defaults = defaults
         self.layout = ContinuityDisplayLayout(defaults: defaults)
         self.localNetworkAccess = localNetworkAccess
+        self.acknowledgementTimeout = acknowledgementTimeout
         self.audit = audit ?? {
             HostLog.shared.write($0, "continuity", $1)
         }
@@ -542,6 +548,8 @@ final class MirrorContinuityController: ObservableObject,
                                 + "\(String(describing: error)); "
                                 + "epoch=\(self.epoch), "
                                 + "positionSequence=\(initialSequence)")
+                            self.guestEnded(
+                                reason: Self.pointerLaneFailure(error))
                         } else {
                             self.audit(.info, "initial UDP state queued: "
                                 + "epoch=\(self.epoch), "
@@ -559,6 +567,8 @@ final class MirrorContinuityController: ObservableObject,
                     self.permissionRetry?.cancel()
                     self.permissionRetry = nil
                     self.sentDatagrams = 1
+                    self.lastAcknowledgementUptime =
+                        ProcessInfo.processInfo.systemUptime
                     self.audit(.info, "UDP pointer lane is ready")
                     self.localNetworkAccess?.directAccessBecameReady(
                         host: self.target?.host,
@@ -648,6 +658,12 @@ final class MirrorContinuityController: ObservableObject,
                        leeway: .milliseconds(2))
         timer.setEventHandler { [weak self] in
             guard let self, self.phase == .active else { return }
+            if let last = self.lastAcknowledgementUptime,
+               ProcessInfo.processInfo.systemUptime - last
+                    > self.acknowledgementTimeout {
+                self.guestEnded(reason: "UDP acknowledgements stopped")
+                return
+            }
             if self.positionDirty {
                 self.advancePositionIfNeeded()
                 self.sendState(inside: true, keepalive: false)
@@ -724,6 +740,9 @@ final class MirrorContinuityController: ObservableObject,
                         + "\(String(describing: error)); "
                         + "sent=\(self.sentDatagrams), "
                         + "validAcks=\(self.validAcks)")
+                    self.guestEnded(
+                        reason: "UDP acknowledgement receive failed: "
+                            + error.localizedDescription)
                     return
                 }
                 if let data {
@@ -739,6 +758,8 @@ final class MirrorContinuityController: ObservableObject,
                             return
                         }
                         self.validAcks &+= 1
+                        self.lastAcknowledgementUptime =
+                            ProcessInfo.processInfo.systemUptime
                         if self.validAcks == 1
                             || ack.exitReason != .none
                             || ack.state == .inactive
@@ -1013,6 +1034,7 @@ final class MirrorContinuityController: ObservableObject,
         idleIntervals = 0
         sentDatagrams = 0
         validAcks = 0
+        lastAcknowledgementUptime = nil
         lastAuditedButtonGeneration = 0
         lastPrimaryDownUptime = nil
         buttonTransitionSentUptime = nil
