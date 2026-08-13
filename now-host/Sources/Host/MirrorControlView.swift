@@ -347,21 +347,29 @@ private struct ContinuityControlCard: View {
                     .disabled(!controller.isEnabled || !mirrorRunning)
                 Toggle("Pin held point (experimental)",
                        isOn: $controller.pinHeldPoint)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
+                    .disabled(!controller.isEnabled || !mirrorRunning
+                              || controller.virtualADB)
                 Toggle("Virtual GetMouse (experimental)",
                        isOn: $controller.virtualGetMouse)
+                    .disabled(!controller.isEnabled || !mirrorRunning
+                              || controller.virtualADB)
+                Toggle("Virtual ADB pointer (experimental)",
+                       isOn: $controller.virtualADB)
                     .disabled(!controller.isEnabled || !mirrorRunning)
                 Toggle("Hide guest cursor during drag (experimental)",
                        isOn: $controller.hideGuestCursorWhileDragging)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
+                    .disabled(!controller.isEnabled || !mirrorRunning
+                              || controller.virtualADB)
                 Text(controller.status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Primary clicks and held motion follow the pointer into "
-                     + "the guest. Fast Pump asks the guest to yield every tick. "
-                     + "The held-point experiments remain diagnostic and do "
-                     + "not modify the physical device.")
+                     + "the guest. Guest mouse input immediately returns control "
+                     + "to that Mac. Fast Pump asks the guest to yield every "
+                     + "tick. Virtual ADB is a metal-test spike that routes "
+                     + "Continuity through the mouse device path; the other "
+                     + "held-point experiments leave that device untouched.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

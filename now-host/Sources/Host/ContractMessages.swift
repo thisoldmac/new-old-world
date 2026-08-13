@@ -182,6 +182,7 @@ struct ContinuityArm: Codable, Equatable, Sendable {
     var fastPump: Bool?
     var pinHeldPoint: Bool?
     var virtualGetMouse: Bool?
+    var virtualADB: Bool? = nil
     var hideGuestCursorWhileDragging: Bool? = nil
 }
 

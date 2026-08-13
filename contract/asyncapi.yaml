@@ -2181,12 +2181,13 @@ components:
           type: boolean
           default: false
           description: >
-            Emulator-only authority experiment. Tiny relative ADB register-0
-            packets become carriers for bounded deltas toward the latest host
-            point, and the ordinary Cursor Device position apply is bypassed.
-            Larger physical deltas remain native and revoke Continuity. This
-            is absent and false in product builds until the mechanism is
-            proven safe on a real ADB PowerBook.
+            Experimental, host-selected, and off by default. Tiny relative ADB
+            register-0 packets become carriers for bounded deltas toward the
+            latest host point, and the ordinary Cursor Device position apply
+            is bypassed. Larger physical deltas remain native and revoke
+            Continuity. This mechanism is emulator-tested but remains a
+            controlled metal-test spike until proven safe on a real ADB
+            PowerBook.
     ContinuityDisarm:
       type: object
       required: [type, version, id, epoch, reason]

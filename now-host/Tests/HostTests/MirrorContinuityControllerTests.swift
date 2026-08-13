@@ -208,6 +208,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         fastPump: Bool = false,
         pinHeldPoint: Bool = false,
         virtualGetMouse: Bool = false,
+        virtualADB: Bool = false,
         hideGuestCursorWhileDragging: Bool = false,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ArmingRig {
@@ -227,6 +228,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         controller.virtualGetMouse = virtualGetMouse
         controller.hideGuestCursorWhileDragging =
             hideGuestCursorWhileDragging
+        controller.virtualADB = virtualADB
         controller.isEnabled = true
         controller.pointerMoved(to: initial)
         try await waitUntil("arm") {
@@ -647,7 +649,19 @@ final class MirrorContinuityControllerTests: XCTestCase {
             hideGuestCursorWhileDragging: true)
         XCTAssertEqual(experiments.arm.pinHeldPoint, true)
         XCTAssertEqual(experiments.arm.virtualGetMouse, true)
+        XCTAssertEqual(experiments.arm.virtualADB, false)
         XCTAssertEqual(experiments.arm.hideGuestCursorWhileDragging, true)
+    }
+
+    func testVirtualADBIsolatesOlderTrackingExperiments()
+        async throws {
+        let adb = try await makeArmingRig(
+            pinHeldPoint: true, virtualGetMouse: true, virtualADB: true,
+            hideGuestCursorWhileDragging: true)
+        XCTAssertEqual(adb.arm.virtualADB, true)
+        XCTAssertEqual(adb.arm.pinHeldPoint, false)
+        XCTAssertEqual(adb.arm.virtualGetMouse, false)
+        XCTAssertEqual(adb.arm.hideGuestCursorWhileDragging, false)
     }
 
     func testClicksFallThroughUntilTheRawLaneIsActive() async throws {
@@ -802,6 +816,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         controller?.pinHeldPoint = true
         controller?.virtualGetMouse = true
         controller?.hideGuestCursorWhileDragging = true
+        controller?.virtualADB = true
         controller?.isEnabled = true
         controller = nil
 
@@ -810,9 +825,10 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(reopened.requestedHz, 60)
         XCTAssertTrue(reopened.autoReconnect)
         XCTAssertTrue(reopened.fastPump)
-        XCTAssertTrue(reopened.pinHeldPoint)
-        XCTAssertTrue(reopened.virtualGetMouse)
-        XCTAssertTrue(reopened.hideGuestCursorWhileDragging)
+        XCTAssertFalse(reopened.pinHeldPoint)
+        XCTAssertFalse(reopened.virtualGetMouse)
+        XCTAssertTrue(reopened.virtualADB)
+        XCTAssertFalse(reopened.hideGuestCursorWhileDragging)
         XCTAssertFalse(reopened.isEnabled,
                        "opening a new Mirror session must not seize input")
     }

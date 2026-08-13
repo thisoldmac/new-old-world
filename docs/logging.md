@@ -92,6 +92,7 @@ way (AGENTS.md, *Enumerated lists rot at merges*).
 | `update` | update offers rejected by validation, requests refused, and installation results |
 | `dev` | project candidate publication and Development build/run settlement |
 | `mirror` | the Mirror: the writer verdict, plane arm/disarm requests and outcomes, the Workshop page, and the resident's own counters read back |
+| `adb` | guest application only: drained ADB mouse observations and bounded trace-integrity faults from the resident Continuity probe |
 | `sw` | the software family: the `catsearch` probe, and `launch` outcomes (the `sw` listing itself is a read and stays quiet) |
 | `agent` | host only: the optional agent-integration surface — one line per capability a non-user face invoked, and the local endpoint's own failures |
 

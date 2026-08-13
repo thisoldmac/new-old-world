@@ -698,6 +698,7 @@ final class GuestListener: ObservableObject {
                        fastPump: Bool = false,
                        pinHeldPoint: Bool = false,
                        virtualGetMouse: Bool = false,
+                       virtualADB: Bool = false,
                        hideGuestCursorWhileDragging: Bool = false) -> Int? {
         guard let session else { return nil }
         let id = nextContinuityId
@@ -708,6 +709,7 @@ final class GuestListener: ObservableObject {
             requestedHz: requestedHz, leaseTicks: leaseTicks,
             fastPump: fastPump, pinHeldPoint: pinHeldPoint,
             virtualGetMouse: virtualGetMouse,
+            virtualADB: virtualADB,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)))
         return id
     }
