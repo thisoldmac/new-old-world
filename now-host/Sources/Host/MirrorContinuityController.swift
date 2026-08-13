@@ -919,31 +919,7 @@ final class MirrorContinuityController: ObservableObject,
             wireButtonDown = false
             sendState(inside: false, keepalive: false)
         }
-        timer?.cancel()
-        timer = nil
-        armTimeout?.cancel()
-        armTimeout = nil
-        buttonAckTimeout?.cancel()
-        buttonAckTimeout = nil
-        permissionRetry?.cancel()
-        permissionRetry = nil
-        reconnectTask?.cancel()
-        reconnectTask = nil
-        waitingForLocalNetworkAccess = false
-        udp?.cancel()
-        udp = nil
-        phase = .idle
-        armID = nil
-        target = nil
-        positionDirty = false
-        idleIntervals = 0
-        sentDatagrams = 0
-        validAcks = 0
-        lastAuditedButtonGeneration = 0
-        lastPrimaryDownUptime = nil
-        buttonTransitionSentUptime = nil
-        resetButtonState()
-        keyGeneration = 0
+        clearTransportState()
         if wasOwned {
             audit(.info, "ending locally: reason=\(reason), "
                 + "phase=\(oldPhase), epoch=\(oldEpoch), "
@@ -1009,6 +985,14 @@ final class MirrorContinuityController: ObservableObject,
     }
 
     private func resetTransport() {
+        clearTransportState()
+    }
+
+    /// End one authority epoch without deciding what the UI should say next.
+    /// Local relinquish and guest-reported exit must clear the same state: in
+    /// particular, click timing cannot cross an epoch boundary and masquerade
+    /// as evidence about the next guest double-click.
+    private func clearTransportState() {
         timer?.cancel()
         timer = nil
         armTimeout?.cancel()
@@ -1030,6 +1014,8 @@ final class MirrorContinuityController: ObservableObject,
         sentDatagrams = 0
         validAcks = 0
         lastAuditedButtonGeneration = 0
+        lastPrimaryDownUptime = nil
+        buttonTransitionSentUptime = nil
         resetButtonState()
         keyGeneration = 0
     }

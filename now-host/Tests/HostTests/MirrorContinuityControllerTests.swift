@@ -656,6 +656,62 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(rig.controller.phase, .arming)
     }
 
+    func testGuestExitDoesNotCarryClickTimingIntoTheNextEpoch()
+        async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig {
+            audit.append(($0, $1))
+        }
+        defer { rig.udp.stop() }
+
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 40, y: 50)))
+        try await waitUntil("first epoch press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+            }
+        }
+        try rig.guest.send(.continuityReport(.init(
+            version: ContinuityContract.version,
+            id: nil, epoch: rig.arm.epoch, state: "exited",
+            acceptedHz: rig.arm.requestedHz, udpPort: nil,
+            reason: "lease-expired", acceptedPackets: 1,
+            stalePackets: 0, malformedPackets: 0,
+            appliedPositionSequence: 1, appliedButtonGeneration: 0)))
+        try await waitUntil("first epoch ended") {
+            rig.controller.phase == .idle && !rig.controller.isEnabled
+        }
+
+        audit.removeAll()
+        rig.controller.isEnabled = true
+        rig.controller.pointerMoved(to: .init(x: 60, y: 70))
+        try await waitUntil("second epoch arm") {
+            rig.guest.received.compactMap { message -> ContinuityArm? in
+                if case .continuityArm(let arm) = message { return arm }
+                return nil
+            }.count == 2
+        }
+        let secondArm = try XCTUnwrap(
+            rig.guest.received.compactMap { message -> ContinuityArm? in
+                if case .continuityArm(let arm) = message { return arm }
+                return nil
+            }.last)
+        try rig.guest.send(.continuityReport(.init(
+            version: ContinuityContract.version,
+            id: secondArm.id, epoch: secondArm.epoch, state: "armed",
+            acceptedHz: secondArm.requestedHz,
+            udpPort: Int(try XCTUnwrap(listener.boundPort)), reason: nil,
+            acceptedPackets: 0, stalePackets: 0, malformedPackets: 0,
+            appliedPositionSequence: 0, appliedButtonGeneration: 0)))
+        try await waitUntil("second epoch active") {
+            rig.controller.isActive
+        }
+
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 61, y: 71)))
+        XCTAssertFalse(audit.contains {
+            $0.1.contains("primary down interval")
+        }, "the first click of an epoch has no cross-epoch timing interval")
+    }
+
     func testFastPumpIsRequestedOnlyWhenOptedIn() async throws {
         let fast = try await makeArmingRig(fastPump: true)
         XCTAssertEqual(fast.arm.fastPump, true)
