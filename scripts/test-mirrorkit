@@ -44,7 +44,7 @@ if ! command -v swift >/dev/null 2>&1; then
     echo "    Install the Xcode command line tools to run it."
     exit 0
 fi
-if rg -l '^(import Testing|[[:space:]]*@Test([[:space:](]|$))' \
+if grep -Erl '^(import Testing|[[:space:]]*@Test([[:space:](]|$))' \
         "$package/Tests" >/dev/null 2>&1; then
     echo "==> FAIL: MirrorKit gate disables Swift Testing, but a Swift Testing test exists." >&2
     echo "    Split the runners and require both statuses before adding that test." >&2

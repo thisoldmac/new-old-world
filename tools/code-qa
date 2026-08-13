@@ -71,15 +71,38 @@ def gh_json(endpoint: str) -> dict | list:
     return json.loads(run(["gh", "api", endpoint]))
 
 
+def pull_request_files(repo: str, number: int, expected: int,
+                       fetch=gh_json) -> list[str]:
+    paths: list[str] = []
+    page = 1
+    while len(paths) < expected:
+        batch = fetch(
+            f"repos/{repo}/pulls/{number}/files?per_page=100&page={page}"
+        )
+        if not isinstance(batch, list) or not batch:
+            raise Refusal(
+                "GitHub returned an incomplete pull-request file list "
+                f"({len(paths)} of {expected})"
+            )
+        paths.extend(str(item["filename"]) for item in batch)
+        page += 1
+    if len(paths) != expected:
+        raise Refusal(
+            "GitHub returned an inconsistent pull-request file list "
+            f"({len(paths)} for changed_files={expected})"
+        )
+    return paths
+
+
 def pull_request(number: int) -> tuple[dict, list[str]]:
     repo = repo_name()
     pr = gh_json(f"repos/{repo}/pulls/{number}")
-    files = gh_json(f"repos/{repo}/pulls/{number}/files?per_page=100")
-    if not isinstance(pr, dict) or not isinstance(files, list):
+    if not isinstance(pr, dict):
         raise Refusal("GitHub returned an unexpected pull-request response")
-    if len(files) == 100:
-        raise Refusal("PR has at least 100 files; classify it manually before attesting")
-    return pr, [str(item["filename"]) for item in files]
+    changed_files = pr.get("changed_files")
+    if not isinstance(changed_files, int) or changed_files < 0:
+        raise Refusal("GitHub omitted the pull request's changed-file count")
+    return pr, pull_request_files(repo, number, changed_files)
 
 
 def post_status(sha: str, context: str, state: str, description: str,
@@ -225,6 +248,18 @@ def selftest() -> None:
             pass
         else:
             raise AssertionError(f"should refuse invalid path: {invalid!r}")
+
+    first_page = [{"filename": f"docs/file-{index}.md"}
+                  for index in range(100)]
+    second_page = [{"filename": "now-host/Sources/Host/App.swift"}]
+    pages = [first_page, second_page]
+
+    def fetch_page(_endpoint: str) -> list[dict[str, str]]:
+        return pages.pop(0)
+
+    paged = pull_request_files("owner/repo", 27, 101, fetch_page)
+    if len(paged) != 101 or paged[-1] != second_page[0]["filename"]:
+        raise AssertionError("pull-request classification stopped at 100 files")
     print("code-qa selftest: passed")
 
 

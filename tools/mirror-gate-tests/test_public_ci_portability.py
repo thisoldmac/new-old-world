@@ -10,6 +10,22 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class PublicCIPortabilityTests(unittest.TestCase):
+    def test_host_identity_gate_uses_standard_search_tools(self):
+        """MUTATION: restore rg and a stock macOS runner cannot execute it."""
+        script = (ROOT / "scripts" / "test-host-build-identity").read_text()
+        self.assertNotRegex(
+            script,
+            r"(?m)(?:^[ \t]*(?:if[ \t]+)?|[|;&][ \t]*)rg(?:[ \t]|$)",
+        )
+
+    def test_mirrorkit_gate_uses_standard_search_tools(self):
+        """MUTATION: restore rg and Swift Testing detection silently vanishes."""
+        script = (ROOT / "scripts" / "test-mirrorkit").read_text()
+        self.assertNotRegex(
+            script,
+            r"(?m)(?:^[ \t]*(?:if[ \t]+)?|[|;&][ \t]*)rg(?:[ \t]|$)",
+        )
+
     def test_host_job_selects_a_swift_6_runner(self):
         """MUTATION: restore macos-14 and this names the Swift 5.10 runner."""
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()

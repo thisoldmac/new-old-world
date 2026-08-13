@@ -30,7 +30,7 @@ candidate_id=$($identity continuity bundle-id)
     exit 1
 }
 
-if rg -q 'bundle_identifier=\$\{NOW_HOST_BUNDLE_IDENTIFIER|display_name=\$\{NOW_HOST_DISPLAY_NAME' \
+if grep -Eq 'bundle_identifier=\$\{NOW_HOST_BUNDLE_IDENTIFIER|display_name=\$\{NOW_HOST_DISPLAY_NAME' \
         "$script_dir/build-host-app"; then
     echo "host build again accepts permission-churning free-form identity" >&2
     exit 1
@@ -51,97 +51,97 @@ fi
     echo "Continuity handoff rejects its canonical installed path" >&2
     exit 1
 }
-rg -Fq '"$repo_root/tools/host-handoff-path" "$output_root"' \
+grep -Fq '"$repo_root/tools/host-handoff-path" "$output_root"' \
     "$script_dir/build-host-app" || {
     echo "signed Continuity build bypasses its stable-path guard" >&2
     exit 1
 }
-rg -Fq 'NOW_PRODUCT_NAME="$display_name"' "$script_dir/build-host-app" || {
+grep -Fq 'NOW_PRODUCT_NAME="$display_name"' "$script_dir/build-host-app" || {
     echo "Xcode again registers Continuity under a transient product name" >&2
     exit 1
 }
-if rg -q '^[[:space:]]*PRODUCT_NAME="\$display_name"' \
+if grep -Eq '^[[:space:]]*PRODUCT_NAME="\$display_name"' \
         "$script_dir/build-host-app"; then
     echo "host product name override again leaks into package dependencies" >&2
     exit 1
 fi
-rg -Fq 'PRODUCT_NAME = "$(NOW_PRODUCT_NAME)";' \
+grep -Fq 'PRODUCT_NAME = "$(NOW_PRODUCT_NAME)";' \
     "$repo_root/now-host/NewOldWorld.xcodeproj/project.pbxproj" || {
     echo "host target no longer owns its profile-specific product name" >&2
     exit 1
 }
-rg -q 'use --profile canonical\|continuity' "$script_dir/build-host-app" || {
+grep -Eq 'use --profile canonical\|continuity' "$script_dir/build-host-app" || {
     echo "host build no longer rejects legacy free-form identity variables" >&2
     exit 1
 }
-rg -q '<key>NSLocalNetworkUsageDescription</key>' \
+grep -Eq '<key>NSLocalNetworkUsageDescription</key>' \
     "$script_dir/HostInfo.plist.in" || {
     echo "ad-hoc host plist lost its Local Network declaration" >&2
     exit 1
 }
 for plist in "$repo_root/now-host/NewOldWorld-Info.plist" \
              "$script_dir/HostInfo.plist.in"; do
-    rg -q '<key>NSBonjourServices</key>' "$plist" || {
+    grep -Eq '<key>NSBonjourServices</key>' "$plist" || {
         echo "$plist lost the app-owned Bonjour permission prompt" >&2
         exit 1
     }
-    rg -q '<string>_newoldworld\._tcp</string>' "$plist" || {
+    grep -Eq '<string>_newoldworld\._tcp</string>' "$plist" || {
         echo "$plist has the wrong Bonjour permission prompt service" >&2
         exit 1
     }
 done
-rg -A1 '<key>CFBundleName</key>' "$repo_root/now-host/NewOldWorld-Info.plist" \
-    | rg -Fq '<string>$(NOW_DISPLAY_NAME)</string>' || {
+grep -A1 '<key>CFBundleName</key>' "$repo_root/now-host/NewOldWorld-Info.plist" \
+    | grep -Fq '<string>$(NOW_DISPLAY_NAME)</string>' || {
     echo "Xcode host plist gives Continuity the canonical bundle name" >&2
     exit 1
 }
 
 permission="$repo_root/now-host/Sources/Host/LocalNetworkAccessController.swift"
-if rg -q 'func request\(to[[:space:]]' "$permission"; then
+if grep -Eq 'func request\(to[[:space:]]' "$permission"; then
     echo "app permission request again requires a guest target" >&2
     exit 1
 fi
-rg -q 'func request\(\)' "$permission" || {
+grep -Eq 'func request\(\)' "$permission" || {
     echo "app-owned Local Network request no longer exists" >&2
     exit 1
 }
-rg -q 'func verifyDirectAccess\(to host: String\)' "$permission" || {
+grep -Eq 'func verifyDirectAccess\(to host: String\)' "$permission" || {
     echo "Continuity direct-path proof is no longer separate from prompting" >&2
     exit 1
 }
-rg -q 'protocol LocalNetworkDirectAccessConnection' "$permission" || {
+grep -Eq 'protocol LocalNetworkDirectAccessConnection' "$permission" || {
     echo "direct-path verification is again named or owned as permission" >&2
     exit 1
 }
-rg -q 'using: \.udp' "$permission" || {
+grep -Eq 'using: \.udp' "$permission" || {
     echo "Local Network verification no longer opens a real UDP path" >&2
     exit 1
 }
-rg -Fq 'connection.send(content: content' "$permission" || {
+grep -Fq 'connection.send(content: content' "$permission" || {
     echo "Local Network verification only evaluates a path and sends nothing" >&2
     exit 1
 }
-rg -q 'NWBrowser' "$permission" && rg -q 'NWListener' "$permission" || {
+grep -Eq 'NWBrowser' "$permission" && grep -Eq 'NWListener' "$permission" || {
     echo "Local Network request lost its app-owned macOS prompt operation" >&2
     exit 1
 }
-if rg -q 'requiredInterface|requiredInterfaceType' "$permission"; then
+if grep -Eq 'requiredInterface|requiredInterfaceType' "$permission"; then
     echo "Local Network request pins an interface instead of following route" >&2
     exit 1
 fi
 
 app="$repo_root/now-host/Sources/Host/App.swift"
-rg -q '^[[:space:]]*state\.localNetworkAccess\.request\(\)[[:space:]]*$' \
+grep -Eq '^[[:space:]]*state\.localNetworkAccess\.request\(\)[[:space:]]*$' \
     "$app" || {
     echo "Local Network permission regressed from app-owned launch request" >&2
     exit 1
 }
 continuity="$repo_root/now-host/Sources/Host/MirrorContinuityController.swift"
-if rg -q '^[[:space:]]*localNetworkAccess\?\.request\(' "$continuity"; then
+if grep -Eq '^[[:space:]]*localNetworkAccess\?\.request\(' "$continuity"; then
     echo "Continuity has taken ownership of the app Local Network request" >&2
     exit 1
 fi
-rg -q '^[[:space:]]*localNetworkAccess\?\.verifyDirectAccess\(to: host\)[[:space:]]*$' \
+grep -Eq '^[[:space:]]*localNetworkAccess\?\.verifyDirectAccess\(to: host\)[[:space:]]*$' \
     "$continuity" || {
     echo "Continuity no longer verifies its direct path separately" >&2
     exit 1
