@@ -51,12 +51,28 @@ def require_clean_checkout() -> str:
     return git("rev-parse", "HEAD")
 
 
+def discard_stale_component_sidecars(build_root: Path) -> None:
+    """Force CMake to record this checkout even when component bytes reuse."""
+    for relative in (
+        "ppc/New Old World.bin.now-update.json",
+        "ext/NowExt.bin.now-update.json",
+    ):
+        try:
+            (build_root / relative).unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise ReleaseRefusal(
+                f"could not discard stale component metadata: {exc}") from exc
+
+
 def build_components(channel: str) -> tuple[Path, Path]:
     os.environ["NOW_UPDATE_CHANNEL"] = channel
-    run([str(ROOT / "scripts/build-guests"), "ppc"])
-    run([str(ROOT / "scripts/build-guests"), "68k"])
     digest = hashlib.sha1(str(ROOT).encode()).hexdigest()[:12]
     build_root = Path(os.environ.get("TMPDIR", "/tmp")) / "now-guest-builds" / digest
+    discard_stale_component_sidecars(build_root)
+    run([str(ROOT / "scripts/build-guests"), "ppc"])
+    run([str(ROOT / "scripts/build-guests"), "68k"])
     return build_root / "ppc/New Old World.bin", build_root / "ext/NowExt.bin"
 
 

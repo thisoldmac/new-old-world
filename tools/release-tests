@@ -6,6 +6,7 @@ import json
 import os
 import plistlib
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -280,6 +281,26 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("release channel cannot use prepared inputs",
                       result.stderr)
+
+    def test_component_build_discards_stale_revision_sidecars(self) -> None:
+        build_root = self.root / "guest-build"
+        application = build_root / "ppc/New Old World.bin"
+        extension = build_root / "ext/NowExt.bin"
+        for artifact in (application, extension):
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_bytes(b"unchanged component")
+            artifact.with_name(artifact.name + ".now-update.json").write_text(
+                '{"sourceRevision":"stale"}')
+        namespace = runpy.run_path(str(ROOT / "scripts/assemble-release"))
+
+        namespace["discard_stale_component_sidecars"](build_root)
+
+        self.assertTrue(application.is_file())
+        self.assertTrue(extension.is_file())
+        self.assertFalse(application.with_name(
+            application.name + ".now-update.json").exists())
+        self.assertFalse(extension.with_name(
+            extension.name + ".now-update.json").exists())
 
     def test_assembler_publishes_consumable_development_bundle(self) -> None:
         checkout = self.root / "checkout"
