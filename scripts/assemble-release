@@ -104,20 +104,22 @@ def sign_host(bundle: Path, identity: str | None, adhoc: bool,
     if not adhoc and not identity:
         raise ReleaseRefusal("name --sign-identity or use --adhoc for a local fixture")
     signing_identity = "-" if adhoc else identity
-    entitlements = {
-        "com.apple.application-identifier": f"{TEAM_ID}.{BUNDLE_ID}",
-        "com.apple.developer.team-identifier": TEAM_ID,
-        "com.apple.security.personal-information.addressbook": True,
-        "com.apple.security.personal-information.photos-library": True,
-        "keychain-access-groups": [f"{TEAM_ID}.{BUNDLE_ID}"],
-    }
-    entitlements_path = workspace / "host-entitlements.plist"
-    entitlements_path.write_bytes(plistlib.dumps(entitlements))
     arguments = [
         "/usr/bin/codesign", "--force", "--deep", "--options", "runtime",
-        "--sign", str(signing_identity), "--entitlements", str(entitlements_path),
-        str(bundle),
+        "--sign", str(signing_identity),
     ]
+    if not adhoc:
+        entitlements = {
+            "com.apple.application-identifier": f"{TEAM_ID}.{BUNDLE_ID}",
+            "com.apple.developer.team-identifier": TEAM_ID,
+            "com.apple.security.personal-information.addressbook": True,
+            "com.apple.security.personal-information.photos-library": True,
+            "keychain-access-groups": [f"{TEAM_ID}.{BUNDLE_ID}"],
+        }
+        entitlements_path = workspace / "host-entitlements.plist"
+        entitlements_path.write_bytes(plistlib.dumps(entitlements))
+        arguments.extend(["--entitlements", str(entitlements_path)])
+    arguments.append(str(bundle))
     run(arguments)
     run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(bundle)])
     if not adhoc:
