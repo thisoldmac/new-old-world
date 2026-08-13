@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "confirm.h"
+#include "carbon_warning.h"
 #include "nowlog.h"
 #include "fileshare.h"
 #include "product_identity.h"
@@ -493,6 +494,7 @@ int main(void)
     conn_set_file_note(files_share_note);
     conn_set_listing(files_browser_listing);
     conn_set_get_note(files_browser_note);
+    now_carbon_warning_show_if_needed();
 
     /* A real UPP, not a cast. The old comment here claimed "on CFM
        PowerPC a UPP is the tvector itself" - that is true on Mach-O and
