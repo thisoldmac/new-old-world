@@ -53,8 +53,28 @@ needs one attended log before the investigation can move outward to Event
 Manager/tracking state. Until then the accepted product status is explicit:
 cursor, click, keyboard and logical drag work on metal, but held drags may
 flicker between origin and current position, double-click is intermittent, and
-cooperative scheduling produces periodic motion hitches. Mirror guest-to-host
-native file drag and Continuity edge file drag remain metal-unverified.
+cooperative scheduling produces periodic motion hitches. Those hitches have
+not been observed while a drag is held, which is a useful discriminator for
+the input-pump investigation rather than evidence that cooperative scheduling
+alone is the cause. Mirror guest-to-host native file drag and Continuity edge
+file drag remain metal-unverified.
+
+**2026-08-13 metal follow-up — open regressions and interaction debt:**
+
+- A menu-bar title clicked through the direct pointer opens on mouse-down and
+  closes again on mouse-up. This is a regression of the OS 8/9 click-open
+  behavior described below; do not classify it as expected System 6/7
+  hold-to-track behavior.
+- Mirror does not refresh a desktop item's rendered position after that item
+  is dragged with Mirror Cursor. The guest move completes, but the host scene
+  retains the old desktop layout; whether any later refresh repairs it has not
+  yet been measured. This predates the Continuity work. Track it against
+  Mirror's Finder-complement invalidation without attributing it to the
+  resident drag mechanism.
+- Screen-edge acquisition is too magnetic. Before ownership transfers, host
+  motion away from the configured edge should cancel the pending handoff
+  immediately. Apply the same cancellation guest-side only if it does not add
+  meaningful work to the already constrained guest input path.
 
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
