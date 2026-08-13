@@ -13,6 +13,8 @@ final class ModuleRegistryTests: XCTestCase {
                        "Screen")
         XCTAssertEqual(ModuleRegistry.standard.module(id: "settings")?.title,
                        "Connections")
+        XCTAssertEqual(ModuleRegistry.standard.module(id: "web")?.title,
+                       "Web Proxy")
     }
 
     func testUnknownModuleIsAbsent() {

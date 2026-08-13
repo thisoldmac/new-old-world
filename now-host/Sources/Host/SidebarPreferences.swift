@@ -17,6 +17,11 @@ import Combine
 /// nothing.
 @MainActor
 final class SidebarPreferences: ObservableObject {
+    /// The versioned navigation arrangement. The old flat `order` remains a
+    /// compatibility projection until the shelf-rendering unit moves the root
+    /// view to this model.
+    @Published private(set) var layout: NavigationLayout
+
     /// One line per row instead of a title and a summary.
     @Published var compact: Bool {
         didSet { defaults.set(compact, forKey: Self.compactKey) }
@@ -36,16 +41,26 @@ final class SidebarPreferences: ObservableObject {
     }
 
     private let defaults: UserDefaults
+    private let layoutStore: NavigationLayoutStore
     private static let compactKey = "sidebarCompact"
     private static let collapsedKey = "sidebarCollapsed"
     private static let orderKey = "sidebarOrder"
 
     init(defaults: UserDefaults = ProductIdentity.defaults, registry: ModuleRegistry) {
         self.defaults = defaults
+        layoutStore = NavigationLayoutStore(defaults: defaults,
+                                            registry: registry)
+        layout = layoutStore.load()
         compact = defaults.bool(forKey: Self.compactKey)
         collapsed = defaults.bool(forKey: Self.collapsedKey)
         order = Self.sanitised(defaults.stringArray(forKey: Self.orderKey) ?? [],
                                against: registry.listModules.map(\.id))
+    }
+
+    func replaceLayout(_ proposed: NavigationLayout,
+                       registry: ModuleRegistry) {
+        layout = proposed.sanitised(for: registry)
+        layoutStore.save(layout)
     }
 
     /// A stored order made whole against what exists today.

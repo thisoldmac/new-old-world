@@ -142,4 +142,15 @@ final class SidebarPreferencesTests: XCTestCase {
         XCTAssertTrue(reopened.collapsed)
         XCTAssertEqual(reopened.ordered(modules).first?.id, last)
     }
+
+    func testLegacyOrderIsMigratedToAVersionedNavigationLayout() throws {
+        let suite = "SidebarPreferencesTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["chat", "screen", "files"], forKey: "sidebarOrder")
+
+        _ = SidebarPreferences(defaults: defaults, registry: .standard)
+
+        XCTAssertNotNil(defaults.data(forKey: "navigationLayout"))
+    }
 }
