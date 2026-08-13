@@ -1394,6 +1394,53 @@ checks, and clean shutdown; CUDA also proved held physical takeover. Those
 rigs do not reproduce stationary PowerBook ADB republishing, so this remains
 Tested and not metal-verified.
 
+**Updated 2026-08-12, passive ADB authority observer in progress:** Pin held
+point and Virtual GetMouse together made PowerBook dragging mostly usable but
+did not remove the alternating origin/current cursor, and hiding the guest
+cursor hid both sprites without changing it. The next branch no longer adds a
+fourth coordinate reassertion. Continuity table V6 wraps exactly one relative
+ADB device's incumbent service routine, retains its handler packet and data
+pointer unchanged, and records the ADB packet plus `Mouse`, `RawMouse`,
+`MTemp`, and `MBState` around the incumbent call. The callback is bounded and
+preallocated; only PPC task time drains or persists samples. Disarm stops
+recording but deliberately leaves the passive link installed until reboot.
+CUDA/ADB installed handler ID 2 and observed two callbacks for two native QMP
+transitions. PMU/USB exposed a dormant address-3 handler ID 1, so installation
+also succeeded there, but native USB movement bypassed it and left callbacks at
+zero. Both completed the direct-pointer lifecycle and returned to native input;
+the emulator result proves transparent chaining and an ADB/USB control, not the
+source of the PowerBook's stationary republishing. On CUDA the `0x3C` two-byte
+register-0 packet left every sampled cursor global unchanged across the handler
+call even though the cursor moved later. That rules out invoking the incumbent
+from the Time Manager as an equivalent injection path: the handler feeds a
+later system update whose context must be preserved. Packet substitution on the
+real autopoll lane is the next emulator-only experiment. No PowerBook has run
+this observer yet.
+
+**Updated 2026-08-12, active CUDA ADB authority proved:** Continuity table V7
+adds an explicit `virtualADB` arm experiment, absent/off in the product host.
+It bypasses the Cursor Device position request and substitutes only tiny
+two-byte ADB register-0 carrier packets with bounded deltas toward the latest
+host point; larger physical deltas pass through. The CUDA fault instrument
+reached exact absolute move and drag targets, settled down/up with no button
+debt, recorded zero Cursor Device position applies, then passed a larger native
+delta through and exited `guest-input`. This is Tested in a private CUDA clone,
+not metal-verified. It proves the ADB handler path removes the competing
+coordinate publisher. It does not provide an idle packet clock: QEMU, and
+possibly the PowerBook trackpad, reports nothing while stationary. Do not
+enable this on metal until the passive trace establishes the PowerBook's idle
+packet behavior; the product mechanism may need a real virtual ADB device or a
+controller-level injection source rather than carrier substitution.
+
+The final gate streams held states without awaiting task-time acknowledgement
+inside Finder's cooperative tracking loop, then sends up and requires the
+settled position/generation. It also requires zero false native-input changes,
+zero new forced releases, zero Cursor Device applies, and one wrapper-attributed
+physical packet for takeover. A related screen-edge metal report found that a
+previously hidden guest cursor could remain hidden: the task-time reveal path
+now redraws on every applied point even when `CrsrObscure` was already zero.
+That visibility correction is Tested, not yet rechecked on the PowerBook.
+
 **Corrected 2026-08-12, target-context installation:** that candidate installed
 the three tracking hooks once from NOW's arm service even though this resident's
 act plane has already measured Toolbox trap dispatch differing by process

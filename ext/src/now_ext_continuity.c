@@ -12,6 +12,7 @@
 #include "peek_table.h"
 #include "now_continuity_logic.h"
 #include "now_ext_core_logic.h"
+#include "now_ext_adb_observer.h"
 #include "now_ext_cursor_input.h"
 #include "now_input_owner.h"
 
@@ -39,6 +40,15 @@ static Boolean gButtonTaskInstalled;
 static volatile Boolean gButtonTaskRunning;
 static volatile NowPeekU32 gReleaseSettleStarted;
 
+static NowPeekU32 native_input_sequence(const NowPeekContinuityCell *cell)
+{
+    if (cell != NULL
+            && (cell->tracking_options
+                & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB) != 0)
+        return now_ext_adb_observer_physical_seq();
+    return now_ext_cursor_physical_input_seq();
+}
+
 enum { kNowContinuityReleaseSettleMaxTicks = 60 };
 
 extern void now_ext_continuity_tm_entry(void);
@@ -52,7 +62,7 @@ static NowPeekContinuityCell *continuity_cell(NowPeekTable *table)
                                      + sizeof(NowPeekContinuityCell)))
         return NULL;
     if (table->continuity_format
-            != (NowPeekU32)kNowPeekContinuityFormatV5)
+            != (NowPeekU32)kNowPeekContinuityFormatV7)
         return NULL;
     return &table->continuity;
 }
@@ -209,8 +219,11 @@ static int process_event_result(NowPeekContinuityCell *cell,
            ours before sampling position, then arm the interrupt-time escape
            path. The resident never impersonates the ADB/PMU device on down. */
         now_ext_cursor_remember_continuity_button(1u);
-        gNativeInputSeq = now_ext_cursor_physical_input_seq();
-        gNativeInputBaseline = gNativeInputSeq;
+        if (!(cell->tracking_options
+                & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB)) {
+            gNativeInputSeq = native_input_sequence(cell);
+            gNativeInputBaseline = gNativeInputSeq;
+        }
         /* Publish the press point before the target enters its nested loop.
            The timer replaces it with newer host points while held. */
         now_ext_cursor_remember_continuity_tracking_point(
@@ -257,6 +270,7 @@ static void finish_locked(NowPeekContinuityCell *cell, NowPeekU32 reason,
     force_reset(cell, reason);
     now_ext_cursor_cancel_task_apply();
     now_ext_cursor_configure_continuity_tracking(0);
+    now_ext_adb_observer_stop();
     cell->state = (NowPeekU32)kNowPeekContinuityStateExited;
     cell->exit_reason = reason;
     cell->apply_ticks = ticks;
@@ -290,8 +304,12 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
     cell->pending_mouseup = 0;
     cell->button_release_reason = 0;
     now_ext_cursor_configure_continuity_tracking(cell->tracking_options);
-    gNativeInputSeq = now_ext_cursor_physical_input_seq();
+    gNativeInputSeq = native_input_sequence(cell);
     gNativeInputBaseline = gNativeInputSeq;
+    now_ext_adb_observer_start(
+        gTable, cell->epoch,
+        cell->tracking_options
+            & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB);
     publish_tasktime_counters(cell);
 }
 
@@ -438,10 +456,10 @@ void now_ext_continuity_service(void)
         gButtonTaskRunning = false;
     }
 
-    /* Sample physical RawMouse before the owned synthetic device reports its
-       next point. Recent owned reports are excluded by the sampler, while a
-       real ADB/USB change exits before another host point is applied. */
-    native_input_seq = now_ext_cursor_physical_input_seq();
+    /* Passive mode samples RawMouse. Virtual-ADB mode instead trusts the
+       wrapper's exact packet classification, because the incumbent's later
+       system update is downstream of both injected and physical packets. */
+    native_input_seq = native_input_sequence(cell);
     gNativeInputSeq = native_input_seq;
     if (native_input_seq != gNativeInputBaseline) {
         gNativeInputBaseline = native_input_seq;
@@ -449,6 +467,20 @@ void now_ext_continuity_service(void)
                       (NowPeekU32)kNowPeekContinuityExitGuestInput, ticks);
         service_return(cell);
         return;
+    }
+    if (cell->tracking_options
+            & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB) {
+        Point actual = LMGetMouseLocation();
+
+        cell->at_h = actual.h;
+        cell->at_v = actual.v;
+        if (actual.h == (short)cell->want_h
+                && actual.v == (short)cell->want_v
+                && now_continuity_sequence_newer(
+                    cell->position_seq, cell->applied_position_seq)) {
+            cell->applied_position_seq = cell->position_seq;
+            cell->apply_ticks = ticks;
+        }
     }
     exit_due = now_continuity_exit_due(
         ticks, cell->last_arrival_ticks,
@@ -487,9 +519,12 @@ void now_ext_continuity_service(void)
             cell->state = (NowPeekU32)kNowPeekContinuityStateActive;
             if (now_continuity_sequence_newer(
                     position_seq, cell->applied_position_seq)) {
-                cell->request_h = h;
-                cell->request_v = v;
-                cell->request_position_seq = position_seq;
+                if (!(cell->tracking_options
+                        & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB)) {
+                    cell->request_h = h;
+                    cell->request_v = v;
+                    cell->request_position_seq = position_seq;
+                }
                 trace_event(cell,
                             (NowPeekU32)kNowPeekContinuityTraceRequest,
                             ticks, (NowPeekI32)position_seq, h);
@@ -561,7 +596,7 @@ void now_ext_continuity_tick(TMTaskPtr task)
         return;
     }
     cell->button_timer_ticks++;
-    if (now_ext_cursor_physical_input_seq() != gNativeInputBaseline) {
+    if (native_input_sequence(cell) != gNativeInputBaseline) {
         release_button(cell, cell->button_generation,
                        (NowPeekU32)kNowPeekContinuityExitGuestInput);
         return;
@@ -633,7 +668,7 @@ int now_ext_continuity_boot(NowPeekTable *table)
     if (table->length < (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                      + sizeof(NowPeekContinuityCell)))
         return 0;
-    table->continuity_format = (NowPeekU32)kNowPeekContinuityFormatV5;
+    table->continuity_format = (NowPeekU32)kNowPeekContinuityFormatV7;
     cell = &table->continuity;
     cell->state = (NowPeekU32)kNowPeekContinuityStateInactive;
     cell->exit_reason = (NowPeekU32)kNowPeekContinuityExitNone;
@@ -664,6 +699,7 @@ int now_ext_continuity_boot(NowPeekTable *table)
 
 void now_ext_continuity_rollback(NowPeekTable *table)
 {
+    now_ext_adb_observer_rollback(table);
     if (table != NULL && table->continuity.button_down)
         release_button_lowmem();
     gButtonTaskRunning = false;

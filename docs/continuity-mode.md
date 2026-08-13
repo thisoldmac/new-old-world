@@ -927,6 +927,95 @@ gesture, leaving the host pointer visible over Mirror and changing no ADB or
 Cursor Device state. It is an isolation experiment for the remaining sprite
 fight, not yet a default or a metal result.
 
+### ADB authority spike: observe the incumbent before replacing it
+
+The cursor-hiding experiment hid both visible cursors and did not remove the
+alternation. Together with the partial improvement from Pin held point and
+Virtual GetMouse, that is evidence against treating the remainder as only a
+sprite problem. The current path has three coordinate publishers: the PPC
+application's synthetic absolute Cursor Device, the resident's held-point
+tracking source, and the physical ADB/PMU input device. More reassertion layers
+would make the observed result harder to attribute.
+
+Continuity table V6 therefore adds a **passive** ADB observer before attempting
+a virtual-device implementation. On the first Continuity epoch, task time
+enumerates devices by original ADB address 3, refuses zero or ambiguous
+matches, and uses `SetADBInfo` to wrap the existing relative device's service
+routine while retaining its exact data-area pointer. A register-ABI assembly
+shim presents the original packet, command, data pointer, and handler identity
+to the incumbent unchanged. Around that call, bounded C code records all eight
+ADB data bytes plus `Mouse`, `RawMouse`, `MTemp`, and `MBState` before and after.
+The callback allocates nothing and performs no manager, QuickDraw, Event
+Manager, file, log, or network operation.
+
+Disarm only turns recording off. The transparent wrapper remains linked until
+restart because removing it after another extension has chained behind it
+would be unsafe. The resident rest-state bit makes that persistent fact visible.
+The PPC application drains the eight-entry ring after its synchronous resident
+service returns, keeps every observation in the ordinary in-memory log, and—if
+disk logging is enabled—flushes the first observation and one checkpoint per
+60 callbacks. This gives a post-fault log a bounded chance to distinguish “ADB
+handler republished the old point” from “the alternation happened elsewhere”
+without doing disk I/O in interrupt context.
+
+This is diagnostic scaffolding, not the proposed final virtual ADB mouse. Its
+first emulator gate was deliberately asymmetric. CUDA/ADB installed handler ID
+2 and recorded two callbacks for the two QMP native transitions. PMU/USB still
+exposed a dormant address-3 handler (ID 1), so the observer installed there too,
+but native USB movement bypassed it and the callback count remained zero. Both
+rigs completed click, rapid-click, drag, lease-release, native-return, and clean
+Finder shutdown cycles. This establishes that the wrapper preserves the real
+CUDA handler and distinguishes ADB from USB input; it does not yet identify the
+PowerBook's stationary republisher. The CUDA trace also established a more
+important boundary: command `0x3C` delivered the standard two-byte address-3
+register-0 packet, but `Mouse`, `RawMouse`, `MTemp`, and `MBState` were all
+unchanged when the incumbent returned even though the cursor moved later. The
+service routine therefore feeds a later system update path; it is not itself a
+synchronous low-memory cursor writer. An active emulator spike should rewrite
+the real autopoll packet before that incumbent runs, rather than call the
+handler from an unrelated timer context. Only an attended PowerBook trace can
+show whether stationary trackpad packets are the remaining republisher.
+
+V7 adds one deliberately non-product experiment on top of that observer.
+`continuity.arm.virtualADB` is optional, defaults false, and is not emitted by
+the NOW host UI. When a fault instrument opts in, the normal Cursor Device
+position request is bypassed. A standard two-byte address-3 register-0 packet
+whose physical deltas are no larger than one count is treated as an emulator
+carrier: a pure shared-C transform replaces it with the bounded signed
+seven-bit delta toward the latest absolute host point, forces both physical
+button bits released, and then lets the incumbent handler and the rest of the
+ADB Manager path consume it normally. A larger physical delta is never
+rewritten and remains the optimistic guest-takeover signal. Disarm clears the
+active packet source. Passive mode continues to sample `RawMouse`; active mode
+uses the observer's untouched-physical-packet sequence, so an injected packet's
+later downstream `RawMouse` update cannot revoke its own epoch.
+
+The private CUDA V7 gate moved `(15,15)` to `(52,44)` using four carrier
+packets with zero Cursor Device position applies. A second run moved from
+`(77,44)` to `(114,73)`, pressed, dragged through the same ADB path to
+`(157,104)`, released with no button debt, and then passed a larger native
+delta through; the guest exited Continuity as `guest-input` and moved to
+`(182,104)`. The app, resident, and wire remained responsive. This proves that
+the incumbent ADB path can be the sole coordinate publisher in the CUDA rig.
+The final instrument also models classic cooperative tracking correctly: it
+streams held positions without waiting for an intermediate task-time
+acknowledgement, sends mouse-up to unwind Finder's nested loop, and only then
+requires the final position and generation acknowledgement. It fails if the
+lease safety path releases the button, if an injected report increments native
+input, or if takeover is not attributed to an untouched physical ADB packet.
+It does **not** prove that a stationary PowerBook trackpad supplies carrier
+packets, nor that stealing one-count physical deltas is acceptable product
+behavior. A true virtual ADB device or controller-level injection clock remains
+the likely production mechanism if the attended PowerBook trace shows no idle
+trackpad reports.
+
+The same resident checkpoint corrects a separate metal visibility defect.
+`CrsrObscure == 0` does not prove that the sprite is visible, so every applied
+task-time Continuity point now clears `CrsrObscure` and performs one balanced
+`HideCursor`/`ShowCursor` redraw. The source guard refuses an early return that
+would preserve a stale or already-hidden sprite. This is built and tested in
+the emulator; the screen-edge case that reported it still needs a metal rerun.
+
 ### Double-click timing is measured at both scheduling boundaries
 
 The host already buffers exactly one second primary cycle while the first

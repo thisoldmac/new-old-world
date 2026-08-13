@@ -388,13 +388,14 @@ void now_ext_cursor_remember_continuity_point(NowPeekI32 h, NowPeekI32 v)
 }
 
 /* The synthetic PPC Cursor Device normally draws its own report, but an
-   application can leave CrsrObscure set until the next physical mouse move.
-   Continuity is that next movement. This is called only from the PPC app's
-   synchronous resident service in cooperative task time, never from a timer. */
+   application can leave either CrsrObscure or the sprite itself stale until
+   the next physical mouse move. Continuity is that next movement. Clear the
+   low-memory obscured state and always ask QuickDraw for one balanced redraw;
+   CrsrObscure == 0 does not prove that the sprite is currently visible. This
+   is called only from the PPC app's synchronous resident service in
+   cooperative task time, never from a timer. */
 void now_ext_cursor_reveal_continuity(void)
 {
-    if (*gCrsrObscure == 0)
-        return;
     *gCrsrObscure = 0;
     HideCursor();
     ShowCursor();
@@ -487,7 +488,7 @@ int now_ext_cursor_answer_continuity_getmouse(void *mouse_loc)
                 >= (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                  + sizeof(NowPeekContinuityCell))
             && gTable->continuity_format
-                == (NowPeekU32)kNowPeekContinuityFormatV5) {
+                == (NowPeekU32)kNowPeekContinuityFormatV7) {
         cell = &gTable->continuity;
         cell->tracking_getmouse_answers++;
     }

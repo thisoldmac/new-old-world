@@ -2177,6 +2177,16 @@ components:
             the host cursor remains visible over Mirror. This isolates the
             native cursor sprite from ADB and Cursor Device position
             contention without changing either device's state.
+        virtualADB:
+          type: boolean
+          default: false
+          description: >
+            Emulator-only authority experiment. Tiny relative ADB register-0
+            packets become carriers for bounded deltas toward the latest host
+            point, and the ordinary Cursor Device position apply is bypassed.
+            Larger physical deltas remain native and revoke Continuity. This
+            is absent and false in product builds until the mechanism is
+            proven safe on a real ADB PowerBook.
     ContinuityDisarm:
       type: object
       required: [type, version, id, epoch, reason]

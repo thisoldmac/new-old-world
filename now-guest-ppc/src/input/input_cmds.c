@@ -229,7 +229,7 @@ static void cursor_rows(InputRows *rows)
     row_addl(rows, "cursor last err", (long)c->last_err);
     if (t->length >= (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                   + sizeof(NowPeekContinuityCell))
-        && t->continuity_format == (NowPeekU32)kNowPeekContinuityFormatV5) {
+        && t->continuity_format == (NowPeekU32)kNowPeekContinuityFormatV7) {
         const NowPeekContinuityCell *continuity = &t->continuity;
 
         row_addl(rows, "native samples", (long)continuity->native_input_samples);
@@ -242,6 +242,8 @@ static void cursor_rows(InputRows *rows)
         row_addl(rows, "native buttons", (long)continuity->native_buttons);
         row_addl(rows, "cursor debt cancels",
                  (long)continuity->cursor_debt_cancels);
+        row_addl(rows, "task cursor applies",
+                 (long)continuity->tasktime_cursor_applies);
         row_addl(rows, "button generation",
                  (long)continuity->applied_button_generation);
         row_addl(rows, "button down", (long)continuity->button_down);
@@ -257,6 +259,78 @@ static void cursor_rows(InputRows *rows)
                  (long)continuity->tracking_pin_writes);
         row_addl(rows, "tracking GetMouse answers",
                  (long)continuity->tracking_getmouse_answers);
+        row_addl(rows, "ADB observer state",
+                 (long)continuity->adb_observer_state);
+        row_addl(rows, "ADB observer address",
+                 (long)continuity->adb_observer_address);
+        row_addl(rows, "ADB observer handler",
+                 (long)continuity->adb_observer_handler_id);
+        row_addl(rows, "ADB pointing devices",
+                 (long)continuity->adb_observer_device_count);
+        row_addl(rows, "ADB observer install err",
+                 (long)continuity->adb_observer_install_result);
+        row_addl(rows, "ADB observer installs",
+                 (long)continuity->adb_observer_installs);
+        row_addl(rows, "ADB observer callbacks",
+                 (long)continuity->adb_observer_callbacks);
+        row_addl(rows, "ADB observer reentries",
+                 (long)continuity->adb_observer_reentries);
+        row_addl(rows, "ADB observer trace seq",
+                 (long)continuity->adb_trace_write_seq);
+        row_addl(rows, "ADB injection packets",
+                 (long)continuity->adb_injection_packets);
+        row_addl(rows, "ADB injection carriers",
+                 (long)continuity->adb_injection_carriers);
+        row_addl(rows, "ADB injection physical",
+                 (long)continuity->adb_injection_physical);
+        row_addl(rows, "ADB injection clamps",
+                 (long)continuity->adb_injection_clamps);
+        if (continuity->adb_trace_write_seq != 0) {
+            NowPeekU32 trace_seq = continuity->adb_trace_write_seq;
+            const NowPeekADBTraceEntry *entry = &continuity->adb_trace[
+                (trace_seq - 1u) % kNowPeekADBTraceCapacity];
+
+            if (entry->seq == trace_seq) {
+                row_addu(rows, "ADB last epoch",
+                         (unsigned long)entry->epoch);
+                row_addu(rows, "ADB last command",
+                         (unsigned long)entry->command);
+                row_addu(rows, "ADB last bytes",
+                         (unsigned long)entry->data_length);
+                row_addu(rows, "ADB last data 0-3",
+                         (unsigned long)entry->data_0_3);
+                row_addu(rows, "ADB last data 4-7",
+                         (unsigned long)entry->data_4_7);
+                row_addl(rows, "ADB mouse before x",
+                         (long)entry->before_mouse_h);
+                row_addl(rows, "ADB mouse before y",
+                         (long)entry->before_mouse_v);
+                row_addl(rows, "ADB mouse after x",
+                         (long)entry->after_mouse_h);
+                row_addl(rows, "ADB mouse after y",
+                         (long)entry->after_mouse_v);
+                row_addl(rows, "ADB raw before x",
+                         (long)entry->before_raw_h);
+                row_addl(rows, "ADB raw before y",
+                         (long)entry->before_raw_v);
+                row_addl(rows, "ADB raw after x",
+                         (long)entry->after_raw_h);
+                row_addl(rows, "ADB raw after y",
+                         (long)entry->after_raw_v);
+                row_addl(rows, "ADB temp before x",
+                         (long)entry->before_temp_h);
+                row_addl(rows, "ADB temp before y",
+                         (long)entry->before_temp_v);
+                row_addl(rows, "ADB temp after x",
+                         (long)entry->after_temp_h);
+                row_addl(rows, "ADB temp after y",
+                         (long)entry->after_temp_v);
+                row_addu(rows, "ADB button before",
+                         (unsigned long)entry->before_button);
+                row_addu(rows, "ADB button after",
+                         (unsigned long)entry->after_button);
+            }
+        }
     }
 }
 

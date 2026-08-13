@@ -79,6 +79,11 @@ check("now_ext_cursor_reveal_continuity();" in resident_service,
       "successful task-time movement no longer wakes an obscured cursor")
 check("HideCursor();" in reveal and "ShowCursor();" in reveal,
       "the task-time visibility wake no longer redraws through QuickDraw")
+check("*gCrsrObscure = 0;" in reveal
+      and reveal.index("*gCrsrObscure = 0;") < reveal.index("HideCursor();"),
+      "the task-time visibility wake no longer clears obscured state first")
+check("return;" not in reveal,
+      "a nominally clear CrsrObscure can still suppress the sprite redraw")
 
 check("now_cdm_move_to(gDevice" in ppc_move,
       "PPC task-time cursor path no longer uses the corrected transition")
@@ -147,7 +152,7 @@ check("gOwnedDeviceHistory" in CURSOR
       "task-time and timer-owned point history again share an unsafe writer")
 check("now_ext_continuity_gne" not in CORE,
       "the global jGNE path again services Continuity")
-check("kNowPeekContinuityFormatV5" in CONTINUITY,
+check("kNowPeekContinuityFormatV7" in CONTINUITY,
       "the resident no longer advertises the direct-pointer contract")
 check("now_continuity_cursor_move" in SERVICE
       and "now_continuity_cursor_button" in SERVICE
