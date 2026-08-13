@@ -87,17 +87,12 @@ final class MirrorContinuityController: ObservableObject,
     @Published var pinHeldPoint = false {
         didSet {
             guard pinHeldPoint != oldValue else { return }
-            if pinHeldPoint && virtualADB && !normalizingTrackingModes {
-                normalizingTrackingModes = true
-                virtualADB = false
-                normalizingTrackingModes = false
-            }
             if !loadingSettings,
                let machine = listener.activeContinuityTarget?.key.machine {
                 defaults.set(pinHeldPoint,
                              forKey: pinHeldPointKey(for: machine))
             }
-            if phase != .idle && !normalizingTrackingModes {
+            if phase != .idle {
                 rearmAfterConfigurationChange(reason: "held-point pin changed")
             }
         }
@@ -105,56 +100,25 @@ final class MirrorContinuityController: ObservableObject,
     @Published var virtualGetMouse = false {
         didSet {
             guard virtualGetMouse != oldValue else { return }
-            if virtualGetMouse && virtualADB && !normalizingTrackingModes {
-                normalizingTrackingModes = true
-                virtualADB = false
-                normalizingTrackingModes = false
-            }
             if !loadingSettings,
                let machine = listener.activeContinuityTarget?.key.machine {
                 defaults.set(virtualGetMouse,
                              forKey: virtualGetMouseKey(for: machine))
             }
-            if phase != .idle && !normalizingTrackingModes {
+            if phase != .idle {
                 rearmAfterConfigurationChange(reason: "GetMouse mode changed")
-            }
-        }
-    }
-    @Published var virtualADB = false {
-        didSet {
-            guard virtualADB != oldValue else { return }
-            if virtualADB && !normalizingTrackingModes {
-                normalizingTrackingModes = true
-                pinHeldPoint = false
-                virtualGetMouse = false
-                hideGuestCursorWhileDragging = false
-                normalizingTrackingModes = false
-            }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(virtualADB,
-                             forKey: virtualADBKey(for: machine))
-            }
-            if phase != .idle && !normalizingTrackingModes {
-                rearmAfterConfigurationChange(reason: "Virtual ADB changed")
             }
         }
     }
     @Published var hideGuestCursorWhileDragging = false {
         didSet {
             guard hideGuestCursorWhileDragging != oldValue else { return }
-            if hideGuestCursorWhileDragging && virtualADB
-                && !normalizingTrackingModes {
-                normalizingTrackingModes = true
-                virtualADB = false
-                normalizingTrackingModes = false
-            }
             if !loadingSettings,
                let machine = listener.activeContinuityTarget?.key.machine {
                 defaults.set(hideGuestCursorWhileDragging,
                              forKey: hideGuestCursorKey(for: machine))
             }
-            if phase != .idle && !normalizingTrackingModes {
+            if phase != .idle {
                 rearmAfterConfigurationChange(
                     reason: "guest cursor visibility changed")
             }
@@ -201,7 +165,6 @@ final class MirrorContinuityController: ObservableObject,
     }()
 
     private let listener: GuestListener
-    private var normalizingTrackingModes = false
     private let defaults: UserDefaults
     private let audit: Audit
     private weak var localNetworkAccess: LocalNetworkAccessController?
@@ -459,7 +422,6 @@ final class MirrorContinuityController: ObservableObject,
             requestedHz: rate, leaseTicks: 90, fastPump: fastPump,
             pinHeldPoint: pinHeldPoint,
             virtualGetMouse: virtualGetMouse,
-            virtualADB: virtualADB,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)
         guard armID != nil else {
             status = "unavailable: no Mac is connected"
@@ -1100,7 +1062,6 @@ final class MirrorContinuityController: ObservableObject,
         fastPump = defaults.bool(forKey: fastPumpKey(for: machine))
         pinHeldPoint = defaults.bool(forKey: pinHeldPointKey(for: machine))
         virtualGetMouse = defaults.bool(forKey: virtualGetMouseKey(for: machine))
-        virtualADB = defaults.bool(forKey: virtualADBKey(for: machine))
         hideGuestCursorWhileDragging = defaults.bool(
             forKey: hideGuestCursorKey(for: machine))
         let keyboardKey = keyboardForwardingKey(for: machine)
@@ -1133,10 +1094,6 @@ final class MirrorContinuityController: ObservableObject,
 
     private func virtualGetMouseKey(for machine: GuestID) -> String {
         "mirror.continuity.virtualGetMouse.\(machine.slug)"
-    }
-
-    private func virtualADBKey(for machine: GuestID) -> String {
-        "mirror.continuity.virtualADB.\(machine.slug)"
     }
 
     private func hideGuestCursorKey(for machine: GuestID) -> String {

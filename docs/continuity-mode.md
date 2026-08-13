@@ -990,8 +990,8 @@ active packet source. Passive mode continues to sample `RawMouse`; active mode
 uses the observer's untouched-physical-packet sequence, so an injected packet's
 later downstream `RawMouse` update cannot revoke its own epoch.
 
-The private CUDA V7 gate moved `(15,15)` to `(52,44)` using four carrier
-packets with zero Cursor Device position applies. A second run moved from
+The private CUDA V7 gate moved `(15,15)` to `(52,44)` using four manufactured
+carrier packets with zero Cursor Device position applies. A second run moved from
 `(77,44)` to `(114,73)`, pressed, dragged through the same ADB path to
 `(157,104)`, released with no button debt, and then passed a larger native
 delta through; the guest exited Continuity as `guest-input` and moved to
@@ -1003,11 +1003,11 @@ acknowledgement, sends mouse-up to unwind Finder's nested loop, and only then
 requires the final position and generation acknowledgement. It fails if the
 lease safety path releases the button, if an injected report increments native
 input, or if takeover is not attributed to an untouched physical ADB packet.
-It does **not** prove that a stationary PowerBook trackpad supplies carrier
-packets, nor that stealing one-count physical deltas is acceptable product
-behavior. A true virtual ADB device or controller-level injection clock remains
-the likely production mechanism if the attended PowerBook trace shows no idle
-trackpad reports.
+It proves only that manufactured CUDA reports can carry the substituted deltas;
+it did not prohibit the separate held-point low-memory writer or prove that a
+stationary PowerBook trackpad supplies a report clock. A true virtual ADB device
+or controller-level injection clock would be a different mechanism, not an
+extension of this carrier-substitution result.
 
 The same resident checkpoint corrects a separate metal visibility defect.
 `CrsrObscure == 0` does not prove that the sprite is visible, so every applied
@@ -1015,6 +1015,28 @@ task-time Continuity point now clears `CrsrObscure` and performs one balanced
 `HideCursor`/`ShowCursor` redraw. The source guard refuses an early return that
 would preserve a stale or already-hidden sprite. This is built and tested in
 the emulator; the screen-edge case that reported it still needs a metal rerun.
+
+**PowerBook correction, 2026-08-12:** the first attended run of host checkpoint
+`4d9ba67d` with the V7 guest and resident falsified the mechanism as a virtual
+mouse. Host movement appeared only while a host button was held or when a
+native click caused an ADB report, and the drag-origin/current-position
+alternation remained. The two visible cases came from different sources:
+`now_ext_adb_observer_begin` can rewrite a packet only when the physical
+trackpad's service routine is entered, while the held-button Time Manager path
+still writes `MouseLocation` independently. The CUDA gate supplied its own
+carrier reports and asserted zero Cursor Device position applies, but it did
+not assert an independent idle report clock or forbid the legacy held-point
+writer. Its “ADB-owned pointer authority” conclusion was therefore too broad.
+
+V7 is now a rejected carrier-substitution experiment, not a candidate pointer
+mechanism. Do not layer more position writers onto it. The passive ADB wrapper
+and its counters remain useful for determining whether the PowerBook's
+snap-back source actually traverses this handler. A next experiment must first
+separate those cases: if the passive trace records the snap-back packet, use
+the ADB seam only as an ownership fence that neutralizes stale physical reports
+while real native motion revokes Continuity; if it records no callback, the
+remaining authority defect is downstream or in the tracking loop and cannot be
+fixed by rewriting this device's packets.
 
 ### Double-click timing is measured at both scheduling boundaries
 

@@ -2195,13 +2195,15 @@ components:
           type: boolean
           default: false
           description: >
-            Experimental, host-selected, and off by default. Tiny relative ADB
-            register-0 packets become carriers for bounded deltas toward the
-            latest host point, and the ordinary Cursor Device position apply
-            is bypassed. Larger physical deltas remain native and revoke
-            Continuity. This mechanism is emulator-tested but remains a
-            controlled metal-test spike until proven safe on a real ADB
-            PowerBook.
+            Rejected carrier-substitution experiment, absent from the product
+            UI and false in ordinary host arms. Tiny relative ADB register-0
+            packets become carriers for bounded deltas toward the latest host
+            point, and the ordinary Cursor Device position apply is bypassed.
+            Larger physical deltas remain native and revoke Continuity. A
+            PowerBook metal run established that the physical trackpad does
+            not provide the independent report clock this mechanism needs and
+            that it does not resolve held-pointer contention. Retained only
+            for bounded emulator and passive-observer research.
     ContinuityDisarm:
       type: object
       required: [type, version, id, epoch, reason]

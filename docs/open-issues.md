@@ -1417,7 +1417,7 @@ later system update whose context must be preserved. Packet substitution on the
 real autopoll lane is the next emulator-only experiment. No PowerBook has run
 this observer yet.
 
-**Updated 2026-08-12, active CUDA ADB authority proved:** Continuity table V7
+**Updated 2026-08-12, CUDA carrier-substitution result:** Continuity table V7
 adds an explicit `virtualADB` arm experiment, absent/off in the product host.
 It bypasses the Cursor Device position request and substitutes only tiny
 two-byte ADB register-0 carrier packets with bounded deltas toward the latest
@@ -1436,10 +1436,26 @@ The final gate streams held states without awaiting task-time acknowledgement
 inside Finder's cooperative tracking loop, then sends up and requires the
 settled position/generation. It also requires zero false native-input changes,
 zero new forced releases, zero Cursor Device applies, and one wrapper-attributed
-physical packet for takeover. A related screen-edge metal report found that a
+physical packet for takeover. It did not prohibit the held-time low-memory
+writer and therefore did not establish exclusive pointer authority. A related
+screen-edge metal report found that a
 previously hidden guest cursor could remain hidden: the task-time reveal path
 now redraws on every applied point even when `CrsrObscure` was already zero.
 That visibility correction is Tested, not yet rechecked on the PowerBook.
+
+**Falsified on the PowerBook, 2026-08-12:** host checkpoint `4d9ba67d` exposed
+V7 for an attended run. It moved only while a host button was held or when a
+native click supplied an ADB callback, and it did not remove the alternating
+drag-origin/current-position cursor. This is explained by the implementation,
+not a rate problem: packet substitution has no clock of its own, and the held
+gesture still uses the pre-existing Time Manager `MouseLocation` writer. The
+CUDA instrument manufactured carrier callbacks and prohibited Cursor Device
+position applies, but did not prohibit that held-point writer, so its claim of
+ADB-owned authority was overstated. The result demotes V7 to rejected research.
+Do not integrate the host toggle as a working Continuity option. Retain the
+passive observer long enough to learn whether the PowerBook snap-back traverses
+the wrapped handler; choose a physical-report ownership fence only if the trace
+proves that it does.
 
 **Corrected 2026-08-12, target-context installation:** that candidate installed
 the three tracking hooks once from NOW's arm service even though this resident's
