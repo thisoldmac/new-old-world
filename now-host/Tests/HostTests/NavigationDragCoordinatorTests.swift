@@ -1,0 +1,139 @@
+import XCTest
+@testable import Host
+
+final class NavigationDragCoordinatorTests: XCTestCase {
+    private let shelfUUID = UUID(
+        uuidString: "8D5B6B80-6522-4CE9-A123-A2DA410D8488")!
+
+    func testLooseModuleMovesAcrossZones() throws {
+        let layout = NavigationLayout.standard(for: .standard)
+        let command = try XCTUnwrap(NavigationDragCoordinator.command(
+            for: .module("chat"),
+            droppingOn: .zone(.lower, index: 1),
+            in: layout,
+            makeShelfID: { self.shelfUUID }))
+
+        let changed = try layout.applying(command)
+
+        XCTAssertFalse(changed.upper.contains(.module("chat")))
+        XCTAssertEqual(changed.lower[1], .module("chat"))
+    }
+
+    func testDroppingLooseModuleOnLooseModuleCombinesThem() throws {
+        let layout = NavigationLayout.standard(for: .standard)
+        let command = try XCTUnwrap(NavigationDragCoordinator.command(
+            for: .module("development"),
+            droppingOn: .module("chat"),
+            in: layout,
+            makeShelfID: { self.shelfUUID }))
+
+        let changed = try layout.applying(command)
+        let shelf = try XCTUnwrap(changed.shelf(id: .user(shelfUUID)))
+
+        XCTAssertEqual(shelf.moduleIDs, ["chat", "development"])
+        XCTAssertFalse(changed.upper.contains(.module("chat")))
+        XCTAssertFalse(changed.upper.contains(.module("development")))
+    }
+
+    func testModuleCanBeExtractedFromShelfAndShelfModuleCanBeReordered() throws {
+        let layout = NavigationLayout.standard(for: .standard)
+        let extracted = try layout.applying(try XCTUnwrap(
+            NavigationDragCoordinator.command(
+                for: .module("mirror"),
+                droppingOn: .zone(.lower, index: 0),
+                in: layout,
+                makeShelfID: { self.shelfUUID })))
+
+        XCTAssertEqual(extracted.lower.first, .module("mirror"))
+        XCTAssertEqual(extracted.shelf(id: .screen)?.moduleIDs, ["screen"])
+
+        let reordered = try layout.applying(try XCTUnwrap(
+            NavigationDragCoordinator.command(
+                for: .module("mcp"),
+                droppingOn: .shelf(.network, beforeModuleID: "settings"),
+                in: layout,
+                makeShelfID: { self.shelfUUID })))
+        XCTAssertEqual(reordered.shelf(id: .network)?.moduleIDs,
+                       ["mcp", "settings", "networking", "web"])
+    }
+
+    func testInvalidAndSelfDropsDoNotProduceCommands() {
+        let layout = NavigationLayout.standard(for: .standard)
+
+        XCTAssertNil(NavigationDragCoordinator.command(
+            for: .module("missing"), droppingOn: .zone(.upper, index: 0),
+            in: layout, makeShelfID: { shelfUUID }))
+        XCTAssertNil(NavigationDragCoordinator.command(
+            for: .module("chat"), droppingOn: .module("chat"),
+            in: layout, makeShelfID: { shelfUUID }))
+        XCTAssertNil(NavigationDragCoordinator.command(
+            for: .shelf(.screen), droppingOn: .module("chat"),
+            in: layout, makeShelfID: { shelfUUID }))
+        XCTAssertNil(NavigationDragCoordinator.command(
+            for: .module("chat"),
+            droppingOn: .shelf(.user(shelfUUID), beforeModuleID: nil),
+            in: layout, makeShelfID: { shelfUUID }))
+    }
+
+    func testUserShelfDecomposesAtOneButSpecialShelvesDoNot() throws {
+        var layout = NavigationLayout.standard(for: .standard)
+        layout.upper.removeAll { $0 == .module("chat") || $0 == .module("development") }
+        layout.upper.append(.shelf(NavigationShelf(
+            id: .user(shelfUUID), moduleIDs: ["chat", "development"])))
+
+        let changed = try layout.applying(try XCTUnwrap(
+            NavigationDragCoordinator.command(
+                for: .module("development"),
+                droppingOn: .zone(.lower, index: 0),
+                in: layout,
+                makeShelfID: { self.shelfUUID })))
+
+        XCTAssertNil(changed.shelf(id: .user(shelfUUID)))
+        XCTAssertTrue(changed.upper.contains(.module("chat")))
+        XCTAssertNotNil(changed.shelf(id: .machine))
+        XCTAssertNotNil(changed.shelf(id: .network))
+    }
+
+    func testMachineShelfCannotEnterDrawerAndNetworkShelfCan() throws {
+        let layout = NavigationLayout.standard(for: .standard)
+
+        XCTAssertNil(NavigationDragCoordinator.command(
+            for: .shelf(.machine),
+            droppingOn: .zone(.drawer, index: 0),
+            in: layout, makeShelfID: { shelfUUID }))
+
+        let command = try XCTUnwrap(NavigationDragCoordinator.command(
+            for: .shelf(.network),
+            droppingOn: .zone(.drawer, index: 0),
+            in: layout, makeShelfID: { shelfUUID }))
+        let changed = try layout.applying(command)
+        XCTAssertEqual(changed.zone(of: .network), .drawer)
+        XCTAssertNotNil(changed.shelf(id: .machine))
+    }
+
+    func testDrawerSummaryCountsContainedLeavesAndSurfacesNetworkStatus() {
+        var layout = NavigationLayout.standard(for: .standard)
+        let networkIndex = layout.lower.firstIndex {
+            $0.id == NavigationShelfID.network.rawValue
+        }!
+        layout.drawer.append(layout.lower.remove(at: networkIndex))
+        layout.drawer.append(.module("chat"))
+        layout.upper.removeAll { $0 == .module("chat") }
+
+        XCTAssertEqual(NavigationDrawerSummary(layout: layout),
+                       NavigationDrawerSummary(moduleCount: 5,
+                                               containsNetworkShelf: true))
+    }
+
+    func testSpringLoadingFeedbackArmsOnceAndRequestsTwoFlashes() {
+        var feedback = NavigationDragFeedbackState()
+        let target = NavigationDropTarget.zone(.drawer, index: 0)
+
+        feedback.enter(target, eligible: true)
+        XCTAssertTrue(feedback.activateSpringLoading(for: target))
+        XCTAssertEqual(feedback.flashCount, 2)
+        XCTAssertFalse(feedback.activateSpringLoading(for: target))
+        feedback.exit(target)
+        XCTAssertNil(feedback.target)
+    }
+}

@@ -8,16 +8,19 @@ struct HostSidebarView: View {
     let selection: NavigationSelection
     let selectGuest: (GuestKey) -> Void
     let select: (NavigationSelection) -> Void
+    @State private var drawerPresented = false
 
     var body: some View {
         List {
             SidebarNavigationItems(
                 items: sidebar.layout.upper,
+                zone: .upper,
                 registry: registry,
                 status: monitor.status,
                 compact: sidebar.compact,
                 collapsed: sidebar.collapsed,
                 selection: selection,
+                dragActions: dragActions,
                 select: select)
         }
         .listStyle(.sidebar)
@@ -37,17 +40,38 @@ struct HostSidebarView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HostSidebarLowerSection(
                 items: sidebar.layout.lower,
+                drawerItems: sidebar.layout.drawer,
                 registry: registry,
                 status: monitor.status,
                 compact: sidebar.compact,
                 collapsed: sidebar.collapsed,
                 selection: selection,
+                drawerPresented: $drawerPresented,
+                dragActions: dragActions,
                 select: select)
         }
         .contextMenu {
             SidebarDisplayMenu(sidebar: sidebar, registry: registry)
         }
         .onAppear { monitor.refresh() }
+    }
+
+    private var dragActions: SidebarNavigationDragActions {
+        SidebarNavigationDragActions(
+            canDrop: { payload, target in
+                NavigationDragCoordinator.command(
+                    for: payload, droppingOn: target,
+                    in: sidebar.layout) != nil
+            },
+            performDrop: { payload, target in
+                guard let command = NavigationDragCoordinator.command(
+                    for: payload, droppingOn: target,
+                    in: sidebar.layout),
+                      let changed = try? sidebar.layout.applying(command)
+                else { return false }
+                sidebar.replaceLayout(changed)
+                return true
+            })
     }
 }
 
@@ -94,45 +118,70 @@ private struct HostSidebarHeader: View {
 
 private struct HostSidebarLowerSection: View {
     let items: [NavigationItem]
+    let drawerItems: [NavigationItem]
     let registry: ModuleRegistry
     let status: GuestStatus
     let compact: Bool
     let collapsed: Bool
     let selection: NavigationSelection
+    @Binding var drawerPresented: Bool
+    let dragActions: SidebarNavigationDragActions
     let select: (NavigationSelection) -> Void
 
     var body: some View {
-        if !items.isEmpty {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
+            if !items.isEmpty {
                 Divider()
                 SidebarNavigationItems(
                     items: items,
+                    zone: .lower,
                     registry: registry,
                     status: status,
                     compact: compact,
                     collapsed: collapsed,
                     selection: selection,
+                    dragActions: dragActions,
                     select: select)
                     .padding(.horizontal, collapsed ? 4 : 8)
                     .padding(.vertical, 6)
             }
-            .frame(maxWidth: .infinity)
-            .nowGlassBar()
+            ModuleDrawerView(
+                items: drawerItems,
+                registry: registry,
+                status: status,
+                compact: compact,
+                collapsed: collapsed,
+                selection: selection,
+                isPresented: $drawerPresented,
+                dragActions: dragActions,
+                select: select)
         }
+        .frame(maxWidth: .infinity)
+        .nowGlassBar()
     }
 }
 
-private struct SidebarNavigationItems: View {
+struct SidebarNavigationDragActions {
+    let canDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
+    let performDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
+}
+
+struct SidebarNavigationItems: View {
     let items: [NavigationItem]
+    let zone: NavigationZone
     let registry: ModuleRegistry
     let status: GuestStatus
     let compact: Bool
     let collapsed: Bool
     let selection: NavigationSelection
+    let dragActions: SidebarNavigationDragActions
     let select: (NavigationSelection) -> Void
 
     var body: some View {
-        ForEach(items) { item in
+        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+            SidebarNavigationDropSlot(
+                target: .zone(zone, index: index),
+                dragActions: dragActions)
             SidebarNavigationItemView(
                 item: item,
                 registry: registry,
@@ -140,11 +189,32 @@ private struct SidebarNavigationItems: View {
                 compact: compact,
                 collapsed: collapsed,
                 selection: selection,
+                dragActions: dragActions,
                 select: select)
                 .listRowInsets(EdgeInsets(top: 3, leading: 7,
                                           bottom: 3, trailing: 7))
                 .listRowSeparator(.hidden)
         }
+        SidebarNavigationDropSlot(
+            target: .zone(zone, index: items.endIndex),
+            dragActions: dragActions)
+    }
+}
+
+private struct SidebarNavigationDropSlot: View {
+    let target: NavigationDropTarget
+    let dragActions: SidebarNavigationDragActions
+
+    var body: some View {
+        Color.clear
+            .frame(height: 5)
+            .overlay(SidebarNativeDragSurface(
+                payload: nil,
+                target: target,
+                canDrop: dragActions.canDrop,
+                performDrop: dragActions.performDrop))
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
     }
 }
 
@@ -155,6 +225,7 @@ private struct SidebarNavigationItemView: View {
     let compact: Bool
     let collapsed: Bool
     let selection: NavigationSelection
+    let dragActions: SidebarNavigationDragActions
     let select: (NavigationSelection) -> Void
 
     var body: some View {
@@ -171,6 +242,17 @@ private struct SidebarNavigationItemView: View {
                             in: NavigationLayout(
                                 upper: [item], lower: [], drawer: [])))
                     }
+                    .overlay(SidebarNativeDragSurface(
+                        payload: .module(moduleID),
+                        target: .module(moduleID),
+                        canDrop: dragActions.canDrop,
+                        performDrop: dragActions.performDrop,
+                        activate: {
+                            select(NavigationSelection.selecting(
+                                moduleID: moduleID,
+                                in: NavigationLayout(
+                                    upper: [item], lower: [], drawer: [])))
+                        }))
             }
         case .shelf(let shelf):
             SidebarShelfRow(
@@ -179,6 +261,7 @@ private struct SidebarNavigationItemView: View {
                 status: status,
                 collapsed: collapsed,
                 selection: selection,
+                dragActions: dragActions,
                 select: select)
         }
     }
@@ -234,6 +317,7 @@ private struct SidebarShelfRow: View {
     let status: GuestStatus
     let collapsed: Bool
     let selection: NavigationSelection
+    let dragActions: SidebarNavigationDragActions
     let select: (NavigationSelection) -> Void
 
     var body: some View {
@@ -253,6 +337,11 @@ private struct SidebarShelfRow: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
+                .overlay(SidebarNativeDragSurface(
+                    payload: .shelf(shelf.id),
+                    target: .shelf(shelf.id, beforeModuleID: nil),
+                    canDrop: dragActions.canDrop,
+                    performDrop: dragActions.performDrop))
 
                 VStack(spacing: 3) {
                     if shelf.id == .machine {
@@ -274,6 +363,17 @@ private struct SidebarShelfRow: View {
                                 destination: .module(module.id),
                                 containingShelfID: shelf.id))
                         }
+                        .overlay(SidebarNativeDragSurface(
+                            payload: .module(module.id),
+                            target: .shelf(
+                                shelf.id, beforeModuleID: module.id),
+                            canDrop: dragActions.canDrop,
+                            performDrop: dragActions.performDrop,
+                            activate: {
+                                select(NavigationSelection(
+                                    destination: .module(module.id),
+                                    containingShelfID: shelf.id))
+                            }))
                     }
                 }
             }
