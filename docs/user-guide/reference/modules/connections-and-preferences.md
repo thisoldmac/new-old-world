@@ -7,7 +7,7 @@ audience: user
 lifecycle: current
 authority: [docs/architecture.md, docs/naming.md, docs/onboarding.md, contract/asyncapi.yaml]
 module_ids: [settings]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-guest-ppc/src/connection, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-host/Sources/Host/GuestUpdateSection.swift, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-guest-ppc/src/connection, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
 media_ids: [settings-host, settings-ppc]
 last_verified: 2026-08-13
 ---

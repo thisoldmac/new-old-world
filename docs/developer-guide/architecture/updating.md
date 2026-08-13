@@ -6,7 +6,7 @@ doc_type: explanation
 audience: developer
 lifecycle: current
 authority: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/resident-components.md, docs/developer-guide/reference/distribution-standard.md]
-source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/developer-guide/reference/distribution-standard.md, docs/distribution-profile.yaml, tools/write-update-manifest.py, tools/product-version-gate, tools/ext-bake-gate, tools/land-main, now-guest-ppc/cmake/buildstamp.cmake, ext/cmake/build_identity.cmake, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/OnboardingAssets.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/wire.c, now-guest-ppc/src/core/prefs.c]
+source_dependencies: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/developer-guide/reference/distribution-standard.md, docs/distribution-profile.yaml, tools/write-update-manifest.py, tools/product-version-gate, tools/ext-bake-gate, tools/land-main, now-guest-ppc/cmake/buildstamp.cmake, ext/cmake/build_identity.cmake, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-host/Sources/Host/GuestUpdateSection.swift, now-host/Sources/Host/OnboardingAssets.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/wire.c, now-guest-ppc/src/core/prefs.c]
 media_ids: []
 last_verified: 2026-08-13
 ---

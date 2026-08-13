@@ -1770,7 +1770,10 @@ final class Session {
         let now = Date()
         health = GuestListener.SessionHealth(
             guestName: guestName, guestVersion: hello.version,
-            guestBuild: hello.build, guestAgentAccess: hello.agent,
+            guestBuild: hello.build,
+            extensionVersion: hello.extensionVersion,
+            extensionBuild: hello.extensionBuild,
+            guestAgentAccess: hello.agent,
             guestOS: hello.os,
             connectedAt: now, lastTraffic: now,
             pingsAnswered: 0, framesReceived: 1)

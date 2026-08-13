@@ -477,6 +477,10 @@ struct Hello: Codable, Equatable, Sendable {
     /// because a version equal across two builds is the failure this exists
     /// for.
     var build: String? = nil
+    /// Active resident identity observed by a normal guest application.
+    /// Absence stays unknown: it may mean no resident or an older guest.
+    var extensionVersion: String? = nil
+    var extensionBuild: String? = nil
     /// The sending machine's own answer to whether a companion agent may
     /// drive it. Nil means it never said — a sender that predates the
     /// field — and that is NOT consent, never `.fullAccess` filled in

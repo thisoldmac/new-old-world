@@ -121,6 +121,7 @@ struct ConnectionsModuleView: View {
                             beginRenaming(row)
                         }
                         .contextMenu { connectionMenu(for: row) }
+                        GuestUpdateSection(row: row, model: model)
                         ConnectionListenerLog(
                             listener: listener,
                             sessionIDs: Set([

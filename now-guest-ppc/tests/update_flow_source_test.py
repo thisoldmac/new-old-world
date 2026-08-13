@@ -27,9 +27,10 @@ activation = (
 prefs = (ROOT / "now-guest-ppc/src/core/prefs.c").read_text()
 main = (ROOT / "now-guest-ppc/src/main.c").read_text()
 
-# A remote command must not silently spend the local confirmation the
-# Connections page collected. Mutating false to true reopens exactly that gap.
-assert "now_wire_update_request(component, false" in commands
+# A bare command still cannot spend consent. Only the explicit hostApproved
+# boolean carried by the native host's confirmation reaches the installer.
+ordered(commands, 'now_json_find_bool(request_json, "hostApproved", 0)',
+        "now_wire_update_request(component, host_approved")
 ordered(connection, "now_confirm(\"Install unsigned update?\"",
         "now_wire_update_request(component, true")
 assert r'\"sha256\":\"%s\"' in wire

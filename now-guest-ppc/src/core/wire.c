@@ -39,6 +39,7 @@
 #include "update_install.h"
 #include "update_activation.h"
 #include "update_model.h"
+#include "update_status.h"
 
 enum {
     /* Room for the one field whose VALUE is not known until the sizing
@@ -750,14 +751,33 @@ static void service_connecting(void)
     }
 }
 
+static void hello_extension_fields(char *out, long cap)
+{
+    char version[24];
+    char build[65];
+
+    now_update_current_identity(kNowUpdateExtension,
+                                version, sizeof version,
+                                build, sizeof build);
+    if (version[0] != '\0' && strlen(build) == 40) {
+        snprintf(out, (size_t)cap,
+                 ",\"extensionVersion\":\"%s\","
+                 "\"extensionBuild\":\"%s\"",
+                 version, build);
+    } else if (cap > 0) {
+        out[0] = '\0';
+    }
+}
+
 static void send_hello(void)
 {
-    char json[640];
+    char json[896];
     char name[64];
     char esc[256];
     char model[64];
     char model_esc[160];
     char sysver[kNowIdentityVersionCap];
+    char extension_fields[160];
 
     /* This machine's name, not the product's: the other side puts it on
        screen ("Connected: Quadra 950"), and the product name is the one
@@ -779,6 +799,7 @@ static void send_hello(void)
     now_machine_model(model, sizeof model);
     now_json_escape(model, model_esc, sizeof model_esc);
     now_system_version(sysver, sizeof sysver);
+    hello_extension_fields(extension_fields, sizeof extension_fields);
     /* build carries what version cannot: two builds of one release version
        deliberately share a string, so a stale build on a machine otherwise
        looks current and a host has no way to tell them apart. It cost a misdiagnosis on
@@ -794,10 +815,10 @@ static void send_hello(void)
     snprintf(json, sizeof json,
              "{\"type\":\"hello\",\"contract\":%d,\"side\":\"guest\","
              "\"version\":\"%s\",\"build\":\"%s\",\"agent\":\"%s\","
-             "\"name\":\"%s\",\"os\":\"%s\","
+             "\"name\":\"%s\",\"os\":\"%s\"%s,"
              "\"machine\":{\"id\":%ld,\"model\":\"%s\"},\"chunk\":%d}",
              kNowContractRevision, PRODUCT_VERSION, now_build_stamp(),
-             now_agent_access(), esc, sysver,
+             now_agent_access(), esc, sysver, extension_fields,
              now_machine_type(), model_esc, kNowDefaultChunk);
     if (!send_control(json)) {
         fail("Sending hello failed");
