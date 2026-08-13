@@ -53,7 +53,19 @@ struct HostSidebarView: View {
         .contextMenu {
             SidebarDisplayMenu(sidebar: sidebar, registry: registry)
         }
-        .onAppear { monitor.refresh() }
+        .onAppear {
+            monitor.refresh()
+            revealDrawerSelection()
+        }
+        .onChange(of: selection.destination) { _ in
+            revealDrawerSelection()
+        }
+    }
+
+    private func revealDrawerSelection() {
+        if selection.requiresDrawerPresentation(in: sidebar.layout) {
+            drawerPresented = true
+        }
     }
 
     private var dragActions: SidebarNavigationDragActions {
@@ -417,6 +429,29 @@ private struct SidebarShelfRow: View {
                     selection.containingShelfID == shelf.id ? 0.18 : 0)))
         .accessibilityLabel(title)
         .help(title)
+        .overlay(SidebarNativeDragSurface(
+            payload: .shelf(shelf.id),
+            target: .shelf(shelf.id, beforeModuleID: nil),
+            canDrop: dragActions.canDrop,
+            performDrop: dragActions.performDrop,
+            menuItems: collapsedMenuItems))
+    }
+
+    private var collapsedMenuItems: [SidebarNativeMenuItem] {
+        var items: [SidebarNativeMenuItem] = []
+        if shelf.id == .machine {
+            items.append(SidebarNativeMenuItem(title: "Overview") {
+                select(NavigationSelection.selectingHero(of: shelf))
+            })
+        }
+        items.append(contentsOf: modules.map { module in
+            SidebarNativeMenuItem(title: module.title) {
+                select(NavigationSelection(
+                    destination: .module(module.id),
+                    containingShelfID: shelf.id))
+            }
+        })
+        return items
     }
 
     private var title: String {

@@ -40,6 +40,11 @@ struct NavigationSelection: Equatable, Sendable {
                                    containingShelfID: shelf.id)
     }
 
+    func requiresDrawerPresentation(in layout: NavigationLayout) -> Bool {
+        guard case .module(let moduleID) = destination else { return false }
+        return layout.zone(containing: moduleID) == .drawer
+    }
+
     private static func containingShelf(
         for moduleID: String,
         in layout: NavigationLayout

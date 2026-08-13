@@ -48,6 +48,10 @@ struct NavigationDragCoordinator {
         makeShelfID: () -> UUID = UUID.init
     ) -> NavigationLayoutCommand? {
         guard layout.contains(dragged) else { return nil }
+        if case .module(let moduleID) = dragged,
+           layout.isFixedModuleHero(moduleID) {
+            return nil
+        }
 
         switch target {
         case .zone(let zone, let index):
@@ -135,6 +139,21 @@ extension NavigationLayout {
             guard let existing = changed.shelf(id: shelfID),
                   beforeModuleID.map(existing.moduleIDs.contains) ?? true else {
                 throw NavigationLayoutCommandError.missingTarget
+            }
+            if existing.moduleIDs.contains(moduleID) {
+                guard let location = changed.shelfLocation(shelfID) else {
+                    throw NavigationLayoutCommandError.missingTarget
+                }
+                var destination = existing
+                destination.moduleIDs.removeAll { $0 == moduleID }
+                let index = beforeModuleID.flatMap {
+                    destination.moduleIDs.firstIndex(of: $0)
+                } ?? destination.moduleIDs.endIndex
+                destination.moduleIDs.insert(moduleID, at: index)
+                var items = changed.items(in: location.zone)
+                items[location.index] = .shelf(destination)
+                changed.setItems(items, in: location.zone)
+                break
             }
             _ = try changed.remove(.module(moduleID))
             guard var destination = changed.shelf(id: shelfID),
@@ -305,4 +324,26 @@ struct NavigationDragFeedbackState: Equatable, Sendable {
 enum NavigationSpringLoadFlash {
     static let count = 2
     static var animationRepeatCount: Float { Float(count) }
+}
+
+struct NavigationSpringLoadActivation {
+    static func shouldActivate(
+        activated: Bool,
+        acceptedTarget: NavigationDropTarget?,
+        feedback: inout NavigationDragFeedbackState
+    ) -> Bool {
+        guard activated, let target = acceptedTarget,
+              target.supportsSpringLoading else { return false }
+        return feedback.activateSpringLoading(for: target)
+    }
+}
+
+extension NavigationDropTarget {
+    var supportsSpringLoading: Bool {
+        switch self {
+        case .module: true
+        case .zone(.drawer, _): true
+        case .zone, .shelf: false
+        }
+    }
 }

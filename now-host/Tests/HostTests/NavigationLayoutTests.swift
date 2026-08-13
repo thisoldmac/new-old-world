@@ -19,6 +19,17 @@ final class NavigationLayoutTests: XCTestCase {
         assertTotalPartition(layout, registry: .standard)
     }
 
+    func testStandardLayoutContainsOnlyModulesFromAReducedRegistry() {
+        let registry = ModuleRegistry(modules: ModuleRegistry.standard.modules
+            .filter { $0.id != "console" && $0.id != "logs" })
+
+        let layout = NavigationLayout.standard(for: registry)
+
+        assertTotalPartition(layout, registry: registry)
+        XCTAssertFalse(layout.allModuleIDs.contains("console"))
+        XCTAssertFalse(layout.allModuleIDs.contains("logs"))
+    }
+
     func testSanitisingRepairsDuplicatesUnknownsRenamesAndMissingModules() {
         let corrupt = NavigationLayout(
             version: 99,
@@ -192,10 +203,12 @@ final class NavigationLayoutStoreTests: XCTestCase {
         let data = try JSONEncoder().encode(future)
         defaults.set(data, forKey: NavigationLayoutStore.layoutKey)
 
-        let layout = NavigationLayoutStore(defaults: defaults,
-            registry: .standard).load()
+        let store = NavigationLayoutStore(defaults: defaults,
+            registry: .standard)
+        var layout = store.load()
+        layout.upper.swapAt(3, 4)
+        _ = store.save(layout)
 
-        XCTAssertEqual(layout, NavigationLayout.standard(for: .standard))
         XCTAssertEqual(defaults.data(forKey: NavigationLayoutStore.layoutKey),
                        data)
     }

@@ -13,6 +13,7 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
     let performDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
     var activate: (() -> Void)?
     var springLoad: (() -> Void)?
+    var menuItems: [SidebarNativeMenuItem] = []
 
     func makeNSView(context: Context) -> NativeNavigationDragView {
         let view = NativeNavigationDragView()
@@ -31,8 +32,14 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
             canDrop: canDrop,
             performDrop: performDrop,
             activate: activate,
-            springLoad: springLoad)
+            springLoad: springLoad,
+            menuItems: menuItems)
     }
+}
+
+struct SidebarNativeMenuItem {
+    let title: String
+    let action: () -> Void
 }
 
 @MainActor
@@ -45,6 +52,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         let performDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
         let activate: (() -> Void)?
         let springLoad: (() -> Void)?
+        let menuItems: [SidebarNativeMenuItem]
     }
 
     static let pasteboardType = NSPasteboard.PasteboardType(
@@ -100,7 +108,13 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     }
 
     override func mouseUp(with event: NSEvent) {
-        if !beganDrag { configuration?.activate?() }
+        if !beganDrag {
+            if configuration?.menuItems.isEmpty == false {
+                showConfiguredMenu(with: event)
+            } else {
+                configuration?.activate?()
+            }
+        }
         mouseDownEvent = nil
         beganDrag = false
     }
@@ -179,9 +193,10 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
 
     func springLoadingActivated(_ activated: Bool,
                                 draggingInfo: any NSDraggingInfo) {
-        guard activated, let (_, target) = accepted(draggingInfo),
-              target.supportsSpringLoading,
-              feedback.activateSpringLoading(for: target) else { return }
+        let target = accepted(draggingInfo)?.1
+        guard NavigationSpringLoadActivation.shouldActivate(
+            activated: activated, acceptedTarget: target,
+            feedback: &feedback) else { return }
         flashTwice()
         configuration?.springLoad?()
     }
@@ -217,6 +232,27 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
             ?? NSImage(size: NSSize(width: 24, height: 24))
     }
 
+    private func showConfiguredMenu(with event: NSEvent) {
+        guard let items = configuration?.menuItems, !items.isEmpty else { return }
+        let menu = NSMenu()
+        for (index, item) in items.enumerated() {
+            let menuItem = NSMenuItem(title: item.title,
+                                      action: #selector(chooseMenuItem(_:)),
+                                      keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = index
+            menu.addItem(menuItem)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func chooseMenuItem(_ sender: NSMenuItem) {
+        guard let index = sender.representedObject as? Int,
+              let items = configuration?.menuItems,
+              items.indices.contains(index) else { return }
+        items[index].action()
+    }
+
     private func showDropHighlight(_ shown: Bool) {
         layer?.borderWidth = shown ? 1.5 : 0
         layer?.borderColor = shown
@@ -234,15 +270,5 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         animation.autoreverses = true
         animation.repeatCount = NavigationSpringLoadFlash.animationRepeatCount
         layer.add(animation, forKey: "navigation-double-flash")
-    }
-}
-
-private extension NavigationDropTarget {
-    var supportsSpringLoading: Bool {
-        switch self {
-        case .module: true
-        case .zone(.drawer, _): true
-        case .zone, .shelf: false
-        }
     }
 }

@@ -6,7 +6,7 @@ doc_type: explanation
 audience: developer
 lifecycle: current
 authority: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, docs/architecture.md]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationLayoutStore.swift, now-host/Sources/Host/HostRootView.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarOutlineView.swift, now-host/Sources/Host/NavigationDragCoordinator.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/GuestScopedState.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/OnboardingPortal.swift]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationLayoutStore.swift, now-host/Sources/Host/HostRootView.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/NavigationDragCoordinator.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/GuestScopedState.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/OnboardingPortal.swift]
 media_ids: []
 last_verified: 2026-08-13
 ---
@@ -69,7 +69,7 @@ can and carries its status indicator there. User shelves decompose at one
 module. New registry leaves are adopted into their known family or appended as
 a standalone upper item.
 
-`SidebarOutlineView` is the AppKit drag surface used from SwiftUI. Ordinary
+`SidebarNativeDragSurface` is the AppKit drag surface used from SwiftUI. Ordinary
 dragging produces pure commands through `NavigationDragCoordinator`; hover and
 spring-loading provide feedback, including the double flash, but mutation
 occurs only on drop. Feature entry points remain unchanged: navigation routes

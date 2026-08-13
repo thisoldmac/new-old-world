@@ -57,6 +57,37 @@ final class NavigationDragCoordinatorTests: XCTestCase {
                        ["mcp", "settings", "networking", "web"])
     }
 
+    func testTwoMemberUserShelfCanReorderWithoutDecomposing() throws {
+        var layout = NavigationLayout.standard(for: .standard)
+        layout.upper.removeAll {
+            $0 == .module("chat") || $0 == .module("development")
+        }
+        layout.upper.append(.shelf(NavigationShelf(
+            id: .user(shelfUUID), moduleIDs: ["chat", "development"])))
+
+        let changed = try layout.applying(try XCTUnwrap(
+            NavigationDragCoordinator.command(
+                for: .module("development"),
+                droppingOn: .shelf(.user(shelfUUID), beforeModuleID: "chat"),
+                in: layout,
+                makeShelfID: { self.shelfUUID })))
+
+        XCTAssertEqual(changed.shelf(id: .user(shelfUUID))?.moduleIDs,
+                       ["development", "chat"])
+    }
+
+    func testFixedModuleHeroesCannotProduceDragCommands() {
+        let layout = NavigationLayout.standard(for: .standard)
+
+        for moduleID in ["screen", "files", "settings"] {
+            XCTAssertNil(NavigationDragCoordinator.command(
+                for: .module(moduleID),
+                droppingOn: .zone(.lower, index: 0),
+                in: layout,
+                makeShelfID: { shelfUUID }))
+        }
+    }
+
     func testInvalidAndSelfDropsDoNotProduceCommands() {
         let layout = NavigationLayout.standard(for: .standard)
 
@@ -134,6 +165,27 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertFalse(feedback.activateSpringLoading(for: target))
         feedback.exit(target)
         XCTAssertNil(feedback.target)
+    }
+
+    func testSpringLoadingActivationRequiresAcceptedSupportedTargetOnce() {
+        var feedback = NavigationDragFeedbackState()
+        let target = NavigationDropTarget.zone(.drawer, index: 0)
+        feedback.enter(target)
+
+        XCTAssertFalse(NavigationSpringLoadActivation.shouldActivate(
+            activated: false, acceptedTarget: target, feedback: &feedback))
+        XCTAssertTrue(NavigationSpringLoadActivation.shouldActivate(
+            activated: true, acceptedTarget: target, feedback: &feedback))
+        XCTAssertFalse(NavigationSpringLoadActivation.shouldActivate(
+            activated: true, acceptedTarget: target, feedback: &feedback))
+
+        var unsupportedFeedback = NavigationDragFeedbackState()
+        let unsupported = NavigationDropTarget.shelf(
+            .screen, beforeModuleID: nil)
+        unsupportedFeedback.enter(unsupported)
+        XCTAssertFalse(NavigationSpringLoadActivation.shouldActivate(
+            activated: true, acceptedTarget: unsupported,
+            feedback: &unsupportedFeedback))
     }
 
     func testSpringLoadingUsesTheDoubleFlashSpec() {

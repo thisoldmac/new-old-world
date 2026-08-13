@@ -68,6 +68,11 @@ struct NavigationLayoutStore {
     @discardableResult
     func save(_ layout: NavigationLayout) -> NavigationLayout {
         let repaired = layout.sanitised(for: registry)
+        if let data = defaults.data(forKey: Self.layoutKey),
+           let stored = try? decoder.decode(NavigationLayout.self, from: data),
+           stored.version > NavigationLayout.currentVersion {
+            return repaired
+        }
         persist(repaired)
         return repaired
     }

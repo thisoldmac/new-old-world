@@ -36,6 +36,15 @@ enum NavigationShelfID: Hashable, Sendable {
     var canEnterDrawer: Bool {
         self != .machine
     }
+
+    var fixedModuleHeroID: String? {
+        switch self {
+        case .screen: "screen"
+        case .files: "files"
+        case .network: "settings"
+        case .machine, .user: nil
+        }
+    }
 }
 
 extension NavigationShelfID: Codable {
@@ -199,6 +208,22 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         }
     }
 
+    func zone(containing moduleID: String) -> NavigationZone? {
+        NavigationZone.allCases.first { zone in
+            items(in: zone).contains { $0.moduleIDs.contains(moduleID) }
+        }
+    }
+
+    func isFixedModuleHero(_ moduleID: String) -> Bool {
+        NavigationZone.allCases
+            .flatMap { items(in: $0) }
+            .contains { item in
+                guard case .shelf(let shelf) = item else { return false }
+                return shelf.id.fixedModuleHeroID == moduleID
+                    && shelf.moduleIDs.contains(moduleID)
+            }
+    }
+
     static func standard(for registry: ModuleRegistry) -> NavigationLayout {
         let known = Set(registry.modules.map(\.id))
         func present(_ ids: [String]) -> [String] {
@@ -216,24 +241,13 @@ struct NavigationLayout: Codable, Equatable, Sendable {
                 .shelf(NavigationShelf(
                     id: .files,
                     moduleIDs: present(Self.members(of: .files)))),
-                .module("chat"),
-                .module("development"),
-            ],
+            ] + present(["chat", "development"]).map(NavigationItem.module),
             lower: [
                 .shelf(NavigationShelf(
                     id: .network,
                     moduleIDs: present(Self.members(of: .network)))),
-                .module("console"),
-                .module("logs"),
-            ],
+            ] + present(["console", "logs"]).map(NavigationItem.module),
             drawer: [])
-
-        layout.upper = layout.upper.compactMap { item in
-            switch item {
-            case .module(let id): known.contains(id) ? item : nil
-            case .shelf: item
-            }
-        }
         let placed = Set(layout.allModuleIDs)
         layout.upper.append(contentsOf: registry.modules
             .map(\.id)
@@ -394,9 +408,8 @@ struct NavigationLayout: Codable, Equatable, Sendable {
 
     private mutating func enforceSpecialHeroes(known: Set<String>) {
         for shelfID in [NavigationShelfID.screen, .files, .network] {
-            guard case .module(let heroID) = NavigationShelf(
-                id: shelfID, moduleIDs: []).hero,
-                known.contains(heroID) else { continue }
+            guard let heroID = shelfID.fixedModuleHeroID,
+                  known.contains(heroID) else { continue }
             guard shelf(id: shelfID) != nil else { continue }
             removeModule(heroID)
             _ = prepend(heroID, toShelf: shelfID)

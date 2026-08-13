@@ -68,6 +68,20 @@ final class NavigationSelectionTests: XCTestCase {
                                 containingShelfID: nil))
     }
 
+    func testDrawerResidentSelectionRequiresDrawerPresentation() throws {
+        var layout = NavigationLayout.standard(for: .standard)
+        layout.upper.removeAll { $0 == .module("chat") }
+        layout.drawer.append(.module("chat"))
+
+        let selection = NavigationSelection.selecting(
+            moduleID: "chat", in: layout)
+
+        XCTAssertTrue(selection.requiresDrawerPresentation(in: layout))
+        XCTAssertFalse(NavigationSelection.selecting(
+            moduleID: "mirror", in: layout)
+            .requiresDrawerPresentation(in: layout))
+    }
+
     func testMachineShelfUsesTheGuestNameOrTheDisconnectedLabel() {
         XCTAssertEqual(GuestStatus.connected(name: "PowerBook 1400c",
                                              quietFor: 0).machineShelfTitle,
