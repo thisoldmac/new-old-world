@@ -79,7 +79,13 @@ failing when the Mirror call-site token was removed. The complete repository
 gate passes locally: 186 native tests, MirrorKit, every guest and resident
 cross-build, 2,225 host tests in asset mode (56 expected skips), honest-
 degradation mode, the isolated socket test, and unsigned Debug and Release app
-builds. A real PowerBook drag remains unverified.
+builds. An attended PowerBook pass on `d44491f5` proved host-to-guest copy,
+then found guest-to-host could not attach to its source while Mirror Cursor
+was enabled: the direct-pointer driver consumed mouse-down before the file
+candidate existed. `b8fc1bb2` gives a transferable file first claim on the
+Mirror gesture and retains direct pointer input everywhere else. Its ordering
+guard was watched failing against the exact old ordering and the MirrorKit
+gate passes; guest-to-host now needs the attended metal retest.
 
 ## TESTED: Continuity now sits on the atomic module foundation (2026-08-12, `feat/continuity-direct-pointer`)
 
