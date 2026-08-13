@@ -205,6 +205,8 @@ protocol ContinuityEdgeDriving: AnyObject {
 
 @MainActor
 final class ContinuityEdgeController: ObservableObject {
+    typealias Audit = (HostLog.LogLevel, String) -> Void
+
     enum State: Equatable {
         case disabled
         case ready
@@ -218,6 +220,11 @@ final class ContinuityEdgeController: ObservableObject {
         let hostAnchor: CGPoint
     }
 
+    private struct PendingCursorWarp {
+        let point: CGPoint
+        let requestedAt: TimeInterval
+    }
+
     @Published private(set) var state: State = .disabled
     @Published private(set) var status = "off"
 
@@ -225,6 +232,8 @@ final class ContinuityEdgeController: ObservableObject {
     private weak var driver: ContinuityEdgeDriving?
     private let environment: ContinuityPointerEnvironment
     private let keyboardEnvironment: ContinuityKeyboardEnvironment
+    private let audit: Audit
+    private let uptime: () -> TimeInterval
     private var monitor: AnyObject?
     private var fileEdge: AnyObject?
     private var layoutSubscription: AnyCancellable?
@@ -232,6 +241,8 @@ final class ContinuityEdgeController: ObservableObject {
     private var ownership: Ownership?
     private var cursorHiddenOn: UInt32?
     private var keyboardMonitor: AnyObject?
+    private var pendingCursorWarp: PendingCursorWarp?
+    private var suppressedCursorWarps: UInt32 = 0
     private var hostFileDrag = false
     private var guestFileCandidate: HostFileDragItem?
     private var guestFileAtPoint: ((MirrorKit.Point) -> HostFileDragItem?)?
@@ -241,13 +252,19 @@ final class ContinuityEdgeController: ObservableObject {
     init(layout: ContinuityDisplayLayout,
          driver: ContinuityEdgeDriving,
          environment: ContinuityPointerEnvironment? = nil,
-         keyboardEnvironment: ContinuityKeyboardEnvironment? = nil) {
+         keyboardEnvironment: ContinuityKeyboardEnvironment? = nil,
+         audit: Audit? = nil,
+         uptime: @escaping () -> TimeInterval = {
+             ProcessInfo.processInfo.systemUptime
+         }) {
         self.layout = layout
         self.driver = driver
         self.environment = environment
             ?? AppKitContinuityPointerEnvironment()
         self.keyboardEnvironment = keyboardEnvironment
             ?? AppKitContinuityKeyboardEnvironment()
+        self.audit = audit ?? { HostLog.shared.write($0, "continuity", $1) }
+        self.uptime = uptime
         layoutSubscription = layout.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
                 await Task.yield()
@@ -294,6 +311,7 @@ final class ContinuityEdgeController: ObservableObject {
         if let monitor { environment.stop(monitor) }
         stopKeyboardCapture()
         monitor = nil
+        pendingCursorWarp = nil
         if let fileEdge { environment.hideFileEdge(fileEdge) }
         fileEdge = nil
         state = .disabled
@@ -341,6 +359,7 @@ final class ContinuityEdgeController: ObservableObject {
     }
 
     private func received(_ sample: HostPointerSample) {
+        if consumeExpectedCursorWarp(sample) { return }
         switch state {
         case .disabled:
             return
@@ -365,6 +384,7 @@ final class ContinuityEdgeController: ObservableObject {
             scale: layout.guestScale)
         pending = Ownership(edge: edge, guestPoint: guest,
                             hostAnchor: anchor)
+        suppressedCursorWarps = 0
         state = .arming
         status = "Connecting the guest pointer…"
         driver?.pointerMoved(to: .init(x: Int(guest.x), y: Int(guest.y)))
@@ -402,6 +422,11 @@ final class ContinuityEdgeController: ObservableObject {
             next, through: ownership.edge.guestSide,
             guestPixels: layout.guestSize) {
             ownership.guestPoint = next
+            audit(.info, "shared edge crossing: guest="
+                + "\(Int(next.x)),\(Int(next.y)), delta="
+                + "\(Int(sample.delta.x)),\(Int(sample.delta.y)), host="
+                + "\(Int(sample.location.x)),\(Int(sample.location.y)), "
+                + "suppressedWarps=\(suppressedCursorWarps)")
             if sample.buttonsDown, let item = guestFileCandidate {
                 returnGuestFileToHost(item, from: ownership)
             } else {
@@ -429,6 +454,9 @@ final class ContinuityEdgeController: ObservableObject {
     }
 
     private func returnToHost(_ ownership: Ownership, reason: String) {
+        audit(.info, "returning pointer to host: reason=\(reason), guest="
+            + "\(Int(ownership.guestPoint.x)),\(Int(ownership.guestPoint.y)), "
+            + "suppressedWarps=\(suppressedCursorWarps)")
         driver?.pointerLeft()
         stopKeyboardCapture()
         restoreHostCursor(from: ownership)
@@ -442,22 +470,45 @@ final class ContinuityEdgeController: ObservableObject {
 
     private func startKeyboardCapture() {
         guard keyboardMonitor == nil else { return }
-        keyboardMonitor = keyboardEnvironment.start { [weak self] sample in
-            guard let self, self.state == .active,
-                  let driver = self.driver else { return false }
-            if driver.escapeShortcut.matches(sample) {
-                if let ownership = self.ownership {
-                    self.returnToHost(ownership, reason: "escape shortcut")
+        guard let driver else { return }
+        let policy = ContinuityKeyboardCapturePolicy(
+            forwardingEnabled: driver.keyboardForwardingEnabled,
+            escapeShortcut: driver.escapeShortcut)
+        keyboardMonitor = keyboardEnvironment.start(
+            policy: policy,
+            handler: { [weak self] sample in
+                guard let self, self.state == .active,
+                      let driver = self.driver else { return }
+                if driver.escapeShortcut.matches(sample) {
+                    if let ownership = self.ownership {
+                        self.returnToHost(
+                            ownership, reason: "escape shortcut")
+                    }
+                    return
                 }
-                return true
-            }
-            guard driver.keyboardForwardingEnabled else { return false }
-            return driver.keyboardEvent(sample)
-        }
+                guard driver.keyboardForwardingEnabled else { return }
+                if !driver.keyboardEvent(sample) {
+                    self.audit(
+                        .error,
+                        "captured keyboard event could not be queued: "
+                            + "action=\(sample.action), code=\(sample.code)")
+                }
+            }, tapDisabled: { [weak self] reason in
+                self?.audit(
+                    .warn,
+                    "keyboard event tap was disabled by \(reason); "
+                        + "re-enabled immediately")
+            })
         if keyboardMonitor == nil {
             status = "Pointer is on the guest display; keyboard capture "
                 + "needs Accessibility permission"
         }
+    }
+
+    func keyboardConfigurationChanged() {
+        guard state == .active else { return }
+        stopKeyboardCapture()
+        startKeyboardCapture()
     }
 
     private func stopKeyboardCapture() {
@@ -520,6 +571,7 @@ final class ContinuityEdgeController: ObservableObject {
         let host = ownership.edge.host.frame
         let point = CGPoint(x: ownership.hostAnchor.x - host.minX,
                             y: host.maxY - ownership.hostAnchor.y)
+        expectCursorWarp(to: ownership.hostAnchor)
         environment.moveCursor(on: ownership.edge.host.id, to: point)
     }
 
@@ -530,6 +582,7 @@ final class ContinuityEdgeController: ObservableObject {
                 for: ownership.guestPoint, edge: ownership.edge,
                 guestFrame: layout.guestFrame, scale: layout.guestScale)
             let host = ownership.edge.host.frame
+            expectCursorWarp(to: hostPoint)
             environment.moveCursor(
                 on: ownership.edge.host.id,
                 to: CGPoint(x: hostPoint.x - host.minX,
@@ -537,6 +590,29 @@ final class ContinuityEdgeController: ObservableObject {
         }
         environment.showCursor(on: id)
         cursorHiddenOn = nil
+    }
+
+    private func expectCursorWarp(to point: CGPoint) {
+        pendingCursorWarp = PendingCursorWarp(
+            point: point, requestedAt: uptime())
+    }
+
+    private func consumeExpectedCursorWarp(_ sample: HostPointerSample) -> Bool {
+        guard sample.kind == .moved, sample.eventUptime > 0,
+              let pendingCursorWarp else { return false }
+        let age = sample.eventUptime - pendingCursorWarp.requestedAt
+        if age < -0.01 { return false }
+        if age > 0.25 {
+            self.pendingCursorWarp = nil
+            return false
+        }
+        guard abs(sample.location.x - pendingCursorWarp.point.x) <= 1,
+              abs(sample.location.y - pendingCursorWarp.point.y) <= 1 else {
+            return false
+        }
+        self.pendingCursorWarp = nil
+        suppressedCursorWarps &+= 1
+        return true
     }
 
     private var fileEdgeCallbacks: ContinuityFileEdge.Callbacks {

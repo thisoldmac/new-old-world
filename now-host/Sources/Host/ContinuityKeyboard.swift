@@ -8,6 +8,15 @@ struct HostKeySample: Equatable, Sendable {
     let modifiers: UInt16
 }
 
+struct ContinuityKeyboardCapturePolicy: Equatable, Sendable {
+    let forwardingEnabled: Bool
+    let escapeShortcut: ContinuityEscapeShortcut
+
+    func captures(_ sample: HostKeySample) -> Bool {
+        forwardingEnabled || escapeShortcut.matches(sample)
+    }
+}
+
 enum ContinuityEscapeShortcut: String, CaseIterable, Identifiable, Sendable {
     case controlOptionEscape
     case controlOptionCommandEscape
@@ -56,8 +65,11 @@ enum ContinuityEscapeShortcut: String, CaseIterable, Identifiable, Sendable {
 
 @MainActor
 protocol ContinuityKeyboardEnvironment: AnyObject {
-    func start(_ handler: @escaping @MainActor (HostKeySample) -> Bool)
-        -> AnyObject?
+    func start(
+        policy: ContinuityKeyboardCapturePolicy,
+        handler: @escaping @MainActor (HostKeySample) -> Void,
+        tapDisabled: @escaping @MainActor (String) -> Void
+    ) -> AnyObject?
     func stop(_ token: AnyObject)
 }
 
@@ -65,10 +77,16 @@ protocol ContinuityKeyboardEnvironment: AnyObject {
 final class AppKitContinuityKeyboardEnvironment:
     ContinuityKeyboardEnvironment {
     private final class Context: NSObject {
-        let handler: @MainActor (HostKeySample) -> Bool
+        let policy: ContinuityKeyboardCapturePolicy
+        let handler: @MainActor (HostKeySample) -> Void
+        let tapDisabled: @MainActor (String) -> Void
         var port: CFMachPort?
-        init(handler: @escaping @MainActor (HostKeySample) -> Bool) {
+        init(policy: ContinuityKeyboardCapturePolicy,
+             handler: @escaping @MainActor (HostKeySample) -> Void,
+             tapDisabled: @escaping @MainActor (String) -> Void) {
+            self.policy = policy
             self.handler = handler
+            self.tapDisabled = tapDisabled
         }
     }
 
@@ -83,9 +101,13 @@ final class AppKitContinuityKeyboardEnvironment:
         }
     }
 
-    func start(_ handler: @escaping @MainActor (HostKeySample) -> Bool)
-        -> AnyObject? {
-        let context = Context(handler: handler)
+    func start(
+        policy: ContinuityKeyboardCapturePolicy,
+        handler: @escaping @MainActor (HostKeySample) -> Void,
+        tapDisabled: @escaping @MainActor (String) -> Void
+    ) -> AnyObject? {
+        let context = Context(policy: policy, handler: handler,
+                              tapDisabled: tapDisabled)
         let mask = (1 << CGEventType.keyDown.rawValue)
             | (1 << CGEventType.keyUp.rawValue)
         guard let port = CGEvent.tapCreate(
@@ -102,16 +124,25 @@ final class AppKitContinuityKeyboardEnvironment:
                     if let port = context.port {
                         CGEvent.tapEnable(tap: port, enable: true)
                     }
+                    let reason = type == .tapDisabledByTimeout
+                        ? "timeout" : "user input"
+                    let notify = context.tapDisabled
+                    Task { @MainActor in notify(reason) }
                     return Unmanaged.passUnretained(event)
                 }
                 guard let sample = AppKitContinuityKeyboardEnvironment.sample(
                     event, type: type) else {
                     return Unmanaged.passUnretained(event)
                 }
-                let consumed = MainActor.assumeIsolated {
-                    context.handler(sample)
+                guard context.policy.captures(sample) else {
+                    return Unmanaged.passUnretained(event)
                 }
-                return consumed ? nil : Unmanaged.passUnretained(event)
+                /* The tap's watchdog covers this callback, not the later main
+                   actor hop. Decide ownership and suppress synchronously, then
+                   let the normal controller enqueue the reliable wire event. */
+                let deliver = context.handler
+                Task { @MainActor in deliver(sample) }
+                return nil
             }, userInfo: Unmanaged.passUnretained(context).toOpaque()) else {
             return nil
         }

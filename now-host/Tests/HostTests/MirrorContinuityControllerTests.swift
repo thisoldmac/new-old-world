@@ -724,6 +724,17 @@ final class MirrorContinuityControllerTests: XCTestCase {
                        firstUp.buttonGeneration)
         XCTAssertFalse(secondDown.previousButtonDown,
                        "v4 must carry the intervening up beside the second down")
+        try await Task.sleep(nanoseconds: 1_200_000_000)
+        XCTAssertTrue(
+            rig.controller.isActive,
+            "a resident-deferred second press must outlive the ordinary deadline")
+        rig.udp.acknowledge(secondDown)
+        try await waitUntil("confirmed second release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != secondDown.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+            }
+        }
     }
 
     func testIndependentKeepaliveContinuesWhileMainActorIsBusy() async throws {
@@ -733,7 +744,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         rig.udp.acknowledge(try XCTUnwrap(rig.udp.packets.last))
         let baseline = rig.udp.packets.count
 
-        let end = Date().addingTimeInterval(0.7)
+        let end = Date().addingTimeInterval(1.7)
         while Date() < end { _ = 1 + 1 }
 
         try await waitUntil("independent keepalive") {

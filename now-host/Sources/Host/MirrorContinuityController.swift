@@ -133,6 +133,7 @@ final class MirrorContinuityController: ObservableObject,
             else { return }
             defaults.set(keyboardForwardingEnabled,
                          forKey: keyboardForwardingKey(for: machine))
+            if phase == .active { edge.keyboardConfigurationChanged() }
         }
     }
     @Published var escapeShortcut = ContinuityEscapeShortcut.controlOptionEscape {
@@ -142,6 +143,7 @@ final class MirrorContinuityController: ObservableObject,
             else { return }
             defaults.set(escapeShortcut.rawValue,
                          forKey: escapeShortcutKey(for: machine))
+            if phase == .active { edge.keyboardConfigurationChanged() }
         }
     }
 
@@ -156,7 +158,8 @@ final class MirrorContinuityController: ObservableObject,
     var maintainsOptInAfterGuestExit = false
 
     private(set) lazy var edge: ContinuityEdgeController = {
-        let edge = ContinuityEdgeController(layout: layout, driver: self)
+        let edge = ContinuityEdgeController(
+            layout: layout, driver: self, audit: audit)
         onPhaseChanged = { [weak edge] phase in
             edge?.transportPhaseChanged(phase)
         }
@@ -284,6 +287,9 @@ final class MirrorContinuityController: ObservableObject,
             audit(.error, "keyboard event lost because the guest session ended")
             return false
         }
+        audit(.info, "keyboard event queued: generation=\(keyGeneration), "
+            + "action=\(sample.action), code=\(sample.code), "
+            + "modifiers=0x\(String(sample.modifiers, radix: 16))")
         return true
     }
 
@@ -322,7 +328,8 @@ final class MirrorContinuityController: ObservableObject,
             if clickCount >= 2, !wireButtonDown {
                 audit(.info, "starting AppKit-confirmed click \(clickCount) "
                     + "before the preceding manager-up acknowledgement")
-                beginPrimaryCycle(at: point, inMenuBar: inMenuBar)
+                beginPrimaryCycle(at: point, inMenuBar: inMenuBar,
+                                  residentMayDeferPress: true)
                 return true
             }
             guard bufferedButtonCycle == nil,
@@ -342,7 +349,8 @@ final class MirrorContinuityController: ObservableObject,
 
     private func beginPrimaryCycle(at point: MirrorKit.Point,
                                    releasedAt: MirrorKit.Point? = nil,
-                                   inMenuBar: Bool = false) {
+                                   inMenuBar: Bool = false,
+                                   residentMayDeferPress: Bool = false) {
         self.point = point
         positionDirty = true
         advancePositionIfNeeded()
@@ -358,7 +366,9 @@ final class MirrorContinuityController: ObservableObject,
         isMenuTracking = inMenuBar
         sendState(inside: true, keepalive: false)
         buttonTransitionSentUptime = ProcessInfo.processInfo.systemUptime
-        scheduleButtonAckTimeout(generation: buttonGeneration, down: true)
+        scheduleButtonAckTimeout(
+            generation: buttonGeneration, down: true,
+            residentMayDeferPress: residentMayDeferPress)
     }
 
     @discardableResult
@@ -939,15 +949,19 @@ final class MirrorContinuityController: ObservableObject,
         wireButtonDown = down
     }
 
-    private func scheduleButtonAckTimeout(generation: UInt32, down: Bool) {
+    private func scheduleButtonAckTimeout(
+        generation: UInt32, down: Bool,
+        residentMayDeferPress: Bool = false
+    ) {
         buttonAckTimeout?.cancel()
         buttonAckTimeout = Task { @MainActor [weak self] in
             /* Down must settle quickly before a hold is considered live. Up
                is already safe in low memory and can wait for a starved NOW
                task to regain cooperative time after the target tracking loop
                unwinds. */
-            try? await Task.sleep(
-                nanoseconds: down ? 1_000_000_000 : 5_000_000_000)
+            let timeout: UInt64 = down && !residentMayDeferPress
+                ? 1_000_000_000 : 5_000_000_000
+            try? await Task.sleep(nanoseconds: timeout)
             guard let self, !Task.isCancelled,
                   self.phase == .active, self.buttonCycleActive,
                   self.wireButtonDown == down,

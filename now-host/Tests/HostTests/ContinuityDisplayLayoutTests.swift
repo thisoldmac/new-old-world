@@ -248,6 +248,65 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertTrue(environment.shown.isEmpty)
     }
 
+    func testHostCursorWarpIsNotIntegratedAsGuestMotion() {
+        var now: TimeInterval = 100
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            uptime: { now })
+        controller.start()
+        environment.emit(.init(
+            kind: .moved, location: CGPoint(x: 1439, y: 450),
+            delta: CGPoint(x: 2, y: 0), buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        now += 0.01
+        environment.emit(.init(
+            kind: .moved, location: CGPoint(x: 1439, y: 450),
+            delta: CGPoint(x: -600, y: 0), buttonsDown: false,
+            eventUptime: now))
+
+        XCTAssertEqual(controller.state, .active)
+        XCTAssertEqual(driver.leftCount, 0)
+        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 0, y: 450))
+
+        environment.emit(.init(
+            kind: .moved, location: CGPoint(x: 1451, y: 450),
+            delta: CGPoint(x: 12, y: 0), buttonsDown: false,
+            eventUptime: now + 0.01))
+        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 12, y: 450))
+    }
+
+    func testRestoreWarpCannotImmediatelyReenterGuest() {
+        var now: TimeInterval = 200
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            uptime: { now })
+        controller.start()
+        environment.emit(.init(
+            kind: .moved, location: CGPoint(x: 1439, y: 450),
+            delta: CGPoint(x: 2, y: 0), buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+        environment.emit(.init(
+            kind: .moved, location: CGPoint(x: 1420, y: 450),
+            delta: CGPoint(x: -20, y: 0), buttonsDown: false))
+        XCTAssertEqual(controller.state, .ready)
+
+        now += 0.01
+        environment.emit(.init(
+            kind: .moved, location: CGPoint(x: 1439, y: 450),
+            delta: CGPoint(x: 40, y: 0), buttonsDown: false,
+            eventUptime: now))
+
+        XCTAssertEqual(controller.state, .ready)
+        XCTAssertEqual(driver.leftCount, 1)
+    }
+
     func testKeyboardIsForwardedAndSuppressedWhileGuestOwnsPointer() {
         let layout = makeLayout()
         let driver = Driver()
@@ -318,6 +377,18 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
             action: .down, code: 53, character: 27,
             modifiers: (1 << 11) | (1 << 12))))
         XCTAssertEqual(controller.state, .ready)
+    }
+
+    func testKeyboardCapturePolicyOwnsBothCommandOEdges() {
+        let policy = ContinuityKeyboardCapturePolicy(
+            forwardingEnabled: true,
+            escapeShortcut: .controlOptionEscape)
+        XCTAssertTrue(policy.captures(.init(
+            action: .down, code: 31, character: 111,
+            modifiers: 1 << 8)))
+        XCTAssertTrue(policy.captures(.init(
+            action: .up, code: 31, character: 111,
+            modifiers: 1 << 8)))
     }
 
     func testGuestFileCrossingBackStartsNativeCopyDrag() {
@@ -503,21 +574,32 @@ private extension ContinuityDisplayLayoutTests {
 
     final class KeyboardEnvironment: ContinuityKeyboardEnvironment {
         final class Token: NSObject {}
-        var handler: (@MainActor (HostKeySample) -> Bool)?
+        var policy: ContinuityKeyboardCapturePolicy?
+        var handler: (@MainActor (HostKeySample) -> Void)?
+        var tapDisabled: (@MainActor (String) -> Void)?
         var stopCount = 0
 
-        func start(_ handler: @escaping @MainActor (HostKeySample) -> Bool)
-            -> AnyObject? {
+        func start(
+            policy: ContinuityKeyboardCapturePolicy,
+            handler: @escaping @MainActor (HostKeySample) -> Void,
+            tapDisabled: @escaping @MainActor (String) -> Void
+        ) -> AnyObject? {
+            self.policy = policy
             self.handler = handler
+            self.tapDisabled = tapDisabled
             return Token()
         }
         func stop(_ token: AnyObject) {
             _ = token
             stopCount += 1
+            policy = nil
             handler = nil
+            tapDisabled = nil
         }
         func emit(_ sample: HostKeySample) -> Bool {
-            handler?(sample) ?? false
+            guard policy?.captures(sample) == true else { return false }
+            handler?(sample)
+            return true
         }
     }
 }

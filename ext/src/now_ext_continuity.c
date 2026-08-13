@@ -527,16 +527,12 @@ void now_ext_continuity_service(void)
             cell->apply_ticks = ticks;
         }
     }
-    exit_due = now_continuity_exit_due(
-        ticks, cell->last_arrival_ticks,
-        now_continuity_lease_for_state(cell->state, cell->lease_ticks),
-        0, 0, 0, 0, 0, 0, 0, 0);
-    if (exit_due != (NowPeekU32)kNowPeekContinuityExitNone) {
-        finish_locked(cell, exit_due, ticks);
-        service_return(cell);
-        return;
-    }
-
+    /* Admit a coherent packet before evaluating its lease. The Open Transport
+       notifier can publish a keepalive while the application is starved in a
+       nested Toolbox loop; when cooperative service resumes, comparing ticks
+       with the PREVIOUS admitted arrival first expires a lease that is already
+       renewed in this cell. Stale epochs still cannot renew it, and host-left
+       remains authoritative over the timeout. */
     before = cell->packet_seq;
     if (before != cell->observed_packet_seq) {
         packet_epoch = cell->packet_epoch;
@@ -584,6 +580,15 @@ void now_ext_continuity_service(void)
                               previous_button_flags);
             apply_button_edge(cell, button_generation, flags);
         }
+    }
+    exit_due = now_continuity_exit_due(
+        ticks, cell->last_arrival_ticks,
+        now_continuity_lease_for_state(cell->state, cell->lease_ticks),
+        0, 0, 0, 0, 0, 0, 0, 0);
+    if (exit_due != (NowPeekU32)kNowPeekContinuityExitNone) {
+        finish_locked(cell, exit_due, ticks);
+        service_return(cell);
+        return;
     }
     publish_tasktime_counters(cell);
     service_return(cell);

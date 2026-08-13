@@ -673,6 +673,16 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "Private PR #27 retest bake verified; shared oracle remains unchanged until the attended hardware retest is accepted."
+    },
+    {
+      "at": "2026-08-13T14:44:16-0400",
+      "branch": "fix/continuity-retest-inputs",
+      "extDigest": "c59fdb31e20441a1f9ba021f517459fa230a10ba",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "Private PR #27 retest bake verified exact resident d19c192cba60; shared oracle remains unchanged until the attended hardware retest accepts this candidate."
     }
   ]
 }

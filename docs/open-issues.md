@@ -119,6 +119,44 @@ double click, and drag telemetry are covered by focused host/native tests and
 both guests plus the Extension cross-build. They are **tested, not
 metal-verified** pending the fresh stack bundle.
 
+**2026-08-13 attended retest and follow-up candidate:** the menu classification
+change is now metal-verified. Nothing else in that retest met acceptance:
+double-clicks still did not open their targets, the pointer returned to the
+host unexpectedly, Command-O opened on the host rather than the guest, and
+modal starvation still ended or prevented Continuity ownership. The paired
+host and guest logs separated four causes that the earlier candidate combined:
+
+- The independent host keepalive remained punctual (maximum observed gap about
+  502 ms), but resident service checked the previously admitted arrival before
+  consuming a coherent keepalive already published by the Open Transport
+  notifier. The resident now admits a same-epoch packet before lease expiry;
+  stale epochs still cannot renew authority and host-left still wins.
+- The host cursor-pin warp could return as an AppKit movement sample and be
+  integrated as physical relative motion. A short-lived, point-and-time-matched
+  warp token now discards only that synthetic sample. Edge-return logs include
+  guest point, source delta, host point and the number of suppressed warps.
+- Only one Command-O edge reached the guest and its target-context `PPostEvent`
+  failed. The CG event-tap callback previously performed the reliable send
+  synchronously and silently passed through a watchdog-disable notification.
+  Capture ownership is now decided synchronously, both key edges are suppressed
+  as a pair, forwarding hops asynchronously to the main actor, and tap disables
+  plus each queued key edge are logged.
+- The resident correctly deferred an AppKit-confirmed second press behind the
+  first manager-up, but the host applied its ordinary one-second press deadline
+  and tore down the epoch. Only this already-accounted-for deferred press now
+  receives the five-second settlement window; ordinary first presses retain
+  the one-second safety deadline.
+
+The exact stale-arrival, warp-feedback, key-up-loss and one-second-deferred-
+press mutations each fail their focused guard. Targeted host suites and the
+Continuity native subset pass. These four repairs remain **tested, not
+metal-verified** until the next attended bundle. Modal attachment itself still
+requires the Carbon application to schedule its reliable arm service; this
+candidate prevents an already-active lease from being falsely expired after
+starvation but does not claim resident-only arm while an alert owns the
+application event loop. Continuity file dragging and held-drag visual fidelity
+also remain open and unchanged.
+
 **2026-08-13 pre-PR review:** the full integration diff received local
 correctness, reliability, contract, security, performance, test, Swift and
 maintainability review. The bounded defects were repaired in the candidate:
