@@ -343,6 +343,12 @@ class ReleaseTests(unittest.TestCase):
                       if "dev-entry" in row)
         try:
             onboarding = mount / "New Old World.app/Contents/Resources/Onboarding"
+            executable = mount / "New Old World.app/Contents/MacOS/New Old World"
+            launched = subprocess.run([str(executable)], capture_output=True)
+            self.assertEqual(
+                launched.returncode, 0,
+                "mounted ad-hoc app was not executable: "
+                + launched.stderr.decode(errors="replace"))
             self.assertEqual(
                 (onboarding / "New Old World.bin").read_bytes(),
                 application.read_bytes())
@@ -352,8 +358,9 @@ class ReleaseTests(unittest.TestCase):
             self.assertTrue((onboarding / "Dependencies/License Material"
                              / "Apple License.txt").is_file())
         finally:
-            subprocess.run(["/usr/bin/hdiutil", "detach", device], check=True,
-                           capture_output=True)
+            subprocess.run([
+                "/usr/bin/hdiutil", "detach", "-force", device,
+            ], check=True, capture_output=True)
 
 
 if __name__ == "__main__":
