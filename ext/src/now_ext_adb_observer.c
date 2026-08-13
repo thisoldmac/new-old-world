@@ -48,7 +48,7 @@ static NowPeekContinuityCell *observer_cell(NowPeekTable *table)
     if (table->length < (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                      + sizeof(NowPeekContinuityCell)))
         return NULL;
-    if (table->continuity_format != (NowPeekU32)kNowPeekContinuityFormatV7)
+    if (table->continuity_format != (NowPeekU32)kNowPeekContinuityFormatV8)
         return NULL;
     return &table->continuity;
 }

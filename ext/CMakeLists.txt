@@ -107,6 +107,7 @@ add_executable(NowExt
     # surface is tracking-loop MouseLocation plus dead-man MBState-up; it
     # cannot call managers or impersonate the physical ADB/PMU input path.
     src/now_ext_continuity.c
+    src/now_ext_continuity_keyboard.c
     src/now_ext_continuity_tm.S
     # P9 ADB authority spike: passively wrap the existing relative device by
     # default. One explicit V7 option substitutes bounded packets through a
@@ -125,6 +126,7 @@ add_executable(NowExt
     # word between them; neither plane guesses from the other's cell.
     ../now-guest-shared/src/now_input_owner.c
     ../now-guest-shared/src/now_continuity_logic.c
+    ../now-guest-shared/src/now_continuity_keyboard_logic.c
     ../now-guest-shared/src/now_adb_injection_logic.c
     ../now-guest-shared/src/now_semantic_guard.c)
 add_dependencies(NowExt generate_now_ext_identity)

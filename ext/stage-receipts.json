@@ -618,6 +618,23 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "Integrates the exact 5a601a18 V7 resident already verified by a clean branch-private bake; shared promotion remains deferred until the combined keyboard release candidate is baked and metal-tested."
+    },
+    {
+      "at": "2026-08-12T20:11:36-0400",
+      "branch": "feat/continuity-keyboard",
+      "extDigest": "5f75a302913250edcc0e4331f3cea83f8e9169dc",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_adb_observer.c",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_keyboard.c",
+        "ext/src/now_ext_continuity_keyboard.h",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "V8 keyboard resident queue checkpoint builds and native queue tests pass; private bake is deferred until the matched host/PPC protocol and escape-control path are integrated."
     }
   ]
 }

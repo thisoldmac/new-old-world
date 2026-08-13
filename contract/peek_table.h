@@ -931,6 +931,11 @@ enum {
        substitute tiny relative ADB packets with a bounded delta toward the
        latest host point. The default remains the V6 passive observer. */
     kNowPeekContinuityFormatV7 = 7,
+    /* V8 appends a bounded keyboard queue. The PPC application resolves the
+       foreground process and publishes keys; the resident drains them only
+       from that process's target-context jGNE pass, where PPostEvent is legal.
+       This is Event Manager delivery, not ADB or GetKeys state synthesis. */
+    kNowPeekContinuityFormatV8 = 8,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -946,6 +951,34 @@ enum {
     kNowPeekContinuityExitDisarmed = 4,
     kNowPeekContinuityExitUnavailable = 5
 };
+
+enum {
+    kNowPeekContinuityKeyDown = 1,
+    kNowPeekContinuityKeyUp = 2,
+    kNowPeekContinuityKeyRepeat = 3,
+    kNowPeekContinuityKeyQueueCapacity = 16
+};
+
+enum {
+    kNowPeekContinuityKeyErrorNone = 0,
+    kNowPeekContinuityKeyErrorPostFailed = 1,
+    kNowPeekContinuityKeyErrorInvalid = 2
+};
+
+/* V8 queue entry. `queue_seq` is written LAST by the PPC application and is
+   the resident's tear detector. Every other value is a four-byte contract
+   word so the PPC and 68K compilers agree without packing directives. */
+typedef struct {
+    NowPeekU32 queue_seq;
+    NowPeekU32 generation;
+    NowPeekU32 target_a5;
+    NowPeekU32 target_psn_high;
+    NowPeekU32 target_psn_low;
+    NowPeekU32 action;
+    NowPeekU32 key_code;
+    NowPeekU32 character;
+    NowPeekU32 modifiers;
+} NowPeekContinuityKeyEntry;
 
 enum {
     kNowPeekContinuityInside = 1u << 0,
@@ -1149,6 +1182,25 @@ typedef struct {
     NowPeekU32 adb_injection_carriers;
     NowPeekU32 adb_injection_physical;
     NowPeekU32 adb_injection_clamps;
+    /* V8 keyboard queue. The application owns write_seq, floor_seq and the
+       target identity. Advancing floor_seq atomically abandons every older
+       slot on process switch or control release. The resident owns read_seq,
+       result generations, errors and counters. */
+    NowPeekU32 key_write_seq;
+    NowPeekU32 key_floor_seq;
+    NowPeekU32 key_target_a5;
+    NowPeekU32 key_target_psn_high;
+    NowPeekU32 key_target_psn_low;
+    NowPeekU32 key_read_seq;
+    NowPeekU32 key_applied_generation;
+    NowPeekU32 key_failed_generation;
+    NowPeekI32 key_last_error;
+    NowPeekU32 key_enqueued;
+    NowPeekU32 key_applied;
+    NowPeekU32 key_failures;
+    NowPeekU32 key_dropped;
+    NowPeekU32 key_flushes;
+    NowPeekContinuityKeyEntry key_queue[kNowPeekContinuityKeyQueueCapacity];
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -2068,7 +2120,9 @@ _Static_assert(sizeof(NowPeekContinuityTraceEntry) == 20,
                "continuity trace ABI drift");
 _Static_assert(sizeof(NowPeekADBTraceEntry) == 84,
                "ADB observer trace ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 1160,
+_Static_assert(sizeof(NowPeekContinuityKeyEntry) == 36,
+               "continuity key entry ABI drift");
+_Static_assert(sizeof(NowPeekContinuityCell) == 1792,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -2100,6 +2154,10 @@ _Static_assert(offsetof(NowPeekContinuityCell, adb_trace) == 472,
                "continuity V6 ADB trace offset");
 _Static_assert(offsetof(NowPeekContinuityCell, adb_injection_packets) == 1144,
                "continuity V7 ADB injection offset");
+_Static_assert(offsetof(NowPeekContinuityCell, key_write_seq) == 1160,
+               "continuity V8 keyboard queue offset");
+_Static_assert(offsetof(NowPeekContinuityCell, key_queue) == 1216,
+               "continuity V8 keyboard entries offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

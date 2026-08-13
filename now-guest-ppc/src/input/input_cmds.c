@@ -229,7 +229,7 @@ static void cursor_rows(InputRows *rows)
     row_addl(rows, "cursor last err", (long)c->last_err);
     if (t->length >= (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                   + sizeof(NowPeekContinuityCell))
-        && t->continuity_format == (NowPeekU32)kNowPeekContinuityFormatV7) {
+        && t->continuity_format == (NowPeekU32)kNowPeekContinuityFormatV8) {
         const NowPeekContinuityCell *continuity = &t->continuity;
 
         row_addl(rows, "native samples", (long)continuity->native_input_samples);

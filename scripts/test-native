@@ -197,6 +197,8 @@ run_c now-guest-shared now_continuity_wire_test.c "-DNOW_CONTINUITY_HOST" \
       src/now_continuity_wire.c
 run_c now-guest-shared now_input_owner_test.c "" src/now_input_owner.c
 run_c now-guest-shared now_continuity_logic_test.c "" src/now_continuity_logic.c
+run_c now-guest-shared now_continuity_keyboard_logic_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c
 run_c now-guest-shared now_adb_injection_logic_test.c "" \
       src/now_adb_injection_logic.c
 run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c

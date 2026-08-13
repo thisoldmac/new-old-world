@@ -39,6 +39,7 @@
 
 #include "peek_table.h"
 #include "now_ext_build_identity.h"
+#include "now_ext_continuity_keyboard.h"
 #include "now_ext_core_logic.h"
 #include "now_ext_install.h"
 
@@ -369,6 +370,7 @@ void now_ext_gne_apply(void)
        picture that disagrees with the machine is not made correct by
        disarming a plane. Nothing owed costs a load and a return. */
     now_ext_cursor_gne(table);
+    now_ext_continuity_keyboard_gne(table);
     now_content_gne(table);
     /* P5. Its own arm verdict, like P3's, because it also names an A5
        world. Disarmed it is a load, a null check and a return. */

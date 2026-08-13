@@ -488,7 +488,7 @@ int now_ext_cursor_answer_continuity_getmouse(void *mouse_loc)
                 >= (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                  + sizeof(NowPeekContinuityCell))
             && gTable->continuity_format
-                == (NowPeekU32)kNowPeekContinuityFormatV7) {
+                == (NowPeekU32)kNowPeekContinuityFormatV8) {
         cell = &gTable->continuity;
         cell->tracking_getmouse_answers++;
     }

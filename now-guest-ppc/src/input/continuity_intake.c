@@ -65,7 +65,7 @@ static NowPeekContinuityCell *cell(void)
     if (table == NULL
         || table->length < (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                         + sizeof(NowPeekContinuityCell))
-        || table->continuity_format != kNowPeekContinuityFormatV7
+        || table->continuity_format != kNowPeekContinuityFormatV8
         || !(table->caps & kNowPeekTableCapContinuity))
         return NULL;
     return &table->continuity;

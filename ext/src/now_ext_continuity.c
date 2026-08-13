@@ -13,6 +13,7 @@
 #include "now_continuity_logic.h"
 #include "now_ext_core_logic.h"
 #include "now_ext_adb_observer.h"
+#include "now_ext_continuity_keyboard.h"
 #include "now_ext_cursor_input.h"
 #include "now_input_owner.h"
 
@@ -62,7 +63,7 @@ static NowPeekContinuityCell *continuity_cell(NowPeekTable *table)
                                      + sizeof(NowPeekContinuityCell)))
         return NULL;
     if (table->continuity_format
-            != (NowPeekU32)kNowPeekContinuityFormatV7)
+            != (NowPeekU32)kNowPeekContinuityFormatV8)
         return NULL;
     return &table->continuity;
 }
@@ -269,6 +270,7 @@ static void finish_locked(NowPeekContinuityCell *cell, NowPeekU32 reason,
 {
     force_reset(cell, reason);
     now_ext_cursor_cancel_task_apply();
+    now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(0);
     now_ext_adb_observer_stop();
     cell->state = (NowPeekU32)kNowPeekContinuityStateExited;
@@ -303,6 +305,7 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
     cell->event_result_err = 0;
     cell->pending_mouseup = 0;
     cell->button_release_reason = 0;
+    now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(cell->tracking_options);
     gNativeInputSeq = native_input_sequence(cell);
     gNativeInputBaseline = gNativeInputSeq;
@@ -668,7 +671,7 @@ int now_ext_continuity_boot(NowPeekTable *table)
     if (table->length < (NowPeekU32)(offsetof(NowPeekTable, continuity)
                                      + sizeof(NowPeekContinuityCell)))
         return 0;
-    table->continuity_format = (NowPeekU32)kNowPeekContinuityFormatV7;
+    table->continuity_format = (NowPeekU32)kNowPeekContinuityFormatV8;
     cell = &table->continuity;
     cell->state = (NowPeekU32)kNowPeekContinuityStateInactive;
     cell->exit_reason = (NowPeekU32)kNowPeekContinuityExitNone;

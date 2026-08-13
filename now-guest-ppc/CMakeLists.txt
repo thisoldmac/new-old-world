@@ -264,6 +264,7 @@ add_application(now-guest-ppc
     src/input/continuity_report_logic.c
     ../now-guest-shared/src/now_continuity_wire.c
     ../now-guest-shared/src/now_continuity_logic.c
+    ../now-guest-shared/src/now_continuity_keyboard_logic.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that
