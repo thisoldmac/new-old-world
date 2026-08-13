@@ -14,6 +14,8 @@
 #include <Carbon.h>
 #include <CursorDevices.h>
 
+#include <string.h>
+
 #include "continuity_cdm_transition.h"
 #include "nowlog.h"
 
@@ -26,6 +28,15 @@ static CursorDevicePtr gDevice;
 static unsigned long gEpoch;
 static unsigned long gMoveCount;
 static unsigned long gButtonCount;
+static NowContinuityCursorDiagnostics gDiagnostics;
+
+static int device_point(Point *out)
+{
+    if (out == NULL || gDevice == NULL || gDevice->whichCursor == NULL)
+        return 0;
+    *out = gDevice->whichCursor->where;
+    return 1;
+}
 
 static int checkpoint(unsigned long count)
 {
@@ -71,6 +82,7 @@ void now_continuity_cursor_begin_epoch(unsigned long epoch)
     gEpoch = epoch;
     gMoveCount = 0;
     gButtonCount = 0;
+    memset(&gDiagnostics, 0, sizeof gDiagnostics);
     now_log(kLogInfo, "mirror", "CDM PPC epoch=%lu begin", epoch);
     now_log_flush();
 }
@@ -83,6 +95,11 @@ long now_continuity_cursor_button(unsigned long epoch,
     if (gDevice == NULL || epoch == 0 || epoch != gEpoch
             || generation == 0)
         return paramErr;
+    if (down && gDiagnostics.requested_valid) {
+        gDiagnostics.press_h = gDiagnostics.requested_h;
+        gDiagnostics.press_v = gDiagnostics.requested_v;
+        gDiagnostics.press_valid = 1;
+    }
     gButtonCount++;
     now_log_memory(kLogInfo, "mirror",
                    "CDM PPC button begin epoch=%lu n=%lu generation=%lu down=%d",
@@ -105,6 +122,8 @@ long now_continuity_cursor_button(unsigned long epoch,
 long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
                                 long h, long v)
 {
+    Point device_before;
+    Point device_after;
     unsigned long before;
     unsigned long after;
     OSErr err;
@@ -113,6 +132,24 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
     if (gDevice == NULL || epoch == 0 || epoch != gEpoch)
         return paramErr;
     gMoveCount++;
+    if (device_point(&device_before)) {
+        gDiagnostics.samples++;
+        gDiagnostics.device_point_valid = 1;
+        gDiagnostics.before_h = device_before.h;
+        gDiagnostics.before_v = device_before.v;
+        if (gDiagnostics.requested_valid
+                && (device_before.h != (short)gDiagnostics.requested_h
+                    || device_before.v != (short)gDiagnostics.requested_v)) {
+            gDiagnostics.before_request_mismatches++;
+        }
+        if (gDiagnostics.press_valid && gDiagnostics.requested_valid
+                && (gDiagnostics.requested_h != gDiagnostics.press_h
+                    || gDiagnostics.requested_v != gDiagnostics.press_v)
+                && device_before.h == (short)gDiagnostics.press_h
+                && device_before.v == (short)gDiagnostics.press_v) {
+            gDiagnostics.press_reversions++;
+        }
+    }
     durable = checkpoint(gMoveCount);
     if (durable) {
         now_log_memory(kLogInfo, "mirror",
@@ -122,6 +159,16 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
     before = TickCount();
     err = now_cdm_move_to(gDevice, h, v);
     after = TickCount();
+    if (device_point(&device_after)) {
+        gDiagnostics.device_point_valid = 1;
+        gDiagnostics.after_h = device_after.h;
+        gDiagnostics.after_v = device_after.v;
+        if (device_after.h != (short)h || device_after.v != (short)v)
+            gDiagnostics.after_request_mismatches++;
+    }
+    gDiagnostics.requested_h = h;
+    gDiagnostics.requested_v = v;
+    gDiagnostics.requested_valid = 1;
     if (err != noErr) {
         now_log(kLogError, "mirror",
                 "CDM PPC move failed epoch=%lu n=%lu seq=%lu err=%d ticks=%lu",
@@ -132,6 +179,12 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
                        epoch, gMoveCount, sequence, after - before);
     }
     return (long)err;
+}
+
+void now_continuity_cursor_diagnostics(NowContinuityCursorDiagnostics *out)
+{
+    if (out != NULL)
+        *out = gDiagnostics;
 }
 
 void now_continuity_cursor_shutdown(void)
@@ -147,4 +200,5 @@ void now_continuity_cursor_shutdown(void)
     gEpoch = 0;
     gMoveCount = 0;
     gButtonCount = 0;
+    memset(&gDiagnostics, 0, sizeof gDiagnostics);
 }

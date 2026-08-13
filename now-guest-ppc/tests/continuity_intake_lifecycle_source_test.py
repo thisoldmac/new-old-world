@@ -140,6 +140,15 @@ for field in ("tracking_options", "tracking_pin_writes",
     if field not in disarm:
         failures.append(
             f"disarm log no longer persists tracking diagnostic field {field}")
+if "now_continuity_cursor_diagnostics(&cursor)" not in disarm:
+    failures.append("disarm no longer snapshots the synthetic Cursor Device")
+for field in ("before_request_mismatches", "press_reversions",
+              "after_request_mismatches", "press_h", "press_v",
+              "requested_h", "requested_v", "before_h", "before_v",
+              "after_h", "after_v", "press_valid", "requested_valid"):
+    if f"cursor.{field}" not in disarm:
+        failures.append(
+            f"disarm log no longer persists Cursor Device diagnostic {field}")
 if "now_log_flush();" not in arm or "now_log_flush();" not in disarm:
     failures.append("ADB observer boundary can be lost before a wedge reboot")
 if "if (!prepare_ack(shared))" not in try_ack:
@@ -172,6 +181,18 @@ for name, hot_path in (("button", cursor_button), ("move", cursor_move)):
     if "now_log_memory(" not in hot_path:
         failures.append(
             f"cursor {name} path lost its allocation-free in-memory breadcrumb")
+if "device_point(&device_before)" not in cursor_move \
+        or "device_point(&device_after)" not in cursor_move:
+    failures.append("cursor movement no longer samples its device record around MoveTo")
+if "gDiagnostics.before_request_mismatches++" not in cursor_move:
+    failures.append("cursor movement no longer counts pre-MoveTo record divergence")
+if "gDiagnostics.press_reversions++" not in cursor_move:
+    failures.append("cursor movement no longer identifies drag-origin record returns")
+if "gDiagnostics.after_request_mismatches++" not in cursor_move:
+    failures.append("cursor movement no longer checks the record after MoveTo")
+if "gDiagnostics.press_h = gDiagnostics.requested_h" not in cursor_button \
+        or "gDiagnostics.press_v = gDiagnostics.requested_v" not in cursor_button:
+    failures.append("button-down no longer binds the synthetic-device press point")
 for trap in ("getmouse", "stilldown", "button"):
     label = f"now_cursor_{trap}_patch:"
     if label not in TRACKING_PATCH:

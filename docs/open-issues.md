@@ -1489,6 +1489,21 @@ passive observer long enough to learn whether the PowerBook snap-back traverses
 the wrapped handler; choose a physical-report ownership fence only if the trace
 proves that it does.
 
+**PowerBook observer result and next split, 2026-08-12:** the passive wrapper
+installed and entered recording state on the sole address-3 device, but its
+callback, reentry, and trace counters all remained zero during the reproduced
+drag. That epoch still applied 28 positions; Pin held point ran 11 times and
+Virtual GetMouse answered 18 calls. Requested and synthetic-owned coordinates
+both ended at `(730,101)`, distinct from the retained physical baseline
+`(621,303)`. The remaining alternation therefore does not traverse the wrapped
+ADB service routine, and neither tracking patch was dormant. The physical row
+is a retained baseline rather than proof of a live reader, so the next build
+does not patch Event Manager speculatively. It records the synthetic PPC Cursor
+Device's `CursorData.where` before and after each move, counting general
+divergence, exact drag-origin returns, and post-move disagreement. This is a
+diagnostic guest-only probe; a zero result moves the investigation outward to
+Event Manager/tracking state.
+
 **Corrected 2026-08-12, target-context installation:** that candidate installed
 the three tracking hooks once from NOW's arm service even though this resident's
 act plane has already measured Toolbox trap dispatch differing by process

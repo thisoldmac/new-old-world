@@ -1068,6 +1068,28 @@ while real native motion revokes Continuity; if it records no callback, the
 remaining authority defect is downstream or in the tracking loop and cannot be
 fixed by rewriting this device's packets.
 
+**PowerBook downstream split, 2026-08-12:** the passive wrapper installed on
+the sole address-3 pointing device (`state=recording`, handler 1, no error) but
+recorded zero callbacks while one held epoch accepted 30 packets, applied 28
+positions, and completed four button generations. In that same drag, Pin held
+point ran 11 times and Virtual GetMouse answered 18 calls. At release, the
+requested and synthetic-owned points agreed at `(730,101)` while the retained
+physical baseline remained `(621,303)`. The observer result rules out the
+wrapped ADB service routine as the snap-back path. The counters also rule out
+either tracking experiment merely failing to run. They do not prove that the
+physical baseline itself was read by Finder: that field is deliberately the
+last accepted native point, not a live attribution trace.
+
+The next diagnostic therefore samples the PPC application's own synthetic
+Cursor Device record immediately before and after every `CursorDeviceMoveTo`.
+It counts divergence from the preceding request, exact returns to the bound
+press point, and failures to leave the record at the new request. The samples
+are resident-free scalar reads and are persisted only at disarm. If the record
+returns to the press point between successful moves, the second authority is
+inside Cursor Device Manager reconciliation. If it remains coherent, the next
+probe moves outward to Event Manager/tracking state rather than adding another
+position writer.
+
 ### Double-click timing is measured at both scheduling boundaries
 
 The host already buffers exactly one second primary cycle while the first

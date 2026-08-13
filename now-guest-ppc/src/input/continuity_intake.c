@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "continuity_report_logic.h"
+#include "continuity_cursor.h"
 #include "continuity_service.h"
 #include "arm_target.h"
 #include "nowlog.h"
@@ -447,6 +448,7 @@ int now_continuity_arm(long id, unsigned short port,
 int now_continuity_disarm(long id, unsigned long epoch)
 {
     NowPeekContinuityCell *shared = cell();
+    NowContinuityCursorDiagnostics cursor;
 
     if (shared == NULL || (NowPeekU32)epoch != shared->epoch) {
         now_log(kLogWarn, "mirror", "disarm refused epoch=%lu", epoch);
@@ -483,6 +485,22 @@ int now_continuity_disarm(long id, unsigned long epoch)
             epoch, (long)shared->at_h, (long)shared->at_v,
             (long)shared->native_input_h, (long)shared->native_input_v,
             (long)shared->native_owned_h, (long)shared->native_owned_v);
+    memset(&cursor, 0, sizeof cursor);
+    now_continuity_cursor_diagnostics(&cursor);
+    now_log(kLogInfo, "mirror",
+            "CDM record epoch=%lu samples=%lu before-diff=%lu "
+            "press-return=%lu after-diff=%lu",
+            epoch, cursor.samples, cursor.before_request_mismatches,
+            cursor.press_reversions, cursor.after_request_mismatches);
+    now_log(kLogInfo, "mirror",
+            "CDM points epoch=%lu press=%ld,%ld request=%ld,%ld valid=%d/%d",
+            epoch, cursor.press_h, cursor.press_v,
+            cursor.requested_h, cursor.requested_v,
+            cursor.press_valid, cursor.requested_valid);
+    now_log(kLogInfo, "mirror",
+            "CDM observed epoch=%lu before=%ld,%ld after=%ld,%ld valid=%d",
+            epoch, cursor.before_h, cursor.before_v,
+            cursor.after_h, cursor.after_v, cursor.device_point_valid);
     now_log_flush();
     /* The endpoint is transport, not authority. Keep the asynchronous OT
        endpoint bound for this TCP session and reject every packet while the
