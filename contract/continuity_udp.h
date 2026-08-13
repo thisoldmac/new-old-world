@@ -6,7 +6,7 @@
    struct. The host is little-endian and the classic guest is big-endian,
    so sharing native layout here would only hide a protocol bug. */
 
-#define NOW_CONTINUITY_VERSION 2u
+#define NOW_CONTINUITY_VERSION 3u
 
 #define NOW_CONTINUITY_STATE_MAGIC 0x4E574331UL /* NWC1 */
 #define NOW_CONTINUITY_STATE_BYTES 40u

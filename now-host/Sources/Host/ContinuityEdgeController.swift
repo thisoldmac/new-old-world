@@ -96,11 +96,14 @@ private final class AppKitContinuityPointerEnvironment:
 
 @MainActor
 protocol ContinuityEdgeDriving: AnyObject {
+    var keyboardForwardingEnabled: Bool { get }
+    var escapeShortcut: ContinuityEscapeShortcut { get }
     func pointerMoved(to point: MirrorKit.Point)
     func pointerLeft()
     func primaryDown(at point: MirrorKit.Point, inMenuBar: Bool) -> Bool
     func primaryDragged(to point: MirrorKit.Point) -> Bool
     func primaryUp(at point: MirrorKit.Point) -> Bool
+    func keyboardEvent(_ sample: HostKeySample) -> Bool
 }
 
 @MainActor
@@ -124,18 +127,23 @@ final class ContinuityEdgeController: ObservableObject {
     private let layout: ContinuityDisplayLayout
     private weak var driver: ContinuityEdgeDriving?
     private let environment: ContinuityPointerEnvironment
+    private let keyboardEnvironment: ContinuityKeyboardEnvironment
     private var monitor: AnyObject?
     private var pending: Ownership?
     private var ownership: Ownership?
     private var cursorHiddenOn: UInt32?
+    private var keyboardMonitor: AnyObject?
 
     init(layout: ContinuityDisplayLayout,
          driver: ContinuityEdgeDriving,
-         environment: ContinuityPointerEnvironment? = nil) {
+         environment: ContinuityPointerEnvironment? = nil,
+         keyboardEnvironment: ContinuityKeyboardEnvironment? = nil) {
         self.layout = layout
         self.driver = driver
         self.environment = environment
             ?? AppKitContinuityPointerEnvironment()
+        self.keyboardEnvironment = keyboardEnvironment
+            ?? AppKitContinuityKeyboardEnvironment()
     }
 
     func start() {
@@ -156,6 +164,7 @@ final class ContinuityEdgeController: ObservableObject {
         pending = nil
         ownership = nil
         if let monitor { environment.stop(monitor) }
+        stopKeyboardCapture()
         monitor = nil
         state = .disabled
         status = reason
@@ -168,11 +177,13 @@ final class ContinuityEdgeController: ObservableObject {
             self.pending = nil
             ownership = pending
             hideHostCursor(for: pending)
+            startKeyboardCapture()
             state = .active
             status = "Pointer is on the guest display"
         case .idle:
             guard state == .arming || state == .active else { return }
             restoreHostCursor(from: ownership ?? pending)
+            stopKeyboardCapture()
             pending = nil
             ownership = nil
             state = monitor == nil ? .disabled : .ready
@@ -184,6 +195,7 @@ final class ContinuityEdgeController: ObservableObject {
 
     func transportEnded(reason: String) {
         restoreHostCursor(from: ownership ?? pending)
+        stopKeyboardCapture()
         pending = nil
         ownership = nil
         state = monitor == nil ? .disabled : .ready
@@ -263,11 +275,38 @@ final class ContinuityEdgeController: ObservableObject {
 
     private func returnToHost(_ ownership: Ownership, reason: String) {
         driver?.pointerLeft()
+        stopKeyboardCapture()
         restoreHostCursor(from: ownership)
         self.ownership = nil
         pending = nil
         state = .ready
         status = "Returned at the shared edge (\(reason))"
+    }
+
+    private func startKeyboardCapture() {
+        guard keyboardMonitor == nil else { return }
+        keyboardMonitor = keyboardEnvironment.start { [weak self] sample in
+            guard let self, self.state == .active,
+                  let driver = self.driver else { return false }
+            if driver.escapeShortcut.matches(sample) {
+                if let ownership = self.ownership {
+                    self.returnToHost(ownership, reason: "escape shortcut")
+                }
+                return true
+            }
+            guard driver.keyboardForwardingEnabled else { return false }
+            return driver.keyboardEvent(sample)
+        }
+        if keyboardMonitor == nil {
+            status = "Pointer is on the guest display; keyboard capture "
+                + "needs Accessibility permission"
+        }
+    }
+
+    private func stopKeyboardCapture() {
+        guard let keyboardMonitor else { return }
+        keyboardEnvironment.stop(keyboardMonitor)
+        self.keyboardMonitor = nil
     }
 
     private func isCrossingOutward(_ sample: HostPointerSample,
@@ -346,6 +385,7 @@ final class ContinuityEdgeController: ObservableObject {
     deinit {
         MainActor.assumeIsolated {
             if let monitor { environment.stop(monitor) }
+            if let keyboardMonitor { keyboardEnvironment.stop(keyboardMonitor) }
             if let id = cursorHiddenOn { environment.showCursor(on: id) }
         }
     }

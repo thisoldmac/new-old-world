@@ -342,6 +342,24 @@ private struct ContinuityControlCard: View {
                 Toggle("Reconnect after interruption",
                        isOn: $controller.autoReconnect)
                     .disabled(!mirrorRunning)
+                if source.surfaceMode == .continuity {
+                    Toggle("Send keyboard input to guest",
+                           isOn: $controller.keyboardForwardingEnabled)
+                        .disabled(!controller.isEnabled || !mirrorRunning)
+                    Picker("Return all controls", selection: $controller.escapeShortcut) {
+                        ForEach(ContinuityEscapeShortcut.allCases) { shortcut in
+                            Text(shortcut.label).tag(shortcut)
+                        }
+                    }
+                    .disabled(!controller.isEnabled || !mirrorRunning)
+                    Text("The return shortcut is always handled by this Mac "
+                         + "and is never sent to the guest. Keyboard delivery "
+                         + "covers Event Manager applications and modifiers; "
+                         + "it does not synthesize GetKeys or physical ADB state.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Toggle("Fast Pump (experimental)",
                        isOn: $controller.fastPump)
                     .disabled(!controller.isEnabled || !mirrorRunning)

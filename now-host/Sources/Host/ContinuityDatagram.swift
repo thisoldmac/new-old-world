@@ -5,7 +5,7 @@ import Foundation
 struct ContinuityStateDatagram: Equatable, Sendable {
     static let byteCount = 40
     static let magic: UInt32 = 0x4E57_4331 // NWC1
-    static let version: UInt16 = 2
+    static let version: UInt16 = 3
 
     struct Flags: OptionSet, Equatable, Sendable {
         let rawValue: UInt16

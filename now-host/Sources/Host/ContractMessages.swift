@@ -94,6 +94,8 @@ enum ControlMessage: Equatable, Sendable {
     case continuityArm(ContinuityArm)
     case continuityReport(ContinuityReport)
     case continuityDisarm(ContinuityDisarm)
+    case continuityKey(ContinuityKey)
+    case continuityKeyReport(ContinuityKeyReport)
     case mirrorInvalidate(MirrorInvalidate)
     case updateOffer(UpdateOffer)
     case updateRequest(UpdateRequest)
@@ -191,6 +193,32 @@ struct ContinuityDisarm: Codable, Equatable, Sendable {
     var id: Int
     var epoch: UInt32
     var reason: String
+}
+
+struct ContinuityKey: Codable, Equatable, Sendable {
+    enum Action: String, Codable, Equatable, Sendable {
+        case down
+        case up
+        case repeatKey = "repeat"
+    }
+
+    var version: Int
+    var id: Int
+    var epoch: UInt32
+    var generation: UInt32
+    var action: Action
+    var code: UInt16
+    var character: UInt8
+    var modifiers: UInt16
+}
+
+struct ContinuityKeyReport: Codable, Equatable, Sendable {
+    var version: Int?
+    var id: Int
+    var epoch: UInt32
+    var generation: UInt32
+    var state: String
+    var reason: String?
 }
 
 /// An arm/disarm answer when `id` is present; an unsolicited local-takeover
@@ -1653,6 +1681,12 @@ enum ControlMessageCodec {
         case "continuity.disarm":
             return .continuityDisarm(
                 try decoder.decode(ContinuityDisarm.self, from: data))
+        case "continuity.key":
+            return .continuityKey(
+                try decoder.decode(ContinuityKey.self, from: data))
+        case "continuity.keyReport":
+            return .continuityKeyReport(
+                try decoder.decode(ContinuityKeyReport.self, from: data))
         case "mirror.invalidate":
             return .mirrorInvalidate(
                 try decoder.decode(MirrorInvalidate.self, from: data))
@@ -1807,6 +1841,9 @@ enum ControlMessageCodec {
             return try tagged("continuity.report", m)
         case .continuityDisarm(let m):
             return try tagged("continuity.disarm", m)
+        case .continuityKey(let m): return try tagged("continuity.key", m)
+        case .continuityKeyReport(let m):
+            return try tagged("continuity.keyReport", m)
         case .mirrorInvalidate(let m):
             return try tagged("mirror.invalidate", m)
         case .streamRequest(let m): return try tagged("stream.request", m)

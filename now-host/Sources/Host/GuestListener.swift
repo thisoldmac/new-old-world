@@ -156,6 +156,7 @@ final class GuestListener: ObservableObject {
     /// compares this key to the arm it owns before accepting either a
     /// correlated answer or an unsolicited guest-side takeover.
     var onContinuityReport: ((GuestKey, ContinuityReport) -> Void)?
+    var onContinuityKeyReport: ((GuestKey, ContinuityKeyReport) -> Void)?
 
     /// One exec in flight, from exec.request to its terminal exec.result.
     ///
@@ -722,6 +723,20 @@ final class GuestListener: ObservableObject {
         session.send(.continuityDisarm(.init(
             version: ContinuityContract.version,
             id: id, epoch: epoch, reason: reason)))
+        return id
+    }
+
+    @discardableResult
+    func sendContinuityKey(epoch: UInt32, generation: UInt32,
+                           action: ContinuityKey.Action, code: UInt16,
+                           character: UInt8, modifiers: UInt16) -> Int? {
+        guard let session else { return nil }
+        let id = nextContinuityId
+        nextContinuityId &+= 1
+        session.send(.continuityKey(.init(
+            version: ContinuityContract.version, id: id, epoch: epoch,
+            generation: generation, action: action, code: code,
+            character: character, modifiers: modifiers)))
         return id
     }
 
@@ -3046,6 +3061,11 @@ final class GuestListener: ObservableObject {
                 guard let self, fromActive(),
                       let key = origin.session?.guestKey else { return }
                 self.onContinuityReport?(key, report)
+            },
+            onContinuityKeyReport: { [weak self] report in
+                guard let self, fromActive(),
+                      let key = origin.session?.guestKey else { return }
+                self.onContinuityKeyReport?(key, report)
             },
             onCapture: { [weak self] result in
                 guard fromActive() else { return }

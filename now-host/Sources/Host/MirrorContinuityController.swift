@@ -160,6 +160,24 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
+    @Published var keyboardForwardingEnabled = true {
+        didSet {
+            guard keyboardForwardingEnabled != oldValue, !loadingSettings,
+                  let machine = listener.activeContinuityTarget?.key.machine
+            else { return }
+            defaults.set(keyboardForwardingEnabled,
+                         forKey: keyboardForwardingKey(for: machine))
+        }
+    }
+    @Published var escapeShortcut = ContinuityEscapeShortcut.controlOptionEscape {
+        didSet {
+            guard escapeShortcut != oldValue, !loadingSettings,
+                  let machine = listener.activeContinuityTarget?.key.machine
+            else { return }
+            defaults.set(escapeShortcut.rawValue,
+                         forKey: escapeShortcutKey(for: machine))
+        }
+    }
 
     var isActive: Bool { phase == .active }
     @Published private(set) var isMenuTracking = false
@@ -196,6 +214,7 @@ final class MirrorContinuityController: ObservableObject,
     private var point = MirrorKit.Point(x: 0, y: 0)
     private var positionDirty = false
     private var buttonGeneration: UInt32 = 0
+    private var keyGeneration: UInt32 = 0
     private var buttonCycleActive = false
     private var wireButtonDown = false
     private var pressAcknowledged = false
@@ -251,6 +270,9 @@ final class MirrorContinuityController: ObservableObject,
         listener.onContinuityReport = { [weak self] key, report in
             self?.received(report, from: key)
         }
+        listener.onContinuityKeyReport = { [weak self] key, report in
+            self?.received(report, from: key)
+        }
         loadSettingsForActiveGuest()
     }
 
@@ -271,6 +293,20 @@ final class MirrorContinuityController: ObservableObject,
         guard phase != .idle else { return }
         if phase == .active { sendState(inside: false, keepalive: false) }
         relinquish(reason: "pointer left Mirror", keepEnabled: true)
+    }
+
+    func keyboardEvent(_ sample: HostKeySample) -> Bool {
+        guard phase == .active else { return false }
+        keyGeneration = nextNonzero(keyGeneration)
+        guard listener.sendContinuityKey(
+            epoch: epoch, generation: keyGeneration,
+            action: sample.action, code: sample.code,
+            character: sample.character, modifiers: sample.modifiers) != nil
+        else {
+            audit(.error, "keyboard event lost because the guest session ended")
+            return false
+        }
+        return true
     }
 
     @discardableResult
@@ -497,6 +533,21 @@ final class MirrorContinuityController: ObservableObject,
                        retryable: report.reason != "unsupported"
                            && report.reason != "wrong-version",
                        retryImmediately: report.reason != "guest-input")
+        }
+    }
+
+    private func received(_ report: ContinuityKeyReport, from key: GuestKey) {
+        guard target?.key == key, report.epoch == epoch else { return }
+        guard report.version == ContinuityContract.version else {
+            audit(.error, "keyboard report version mismatch: "
+                + "\(report.version.map(String.init) ?? "missing")")
+            return
+        }
+        if report.state != "queued" {
+            audit(.warn, "keyboard event refused: generation="
+                + "\(report.generation), reason=\(report.reason ?? "unknown")")
+            status = "Keyboard input was refused: "
+                + (report.reason ?? "unknown reason")
         }
     }
 
@@ -931,6 +982,7 @@ final class MirrorContinuityController: ObservableObject,
         lastPrimaryDownUptime = nil
         buttonTransitionSentUptime = nil
         resetButtonState()
+        keyGeneration = 0
         if wasOwned {
             audit(.info, "ending locally: reason=\(reason), "
                 + "phase=\(oldPhase), epoch=\(oldEpoch), "
@@ -1010,6 +1062,7 @@ final class MirrorContinuityController: ObservableObject,
         validAcks = 0
         lastAuditedButtonGeneration = 0
         resetButtonState()
+        keyGeneration = 0
     }
 
     private func resetButtonState() {
@@ -1049,6 +1102,15 @@ final class MirrorContinuityController: ObservableObject,
         virtualADB = defaults.bool(forKey: virtualADBKey(for: machine))
         hideGuestCursorWhileDragging = defaults.bool(
             forKey: hideGuestCursorKey(for: machine))
+        let keyboardKey = keyboardForwardingKey(for: machine)
+        keyboardForwardingEnabled = defaults.object(forKey: keyboardKey) == nil
+            ? true : defaults.bool(forKey: keyboardKey)
+        if let raw = defaults.string(forKey: escapeShortcutKey(for: machine)),
+           let shortcut = ContinuityEscapeShortcut(rawValue: raw) {
+            escapeShortcut = shortcut
+        } else {
+            escapeShortcut = .controlOptionEscape
+        }
         loadingSettings = false
     }
 
@@ -1078,6 +1140,14 @@ final class MirrorContinuityController: ObservableObject,
 
     private func hideGuestCursorKey(for machine: GuestID) -> String {
         "mirror.continuity.hideGuestCursorWhileDragging.\(machine.slug)"
+    }
+
+    private func keyboardForwardingKey(for machine: GuestID) -> String {
+        "mirror.continuity.keyboardForwarding.\(machine.slug)"
+    }
+
+    private func escapeShortcutKey(for machine: GuestID) -> String {
+        "mirror.continuity.escapeShortcut.\(machine.slug)"
     }
 
     private func wireDisarmReason(for reason: String) -> String {

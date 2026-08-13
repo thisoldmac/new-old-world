@@ -112,12 +112,30 @@ static int test_invalid_input_is_not_published(void)
     return 0;
 }
 
+static int test_sequence_wrap_skips_reserved_zero(void)
+{
+    NowPeekContinuityCell cell;
+    NowContinuityKeySnapshot event;
+
+    memset(&cell, 0, sizeof cell);
+    cell.key_write_seq = 0xFFFFFFFFUL;
+    cell.key_read_seq = 0xFFFFFFFFUL;
+    CHECK(enqueue(&cell, 1, 0x1234, kNowPeekContinuityKeyDown)
+          == kNowContinuityKeyEnqueueOK);
+    CHECK(cell.key_write_seq == 1);
+    CHECK(now_continuity_keyboard_peek(&cell, 0x1234, &event)
+          == kNowContinuityKeyPeekReady);
+    CHECK(event.queue_seq == 1);
+    return 0;
+}
+
 int main(void)
 {
     CHECK(test_order_and_results() == 0);
     CHECK(test_target_switch_discards_old_keys() == 0);
     CHECK(test_flush_and_bound() == 0);
     CHECK(test_invalid_input_is_not_published() == 0);
+    CHECK(test_sequence_wrap_skips_reserved_zero() == 0);
     puts("now_continuity_keyboard_logic_test: ok");
     return 0;
 }

@@ -671,6 +671,25 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertFalse(rig.controller.primaryUp(at: .init(x: 50, y: 60)))
     }
 
+    func testActiveKeyboardEventUsesTheOwnedEpochAndReliableLane()
+        async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+        XCTAssertTrue(rig.controller.keyboardForwardingEnabled,
+                      "keyboard forwarding defaults on")
+
+        XCTAssertTrue(rig.controller.keyboardEvent(.init(
+            action: .down, code: 12, character: 113, modifiers: 0x300)))
+        try await waitUntil("keyboard message") {
+            rig.guest.received.contains {
+                guard case .continuityKey(let key) = $0 else { return false }
+                return key.epoch == rig.arm.epoch && key.generation == 1
+                    && key.action == .down && key.code == 12
+                    && key.character == 113 && key.modifiers == 0x300
+            }
+        }
+    }
+
     func testLeavingV0DisarmsImmediately() async throws {
         var audit: [(HostLog.LogLevel, String)] = []
         let rig = try await makeActiveRig {
@@ -817,6 +836,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         controller?.virtualGetMouse = true
         controller?.hideGuestCursorWhileDragging = true
         controller?.virtualADB = true
+        controller?.keyboardForwardingEnabled = false
+        controller?.escapeShortcut = .controlOptionReturn
         controller?.isEnabled = true
         controller = nil
 
@@ -829,6 +850,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertFalse(reopened.virtualGetMouse)
         XCTAssertTrue(reopened.virtualADB)
         XCTAssertFalse(reopened.hideGuestCursorWhileDragging)
+        XCTAssertFalse(reopened.keyboardForwardingEnabled)
+        XCTAssertEqual(reopened.escapeShortcut, .controlOptionReturn)
         XCTAssertFalse(reopened.isEnabled,
                        "opening a new Mirror session must not seize input")
     }

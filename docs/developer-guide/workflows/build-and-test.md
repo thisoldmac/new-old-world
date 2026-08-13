@@ -75,7 +75,7 @@ Mutate the exact condition the guard claims to detect, prove the mutation built,
 
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
-sources-sha1: ce40072b459caa2585e9a020f253afd752ae8d56
+sources-sha1: bb89abcd4a32035461cc34c60013e00cbc0b4e03
 derive test-stages sha256=f78dc22859b46a2e58f5cfceec0ceaf149bf5b1e89be24a1705af22181842aa5 lines=8
     scripts/docs-source-group build
 rederived: pending
@@ -158,4 +158,5 @@ rederived: 2026-08-12T19:15:24-0400 3771e144 unchanged
 rederived: 2026-08-12T19:31:58-0400 3771e144 unchanged
 rederived: 2026-08-12T20:08:32-0400 5a601a18 unchanged
 rederived: 2026-08-12T20:15:22-0400 9e828cdc sources
+rederived: 2026-08-12T20:37:07-0400 633da491 sources
 -->

@@ -47,10 +47,18 @@ final class ContractMessageTests: XCTestCase {
         let disarm = ContinuityDisarm(version: ContinuityContract.version,
                                       id: 10, epoch: 4,
                                       reason: "mirror-closed")
+        let key = ContinuityKey(
+            version: ContinuityContract.version, id: 11, epoch: 4,
+            generation: 7, action: .down, code: 12,
+            character: 113, modifiers: 0x300)
+        let keyReport = ContinuityKeyReport(
+            version: ContinuityContract.version, id: 11, epoch: 4,
+            generation: 7, state: "queued", reason: nil)
 
         for message in [ControlMessage.continuityArm(arm),
                         .continuityReport(report),
-                        .continuityDisarm(disarm)] {
+                        .continuityDisarm(disarm), .continuityKey(key),
+                        .continuityKeyReport(keyReport)] {
             XCTAssertEqual(
                 try ControlMessageCodec.decode(
                     ControlMessageCodec.encode(message)), message)

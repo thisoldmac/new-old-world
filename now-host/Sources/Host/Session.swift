@@ -54,6 +54,7 @@ final class Session {
     private let onGuestError: (ErrorMessage) -> Void
     private let onCensusReport: (CensusReport) -> Void
     private let onContinuityReport: (ContinuityReport) -> Void
+    private let onContinuityKeyReport: (ContinuityKeyReport) -> Void
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
         -> Void
@@ -192,6 +193,7 @@ final class Session {
          onGuestError: @escaping (ErrorMessage) -> Void,
          onCensusReport: @escaping (CensusReport) -> Void,
          onContinuityReport: @escaping (ContinuityReport) -> Void,
+         onContinuityKeyReport: @escaping (ContinuityKeyReport) -> Void,
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
                                       GuestListener.CaptureFailure>) -> Void,
          onCaptureProgress: @escaping (GuestListener.CaptureProgress?) -> Void,
@@ -248,6 +250,7 @@ final class Session {
         self.onGuestError = onGuestError
         self.onCensusReport = onCensusReport
         self.onContinuityReport = onContinuityReport
+        self.onContinuityKeyReport = onContinuityKeyReport
         self.onCapture = onCapture
         self.onCaptureProgress = onCaptureProgress
         self.onScene = onScene
@@ -518,7 +521,9 @@ final class Session {
             serveCensusRefusal(request)
         case .continuityReport(let report):
             onContinuityReport(report)
-        case .continuityArm, .continuityDisarm:
+        case .continuityKeyReport(let report):
+            onContinuityKeyReport(report)
+        case .continuityArm, .continuityDisarm, .continuityKey:
             /* Declared asymmetry: authority is host-to-guest. A guest may
                report that its resident relinquished ownership, but it may
                never arm the host's input lane or disarm another session. */

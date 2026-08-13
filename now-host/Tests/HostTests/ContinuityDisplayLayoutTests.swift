@@ -220,6 +220,78 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertTrue(environment.shown.isEmpty)
     }
 
+    func testKeyboardIsForwardedAndSuppressedWhileGuestOwnsPointer() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let keyboard = KeyboardEnvironment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            keyboardEnvironment: keyboard)
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        let sample = HostKeySample(action: .down, code: 12,
+                                   character: 113, modifiers: 0x300)
+        XCTAssertTrue(keyboard.emit(sample))
+        XCTAssertEqual(driver.keys, [sample])
+        XCTAssertEqual(controller.state, .active)
+    }
+
+    func testEscapeShortcutReturnsAllControlWithoutForwardingChord() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let keyboard = KeyboardEnvironment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            keyboardEnvironment: keyboard)
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        XCTAssertTrue(keyboard.emit(.init(
+            action: .down, code: 53, character: 27,
+            modifiers: (1 << 11) | (1 << 12))))
+        XCTAssertEqual(controller.state, .ready)
+        XCTAssertEqual(driver.leftCount, 1)
+        XCTAssertTrue(driver.keys.isEmpty)
+        XCTAssertEqual(environment.shown, [host.id])
+        XCTAssertEqual(keyboard.stopCount, 1)
+    }
+
+    func testKeyboardToggleLeavesHostInputUntouchedButEscapeStillWorks() {
+        let layout = makeLayout()
+        let driver = Driver()
+        driver.keyboardForwardingEnabled = false
+        let environment = Environment()
+        let keyboard = KeyboardEnvironment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            keyboardEnvironment: keyboard)
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        XCTAssertFalse(keyboard.emit(.init(action: .down, code: 12,
+                                            character: 113, modifiers: 0)))
+        XCTAssertTrue(driver.keys.isEmpty)
+        XCTAssertTrue(keyboard.emit(.init(
+            action: .down, code: 53, character: 27,
+            modifiers: (1 << 11) | (1 << 12))))
+        XCTAssertEqual(controller.state, .ready)
+    }
+
     func testMirrorCursorAndContinuityExposeMutuallyExclusiveEntrySurfaces()
         throws {
         let rig = try MirrorModuleLayoutRenderTests.sharedRig()
@@ -250,11 +322,14 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
 
 private extension ContinuityDisplayLayoutTests {
     final class Driver: ContinuityEdgeDriving {
+        var keyboardForwardingEnabled = true
+        var escapeShortcut = ContinuityEscapeShortcut.controlOptionEscape
         var points: [MirrorKit.Point] = []
         var leftCount = 0
         var downPoints: [MirrorKit.Point] = []
         var draggedPoints: [MirrorKit.Point] = []
         var upPoints: [MirrorKit.Point] = []
+        var keys: [HostKeySample] = []
 
         func pointerMoved(to point: MirrorKit.Point) { points.append(point) }
         func pointerLeft() { leftCount += 1 }
@@ -270,6 +345,10 @@ private extension ContinuityDisplayLayoutTests {
         }
         func primaryUp(at point: MirrorKit.Point) -> Bool {
             upPoints.append(point)
+            return true
+        }
+        func keyboardEvent(_ sample: HostKeySample) -> Bool {
+            keys.append(sample)
             return true
         }
     }
@@ -293,5 +372,25 @@ private extension ContinuityDisplayLayoutTests {
             moves.append((displayID, point))
         }
         func emit(_ sample: HostPointerSample) { handler?(sample) }
+    }
+
+    final class KeyboardEnvironment: ContinuityKeyboardEnvironment {
+        final class Token: NSObject {}
+        var handler: (@MainActor (HostKeySample) -> Bool)?
+        var stopCount = 0
+
+        func start(_ handler: @escaping @MainActor (HostKeySample) -> Bool)
+            -> AnyObject? {
+            self.handler = handler
+            return Token()
+        }
+        func stop(_ token: AnyObject) {
+            _ = token
+            stopCount += 1
+            handler = nil
+        }
+        func emit(_ sample: HostKeySample) -> Bool {
+            handler?(sample) ?? false
+        }
     }
 }

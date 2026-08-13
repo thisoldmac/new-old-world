@@ -12,6 +12,14 @@ enum {
     kNowContinuityArmTransportUnavailable = 2
 };
 
+enum {
+    kNowContinuityKeyMalformed = -2,
+    kNowContinuityKeyTargetUnavailable = -1,
+    kNowContinuityKeyQueueFull = 0,
+    kNowContinuityKeyQueued = 1,
+    kNowContinuityKeyBadEpoch = 2
+};
+
 typedef struct {
     long id;                 /* 0 for an unsolicited resident exit */
     NowPeekU32 epoch;
@@ -31,6 +39,9 @@ int now_continuity_arm(long id, unsigned short port,
                        unsigned long lease_ticks, int fast_pump,
                        unsigned long tracking_options);
 int now_continuity_disarm(long id, unsigned long epoch);
+int now_continuity_key(unsigned long epoch, unsigned long generation,
+                       unsigned long action, unsigned long key_code,
+                       unsigned long character, unsigned long modifiers);
 void now_continuity_disconnect(void);
 void now_continuity_shutdown(void);
 int now_continuity_take_report(NowContinuityReport *out);

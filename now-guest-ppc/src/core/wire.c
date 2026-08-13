@@ -6765,6 +6765,80 @@ static void serve_continuity_disarm(const char *request)
         (void)continuity_refuse(id, epoch, "bad-epoch");
 }
 
+static int continuity_key_report(long id, unsigned long epoch,
+                                 unsigned long generation,
+                                 const char *state, const char *reason)
+{
+    char json[256];
+    if (reason != NULL) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.keyReport\",\"version\":%u,"
+                 "\"id\":%ld,\"epoch\":%lu,\"generation\":%lu,"
+                 "\"state\":\"%s\",\"reason\":\"%s\"}",
+                 (unsigned)NOW_CONTINUITY_VERSION, id, epoch, generation,
+                 state, reason);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.keyReport\",\"version\":%u,"
+                 "\"id\":%ld,\"epoch\":%lu,\"generation\":%lu,"
+                 "\"state\":\"%s\"}",
+                 (unsigned)NOW_CONTINUITY_VERSION, id, epoch, generation,
+                 state);
+    }
+    return send_control(json);
+}
+
+static void serve_continuity_key(const char *request)
+{
+    long id = now_json_find_int(request, "id", 0);
+    unsigned long version = now_json_find_u32(request, "version", 0);
+    unsigned long epoch = now_json_find_u32(request, "epoch", 0);
+    unsigned long generation = now_json_find_u32(request, "generation", 0);
+    unsigned long code = now_json_find_u32(request, "code", 256);
+    unsigned long character = now_json_find_u32(request, "character", 256);
+    unsigned long modifiers = now_json_find_u32(request, "modifiers", 65536);
+    unsigned long action = 0;
+    char action_name[12];
+    int result;
+
+    if (version != NOW_CONTINUITY_VERSION) {
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "wrong-version");
+        return;
+    }
+    if (now_json_find_string(request, "action", action_name,
+                             sizeof action_name)) {
+        if (strcmp(action_name, "down") == 0)
+            action = kNowPeekContinuityKeyDown;
+        else if (strcmp(action_name, "up") == 0)
+            action = kNowPeekContinuityKeyUp;
+        else if (strcmp(action_name, "repeat") == 0)
+            action = kNowPeekContinuityKeyRepeat;
+    }
+    if (id == 0 || generation == 0 || action == 0
+            || code > 127 || character > 255 || modifiers > 65535) {
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "malformed");
+        return;
+    }
+    result = now_continuity_key(epoch, generation, action, code,
+                                character, modifiers);
+    if (result == kNowContinuityKeyQueued)
+        (void)continuity_key_report(id, epoch, generation, "queued", NULL);
+    else if (result == kNowContinuityKeyBadEpoch)
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "bad-epoch");
+    else if (result == kNowContinuityKeyTargetUnavailable)
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "target-unavailable");
+    else if (result == kNowContinuityKeyQueueFull)
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "queue-full");
+    else
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "malformed");
+}
+
 static void service_continuity(void)
 {
     NowContinuityReport report;
@@ -6821,6 +6895,10 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "continuity.disarm")) {
         serve_continuity_disarm(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "continuity.key")) {
+        serve_continuity_key(reply);
         return 1;
     }
     if (now_json_type_is(reply, "capture.request")) {

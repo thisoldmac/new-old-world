@@ -53,7 +53,7 @@ def check(ok: bool, message: str) -> None:
         failures.append(message)
 
 
-check("#define NOW_CONTINUITY_VERSION 2u" in CONTRACT,
+check("#define NOW_CONTINUITY_VERSION 3u" in CONTRACT,
       "the direct-pointer wire is not versioned independently from v0")
 check("kNowPeekContinuityFormatV8" in RESIDENT,
       "the resident no longer requires the V6 ADB observer table tail")

@@ -51,8 +51,8 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `hostServesChat` | `receive` | `control` | `chatCatalog`, `chatDelta`, `chatStatus`, `chatResult` |
 | `guestAsksHostSurface` | `send` | `control` | `hostShow` |
 | `hostServesHostSurface` | `receive` | `control` | `hostShown` |
-| `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm` |
-| `guestReportsContinuity` | `receive` | `control` | `continuityReport` |
+| `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm`, `continuityKey` |
+| `guestReportsContinuity` | `receive` | `control` | `continuityReport`, `continuityKeyReport` |
 | `peerAnnouncesMirrorInvalidation` | `send` | `control` | `mirrorInvalidate` |
 | `peerReceivesMirrorInvalidation` | `receive` | `control` | `mirrorInvalidate` |
 
@@ -122,6 +122,8 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `continuityArm` | `continuity.arm` | `ContinuityArm` |
 | `continuityReport` | `continuity.report` | `ContinuityReport` |
 | `continuityDisarm` | `continuity.disarm` | `ContinuityDisarm` |
+| `continuityKey` | `continuity.key` | `ContinuityKey` |
+| `continuityKeyReport` | `continuity.keyReport` | `ContinuityKeyReport` |
 | `cloudServices` | `cloud.services` | `CloudServices` |
 | `cloudReport` | `cloud.report` | `CloudReport` |
 | `cloudList` | `cloud.list` | `CloudList` |

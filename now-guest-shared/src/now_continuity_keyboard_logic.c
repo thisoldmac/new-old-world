@@ -5,13 +5,22 @@
 static int sequence_newer(NowPeekU32 candidate, NowPeekU32 baseline)
 {
     NowPeekU32 distance = candidate - baseline;
-    return candidate != baseline && distance < 0x80000000UL;
+    return candidate != 0 && candidate != baseline
+        && distance < 0x80000000UL;
 }
 
 static NowPeekU32 sequence_next(NowPeekU32 value)
 {
     value++;
     return value == 0 ? 1 : value;
+}
+
+static NowPeekU32 sequence_distance(NowPeekU32 newer, NowPeekU32 older)
+{
+    NowPeekU32 distance = newer - older;
+    if (newer < older && distance != 0)
+        distance--;                 /* zero is reserved and skipped */
+    return distance;
 }
 
 static int action_valid(NowPeekU32 action)
@@ -58,7 +67,7 @@ int now_continuity_keyboard_enqueue(
 
     base = sequence_newer(cell->key_floor_seq, cell->key_read_seq)
         ? cell->key_floor_seq : cell->key_read_seq;
-    used = cell->key_write_seq - base;
+    used = sequence_distance(cell->key_write_seq, base);
     if (used >= (NowPeekU32)kNowPeekContinuityKeyQueueCapacity) {
         cell->key_dropped++;
         return kNowContinuityKeyEnqueueFull;

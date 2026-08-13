@@ -12,7 +12,9 @@
 
 #include "continuity_report_logic.h"
 #include "continuity_service.h"
+#include "arm_target.h"
 #include "nowlog.h"
+#include "now_continuity_keyboard_logic.h"
 #include "now_continuity_wire.h"
 #include "ot_carbon.h"
 #include "peek.h"
@@ -368,6 +370,8 @@ int now_continuity_arm(long id, unsigned short port,
                 (unsigned)port);
         return kNowContinuityArmTransportUnavailable;
     }
+    now_peek_claim(kNowPeekOwnerContinuity,
+                   (unsigned long)kNowPeekCapAnchors);
     gNotifierCell = shared;
     gNonceHi = (NowCU32)nonce_hi;
     gNonceLo = (NowCU32)nonce_lo;
@@ -402,6 +406,8 @@ int now_continuity_arm(long id, unsigned short port,
         gEpoch = 0;
         gPendingReplyID = 0;
         gPendingControlSeq = 0;
+        now_peek_release(kNowPeekOwnerContinuity,
+                         (unsigned long)kNowPeekCapAnchors);
         now_log(kLogError, "mirror",
                 "arm refused: resident service unavailable");
         return kNowContinuityArmUnsupported;
@@ -427,6 +433,9 @@ int now_continuity_disarm(long id, unsigned long epoch)
     }
     gEpoch = 0;                    /* datagrams lose authority first */
     gFastPump = 0;
+    now_continuity_keyboard_flush(shared);
+    now_peek_release(kNowPeekOwnerContinuity,
+                     (unsigned long)kNowPeekCapAnchors);
     shared->enabled = 0;
     bump_nonzero(&shared->control_seq);
     gPendingReplyID = id;
@@ -444,14 +453,58 @@ int now_continuity_disarm(long id, unsigned long epoch)
     return 1;
 }
 
+int now_continuity_key(unsigned long epoch, unsigned long generation,
+                       unsigned long action, unsigned long key_code,
+                       unsigned long character, unsigned long modifiers)
+{
+    NowPeekContinuityCell *shared = cell();
+    ProcessSerialNumber front;
+    unsigned long target_a5 = 0;
+    const char *code;
+    const char *message;
+    int queued;
+
+    if (shared == NULL || epoch == 0 || generation == 0
+            || action < (unsigned long)kNowPeekContinuityKeyDown
+            || action > (unsigned long)kNowPeekContinuityKeyRepeat
+            || key_code > 127UL || character > 255UL
+            || modifiers > 65535UL)
+        return kNowContinuityKeyMalformed;
+    if (gEpoch == 0 || (NowCU32)epoch != gEpoch || !shared->enabled
+            || (shared->state != (NowPeekU32)kNowPeekContinuityStateArmed
+                && shared->state
+                    != (NowPeekU32)kNowPeekContinuityStateActive))
+        return kNowContinuityKeyBadEpoch;
+    if (GetFrontProcess(&front) != noErr
+            || !now_peek_arm_target_a5(
+                &front, &target_a5, &code, &message)) {
+        now_log(kLogWarn, "mirror", "key target unavailable: %s: %s",
+                code, message);
+        return kNowContinuityKeyTargetUnavailable;
+    }
+    queued = now_continuity_keyboard_enqueue(
+        shared, (NowPeekU32)generation, (NowPeekU32)target_a5,
+        (NowPeekU32)front.highLongOfPSN, (NowPeekU32)front.lowLongOfPSN,
+        (NowPeekU32)action, (NowPeekU32)key_code,
+        (NowPeekU32)character, (NowPeekU32)modifiers);
+    if (queued == kNowContinuityKeyEnqueueOK)
+        return kNowContinuityKeyQueued;
+    if (queued == kNowContinuityKeyEnqueueFull)
+        return kNowContinuityKeyQueueFull;
+    return kNowContinuityKeyMalformed;
+}
+
 void now_continuity_disconnect(void)
 {
     NowPeekContinuityCell *shared;
 
     gEpoch = 0;                    /* revoke before table or transport work */
     gFastPump = 0;
+    now_peek_release(kNowPeekOwnerContinuity,
+                     (unsigned long)kNowPeekCapAnchors);
     shared = cell();
     if (shared != NULL && shared->enabled) {
+        now_continuity_keyboard_flush(shared);
         shared->enabled = 0;
         bump_nonzero(&shared->control_seq);
     }
@@ -474,6 +527,8 @@ void now_continuity_shutdown(void)
     gEpoch = 0;
     gFastPump = 0;
     gNotifierCell = NULL;
+    now_peek_release(kNowPeekOwnerContinuity,
+                     (unsigned long)kNowPeekCapAnchors);
     close_udp("application shutdown");
     now_continuity_service_shutdown();
 }
@@ -498,6 +553,14 @@ int now_continuity_take_report(NowContinuityReport *out)
 
     if (shared == NULL || out == NULL)
         return 0;
+    if (gEpoch != 0) {
+        /* The owner lease is intentionally finite. Renew from the ordinary
+           and nested wire pump while this input epoch is live, so a person
+           pausing ten seconds before typing does not discover that the A5
+           target plane quietly expired underneath them. */
+        now_peek_claim(kNowPeekOwnerContinuity,
+                       (unsigned long)kNowPeekCapAnchors);
+    }
     /* Every ordinary and nested wire pump services the resident from this
        application's cooperative context. No Time Manager or global jGNE path
        performs Continuity placement. */
