@@ -51,12 +51,13 @@ Any measurement must prove the content plane armed in the stored artifact. An in
 
 ## Cross-machine file ownership
 
-Mirror file dragging is a host-owned native drag around the semantic scene; it
-does not travel through Continuity's cursor, ADB, or resident input path. A
-guest item crossing the view edge becomes an `NSFilePromiseProvider`, using
-its original Mirror icon when the asset atlas has one. The promise redeems
-only after a host Finder or application drop. A host URL released over the
-Mirror is resolved at that exact guest coordinate before bytes are offered.
+File dragging is a host-owned native drag around the semantic scene; it does
+not travel through ADB or the resident item-drag path. A guest item crossing
+the Mirror or Continuity display edge becomes an `NSFilePromiseProvider`,
+using its original Mirror icon when the asset atlas has one. The promise
+redeems only after a host Finder or application drop. A host URL released over
+the Mirror, or carried through the configured Continuity edge, is resolved at
+that exact guest coordinate before bytes are offered.
 
 `CrossMachineFileTargeting` converts scene hits to closed identities: desktop,
 an exact Finder HFS path, a live process serial number, or an application
@@ -68,8 +69,13 @@ destination before accepting, stages application drops in Downloads, and uses
 application retains the copied file and reports that outcome explicitly.
 
 The first contract is copy-only, file-only, no-overwrite, and PowerPC-only.
-Mirror mode alone installs the native drag closures; Continuity mode neither
-depends on nor routes through this transfer service.
+Mirror installs AppKit ownership directly on `LiveMirrorView`. Continuity
+installs a two-point transparent AppKit destination along the configured shared
+edge: native host drags retain their pasteboard while relative movement drives
+the guest target, and a held guest file crossing back releases the guest button
+before AppKit assumes the drag. Both modes converge on the same
+`MirrorFileTransferModel`; Continuity's ordinary non-file pointer gestures are
+unchanged when the mouse-down did not resolve an exact guest file.
 
 ## Visual truth and profiles
 

@@ -98,8 +98,12 @@ The PPC receiver resolves that identity before accepting. Host conversion is
 the ordinary text/MacBinary conversion, transfer progress is the ordinary
 file event stream, and an application receives `kAEOpenDocuments` only after
 the copied file settles. No field asks the source to move, and no Mirror drop
-overwrites an existing item. This first lane transfers regular files only and
-is installed on `LiveMirrorView`, not on Continuity's screen-edge input path.
+overwrites an existing item. This first lane transfers regular files only.
+`LiveMirrorView` owns its native drag directly. Continuity exposes the same
+closed identities through a narrow AppKit destination at the configured
+display edge: an inbound host pasteboard continues to the live guest release
+coordinate, while an outbound guest source becomes a host file promise only
+after it crosses back to macOS.
 
 ## Agent-approved artifact lane
 

@@ -61,6 +61,38 @@ cursor was already hidden, acquiring it across the edge drove its position but
 did not redraw it. That task-time reveal correction belongs to the active
 resident/input lane and is not contained in this host-only branch.
 
+## TESTED; METAL UNVERIFIED: Continuity carries file drags through its configured screen edge (2026-08-12, `feat/mirror-drag-drop`)
+
+Continuity Mode now gives the configured shared display boundary a two-point,
+transparent AppKit drag destination. A native macOS file URL or file promise
+entering that edge retains its host pasteboard while the existing relative
+pointer lane drives the visible guest target; release resolves the current
+guest desktop, exact Finder folder, or application identity before reusing the
+existing symmetric copy contract. In the other direction, mouse-down on an
+exact guest regular file retains that source while the normal Continuity
+pointer performs the guest drag. Crossing back through the shared edge
+releases the guest button and begins a native `NSFilePromiseProvider` drag at
+the corresponding host point with the guest icon when available. Finder, the
+host desktop, or the host application under release then owns the destination.
+
+No new wire field, guest handler, resident table, Extension code, ADB path, or
+keyboard feature is involved. Both directions converge on
+`MirrorFileTransferModel`, so they retain copy-only behavior, conversion,
+single-lane progress, exact source/target refusal, and the existing PowerPC-only
+and regular-file-only limits. Ordinary Continuity pointer gestures retain their
+existing path when mouse-down does not resolve a transferable guest item.
+
+The two ownership tests were watched failing against their exact mutations:
+disabling takeover at the guest return edge produced no host native drag, and
+routing an inbound host pasteboard as a guest held-item gesture produced an
+unexpected guest dragged point. After restoring both guards, the 15-test
+Continuity suite, MirrorKit gate, both 2,232-test host asset modes (56 and 73
+expected skips), isolated socket test, and unsigned Debug and Release app
+builds pass. This is therefore **tested, not metal-verified**. A real host and
+PowerBook run still has to establish AppKit delivery to the transparent edge,
+native drag-session continuation from an already-held guest gesture, icon
+placement, and both release targets.
+
 ## TESTED: Mirror mode has a copy-on-drop file lane (2026-08-12, `feat/mirror-drag-drop`)
 
 With Mirror Cursor off, the host now binds the resolved guest file to a native

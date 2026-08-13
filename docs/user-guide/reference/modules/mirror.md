@@ -84,12 +84,17 @@ Queued human work does not preempt a guest traversal already running. The new
 scheduler and coherent publication path are tested locally, but the PowerBook
 1400c ambient-wait target is not metal-verified.
 
-Cross-machine drag is PowerPC Mirror mode only in this first version. It copies
-regular files one at a time; folders, move semantics, overwrite, NOW-68K, and
-Continuity screen-edge drops are not included. A Finder target must carry an
-exact guest HFS path, and an application target must still accept the delivered
-document; either uncertainty is reported rather than replaced with a nearby
-guess. This lane is tested locally but not metal-verified.
+Cross-machine drag is PowerPC-only in this first version. It works both over
+the rendered Mirror and through the configured Continuity display edge. A
+native host file can continue onto the guest display and settle on its desktop,
+an exact Finder folder, or an application. A guest file dragged back through
+the shared edge becomes an ordinary macOS file-promise drag, with the guest
+icon when available, so the host Finder, desktop, or application under release
+owns the destination. It copies regular files one at a time; folders, move
+semantics, overwrite, and NOW-68K are not included. A Finder target must carry
+an exact guest HFS path, and an application target must still accept the
+delivered document; either uncertainty is reported rather than replaced with a
+nearby guess. The Continuity edge lane is tested locally but not metal-verified.
 
 ## For developers
 
