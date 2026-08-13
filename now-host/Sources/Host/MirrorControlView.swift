@@ -369,6 +369,9 @@ private struct ContinuityControlCard: View {
                 Toggle("Virtual GetMouse (experimental)",
                        isOn: $controller.virtualGetMouse)
                     .disabled(!controller.isEnabled || !mirrorRunning)
+                Toggle("Settle synthetic device (diagnostic)",
+                       isOn: $controller.settleSyntheticDevice)
+                    .disabled(!controller.isEnabled || !mirrorRunning)
                 Toggle("Hide guest cursor during drag (experimental)",
                        isOn: $controller.hideGuestCursorWhileDragging)
                     .disabled(!controller.isEnabled || !mirrorRunning)

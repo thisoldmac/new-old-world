@@ -6878,6 +6878,9 @@ static void serve_continuity_arm(const char *request)
         tracking_options |= kNowPeekContinuityTrackingPinHeldPoint;
     if (now_json_find_bool(request, "virtualGetMouse", 0))
         tracking_options |= kNowPeekContinuityTrackingVirtualGetMouse;
+    if (now_json_find_bool(request, "settleSyntheticDevice", 0))
+        tracking_options |=
+            kNowPeekContinuityTrackingSettleSyntheticDevice;
     if (now_json_find_bool(request, "hideGuestCursorWhileDragging", 0))
         tracking_options |= kNowPeekContinuityTrackingHideGuestCursor;
     if (now_json_find_bool(request, "virtualADB", 0))

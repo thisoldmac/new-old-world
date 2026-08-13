@@ -56,6 +56,14 @@ tracking_gne = body(
     "void now_ext_cursor_gne(NowPeekTable *table)\n{", EXT_CURSOR)
 tracking_settle = body(
     "void now_ext_cursor_settle_continuity_tracking(", EXT_CURSOR)
+tracking_device_settle = body(
+    "static void settle_continuity_tracking_device(", EXT_CURSOR)
+tracking_device_find = body(
+    "static CursorDevicePtr continuity_tracking_device(", EXT_CURSOR)
+tracking_configure = body(
+    "void now_ext_cursor_configure_continuity_tracking(", EXT_CURSOR)
+tracking_conflict = body(
+    "static void record_continuity_tracking_conflict(", EXT_CURSOR)
 tracking_remember = body(
     "void now_ext_cursor_remember_continuity_tracking_point(", EXT_CURSOR)
 tracking_end = body(
@@ -241,7 +249,7 @@ if "LMGetMouseLocation()" not in tracking_settle:
     failures.append("tracking settlement no longer observes ADB displacement")
 for field in ("tracking_settle_calls", "tracking_settle_moved",
               "tracking_settle_redraws", "tracking_settle_reasserts"):
-    if field not in tracking_settle:
+    if field not in tracking_settle and field not in tracking_conflict:
         failures.append(
             f"tracking settlement no longer publishes diagnostic {field}")
 if tracking_settle.count("LMSetMouseLocation(pt)") != 2:
@@ -251,10 +259,33 @@ if "gNowCursorTrackingRedrawOwed = 0" not in tracking_settle:
 elif tracking_settle.index("gNowCursorTrackingRedrawOwed = 0") \
         > tracking_settle.index("HideCursor"):
     failures.append("tracking redraw can recurse before its debt is cleared")
+if "settle_continuity_tracking_device(cell, pt)" not in tracking_settle:
+    failures.append("tracking settlement no longer reaches the opt-in device probe")
 for forbidden in ("NewPtr", "DisposePtr", "WaitNextEvent", "PPostEvent",
                   "now_cdm_", "now_log"):
     if forbidden in tracking_settle:
         failures.append(f"tracking redraw reintroduced forbidden {forbidden}")
+if "kNowPeekContinuityTrackingSettleSyntheticDevice" \
+        not in tracking_configure \
+        or "gNowCursorTrackingSettleSyntheticDevice" \
+        not in tracking_device_settle:
+    failures.append("synthetic-device settlement lost its explicit option gate")
+if "gNowCursorTrackingDeviceActive" not in tracking_device_settle \
+        or "tracking_device_reentries++" not in tracking_device_settle:
+    failures.append("synthetic-device settlement lost its reentrancy guard")
+if "cell->epoch == 0" not in tracking_device_settle \
+        or "kNowPeekContinuityStateActive" not in tracking_device_settle:
+    failures.append("synthetic-device settlement is no longer epoch/state bound")
+if "device->devID == (OSType)'NOWc'" not in tracking_device_find:
+    failures.append("synthetic-device discovery no longer identifies NOWc")
+if "visited < 32" not in tracking_device_find \
+        or "now_cdm_next_device" not in tracking_device_find:
+    failures.append("synthetic-device discovery is no longer a bounded manager walk")
+for forbidden in ("NewPtr", "DisposePtr", "WaitNextEvent", "PPostEvent",
+                  "now_log"):
+    if forbidden in tracking_device_settle or forbidden in tracking_device_find:
+        failures.append(
+            f"synthetic-device probe reintroduced forbidden {forbidden}")
 if "gNowCursorTrackingSourceActive = 0" not in tracking_end \
         or "gNowCursorTrackingRedrawOwed = 0" not in tracking_end:
     failures.append("tracking authority exit no longer clears source and redraw debt")

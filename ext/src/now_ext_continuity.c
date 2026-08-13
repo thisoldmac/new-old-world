@@ -5,6 +5,7 @@
    the PPC application's Apple CursorDevicesGlue call. */
 #include <LowMem.h>
 #include <MacTypes.h>
+#include <Events.h>
 #include <Timer.h>
 
 #include <string.h>
@@ -177,7 +178,48 @@ static void request_button(NowPeekContinuityCell *cell,
        when a Time Manager release interrupts its snapshot. */
     cell->event_request_generation = 0;
     cell->event_request_down = down ? 1u : 0u;
+    cell->event_request_arrival_ticks = cell->last_arrival_ticks;
+    cell->event_request_exposure_ticks = (NowPeekU32)LMGetTicks();
     cell->event_request_generation = generation; /* commit last */
+}
+
+/* Capture the Event Manager's synthetic mouse record in the same guest clock
+   domain as arrival, exposure and manager apply. The first unmatched edge of
+   the same direction owns the observation; actual event coordinates are kept
+   so that this diagnostic never assumes they equal the requested point. */
+void now_ext_continuity_observe_event(EventRecord *event, NowPeekU32 ticks)
+{
+    NowPeekContinuityCell *cell = continuity_cell(gTable);
+    NowPeekU32 down;
+    NowPeekU32 count;
+    NowPeekU32 index;
+
+    if (cell == NULL || event == NULL || !cell->enabled)
+        return;
+    if (event->what == mouseDown)
+        down = 1;
+    else if (event->what == mouseUp)
+        down = 0;
+    else
+        return;
+    count = cell->event_timing_count;
+    if (count > (NowPeekU32)kNowPeekContinuityEventTimingCapacity)
+        count = (NowPeekU32)kNowPeekContinuityEventTimingCapacity;
+    for (index = 0; index < count; index++) {
+        NowPeekContinuityEventTiming *entry = &cell->event_timing[index];
+        NowPeekU32 before = entry->write_seq;
+
+        if ((before & 1u) != 0 || entry->down != down
+                || entry->event_observed_ticks != 0)
+            continue;
+        entry->write_seq = before + 1u;
+        entry->event_when = (NowPeekU32)event->when;
+        entry->event_observed_ticks = ticks;
+        entry->event_h = (NowPeekI32)event->where.h;
+        entry->event_v = (NowPeekI32)event->where.v;
+        entry->write_seq = before + 2u;
+        return;
+    }
 }
 
 static void release_button(NowPeekContinuityCell *cell,
@@ -349,8 +391,13 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
     cell->event_result_generation = 0;
     cell->event_result_down = 0;
     cell->event_result_err = 0;
+    cell->event_request_arrival_ticks = 0;
+    cell->event_request_exposure_ticks = 0;
+    cell->event_timing_count = 0;
+    cell->event_timing_dropped = 0;
     cell->pending_mouseup = 0;
     cell->button_release_reason = 0;
+    cell->double_time_ticks = (NowPeekU32)LMGetDoubleTime();
     gDeferredPressGeneration = 0;
     now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(cell->tracking_options);

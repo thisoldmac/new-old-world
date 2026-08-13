@@ -42,6 +42,37 @@ static int gInvoking;
 
 enum { kNowContinuityServiceApplyRounds = 4 };
 
+static void record_button_timing(NowPeekContinuityCell *cell,
+                                 NowPeekU32 generation, NowPeekU32 down,
+                                 NowPeekU32 begin, NowPeekU32 end,
+                                 NowPeekI32 error)
+{
+    NowPeekU32 index = cell->event_timing_count;
+    NowPeekContinuityEventTiming *entry;
+
+    if (index >= (NowPeekU32)kNowPeekContinuityEventTimingCapacity) {
+        cell->event_timing_dropped++;
+        return;
+    }
+    entry = &cell->event_timing[index];
+    entry->write_seq++;
+    entry->generation = generation;
+    entry->down = down;
+    entry->request_h = cell->request_h;
+    entry->request_v = cell->request_v;
+    entry->arrival_ticks = cell->event_request_arrival_ticks;
+    entry->exposure_ticks = cell->event_request_exposure_ticks;
+    entry->manager_begin_ticks = begin;
+    entry->manager_end_ticks = end;
+    entry->manager_error = error;
+    entry->event_when = 0;
+    entry->event_observed_ticks = 0;
+    entry->event_h = 0;
+    entry->event_v = 0;
+    entry->write_seq++;
+    cell->event_timing_count = index + 1u;
+}
+
 static int resolve_call_upp(void)
 {
     CFragConnectionID conn = 0;
@@ -331,9 +362,16 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
         if (event_generation != 0
                 && (event_generation != cell->event_result_generation
                     || event_down != cell->event_result_down)) {
+            NowPeekU32 manager_begin = (NowPeekU32)TickCount();
+            NowPeekU32 manager_end;
+
             err = now_continuity_cursor_button(
                 (unsigned long)cell->epoch,
                 (unsigned long)event_generation, event_down != 0);
+            manager_end = (NowPeekU32)TickCount();
+            record_button_timing(cell, event_generation, event_down,
+                                 manager_begin, manager_end,
+                                 (NowPeekI32)err);
             cell->event_result_down = event_down;
             cell->event_result_err = (NowPeekI32)err;
             cell->event_result_generation = event_generation;

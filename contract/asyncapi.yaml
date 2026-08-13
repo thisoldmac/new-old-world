@@ -2211,6 +2211,16 @@ components:
             the resident's target-context GetMouse hook answers from the
             host-owned tracking point instead of tail-chaining to the
             incumbent trap. Inactive calls always retain the original chain.
+        settleSyntheticDevice:
+          type: boolean
+          default: false
+          description: >
+            Diagnostic experiment. From the tracked application's task-time
+            hook, the resident discovers the synthetic Cursor Device whose
+            devID is NOWc and moves that device to the held host point before
+            tail-chaining. The walk is bounded, epoch-bound and guarded
+            against reentry. No CursorDevice pointer crosses the resident
+            contract and the experiment is inactive unless explicitly set.
         hideGuestCursorWhileDragging:
           type: boolean
           default: false

@@ -405,6 +405,10 @@ int now_continuity_arm(long id, unsigned short port,
     shared->tracking_settle_moved = 0;
     shared->tracking_settle_redraws = 0;
     shared->tracking_settle_reasserts = 0;
+    memset(&shared->tracking_conflict_current_run, 0,
+           sizeof(*shared)
+             - offsetof(NowPeekContinuityCell,
+                        tracking_conflict_current_run));
     bump_nonzero(&shared->control_seq);
     gPendingReplyID = id;
     gPendingControlSeq = shared->control_seq;
@@ -457,6 +461,9 @@ int now_continuity_disarm(long id, unsigned long epoch)
 {
     NowPeekContinuityCell *shared = cell();
     NowContinuityCursorDiagnostics cursor;
+    unsigned long timing_count;
+    unsigned long timing_index;
+    unsigned long interval_index;
 
     if (shared == NULL || (NowPeekU32)epoch != shared->epoch) {
         now_log(kLogWarn, "mirror", "disarm refused epoch=%lu", epoch);
@@ -504,6 +511,74 @@ int now_continuity_disarm(long id, unsigned long epoch)
             epoch, (long)shared->at_h, (long)shared->at_v,
             (long)shared->native_input_h, (long)shared->native_input_v,
             (long)shared->native_owned_h, (long)shared->native_owned_v);
+    now_log(kLogInfo, "mirror",
+            "tracking conflict epoch=%lu current=%lu max=%lu returns=%lu",
+            epoch,
+            (unsigned long)shared->tracking_conflict_current_run,
+            (unsigned long)shared->tracking_conflict_max_run,
+            (unsigned long)shared->tracking_press_return_count);
+    now_log(kLogInfo, "mirror",
+            "tracking conflict first ticks=%lu live=%ld,%ld held=%ld,%ld",
+            (unsigned long)shared->tracking_conflict_first_ticks,
+            (long)shared->tracking_conflict_first_live_h,
+            (long)shared->tracking_conflict_first_live_v,
+            (long)shared->tracking_conflict_first_held_h,
+            (long)shared->tracking_conflict_first_held_v);
+    now_log(kLogInfo, "mirror",
+            "tracking conflict last ticks=%lu live=%ld,%ld held=%ld,%ld",
+            (unsigned long)shared->tracking_conflict_last_ticks,
+            (long)shared->tracking_conflict_last_live_h,
+            (long)shared->tracking_conflict_last_live_v,
+            (long)shared->tracking_conflict_last_held_h,
+            (long)shared->tracking_conflict_last_held_v);
+    now_log(kLogInfo, "mirror",
+            "tracking device epoch=%lu attempts=%lu found=%lu moves=%lu "
+            "fail=%lu reentry=%lu err=%ld",
+            epoch, (unsigned long)shared->tracking_device_attempts,
+            (unsigned long)shared->tracking_device_found,
+            (unsigned long)shared->tracking_device_moves,
+            (unsigned long)shared->tracking_device_failures,
+            (unsigned long)shared->tracking_device_reentries,
+            (long)shared->tracking_device_last_error);
+    now_log(kLogInfo, "mirror",
+            "tracking device points before=%ld,%ld after=%ld,%ld held=%ld,%ld",
+            (long)shared->tracking_device_last_before_h,
+            (long)shared->tracking_device_last_before_v,
+            (long)shared->tracking_device_last_after_h,
+            (long)shared->tracking_device_last_after_v,
+            (long)shared->tracking_device_last_held_h,
+            (long)shared->tracking_device_last_held_v);
+    timing_count = (unsigned long)shared->event_timing_count;
+    if (timing_count > (unsigned long)kNowPeekContinuityEventTimingCapacity)
+        timing_count = (unsigned long)kNowPeekContinuityEventTimingCapacity;
+    now_log(kLogInfo, "mirror",
+            "button timing epoch=%lu double=%lu count=%lu dropped=%lu",
+            epoch, (unsigned long)shared->double_time_ticks, timing_count,
+            (unsigned long)shared->event_timing_dropped);
+    for (timing_index = 0; timing_index < timing_count; timing_index++) {
+        const NowPeekContinuityEventTiming *timing =
+            &shared->event_timing[timing_index];
+
+        now_log(kLogInfo, "mirror",
+                "button timing n=%lu gen=%lu down=%lu req=%ld,%ld "
+                "arrive=%lu expose=%lu",
+                timing_index + 1u, (unsigned long)timing->generation,
+                (unsigned long)timing->down,
+                (long)timing->request_h, (long)timing->request_v,
+                (unsigned long)timing->arrival_ticks,
+                (unsigned long)timing->exposure_ticks);
+        now_log(kLogInfo, "mirror",
+                "button timing n=%lu manager=%lu>%lu err=%ld "
+                "event=%lu observed=%lu at=%ld,%ld stable=%lu",
+                timing_index + 1u,
+                (unsigned long)timing->manager_begin_ticks,
+                (unsigned long)timing->manager_end_ticks,
+                (long)timing->manager_error,
+                (unsigned long)timing->event_when,
+                (unsigned long)timing->event_observed_ticks,
+                (long)timing->event_h, (long)timing->event_v,
+                (unsigned long)timing->write_seq);
+    }
     memset(&cursor, 0, sizeof cursor);
     now_continuity_cursor_diagnostics(&cursor);
     now_log(kLogInfo, "mirror",
@@ -526,6 +601,28 @@ int now_continuity_disarm(long id, unsigned long epoch)
             "CDM observed epoch=%lu before=%ld,%ld after=%ld,%ld valid=%d",
             epoch, cursor.before_h, cursor.before_v,
             cursor.after_h, cursor.after_v, cursor.device_point_valid);
+    now_log(kLogInfo, "mirror",
+            "CDM intervals epoch=%lu samples=%lu kept=%lu max=%lu "
+            "max-seq=%lu max-at=%lu",
+            epoch, cursor.interval_samples, cursor.interval_used,
+            cursor.interval_max_ticks, cursor.interval_max_sequence,
+            cursor.interval_max_begin_ticks);
+    for (interval_index = 0; interval_index < cursor.interval_used;
+         interval_index++) {
+        unsigned long slot =
+            (cursor.interval_next
+             + (unsigned long)kNowContinuityMoveIntervalCapacity
+             - cursor.interval_used + interval_index)
+            % (unsigned long)kNowContinuityMoveIntervalCapacity;
+        const NowContinuityMoveInterval *interval =
+            &cursor.intervals[slot];
+
+        now_log(kLogInfo, "mirror",
+                "CDM interval n=%lu seq=%lu begin=%lu gap=%lu at=%ld,%ld",
+                interval_index + 1u, interval->sequence,
+                interval->begin_ticks, interval->gap_ticks,
+                interval->h, interval->v);
+    }
     now_log_flush();
     /* The endpoint is transport, not authority. Keep the asynchronous OT
        endpoint bound for this TCP session and reject every packet while the

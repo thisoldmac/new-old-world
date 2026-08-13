@@ -77,6 +77,8 @@ extern void now_ext_cursor_gne(NowPeekTable *table);
    application's cooperative wire pump enters its resident service. */
 extern int now_ext_continuity_boot(NowPeekTable *table);
 extern void now_ext_continuity_rollback(NowPeekTable *table);
+extern void now_ext_continuity_observe_event(EventRecord *event,
+                                             NowPeekU32 ticks);
 
 /* The content plane (now_content.c), P3. Two entry points rather than
    P4's one, and the split is the plane's own: boot allocates and
@@ -271,7 +273,7 @@ static void capture_anchor(NowPeekU32 ticks)
    plane's contract (docs/resident-components.md). Both are a handful of
    low-memory reads and stores - allocate nothing, call nothing that
    moves memory. */
-void now_ext_gne_apply(void)
+void now_ext_gne_apply(EventRecord *event)
 {
     NowPeekTable *table = gNowExtTable;
     NowPeekU32 ticks;
@@ -370,6 +372,7 @@ void now_ext_gne_apply(void)
        picture that disagrees with the machine is not made correct by
        disarming a plane. Nothing owed costs a load and a return. */
     now_ext_cursor_gne(table);
+    now_ext_continuity_observe_event(event, ticks);
     now_ext_continuity_keyboard_gne(table);
     now_content_gne(table);
     /* P5. Its own arm verdict, like P3's, because it also names an A5

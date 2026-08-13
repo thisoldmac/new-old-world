@@ -705,6 +705,7 @@ final class GuestListener: ObservableObject {
                        fastPump: Bool = false,
                        pinHeldPoint: Bool = false,
                        virtualGetMouse: Bool = false,
+                       settleSyntheticDevice: Bool = false,
                        virtualADB: Bool = false,
                        hideGuestCursorWhileDragging: Bool = false) -> Int? {
         guard let session else { return nil }
@@ -716,6 +717,7 @@ final class GuestListener: ObservableObject {
             requestedHz: requestedHz, leaseTicks: leaseTicks,
             fastPump: fastPump, pinHeldPoint: pinHeldPoint,
             virtualGetMouse: virtualGetMouse,
+            settleSyntheticDevice: settleSyntheticDevice,
             virtualADB: virtualADB,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)))
         return id

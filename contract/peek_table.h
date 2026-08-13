@@ -940,6 +940,11 @@ enum {
        deferral/tracking telemetry. It preserves an intervening mouse-up when
        the lossy lane has already advanced to the next double-click down. */
     kNowPeekContinuityFormatV9 = 9,
+    /* V10 makes the three unresolved input symptoms measurable without
+       changing their default behaviour. It appends non-overwriting tracking
+       conflict latches, an opt-in synthetic-device settle probe, and a
+       bounded button timing chain in the guest's TickCount domain. */
+    kNowPeekContinuityFormatV10 = 10,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -952,7 +957,7 @@ enum {
    contain a new application and an older resident while every artifact was
    individually well formed.  The update manifests also publish this value,
    so a stack assembler can reject that pair before it reaches a Macintosh. */
-#define NOW_CONTINUITY_FORMAT_CURRENT 9u
+#define NOW_CONTINUITY_FORMAT_CURRENT 10u
 
 enum {
     kNowPeekContinuityExitNone = 0,
@@ -1010,11 +1015,13 @@ enum {
     kNowPeekContinuityTrackingVirtualGetMouse = 1u << 1,
     kNowPeekContinuityTrackingHideGuestCursor = 1u << 2,
     kNowPeekContinuityTrackingVirtualADB = 1u << 3,
+    kNowPeekContinuityTrackingSettleSyntheticDevice = 1u << 4,
     kNowPeekContinuityTrackingKnownMask =
         kNowPeekContinuityTrackingPinHeldPoint
             | kNowPeekContinuityTrackingVirtualGetMouse
             | kNowPeekContinuityTrackingHideGuestCursor
             | kNowPeekContinuityTrackingVirtualADB
+            | kNowPeekContinuityTrackingSettleSyntheticDevice
 };
 
 enum {
@@ -1082,6 +1089,29 @@ typedef struct {
     NowPeekI32 after_temp_v;
     NowPeekU32 after_button;
 } NowPeekADBTraceEntry;
+
+enum { kNowPeekContinuityEventTimingCapacity = 8 };
+
+/* V10's non-overwriting button timing chain. All times are guest TickCount
+   values: the host logs its own monotonic source/send/ack chain separately,
+   and neither side pretends the clocks share an epoch. `write_seq` is odd
+   while either task-time writer updates the record and even when stable. */
+typedef struct {
+    NowPeekU32 write_seq;
+    NowPeekU32 generation;
+    NowPeekU32 down;
+    NowPeekI32 request_h;
+    NowPeekI32 request_v;
+    NowPeekU32 arrival_ticks;
+    NowPeekU32 exposure_ticks;
+    NowPeekU32 manager_begin_ticks;
+    NowPeekU32 manager_end_ticks;
+    NowPeekI32 manager_error;
+    NowPeekU32 event_when;
+    NowPeekU32 event_observed_ticks;
+    NowPeekI32 event_h;
+    NowPeekI32 event_v;
+} NowPeekContinuityEventTiming;
 
 /* P9. One app-owned latest-state mailbox and one resident-owned status
    block. The application commits control_seq and packet_seq LAST; the
@@ -1233,6 +1263,51 @@ typedef struct {
     NowPeekU32 tracking_settle_moved;
     NowPeekU32 tracking_settle_redraws;
     NowPeekU32 tracking_settle_reasserts;
+    /* V10 durable conflict latches. Unlike the eight-entry general trace,
+       these survive a long nested tracking loop without being overwritten. */
+    NowPeekU32 tracking_conflict_current_run;
+    NowPeekU32 tracking_conflict_max_run;
+    NowPeekU32 tracking_conflict_first_ticks;
+    NowPeekI32 tracking_conflict_first_live_h;
+    NowPeekI32 tracking_conflict_first_live_v;
+    NowPeekI32 tracking_conflict_first_held_h;
+    NowPeekI32 tracking_conflict_first_held_v;
+    NowPeekU32 tracking_conflict_last_ticks;
+    NowPeekI32 tracking_conflict_last_live_h;
+    NowPeekI32 tracking_conflict_last_live_v;
+    NowPeekI32 tracking_conflict_last_held_h;
+    NowPeekI32 tracking_conflict_last_held_v;
+    NowPeekU32 tracking_press_return_count;
+    NowPeekU32 tracking_press_return_first_ticks;
+    NowPeekI32 tracking_press_return_first_live_h;
+    NowPeekI32 tracking_press_return_first_live_v;
+    NowPeekI32 tracking_press_return_first_held_h;
+    NowPeekI32 tracking_press_return_first_held_v;
+    /* The settle-device experiment discovers the app-owned NOWc device at
+       task time. It is epoch-bound, reentrancy-guarded and disabled unless
+       the host explicitly selects its option bit. */
+    NowPeekU32 tracking_device_attempts;
+    NowPeekU32 tracking_device_found;
+    NowPeekU32 tracking_device_moves;
+    NowPeekU32 tracking_device_failures;
+    NowPeekU32 tracking_device_reentries;
+    NowPeekI32 tracking_device_last_error;
+    NowPeekI32 tracking_device_last_before_h;
+    NowPeekI32 tracking_device_last_before_v;
+    NowPeekI32 tracking_device_last_after_h;
+    NowPeekI32 tracking_device_last_after_v;
+    NowPeekI32 tracking_device_last_held_h;
+    NowPeekI32 tracking_device_last_held_v;
+    NowPeekU32 tracking_device_last_ticks;
+    /* Guest-domain timing for the first eight button edges. Capacity is
+       deliberately non-overwriting; later edges increment dropped. */
+    NowPeekU32 double_time_ticks;
+    NowPeekU32 event_request_arrival_ticks;
+    NowPeekU32 event_request_exposure_ticks;
+    NowPeekU32 event_timing_count;
+    NowPeekU32 event_timing_dropped;
+    NowPeekContinuityEventTiming
+        event_timing[kNowPeekContinuityEventTimingCapacity];
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -2154,7 +2229,9 @@ _Static_assert(sizeof(NowPeekADBTraceEntry) == 84,
                "ADB observer trace ABI drift");
 _Static_assert(sizeof(NowPeekContinuityKeyEntry) == 36,
                "continuity key entry ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 1824,
+_Static_assert(sizeof(NowPeekContinuityEventTiming) == 56,
+               "continuity event timing ABI drift");
+_Static_assert(sizeof(NowPeekContinuityCell) == 2416,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -2194,6 +2271,16 @@ _Static_assert(offsetof(NowPeekContinuityCell, previous_button_generation) == 17
                "continuity V9 previous button edge offset");
 _Static_assert(offsetof(NowPeekContinuityCell, tracking_settle_calls) == 1808,
                "continuity V9 tracking-settle counter offset");
+_Static_assert(offsetof(NowPeekContinuityCell,
+                        tracking_conflict_current_run) == 1824,
+               "continuity V10 durable conflict offset");
+_Static_assert(offsetof(NowPeekContinuityCell,
+                        tracking_device_attempts) == 1896,
+               "continuity V10 settle-device offset");
+_Static_assert(offsetof(NowPeekContinuityCell, double_time_ticks) == 1948,
+               "continuity V10 timing header offset");
+_Static_assert(offsetof(NowPeekContinuityCell, event_timing) == 1968,
+               "continuity V10 timing ring offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

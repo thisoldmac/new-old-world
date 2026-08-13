@@ -208,6 +208,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         fastPump: Bool = false,
         pinHeldPoint: Bool = false,
         virtualGetMouse: Bool = false,
+        settleSyntheticDevice: Bool = false,
         hideGuestCursorWhileDragging: Bool = false,
         acknowledgementTimeout: TimeInterval = 3,
         audit: MirrorContinuityController.Audit? = nil
@@ -227,6 +228,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         controller.fastPump = fastPump
         controller.pinHeldPoint = pinHeldPoint
         controller.virtualGetMouse = virtualGetMouse
+        controller.settleSyntheticDevice = settleSyntheticDevice
         controller.hideGuestCursorWhileDragging =
             hideGuestCursorWhileDragging
         controller.isEnabled = true
@@ -839,9 +841,11 @@ final class MirrorContinuityControllerTests: XCTestCase {
     func testHeldPointExperimentsAreRequestedOnlyWhenOptedIn() async throws {
         let experiments = try await makeArmingRig(
             pinHeldPoint: true, virtualGetMouse: true,
+            settleSyntheticDevice: true,
             hideGuestCursorWhileDragging: true)
         XCTAssertEqual(experiments.arm.pinHeldPoint, true)
         XCTAssertEqual(experiments.arm.virtualGetMouse, true)
+        XCTAssertEqual(experiments.arm.settleSyntheticDevice, true)
         XCTAssertEqual(experiments.arm.hideGuestCursorWhileDragging, true)
     }
 
@@ -1029,6 +1033,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         controller?.fastPump = true
         controller?.pinHeldPoint = true
         controller?.virtualGetMouse = true
+        controller?.settleSyntheticDevice = true
         controller?.hideGuestCursorWhileDragging = true
         controller?.keyboardForwardingEnabled = false
         controller?.escapeShortcut = .controlOptionReturn
@@ -1042,6 +1047,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertTrue(reopened.fastPump)
         XCTAssertTrue(reopened.pinHeldPoint)
         XCTAssertTrue(reopened.virtualGetMouse)
+        XCTAssertTrue(reopened.settleSyntheticDevice)
         XCTAssertTrue(reopened.hideGuestCursorWhileDragging)
         XCTAssertFalse(reopened.keyboardForwardingEnabled)
         XCTAssertEqual(reopened.escapeShortcut, .controlOptionReturn)

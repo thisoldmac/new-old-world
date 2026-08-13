@@ -697,6 +697,34 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "private verified retest bundle; shared oracle bake is due when this branch is promoted"
+    },
+    {
+      "at": "2026-08-13T17:38:11-0400",
+      "branch": "fix/continuity-retest-inputs",
+      "extDigest": "27c80fe8f2253df64aac13adee7592c7e5d8b43f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_gne.S"
+      ],
+      "reason": "Private V10 diagnostic bake and matched handoff bundle follow this implementation checkpoint; no shared oracle landing is requested."
+    },
+    {
+      "at": "2026-08-13T17:39:13-0400",
+      "branch": "fix/continuity-retest-inputs",
+      "extDigest": "27c80fe8f2253df64aac13adee7592c7e5d8b43f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_gne.S"
+      ],
+      "reason": "Private V10 diagnostic bake and matched handoff bundle follow this implementation checkpoint; no shared oracle landing is requested."
     }
   ]
 }

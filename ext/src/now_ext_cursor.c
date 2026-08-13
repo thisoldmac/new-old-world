@@ -124,6 +124,7 @@ volatile unsigned char gNowCursorTrackingRedrawOwed = 0;
 volatile unsigned char gNowCursorTrackingSourceActive = 0;
 volatile unsigned char gNowCursorTrackingVirtualGetMouse = 0;
 static volatile unsigned char gNowCursorTrackingHideGuestCursor = 0;
+static volatile unsigned char gNowCursorTrackingSettleSyntheticDevice = 0;
 static volatile unsigned char gNowCursorTrackingCursorHidden = 0;
 void *gNowCursorOldGetMouse = NULL;
 void *gNowCursorOldStillDown = NULL;
@@ -134,6 +135,10 @@ static volatile short gNowCursorTrackingSourceV = 0;
 static Point gNowCursorTrackingPressPoint;
 static Boolean gNowCursorTrackingPressValid = false;
 static NowPeekU32 gNowCursorTrackingConflictCount = 0;
+static volatile unsigned char gNowCursorTrackingDeviceActive = 0;
+static NowPeekU32 gNowCursorTrackingDeviceEpoch = 0;
+static NowPeekU32 gNowCursorTrackingDeviceSearchEpoch = 0;
+static CursorDevicePtr gNowCursorTrackingDevice = NULL;
 
 static NowPeekTable *gTable = NULL;
 static CursorDevicePtr gDevice = NULL;
@@ -466,6 +471,14 @@ void now_ext_cursor_configure_continuity_tracking(NowPeekU32 options)
     gNowCursorTrackingHideGuestCursor =
         (options & (NowPeekU32)kNowPeekContinuityTrackingHideGuestCursor)
             != 0;
+    gNowCursorTrackingSettleSyntheticDevice =
+        (options
+            & (NowPeekU32)kNowPeekContinuityTrackingSettleSyntheticDevice)
+            != 0;
+    gNowCursorTrackingDeviceActive = 0;
+    gNowCursorTrackingDeviceEpoch = 0;
+    gNowCursorTrackingDeviceSearchEpoch = 0;
+    gNowCursorTrackingDevice = NULL;
 }
 
 /* Interrupt-safe held-point pin. This deliberately touches MouseLocation
@@ -506,6 +519,136 @@ int now_ext_cursor_answer_continuity_getmouse(void *mouse_loc)
     return 1;
 }
 
+/* Locate the application-owned synthetic device by its public devID. No
+   pointer crosses the PPC/resident boundary. The walk is bounded and runs
+   only in the target application's task-time hook context. */
+static CursorDevicePtr continuity_tracking_device(
+    NowPeekContinuityCell *cell)
+{
+    CursorDevicePtr device = NULL;
+    unsigned short visited;
+    long err = noErr;
+
+    if (gNowCursorTrackingDevice != NULL
+            && gNowCursorTrackingDeviceEpoch == cell->epoch)
+        return gNowCursorTrackingDevice;
+    if (gNowCursorTrackingDeviceSearchEpoch == cell->epoch)
+        return NULL;
+    gNowCursorTrackingDevice = NULL;
+    gNowCursorTrackingDeviceEpoch = 0;
+    gNowCursorTrackingDeviceSearchEpoch = cell->epoch;
+    for (visited = 0; visited < 32; visited++) {
+        err = now_cdm_next_device((void **)&device);
+        if (err != noErr || device == NULL)
+            break;
+        if (device->devID == (OSType)'NOWc') {
+            gNowCursorTrackingDevice = device;
+            gNowCursorTrackingDeviceEpoch = cell->epoch;
+            cell->tracking_device_found++;
+            return device;
+        }
+    }
+    cell->tracking_device_last_error = (NowPeekI32)err;
+    return NULL;
+}
+
+static void settle_continuity_tracking_device(
+    NowPeekContinuityCell *cell, Point held)
+{
+    CursorDevicePtr device;
+    Point before;
+    Point after;
+    long err;
+
+    if (cell == NULL || !gNowCursorTrackingSettleSyntheticDevice)
+        return;
+    if (!cell->enabled
+            || cell->state != (NowPeekU32)kNowPeekContinuityStateActive
+            || cell->epoch == 0)
+        return;
+    if (gNowCursorTrackingDeviceActive) {
+        cell->tracking_device_reentries++;
+        return;
+    }
+    gNowCursorTrackingDeviceActive = 1;
+    cell->tracking_device_attempts++;
+    cell->tracking_device_last_ticks = (NowPeekU32)LMGetTicks();
+    cell->tracking_device_last_held_h = (NowPeekI32)held.h;
+    cell->tracking_device_last_held_v = (NowPeekI32)held.v;
+    device = continuity_tracking_device(cell);
+    if (device == NULL) {
+        cell->tracking_device_failures++;
+        gNowCursorTrackingDeviceActive = 0;
+        return;
+    }
+    before.h = before.v = 0;
+    if (device->whichCursor != NULL)
+        before = device->whichCursor->where;
+    cell->tracking_device_last_before_h = (NowPeekI32)before.h;
+    cell->tracking_device_last_before_v = (NowPeekI32)before.v;
+    err = now_cdm_move_to(device, (long)held.h, (long)held.v);
+    after = before;
+    if (device->whichCursor != NULL)
+        after = device->whichCursor->where;
+    cell->tracking_device_last_after_h = (NowPeekI32)after.h;
+    cell->tracking_device_last_after_v = (NowPeekI32)after.v;
+    cell->tracking_device_last_error = (NowPeekI32)err;
+    if (err == noErr)
+        cell->tracking_device_moves++;
+    else
+        cell->tracking_device_failures++;
+    gNowCursorTrackingDeviceActive = 0;
+}
+
+static void record_continuity_tracking_conflict(
+    NowPeekContinuityCell *cell, Point live, Point held)
+{
+    NowPeekU32 ticks = (NowPeekU32)LMGetTicks();
+    Boolean at_press = gNowCursorTrackingPressValid
+        && live.h == gNowCursorTrackingPressPoint.h
+        && live.v == gNowCursorTrackingPressPoint.v;
+
+    cell->tracking_settle_moved++;
+    gNowCursorTrackingConflictCount++;
+    cell->tracking_conflict_current_run++;
+    if (cell->tracking_conflict_current_run
+            > cell->tracking_conflict_max_run)
+        cell->tracking_conflict_max_run =
+            cell->tracking_conflict_current_run;
+    if (cell->tracking_conflict_first_ticks == 0) {
+        cell->tracking_conflict_first_ticks = ticks;
+        cell->tracking_conflict_first_live_h = (NowPeekI32)live.h;
+        cell->tracking_conflict_first_live_v = (NowPeekI32)live.v;
+        cell->tracking_conflict_first_held_h = (NowPeekI32)held.h;
+        cell->tracking_conflict_first_held_v = (NowPeekI32)held.v;
+    }
+    cell->tracking_conflict_last_ticks = ticks;
+    cell->tracking_conflict_last_live_h = (NowPeekI32)live.h;
+    cell->tracking_conflict_last_live_v = (NowPeekI32)live.v;
+    cell->tracking_conflict_last_held_h = (NowPeekI32)held.h;
+    cell->tracking_conflict_last_held_v = (NowPeekI32)held.v;
+    if (at_press) {
+        cell->tracking_press_return_count++;
+        if (cell->tracking_press_return_first_ticks == 0) {
+            cell->tracking_press_return_first_ticks = ticks;
+            cell->tracking_press_return_first_live_h = (NowPeekI32)live.h;
+            cell->tracking_press_return_first_live_v = (NowPeekI32)live.v;
+            cell->tracking_press_return_first_held_h = (NowPeekI32)held.h;
+            cell->tracking_press_return_first_held_v = (NowPeekI32)held.v;
+        }
+    }
+    /* Preserve a bounded progression when NOW cannot drain the general trace
+       during a nested loop. The durable fields above never overwrite. */
+    if (gNowCursorTrackingConflictCount <= 4u
+            || (gNowCursorTrackingConflictCount
+                & (gNowCursorTrackingConflictCount - 1u)) == 0
+            || at_press) {
+        now_ext_continuity_trace_tracking_conflict(
+            (NowPeekI32)live.h, (NowPeekI32)live.v,
+            (NowPeekI32)held.h, (NowPeekI32)held.v);
+    }
+}
+
 /* Settle only the picture. This is entered from Toolbox hooks in
    the tracked application's task-time context. Clearing first makes nested
    GetMouse/StillDown/Button calls harmless; a timer interrupt that publishes
@@ -537,22 +680,9 @@ void now_ext_cursor_settle_continuity_tracking(void)
     live = LMGetMouseLocation();
     moved = live.h != pt.h || live.v != pt.v;
     if (moved && cell != NULL) {
-        cell->tracking_settle_moved++;
-        gNowCursorTrackingConflictCount++;
-        /* Preserve a bounded progression when NOW cannot drain the ring
-           during a target's nested tracking loop. Powers of two retain the
-           conflict's duration; every return to the press point is retained
-           because that is the observed menu/drag jitter signature. */
-        if (gNowCursorTrackingConflictCount <= 4u
-                || (gNowCursorTrackingConflictCount
-                    & (gNowCursorTrackingConflictCount - 1u)) == 0
-                || (gNowCursorTrackingPressValid
-                    && live.h == gNowCursorTrackingPressPoint.h
-                    && live.v == gNowCursorTrackingPressPoint.v)) {
-            now_ext_continuity_trace_tracking_conflict(
-                (NowPeekI32)live.h, (NowPeekI32)live.v,
-                (NowPeekI32)pt.h, (NowPeekI32)pt.v);
-        }
+        record_continuity_tracking_conflict(cell, live, pt);
+    } else if (cell != NULL) {
+        cell->tracking_conflict_current_run = 0;
     }
     /* The PowerBook's ADB path can republish its stationary physical point
        between host ticks. Reassert our held point on every tracking call.
@@ -561,6 +691,7 @@ void now_ext_cursor_settle_continuity_tracking(void)
     LMSetMouseLocation(pt);
     if (cell != NULL)
         cell->tracking_settle_reasserts++;
+    settle_continuity_tracking_device(cell, pt);
     if (gNowCursorTrackingCursorHidden) {
         gNowCursorTrackingRedrawOwed = 0;
         return;

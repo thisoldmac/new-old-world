@@ -112,6 +112,20 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
+    @Published var settleSyntheticDevice = false {
+        didSet {
+            guard settleSyntheticDevice != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(settleSyntheticDevice,
+                             forKey: settleSyntheticDeviceKey(for: machine))
+            }
+            if phase != .idle {
+                rearmAfterConfigurationChange(
+                    reason: "synthetic-device settlement changed")
+            }
+        }
+    }
     @Published var hideGuestCursorWhileDragging = false {
         didSet {
             guard hideGuestCursorWhileDragging != oldValue else { return }
@@ -229,6 +243,7 @@ final class MirrorContinuityController: ObservableObject,
     private var lastAuditedButtonGeneration: UInt32 = 0
     private var lastPrimaryDownUptime: TimeInterval?
     private var buttonTransitionSentUptime: TimeInterval?
+    private var buttonTransitionSourceUptime: TimeInterval?
     private var onPhaseChanged: ((Phase) -> Void)?
     private var onOwnershipEnded: ((String) -> Void)?
 
@@ -328,7 +343,8 @@ final class MirrorContinuityController: ObservableObject,
             if clickCount >= 2, !wireButtonDown {
                 audit(.info, "starting AppKit-confirmed click \(clickCount) "
                     + "before the preceding manager-up acknowledgement")
-                beginPrimaryCycle(at: point, inMenuBar: inMenuBar)
+                beginPrimaryCycle(at: point, inMenuBar: inMenuBar,
+                                  sourceUptime: eventUptime)
                 return true
             }
             guard bufferedButtonCycle == nil,
@@ -342,13 +358,15 @@ final class MirrorContinuityController: ObservableObject,
             capturingBufferedCycle = true
             return true
         }
-        beginPrimaryCycle(at: point, inMenuBar: inMenuBar)
+        beginPrimaryCycle(at: point, inMenuBar: inMenuBar,
+                          sourceUptime: eventUptime)
         return true
     }
 
     private func beginPrimaryCycle(at point: MirrorKit.Point,
                                    releasedAt: MirrorKit.Point? = nil,
-                                   inMenuBar: Bool = false) {
+                                   inMenuBar: Bool = false,
+                                   sourceUptime: TimeInterval? = nil) {
         self.point = point
         positionDirty = true
         advancePositionIfNeeded()
@@ -362,10 +380,16 @@ final class MirrorContinuityController: ObservableObject,
         menuLatched = false
         menuReleaseArmed = false
         isMenuTracking = inMenuBar
+        let sendUptime = ProcessInfo.processInfo.systemUptime
+        let source = sourceUptime ?? sendUptime
         sendState(inside: true, keepalive: false)
-        audit(.info, "primary down sent: generation=\(buttonGeneration), "
-            + "clickPoint=\(point.x),\(point.y), menu=\(inMenuBar)")
-        buttonTransitionSentUptime = ProcessInfo.processInfo.systemUptime
+        audit(.info, String(
+            format: "primary down sent: generation=%u, clickPoint=%d,%d, menu=%d, hostSourceMs=%.1f, hostSendMs=%.1f, sourceToSendMs=%.1f",
+            buttonGeneration, point.x, point.y, inMenuBar ? 1 : 0,
+            source * 1_000, sendUptime * 1_000,
+            max(0, sendUptime - source) * 1_000))
+        buttonTransitionSourceUptime = source
+        buttonTransitionSentUptime = sendUptime
         scheduleButtonAckTimeout(generation: buttonGeneration, down: true)
     }
 
@@ -466,6 +490,7 @@ final class MirrorContinuityController: ObservableObject,
             requestedHz: rate, leaseTicks: 90, fastPump: fastPump,
             pinHeldPoint: pinHeldPoint,
             virtualGetMouse: virtualGetMouse,
+            settleSyntheticDevice: settleSyntheticDevice,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)
         guard armID != nil else {
             status = "unavailable: no Mac is connected"
@@ -829,8 +854,8 @@ final class MirrorContinuityController: ObservableObject,
                             self.status = "direct pointer connected at "
                                 + "\(self.acceptedHz) Hz"
                         }
-                        self.lastAcknowledgementUptime =
-                            ProcessInfo.processInfo.systemUptime
+                        let hostAckUptime = ProcessInfo.processInfo.systemUptime
+                        self.lastAcknowledgementUptime = hostAckUptime
                         if self.validAcks == 1
                             || ack.exitReason != .none
                             || ack.state == .inactive
@@ -871,11 +896,15 @@ final class MirrorContinuityController: ObservableObject,
               ack.buttonGeneration == buttonGeneration else { return }
         if let sent = buttonTransitionSentUptime {
             let direction = wireButtonDown ? "down" : "up"
-            audit(.info, String(format: "primary %@ acknowledged in %.1f ms",
-                                direction,
-                                (ProcessInfo.processInfo.systemUptime - sent)
-                                    * 1_000))
+            let hostAck = ProcessInfo.processInfo.systemUptime
+            let source = buttonTransitionSourceUptime ?? sent
+            audit(.info, String(
+                format: "primary %@ acknowledged: generation=%u, hostSourceMs=%.1f, hostSendMs=%.1f, hostAckMs=%.1f, sourceToAckMs=%.1f, guestArrivalTicks=%u, guestApplyTicks=%u",
+                direction, buttonGeneration, source * 1_000, sent * 1_000,
+                hostAck * 1_000, max(0, hostAck - source) * 1_000,
+                ack.arrivalTicks, ack.applyTicks))
             buttonTransitionSentUptime = nil
+            buttonTransitionSourceUptime = nil
         }
         if wireButtonDown {
             guard !pressAcknowledged else { return }
@@ -910,7 +939,8 @@ final class MirrorContinuityController: ObservableObject,
         self.bufferedButtonCycle = nil
         capturingBufferedCycle = false
         beginPrimaryCycle(at: bufferedButtonCycle.press,
-                          releasedAt: bufferedButtonCycle.release)
+                          releasedAt: bufferedButtonCycle.release,
+                          sourceUptime: bufferedButtonCycle.sourceUptime)
         if let source = bufferedButtonCycle.sourceUptime {
             audit(.info, String(
                 format: "buffered click %d settled %.1f ms after AppKit delivery",
@@ -938,7 +968,9 @@ final class MirrorContinuityController: ObservableObject,
         buttonAckTimeout?.cancel()
         buttonAckTimeout = nil
         sendState(inside: true, keepalive: false)
-        buttonTransitionSentUptime = ProcessInfo.processInfo.systemUptime
+        let sent = ProcessInfo.processInfo.systemUptime
+        buttonTransitionSourceUptime = sent
+        buttonTransitionSentUptime = sent
         scheduleButtonAckTimeout(generation: buttonGeneration, down: false)
         if bufferedButtonCycle?.clickCount ?? 0 >= 2 {
             startBufferedPrimaryCycleIfNeeded()
@@ -1140,6 +1172,7 @@ final class MirrorContinuityController: ObservableObject,
         lastAuditedButtonGeneration = 0
         lastPrimaryDownUptime = nil
         buttonTransitionSentUptime = nil
+        buttonTransitionSourceUptime = nil
         previousButtonGeneration = 0
         previousButtonDown = false
         resetButtonState()
@@ -1180,6 +1213,8 @@ final class MirrorContinuityController: ObservableObject,
         fastPump = defaults.bool(forKey: fastPumpKey(for: machine))
         pinHeldPoint = defaults.bool(forKey: pinHeldPointKey(for: machine))
         virtualGetMouse = defaults.bool(forKey: virtualGetMouseKey(for: machine))
+        settleSyntheticDevice = defaults.bool(
+            forKey: settleSyntheticDeviceKey(for: machine))
         hideGuestCursorWhileDragging = defaults.bool(
             forKey: hideGuestCursorKey(for: machine))
         let keyboardKey = keyboardForwardingKey(for: machine)
@@ -1212,6 +1247,10 @@ final class MirrorContinuityController: ObservableObject,
 
     private func virtualGetMouseKey(for machine: GuestID) -> String {
         "mirror.continuity.virtualGetMouse.\(machine.slug)"
+    }
+
+    private func settleSyntheticDeviceKey(for machine: GuestID) -> String {
+        "mirror.continuity.settleSyntheticDevice.\(machine.slug)"
     }
 
     private func hideGuestCursorKey(for machine: GuestID) -> String {

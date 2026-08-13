@@ -181,6 +181,17 @@ A click-drag-release remains native, and leaving the Mirror or ending the lease
 still forces the held button up. This stays on the raw pointer plane rather
 than silently routing a menu through Mirror's semantic act.
 
+Resident table V10 adds diagnostics without changing the default input path.
+It retains non-overwriting tracking-conflict latches and the first eight
+button-stage records in the guest's `TickCount` domain, while the host keeps
+AppKit source/send/ack timestamps in macOS monotonic time. The two domains are
+reported separately. V10 also exposes one default-off **Settle synthetic
+device** experiment: the target-context hook discovers the app-owned `NOWc`
+device by ID, never through a pointer in the resident contract, and records its
+bounded manager call. PPC movement intervals are kept in a preallocated local
+ring and serialized only when the epoch disarms. None of these additions is a
+metal-verified behavior correction.
+
 The post-metal candidate was then cold-booted independently on
 `mac99,via=pmu` and `mac99,via=cuda` with Fast Pump enabled. Both guests
 reported build `582abf3ee6e2…`, resident fingerprint `e500d393bf76…`, and all

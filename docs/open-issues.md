@@ -188,6 +188,37 @@ result trace build in both classic artifacts and pass their focused guards.
 They are **tested, not metal-verified** pending the next matched bundle. Modal
 attachment and Continuity file dragging remain open and unchanged.
 
+**2026-08-13 V10 diagnostic bundle for the remaining three symptoms:** this
+candidate does not choose a cursor or double-click theory. It makes one
+attended pass capable of separating the observed stages:
+
+- Tracking conflict evidence now has non-overwriting first, last, maximum-run
+  and press-point-return latches outside the eight-entry resident trace. A long
+  nested menu or drag loop therefore cannot erase the fact that it conflicted.
+- A new **Settle synthetic device** host toggle is off by default. When selected,
+  the target-context hook discovers the app-owned `NOWc` Cursor Device through
+  a bounded `CursorDeviceNextDevice` walk, binds it to the active epoch, guards
+  reentry, and records before/after/error counters around `CursorDeviceMoveTo`.
+  The Extension still receives no PPC pointer. This is an attended experiment,
+  not a product default or claimed fix.
+- The first eight button edges retain guest-domain arrival, resident exposure,
+  PPC manager begin/end, manager result, synthetic `EventRecord.when`, event
+  observation tick and actual event coordinates. The host separately records
+  AppKit source, UDP send and acknowledgement in its own monotonic domain. The
+  log does not subtract those unrelated clock epochs or label the remainder
+  one-way wire latency. `LMGetDoubleTime()` is recorded beside the chain.
+- A preallocated 32-entry PPC ring records the interval between consecutive
+  `CursorDeviceMoveTo` calls, while a separate maximum latch survives ring
+  wrap. This lets the ordinary-motion pause be correlated with the manager-call
+  cadence without adding disk I/O to the live path.
+
+The 16:32 attended log contains two explicit right-edge host returns; the
+operator confirms at least one crossing was intentional. Treat that record as
+mixed intentional/test traffic, not as two established ownership leaks. The
+three unresolved acceptance items remain dual-position cursor jitter during
+drag/menu tracking, ordinary-motion pauses, and broken double-click behavior.
+This V10 stack is **built and tested, not metal-verified**.
+
 **2026-08-13 pre-PR review:** the full integration diff received local
 correctness, reliability, contract, security, performance, test, Swift and
 maintainability review. The bounded defects were repaired in the candidate:

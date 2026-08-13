@@ -1,6 +1,16 @@
 #ifndef NOW_CONTINUITY_CURSOR_H
 #define NOW_CONTINUITY_CURSOR_H
 
+enum { kNowContinuityMoveIntervalCapacity = 32 };
+
+typedef struct {
+    unsigned long sequence;
+    unsigned long begin_ticks;
+    unsigned long gap_ticks;
+    long h;
+    long v;
+} NowContinuityMoveInterval;
+
 typedef struct {
     unsigned long samples;
     unsigned long before_request_mismatches;
@@ -20,6 +30,14 @@ typedef struct {
     int press_valid;
     int requested_valid;
     int device_point_valid;
+    unsigned long interval_samples;
+    unsigned long interval_used;
+    unsigned long interval_next;
+    unsigned long interval_max_ticks;
+    unsigned long interval_max_sequence;
+    unsigned long interval_max_begin_ticks;
+    NowContinuityMoveInterval
+        intervals[kNowContinuityMoveIntervalCapacity];
 } NowContinuityCursorDiagnostics;
 
 int now_continuity_cursor_ready(void);

@@ -74,6 +74,7 @@ final class ContractMessageTests: XCTestCase {
                                 requestedHz: 30, leaseTicks: 90,
                                 fastPump: true, pinHeldPoint: true,
                                 virtualGetMouse: true,
+                                settleSyntheticDevice: true,
                                 virtualADB: true,
                                 hideGuestCursorWhileDragging: true)
         let report = ContinuityReport(

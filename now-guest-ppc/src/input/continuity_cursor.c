@@ -28,6 +28,8 @@ static CursorDevicePtr gDevice;
 static unsigned long gEpoch;
 static unsigned long gMoveCount;
 static unsigned long gButtonCount;
+static unsigned long gLastMoveBeginTicks;
+static int gLastMoveBeginValid;
 static NowContinuityCursorDiagnostics gDiagnostics;
 
 static int device_point(Point *out)
@@ -82,6 +84,8 @@ void now_continuity_cursor_begin_epoch(unsigned long epoch)
     gEpoch = epoch;
     gMoveCount = 0;
     gButtonCount = 0;
+    gLastMoveBeginTicks = 0;
+    gLastMoveBeginValid = 0;
     memset(&gDiagnostics, 0, sizeof gDiagnostics);
     now_log(kLogInfo, "mirror", "CDM PPC epoch=%lu begin", epoch);
     now_log_flush();
@@ -128,9 +132,36 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
     unsigned long after;
     OSErr err;
     int durable;
+    unsigned long move_begin;
 
     if (gDevice == NULL || epoch == 0 || epoch != gEpoch)
         return paramErr;
+    move_begin = TickCount();
+    if (gLastMoveBeginValid) {
+        unsigned long gap = move_begin - gLastMoveBeginTicks;
+        unsigned long index = gDiagnostics.interval_next;
+        NowContinuityMoveInterval *interval =
+            &gDiagnostics.intervals[index];
+
+        interval->sequence = sequence;
+        interval->begin_ticks = move_begin;
+        interval->gap_ticks = gap;
+        interval->h = h;
+        interval->v = v;
+        gDiagnostics.interval_samples++;
+        if (gDiagnostics.interval_used
+                < (unsigned long)kNowContinuityMoveIntervalCapacity)
+            gDiagnostics.interval_used++;
+        gDiagnostics.interval_next =
+            (index + 1u) % (unsigned long)kNowContinuityMoveIntervalCapacity;
+        if (gap > gDiagnostics.interval_max_ticks) {
+            gDiagnostics.interval_max_ticks = gap;
+            gDiagnostics.interval_max_sequence = sequence;
+            gDiagnostics.interval_max_begin_ticks = move_begin;
+        }
+    }
+    gLastMoveBeginTicks = move_begin;
+    gLastMoveBeginValid = 1;
     gMoveCount++;
     if (device_point(&device_before)) {
         gDiagnostics.samples++;
@@ -211,5 +242,7 @@ void now_continuity_cursor_shutdown(void)
     gEpoch = 0;
     gMoveCount = 0;
     gButtonCount = 0;
+    gLastMoveBeginTicks = 0;
+    gLastMoveBeginValid = 0;
     memset(&gDiagnostics, 0, sizeof gDiagnostics);
 }

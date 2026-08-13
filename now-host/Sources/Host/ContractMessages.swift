@@ -169,7 +169,7 @@ struct HostShown: Codable, Equatable, Sendable {
 
 enum ContinuityContract {
     static let version = Int(ContinuityStateDatagram.version)
-    static let residentTableVersion = 9
+    static let residentTableVersion = 10
     static let residentVersion = "1.3"
 }
 
@@ -186,6 +186,7 @@ struct ContinuityArm: Codable, Equatable, Sendable {
     var fastPump: Bool?
     var pinHeldPoint: Bool?
     var virtualGetMouse: Bool?
+    var settleSyntheticDevice: Bool? = nil
     var virtualADB: Bool? = nil
     var hideGuestCursorWhileDragging: Bool? = nil
 }
