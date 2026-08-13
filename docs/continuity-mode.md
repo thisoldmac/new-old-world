@@ -192,6 +192,26 @@ bounded manager call. PPC movement intervals are kept in a preallocated local
 ring and serialized only when the epoch disarms. None of these additions is a
 metal-verified behavior correction.
 
+The 17:48 attended run of that stack measured what the diagnostics were built
+to separate. Settle synthetic device ran 567 hook-context manager moves with
+zero errors and took press-point returns from 219 to 0, so it now defaults
+on. The button-stage chain showed AppKit double-clicks at 165-213 ms arriving
+as guest manager downs 40-45 ticks apart against a 32-tick `GetDblTime()`,
+because the second cycle rides application task time the click's own target
+is holding. Two behavior changes follow. **Widen double-click window**
+(`wideDoubleTime`, default on): while an epoch runs, the resident saves the
+guest's DoubleTime and installs the 60-tick window declared once in
+`peek_table.h`, restoring the saved value on every exit including forced
+releases and rollback — the recognition window is the only half of that
+comparison Continuity controls, and the cost is that a deliberate
+click-pause-click inside one second reads as a double click while connected.
+On the host, a slow button-down acknowledgement no longer ends the epoch:
+the bound is 3 seconds and expiry abandons the single cycle, forcing the
+wire button up inside the epoch so no logical hold can leak, because the
+1-second teardown turned every starved double-click into an ownership
+bounce. Both changes are tested against source guards and cross-builds;
+neither is metal-verified.
+
 The post-metal candidate was then cold-booted independently on
 `mac99,via=pmu` and `mac99,via=cuda` with Fast Pump enabled. Both guests
 reported build `582abf3ee6e2…`, resident fingerprint `e500d393bf76…`, and all

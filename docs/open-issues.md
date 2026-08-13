@@ -250,6 +250,50 @@ overnight refactor:
   yet projected read-only through MCP; installation must remain human-only
   when that observability is added.
 
+**2026-08-13 17:48 attended V10 run, and the response bundle
+(`claude/mirror-continuity-input-47eb68`):** the diagnostic build answered
+three questions and the operator reported overall feel as worse than before.
+
+- **The dual-cursor press-point writer is now measured, not inferred.** In the
+  0x3 drag epoch the non-overwriting latches recorded the live low-memory
+  point returning to exactly the press point 219 times while the held point
+  advanced, with the synthetic Cursor Device record sitting at that same press
+  point and zero wrapped ADB callbacks. With **Settle synthetic device** on
+  (0x13 epochs), 567 hook-context `CursorDeviceMoveTo` calls ran with zero
+  failures/reentries/errors and press-point returns went to zero. One attended
+  run, one machine; the human's per-epoch visual report is absent, so this is
+  strong instrument evidence for the frozen-device-record mechanism and for
+  the settlement as remedy, not yet a metal-verified fix.
+- **Double-click failure is arithmetic.** `LMGetDoubleTime()` is 32 ticks;
+  AppKit-classified double-clicks at 165-213 ms reached the guest as manager
+  downs 40-45 ticks apart in every completed attempt, because the second
+  cycle rides application task time that the click's own target is holding
+  (up exposure-to-manager lag 36-37 ticks in exactly those sequences). No
+  handshake defect remained in the completed sequences.
+- **The felt regression was mostly host policy.** Three epochs died to the
+  1-second down-acknowledgement teardown mid-double-click (measured second
+  downs ran 520-630 ms source-to-ack), each bouncing ownership back to the
+  host, plus two right-edge returns with heavy suppressed-warp counts.
+
+The response bundle: `wideDoubleTime` (bit 0x20, host default on) saves the
+guest's DoubleTime at arm and installs the 60-tick window stated once in
+`peek_table.h`, restored on every exit path including forced releases and
+rollback; the host down-ack timeout rises to 3 s and abandons the cycle -
+forcing the wire button up inside the epoch - instead of tearing the epoch
+down; `settleSyntheticDevice` defaults on. A resident-delivered second press
+was designed and rejected: the safety pins forbidding Event Manager calls
+and any non-up `MBState` write from the resident are wedge history, and under
+that architecture press latency is irreducibly app-scheduling-bound, which is
+why widening the recognition window is the coherent fix rather than a
+workaround. Guards in `continuity_event_safety_source_test.py` pin all of
+the above and were each watched failing against the mutation they name
+(7/7). This bundle is **tested (source guards, native suite, both guest
+cross-builds), not metal-verified**; the open questions it does not touch
+are ordinary-motion pauses (interval ring correlation still unread against a
+paused run), the missing per-epoch human visual report for settle-device,
+and the fresh-press-while-starved case, which now degrades to a late click
+instead of an epoch death.
+
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
 While the guest owns the pointer, the host now captures key-down, key-up, and
