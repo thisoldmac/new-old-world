@@ -10,7 +10,6 @@ struct ModuleDrawerView: View {
     @Binding var isPresented: Bool
     let dragActions: SidebarNavigationDragActions
     let select: (NavigationSelection) -> Void
-    @State private var hovering = false
 
     private var summary: NavigationDrawerSummary {
         NavigationDrawerSummary(items: items)
@@ -22,10 +21,9 @@ struct ModuleDrawerView: View {
             Button { isPresented.toggle() } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "archivebox")
-                    if hovering && !collapsed {
+                    if !collapsed {
                         Text("Drawer")
                             .font(.caption.weight(.medium))
-                            .transition(.opacity.combined(with: .move(edge: .trailing)))
                     }
                     if summary.moduleCount > 0 {
                         Text(String(summary.moduleCount))
@@ -47,9 +45,6 @@ struct ModuleDrawerView: View {
             }
             .buttonStyle(.plain)
             .help("Modules Drawer")
-            .onHover { over in
-                withAnimation(.easeOut(duration: 0.14)) { hovering = over }
-            }
             .overlay(SidebarNativeDragSurface(
                 payload: nil,
                 target: .zone(.drawer, index: items.endIndex),

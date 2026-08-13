@@ -6,7 +6,7 @@ doc_type: explanation
 audience: developer
 lifecycle: current
 authority: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, docs/architecture.md]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationLayoutStore.swift, now-host/Sources/Host/HostRootView.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/NavigationDragCoordinator.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/GuestScopedState.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/OnboardingPortal.swift]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationLayoutStore.swift, now-host/Sources/Host/NavigationShelfTab.swift, now-host/Sources/Host/HostRootView.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/NavigationDragCoordinator.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/GuestScopedState.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/OnboardingPortal.swift]
 media_ids: []
 last_verified: 2026-08-13
 ---
@@ -62,6 +62,15 @@ wire and preference identity while presenting the title **Web Proxy**. Console
 and Logs are lower standalone modules. There is no registered `continuity`
 descriptor in this revision, so the Screen shelf does not manufacture one.
 
+The sidebar renders one row per shelf, not one row per shelf member.
+`NavigationShelfTab` derives the stable tabs for that shelf, and
+`ShelfDetailView` renders them as a centered pill strip above the existing
+module view. The synthetic machine Overview remains window-local; every other
+pill retains its real module ID. The lower Network shelf, Console, and Logs are
+collected in the sidebar's compact pinned utility area, immediately above the
+labeled drawer. The primary destinations use SwiftUI's native sidebar `List`;
+the shell does not recreate list scrolling or row layout.
+
 `NavigationLayoutStore` migrates the earlier flat order and sanitizes stored
 layouts against the current registry. The machine and Network shelves remain
 structurally present; the machine shelf cannot enter the drawer, while Network
@@ -69,11 +78,14 @@ can and carries its status indicator there. User shelves decompose at one
 module. New registry leaves are adopted into their known family or appended as
 a standalone upper item.
 
-`SidebarNativeDragSurface` is the AppKit drag surface used from SwiftUI. Ordinary
-dragging produces pure commands through `NavigationDragCoordinator`; hover and
-spring-loading provide feedback, including the double flash, but mutation
-occurs only on drop. Feature entry points remain unchanged: navigation routes
-the registered leaf into the existing module view rather than wrapping feature
+`SidebarNativeDragSurface` is the AppKit drag surface used from SwiftUI,
+including on the detail-pane pills so a shelf member can still be reordered or
+extracted. Ordinary dragging produces pure commands through
+`NavigationDragCoordinator`; hover and spring-loading provide feedback,
+including the double flash, but mutation occurs only on drop. The AppKit bridge
+snapshots the rendered row or pill for its drag image instead of substituting a
+generic label. Feature entry points remain unchanged: navigation routes the
+registered leaf into the existing module view rather than wrapping feature
 ownership in the shelf.
 
 ## Disconnection and appearance

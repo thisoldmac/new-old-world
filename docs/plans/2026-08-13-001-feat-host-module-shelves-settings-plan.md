@@ -186,15 +186,18 @@ glass behavior uses build plus manual inspection rather than snapshot claims.
 ### U3. Render shelves and route details
 
 **Goal:** Render the accepted upper/lower default, machine Overview hero,
-Network Connections hero, shelf tabs, and stable module selection.
+Network Connections hero, detail-pane pill tabs, and stable module selection.
 
 **Files:** `HostRootView.swift`, new navigation subviews, new
 `MachineOverviewView.swift`, `MainMenu.swift`, registry/menu tests.
 
 **Approach:** Split the current root into real View types with narrow inputs.
 Selection distinguishes a shelf hero from a module leaf. View-menu module
-selection reveals its shelf and tab. Preserve each module's existing entry
-point; specifically preserve Files and Mirror signatures.
+selection reveals its shelf and tab. Each shelf is one native sidebar-list row;
+its member modules are centered pills above the selected module in the detail
+pane. Network, Console, Logs, and the labeled Drawer form one compact pinned
+utility area. Preserve each module's existing entry point; specifically
+preserve Files and Mirror signatures.
 
 **Execution note:** Characterize current selection restoration before changing
 the shell, then strengthen it for shelf/tab navigation.
@@ -206,13 +209,15 @@ the shell, then strengthen it for shelf/tab navigation.
 **Goal:** Support ordinary cross-zone drag, drop-to-shelf, tab extraction,
 spring-loaded targets, user-shelf decomposition, and drawer accessories.
 
-**Files:** new `SidebarOutlineView.swift`, new `NavigationDragCoordinator.swift`,
-new `ModuleDrawerView.swift`, navigation views, focused tests.
+**Files:** new `SidebarNativeDragSurface.swift`, new
+`NavigationDragCoordinator.swift`, new `ModuleDrawerView.swift`, navigation
+views, focused tests.
 
 **Approach:** Use AppKit dragging and spring-loading at the macOS 13 floor.
 Keep all mutations as pure layout commands decided by the coordinator. Dwell
 and double-flash are feedback only; the drop commits the command. Use SF Symbol
-effects where available and an AppKit animation fallback on 13.
+effects where available and an AppKit animation fallback on 13. Snapshot the
+rendered row or detail pill for the native drag preview.
 
 **Execution note:** Proof-first for every layout command and invalid target.
 Native gesture timing receives a manual interaction check.

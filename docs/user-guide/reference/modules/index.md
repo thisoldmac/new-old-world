@@ -6,7 +6,7 @@ doc_type: reference
 audience: user
 lifecycle: current
 authority: [docs/module-manifest.yaml, docs/contract-coverage.md, now-host/Sources/Host/NavigationLayout.swift]
-source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
+source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
 media_ids: []
 last_verified: 2026-08-13
 ---
@@ -32,6 +32,11 @@ is:
 | Lower sidebar | Network | Connections, Networking, MCP, Web Proxy |
 | Lower sidebar | Console | Console |
 | Lower sidebar | Logs | Logs |
+
+Each shelf is one sidebar item. Selecting it opens a shelf page with its pages
+as centered pill tabs at the top of the main area; the selected module renders
+under that strip. Network, Console, and Logs form a compact group pinned to the
+bottom of the sidebar. The labeled Drawer sits directly beneath them.
 
 **Overview** is the landing page for the This Mac shelf. It summarizes the
 selected classic Mac; it is not another module. When no guest is attached,

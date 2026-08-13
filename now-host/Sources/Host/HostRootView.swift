@@ -23,16 +23,18 @@ struct HostRootView: View {
                 listener: state.listener,
                 monitor: state.guestStatus,
                 selection: selection,
+                dragActions: dragActions,
                 selectGuest: { state.selectGuest($0) },
                 select: select)
         } detail: {
             HostDetailView(
-                destination: selection.destination,
+                selection: selection,
                 registry: registry,
                 layout: sidebar.layout,
                 state: state,
                 monitor: state.guestStatus,
-                selectModule: selectModule)
+                dragActions: dragActions,
+                select: select)
                 // A module may wrap at any size, but may not ask the window
                 // to grow to an unbounded ideal width.
                 .frame(minWidth: 480, idealWidth: 820,
@@ -70,20 +72,57 @@ struct HostRootView: View {
         selectedHeroShelfID = nil
         state.selectedModuleID = moduleID
     }
+
+    private var dragActions: SidebarNavigationDragActions {
+        SidebarNavigationDragActions(
+            canDrop: { payload, target in
+                NavigationDragCoordinator.command(
+                    for: payload, droppingOn: target,
+                    in: sidebar.layout) != nil
+            },
+            performDrop: { payload, target in
+                guard let command = NavigationDragCoordinator.command(
+                    for: payload, droppingOn: target,
+                    in: sidebar.layout),
+                      let changed = try? sidebar.layout.applying(command)
+                else { return false }
+                sidebar.replaceLayout(changed)
+                return true
+            })
+    }
 }
 
 /// Shelves and availability policy wrap the existing module runtime; they do
 /// not duplicate the registry's rendering switch or take ownership from a
 /// module definition.
 private struct HostDetailView: View {
-    let destination: NavigationDestination
+    let selection: NavigationSelection
     let registry: ModuleRegistry
     let layout: NavigationLayout
     @ObservedObject var state: HostAppState
     @ObservedObject var monitor: GuestStatusMonitor
-    let selectModule: (String) -> Void
+    let dragActions: SidebarNavigationDragActions
+    let select: (NavigationSelection) -> Void
 
+    @ViewBuilder
     var body: some View {
+        if let shelfID = selection.containingShelfID,
+           let shelf = layout.shelf(id: shelfID) {
+            ShelfDetailView(
+                shelf: shelf,
+                tabs: NavigationShelfTab.tabs(for: shelf, registry: registry),
+                selection: selection,
+                dragActions: dragActions,
+                select: select) {
+                    destinationContent(selection.destination)
+                }
+        } else {
+            destinationContent(selection.destination)
+        }
+    }
+
+    @ViewBuilder
+    private func destinationContent(_ destination: NavigationDestination) -> some View {
         switch destination {
         case .shelfHero(.machine):
             MachineOverviewView(
@@ -95,6 +134,10 @@ private struct HostDetailView: View {
         case .module(let moduleID):
             module(moduleID)
         }
+    }
+
+    private func selectModule(_ moduleID: String) {
+        select(NavigationSelection.selecting(moduleID: moduleID, in: layout))
     }
 
     private func module(_ moduleID: String) -> some View {

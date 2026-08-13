@@ -98,9 +98,14 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         pasteboardItem.setString(string, forType: Self.pasteboardType)
         let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
         let point = convert(event.locationInWindow, from: nil)
-        let image = dragImage(for: payload)
+        let startPoint = convert(start.locationInWindow, from: nil)
+        let image = renderedElementSnapshot()
+            ?? NSImage(size: bounds.size)
         draggingItem.setDraggingFrame(
-            NSRect(x: point.x - 12, y: point.y - 12, width: 24, height: 24),
+            NSRect(
+                origin: NSPoint(x: point.x - startPoint.x,
+                                y: point.y - startPoint.y),
+                size: bounds.size),
             contents: image)
 
         beganDrag = true
@@ -221,15 +226,19 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         return (payload, target)
     }
 
-    private func dragImage(for payload: NavigationDraggedItem) -> NSImage {
-        let symbol: String
-        switch payload {
-        case .module: symbol = "square.grid.2x2"
-        case .shelf: symbol = "square.stack.3d.up"
-        }
-        return NSImage(systemSymbolName: symbol,
-                       accessibilityDescription: "Move navigation item")
-            ?? NSImage(size: NSSize(width: 24, height: 24))
+    /// The representable itself is transparent because it sits over the
+    /// SwiftUI row or pill. Snapshot the same rectangle from the window's
+    /// content view so AppKit drags the element the person actually grabbed.
+    private func renderedElementSnapshot() -> NSImage? {
+        guard !bounds.isEmpty,
+              let contentView = window?.contentView else { return nil }
+        let sourceRect = convert(bounds, to: contentView)
+        guard let representation = contentView
+            .bitmapImageRepForCachingDisplay(in: sourceRect) else { return nil }
+        contentView.cacheDisplay(in: sourceRect, to: representation)
+        let image = NSImage(size: sourceRect.size)
+        image.addRepresentation(representation)
+        return image
     }
 
     private func showConfiguredMenu(with event: NSEvent) {

@@ -6,27 +6,13 @@ struct HostSidebarView: View {
     @ObservedObject var listener: GuestListener
     @ObservedObject var monitor: GuestStatusMonitor
     let selection: NavigationSelection
+    let dragActions: SidebarNavigationDragActions
     let selectGuest: (GuestKey) -> Void
     let select: (NavigationSelection) -> Void
     @State private var drawerPresented = false
 
     var body: some View {
-        List {
-            SidebarNavigationItems(
-                items: sidebar.layout.upper,
-                zone: .upper,
-                registry: registry,
-                status: monitor.status,
-                compact: sidebar.compact,
-                collapsed: sidebar.collapsed,
-                selection: selection,
-                dragActions: dragActions,
-                select: select)
-        }
-        .listStyle(.sidebar)
-        .navigationTitle("Modules")
-        .modifier(SidebarWidth(collapsed: sidebar.collapsed))
-        .safeAreaInset(edge: .top, spacing: 0) {
+        VStack(spacing: 0) {
             HostSidebarHeader(
                 listener: listener,
                 collapsed: sidebar.collapsed,
@@ -36,9 +22,22 @@ struct HostSidebarView: View {
                     select(NavigationSelection.selecting(
                         moduleID: "settings", in: sidebar.layout))
                 })
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            HostSidebarLowerSection(
+
+            List {
+                SidebarNavigationItems(
+                    items: sidebar.layout.upper,
+                    zone: .upper,
+                    registry: registry,
+                    status: monitor.status,
+                    compact: sidebar.compact,
+                    collapsed: sidebar.collapsed,
+                    selection: selection,
+                    dragActions: dragActions,
+                    select: select)
+            }
+            .listStyle(.sidebar)
+
+            SidebarUtilityArea(
                 items: sidebar.layout.lower,
                 drawerItems: sidebar.layout.drawer,
                 registry: registry,
@@ -50,6 +49,8 @@ struct HostSidebarView: View {
                 dragActions: dragActions,
                 select: select)
         }
+        .navigationTitle("Modules")
+        .modifier(SidebarWidth(collapsed: sidebar.collapsed))
         .contextMenu {
             SidebarDisplayMenu(sidebar: sidebar, registry: registry)
         }
@@ -66,24 +67,6 @@ struct HostSidebarView: View {
         if selection.requiresDrawerPresentation(in: sidebar.layout) {
             drawerPresented = true
         }
-    }
-
-    private var dragActions: SidebarNavigationDragActions {
-        SidebarNavigationDragActions(
-            canDrop: { payload, target in
-                NavigationDragCoordinator.command(
-                    for: payload, droppingOn: target,
-                    in: sidebar.layout) != nil
-            },
-            performDrop: { payload, target in
-                guard let command = NavigationDragCoordinator.command(
-                    for: payload, droppingOn: target,
-                    in: sidebar.layout),
-                      let changed = try? sidebar.layout.applying(command)
-                else { return false }
-                sidebar.replaceLayout(changed)
-                return true
-            })
     }
 }
 
@@ -108,12 +91,7 @@ private struct HostSidebarHeader: View {
                 .accessibilityLabel(collapsed
                                     ? "Show module names"
                                     : "Collapse sidebar to icons")
-                if !collapsed {
-                    Text("Navigation")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                }
+                Spacer(minLength: 0)
             }
             SidebarGuestMenu(
                 listener: listener,
@@ -128,7 +106,7 @@ private struct HostSidebarHeader: View {
     }
 }
 
-private struct HostSidebarLowerSection: View {
+private struct SidebarUtilityArea: View {
     let items: [NavigationItem]
     let drawerItems: [NavigationItem]
     let registry: ModuleRegistry
@@ -142,21 +120,20 @@ private struct HostSidebarLowerSection: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !items.isEmpty {
-                Divider()
-                SidebarNavigationItems(
-                    items: items,
-                    zone: .lower,
-                    registry: registry,
-                    status: status,
-                    compact: compact,
-                    collapsed: collapsed,
-                    selection: selection,
-                    dragActions: dragActions,
-                    select: select)
-                    .padding(.horizontal, collapsed ? 4 : 8)
-                    .padding(.vertical, 6)
-            }
+            Divider()
+            SidebarNavigationItems(
+                items: items,
+                zone: .lower,
+                registry: registry,
+                status: status,
+                compact: true,
+                collapsed: collapsed,
+                selection: selection,
+                dragActions: dragActions,
+                select: select)
+                .padding(.horizontal, collapsed ? 4 : 8)
+                .padding(.top, 4)
+
             ModuleDrawerView(
                 items: drawerItems,
                 registry: registry,
@@ -168,8 +145,6 @@ private struct HostSidebarLowerSection: View {
                 dragActions: dragActions,
                 select: select)
         }
-        .frame(maxWidth: .infinity)
-        .nowGlassBar()
     }
 }
 
@@ -265,7 +240,6 @@ private struct SidebarNavigationItemView: View {
         case .shelf(let shelf):
             SidebarShelfRow(
                 shelf: shelf,
-                modules: shelf.moduleIDs.compactMap(registry.module(id:)),
                 status: status,
                 collapsed: collapsed,
                 selection: selection,
@@ -321,7 +295,6 @@ private struct SidebarLooseModuleRow: View {
 
 private struct SidebarShelfRow: View {
     let shelf: NavigationShelf
-    let modules: [ModuleDescriptor]
     let status: GuestStatus
     let collapsed: Bool
     let selection: NavigationSelection
@@ -329,104 +302,41 @@ private struct SidebarShelfRow: View {
     let select: (NavigationSelection) -> Void
 
     var body: some View {
-        if collapsed {
-            collapsedMenu
-        } else {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 7) {
+        let shelfSelection = NavigationSelection.selectingHero(of: shelf)
+        Button { select(shelfSelection) } label: {
+            if collapsed {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: symbol)
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                    if shelf.id == .network {
+                        ConnectionStatusDot(status: status)
+                            .scaleEffect(0.72)
+                            .offset(x: 4, y: -3)
+                    }
+                }
+            } else {
+                HStack(spacing: 8) {
                     Image(systemName: symbol)
                         .foregroundStyle(.secondary)
                     Text(title)
-                        .font(.caption.weight(.semibold))
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     if shelf.id == .network {
                         ConnectionStatusDot(status: status)
                     }
                 }
-                .accessibilityElement(children: .combine)
-                .overlay(SidebarNativeDragSurface(
-                    payload: .shelf(shelf.id),
-                    target: .shelf(shelf.id, beforeModuleID: nil),
-                    canDrop: dragActions.canDrop,
-                    performDrop: dragActions.performDrop))
-
-                VStack(spacing: 3) {
-                    if shelf.id == .machine {
-                        SidebarShelfTab(
-                            title: "Overview",
-                            symbol: "rectangle.grid.2x2",
-                            isSelected: selection.destination
-                                == .shelfHero(.machine)) {
-                            select(NavigationSelection.selectingHero(of: shelf))
-                        }
-                    }
-                    ForEach(modules) { module in
-                        SidebarShelfTab(
-                            title: module.title,
-                            symbol: module.symbol,
-                            isSelected: selection.destination
-                                == .module(module.id)) {
-                            select(NavigationSelection(
-                                destination: .module(module.id),
-                                containingShelfID: shelf.id))
-                        }
-                        .overlay(SidebarNativeDragSurface(
-                            payload: .module(module.id),
-                            target: .shelf(
-                                shelf.id, beforeModuleID: module.id),
-                            canDrop: dragActions.canDrop,
-                            performDrop: dragActions.performDrop,
-                            activate: {
-                                select(NavigationSelection(
-                                    destination: .module(module.id),
-                                    containingShelfID: shelf.id))
-                            }))
-                    }
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
             }
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor)
-                        .opacity(0.62)))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(.separator.opacity(0.38), lineWidth: 0.5))
         }
-    }
-
-    private var collapsedMenu: some View {
-        Menu {
-            if shelf.id == .machine {
-                Button("Overview") {
-                    select(NavigationSelection.selectingHero(of: shelf))
-                }
-            }
-            ForEach(modules) { module in
-                Button(module.title) {
-                    select(NavigationSelection(
-                        destination: .module(module.id),
-                        containingShelfID: shelf.id))
-                }
-            }
-        } label: {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: symbol)
-                    .frame(maxWidth: .infinity, minHeight: 28)
-                if shelf.id == .network {
-                    ConnectionStatusDot(status: status)
-                        .scaleEffect(0.72)
-                        .offset(x: 4, y: -3)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(Color.accentColor.opacity(
                     selection.containingShelfID == shelf.id ? 0.18 : 0)))
+        .accessibilityAddTraits(
+            selection.containingShelfID == shelf.id ? [.isSelected] : [])
         .accessibilityLabel(title)
         .help(title)
         .overlay(SidebarNativeDragSurface(
@@ -434,24 +344,7 @@ private struct SidebarShelfRow: View {
             target: .shelf(shelf.id, beforeModuleID: nil),
             canDrop: dragActions.canDrop,
             performDrop: dragActions.performDrop,
-            menuItems: collapsedMenuItems))
-    }
-
-    private var collapsedMenuItems: [SidebarNativeMenuItem] {
-        var items: [SidebarNativeMenuItem] = []
-        if shelf.id == .machine {
-            items.append(SidebarNativeMenuItem(title: "Overview") {
-                select(NavigationSelection.selectingHero(of: shelf))
-            })
-        }
-        items.append(contentsOf: modules.map { module in
-            SidebarNativeMenuItem(title: module.title) {
-                select(NavigationSelection(
-                    destination: .module(module.id),
-                    containingShelfID: shelf.id))
-            }
-        })
-        return items
+            activate: { select(shelfSelection) }))
     }
 
     private var title: String {
@@ -472,30 +365,6 @@ private struct SidebarShelfRow: View {
         case .network: "network"
         case .user: "square.stack.3d.up"
         }
-    }
-}
-
-private struct SidebarShelfTab: View {
-    let title: String
-    let symbol: String
-    let isSelected: Bool
-    let select: () -> Void
-
-    var body: some View {
-        Button(action: select) {
-            Label(title, systemImage: symbol)
-                .font(.callout)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.accentColor.opacity(isSelected ? 0.18 : 0)))
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 
