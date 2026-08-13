@@ -3,6 +3,15 @@ import XCTest
 @testable import Host
 
 final class ClassicSetupImageBuilderTests: XCTestCase {
+    func testGenericModeOmitsMachinePreferencesAndCodeKitten() {
+        let mode = ClassicSetupImageBuilder.Mode.generic
+        XCTAssertFalse(mode.includesPreferences)
+        XCTAssertFalse(mode.includesCodeKitten)
+        XCTAssertTrue(mode.instructions.contains(
+            "enter the modern Mac's address"))
+        XCTAssertFalse(mode.instructions.contains("CodeKitten"))
+    }
+
     func testBuilderMakesMountableForkPreservingSetupVolume() async throws {
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
