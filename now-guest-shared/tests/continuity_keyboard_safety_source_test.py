@@ -26,6 +26,11 @@ check("PPostEvent" in KEYBOARD and "evtQModifiers" in KEYBOARD,
       "resident delivery must use PPostEvent and stamp modifiers")
 check("kNowContinuityKeyDrainPerPass = 4" in KEYBOARD,
       "one target event pass must have a bounded drain")
+check("GetFrontProcess(&front)" in KEYBOARD
+      and "event.target_psn_high" in KEYBOARD
+      and "event.target_psn_low" in KEYBOARD
+      and "now_ext_continuity_keyboard_flush(cell);" in KEYBOARD,
+      "a process switch must flush input before PPostEvent")
 check("PPostEvent" not in SERVICE,
       "the synchronous service and timer translation unit must not post keys")
 check("now_continuity_keyboard_flush(shared);" in INTAKE,

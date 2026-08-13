@@ -213,12 +213,25 @@ struct ContinuityKey: Codable, Equatable, Sendable {
 }
 
 struct ContinuityKeyReport: Codable, Equatable, Sendable {
+    enum State: String, Codable, Equatable, Sendable {
+        case queued
+        case refused
+    }
+
+    enum Reason: String, Codable, Equatable, Sendable {
+        case wrongVersion = "wrong-version"
+        case badEpoch = "bad-epoch"
+        case targetUnavailable = "target-unavailable"
+        case queueFull = "queue-full"
+        case malformed
+    }
+
     var version: Int?
     var id: Int
     var epoch: UInt32
     var generation: UInt32
-    var state: String
-    var reason: String?
+    var state: State
+    var reason: Reason?
 }
 
 /// An arm/disarm answer when `id` is present; an unsolicited local-takeover

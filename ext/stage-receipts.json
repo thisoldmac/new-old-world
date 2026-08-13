@@ -635,6 +635,16 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "V8 keyboard resident queue checkpoint builds and native queue tests pass; private bake is deferred until the matched host/PPC protocol and escape-control path are integrated."
+    },
+    {
+      "at": "2026-08-12T20:44:09-0400",
+      "branch": "feat/continuity-keyboard",
+      "extDigest": "5e67cb7db68bbfbc6e8da35593073a53fff825e1",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity_keyboard.c"
+      ],
+      "reason": "Process-switch safety checkpoint before the final V8 private resident bake; focused typed-wire, native, and 68K cross-build gates pass."
     }
   ]
 }

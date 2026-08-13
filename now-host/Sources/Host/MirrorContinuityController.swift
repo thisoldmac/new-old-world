@@ -296,7 +296,7 @@ final class MirrorContinuityController: ObservableObject,
     }
 
     func keyboardEvent(_ sample: HostKeySample) -> Bool {
-        guard phase == .active else { return false }
+        guard phase == .active, sample.code <= 127 else { return false }
         keyGeneration = nextNonzero(keyGeneration)
         guard listener.sendContinuityKey(
             epoch: epoch, generation: keyGeneration,
@@ -543,11 +543,12 @@ final class MirrorContinuityController: ObservableObject,
                 + "\(report.version.map(String.init) ?? "missing")")
             return
         }
-        if report.state != "queued" {
+        if report.state != .queued {
             audit(.warn, "keyboard event refused: generation="
-                + "\(report.generation), reason=\(report.reason ?? "unknown")")
+                + "\(report.generation), reason="
+                + "\(report.reason?.rawValue ?? "unknown")")
             status = "Keyboard input was refused: "
-                + (report.reason ?? "unknown reason")
+                + (report.reason?.rawValue ?? "unknown reason")
         }
     }
 

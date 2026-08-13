@@ -53,7 +53,7 @@ final class ContractMessageTests: XCTestCase {
             character: 113, modifiers: 0x300)
         let keyReport = ContinuityKeyReport(
             version: ContinuityContract.version, id: 11, epoch: 4,
-            generation: 7, state: "queued", reason: nil)
+            generation: 7, state: .queued, reason: nil)
 
         for message in [ControlMessage.continuityArm(arm),
                         .continuityReport(report),

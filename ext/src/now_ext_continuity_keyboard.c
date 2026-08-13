@@ -10,6 +10,7 @@
 
 #include <Events.h>
 #include <LowMem.h>
+#include <Processes.h>
 
 #include "now_continuity_keyboard_logic.h"
 
@@ -53,6 +54,7 @@ void now_ext_continuity_keyboard_gne(NowPeekTable *table)
     current_a5 = (NowPeekU32)LMGetCurrentA5();
     for (drained = 0; drained < kNowContinuityKeyDrainPerPass; ++drained) {
         NowContinuityKeySnapshot event;
+        ProcessSerialNumber front;
         EvQElPtr element = NULL;
         UInt32 message;
         short event_kind;
@@ -66,6 +68,14 @@ void now_ext_continuity_keyboard_gne(NowPeekTable *table)
             now_continuity_keyboard_commit(
                 cell, &event, kNowPeekContinuityKeyErrorInvalid);
             continue;
+        }
+        if (GetFrontProcess(&front) != noErr
+                || (NowPeekU32)front.highLongOfPSN
+                    != event.target_psn_high
+                || (NowPeekU32)front.lowLongOfPSN
+                    != event.target_psn_low) {
+            now_ext_continuity_keyboard_flush(cell);
+            return;
         }
         if (event.action == (NowPeekU32)kNowPeekContinuityKeyDown)
             event_kind = keyDown;

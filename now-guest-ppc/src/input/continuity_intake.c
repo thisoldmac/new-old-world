@@ -632,6 +632,17 @@ int now_continuity_take_report(NowContinuityReport *out)
     now_log(kLogInfo, "mirror", "resident service calls=%lu applies=%lu",
             (unsigned long)shared->service_calls,
             (unsigned long)shared->tasktime_cursor_applies);
+    now_log(shared->key_failures == 0 && shared->key_dropped == 0
+                ? kLogInfo : kLogWarn,
+            "mirror",
+            "keyboard queued=%lu applied=%lu failed=%lu dropped=%lu "
+            "flushes=%lu last=%ld",
+            (unsigned long)shared->key_enqueued,
+            (unsigned long)shared->key_applied,
+            (unsigned long)shared->key_failures,
+            (unsigned long)shared->key_dropped,
+            (unsigned long)shared->key_flushes,
+            (long)shared->key_last_error);
     now_log(kLogInfo, "mirror",
             "button generation=%lu down=%lu timer=%lu forced=%lu pending-up=%lu",
             (unsigned long)shared->applied_button_generation,

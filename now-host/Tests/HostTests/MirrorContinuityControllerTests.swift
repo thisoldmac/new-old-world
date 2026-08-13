@@ -688,6 +688,14 @@ final class MirrorContinuityControllerTests: XCTestCase {
                     && key.character == 113 && key.modifiers == 0x300
             }
         }
+        let sentKeys = rig.guest.received.reduce(into: 0) { count, message in
+            if case .continuityKey = message { count += 1 }
+        }
+        XCTAssertFalse(rig.controller.keyboardEvent(.init(
+            action: .down, code: 200, character: 0, modifiers: 0)))
+        XCTAssertEqual(rig.guest.received.reduce(into: 0) { count, message in
+            if case .continuityKey = message { count += 1 }
+        }, sentKeys, "unrepresentable host keys must remain host-owned")
     }
 
     func testLeavingV0DisarmsImmediately() async throws {
