@@ -928,6 +928,16 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "No Metal access overnight; resident instrumentation retirement is built and emulator verification follows, shared bake and Metal verification are due before landing."
+    },
+    {
+      "at": "2026-08-14T03:57:01-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "fee8c9965e22e3c55cebdc6e1e2446f4d50136d2",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "No Metal access overnight; INIT audit corrected the interrupt-context contract comment after the built prune. Shared bake and Metal verification remain due before landing."
     }
   ]
 }

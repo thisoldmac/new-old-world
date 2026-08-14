@@ -687,24 +687,13 @@ static void apply_button_edge(NowPeekContinuityCell *cell,
     }
 }
 
-/* THE ONE PLACE THE RESIDENT PRESSES, AND WHY THE TABOO BENT.
-   Every rule this file ever pinned said the resident never calls the Event
-   Manager and never writes MBState down - and those pins were right until
-   the measurement that ended them: the Finder pairs clicks by ITS OWN
-   CLOCK at processing time, not by event.when. A synthetic pair whose
-   `when`s read 8 ticks apart still failed while its dequeue spacing was
-   54 ticks (2026-08-13 225207), because during the Finder's own click
-   processing NOTHING cooperative runs anywhere - not this application,
-   not another pump, no jGNE - so the second press cannot enter the queue
-   by any task-time route before the Finder's stopwatch runs out.
-   Interrupt time is the only context left, and the keyboard plane has
-   posted from resident context since it shipped (PPostEvent is the OS
-   Event Manager's documented interrupt-safe entry - device drivers post
-   with it). The safety that made the old pins necessary now exists
-   elsewhere: the two-slot interrupt release, the unconditional MBState-up
-   on every exit, the manager-ledger corrective (fired live tonight), and
-   the host's cycle abandon. Option-gated, off by default, and the pins
-   were NARROWED to confine presses to this function rather than deleted.
+/* THE ONE PLACE THE RESIDENT PRESSES.
+   Finder click recognition can require a second press while no cooperative
+   task or jGNE pass is running. PPostEvent is the Event Manager's bounded
+   interrupt-safe entry, so the option-gated mechanism is confined here. The
+   two-slot interrupt release, unconditional MBState-up on exit, manager-ledger
+   correction and host cycle abandon preserve release safety. The measurement
+   history and rationale live in docs/continuity-mode.md.
 
    Sequence: complete click 1's event stream (the manager up is canceled,
    so its PostEvent will never run), then press: MBState down, tracking
@@ -730,13 +719,8 @@ static int deliver_deferred_press_interrupt(NowPeekContinuityCell *cell,
 
     if (!gInterruptPress)
         return 0;
-    /* The V11 gate read gDeferredPressGeneration here and never once
-       fired on metal (11 deferrals, 0 deliveries, 235658; 3 and 0 again,
-       015913): task time set that slot and the same service invoke
-       consumed it, so it never survived to a timer tick. The press this
-       exists to deliver is already in the cell - the OT notifier wrote
-       it at interrupt time - so read the wire edges directly and depend
-       on task time for nothing. */
+    /* The press is already in the notifier-written wire cell; reading the
+       edge pair here avoids depending on task time during a tracking loop. */
     if ((cell->status_seq & 1u) != 0)
         return 0;
     /* The manager call itself runs BETWEEN service invokes, where the
@@ -1026,8 +1010,9 @@ void now_ext_continuity_service(void)
 /* Held-input vehicle. INTERRUPT TIME: MouseLocation, emergency MBState-up and
    resident fields only. RawMouse and MTemp belong to the physical ADB/PMU
    path; touching either from this unrelated timer caused the metal wedge this
-   split exists to prevent. There is no manager, Event Manager, QuickDraw,
-   Process Manager, allocation or logging here. */
+   split exists to prevent. There is no manager, QuickDraw, Process Manager,
+   allocation or logging here. The one Event Manager exception is the bounded,
+   gated PPostEvent pair in deliver_deferred_press_interrupt above. */
 void now_ext_continuity_tick(TMTaskPtr task)
 {
     ContinuityButtonTask *self = (ContinuityButtonTask *)task;
