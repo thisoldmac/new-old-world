@@ -7,7 +7,6 @@ search:
 
 # Open issues
 
-<<<<<<< HEAD
 ## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
 
 Slice 4 of the cross-edge file drag plan, and the consumer the entry
@@ -147,9 +146,8 @@ Two things a reader should carry away rather than rediscover:
   here. Until then every ingested pack lands in the one shared dated store.
 
 ## DOGFOOD FINDINGS, NOT YET TRIAGED: host shell and module follow-up (2026-08-14, `feat/bundle-update-slice` at `83f10653`)
-=======
+
 ## TESTED, NOT METAL-VERIFIED: host shell and module dogfood follow-up (2026-08-14, `feat/bundle-update-slice`)
->>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 
 The integrated 0.2.0 development bundle exposed this batch. The host changes
 below are covered by focused tests and Debug/Release app builds; the guest
