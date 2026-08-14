@@ -678,8 +678,28 @@ static void settle_continuity_idle_cursor(void)
        the sampler otherwise classifies our own settle as physical input
        and hands the pointer back to the host - eleven guest-input exits
        in under a minute of 0x73 epochs (2026-08-13 200240). */
-    remember_owned_device_point(want);
-    settle_continuity_tracking_device(cell, want);
+    {
+        NowPeekU32 moves_before = cell->tracking_device_moves;
+
+        remember_owned_device_point(want);
+        settle_continuity_tracking_device(cell, want);
+        /* A settle that actually moved the device makes this resident, not
+           the application, the driver that satisfied this sequence - so it
+           owns the acknowledgement currency too, or the host's acks describe
+           a point nobody reached. Only advance; a settle can race ahead of
+           an older applied sequence but must never walk one back.
+
+           Writer safety: both writers of applied_position_seq run at task
+           time under cooperative scheduling, so they cannot interleave. The
+           ACK BUILDER does read it at interrupt time from the Open Transport
+           notifier, under the status_seq seqlock - but a single aligned U32
+           store is atomic on 68K, so the reader sees the old or the new
+           value and never a torn one. */
+        if (cell->tracking_device_moves != moves_before
+                && now_continuity_sequence_newer(position_seq,
+                                                 cell->applied_position_seq))
+            cell->applied_position_seq = position_seq;
+    }
     gNowCursorIdleSettledSeq = position_seq;
     gNowCursorIdleSettleCount++;
     /* jGNE is task time: one balanced redraw so the settled point is also
@@ -706,6 +726,21 @@ static void settle_continuity_idle_cursor(void)
                                              gNowCursorIdleMaxSettleGap);
         gNowCursorIdleMaxSettleGap = 0;
     }
+}
+
+/* The freshest wire sequence the idle spike has taken responsibility for.
+   The service reads it to keep the two drivers of the one Cursor Device
+   exclusive: a sequence the spike has settled must not also be handed to the
+   PPC application, whose apply would be a backward move to a point the device
+   is already past. It advances on every settle ATTEMPT, not only the ones the
+   manager accepted, so a device the spike cannot move drops that one 60 Hz
+   point rather than retrying the same sequence on every jGNE pass; the
+   acknowledgement currency below is the half that requires success. Zero
+   until the spike settles anything, which includes every epoch that did not
+   select the option (configure resets it beside the option byte). */
+NowPeekU32 now_ext_cursor_idle_settled_seq(void)
+{
+    return gNowCursorIdleSettledSeq;
 }
 
 static void record_continuity_tracking_conflict(

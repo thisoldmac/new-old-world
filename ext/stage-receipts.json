@@ -815,6 +815,18 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "chain-window fix; bake follows with stack build"
+    },
+    {
+      "at": "2026-08-13T22:48:50-0400",
+      "branch": "claude/swarm-single-driver",
+      "extDigest": "9e8c66a1b8713076ecbeafdb515dfb6798645083",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h"
+      ],
+      "reason": "single-driver unit; orchestrator bakes the merged stack"
     }
   ]
 }

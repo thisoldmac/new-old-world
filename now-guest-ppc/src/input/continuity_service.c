@@ -42,6 +42,51 @@ static int gInvoking;
 
 enum { kNowContinuityServiceApplyRounds = 4 };
 
+/* Who is ACTUALLY front when a synthetic press lands? The menu bar and the
+   application switcher are drawn from layer state, and both have shown Finder
+   frontmost through double clicks that failed - but a click is dispatched
+   against the Process Manager's front process, which is the only answer that
+   can disagree usefully. Task time, so the Process Manager is legal here, and
+   one line per press, so the FILE logger can carry it; now_log_memory would
+   keep this evidence out of every uploaded log. */
+static void log_front_process_at_down(NowPeekU32 generation)
+{
+    ProcessSerialNumber psn;
+    ProcessInfoRec info;
+    Str31 name;
+    char text[32];
+    OSErr err;
+    short length;
+
+    name[0] = 0;
+    err = GetFrontProcess(&psn);
+    if (err != noErr) {
+        now_log(kLogWarn, "mirror", "front at down generation=%lu err=%d",
+                (unsigned long)generation, (int)err);
+        return;
+    }
+    info.processInfoLength = (long)sizeof(info);
+    info.processName = name;
+    info.processAppSpec = NULL;
+    err = GetProcessInformation(&psn, &info);
+    if (err != noErr) {
+        now_log(kLogWarn, "mirror",
+                "front at down generation=%lu psn=%lu err=%d",
+                (unsigned long)generation, (unsigned long)psn.lowLongOfPSN,
+                (int)err);
+        return;
+    }
+    /* A Str31 body cannot exceed 31 bytes, but the length byte comes from
+       another process's record - bound it before copying either way. */
+    length = (short)name[0];
+    if (length > 31)
+        length = 31;
+    BlockMoveData(&name[1], text, (Size)length);
+    text[length] = '\0';
+    now_log(kLogInfo, "mirror", "front at down generation=%lu psn=%lu name=%s",
+            (unsigned long)generation, (unsigned long)psn.lowLongOfPSN, text);
+}
+
 static void record_button_timing(NowPeekContinuityCell *cell,
                                  NowPeekU32 generation, NowPeekU32 down,
                                  NowPeekU32 begin, NowPeekU32 end,
@@ -408,6 +453,8 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
             record_button_timing(cell, event_generation, event_down,
                                  manager_begin, manager_end,
                                  (NowPeekI32)err);
+            if (event_down != 0 && err == noErr)
+                log_front_process_at_down(event_generation);
             /* The resident's interrupt-time release flips MBState before
                this manager call runs, so CursorDeviceButtonUp sees no
                transition and posts nothing: across every logged run, no
