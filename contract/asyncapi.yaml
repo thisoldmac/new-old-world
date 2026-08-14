@@ -3683,6 +3683,14 @@ components:
         cleanup:
           enum: [temp-renamed, temp-discarded, partial-retained, unknown]
           description: What happened to the receiver's staging artifact.
+        relaunchRequired:
+          type: boolean
+          description: >
+            True only when an overwrite moved a running application to the
+            receiver's Trash before the new application took its name. The
+            process already in memory keeps running the old code until the
+            person quits and relaunches it. Absent and false mean no relaunch
+            consequence was reported; absence remains valid for older peers.
     FileProgress:
       type: object
       required: [type, id, received]

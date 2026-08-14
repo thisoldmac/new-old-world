@@ -13060,6 +13060,32 @@ render at the state-machine level. The remaining useful check is a live host
 UI pass for the AppKit key events and sidebar redraw; no guest behavior or wire
 message changed.
 
+**2026-08-12 successor -- tested locally, not metal-verified.** Running `APPL`
+replacement is no longer the refusal path described above. Both guests now
+move an in-use application to the same volume's Trash after the authorized
+overwrite, rename the complete staging file into place, and return
+`relaunchRequired`; the host says that the still-running process must be quit
+and relaunched. The contract field is optional for older peers. A shared
+source guard pins the APPL/fBsyErr/move/rename order on both Toolbox
+implementations, and the host transfer test pins the single-prompt success
+notice.
+
+The host Files surface is also now a resizable guest/This Mac peer workspace.
+Each side owns its native sidebar and browser navigation; the right pane can
+switch between Browser, Settings, and Sharing. The guest offers icon, list,
+tree, and full-width three-column views, while both browsers support active-
+Place highlighting and Place drop targets. The guest persists root/last/custom
+startup behavior and uses larger, accessibility-aware glass breadcrumb chrome.
+Drag promises infer their type from classic Finder metadata and lazily rebuild
+forked files instead of handing non-Finder apps a generic MacBinary skeleton.
+Focused host and native tests cover the state and contract seams.
+
+Still unverified: the replacement has not run against an application actually
+executing on either classic guest, and promised fork reconstruction has not
+been redeemed by a representative set of third-party macOS app drop targets.
+Those are metal/live-app checks; builds and source ordering do not prove File
+Manager behavior or destination-specific drag negotiation.
+
 ## Multi-guest host controls: tested, not visually or metal-verified (2026-08-08)
 
 The host now keeps its guest choice at the top of the sidebar as a

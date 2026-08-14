@@ -62,12 +62,13 @@ class PublicCIPortabilityTests(unittest.TestCase):
                   / "GlassStyle.swift").read_text()
         implementation = source[source.index("private struct NowGlassPanel"):]
         sections = implementation.split("#if compiler(>=6.2)")[1:]
-        self.assertEqual(len(sections), 3)
+        self.assertEqual(
+            len(sections), implementation.count("private struct NowGlass"))
         guarded = [section.partition("#else")[0] for section in sections]
         self.assertTrue(all("#else" in section for section in sections))
-        self.assertIn("glassEffect", guarded[0])
-        self.assertIn("glassEffect", guarded[1])
-        self.assertIn("buttonStyle(.glass)", guarded[2])
+        self.assertTrue(all(
+            "glassEffect" in section or "buttonStyle(.glass)" in section
+            for section in guarded))
         fallbacks = [section.partition("#else")[2].partition("#endif")[0]
                      for section in sections]
         self.assertTrue(all("content.glassEffect" not in fallback

@@ -4650,8 +4650,10 @@ static void put_done(Boolean ok, const char *code, const char *reason,
                  "{\"type\":\"file.done\",\"id\":%ld,\"ok\":true,"
                  "\"received\":%ld,\"crc32\":%lu,"
                  "\"finalization\":\"same-folder-rename\","
-                 "\"cleanup\":\"temp-renamed\"}",
-                 g_put.id, g_put.rx.received, g_put.rx.crc);
+                 "\"cleanup\":\"temp-renamed\"%s}",
+                 g_put.id, g_put.rx.received, g_put.rx.crc,
+                 g_put.rx.relaunch_required
+                    ? ",\"relaunchRequired\":true" : "");
     } else {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.done\",\"id\":%ld,\"ok\":false,"

@@ -56,13 +56,45 @@ struct MacBinaryFile: Equatable {
                 + resourceLength)]))
     }
 
+    /// Turns the transport envelope into the flat file AppKit promised.
+    /// The envelope is staging, never the destination: both success and
+    /// failure consume it, and a failed reconstruction removes any partial
+    /// destination so another application cannot mistake it for the file.
+    static func materializePromise(envelope: URL, destination: URL,
+                                   modified: Date?,
+                                   fileManager: FileManager = .default) throws {
+        defer { try? fileManager.removeItem(at: envelope) }
+        // Keep this HFS-safe because `write` projects classic names; a hidden
+        // dot name would be deliberately rewritten and cease to name staging.
+        let stagingName = "NOWMac-\(UUID().uuidString.prefix(16))"
+        let staging = destination.deletingLastPathComponent()
+            .appendingPathComponent(stagingName)
+        defer { try? fileManager.removeItem(at: staging) }
+        do {
+            let decoded = try decode(Data(contentsOf: envelope))
+            _ = try decoded.write(
+                to: destination.deletingLastPathComponent(),
+                nameOverride: staging.lastPathComponent,
+                fileManager: fileManager)
+            if let modified {
+                try fileManager.setAttributes(
+                    [.modificationDate: modified],
+                    ofItemAtPath: staging.path)
+            }
+            try fileManager.moveItem(at: staging, to: destination)
+        } catch {
+            throw error
+        }
+    }
+
     func write(to directory: URL, nameOverride: String? = nil,
                fileManager: FileManager = .default)
         throws -> URL {
         let destination = directory.appendingPathComponent(
             ClassicName.project(nameOverride ?? name), isDirectory: false)
-        guard fileManager.createFile(atPath: destination.path,
-                                     contents: dataFork) else {
+        do {
+            try dataFork.write(to: destination, options: .withoutOverwriting)
+        } catch {
             throw DecodeError.couldNotWriteFork("data")
         }
         if !resourceFork.isEmpty {

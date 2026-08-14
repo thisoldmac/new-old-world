@@ -154,6 +154,10 @@ typedef struct {
        themselves. */
     Boolean keep_partial;
     Boolean overwrite;
+    /* The old on-disk APPL was moved to the volume Trash because its
+       running process kept it busy. The new file is complete and in place,
+       but the process must be relaunched before it uses these bytes. */
+    Boolean relaunch_required;
 } FileReceive;
 
 /* Bytes of a resumable partial already held for `resume_token` in the

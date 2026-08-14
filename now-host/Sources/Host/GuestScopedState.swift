@@ -111,6 +111,51 @@ final class GuestStateCache<Snapshot> {
     }
 }
 
+/// Browser state belongs to a physical Mac, not to the socket that happened
+/// to carry its last listing. A reconnect mints a new `GuestKey`, so Files
+/// uses this narrower cache to preserve the folder while still keeping the
+/// session-scoped cache above for state such as live process identifiers.
+@MainActor
+final class GuestMachineStateCache<Snapshot> {
+    enum Change {
+        case unchanged
+        case switched(to: Snapshot?)
+    }
+
+    private(set) var focused: GuestID?
+    private var parked: [GuestID: Snapshot] = [:]
+    private var order: [GuestID] = []
+    private let limit: Int
+
+    init(limit: Int = 8) {
+        self.limit = max(1, limit)
+    }
+
+    func focus(_ key: GuestKey?,
+               parking outgoing: @autoclosure () -> Snapshot) -> Change {
+        guard let machine = key?.machine, machine != focused else {
+            return .unchanged
+        }
+        let restored = parked.removeValue(forKey: machine)
+        order.removeAll { $0 == machine }
+        if let leaving = focused {
+            parked[leaving] = outgoing()
+            remember(leaving)
+        }
+        focused = machine
+        return .switched(to: restored)
+    }
+
+    private func remember(_ machine: GuestID) {
+        order.removeAll { $0 == machine }
+        order.append(machine)
+        while order.count > limit, let oldest = order.first {
+            order.removeFirst()
+            parked.removeValue(forKey: oldest)
+        }
+    }
+}
+
 /// A module model that shows one machine's state.
 ///
 /// Two methods, because there are two events and they mean different

@@ -324,7 +324,7 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(accept.staging, "same-folder-temp")
 
         guard case .fileDone(let done) = try decode(
-            #"{"type":"file.done","id":5,"ok":true,"received":4096,"crc32":305419896,"finalization":"same-folder-rename","cleanup":"temp-renamed"}"#
+            #"{"type":"file.done","id":5,"ok":true,"received":4096,"crc32":305419896,"finalization":"same-folder-rename","cleanup":"temp-renamed","relaunchRequired":true}"#
         ) else {
             return XCTFail("not done")
         }
@@ -332,6 +332,7 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(done.crc32, 0x12345678)
         XCTAssertEqual(done.finalization, "same-folder-rename")
         XCTAssertEqual(done.cleanup, "temp-renamed")
+        XCTAssertEqual(done.relaunchRequired, true)
     }
 
     /// A listing without the root, which is what a subfolder gets and

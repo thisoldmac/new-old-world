@@ -89,6 +89,7 @@ typedef struct {
     OSType file_type, creator;
     unsigned long modified;  /* Mac epoch seconds, straight from the offer */
     int    overwrite;
+    int    relaunch_required; /* running APPL moved aside; quit and reopen */
     OSErr  err;              /* the OSErr behind the last failure */
 
     /* The resource fork's first 512 bytes, kept as they were WRITTEN so
@@ -125,6 +126,11 @@ void now68k_putfile_init(N68PutFile *pf);
  * refused" names no cause; the number does, and on this machine the
  * number is often the whole diagnosis. */
 OSErr now68k_putfile_last_error(const N68PutFile *pf);
+
+/* True after a successful overwrite moved a running application to the
+ * volume Trash. The replacement is on disk; the old process is still the
+ * old build until it is relaunched. */
+int now68k_putfile_relaunch_required(const N68PutFile *pf);
 
 /* The destination folder's name, for the console to say where things
  * land. Empty when it cannot be resolved. `out` is a C string. */

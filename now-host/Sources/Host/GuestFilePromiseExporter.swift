@@ -16,13 +16,14 @@ final class GuestFilePromiseExporter {
         _ destination: URL,
         _ completion: @escaping (Result<Void, Error>) -> Void
     ) -> Void
+    typealias FailureReporter = (_ error: Error) -> Void
 
     private struct Request {
         let id = UUID()
         var row: FileRow
         var destination: URL
         var completion: (Result<Void, Error>) -> Void
-        var createdDestination = false
+        var ownsDestinationOnFailure = false
     }
 
     private final class Budget {
@@ -37,6 +38,7 @@ final class GuestFilePromiseExporter {
         case cancelled(String)
         case malformedListing(String)
         case tooManyItems(Int)
+        case exportFailed(name: String, reason: String)
 
         var errorDescription: String? {
             switch self {
@@ -44,6 +46,8 @@ final class GuestFilePromiseExporter {
             case .malformedListing(let reason): return reason
             case .tooManyItems(let limit):
                 return "That folder contains more than \(limit) items."
+            case .exportFailed(let name, let reason):
+                return "Could not export \(name): \(reason)"
             }
         }
     }
@@ -55,6 +59,7 @@ final class GuestFilePromiseExporter {
 
     private let listPage: ListPage
     private let fetchFile: FetchFile
+    private let onFailure: FailureReporter
     private let fileManager: FileManager
     private var pending: ArraySlice<Request> = []
     private var active: Request?
@@ -62,9 +67,11 @@ final class GuestFilePromiseExporter {
 
     init(listPage: @escaping ListPage,
          fetchFile: @escaping FetchFile,
+         onFailure: @escaping FailureReporter = { _ in },
          fileManager: FileManager = .default) {
         self.listPage = listPage
         self.fetchFile = fetchFile
+        self.onFailure = onFailure
         self.fileManager = fileManager
     }
 
@@ -82,7 +89,7 @@ final class GuestFilePromiseExporter {
         generation += 1
         let failure = ExportError.cancelled(reason)
         if let active {
-            if active.createdDestination {
+            if active.ownsDestinationOnFailure {
                 try? fileManager.removeItem(at: active.destination)
             }
             active.completion(.failure(failure))
@@ -101,7 +108,8 @@ final class GuestFilePromiseExporter {
         if request.row.isFolder {
             exportFolder(request, token: token)
         } else {
-            fetchFile(request.row, request.destination) { [weak self] result in
+            exportFile(request.row, to: request.destination,
+                       token: token) { [weak self] result in
                 self?.finish(request, result: result, token: token)
             }
         }
@@ -112,7 +120,7 @@ final class GuestFilePromiseExporter {
             try fileManager.createDirectory(
                 at: request.destination, withIntermediateDirectories: false)
             if active?.id == request.id {
-                active?.createdDestination = true
+                active?.ownsDestinationOnFailure = true
             }
         } catch {
             finish(request, result: .failure(error), token: token)
@@ -234,7 +242,38 @@ final class GuestFilePromiseExporter {
             exportDirectory(path: path, destination: localURL,
                             budget: budget, token: token, completion: next)
         } else {
-            fetchFile(FileRow(entry: entry, path: path), localURL, next)
+            exportFile(FileRow(entry: entry, path: path), to: localURL,
+                       token: token, completion: next)
+        }
+    }
+
+    /// Fetch into a private sibling, then publish with one no-overwrite move.
+    /// A destination created by another process while the guest is fetching
+    /// is therefore never overwritten or removed by our failure cleanup.
+    private func exportFile(
+        _ row: FileRow,
+        to destination: URL,
+        token: Int,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        let staging = destination.deletingLastPathComponent()
+            .appendingPathComponent(".now-promise-\(UUID().uuidString)")
+        fetchFile(row, staging) { [weak self] result in
+            guard let self else { return }
+            defer { try? self.fileManager.removeItem(at: staging) }
+            guard token == self.generation else { return }
+            switch result {
+            case .failure:
+                completion(result)
+            case .success:
+                do {
+                    try self.fileManager.moveItem(at: staging,
+                                                  to: destination)
+                    completion(.success(()))
+                } catch {
+                    completion(.failure(error))
+                }
+            }
         }
     }
 
@@ -243,8 +282,12 @@ final class GuestFilePromiseExporter {
         guard token == generation, active?.id == request.id else {
             return
         }
-        if case .failure = result, active?.createdDestination == true {
-            try? fileManager.removeItem(at: request.destination)
+        if case .failure(let error) = result {
+            if active?.ownsDestinationOnFailure == true {
+                try? fileManager.removeItem(at: request.destination)
+            }
+            onFailure(ExportError.exportFailed(
+                name: request.row.name, reason: error.localizedDescription))
         }
         active = nil
         request.completion(result)

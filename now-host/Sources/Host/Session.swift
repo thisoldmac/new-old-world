@@ -144,13 +144,20 @@ final class Session {
     /// disk sink receiving its bulk frames.
     private var fileBegin: FileBegin?
     private var fileSink: InboundFileSink?
+    /// The request that may legitimately produce the next pulled-file
+    /// begin. A cancel can happen before the guest assigns a transfer ID;
+    /// retain that abandoned request ID so its late begin cannot be mistaken
+    /// for a replacement request on the same one-wide lane.
+    private var activeFileGetID: Int?
+    private var abandonedFileGetIDs: [Int] = []
+    private static let abandonedFileGetLimit = 64
     private var fileStagingDirectory = FileManager.default.temporaryDirectory
     private var fileStart = Date()
     /// A transfer the host has abandoned. The guest drains to its frame
     /// boundary before stopping, so bytes keep arriving for a transfer
     /// nothing is waiting on; swallow them rather than calling it a
     /// protocol error and closing a healthy session.
-    private var discardingTransfer: Int?
+    private var discardingTransfers: Set<Int> = []
     private var health: GuestListener.SessionHealth?
 
     private let decoder = FrameDecoder()
@@ -386,8 +393,7 @@ final class Session {
             case .control:
                 handleControl(frame.payload)
             case .bulk:
-                if let discarding = discardingTransfer,
-                   Int(frame.header.transfer) == discarding {
+                if discardingTransfers.contains(Int(frame.header.transfer)) {
                     break
                 }
                 /* A scene rides the same one-wide lane as a capture and a
@@ -616,13 +622,29 @@ final class Session {
             noteOutboundAck(progress)
             onFileProgress(progress)
         case .fileRefuse(let refuse):
-            fileBegin = nil
-            fileSink?.abort()
-            fileSink = nil
+            if removeAbandonedFileGet(refuse.id) {
+                break
+            }
+            if activeFileGetID == refuse.id {
+                activeFileGetID = nil
+                fileBegin = nil
+                fileSink?.abort()
+                fileSink = nil
+            }
             onFileRefuse(refuse)
         case .fileBegin(let begin):
             if inbound?.id == begin.id {
                 break                 // a push we already accepted
+            }
+            if removeAbandonedFileGet(begin.id) {
+                discardingTransfers.insert(begin.transfer)
+                send(.fileCancel(FileCancel(transfer: begin.transfer)))
+                break
+            }
+            guard activeFileGetID == begin.id else {
+                discardingTransfers.insert(begin.transfer)
+                send(.fileCancel(FileCancel(transfer: begin.transfer)))
+                break
             }
             do {
                 fileSink = try InboundFileSink(
@@ -769,6 +791,7 @@ final class Session {
 
     func sendFileGet(id: Int, path: String, container: String?,
                      stagingDirectory: URL) {
+        activeFileGetID = id
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
@@ -791,6 +814,7 @@ final class Session {
     func sendDevelopmentProjectFileGet(id: Int, projectID: String,
                                        path: String,
                                        stagingDirectory: URL) {
+        activeFileGetID = id
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
@@ -801,12 +825,34 @@ final class Session {
     }
 
     func cancelFile() {
-        guard let begin = fileBegin else { return }
-        discardingTransfer = begin.transfer
+        guard let begin = fileBegin else {
+            if let id = activeFileGetID {
+                abandonedFileGetIDs.append(id)
+                if abandonedFileGetIDs.count > Self.abandonedFileGetLimit {
+                    abandonedFileGetIDs.removeFirst(
+                        abandonedFileGetIDs.count
+                            - Self.abandonedFileGetLimit)
+                }
+                activeFileGetID = nil
+            }
+            fileSink?.abort()
+            fileSink = nil
+            return
+        }
+        discardingTransfers.insert(begin.transfer)
+        activeFileGetID = nil
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
         send(.fileCancel(FileCancel(transfer: begin.transfer)))
+    }
+
+    private func removeAbandonedFileGet(_ id: Int) -> Bool {
+        guard let index = abandonedFileGetIDs.firstIndex(of: id) else {
+            return false
+        }
+        abandonedFileGetIDs.remove(at: index)
+        return true
     }
 
     /// Holds an offered file until the guest accepts it. The bytes wait
@@ -818,6 +864,10 @@ final class Session {
     }
 
     private var pendingOffer: (offer: FileOffer, source: OfferedSource)?
+    /// An accept can arrive while a cancelled staged read is still returning.
+    /// Keep the replacement behind the old transfer's terminal frame instead
+    /// of overwriting the one outbound slot and orphaning that old transfer.
+    private var deferredAccept: FileAccept?
     private var transferSeq: UInt16 = 0
 
     func sendFileOffer(_ offer: FileOffer, bytes: Data, crc32: UInt32?) {
@@ -1162,6 +1212,10 @@ final class Session {
     private func sendAcceptedFile(_ accept: FileAccept) {
         guard let pending = pendingOffer,
               pending.offer.id == accept.id else { return }
+        guard outbound == nil else {
+            deferredAccept = accept
+            return
+        }
         pendingOffer = nil
         let offer = pending.offer
         let source: Outbound.Source
@@ -1212,6 +1266,7 @@ final class Session {
             outbound = nil
             send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
                                   ok: false, sendMs: nil)))
+            startDeferredOutboundIfNeeded()
             return
         }
         guard out.sent < out.source.byteCount else {
@@ -1221,6 +1276,7 @@ final class Session {
             // exactly what nothing else checks.
             send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
                                   ok: true, sendMs: nil, crc32: out.crc32)))
+            startDeferredOutboundIfNeeded()
             return
         }
         // Wait for the receiver to catch up rather than piling bytes into
@@ -1288,6 +1344,12 @@ final class Session {
         }
     }
 
+    private func startDeferredOutboundIfNeeded() {
+        guard outbound == nil, let accept = deferredAccept else { return }
+        deferredAccept = nil
+        sendAcceptedFile(accept)
+    }
+
     /// Hands one frame to TCP in metered pieces (see Pacing).
     ///
     /// The gap is the point: it has to be real quiet time on the wire,
@@ -1340,13 +1402,9 @@ final class Session {
                 guard let self, !self.closed else { return }
                 if let error { completion(error); return }
                 if last { completion(nil); return }
-                // Cancellation lands between pieces as well as between
-                // frames: a stopped transfer should not keep metering
-                // out the rest of a 32 KB frame it has abandoned.
-                if self.outbound?.cancelled == true {
-                    completion(nil)
-                    return
-                }
+                // Once the first byte of a protocol frame is on the wire,
+                // finish that frame. A control message inserted here would
+                // be consumed as bulk bytes and desynchronise the peer.
                 try? await Task.sleep(
                     nanoseconds: UInt64(self.pacing.gap * 1_000_000_000))
                 self.sendPiece(frame, from: end, completion: completion)
@@ -1359,16 +1417,20 @@ final class Session {
     func cancelOutbound() {
         if pendingOffer != nil {
             pendingOffer = nil
+            deferredAccept = nil
         }
         outbound?.cancelled = true
+        sendNextOutboundChunk()
     }
 
     func clearOutboundRequest(id: Int) {
         if pendingOffer?.offer.id == id {
             pendingOffer = nil
+            if deferredAccept?.id == id { deferredAccept = nil }
         }
         if outbound?.id == id {
             outbound?.cancelled = true
+            sendNextOutboundChunk()
         }
     }
 
@@ -1439,7 +1501,8 @@ final class Session {
     }
 
     private func failPulledStream(transfer: Int, error: Error) {
-        discardingTransfer = transfer
+        discardingTransfers.insert(transfer)
+        activeFileGetID = nil
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
@@ -1450,7 +1513,7 @@ final class Session {
 
     private func failInboundStream(transfer: Int, error: Error) {
         guard let inbound else { return }
-        discardingTransfer = transfer
+        discardingTransfers.insert(transfer)
         self.inbound = nil
         inbound.sink.abort()
         send(.fileCancel(FileCancel(transfer: transfer)))
@@ -1460,14 +1523,12 @@ final class Session {
     }
 
     private func finishFile(_ end: FileEnd) {
-        if discardingTransfer == end.transfer {
-            discardingTransfer = nil
-            fileBegin = nil
-            fileSink?.abort()
-            fileSink = nil
+        if discardingTransfers.remove(end.transfer) != nil {
             return                    /* the host already gave up on it */
         }
         guard let begin = fileBegin, let sink = fileSink else { return }
+        guard begin.id == end.id else { return }
+        activeFileGetID = nil
         fileBegin = nil
         fileSink = nil
         guard end.ok else {
@@ -1495,8 +1556,7 @@ final class Session {
     }
 
     private func finishCapture(_ end: CaptureEnd) {
-        if discardingTransfer == end.transfer {
-            discardingTransfer = nil
+        if discardingTransfers.remove(end.transfer) != nil {
             captureBegin = nil
             captureBuffer = []
             cancelled = false
@@ -1863,7 +1923,7 @@ final class Session {
     func cancelCapture() {
         guard let begin = captureBegin else { return }
         cancelled = true
-        discardingTransfer = begin.transfer
+        discardingTransfers.insert(begin.transfer)
         send(.captureCancel(CaptureCancel(transfer: begin.transfer)))
     }
 

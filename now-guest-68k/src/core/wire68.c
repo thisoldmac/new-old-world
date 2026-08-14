@@ -2265,7 +2265,14 @@ static void put_done(int okay, N68PutCode code)
         ok = ok && now68k_fmt_append_str(
                        payload, (long)sizeof payload, &pos,
                        ",\"finalization\":\"same-folder-rename\","
-                       "\"cleanup\":\"temp-renamed\"}");
+                       "\"cleanup\":\"temp-renamed\"");
+        if (now68k_putfile_relaunch_required(&g_putfile)) {
+            ok = ok && now68k_fmt_append_str(
+                           payload, (long)sizeof payload, &pos,
+                           ",\"relaunchRequired\":true");
+        }
+        ok = ok && now68k_fmt_append_str(
+                       payload, (long)sizeof payload, &pos, "}");
     } else {
         ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
                                           ",\"ok\":false,\"code\":\"");

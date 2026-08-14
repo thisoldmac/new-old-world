@@ -1289,6 +1289,10 @@ struct FileDone: Codable, Equatable, Sendable {
     var crc32: UInt32? = nil
     var finalization: String? = nil
     var cleanup: String? = nil
+    /// Replacing a running classic application moves the old binary to the
+    /// Trash, then gives the complete staging file its name. The process in
+    /// memory is still the old build until it is relaunched.
+    var relaunchRequired: Bool? = nil
 }
 
 /// What the guest has actually taken off the wire during a put. Advisory:

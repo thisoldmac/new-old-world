@@ -245,6 +245,10 @@ run_py now-guest-shared act_correlation_source_test.py
 run_py now-guest-shared act_install_reentrant_source_test.py
 run_py now-guest-shared arg_shadow_source_test.py
 run_py now-guest-shared control_kind_source_test.py
+# Replacing an in-use APPL is File Manager behavior that a host cc cannot
+# execute. This cross-guest source guard pins the ordering and the shared
+# relaunch receipt instead of pretending the Toolbox half ran here.
+run_py now-guest-shared running_app_replace_source_test.py
 # That gate says every control's making and unmaking goes through one
 # file; this one says the file does the right thing with them. It is here
 # rather than with the other PowerPC tests because the two are one

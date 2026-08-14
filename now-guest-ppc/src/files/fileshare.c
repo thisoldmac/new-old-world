@@ -1984,10 +1984,29 @@ int now_files_receive_chunk(FileReceive *rx, const void *bytes, long len)
     return rc;
 }
 
+/* Defined with the share mutations below; receive finalization uses the
+   same per-volume Trash mechanism when the File Manager says an APPL is
+   busy rather than inventing a second kind of delete. */
+static int trash_folder(short *vref, long *dir);
+static int move_busy_named(FSSpec *spec, long to_dir,
+                           const unsigned char *desired,
+                           Str255 out_final);
+static int move_named(FSSpec *spec, long to_dir,
+                      const unsigned char *desired, Str255 out_final);
+static OSErr g_last_err;
+
+static Boolean spec_is_application(const FSSpec *spec)
+{
+    FInfo info;
+
+    return FSpGetFInfo(spec, &info) == noErr && info.fdType == 'APPL';
+}
+
 int now_files_receive_finish(FileReceive *rx)
 {
     CInfoPBRec pb;
     Str255 name;
+    Str255 final_name;
     OSErr err;
 
     if (!rx->active) {
@@ -2049,16 +2068,40 @@ int now_files_receive_finish(FileReceive *rx)
     /* Replacing: the old file goes only once the new one is whole.
        Create-only offers never delete a file that appeared while the
        transfer was in flight. */
+    memcpy(final_name, rx->final.name, rx->final.name[0] + 1);
     if (rx->overwrite) {
-        if (FSpDelete(&rx->final) != noErr) {
-            /* fnfErr is the normal case — nothing was there. */
+        err = FSpDelete(&rx->final);
+        if (err == fBsyErr && spec_is_application(&rx->final)) {
+            short trash_vref;
+            long trash_dir;
+            Str255 landed;
+
+            /* Classic Finder's replacement behavior: the running process
+               keeps its old image, the old file moves to this volume's
+               Trash, and the complete incoming application takes its name.
+               Moving is allowed where deleting an in-use APPL is not. */
+            if (trash_folder(&trash_vref, &trash_dir) != kFilesOK
+                || trash_vref != rx->final.vRefNum
+                || move_busy_named(&rx->final, trash_dir,
+                                   final_name, landed)
+                    != kFilesOK) {
+                FSpDelete(&rx->temp);
+                return kFilesIOError;
+            }
+            rx->relaunch_required = true;
+        } else if (err != noErr && err != fnfErr) {
+            g_last_err = err;
+            FSpDelete(&rx->temp);
+            return kFilesIOError;
         }
     }
-    err = FSpRename(&rx->temp, rx->final.name);
+    err = FSpRename(&rx->temp, final_name);
     if (err != noErr) {
         FSpDelete(&rx->temp);
         return err == dupFNErr ? kFilesExists : kFilesIOError;
     }
+    rx->final = rx->temp;
+    memcpy(rx->final.name, final_name, final_name[0] + 1);
     return kFilesOK;
 }
 
@@ -2106,8 +2149,6 @@ static void receive_release(FileReceive *rx, Boolean keep)
 /* "the File Manager refused" names no cause and helps nobody debug a
    volume they cannot see. The last OSErr is kept so the answer can carry
    the number the File Manager actually returned. */
-static OSErr g_last_err;
-
 OSErr now_files_last_error(void)
 {
     return g_last_err;
@@ -2271,20 +2312,87 @@ static void free_name(short vref, long dir_a, long dir_b,
     }
 }
 
+/* A collision already in Trash only needs a name free in Trash. The source
+   folder is irrelevant because this rename never touches the running APPL. */
+static void free_name_in_folder(short vref, long dir,
+                                const unsigned char *wanted, Str255 out)
+{
+    FSSpec probe;
+    int suffix;
+
+    memcpy(out, wanted, wanted[0] + 1);
+    for (suffix = 2; suffix < 100; ++suffix) {
+        char base[64], candidate[80];
+
+        if (FSMakeFSSpec(vref, dir, out, &probe) != noErr) {
+            return;
+        }
+        memcpy(base, wanted + 1, wanted[0]);
+        base[wanted[0]] = '\0';
+        snprintf(candidate, sizeof candidate, "%.27s %d", base, suffix);
+        CopyCStringToPascal(candidate, out);
+    }
+}
+
+/* A running application must keep its catalog name. If Trash already holds
+   that name, move the older Trash occupant aside, then move the live APPL
+   unchanged. Renaming the APPL itself is the operation that returns fBsyErr
+   on systems where Finder replacement still succeeds. */
+static int move_busy_named(FSSpec *spec, long to_dir,
+                           const unsigned char *desired,
+                           Str255 out_final)
+{
+    FSSpec collision;
+    Str255 available;
+    Boolean moved_collision = false;
+    OSErr err;
+
+    if (!EqualString(spec->name, desired, false, false)) {
+        return move_named(spec, to_dir, desired, out_final);
+    }
+    if (FSMakeFSSpec(spec->vRefNum, to_dir, desired, &collision) == noErr) {
+        free_name_in_folder(spec->vRefNum, to_dir, desired, available);
+        err = FSpRename(&collision, available);
+        if (err != noErr) {
+            g_last_err = err;
+            return kFilesIOError;
+        }
+        memcpy(collision.name, available, available[0] + 1);
+        moved_collision = true;
+    }
+    err = cat_move(spec, to_dir);
+    if (err != noErr) {
+        if (moved_collision) {
+            (void)FSpRename(&collision, desired);
+        }
+        return err == fnfErr ? kFilesNotFound : kFilesIOError;
+    }
+    spec->parID = to_dir;
+    memcpy(out_final, desired, desired[0] + 1);
+    return kFilesOK;
+}
+
 /* Moves an item to another folder, landing on `desired` where it can.
-   RENAME FIRST, then move: PBCatMove carries the item's CURRENT name, so
-   a move into a folder that already holds that name fails dupFNErr
-   before any later rename could have helped. Renaming into a name free
-   in both folders removes the collision before the move happens.
+   When its current name is already free at the destination, move it as-is:
+   a running APPL can be moved but cannot necessarily be renamed. Otherwise
+   rename first, because PBCatMove carries the item's CURRENT name and a
+   destination collision fails before a later rename could have helped.
    `out_final` is the name it actually ended up with, which is not always
    the one asked for — that is the caller's to report, not to hide. */
 static int move_named(FSSpec *spec, long to_dir, const unsigned char *desired,
                       Str255 out_final)
 {
     Str255 staging;
+    FSSpec destination;
     OSErr err;
 
-    free_name(spec->vRefNum, spec->parID, to_dir, desired, staging);
+    if (EqualString(spec->name, desired, false, false)
+        && FSMakeFSSpec(spec->vRefNum, to_dir, desired,
+                        &destination) != noErr) {
+        memcpy(staging, desired, desired[0] + 1);
+    } else {
+        free_name(spec->vRefNum, spec->parID, to_dir, desired, staging);
+    }
     if (!EqualString(spec->name, staging, false, false)) {
         err = FSpRename(spec, staging);
         if (err != noErr) {

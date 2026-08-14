@@ -1354,6 +1354,7 @@ final class GuestListener: ObservableObject {
         var finalization: String
         var cleanup: String
         var integrity: String
+        var relaunchRequired = false
     }
 
     /// One pulled file, still in guest form. The bytes remain in a
@@ -2223,15 +2224,17 @@ final class GuestListener: ObservableObject {
             completion(.failure(failure))
             return
         }
-        if pendingPut != nil {
+        if pendingPut != nil, putId == refuse.id {
             settlePut(.failure(putFailure(
                 code: failure.code,
                 message: failure.message,
                 guestCleanup: "unknown-before-accept")))
             return
         }
+        guard fileWatchdogId == refuse.id else { return }
         let completion = pendingFile
         pendingFile = nil
+        fileWatchdogId = nil
         captureProgress = nil
         completion?(.failure(failure))
     }
@@ -3291,7 +3294,8 @@ final class GuestListener: ObservableObject {
                         cleanup: done.cleanup ?? "unknown",
                         integrity: done.crc32 != nil
                             ? "guest-crc32-confirmed"
-                            : "file-done-after-crc32")))
+                            : "file-done-after-crc32",
+                        relaunchRequired: done.relaunchRequired == true)))
                 } else {
                     self.settlePut(.failure(self.putFailure(
                         code: done.code ?? "io-error",

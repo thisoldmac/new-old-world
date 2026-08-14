@@ -933,11 +933,10 @@ final class TransferQueueTests: XCTestCase {
         XCTAssertTrue(model.queue.isEmpty)
     }
 
-    /// Replacing a running or locked classic application can accept every
-    /// byte and still fail when the receiver tries to delete-and-rename the
-    /// temporary file. That second `exists` is the final answer to an
-    /// already-authorized overwrite, not a new collision question.
-    func testAnOverwriteThatCannotFinalizeFailsWithoutPromptingAgain()
+    /// Finder-style replacement moves an in-use application aside after
+    /// the human authorizes the overwrite, then tells this side that the
+    /// process still in memory needs to be relaunched.
+    func testRunningApplicationReplacementSucceedsAndRequestsRelaunch()
         async throws {
         let guest = try await silentGuest()
         let url = try XCTUnwrap(tempFiles(["Running App.bin"]).first)
@@ -981,16 +980,17 @@ final class TransferQueueTests: XCTestCase {
             !guest.bulkReceived.isEmpty
         }
         try guest.send(.fileDone(FileDone(
-            id: id, ok: false, code: "exists",
-            reason: "the running application could not be replaced")))
+            id: id, ok: true, code: nil, reason: nil,
+            relaunchRequired: true)))
 
-        try await waitUntil("overwrite failure settled") {
+        try await waitUntil("replacement settled") {
             self.model.transfer == nil
         }
         XCTAssertNil(model.overwritePrompt,
-                     "an overwrite refusal must fail closed, not loop")
-        XCTAssertTrue(model.lastError?.contains("could not be replaced")
-                      == true)
+                     "a completed replacement must not ask twice")
+        XCTAssertNil(model.lastError)
+        XCTAssertTrue(model.lastNotice?.contains("moved to the Trash") == true)
+        XCTAssertTrue(model.lastNotice?.contains("relaunch") == true)
     }
 
     func testADeadWireStopsTheQueueInsteadOfFailingEveryFile()
