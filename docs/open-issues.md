@@ -145,8 +145,6 @@ Two things a reader should carry away rather than rediscover:
   contract change in plan 021 §5.1.1, which is deliberately not attempted
   here. Until then every ingested pack lands in the one shared dated store.
 
-## DOGFOOD FINDINGS, NOT YET TRIAGED: host shell and module follow-up (2026-08-14, `feat/bundle-update-slice` at `83f10653`)
-
 ## TESTED, NOT METAL-VERIFIED: host shell and module dogfood follow-up (2026-08-14, `feat/bundle-update-slice`)
 
 The integrated 0.2.0 development bundle exposed this batch. The host changes
