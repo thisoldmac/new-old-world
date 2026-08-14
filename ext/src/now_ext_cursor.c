@@ -645,6 +645,11 @@ static void settle_continuity_idle_cursor(void)
         return;
     want.h = (short)cell->want_h;
     want.v = (short)cell->want_v;
+    /* Own the point BEFORE the manager can propagate it into RawMouse:
+       the sampler otherwise classifies our own settle as physical input
+       and hands the pointer back to the host - eleven guest-input exits
+       in under a minute of 0x73 epochs (2026-08-13 200240). */
+    remember_owned_device_point(want);
     settle_continuity_tracking_device(cell, want);
     gNowCursorIdleSettledSeq = position_seq;
     gNowCursorIdleSettleCount++;

@@ -260,6 +260,24 @@ check("!gNowCursorSettleIdleCursor || gNowCursorTrackingSourceActive"
 check("applied_position_seq" in idle_settle
       and "gNowCursorIdleSettledSeq" in idle_settle,
       "the idle settle spike no longer proves the application is behind")
+# The spike must own its point BEFORE the manager can propagate it into
+# RawMouse, or the sampler classifies the settle as physical input and
+# hands the pointer back (11 guest-input exits in under a minute of 0x73
+# epochs, 2026-08-13 200240).
+check("remember_owned_device_point(want);" in idle_settle
+      and idle_settle.index("remember_owned_device_point(want);")
+          < idle_settle.index("settle_continuity_tracking_device(cell, want);"),
+      "the idle settle no longer owns its point before the manager move")
+
+# The interrupt-time MBState release beats the manager to the transition,
+# so CursorDeviceButtonUp posts nothing: across every logged run no
+# synthetic mouseUp event ever entered the queue, and a target pairing a
+# down against the last mouseUp EVENT can never see a double click. The
+# PPC application completes the stream in task time after each successful
+# manager up; PostEvent is CarbonLib 1.0+.
+check("PostEvent(mouseUp, 0)" in PPC
+      and "event_down == 0 && err == noErr" in PPC,
+      "the application no longer posts the mouseUp the manager cannot")
 
 if failures:
     for failure in failures:

@@ -379,6 +379,20 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
             record_button_timing(cell, event_generation, event_down,
                                  manager_begin, manager_end,
                                  (NowPeekI32)err);
+            /* The resident's interrupt-time release flips MBState before
+               this manager call runs, so CursorDeviceButtonUp sees no
+               transition and posts nothing: across every logged run, no
+               synthetic mouseUp event has ever entered the queue
+               (event=0 on all up rows). A target that pairs a down
+               against the last mouseUp EVENT can therefore never see a
+               double click, whatever the recognition window. Complete
+               the stream here, in ordinary task time. The queue element
+               takes its point from the mouse global, which the resident's
+               tracking completion has already settled to the release
+               point. PostEvent is CarbonLib 1.0+; the jGNE observer will
+               now record these ups, which is also the proof they landed. */
+            if (event_down == 0 && err == noErr)
+                (void)PostEvent(mouseUp, 0);
             cell->event_result_down = event_down;
             cell->event_result_err = (NowPeekI32)err;
             cell->event_result_generation = event_generation;

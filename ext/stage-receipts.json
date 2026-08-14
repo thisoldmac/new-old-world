@@ -759,6 +759,16 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "redesign checkpoint; bake follows with the stack build"
+    },
+    {
+      "at": "2026-08-13T20:11:59-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "15ea71b0067bac35f82316f16030ad17b04fbe3d",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "fix checkpoint; bake follows with the stack rebuild"
     }
   ]
 }

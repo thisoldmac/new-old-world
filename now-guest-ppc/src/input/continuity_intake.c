@@ -433,9 +433,16 @@ int now_continuity_arm(long id, unsigned short port,
        that proves the epoch armed. A reboot loses the resident ring, and an
        empty ADB trace is otherwise ambiguous between "no physical packets"
        and "the wrapper never installed". */
+    /* double-active is GetDblTime() AFTER the resident armed: with the wide
+       window bit set it must read the widened value, so this line is the
+       proof the widening actually installed on this machine - the teardown
+       line's double= deliberately reports the human's saved original and
+       cannot distinguish a widening that never ran. */
     now_log(kLogInfo, "mirror",
-            "arm epoch=%lu hz=%lu lease=%lu fast=%d tracking=0x%lx",
-            epoch, requested_hz, lease_ticks, gFastPump, tracking_options);
+            "arm epoch=%lu hz=%lu lease=%lu fast=%d tracking=0x%lx "
+            "double-active=%lu",
+            epoch, requested_hz, lease_ticks, gFastPump, tracking_options,
+            (unsigned long)GetDblTime());
     now_log(kLogInfo, "adb",
             "observer epoch=%lu state=%lu addr=%ld handler=%ld devices=%lu "
             "err=%ld",
