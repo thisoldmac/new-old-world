@@ -67,6 +67,14 @@ protocol ContinuityPointerEnvironment: AnyObject {
     func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
                         callbacks: ContinuityFileEdge.Callbacks)
     func hideFileEdge(_ token: AnyObject)
+    /// Widens the sentinel strip into a catch surface, or narrows it back.
+    ///
+    /// Two physical pixels are enough to DETECT a crossing and far too few
+    /// to CATCH one: the returning pointer is already moving, and the drag
+    /// must begin over a real view of ours. The surface is widened for the
+    /// length of one handoff only, so the rest of the time the boundary
+    /// pixel pair is all this app takes from whatever is underneath.
+    func setFileEdgeCatching(_ token: AnyObject, _ catching: Bool)
     /// Starts the native drag from a REAL host mouse event. Non-optional on
     /// purpose: AppKit owns a gesture only when it can see the event that
     /// began it, and a synthesized stand-in is the shape that failed
@@ -135,8 +143,25 @@ final class ContinuityEdgeController: ObservableObject {
     private var hostFileDrag = false
     private var guestFileCandidate: HostFileDragItem?
     private var guestFileAtPoint: ((MirrorKit.Point) -> HostFileDragItem?)?
+    private var guestSelectionItem: (() -> HostFileDragItem?)?
     private var hostFilesDropped:
         ((NSPasteboard, MirrorKit.Point) -> Bool)?
+    private var pendingReturnDrag: PendingReturnDrag?
+
+    /// A crossing whose guest press has been released and whose host drag is
+    /// waiting for the first REAL mouse event.
+    ///
+    /// It cannot start before that event exists. AppKit owns a gesture only
+    /// from an event it can see, and the crossing sample itself arrives
+    /// through the consuming CGEvent tap, which has none by construction. The
+    /// button is still physically held, so real events resume the moment the
+    /// tap dies — this is the half-instant in between, made a state rather
+    /// than a hope.
+    private struct PendingReturnDrag {
+        let item: HostFileDragItem
+        let returnPoint: CGPoint
+        var waitedForRealEvent = false
+    }
 
     init(layout: ContinuityDisplayLayout,
          driver: ContinuityEdgeDriving,
@@ -177,6 +202,23 @@ final class ContinuityEdgeController: ObservableObject {
         refreshFileEdge()
     }
 
+    /// Binds a press to the guest's PUBLISHED SELECTION rather than to a
+    /// scene hit test.
+    ///
+    /// The stub is the truth for this lane, and the reason is not
+    /// preference: during a drag the guest cannot be asked anything, so what
+    /// the press binds to has to have arrived before the press. A scene
+    /// lookup would also make edge-mode file drags depend on the Mirror
+    /// running, which is the dependency slice 1 spent its whole existence
+    /// removing. The closure returns nil for an unusable selection and is
+    /// responsible for saying WHY out loud — a silent nil here is the v1
+    /// failure mode.
+    func configureSelectionDragging(
+        guestSelectionItem: @escaping () -> HostFileDragItem?
+    ) {
+        self.guestSelectionItem = guestSelectionItem
+    }
+
     /// Whether the file seam has an owner at all. Both callbacks are a
     /// precondition for creating the AppKit destination, so their absence is
     /// the difference between a drop that refuses and a strip that is not
@@ -204,6 +246,11 @@ final class ContinuityEdgeController: ObservableObject {
         if let monitor { environment.stop(monitor) }
         monitor = nil
         pendingCursorWarp = nil
+        if pendingReturnDrag != nil {
+            audit(.warn, "the guest file drag was abandoned: Continuity "
+                + "stopped before this Mac could start it")
+            pendingReturnDrag = nil
+        }
         if let fileEdge { environment.hideFileEdge(fileEdge) }
         fileEdge = nil
     }
@@ -243,6 +290,10 @@ final class ContinuityEdgeController: ObservableObject {
     private func received(_ sample: HostPointerSample,
                           sourceEvent: NSEvent?) {
         if consumeExpectedCursorWarp(sample) { return }
+        if pendingReturnDrag != nil,
+           resumeReturnDrag(with: sample, sourceEvent: sourceEvent) {
+            return
+        }
         switch state {
         case .disabled:
             return
@@ -282,7 +333,13 @@ final class ContinuityEdgeController: ObservableObject {
         }
         if sample.kind == .primaryDown {
             let point = mirrorPoint(ownership.guestPoint)
-            guestFileCandidate = guestFileAtPoint?(point)
+            /* The selection stub wins outright where it is configured. It is
+               not a better hit test, it is a different question: what the
+               person picked, asked before the press, rather than what is
+               under a point in a scene this lane may not have. */
+            guestFileCandidate = guestSelectionItem != nil
+                ? guestSelectionItem?()
+                : guestFileAtPoint?(point)
             let consumed = driver?.primaryDown(at: point,
                 inMenuBar: point.y < HitTester.menubarHeight,
                 sourceUptime: sample.eventUptime > 0
@@ -416,38 +473,100 @@ final class ContinuityEdgeController: ObservableObject {
 
     /// Hands a held guest item to AppKit as the pointer crosses back.
     ///
-    /// `sourceEvent` is the real host mouse event behind the crossing
-    /// sample. The consuming CGEvent tap has none — it delivers CGEvents —
-    /// so this refuses by name there rather than feeding AppKit a
-    /// synthesized gesture, which is what shipped and failed before.
+    /// The order is the whole mechanism, so it is stated once here and
+    /// pinned by a test:
+    ///
+    /// 1. **Release the guest button first.** v1 never did, and the item
+    ///    stayed stuck to the Finder's cursor on the other machine. It goes
+    ///    down the ordinary driver lane — the same release an ordinary
+    ///    click sends — because there is no second way to end a press.
+    /// 2. Tear the pass down exactly as an ordinary return does: pointer
+    ///    left, cursor restored, tap stopped, ownership dropped.
+    /// 3. Only THEN start the native drag, and only from a real event. The
+    ///    crossing sample usually arrives through the consuming tap, which
+    ///    has no NSEvent by construction; the physical button is still held,
+    ///    so the first real `mouseDragged` after the tap dies is the gesture
+    ///    AppKit can own. The strip widens into a catch surface for that
+    ///    instant so the returning pointer is over a view of ours.
     private func returnGuestFileToHost(_ item: HostFileDragItem,
                                        from ownership: Ownership,
                                        sourceEvent: NSEvent?) {
         let returnPoint = ContinuityDisplayGeometry.hostReturnPoint(
             for: ownership.guestPoint, edge: ownership.edge,
             guestFrame: layout.guestFrame, scale: layout.guestScale)
+        let guestPoint = mirrorPoint(ownership.guestPoint)
+        _ = driver?.primaryUp(at: guestPoint)
+        audit(.info, "guest press released before the cross: guest="
+            + "\(guestPoint.x),\(guestPoint.y) — the dragged icon must snap "
+            + "back on the Mac")
         driver?.pointerLeft()
         restoreHostCursor(from: ownership)
         self.ownership = nil
         pending = nil
         guestFileCandidate = nil
         state = .ready
-        guard let sourceEvent else {
-            audit(.error, "cannot hand the guest file to this Mac: the "
-                + "crossing sample carried no host mouse event, so AppKit "
-                + "has no gesture to start a drag from")
-            status = "Could not start the host file drag: this Mac saw no "
-                + "mouse event behind the crossing"
+        setFileEdgeCatching(true)
+        pendingReturnDrag = PendingReturnDrag(item: item,
+                                              returnPoint: returnPoint)
+        if let sourceEvent {
+            /* The observe-only monitor path already has one. Nothing waits. */
+            startReturnDrag(with: sourceEvent)
             return
         }
-        if environment.beginFileDrag(item, at: returnPoint,
+        status = "Keep holding the button: finishing the file drag on this Mac"
+        audit(.info, "guest file crossed with no host mouse event yet; "
+            + "waiting for the first real one now the tap is down")
+    }
+
+    /// The second half of the crossing above, driven by whatever real event
+    /// arrives first. Returns true when it consumed the sample.
+    private func resumeReturnDrag(with sample: HostPointerSample,
+                                  sourceEvent: NSEvent?) -> Bool {
+        guard var waiting = pendingReturnDrag else { return false }
+        if !sample.buttonsDown || sample.kind == .primaryUp {
+            pendingReturnDrag = nil
+            setFileEdgeCatching(false)
+            audit(.warn, "the guest file drag was abandoned: the button was "
+                + "released before this Mac saw a real mouse event to start "
+                + "the drag from")
+            status = "The file drag ended before this Mac could take it over"
+            return true
+        }
+        guard let sourceEvent else {
+            if !waiting.waitedForRealEvent {
+                waiting.waitedForRealEvent = true
+                pendingReturnDrag = waiting
+                /* Once, not per sample: the tap can deliver a burst, and a
+                   line per sample would bury the one that matters. */
+                audit(.info, "still waiting for a real host mouse event: the "
+                    + "held sample carried none")
+            }
+            return true
+        }
+        startReturnDrag(with: sourceEvent)
+        return true
+    }
+
+    private func startReturnDrag(with sourceEvent: NSEvent) {
+        guard let waiting = pendingReturnDrag else { return }
+        pendingReturnDrag = nil
+        let point = waiting.returnPoint
+        if environment.beginFileDrag(waiting.item, at: point,
                                      sourceEvent: sourceEvent) {
+            audit(.info, "host file drag started from a real mouse event at "
+                + "\(Int(point.x)),\(Int(point.y))")
             status = "Copying the guest file to this Mac on release"
         } else {
             audit(.error, "the host file drag was refused by AppKit at "
-                + "\(Int(returnPoint.x)),\(Int(returnPoint.y))")
+                + "\(Int(point.x)),\(Int(point.y))")
             status = "Could not start the host file drag"
         }
+        setFileEdgeCatching(false)
+    }
+
+    private func setFileEdgeCatching(_ catching: Bool) {
+        guard let fileEdge else { return }
+        environment.setFileEdgeCatching(fileEdge, catching)
     }
 
     private func isCrossingOutward(_ sample: HostPointerSample,

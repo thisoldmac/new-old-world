@@ -244,6 +244,10 @@ final class AppKitContinuityPointerEnvironment:
         edgeWindow.update(callbacks: callbacks)
     }
 
+    func setFileEdgeCatching(_ token: AnyObject, _ catching: Bool) {
+        (token as? ContinuityFileEdge)?.setCatching(catching)
+    }
+
     func hideFileEdge(_ token: AnyObject) {
         let fileEdge = token as? ContinuityFileEdge
         fileEdge?.close()

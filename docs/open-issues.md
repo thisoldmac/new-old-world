@@ -7,6 +7,50 @@ search:
 
 # Open issues
 
+## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
+
+Slice 4 of the cross-edge file drag plan, and the consumer the entry
+below ends by saying does not exist: `Session.onContinuitySelection` is
+wired, the stub is cached under the epoch that published it, a press
+binds to it, and the drop is redeemed over `continuity.grab` through the
+one bulk receiver this side already has. Host only — no guest, contract
+or resident file was touched.
+
+**The cross is an ORDER, and that is the whole repair.** v1 started the
+host drag while the guest still held its press, so the dragged icon
+stayed stuck to the Finder's cursor on the other machine. The sequence
+is now: release the guest button down the ordinary driver lane, tear the
+pass down exactly as an ordinary return does, and only then begin the
+native drag — from a REAL mouse event, never a synthesized one. The
+crossing sample usually arrives through the consuming CGEvent tap, which
+has no NSEvent by construction, so the handoff WAITS for the first
+physical `mouseDragged` after the tap dies, and the 2-point sentinel
+strip widens into a catch surface for that instant.
+
+**What is proven and what is not.**
+
+- Proven here: `now-host` is 2438/0 and `scripts/test-host` is green
+  (both suites plus the Xcode app target, Debug and Release). Three
+  mutations were watched failing against the guard that names them — the
+  release deferred past `beginDraggingSession`, a wire refusal finished
+  as success, and the unusable-stub audit deleted.
+- NOT proven, and it is most of the risk: **nobody has done this with a
+  hand on a mouse.** Every step past the tap's death is asserted against
+  a fake environment. Whether a real `mouseDragged` reaches the widened
+  panel at all, whether 160 points is enough surface at speed, whether
+  AppKit accepts a session seeded from a global-monitor event on a
+  non-key panel, and whether the guest icon visibly snaps back are all
+  UNMEASURED. Named audit lines exist on every gate for exactly that
+  pass: v1's attended round produced no per-direction symptom because
+  each of these paths was a silent nil.
+
+**Deliberately not built.** Folders are refused `folder-not-yet` by name
+(slice 6). A multiple selection is its first item, as the contract says.
+The drag image is the generic icon for the type the OSType named,
+because stub icon extraction is declared and unsent. Host-to-guest is
+slice 5 and is untouched here — the sentinel still freezes the entry
+point, which is that direction's known defect.
+
 ## BUILDS AND TESTED, NEVER RUN ON ANY MACINTOSH: the Finder-selection stub and its gesture-scoped grab (2026-08-14, `feat/continuity-selection-stub`)
 
 Slices 2 and 3 of the cross-edge file drag plan. The contract gains

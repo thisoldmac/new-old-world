@@ -1,6 +1,7 @@
 import AppKit
 import MirrorKit
 import MirrorKitUI
+import UniformTypeIdentifiers
 
 /// Installs the cross-edge file seam on the app-owned edge controller.
 ///
@@ -32,10 +33,39 @@ enum ContinuityFileDrag {
         edge: ContinuityEdgeController,
         fileTransfer: MirrorFileTransferModel,
         scene: @escaping () -> MirrorKit.Scene?,
+        selection: (() -> Result<ContinuityDragStub,
+                                 ContinuitySelectionCache.Unusable>)? = nil,
+        grab: ContinuityGrabTransfer? = nil,
         audit: @escaping Audit = {
             HostLog.shared.write($0, "continuity", $1)
         }
     ) {
+        if let selection, let grab {
+            /* The stub lane is installed only when both halves exist: a
+               binding with nothing to redeem it would drag a promise that
+               can never be fulfilled, which is worse than not claiming the
+               press at all. */
+            edge.configureSelectionDragging(
+                guestSelectionItem: { [weak grab] in
+                    guard let grab else {
+                        audit(.error, "no guest file can be picked up: the "
+                            + "grab lane is gone")
+                        return nil
+                    }
+                    switch selection() {
+                    case .failure(let unusable):
+                        audit(.info, unusable.message)
+                        return nil
+                    case .success(let stub):
+                        audit(.info, "press bound to the guest selection: "
+                            + "epoch=\(stub.epoch), "
+                            + "generation=\(stub.generation), "
+                            + "name=\(stub.item.name), "
+                            + "type=\(stub.utType.identifier)")
+                        return grab.dragItem(for: stub)
+                    }
+                })
+        }
         edge.configureFileDragging(
             guestFileAtPoint: { [weak fileTransfer] point in
                 guard let fileTransfer else {

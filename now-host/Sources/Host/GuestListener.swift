@@ -161,6 +161,10 @@ final class GuestListener: ObservableObject {
     /// correlated answer or an unsolicited guest-side takeover.
     var onContinuityReport: ((GuestKey, ContinuityReport) -> Void)?
     var onContinuityKeyReport: ((GuestKey, ContinuityKeyReport) -> Void)?
+    /// The guest's unsolicited Finder-selection stub. It arrives from the
+    /// active session only, like the two reports above: a background Mac's
+    /// selection is not what the pointer is standing on.
+    var onContinuitySelection: ((GuestKey, ContinuitySelection) -> Void)?
 
     /// One exec in flight, from exec.request to its terminal exec.result.
     ///
@@ -1700,6 +1704,44 @@ final class GuestListener: ObservableObject {
             id: id, source: source, container: container,
             stagingDirectory: stagingDirectory
                 ?? FileManager.default.temporaryDirectory)
+    }
+
+    /// Redeems one drag gesture over `continuity.grab`.
+    ///
+    /// Everything about the ANSWER is the Mirror get above — one pending
+    /// waiter, one watchdog, the same `deliverFile` — because the grab is
+    /// served down the ordinary file lane. What differs is the ASK: no path
+    /// and no source, only the generation the guest itself published, which
+    /// is what keeps a read outside the share bounded by what a person
+    /// selected by hand.
+    func grabContinuityFile(
+        epoch: UInt32, generation: UInt32, container: String? = nil,
+        stagingDirectory: URL,
+        completion: @escaping (Result<FileDelivery, FileFailure>) -> Void
+    ) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(
+                code: "disconnected",
+                message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        guard pendingFile == nil else {
+            completion(.failure(.init(
+                code: "busy",
+                message: "Another file transfer is already in progress")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingFile = completion
+        fileWatchdogId = id
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            self?.deliverFile(.failure(.init(code: "timeout",
+                                             message: reason)))
+        }
+        session.sendContinuityGrab(
+            id: id, epoch: epoch, generation: generation,
+            container: container, stagingDirectory: stagingDirectory)
     }
 
     func getDevelopmentProjectFile(projectID: String, path: String,
@@ -3479,6 +3521,15 @@ final class GuestListener: ObservableObject {
                 }?.key
                 self.publishActive()
             })
+        /* Set after construction because the Session declares it as a var:
+           the stub's consumer is the drag lane, and a required parameter
+           would put an empty closure at every construction site and read as
+           a wired-up capability. */
+        newSession.onContinuitySelection = { [weak self, weak newSession] sel in
+            guard let self, let key = newSession?.guestKey,
+                  key == self.activeKey else { return }
+            self.onContinuitySelection?(key, sel)
+        }
         origin.session = newSession
         pending.append(newSession)
         newSession.begin()

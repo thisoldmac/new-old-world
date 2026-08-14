@@ -55,12 +55,11 @@ final class Session {
     private let onCensusReport: (CensusReport) -> Void
     private let onContinuityReport: (ContinuityReport) -> Void
     private let onContinuityKeyReport: (ContinuityKeyReport) -> Void
-    /* A `var` rather than an init parameter, unlike its neighbours: the
-       stub's consumer is the drag lane, which does not exist yet. Making
-       it required would put an empty closure at every construction site
-       and read as a wired-up capability. Nil is the honest state — the
-       frame decodes, so it can never drop the connection, and nothing
-       claims to be doing anything with it. */
+    /* A `var` rather than an init parameter, unlike its neighbours. It was
+       nil when the stub had no consumer; the listener now sets it, and the
+       shape stays because nil remains the honest state for a session that
+       is not the active one — the frame still decodes, so an unbound stub
+       can never drop a connection. */
     var onContinuitySelection: ((ContinuitySelection) -> Void)?
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
@@ -822,6 +821,23 @@ final class Session {
         fileStart = Date()
         send(.fileGet(FileGet(id: id, path: "", container: container,
                               mirrorSource: source)))
+    }
+
+    /// Redeems one drag gesture's consent for the item a selection
+    /// generation named. The answer is the ordinary file lane, so the staging
+    /// and sink reset here are identical to `sendMirrorFileGet` on purpose:
+    /// there is one bulk receiver on this side and a grab uses it.
+    func sendContinuityGrab(id: Int, epoch: UInt32, generation: UInt32,
+                            container: String?, stagingDirectory: URL) {
+        fileBegin = nil
+        fileSink?.abort()
+        fileSink = nil
+        fileStagingDirectory = stagingDirectory
+        fileStart = Date()
+        send(.continuityGrab(.init(version: ContinuityContract.version,
+                                   id: id, epoch: epoch,
+                                   generation: generation,
+                                   container: container)))
     }
 
     func sendDevelopmentProjectFileGet(id: Int, projectID: String,
