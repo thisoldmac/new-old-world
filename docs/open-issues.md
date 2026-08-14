@@ -36,10 +36,23 @@ produces an advisory launch warning with a durable **Don't Warn Again** choice.
 The integrated continuity branch stores these additions in preference format
 26 because format 25 already owns launch-log retention.
 
-Still open: a real assembly using the intended Apple installer and signing
-identity; notarization and website publication; classic-browser download of
-the generic image; rollback and low-disk acceptance; host self-update; and the
-full lifecycle on the PowerBook 1400c.
+The native host shell now keeps a 136-point collapsed source-list rail clear
+of AppKit's traffic lights, presents the selected guest and live connection
+status in the toolbar, uses AppKit tracking areas for hover, spring-loads
+closed shelves into their indexed tab targets, and renders drag snapshots
+under the source view's effective appearance. Shelves remain selectable drop
+destinations with a subtle clear-glass or material surface; source-list group
+rows were rejected because their native semantics are supplementary headers.
+The host gate passed and the shell was visually observed in dark and light
+appearances on macOS 27. The actual spring-loaded drag gesture and drag image
+remain UI-unverified, and the Ventura fallback is built and tested but not
+runtime-observed.
+
+Still open: a real release assembly using the intended Apple installer and
+signing identity; notarization and website publication; classic-browser direct
+download of the generic image; rollback and low-disk acceptance; host
+self-update after canonical deployed releases have a trust/channel policy; and
+the full lifecycle on the PowerBook 1400c.
 
 ## TESTED, EMULATOR SAFETY PASSED, NOT METAL-VERIFIED: the Continuity resident is consolidated to one product path (2026-08-14, `refactor/continuity-consolidation`)
 
@@ -1002,7 +1015,6 @@ The private bring-up ledger retains the exact capture paths, disk identities,
 fragment inventories, and install receipt. The next diagnosis should inspect
 the embedded `Textension_CL` fragment's own import closure at load time before
 changing another application import library.
-
 ## UNVERIFIED: NOW Web Direct needs Classilla and MacWeb acceptance (2026-08-10, `codex/web-proxy`)
 
 The Direct implementation, host supervision, PowerPC Workshop page, semantic
