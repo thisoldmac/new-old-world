@@ -354,15 +354,18 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertTrue(rig.source.continuityInputDriver
                       === rig.source.continuity)
 
-        rig.source.surfaceMode = .continuity
+        rig.source.continuity.beginEdgeMode()
         XCTAssertNil(rig.source.continuityInputDriver,
-                     "the invisible Mirror must not remain a pointer entry")
+                     "edge mode owns the pointer; the in-picture cursor "
+                     + "stands down")
         XCTAssertTrue(rig.source.continuity.isEnabled)
 
-        rig.source.surfaceMode = .mirror
+        rig.source.continuity.endEdgeMode(reason: "test")
         XCTAssertTrue(rig.source.continuityInputDriver
                       === rig.source.continuity,
-                      "returning to Mirror restores its own cursor feature")
+                      "ending edge mode restores the Mirror's own cursor")
+        XCTAssertTrue(rig.source.continuity.isEnabled,
+                      "the mirror-cursor request survives edge mode ending")
     }
 
     func testGuestOwnershipDetachesTheHostCursorAndCapturesHostInput() {

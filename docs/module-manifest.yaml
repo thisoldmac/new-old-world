@@ -45,6 +45,16 @@ modules:
     page: user-guide/reference/modules/mirror.md
     ppc_pages: [kWorkshopMirror]
     guest_68k: unavailable
+  - id: continuity
+    title: Continuity
+    tier: experimental
+    domains: []
+    feature_id: null
+    page: user-guide/reference/modules/continuity.md
+    # Host-side feature: the guest's half is the resident pointer plane and
+    # the application's intake, which have no Workshop page of their own.
+    ppc_pages: []
+    guest_68k: unavailable
   - id: console
     title: Console
     tier: core

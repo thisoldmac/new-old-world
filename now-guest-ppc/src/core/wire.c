@@ -6813,12 +6813,34 @@ static void service_stream(void)
     }
 }
 
+/* The pointer plane's own screen answer. Before these two numbers rode
+   this reply, the display layout's only source for the guest's size was
+   Mirror's decoded scene - which quietly required Mirror to have run
+   before Continuity could map the shared edge correctly. Same main
+   device the pointer plane drives. */
+static void continuity_screen_bounds(int *width, int *height)
+{
+    GDHandle device = GetMainDevice();
+    Rect bounds;
+
+    *width = 0;
+    *height = 0;
+    if (device == NULL)
+        return;
+    bounds = (**device).gdRect;
+    *width = bounds.right - bounds.left;
+    *height = bounds.bottom - bounds.top;
+}
+
 static int send_continuity_report(const NowContinuityReport *report)
 {
     char json[512];
     const char *state = now_continuity_state_name(report->state);
     const char *reason = now_continuity_reason_name(report->exit_reason);
+    int screen_width;
+    int screen_height;
 
+    continuity_screen_bounds(&screen_width, &screen_height);
     if (report->id != 0 && reason != NULL) {
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.report\",\"version\":%u,"
@@ -6828,7 +6850,8 @@ static int send_continuity_report(const NowContinuityReport *report)
                  "\"acceptedPackets\":%lu,\"stalePackets\":%lu,"
                  "\"malformedPackets\":%lu,"
                  "\"appliedPositionSequence\":%lu,"
-                 "\"appliedButtonGeneration\":%lu}",
+                 "\"appliedButtonGeneration\":%lu,"
+                 "\"screenWidth\":%d,\"screenHeight\":%d}",
                  (unsigned)NOW_CONTINUITY_VERSION,
                  report->id, (unsigned long)report->epoch, state,
                  (unsigned long)report->accepted_hz,
@@ -6837,7 +6860,8 @@ static int send_continuity_report(const NowContinuityReport *report)
                  (unsigned long)report->stale_packets,
                  (unsigned long)report->malformed_packets,
                  (unsigned long)report->applied_position_seq,
-                 (unsigned long)report->applied_button_generation);
+                 (unsigned long)report->applied_button_generation,
+                 screen_width, screen_height);
     } else if (report->id != 0) {
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.report\",\"version\":%u,"
@@ -6846,7 +6870,8 @@ static int send_continuity_report(const NowContinuityReport *report)
                  "\"udpPort\":%u,\"acceptedPackets\":%lu,"
                  "\"stalePackets\":%lu,\"malformedPackets\":%lu,"
                  "\"appliedPositionSequence\":%lu,"
-                 "\"appliedButtonGeneration\":%lu}",
+                 "\"appliedButtonGeneration\":%lu,"
+                 "\"screenWidth\":%d,\"screenHeight\":%d}",
                  (unsigned)NOW_CONTINUITY_VERSION,
                  report->id, (unsigned long)report->epoch, state,
                  (unsigned long)report->accepted_hz,
@@ -6855,7 +6880,8 @@ static int send_continuity_report(const NowContinuityReport *report)
                  (unsigned long)report->stale_packets,
                  (unsigned long)report->malformed_packets,
                  (unsigned long)report->applied_position_seq,
-                 (unsigned long)report->applied_button_generation);
+                 (unsigned long)report->applied_button_generation,
+                 screen_width, screen_height);
     } else {
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.report\",\"version\":%u,"
@@ -6864,7 +6890,8 @@ static int send_continuity_report(const NowContinuityReport *report)
                  "\"reason\":\"%s\",\"acceptedPackets\":%lu,"
                  "\"stalePackets\":%lu,\"malformedPackets\":%lu,"
                  "\"appliedPositionSequence\":%lu,"
-                 "\"appliedButtonGeneration\":%lu}",
+                 "\"appliedButtonGeneration\":%lu,"
+                 "\"screenWidth\":%d,\"screenHeight\":%d}",
                  (unsigned)NOW_CONTINUITY_VERSION,
                  (unsigned long)report->epoch, state,
                  (unsigned long)report->accepted_hz,
@@ -6874,7 +6901,8 @@ static int send_continuity_report(const NowContinuityReport *report)
                  (unsigned long)report->stale_packets,
                  (unsigned long)report->malformed_packets,
                  (unsigned long)report->applied_position_seq,
-                 (unsigned long)report->applied_button_generation);
+                 (unsigned long)report->applied_button_generation,
+                 screen_width, screen_height);
     }
     return send_control(json);
 }

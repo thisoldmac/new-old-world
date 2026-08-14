@@ -117,6 +117,13 @@ struct ModuleRegistry {
            poll, and that poll deliberately keeps running while another
            module is showing. */
         MirrorHostModule.definition,
+        /* Directly after Mirror because they are the two halves of one
+           posture toward the machine — Mirror brings its screen HERE,
+           Continuity sends your pointer THERE — and a person deciding
+           between them should see them side by side. They share the
+           app-owned pointer controller; the split is by feature, and the
+           controller arbitrates so only one drives at a time. */
+        ContinuityHostModule.definition,
         ConsoleHostModule.definition,
         /* Beside Console because it is the same posture — a page that DOES
            things to the machine, through a model instead of a verb table.

@@ -34,18 +34,7 @@ struct MirrorToolbarView: View {
         HStack(spacing: 12) {
             identity
             Spacer(minLength: 8)
-            HStack(spacing: 4) {
-                ForEach(MirrorSurfaceMode.allCases) { mode in
-                    Button(mode.label) { source.surfaceMode = mode }
-                        .buttonStyle(ContinuityChoiceButtonStyle(
-                            selected: source.surfaceMode == mode))
-                }
-            }
-            .frame(width: 170)
-            .help("Mirror shows and drives the remote screen. Continuity "
-                  + "arranges it beside this Mac and passes the pointer "
-                  + "through their shared edge.")
-            if !presentation.isDetached && source.surfaceMode == .mirror {
+            if !presentation.isDetached {
                 /* A MENU rather than a segmented control. Five stops as
                    segments is 260 points of toolbar for a setting that
                    is changed occasionally — it crowded out the machine's
@@ -74,7 +63,6 @@ struct MirrorToolbarView: View {
             Button(presentation.isDetached ? "Attach" : "Detach") {
                 setDetached(!presentation.isDetached)
             }
-            .disabled(source.surfaceMode == .continuity)
             .help(presentation.isDetached
                   ? "Bring the Mirror back into this page."
                   : "Put the Mirror in a window of its own. It keeps "
@@ -295,94 +283,28 @@ struct MirrorControlView: View {
     }
 }
 
+/// The Mirror's remaining claim on the pointer: the in-picture cursor.
+/// Everything screen-edge — the layout, the rate, keyboard forwarding,
+/// the option catalog — lives in the Continuity module now.
 private struct ContinuityControlCard: View {
     @ObservedObject var source: NOWMirrorSource
-    @ObservedObject var controller: MirrorContinuityController
     var mirrorRunning: Bool
 
     init(source: NOWMirrorSource, mirrorRunning: Bool) {
         self.source = source
-        self.controller = source.continuity
         self.mirrorRunning = mirrorRunning
     }
 
     var body: some View {
-        GroupBox(source.surfaceMode == .mirror
-                 ? "Mirror Cursor" : "Continuity Pointer") {
+        GroupBox("Mirror Cursor") {
             VStack(alignment: .leading, spacing: 8) {
-                if source.surfaceMode == .mirror {
-                    Toggle("Mirror Cursor",
-                           isOn: $source.mirrorCursorEnabled)
-                        .disabled(!mirrorRunning)
-                    Text("Moves the guest cursor while the pointer is over "
-                         + "the rendered Mirror. It is a Mirror feature, "
-                         + "not screen-edge Continuity.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("The guest pointer is acquired only after the host "
-                         + "pointer crosses the shared edge in the display "
-                         + "layout. Guest mouse input returns control here.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Update rate")
-                    Picker("Update rate", selection: $controller.requestedHz) {
-                        Text("15 Hz").tag(15)
-                        Text("30 Hz").tag(30)
-                        Text("60 Hz").tag(60)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
-                }
-                Toggle("Reconnect after interruption",
-                       isOn: $controller.autoReconnect)
+                Toggle("Mirror Cursor",
+                       isOn: $source.mirrorCursorEnabled)
                     .disabled(!mirrorRunning)
-                Stepper(value: $controller.reconnectDelay,
-                        in: 0.1...5.0, step: 0.1) {
-                    Text("Reconnect delay: "
-                         + String(format: "%.1fs", controller.reconnectDelay))
-                }
-                .disabled(!controller.autoReconnect || !mirrorRunning)
-                if source.surfaceMode == .continuity {
-                    Toggle("Send keyboard input to guest",
-                           isOn: $controller.keyboardForwardingEnabled)
-                        .disabled(!controller.isEnabled || !mirrorRunning)
-                    Picker("Return all controls", selection: $controller.escapeShortcut) {
-                        ForEach(ContinuityEscapeShortcut.allCases) { shortcut in
-                            Text(shortcut.label).tag(shortcut)
-                        }
-                    }
-                    .disabled(!controller.isEnabled || !mirrorRunning)
-                    Text("The return shortcut is always handled by this Mac "
-                         + "and is never sent to the guest. Keyboard delivery "
-                         + "covers Event Manager applications and modifiers; "
-                         + "it does not synthesize GetKeys or physical ADB state.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                ForEach(ContinuityOptionCatalog.options(in: .product)) {
-                    option in
-                    Toggle(option.label, isOn: Binding(
-                        get: { controller[keyPath: option.keyPath] },
-                        set: { controller[keyPath: option.keyPath] = $0 }))
-                        .help(option.detail)
-                        .disabled(!controller.isEnabled || !mirrorRunning)
-                }
-                Text(controller.status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Primary clicks and held motion follow the pointer into "
-                     + "the guest. Guest mouse input immediately returns control "
-                     + "to that Mac. The continuity mechanisms preserve "
-                     + "responsive clicks and smooth motion when the guest "
-                     + "is busy. Diagnostic probes live in Logs.")
+                Text("Moves the guest cursor while the pointer is over "
+                     + "the rendered Mirror. Screen-edge Continuity is "
+                     + "its own module; while it owns the shared edge, "
+                     + "this cursor stands down.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

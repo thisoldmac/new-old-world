@@ -292,6 +292,11 @@ struct ContinuityReport: Codable, Equatable, Sendable {
     var malformedPackets: Int?
     var appliedPositionSequence: UInt32?
     var appliedButtonGeneration: UInt32?
+    /* The guest's main display bounds in guest pixels, on the pointer
+       plane's own wire so the display layout never depends on Mirror
+       having decoded a scene first. Optional: an older guest omits them. */
+    var screenWidth: Int?
+    var screenHeight: Int?
 }
 
 /// An additive hint from the peer that serves scene state. It names what

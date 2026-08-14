@@ -212,27 +212,14 @@ enum MirrorPerformDisposition: Equatable {
 final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     @Published private(set) var scene: MirrorKit.Scene?
-    @Published var surfaceMode: MirrorSurfaceMode = .mirror {
-        didSet {
-            guard surfaceMode != oldValue else { return }
-            if surfaceMode == .continuity {
-                continuity.cancel(reason: "switched to Continuity Mode")
-            }
-            reconcilePointerOwnership()
-            /* The armed set is a function of the mode, so a mode change is a
-               policy change: the same path re-arms it. Entering Continuity
-               this way is what RELEASES the content plane rather than
-               leaving it armed until something else happens to poll. */
-            planePolicyDidChange()
-        }
-    }
-    /// A Mirror feature, deliberately independent of Continuity Mode. Its
-    /// preference survives a trip through the layout editor so returning to
-    /// Mirror restores the same behavior rather than silently changing it.
+    /// The Mirror's in-picture cursor: moves the guest pointer while the
+    /// host pointer is over the rendered Mirror. It borrows the app-owned
+    /// continuity controller as a driver; screen-edge Continuity is its
+    /// own module, and the controller arbitrates so only one drives.
     @Published var mirrorCursorEnabled = false {
         didSet {
             guard mirrorCursorEnabled != oldValue else { return }
-            reconcilePointerOwnership()
+            continuity.setMirrorCursorActive(running && mirrorCursorEnabled)
         }
     }
 
@@ -320,7 +307,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     let continuity: MirrorContinuityController
     private var continuitySubscription: AnyCancellable?
     var continuityInputDriver: ContinuityInputDriver? {
-        surfaceMode == .mirror && mirrorCursorEnabled ? continuity : nil
+        /* Edge mode wins: while the Continuity module owns the shared
+           edge, the in-picture cursor must not also drive the same guest
+           pointer. The controller publishes the fact; this hook obeys it. */
+        mirrorCursorEnabled && !continuity.edgeModeActive ? continuity : nil
     }
     private let hostFinder: HostFinderSession
     private var lastGuestScene: MirrorKit.Scene?
@@ -542,27 +532,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         hostFinder.resetForGuestChange()
     }
 
-    // MARK: - Pointer ownership
-
-    private func reconcilePointerOwnership() {
-        guard running else {
-            continuity.edge.stop(reason: "Mirror stopped")
-            continuity.maintainsOptInAfterGuestExit = false
-            continuity.isEnabled = false
-            return
-        }
-        switch surfaceMode {
-        case .mirror:
-            continuity.edge.stop(reason: "Mirror mode")
-            continuity.maintainsOptInAfterGuestExit = false
-            continuity.isEnabled = mirrorCursorEnabled
-        case .continuity:
-            continuity.maintainsOptInAfterGuestExit = true
-            continuity.isEnabled = true
-            continuity.edge.start()
-        }
-    }
-
     // MARK: - What this surface asks the Macintosh to arm
 
     /// **What policy allows, narrowed to what the visible surface needs.**
@@ -573,15 +542,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// engine's projection keeps following the full policy, because hiding
     /// retained evidence is a display decision and this is a guest cost.
     private func armedPlanes(for key: GuestKey) -> Set<MirrorPlaneID> {
-        planePolicy(key).intersection(surfaceMode.armablePlanes)
+        /* The mode intersection is gone with Continuity Mode itself:
+           screen-edge Continuity is its own module now, arms nothing here,
+           and its guest intake claims its one plane on its own wire. The
+           Mirror is the only surface left and it may use everything policy
+           permits. */
+        planePolicy(key)
     }
 
-    /// The same question for the planes armed outside the scene cycle. The
-    /// transition tail is started by front-process change rather than by the
-    /// cycle, so it needs its own reading of the mode.
-    private var armsTransitionTail: Bool {
-        surfaceMode.armablePlanes.contains(.transitions)
-    }
+    /// The transition tail is started by front-process change rather than
+    /// by the cycle. With the mode narrowing gone, the Mirror always wants
+    /// it when policy allows; the policy check lives at the call sites.
+    private var armsTransitionTail: Bool { true }
 
     // MARK: - The poll
 
@@ -621,7 +593,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
         actTimeline.depth = 0
         running = true
-        reconcilePointerOwnership()
+        continuity.setMirrorCursorActive(mirrorCursorEnabled)
         cycleGeneration = nil
         pollRequestedAfterCycle = false
         cycleIO.guestChanged()
@@ -631,8 +603,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     func stop() {
-        continuity.edge.stop(reason: "Mirror stopped")
-        continuity.cancel(reason: "Mirror stopped")
+        /* Only the Mirror's own claim on the pointer ends here. Screen-edge
+           Continuity is the module's session, and the Mirror stopping must
+           not tear it down. */
+        continuity.setMirrorCursorActive(false)
         let stoppingKey = pinnedGuestKey
         let canRelease = stoppingKey != nil
             && stoppingKey == cycleIO.activeKey()
@@ -1053,11 +1027,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             sceneGuestKey = delivery.guestKey
             decoded = continuity.scene
             decoded = withIcons(decoded)
-            let screen = decoded.screen
-            if screen.w > 0, screen.h > 0 {
-                self.continuity.layout.updateGuestSize(CGSize(
-                    width: CGFloat(screen.w), height: CGFloat(screen.h)))
-            }
+            /* The guest's size no longer flows from here: the
+               continuity.report carries it on the pointer plane's own wire,
+               so the display layout works without Mirror having run. */
             armTransitionSampler(for: decoded)
             _ = shadowEngine?.enrichFinder(decoded)
             scene = projectedScene(fallback: decoded)

@@ -76,6 +76,11 @@ module_feature_coverage:
     without_extension: Basic shell only.
     extension_required: false
     status: Experimental; interactive requests take priority over queued background refreshes, but the hardware latency target is not yet verified.
+  - module_id: continuity
+    title: Pass the pointer and keyboard across a shared screen edge
+    without_extension: Refused honestly; the pointer session needs the resident plane.
+    extension_required: true
+    status: Experimental; click, double-click, drag, and keyboard verified on hardware 2026-08-14, with cursor-motion texture still under investigation.
   - module_id: console
     title: Run classic-side console commands
     without_extension: Available.

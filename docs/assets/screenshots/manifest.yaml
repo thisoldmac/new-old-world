@@ -199,6 +199,20 @@ images:
     surface: PowerPC Mirror page
     state: Extension plane status and consent controls
     machine: Mac OS 9
+  - id: continuity-host
+    path: assets/screenshots/modules/continuity/host.svg
+    width: 980
+    height: 650
+    surface: macOS Continuity module
+    state: Display arrangement with the shared edge and pointer controls
+    machine: modern macOS
+  - id: continuity-ppc
+    path: assets/screenshots/modules/continuity/ppc.svg
+    width: 744
+    height: 478
+    surface: Mac OS 9 desktop under Continuity pointer control
+    state: Pointer session active with the guest log showing the arm
+    machine: Mac OS 9
   - id: mirror-detail
     path: assets/screenshots/modules/mirror/detail.svg
     width: 980

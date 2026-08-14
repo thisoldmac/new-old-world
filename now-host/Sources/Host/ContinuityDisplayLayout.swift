@@ -2,50 +2,13 @@ import AppKit
 import Combine
 import Foundation
 
-enum MirrorSurfaceMode: String, CaseIterable, Identifiable, Sendable {
-    case mirror
-    case continuity
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .mirror: return "Mirror"
-        case .continuity: return "Continuity"
-        }
-    }
-
-    /// **Which resident planes this surface is entitled to arm.**
-    ///
-    /// The host's plane policy says what a person and the guest ALLOW; this
-    /// says what the surface currently on screen actually NEEDS. The armed
-    /// set is the intersection, so a mode can only ever ask for less — never
-    /// for a plane policy has refused.
-    ///
-    /// Continuity renders nothing (`MirrorPaneView` says so in as many
-    /// words), and its guest-side intake claims exactly one plane for
-    /// itself: `continuity_intake.c` claims `kNowPeekCapAnchors` and no
-    /// other. Every further plane the Mirror's cycle used to arm underneath
-    /// it was paid for by the Macintosh and read by nobody:
-    ///
-    /// - `.semantics` / `.interaction` widen the structural walk
-    ///   (`wire.c` claims `Tree` and `Act` from the scene owner only when
-    ///   the request asks for them),
-    /// - `.content` arms and releases the ~64 KiB draw-capture plane, which
-    ///   on 2026-08-13 cycled `arm_request` between 0x1f and 0x17 for a
-    ///   whole session, repaired its hook every two seconds, and spammed
-    ///   `content refused wrong-a5` while the pointer needed the CPU,
-    /// - `.transitions` starts the P5 tail whose only consumer is the
-    ///   Mirror's own scene invalidation.
-    var armablePlanes: Set<MirrorPlaneID> {
-        switch self {
-        case .mirror:
-            return Set(MirrorPlaneID.allCases)
-        case .continuity:
-            return [.structure]
-        }
-    }
-}
+/* MirrorSurfaceMode is gone, and the arming lesson it carried moved to
+   `NOWMirrorSource.armedPlanes`. Screen-edge Continuity is its own module
+   now: it arms no Mirror planes at all — its guest intake claims its one
+   plane on its own wire, and the 2026-08-13 measurement that every extra
+   armed plane was paid for by the Macintosh and read by nobody is exactly
+   why the module split removed the mode rather than keeping a narrowing
+   enum for it. */
 
 enum GuestDisplayScale: Double, CaseIterable, Identifiable, Sendable {
     case half = 0.5

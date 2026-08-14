@@ -108,13 +108,7 @@ struct MirrorModuleView: View {
 
     @ViewBuilder
     private var content: some View {
-        if source.surfaceMode == .continuity {
-            ContinuityDisplayLayoutView(
-                layout: source.continuity.layout,
-                edge: source.continuity.edge,
-                guestName: connectedMachineName,
-                mirrorRunning: source.running)
-        } else if presentation.isDetached {
+        if presentation.isDetached {
             /* Not an empty pane. A module whose content has gone
                somewhere else must say where, or it reads as broken —
                and the way back is right here rather than in a menu. */

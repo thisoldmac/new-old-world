@@ -2346,6 +2346,19 @@ components:
             acknowledged only after MBState is up; the resident may do that
             first as a dead-man escape, then reconcile CursorDeviceButtonUp at
             the next safe task-time pass.
+        screenWidth: { type: integer, minimum: 1, maximum: 32767 }
+        screenHeight:
+          type: integer
+          minimum: 1
+          maximum: 32767
+          description: >
+            The guest's main display bounds in guest pixels, from the same
+            device the pointer plane drives. Continuity's display layout
+            needs the guest's size to map the shared edge, and this reply is
+            the pointer plane's own wire - before these fields the only
+            source was Mirror's decoded scene, which quietly coupled
+            Continuity to Mirror having run first. Optional at the decoder
+            for older guests; this build always sends both.
     ContinuityKey:
       type: object
       required: [type, version, id, epoch, generation, action, code,

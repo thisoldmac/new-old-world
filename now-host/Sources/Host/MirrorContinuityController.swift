@@ -118,6 +118,47 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
+
+    /* One controller, two consumers, and they are made exclusive HERE
+       rather than by each remembering the other exists. Screen-edge mode
+       belongs to the Continuity module; the Mirror's in-picture cursor is
+       a Mirror feature that borrows this controller as an input driver.
+       Both drive the same guest pointer, so edge mode wins: while it is
+       active the Mirror's driver hook reads nil. `isEnabled` is derived
+       from the two requests and is no longer set directly by either
+       owner. */
+    @Published private(set) var edgeModeActive = false
+    private var mirrorCursorActive = false
+
+    func beginEdgeMode() {
+        guard !edgeModeActive else { return }
+        edgeModeActive = true
+        maintainsOptInAfterGuestExit = true
+        isEnabled = true
+        edge.start()
+    }
+
+    func endEdgeMode(reason: String) {
+        guard edgeModeActive else { return }
+        edgeModeActive = false
+        edge.stop(reason: reason)
+        maintainsOptInAfterGuestExit = false
+        isEnabled = mirrorCursorActive
+    }
+
+    func setMirrorCursorActive(_ active: Bool) {
+        guard mirrorCursorActive != active else { return }
+        mirrorCursorActive = active
+        guard !edgeModeActive else { return }
+        isEnabled = active
+    }
+
+    /// Whether any Mac is currently addressable for pointer control - the
+    /// module page's enablement fact, distinct from `isEnabled` (a request)
+    /// and `phase` (the live session).
+    var hasConnectedTarget: Bool {
+        listener.activeContinuityTarget != nil
+    }
     @Published private(set) var phase: Phase = .idle {
         didSet {
             guard phase != oldValue else { return }
@@ -603,6 +644,13 @@ final class MirrorContinuityController: ObservableObject,
                     + "\(report.version!), expected "
                     + "\(ContinuityContract.version)", retryable: false)
             return
+        }
+        /* The pointer plane's own screen answer. Continuity maps the shared
+           edge with this; before the report carried it, the only source was
+           Mirror's decoded scene, which required Mirror to have run first. */
+        if let width = report.screenWidth, let height = report.screenHeight,
+           width > 0, height > 0 {
+            layout.updateGuestSize(CGSize(width: width, height: height))
         }
         if report.id == armID {
             guard report.state == "armed", let port = report.udpPort,

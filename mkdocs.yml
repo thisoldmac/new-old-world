@@ -128,6 +128,7 @@ nav:
               - iCloud: user-guide/reference/modules/icloud.md
               - Processes: user-guide/reference/modules/processes.md
               - Mirror: user-guide/reference/modules/mirror.md
+              - Continuity: user-guide/reference/modules/continuity.md
               - Console: user-guide/reference/modules/console.md
               - Chat: user-guide/reference/modules/chat.md
               - Web Proxy: user-guide/reference/modules/web.md

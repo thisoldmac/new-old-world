@@ -57,22 +57,7 @@ struct MirrorPaneView: View {
 
     @ViewBuilder
     private var surface: some View {
-        if source.surfaceMode == .continuity {
-            VStack(spacing: 8) {
-                Image(systemName: "rectangle.connected.to.line.below")
-                    .font(.system(size: 30))
-                    .foregroundStyle(.secondary)
-                Text("Continuity Mode is active")
-                    .font(.headline)
-                Text("Arrange the guest display in the Mirror module. The "
-                     + "render is disabled while screen-edge traversal is on.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 340)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if !source.running && source.scene == nil {
+        if !source.running && source.scene == nil {
             VStack(spacing: 8) {
                 Text("Mirror is stopped")
                     .font(.headline)
