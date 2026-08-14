@@ -121,7 +121,7 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
             for: guest, edge: edge, guestFrame: layout.guestFrame,
             scale: layout.guestScale)
 
-        XCTAssertEqual(guest.x, 0)
+        XCTAssertEqual(guest.x, 24)
         XCTAssertEqual(guest.y, 450)
         XCTAssertEqual(returned.x, 1439)
         XCTAssertEqual(returned.y, 600)
@@ -140,7 +140,7 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
                                delta: CGPoint(x: 3, y: 0),
                                buttonsDown: false))
         XCTAssertEqual(controller.state, .arming)
-        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 0, y: 300))
+        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 24, y: 300))
         XCTAssertTrue(environment.hidden.isEmpty,
                       "the host cursor stays visible until the guest owns it")
 
@@ -152,11 +152,11 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
                                location: CGPoint(x: 1439, y: 600),
                                delta: CGPoint(x: 12, y: 0),
                                buttonsDown: false))
-        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 12, y: 300))
+        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 36, y: 300))
 
         environment.emit(.init(kind: .moved,
                                location: CGPoint(x: 1439, y: 600),
-                               delta: CGPoint(x: -20, y: 0),
+                               delta: CGPoint(x: -60, y: 0),
                                buttonsDown: false))
         XCTAssertEqual(controller.state, .ready)
         XCTAssertEqual(driver.leftCount, 1)
@@ -187,8 +187,8 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
 
         XCTAssertEqual(controller.state, .active)
         XCTAssertEqual(driver.leftCount, 0)
-        XCTAssertEqual(driver.downPoints, [MirrorKit.Point(x: 0, y: 450)])
-        XCTAssertEqual(driver.upPoints, [MirrorKit.Point(x: 0, y: 450)])
+        XCTAssertEqual(driver.downPoints, [MirrorKit.Point(x: 24, y: 450)])
+        XCTAssertEqual(driver.upPoints, [MirrorKit.Point(x: 24, y: 450)])
         XCTAssertTrue(environment.shown.isEmpty)
         XCTAssertEqual(environment.moves.last?.displayID, host.id)
     }
@@ -215,7 +215,7 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
                                delta: .zero, buttonsDown: true,
                                eventUptime: 123, clickCount: 2))
 
-        XCTAssertEqual(driver.downPoints.last, MirrorKit.Point(x: 0, y: 10))
+        XCTAssertEqual(driver.downPoints.last, MirrorKit.Point(x: 24, y: 10))
         XCTAssertEqual(driver.menuBarDowns.last, true)
         XCTAssertEqual(driver.clickCounts.last, 2)
     }
@@ -244,7 +244,7 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertEqual(controller.state, .active)
         XCTAssertEqual(driver.leftCount, 0)
         XCTAssertEqual(driver.draggedPoints,
-                       [MirrorKit.Point(x: 8, y: 455)])
+                       [MirrorKit.Point(x: 32, y: 455)])
         XCTAssertTrue(environment.shown.isEmpty)
     }
 
@@ -270,13 +270,13 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
 
         XCTAssertEqual(controller.state, .active)
         XCTAssertEqual(driver.leftCount, 0)
-        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 0, y: 450))
+        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 24, y: 450))
 
         environment.emit(.init(
             kind: .moved, location: CGPoint(x: 1451, y: 450),
             delta: CGPoint(x: 12, y: 0), buttonsDown: false,
             eventUptime: now + 0.01))
-        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 12, y: 450))
+        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 36, y: 450))
     }
 
     func testRestoreWarpCannotImmediatelyReenterGuest() {
@@ -294,7 +294,7 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         controller.transportPhaseChanged(.active)
         environment.emit(.init(
             kind: .moved, location: CGPoint(x: 1420, y: 450),
-            delta: CGPoint(x: -20, y: 0), buttonsDown: false))
+            delta: CGPoint(x: -60, y: 0), buttonsDown: false))
         XCTAssertEqual(controller.state, .ready)
 
         now += 0.01
@@ -419,7 +419,8 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
                                delta: CGPoint(x: 50, y: 0), buttonsDown: true))
         environment.emit(.init(kind: .moved,
                                location: CGPoint(x: 1439, y: 450),
-                               delta: CGPoint(x: -60, y: 0), buttonsDown: true))
+                               delta: CGPoint(x: -100, y: 0),
+                               buttonsDown: true))
 
         XCTAssertEqual(controller.state, .ready)
         XCTAssertEqual(driver.leftCount, 1)
@@ -453,7 +454,7 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
                                buttonsDown: true))
 
         XCTAssertTrue(callbacks.dropped(.init(name: .drag)))
-        XCTAssertEqual(droppedAt, MirrorKit.Point(x: 100, y: 500))
+        XCTAssertEqual(droppedAt, MirrorKit.Point(x: 124, y: 500))
         XCTAssertEqual(controller.state, .ready)
         XCTAssertEqual(driver.leftCount, 1)
         XCTAssertTrue(driver.draggedPoints.isEmpty,

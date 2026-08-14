@@ -1059,8 +1059,16 @@ enum {
        the kNowPeekContinuityKeyError* result in the low 16 bits. */
     kNowPeekContinuityTraceKeyboardResult = 9,
     /* Sampled from the jGNE idle-settle spike: arg0 is the cumulative
-       settle count, arg1 the position sequence settled. */
+       settle count, arg1 the largest tick gap between consecutive settles
+       since the previous sample - the spike's own cadence, which bounds
+       how short it can cut a hitch. */
     kNowPeekContinuityTraceIdleSettle = 10,
+    /* One entry per synthetic mouse event the jGNE observer matches:
+       arg0 packs the down flag in the high 16 bits and the event's low 16
+       bits of `when`; arg1 is the first four bytes of the observing
+       process's CurApName - WHO dequeued the event, which no other
+       instrument records. */
+    kNowPeekContinuityTraceEventObserved = 11,
     kNowPeekContinuityTraceCapacity = 8
 };
 

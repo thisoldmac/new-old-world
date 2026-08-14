@@ -196,29 +196,39 @@ enum ContinuityDisplayGeometry {
                                  scale: scale)
     }
 
+    /* Entry seeds the pointer INSIDE the boundary, not on it. Seeding at
+       width-1 parked re-entries one pixel from the exit test, and the
+       physical wiggle of a click (+4 px measured) tipped straight back
+       across - seven "clicks send me home" returns in one minute of the
+       2026-08-13 202005 run. A deliberate exit still only costs this many
+       pixels of motion toward the edge. */
+    static let entryInsetPixels: CGFloat = 24
+
     static func guestEntryPoint(at hostPoint: CGPoint,
                                 edge: ContinuitySharedEdge,
                                 guestFrame: CGRect,
                                 guestPixels: CGSize,
                                 scale: GuestDisplayScale) -> CGPoint {
         let factor = CGFloat(scale.rawValue)
+        let insetX = min(entryInsetPixels, max(0, guestPixels.width - 1))
+        let insetY = min(entryInsetPixels, max(0, guestPixels.height - 1))
         switch edge.guestSide {
         case .left:
-            return CGPoint(x: 0,
+            return CGPoint(x: insetX,
                            y: clamped((guestFrame.maxY - hostPoint.y) / factor,
                                       upper: guestPixels.height - 1))
         case .right:
-            return CGPoint(x: max(0, guestPixels.width - 1),
+            return CGPoint(x: max(0, guestPixels.width - 1 - insetX),
                            y: clamped((guestFrame.maxY - hostPoint.y) / factor,
                                       upper: guestPixels.height - 1))
         case .bottom:
             return CGPoint(x: clamped((hostPoint.x - guestFrame.minX) / factor,
                                       upper: guestPixels.width - 1),
-                           y: max(0, guestPixels.height - 1))
+                           y: max(0, guestPixels.height - 1 - insetY))
         case .top:
             return CGPoint(x: clamped((hostPoint.x - guestFrame.minX) / factor,
                                       upper: guestPixels.width - 1),
-                           y: 0)
+                           y: insetY)
         }
     }
 

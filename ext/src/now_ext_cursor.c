@@ -129,6 +129,8 @@ static volatile unsigned char gNowCursorTrackingSettleSyntheticDevice = 0;
 static volatile unsigned char gNowCursorSettleIdleCursor = 0;
 static NowPeekU32 gNowCursorIdleSettledSeq = 0;
 static NowPeekU32 gNowCursorIdleSettleCount = 0;
+static NowPeekU32 gNowCursorIdleLastSettleTicks = 0;
+static NowPeekU32 gNowCursorIdleMaxSettleGap = 0;
 static volatile unsigned char gNowCursorTrackingCursorHidden = 0;
 void *gNowCursorOldGetMouse = NULL;
 void *gNowCursorOldStillDown = NULL;
@@ -485,6 +487,8 @@ void now_ext_cursor_configure_continuity_tracking(NowPeekU32 options)
             != 0;
     gNowCursorIdleSettledSeq = 0;
     gNowCursorIdleSettleCount = 0;
+    gNowCursorIdleLastSettleTicks = 0;
+    gNowCursorIdleMaxSettleGap = 0;
     gNowCursorTrackingDeviceActive = 0;
     gNowCursorTrackingDeviceEpoch = 0;
     gNowCursorTrackingDeviceSearchEpoch = 0;
@@ -658,9 +662,25 @@ static void settle_continuity_idle_cursor(void)
     *gCrsrObscure = 0;
     HideCursor();
     ShowCursor();
-    if ((gNowCursorIdleSettleCount & 31u) == 1u)
+    /* The spike's cadence is bounded by how often ANY process pumps
+       events; "multiple shorter hitches" is that bound made visible.
+       Track the largest gap between consecutive settles per sample
+       window so the residual can be measured rather than described. */
+    {
+        NowPeekU32 ticks = (NowPeekU32)LMGetTicks();
+
+        if (gNowCursorIdleLastSettleTicks != 0
+                && ticks - gNowCursorIdleLastSettleTicks
+                    > gNowCursorIdleMaxSettleGap)
+            gNowCursorIdleMaxSettleGap =
+                ticks - gNowCursorIdleLastSettleTicks;
+        gNowCursorIdleLastSettleTicks = ticks;
+    }
+    if ((gNowCursorIdleSettleCount & 31u) == 1u) {
         now_ext_continuity_trace_idle_settle(gNowCursorIdleSettleCount,
-                                             position_seq);
+                                             gNowCursorIdleMaxSettleGap);
+        gNowCursorIdleMaxSettleGap = 0;
+    }
 }
 
 static void record_continuity_tracking_conflict(

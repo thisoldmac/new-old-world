@@ -42,6 +42,13 @@ typedef struct {
     NowPeekTable *table;
 } ContinuityButtonTask;
 
+/* CurApName (Str31, 0x0910), reached through a VOLATILE POINTER VARIABLE
+   for the same reason now_ext_cursor.c reaches CrsrNew that way: GCC folds
+   a dereference of a constant tiny address and refuses it under
+   -Werror=array-bounds as "likely at address zero". */
+static volatile unsigned char *volatile gCurApName =
+    (volatile unsigned char *)0x0910UL;
+
 static ContinuityButtonTask gButtonTask;
 static Boolean gButtonTaskInstalled;
 static volatile Boolean gButtonTaskRunning;
@@ -237,6 +244,7 @@ void now_ext_continuity_observe_event(EventRecord *event, NowPeekU32 ticks)
     for (index = 0; index < count; index++) {
         NowPeekContinuityEventTiming *entry = &cell->event_timing[index];
         NowPeekU32 before = entry->write_seq;
+        NowPeekU32 observer;
 
         if ((before & 1u) != 0 || entry->down != down
                 || entry->event_observed_ticks != 0)
@@ -247,6 +255,19 @@ void now_ext_continuity_observe_event(EventRecord *event, NowPeekU32 ticks)
         entry->event_h = (NowPeekI32)event->where.h;
         entry->event_v = (NowPeekI32)event->where.v;
         entry->write_seq = before + 2u;
+        /* Every other stage of the chain is recorded; WHICH PROCESS
+           dequeued the event is not, and misrouting is indistinguishable
+           from non-recognition without it. jGNE runs in the dequeuing
+           process, so CurApName here names it. */
+        observer = ((NowPeekU32)gCurApName[1] << 24)
+            | ((NowPeekU32)gCurApName[2] << 16)
+            | ((NowPeekU32)gCurApName[3] << 8)
+            | (NowPeekU32)gCurApName[4];
+        trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceEventObserved,
+                    ticks,
+                    (NowPeekI32)((down << 16)
+                                 | ((NowPeekU32)event->when & 0xFFFFu)),
+                    (NowPeekI32)observer);
         return;
     }
 }

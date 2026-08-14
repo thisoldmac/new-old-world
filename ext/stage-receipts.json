@@ -769,6 +769,18 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "fix checkpoint; bake follows with the stack rebuild"
+    },
+    {
+      "at": "2026-08-13T20:35:21-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "73aa04c4437a06fbefa533b3e7c664de9d29be86",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "entry-inset and instrument checkpoint; bake follows with the stack rebuild"
     }
   ]
 }
