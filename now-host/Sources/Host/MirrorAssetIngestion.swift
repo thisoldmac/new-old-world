@@ -12,26 +12,33 @@ import MirrorKitUI
 /// `icl8` would eventually disagree, and produce art that is wrong in a
 /// way nobody can see. So this object owns the TRANSPORT and nothing else.
 ///
-/// The sequence is three steps and each one refuses by name:
+/// The sequence is four steps and each one refuses by name:
 ///
 /// 1. **Ask the extractor what it needs.** `--required-files` is the one
 ///    list; this side keeps no copy of it. A face added to `FACES` over
 ///    there changes what gets pulled here with no edit at all, which is
 ///    the drift this arrangement exists to prevent.
-/// 2. **Pull each file over `file.get`, forced to MacBinary**, and
+/// 2. **Ask whether the share can even reach it**, in one listing, before
+///    any bytes move. See ``probeShare(for:)`` — this step exists because
+///    a PowerBook 1400c refused the first pull and the refusal, though
+///    correct, arrived after the run had begun and named a path instead
+///    of a remedy.
+/// 3. **Pull each file over `file.get`, forced to MacBinary**, and
 ///    reconstruct its resource fork on disk at the path the guest knows it
 ///    by. `container: "macbinary"` is not a preference: the art is in the
 ///    resource fork, and `auto` would hand back a bare data fork for
 ///    anything the guest judged forkless.
-/// 3. **Run the extractor over the staged tree.** Its own gates decide
+/// 4. **Run the extractor over the staged tree.** Its own gates decide
 ///    whether what arrived is a pack — a short pull fails there, loudly,
 ///    rather than becoming a half pack that resolves as present.
 ///
-/// **Status: host-tested only. No pack has ever been ingested from a real
-/// Macintosh**, over emulation or metal. The transport underneath it
-/// (`file.get` with forks) is metal-verified for the Files browser; this
-/// particular caller of it is not. Nothing here should be read as a claim
-/// that a PowerBook has answered.
+/// **Status: no pack has ever been ingested from a real Macintosh.** It
+/// has been RUN against one — a PowerBook 1400c on 2026-08-14 — and
+/// refused, because the machine shares a folder and its System Folder was
+/// outside it. The refusal path is therefore the only part of this with
+/// any metal behind it; the pull, the staging and the extraction have
+/// still never seen a Macintosh, and nothing here should be read as a
+/// claim that they have.
 @MainActor
 final class MirrorAssetIngestion: ObservableObject {
     /// Every way this can decline, carrying the code a person can quote
@@ -53,6 +60,9 @@ final class MirrorAssetIngestion: ObservableObject {
         case idle
         /// Asking the extractor for its file list.
         case preparing
+        /// Asking the machine what it is actually sharing, before
+        /// spending a transfer finding out.
+        case probing
         case pulling(done: Int, total: Int, name: String)
         case extracting
         case finished(pack: String)
@@ -74,7 +84,7 @@ final class MirrorAssetIngestion: ObservableObject {
 
     var isRunning: Bool {
         switch phase {
-        case .preparing, .pulling, .extracting: return true
+        case .preparing, .probing, .pulling, .extracting: return true
         case .idle, .finished, .refused: return false
         }
     }
@@ -84,6 +94,7 @@ final class MirrorAssetIngestion: ObservableObject {
         switch phase {
         case .idle: return ""
         case .preparing: return "Asking what this Mac needs to hand over…"
+        case .probing: return "Checking what the classic Mac is sharing…"
         case let .pulling(done, total, name):
             return "Copying \(name) (\(done + 1) of \(total))…"
         case .extracting: return "Building the pack…"
@@ -157,7 +168,15 @@ final class MirrorAssetIngestion: ObservableObject {
             return
         }
 
-        // 2. Pull them.
+        // 2. Is any of it reachable? Ask before spending a transfer.
+        phase = .probing
+        if case let .failure(refusal) = await probeShare(for: required) {
+            refuse(refusal.code, refusal.message)
+            return
+        }
+        if Task.isCancelled { return }
+
+        // 3. Pull them.
         let tree = staging.appendingPathComponent("volume", isDirectory: true)
         for (index, file) in required.enumerated() {
             if Task.isCancelled { return }
@@ -175,7 +194,7 @@ final class MirrorAssetIngestion: ObservableObject {
         }
         if Task.isCancelled { return }
 
-        // 3. One extraction, the same one the disk-image route runs.
+        // 4. One extraction, the same one the disk-image route runs.
         phase = .extracting
         let packID = Self.newPackID()
         let result = await Self.runExtractor(extractor, [
@@ -203,6 +222,109 @@ final class MirrorAssetIngestion: ObservableObject {
             }
             notes.append(contentsOf: Self.scopeNotes(at: landed.resourcesURL))
             phase = .finished(pack: packID)
+        }
+    }
+
+    // MARK: - Is the art even in the share?
+
+    /// **The defect this exists for, found on a PowerBook 1400c on
+    /// 2026-08-14.** The share is a FOLDER chosen on the classic Mac, and
+    /// every `file.get` path resolves inside it. This code originally
+    /// assumed the share was the volume root, having read
+    /// `now_files_share_root` returning `fsRtDirID` — but that is the
+    /// FALLBACK when no folder has been chosen. A real desk has chosen
+    /// one (`Lab`), so `System Folder/System` was simply not in the share
+    /// and the first pull refused `no such item in the share`.
+    ///
+    /// That refusal was honest and arrived in the wrong place: after the
+    /// run had started, naming a path rather than a remedy. Reachability
+    /// is knowable in one cheap listing before any bytes move, so it is
+    /// asked here.
+    ///
+    /// The roots come from the extractor's own required list, so a file
+    /// added over there is checked here without an edit.
+    private func probeShare(for required: [RequiredFile]) async
+        -> Result<Void, Refusal> {
+        let roots = Self.requiredRoots(required)
+        guard !roots.isEmpty else { return .success(()) }
+
+        var folders = Set<String>()
+        var shareLabel: String?
+        var cursor: Int?
+        for _ in 0..<Self.sharePageLimit {
+            let listing: FileListing
+            switch await list(path: "", cursor: cursor) {
+            case let .failure(failure):
+                return .failure(.init(
+                    code: "now-assets-share-\(failure.code)",
+                    message: "NOW could not read what the classic Mac is "
+                        + "sharing: \(failure.message)"))
+            case let .success(value):
+                listing = value
+            }
+            shareLabel = listing.root ?? shareLabel
+            for entry in listing.entries where entry.isFolder {
+                folders.insert(entry.name.lowercased())
+            }
+            guard listing.more, let next = listing.cursor else {
+                let missing = roots
+                    .filter { !folders.contains($0.lowercased()) }
+                    .sorted()
+                guard missing.isEmpty else {
+                    return .failure(Self.shareRefusal(
+                        missing: missing, share: shareLabel))
+                }
+                return .success(())
+            }
+            cursor = next
+        }
+        /* Out of pages with the listing still incomplete. Say nothing:
+           refusing on a partial view would block a share that does hold
+           the System Folder, and the pull answers the question for
+           certain a moment later. */
+        return .success(())
+    }
+
+    /// How many pages of the share root to walk before giving up on
+    /// answering cheaply.
+    private static let sharePageLimit = 20
+
+    /// The top-level folders the share must contain, derived from the
+    /// extractor's own list rather than named here.
+    ///
+    /// Only the REQUIRED files count. An optional file's absence is
+    /// already a note rather than a refusal, so demanding its folder be
+    /// present would refuse a share that can build a perfectly good pack.
+    static func requiredRoots(_ required: [RequiredFile]) -> Set<String> {
+        Set(required.filter(\.required).compactMap {
+            $0.path.split(separator: "/").first.map(String.init)
+        })
+    }
+
+    /// Names the remedy, not the path. A person reading this is at a Mac
+    /// with a NOW preference they can change; "no such item in the share"
+    /// told them where the failure happened and nothing about that.
+    static func shareRefusal(missing: [String],
+                             share: String?) -> Refusal {
+        let named = missing.map { "“\($0)”" }
+            .joined(separator: ", ")
+        let current = share.map { " The shared folder is “\($0)”." } ?? ""
+        return .init(
+            code: "now-assets-not-in-share",
+            message: "The classic Mac's art is outside the folder it is "
+                + "sharing, so NOW cannot read it.\(current) It does not "
+                + "contain \(named). On the classic Mac, set NOW's shared "
+                + "folder to the whole disk — the volume itself rather "
+                + "than a folder inside it — and ingest again. Nothing "
+                + "has been copied.")
+    }
+
+    private func list(path: String, cursor: Int?) async
+        -> Result<FileListing, GuestListener.FileFailure> {
+        await withCheckedContinuation { continuation in
+            listener.listFiles(path: path, cursor: cursor) {
+                continuation.resume(returning: $0)
+            }
         }
     }
 
