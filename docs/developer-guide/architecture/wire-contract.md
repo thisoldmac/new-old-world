@@ -212,4 +212,5 @@ rederived: 2026-08-14T16:58:27-0400 cf962dbb sources, contract-summary 6->6
 rederived: 2026-08-14T17:12:28-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
+rederived: 2026-08-14T18:17:41-0400 d9ed70d2 unchanged
 -->
