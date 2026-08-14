@@ -65,7 +65,18 @@ class ReleaseTests(unittest.TestCase):
             "channel": "development",
             "signed": False,
             "sourceRevision": revision,
+            "compatibility": {
+                "continuityTable": 12,
+                "continuityWire": 4,
+                "resident": self.resident_version(),
+            },
         }
+        if component == "application":
+            sidecar.update({
+                "displayVersion": "0.2.0-prealpha.1",
+                "lifecycle": "prealpha",
+                "lifecycleNumber": 1,
+            })
         artifact.with_name(artifact.name + ".now-update.json").write_text(
             json.dumps(sidecar))
         return artifact
@@ -113,6 +124,10 @@ class ReleaseTests(unittest.TestCase):
         loaded = ComponentArtifact.load(artifact, "application", "0.2.0",
                                         "a" * 40)
         self.assertEqual(loaded.metadata["build"], "b" * 64)
+        self.assertEqual(
+            loaded.manifest_row()["compatibility"]["continuityWire"], 4)
+        self.assertEqual(
+            loaded.manifest_row()["displayVersion"], "0.2.0-prealpha.1")
         artifact.write_bytes(b"mutated")
         with self.assertRaisesRegex(ReleaseRefusal, "stale artifact identity"):
             ComponentArtifact.load(artifact, "application", "0.2.0",
@@ -285,7 +300,7 @@ class ReleaseTests(unittest.TestCase):
     def test_component_build_discards_stale_revision_sidecars(self) -> None:
         build_root = self.root / "guest-build"
         application = build_root / "ppc/New Old World.bin"
-        extension = build_root / "ext/NowExt.bin"
+        extension = build_root / "ext/NOW Extension.bin"
         for artifact in (application, extension):
             artifact.parent.mkdir(parents=True, exist_ok=True)
             artifact.write_bytes(b"unchanged component")

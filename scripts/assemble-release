@@ -55,7 +55,7 @@ def discard_stale_component_sidecars(build_root: Path) -> None:
     """Force CMake to record this checkout even when component bytes reuse."""
     for relative in (
         "ppc/New Old World.bin.now-update.json",
-        "ext/NowExt.bin.now-update.json",
+        "ext/NOW Extension.bin.now-update.json",
     ):
         try:
             (build_root / relative).unlink()
@@ -73,7 +73,10 @@ def build_components(channel: str) -> tuple[Path, Path]:
     discard_stale_component_sidecars(build_root)
     run([str(ROOT / "scripts/build-guests"), "ppc"])
     run([str(ROOT / "scripts/build-guests"), "68k"])
-    return build_root / "ppc/New Old World.bin", build_root / "ext/NowExt.bin"
+    return (
+        build_root / "ppc/New Old World.bin",
+        build_root / "ext/NOW Extension.bin",
+    )
 
 
 def stage_host(workspace: Path) -> Path:
@@ -178,6 +181,10 @@ def assemble(args: argparse.Namespace) -> None:
             app_path, "application", profile.product_version, revision)
         extension = ComponentArtifact.load(
             ext_path, "extension", resident_version(), revision)
+        if application.metadata.get("compatibility") \
+                != extension.metadata.get("compatibility"):
+            raise ReleaseRefusal(
+                "application and Extension compatibility metadata disagree")
         if application.metadata["channel"] != args.channel \
                 or extension.metadata["channel"] != args.channel:
             raise ReleaseRefusal("component sidecars do not match the requested channel")

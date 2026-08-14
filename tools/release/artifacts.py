@@ -57,7 +57,10 @@ class ComponentArtifact:
             "schema", "component", "version", "build", "sha256", "bytes",
             "channel", "signed",
         }
-        optional_keys = {"releaseTag", "sourceRevision"}
+        optional_keys = {
+            "compatibility", "displayVersion", "lifecycle", "lifecycleNumber",
+            "releaseTag", "sourceRevision",
+        }
         unknown = set(metadata) - expected_keys - optional_keys
         if unknown:
             raise ReleaseRefusal(f"{sidecar}: unknown fields: {sorted(unknown)}")
@@ -80,7 +83,7 @@ class ComponentArtifact:
                    metadata=metadata)
 
     def manifest_row(self) -> dict:
-        return {
+        row = {
             "classification": "repository-build",
             "component": self.component,
             "filename": self.path.name,
@@ -90,6 +93,13 @@ class ComponentArtifact:
             "sha256": sha256(self.path),
             "sidecarSHA256": sha256(self.sidecar_path),
         }
+        for key in (
+            "compatibility", "displayVersion", "lifecycle", "lifecycleNumber",
+            "releaseTag",
+        ):
+            if key in self.metadata:
+                row[key] = self.metadata[key]
+        return row
 
 
 @dataclass(frozen=True)
