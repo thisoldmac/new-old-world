@@ -342,6 +342,12 @@ private struct ContinuityControlCard: View {
                 Toggle("Reconnect after interruption",
                        isOn: $controller.autoReconnect)
                     .disabled(!mirrorRunning)
+                Stepper(value: $controller.reconnectDelay,
+                        in: 0.1...5.0, step: 0.1) {
+                    Text("Reconnect delay: "
+                         + String(format: "%.1fs", controller.reconnectDelay))
+                }
+                .disabled(!controller.autoReconnect || !mirrorRunning)
                 if source.surfaceMode == .continuity {
                     Toggle("Send keyboard input to guest",
                            isOn: $controller.keyboardForwardingEnabled)

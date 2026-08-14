@@ -795,6 +795,31 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(rig.controller.phase, .arming)
     }
 
+    func testConfiguredReconnectDelayIsRespected() async throws {
+        let rig = try await makeActiveRig(autoReconnect: true)
+        defer { rig.udp.stop() }
+        rig.controller.reconnectDelay = 0.05
+
+        try rig.guest.send(.continuityReport(.init(
+            version: ContinuityContract.version,
+            id: nil, epoch: rig.arm.epoch, state: "exited",
+            acceptedHz: rig.arm.requestedHz, udpPort: nil,
+            reason: "lease-expired", acceptedPackets: 4,
+            stalePackets: 0, malformedPackets: 0,
+            appliedPositionSequence: 3, appliedButtonGeneration: 0)))
+        /* The old hardcoded 0.75s default would still be mid-wait here; a
+           0.3s timeout only passes if scheduleReconnect actually read the
+           configured 0.05s value instead of a fixed constant. */
+        try await waitUntil("fast automatic rearm", timeout: 0.3) {
+            rig.guest.received.compactMap { message -> ContinuityArm? in
+                if case .continuityArm(let arm) = message { return arm }
+                return nil
+            }.count == 2
+        }
+        XCTAssertTrue(rig.controller.isEnabled)
+        XCTAssertEqual(rig.controller.phase, .arming)
+    }
+
     func testGuestExitDoesNotCarryClickTimingIntoTheNextEpoch()
         async throws {
         var audit: [(HostLog.LogLevel, String)] = []

@@ -205,6 +205,20 @@ final class MirrorContinuityController: ObservableObject,
             if phase == .active { edge.keyboardConfigurationChanged() }
         }
     }
+    /* Bounceback recovery delay: how long scheduleReconnect waits before
+       re-arming after the pointer returns to the host. Purely a host-side
+       timing knob, so unlike the toggles above it never needs to interrupt
+       an in-progress epoch on change. */
+    @Published var reconnectDelay = 0.75 {
+        didSet {
+            guard reconnectDelay != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(reconnectDelay,
+                             forKey: reconnectDelayKey(for: machine))
+            }
+        }
+    }
 
     var isActive: Bool { phase == .active }
     @Published private(set) var isMenuTracking = false
@@ -1048,7 +1062,8 @@ final class MirrorContinuityController: ObservableObject,
                 + "ending epoch=\(self.epoch), generation=\(generation)")
             self.relinquish(reason: "button up acknowledgement timed out",
                             keepEnabled: true)
-            self.scheduleReconnect(reason: "button up timeout")
+            self.scheduleReconnect(reason: "button up timeout",
+                                    delay: self.reconnectDelay)
         }
     }
 
@@ -1061,7 +1076,11 @@ final class MirrorContinuityController: ObservableObject,
         }
     }
 
-    private func scheduleReconnect(reason: String, delay: Double = 0.75,
+    /* No default for `delay`: every call site now names it explicitly
+       (reconnectDelay for the bounceback path, or an intentionally
+       shorter fixed wait for a configuration-change rearm) so the number
+       here can never drift out of step with the configured setting. */
+    private func scheduleReconnect(reason: String, delay: Double,
                                    requiresOptIn: Bool = true) {
         guard (!requiresOptIn || autoReconnect), isEnabled, pointerInside,
               listener.activeContinuityTarget != nil else { return }
@@ -1132,7 +1151,7 @@ final class MirrorContinuityController: ObservableObject,
         if autoReconnect && retryable && isEnabled {
             if retryImmediately {
                 status = "Continuity ended on the Mac: \(reason); reconnecting…"
-                scheduleReconnect(reason: reason)
+                scheduleReconnect(reason: reason, delay: reconnectDelay)
             } else {
                 status = "Continuity ended on the Mac: \(reason); move the "
                     + "host pointer to reconnect"
@@ -1278,7 +1297,17 @@ final class MirrorContinuityController: ObservableObject,
         } else {
             escapeShortcut = .controlOptionEscape
         }
+        let delayKey = reconnectDelayKey(for: machine)
+        reconnectDelay = defaults.object(forKey: delayKey) == nil
+            ? 0.75 : clampReconnectDelay(defaults.double(forKey: delayKey))
         loadingSettings = false
+    }
+
+    /* Guards against a stale or hand-edited defaults value putting the
+       reconnect wait outside a sane range: too low spins scheduleReconnect,
+       too high reads as a hang after the pointer returns to the host. */
+    private func clampReconnectDelay(_ value: Double) -> Double {
+        min(max(value, 0.1), 5.0)
     }
 
     private func rateKey(for machine: GuestID) -> String {
@@ -1327,6 +1356,10 @@ final class MirrorContinuityController: ObservableObject,
 
     private func escapeShortcutKey(for machine: GuestID) -> String {
         "mirror.continuity.escapeShortcut.\(machine.slug)"
+    }
+
+    private func reconnectDelayKey(for machine: GuestID) -> String {
+        "mirror.continuity.reconnectDelay.\(machine.slug)"
     }
 
     private func wireDisarmReason(for reason: String) -> String {
