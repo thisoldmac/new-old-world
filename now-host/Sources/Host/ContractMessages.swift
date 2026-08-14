@@ -190,6 +190,7 @@ struct ContinuityArm: Codable, Equatable, Sendable {
     var wideDoubleTime: Bool? = nil
     var compressClickWhen: Bool? = nil
     var interruptPress: Bool? = nil
+    var deepClickLog: Bool? = nil
     var settleIdleCursor: Bool? = nil
     var virtualADB: Bool? = nil
     var hideGuestCursorWhileDragging: Bool? = nil

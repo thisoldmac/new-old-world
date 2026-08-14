@@ -2246,6 +2246,22 @@ components:
             task-time route can enter the queue while it processes the
             first click. The pending manager-up is canceled and the
             manager ledger reconciles at the next task-time boundary.
+        deepClickLog:
+          type: boolean
+          default: false
+          description: >
+            Diagnostic spike, host-selected, logging only. The resident
+            records every mouse event at the jGNE boundary - native and
+            synthetic alike - with the full post-shape event record and
+            the click-relevant low-memory state beside it, into a rolling
+            ring the application drains into the uploadable log. The latch
+            deliberately survives epoch exit: the native half of the
+            comparison this exists for can only be clicked after takeover
+            has ended the epoch. A later arm without this flag stops it.
+            Exists because both timestamp theories of the Finder
+            double-click failure were eliminated by measurement; whatever
+            distinguishes a synthetic pair is a field, and fields are
+            captured, not theorized about.
         compressClickWhen:
           type: boolean
           default: false

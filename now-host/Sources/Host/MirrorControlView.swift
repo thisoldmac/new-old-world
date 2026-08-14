@@ -387,6 +387,9 @@ private struct ContinuityControlCard: View {
                 Toggle("Interrupt press delivery (experiment)",
                        isOn: $controller.interruptPress)
                     .disabled(!controller.isEnabled || !mirrorRunning)
+                Toggle("Deep click probe (diagnostic, logs every click)",
+                       isOn: $controller.deepClickLog)
+                    .disabled(!controller.isEnabled || !mirrorRunning)
                 Toggle("Settle device while idle (spike)",
                        isOn: $controller.settleIdleCursor)
                     .disabled(!controller.isEnabled || !mirrorRunning)

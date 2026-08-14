@@ -406,6 +406,62 @@ check("PostEvent(mouseUp, 0)" in PPC
       and "event_down == 0 && err == noErr" in PPC,
       "the application no longer posts the mouseUp the manager cannot")
 
+# The V11 deep click probe is a RECORDER: it exists because both timestamp
+# theories of the double-click failure died by measurement, and its whole
+# value is that it observes without participating. A capture that posts,
+# sets state, logs, allocates, or re-primes a timer is a new input source
+# wearing a diagnostic's name.
+capture = body(RESIDENT, "/* V11 deep click probe: READS ONLY.",
+               "static void release_button(")
+for token in ("PPostEvent", "PostEvent", "LMSet", "PrimeTime", "now_log",
+              "NewPtr", "DisposePtr", "GetFrontProcess", "now_cdm_"):
+    check(token not in capture,
+          f"the deep click probe stopped being read-only: {token}")
+check("if (!gDeepClickLog)" in capture
+      and "event->what != mouseDown && event->what != mouseUp" in capture,
+      "the deep click probe lost its latch or event-kind gate")
+check("guard < 32" in capture,
+      "the raw event-queue walk lost its iteration bound")
+check("% (NowPeekU32)kNowPeekContinuityClickProbeCapacity" in capture
+      and "entry->write_seq = seq + 2u;" in capture,
+      "the probe ring lost its rolling index or its commit-last seqlock")
+
+# The latch is written in exactly one place - epoch start - and survives
+# every exit path on purpose: the native half of the comparison can only
+# be clicked after takeover has already ended the epoch. A second writer
+# (an exit-path clear is the tempting one) silently amputates that half.
+check(RESIDENT.count("gDeepClickLog =") == 2
+      and "gDeepClickLog = (cell->tracking_options" in
+          body(RESIDENT, "static void start_epoch_locked(",
+               "static void apply_button_edge("),
+      "the deep-click latch gained a writer outside start_epoch_locked")
+
+# The capture must run ahead of the enabled gate, or disarm/takeover cuts
+# the recording exactly when the native comparison clicks happen.
+observe = body(RESIDENT, "void now_ext_continuity_observe_event(",
+               "/* V11 deep click probe: READS ONLY.")
+check(observe.index("deep_click_capture(cell, event, ticks);")
+          < observe.index("if (!cell->enabled)"),
+      "the deep click probe no longer records after epoch exit")
+
+# The drain is uploadable evidence: now_log, never now_log_memory, and an
+# overrun is counted out loud rather than silently absent.
+probe_drain = body(PPC, "static void drain_click_probe(",
+                   "int now_continuity_service_ready(")
+check("now_log_memory" not in probe_drain
+      and "now_log(" in probe_drain,
+      "the click probe drain fell back to the never-uploaded memory log")
+check("click_probe_overwritten +=" in probe_drain
+      and "click probe overran drain" in probe_drain,
+      "a probe overrun is no longer counted and named")
+
+# The host and wire both know the flag, or the toggle arms nothing.
+check("deepClickLog" in WIRE
+      and "kNowPeekContinuityTrackingDeepClickLog" in WIRE,
+      "the wire no longer maps deepClickLog onto tracking bit 9")
+check("deepClickLog: deepClickLog" in HOST,
+      "the host arm no longer forwards the deep click probe flag")
+
 if failures:
     for failure in failures:
         print("FAIL:", failure)

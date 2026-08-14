@@ -709,6 +709,7 @@ final class GuestListener: ObservableObject {
                        wideDoubleTime: Bool = false,
                        compressClickWhen: Bool = false,
                        interruptPress: Bool = false,
+                       deepClickLog: Bool = false,
                        settleIdleCursor: Bool = false,
                        virtualADB: Bool = false,
                        hideGuestCursorWhileDragging: Bool = false) -> Int? {
@@ -725,6 +726,7 @@ final class GuestListener: ObservableObject {
             wideDoubleTime: wideDoubleTime,
             compressClickWhen: compressClickWhen,
             interruptPress: interruptPress,
+            deepClickLog: deepClickLog,
             settleIdleCursor: settleIdleCursor,
             virtualADB: virtualADB,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)))

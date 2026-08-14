@@ -173,6 +173,24 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
+    /* Diagnostic spike, default off, logging only: the resident records
+       every mouse event at the jGNE boundary with the click-relevant
+       low-memory state beside it, latched past epoch exit so native
+       comparison clicks land in the same uploadable log. */
+    @Published var deepClickLog = false {
+        didSet {
+            guard deepClickLog != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(deepClickLog,
+                             forKey: deepClickLogKey(for: machine))
+            }
+            if phase != .idle {
+                rearmAfterConfigurationChange(
+                    reason: "deep click probe changed")
+            }
+        }
+    }
     /* Spike, default off: extend the settle machinery to idle motion so a
        starved pump's frames are drawn from whichever process holds the CPU. */
     @Published var settleIdleCursor = false {
@@ -553,6 +571,7 @@ final class MirrorContinuityController: ObservableObject,
             wideDoubleTime: wideDoubleTime,
             compressClickWhen: compressClickWhen,
             interruptPress: interruptPress,
+            deepClickLog: deepClickLog,
             settleIdleCursor: settleIdleCursor,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)
         guard armID != nil else {
@@ -1305,6 +1324,8 @@ final class MirrorContinuityController: ObservableObject,
             ? true : defaults.bool(forKey: compressKey)
         interruptPress = defaults.bool(
             forKey: interruptPressKey(for: machine))
+        deepClickLog = defaults.bool(
+            forKey: deepClickLogKey(for: machine))
         settleIdleCursor = defaults.bool(
             forKey: settleIdleCursorKey(for: machine))
         hideGuestCursorWhileDragging = defaults.bool(
@@ -1373,6 +1394,10 @@ final class MirrorContinuityController: ObservableObject,
 
     private func interruptPressKey(for machine: GuestID) -> String {
         "mirror.continuity.interruptPress.\(machine.slug)"
+    }
+
+    private func deepClickLogKey(for machine: GuestID) -> String {
+        "mirror.continuity.deepClickLog.\(machine.slug)"
     }
 
     private func keyboardForwardingKey(for machine: GuestID) -> String {
