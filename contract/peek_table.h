@@ -951,6 +951,15 @@ enum {
        epoch exit so native comparison clicks land in the same ring. It
        changes no default behaviour and injects nothing. */
     kNowPeekContinuityFormatV11 = 11,
+    /* V12 appends the manager-call busy handshake and rebuilds interrupt
+       press delivery on it: the timer now reads the notifier-written wire
+       edges directly (the V11 deferred-slot handshake was structurally
+       unreachable - task time set it and the same invoke consumed it),
+       and both halves keep MBTicks coherent with the shaped event `when`,
+       because the 015913 probe run showed native downs satisfy
+       when == MBTicks exactly while compressed synthetic downs diverge
+       by up to 110 ticks. */
+    kNowPeekContinuityFormatV12 = 12,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -963,7 +972,7 @@ enum {
    contain a new application and an older resident while every artifact was
    individually well formed.  The update manifests also publish this value,
    so a stack assembler can reject that pair before it reaches a Macintosh. */
-#define NOW_CONTINUITY_FORMAT_CURRENT 11u
+#define NOW_CONTINUITY_FORMAT_CURRENT 12u
 
 enum {
     kNowPeekContinuityExitNone = 0,
@@ -1446,6 +1455,14 @@ typedef struct {
     NowPeekU32 click_probe_overwritten;
     NowPeekContinuityClickProbe
         click_probe[kNowPeekContinuityClickProbeCapacity];
+    /* V12 manager-call handshake. The application sets this NONZERO around
+       its CursorDeviceButton* call - which runs BETWEEN resident service
+       invokes, where status_seq is even and the old mid-invoke guard sees
+       nothing - and rechecks the exposed request after setting it. The
+       interrupt-press delivery refuses while it is set. This closes the
+       race where an interrupt delivery cancels a manager up the
+       application has already read and is about to serve. */
+    NowPeekU32 button_manager_busy;
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -2371,7 +2388,7 @@ _Static_assert(sizeof(NowPeekContinuityEventTiming) == 56,
                "continuity event timing ABI drift");
 _Static_assert(sizeof(NowPeekContinuityClickProbe) == 84,
                "continuity click probe ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 4440,
+_Static_assert(sizeof(NowPeekContinuityCell) == 4444,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -2425,6 +2442,8 @@ _Static_assert(offsetof(NowPeekContinuityCell, click_probe_count) == 2416,
                "continuity V11 click probe header offset");
 _Static_assert(offsetof(NowPeekContinuityCell, click_probe) == 2424,
                "continuity V11 click probe ring offset");
+_Static_assert(offsetof(NowPeekContinuityCell, button_manager_busy) == 4440,
+               "continuity V12 manager-busy handshake offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

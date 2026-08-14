@@ -871,6 +871,16 @@
         "ext/src/now_ext_continuity.c"
       ],
       "reason": "deep click probe checkpoint; bake follows with the bundle for the metal diff run"
+    },
+    {
+      "at": "2026-08-14T02:12:13-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "08bc0e717ffd2f115d2aaea3214ea0da5e95b4f9",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "V12 contract base for parallel MBTicks+interrupt-press lanes; bake follows with the bundle"
     }
   ]
 }
