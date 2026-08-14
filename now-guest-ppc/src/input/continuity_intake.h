@@ -47,6 +47,11 @@ void now_continuity_shutdown(void);
 int now_continuity_take_report(NowContinuityReport *out);
 unsigned short now_continuity_udp_port(void);
 int now_continuity_wants_fast_pump(void);
+/* The apply handshake and owner-lease renewal on their own, for the nested
+   waits where the wire's state machine may not be re-entered. Safe to call
+   at any frequency and from any cooperative task time; a no-op with no live
+   epoch. See the definition for what it deliberately does not do. */
+void now_continuity_pump(void);
 const char *now_continuity_state_name(unsigned long state);
 const char *now_continuity_reason_name(unsigned long reason);
 
