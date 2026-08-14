@@ -18,6 +18,10 @@ int now_continuity_button_action(NowPeekU32 applied_generation,
                                  int button_down,
                                  NowPeekU32 incoming_generation,
                                  NowPeekU32 flags);
+NowPeekU32 now_continuity_when_rewrite(NowPeekU32 previous_when,
+                                       NowPeekU32 event_when,
+                                       NowPeekU32 window_ticks,
+                                       NowPeekU32 spacing_ticks);
 NowPeekU32 now_continuity_release_due(NowPeekU32 applied_generation,
                                       int button_down,
                                       NowPeekU32 previous_generation,

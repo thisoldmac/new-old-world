@@ -136,6 +136,25 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
+    /* Default on: the Finder pairs clicks against a private copy of the
+       double-click time that widening the global cannot reach (a 56-tick
+       pair failed under an active 60-tick window while SimpleText accepted
+       the same stream, 2026-08-13). The resident compresses synthetic
+       click `when`s at the jGNE boundary instead. */
+    @Published var compressClickWhen = true {
+        didSet {
+            guard compressClickWhen != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(compressClickWhen,
+                             forKey: compressClickWhenKey(for: machine))
+            }
+            if phase != .idle {
+                rearmAfterConfigurationChange(
+                    reason: "click-when compression changed")
+            }
+        }
+    }
     /* Spike, default off: extend the settle machinery to idle motion so a
        starved pump's frames are drawn from whichever process holds the CPU. */
     @Published var settleIdleCursor = false {
@@ -500,6 +519,7 @@ final class MirrorContinuityController: ObservableObject,
             virtualGetMouse: virtualGetMouse,
             settleSyntheticDevice: settleSyntheticDevice,
             wideDoubleTime: wideDoubleTime,
+            compressClickWhen: compressClickWhen,
             settleIdleCursor: settleIdleCursor,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)
         guard armID != nil else {
@@ -1242,6 +1262,9 @@ final class MirrorContinuityController: ObservableObject,
         let wideKey = wideDoubleTimeKey(for: machine)
         wideDoubleTime = defaults.object(forKey: wideKey) == nil
             ? true : defaults.bool(forKey: wideKey)
+        let compressKey = compressClickWhenKey(for: machine)
+        compressClickWhen = defaults.object(forKey: compressKey) == nil
+            ? true : defaults.bool(forKey: compressKey)
         settleIdleCursor = defaults.bool(
             forKey: settleIdleCursorKey(for: machine))
         hideGuestCursorWhileDragging = defaults.bool(
@@ -1292,6 +1315,10 @@ final class MirrorContinuityController: ObservableObject,
 
     private func settleIdleCursorKey(for machine: GuestID) -> String {
         "mirror.continuity.settleIdleCursor.\(machine.slug)"
+    }
+
+    private func compressClickWhenKey(for machine: GuestID) -> String {
+        "mirror.continuity.compressClickWhen.\(machine.slug)"
     }
 
     private func keyboardForwardingKey(for machine: GuestID) -> String {

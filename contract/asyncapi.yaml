@@ -2233,6 +2233,17 @@ components:
             guest ticks between manager downs, which a stock 32-tick
             DoubleTime can never recognize; the recognition window is the
             only half of that comparison Continuity can honestly control.
+        compressClickWhen:
+          type: boolean
+          default: false
+          description: >
+            Host-selected. At the jGNE boundary, while an epoch is active,
+            the resident rewrites synthetic mouse-event `when` values so a
+            click pair produced within the wide recognition window reads as
+            a few ticks apart to whichever application dequeues it. Exists
+            because the Finder pairs clicks against a private copy of the
+            double-click time that widening the low-memory global cannot
+            reach; SimpleText accepted the same stream unmodified.
         settleIdleCursor:
           type: boolean
           default: false

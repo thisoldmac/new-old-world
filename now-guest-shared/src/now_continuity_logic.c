@@ -55,6 +55,28 @@ int now_continuity_button_action(NowPeekU32 applied_generation,
     return kNowContinuityButtonNothing;
 }
 
+/* Compress a synthetic mouse event's `when` toward its predecessor so any
+   consumer's click-pairing arithmetic accepts the pair. Finder compares
+   against a PRIVATE copy of the double-click time - a 56-tick pair failed
+   under an active 60-tick window - so widening the global cannot reach it;
+   the interval itself has to shrink. Returns the rewritten when, or 0 when
+   no rewrite applies: no predecessor, outside the window (the caller
+   resets its chain), or already at least as tight as the target - a when
+   must never move forward in time. */
+NowPeekU32 now_continuity_when_rewrite(NowPeekU32 previous_when,
+                                       NowPeekU32 event_when,
+                                       NowPeekU32 window_ticks,
+                                       NowPeekU32 spacing_ticks)
+{
+    NowPeekU32 gap = event_when - previous_when;
+
+    if (previous_when == 0 || gap >= window_ticks)
+        return 0;
+    if (gap <= spacing_ticks)
+        return 0;
+    return previous_when + spacing_ticks;
+}
+
 /* The interrupt-time release must see an up wherever it sits in the v4
    edge pair. Under rapid clicking the packet's current edge is already
    the NEXT press by the time the bounded timer looks, and the release

@@ -188,6 +188,7 @@ struct ContinuityArm: Codable, Equatable, Sendable {
     var virtualGetMouse: Bool?
     var settleSyntheticDevice: Bool? = nil
     var wideDoubleTime: Bool? = nil
+    var compressClickWhen: Bool? = nil
     var settleIdleCursor: Bool? = nil
     var virtualADB: Bool? = nil
     var hideGuestCursorWhileDragging: Bool? = nil

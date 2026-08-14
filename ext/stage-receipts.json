@@ -781,6 +781,18 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "entry-inset and instrument checkpoint; bake follows with the stack rebuild"
+    },
+    {
+      "at": "2026-08-13T21:53:00-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "f9ee3857269d604bdd3d5f4c9825e42635c13302",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "swarm-round checkpoint; bake follows with the merged stack build"
     }
   ]
 }

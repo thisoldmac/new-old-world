@@ -1017,7 +1017,11 @@ enum {
        measured starvation tail, narrow enough that click-pause-click still
        reads as two clicks. The human's own value is saved and restored on
        every epoch exit, forced ones included. */
-    kNowPeekContinuityWideDoubleTimeTicks = 60
+    kNowPeekContinuityWideDoubleTimeTicks = 60,
+    /* The spacing a compressed synthetic click pair reads as. Small
+       enough to pass any plausible private window, large enough that
+       event order stays unambiguous. */
+    kNowPeekContinuityCompressedClickTicks = 4
 };
 
 enum {
@@ -1033,6 +1037,13 @@ enum {
        NOWc device to the freshest wire point whenever the application is
        behind, in whatever process is pumping. Off by default. */
     kNowPeekContinuityTrackingSettleIdleCursor = 1u << 6,
+    /* Rewrite synthetic mouse-event `when`s at the jGNE boundary so any
+       consumer's click-pairing arithmetic accepts a pair we produced
+       within the wide window. Finder pairs against a PRIVATE copy of the
+       double-click time (a 56-tick pair failed under an active 60-tick
+       window, 2026-08-13), so the interval itself must shrink; widening
+       the global cannot reach a private copy. */
+    kNowPeekContinuityTrackingCompressClickWhen = 1u << 7,
     kNowPeekContinuityTrackingKnownMask =
         kNowPeekContinuityTrackingPinHeldPoint
             | kNowPeekContinuityTrackingVirtualGetMouse
@@ -1041,6 +1052,7 @@ enum {
             | kNowPeekContinuityTrackingSettleSyntheticDevice
             | kNowPeekContinuityTrackingWideDoubleTime
             | kNowPeekContinuityTrackingSettleIdleCursor
+            | kNowPeekContinuityTrackingCompressClickWhen
 };
 
 enum {

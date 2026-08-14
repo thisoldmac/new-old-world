@@ -13,6 +13,8 @@ PPC_CURSOR = (ROOT / "now-guest-ppc/src/input/continuity_cursor.c").read_text()
 HOST = (ROOT / "now-host/Sources/Host/MirrorContinuityController.swift").read_text()
 CONTRACT = (ROOT / "contract/continuity_udp.h").read_text()
 WIRE = (ROOT / "now-guest-ppc/src/core/wire.c").read_text()
+EXT_CORE = (ROOT / "ext/src/now_ext.c").read_text()
+INTAKE = (ROOT / "now-guest-ppc/src/input/continuity_intake.c").read_text()
 EXT_CMAKE = (ROOT / "ext/CMakeLists.txt").read_text()
 TRACKING_ASM = (ROOT / "ext/src/now_ext_cursor_tracking.S").read_text()
 
@@ -268,6 +270,38 @@ check("remember_owned_device_point(want);" in idle_settle
       and idle_settle.index("remember_owned_device_point(want);")
           < idle_settle.index("settle_continuity_tracking_device(cell, want);"),
       "the idle settle no longer owns its point before the manager move")
+
+# when-compression may only run on our own events: option-gated, active
+# epoch only (every mouse event during an active epoch is synthetic -
+# physical input exits the epoch), mouse events only, and shaped BEFORE the
+# observer records `when` so the log shows what the application received.
+# It exists because Finder pairs clicks against a private copy of the
+# double-click time (56-tick pair failed under an active 60-tick window,
+# 2026-08-13 210811) that widening the global cannot reach.
+shape = body(RESIDENT, "void now_ext_continuity_shape_event(",
+             "/* Capture the Event Manager's synthetic mouse record")
+check("!gCompressClickWhen" in shape
+      and "kNowPeekContinuityStateActive" in shape
+      and "event->what != mouseDown && event->what != mouseUp" in shape,
+      "when-compression lost its option, state, or event-kind gate")
+check("now_continuity_when_rewrite(" in shape,
+      "when-compression no longer uses the guarded pure rewrite")
+check("now_ext_continuity_shape_event(event);" in EXT_CORE
+      and EXT_CORE.index("now_ext_continuity_shape_event(event);")
+          < EXT_CORE.index("now_ext_continuity_observe_event(event, ticks);"),
+      "events are no longer shaped before the observer records them")
+check('"compressClickWhen"' in WIRE
+      and "kNowPeekContinuityTrackingCompressClickWhen" in WIRE,
+      "the wire arm no longer maps compressClickWhen onto its option bit")
+
+# Handing the pointer back must not leave a stale guest sprite parked at
+# the last synthetic point - except on guest-input takeover, where the
+# human's own hand is the next movement and wants the sprite visible.
+check("ObscureCursor();" in INTAKE
+      and "kNowPeekContinuityExitGuestInput" in
+          INTAKE[INTAKE.index("gHaveReportedTerminal = 1;"):
+                 INTAKE.index("ObscureCursor();")],
+      "a handback no longer obscures the guest sprite (or obscures on takeover)")
 
 # The interrupt-time MBState release beats the manager to the transition,
 # so CursorDeviceButtonUp posts nothing: across every logged run no

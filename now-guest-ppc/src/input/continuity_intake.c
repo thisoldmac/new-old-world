@@ -800,6 +800,17 @@ int now_continuity_take_report(NowContinuityReport *out)
         gLastTerminalEpoch = out->epoch;
         gLastTerminalReason = out->exit_reason;
         gHaveReportedTerminal = 1;
+        /* The pointer belongs to the host again: leave no stale guest
+           sprite parked at the last synthetic point. ObscureCursor hides
+           until the next real mouse movement, which is exactly a
+           handback's semantics - and exactly why a guest-input takeover
+           is excluded, since there the human IS the next movement and
+           wants the sprite where their hand just put it. Idempotent, so
+           a duplicated terminal report costs nothing. */
+        if (out->state == (NowPeekU32)kNowPeekContinuityStateExited
+                && out->exit_reason
+                    != (NowPeekU32)kNowPeekContinuityExitGuestInput)
+            ObscureCursor();
     }
     now_log(out->state == kNowPeekContinuityStateRefused
                 ? kLogWarn : kLogInfo,

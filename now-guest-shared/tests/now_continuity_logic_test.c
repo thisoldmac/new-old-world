@@ -68,6 +68,22 @@ int main(void)
               5, 1, 6, kNowPeekContinuityPrimaryDown,
               7, kNowPeekContinuityPrimaryDown) == 0);
 
+    /* Finder pairs clicks against a private copy of the double-click
+       time, not the live global: a pair 56 ticks apart failed under an
+       active 60-tick window while SimpleText accepted the same stream
+       (2026-08-13 210811, app=Find/app=Simp). The rewrite compresses
+       synthetic mouse-event `when`s so ANY consumer's arithmetic pairs
+       them, without changing which events exist. */
+    /* Inside the window: rewritten to previous + spacing. */
+    CHECK(now_continuity_when_rewrite(1000, 1041, 60, 4) == 1004);
+    /* Outside the window: no rewrite, chain resets on the caller. */
+    CHECK(now_continuity_when_rewrite(1000, 1061, 60, 4) == 0);
+    /* Real spacing already tighter than the target: keep the original -
+       never move an event's when forward in time. */
+    CHECK(now_continuity_when_rewrite(1000, 1002, 60, 4) == 0);
+    /* First event of a chain (no previous): no rewrite. */
+    CHECK(now_continuity_when_rewrite(0, 1041, 60, 4) == 0);
+
     CHECK(now_continuity_exit_due(
         100, 90, 90, 1, 1, 11, 20, 0, 10, 20, 0)
         == kNowPeekContinuityExitGuestInput);

@@ -219,6 +219,45 @@ static void request_button(NowPeekContinuityCell *cell,
     cell->event_request_generation = generation; /* commit last */
 }
 
+/* Compress synthetic mouse-event `when`s at the jGNE boundary, before the
+   dequeuing application sees the record. While an epoch is ACTIVE every
+   mouse event is ours (physical input exits the epoch), so the chain needs
+   no per-event marker; the option bit and the active state gate it. The
+   chain resets whenever a gap falls outside the wide window, so unrelated
+   clicks keep their real spacing. */
+static volatile unsigned char gCompressClickWhen = 0;
+static NowPeekU32 gLastShapedWhen = 0;
+
+void now_ext_continuity_configure_compression(NowPeekU32 options)
+{
+    gCompressClickWhen =
+        (options & (NowPeekU32)kNowPeekContinuityTrackingCompressClickWhen)
+            != 0;
+    gLastShapedWhen = 0;
+}
+
+void now_ext_continuity_shape_event(EventRecord *event)
+{
+    NowPeekContinuityCell *cell;
+    NowPeekU32 rewritten;
+
+    if (!gCompressClickWhen || event == NULL)
+        return;
+    if (event->what != mouseDown && event->what != mouseUp)
+        return;
+    cell = continuity_cell(gTable);
+    if (cell == NULL || !cell->enabled
+            || cell->state != (NowPeekU32)kNowPeekContinuityStateActive)
+        return;
+    rewritten = now_continuity_when_rewrite(
+        gLastShapedWhen, (NowPeekU32)event->when,
+        (NowPeekU32)kNowPeekContinuityWideDoubleTimeTicks,
+        (NowPeekU32)kNowPeekContinuityCompressedClickTicks);
+    if (rewritten != 0)
+        event->when = (UInt32)rewritten;
+    gLastShapedWhen = (NowPeekU32)event->when;
+}
+
 /* Capture the Event Manager's synthetic mouse record in the same guest clock
    domain as arrival, exposure and manager apply. The first unmatched edge of
    the same direction owns the observation; actual event coordinates are kept
@@ -414,6 +453,7 @@ static void finish_locked(NowPeekContinuityCell *cell, NowPeekU32 reason,
     now_ext_cursor_cancel_task_apply();
     now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(0);
+    now_ext_continuity_configure_compression(0);
     now_ext_adb_observer_stop();
     cell->state = (NowPeekU32)kNowPeekContinuityStateExited;
     cell->exit_reason = reason;
@@ -465,6 +505,7 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
     gDeferredPressGeneration = 0;
     now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(cell->tracking_options);
+    now_ext_continuity_configure_compression(cell->tracking_options);
     gNativeInputSeq = native_input_sequence(cell);
     gNativeInputBaseline = gNativeInputSeq;
     now_ext_adb_observer_start(

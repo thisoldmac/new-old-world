@@ -77,6 +77,7 @@ extern void now_ext_cursor_gne(NowPeekTable *table);
    application's cooperative wire pump enters its resident service. */
 extern int now_ext_continuity_boot(NowPeekTable *table);
 extern void now_ext_continuity_rollback(NowPeekTable *table);
+extern void now_ext_continuity_shape_event(EventRecord *event);
 extern void now_ext_continuity_observe_event(EventRecord *event,
                                              NowPeekU32 ticks);
 
@@ -372,6 +373,9 @@ void now_ext_gne_apply(EventRecord *event)
        picture that disagrees with the machine is not made correct by
        disarming a plane. Nothing owed costs a load and a return. */
     now_ext_cursor_gne(table);
+    /* Shape before observe: the observer's recorded `when` should be the
+       one the application actually receives. */
+    now_ext_continuity_shape_event(event);
     now_ext_continuity_observe_event(event, ticks);
     now_ext_continuity_keyboard_gne(table);
     now_content_gne(table);
