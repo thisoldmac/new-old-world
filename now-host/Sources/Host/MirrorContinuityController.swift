@@ -25,7 +25,6 @@ struct ContinuityOptionDescriptor: Identifiable {
     let detail: String
     let tier: ContinuityOptionTier
     let defaultEnabled: Bool
-    let preferenceSuffix: String
     let rearmReason: String
     let keyPath: ReferenceWritableKeyPath<MirrorContinuityController, Bool>
 }
@@ -38,47 +37,41 @@ enum ContinuityOptionCatalog {
         .init(id: .fastPump, label: "Fast Pump",
               detail: "Ask the guest to yield every tick while diagnosing scheduling.",
               tier: .diagnostic, defaultEnabled: false,
-              preferenceSuffix: "fastPump", rearmReason: "Fast Pump changed",
+              rearmReason: "Fast Pump changed",
               keyPath: \MirrorContinuityController.fastPump),
         .init(id: .settleSyntheticDevice,
               label: "Settle synthetic pointer state",
               detail: "Keep the guest's pointer manager coherent after host motion.",
               tier: .product, defaultEnabled: true,
-              preferenceSuffix: "settleSyntheticDevice",
               rearmReason: "synthetic-device settlement changed",
               keyPath: \MirrorContinuityController.settleSyntheticDevice),
         .init(id: .wideDoubleTime,
               label: "Preserve the double-click window",
               detail: "Allow for cooperative scheduling delays between click edges.",
               tier: .product, defaultEnabled: true,
-              preferenceSuffix: "wideDoubleTime",
               rearmReason: "double-click window changed",
               keyPath: \MirrorContinuityController.wideDoubleTime),
         .init(id: .compressClickWhen,
               label: "Preserve Finder click timing",
               detail: "Keep synthetic click timestamps inside Finder's private window.",
               tier: .product, defaultEnabled: true,
-              preferenceSuffix: "compressClickWhen",
               rearmReason: "click-when compression changed",
               keyPath: \MirrorContinuityController.compressClickWhen),
         .init(id: .interruptPress,
               label: "Keep double-click delivery responsive",
               detail: "Deliver a deferred second press while the guest is busy.",
               tier: .product, defaultEnabled: true,
-              preferenceSuffix: "interruptPress",
               rearmReason: "interrupt press delivery changed",
               keyPath: \MirrorContinuityController.interruptPress),
         .init(id: .deepClickLog, label: "Deep click logging",
               detail: "Record click timing and guest low-memory state for diagnosis.",
               tier: .diagnostic, defaultEnabled: false,
-              preferenceSuffix: "deepClickLog",
               rearmReason: "deep click probe changed",
               keyPath: \MirrorContinuityController.deepClickLog),
         .init(id: .settleIdleCursor,
               label: "Keep guest cursor motion smooth",
               detail: "Settle idle motion even while a guest process starves its pump.",
               tier: .product, defaultEnabled: true,
-              preferenceSuffix: "settleIdleCursor",
               rearmReason: "idle cursor settlement changed",
               keyPath: \MirrorContinuityController.settleIdleCursor),
     ]
@@ -156,12 +149,14 @@ final class MirrorContinuityController: ObservableObject,
             defaults.set(autoReconnect, forKey: reconnectKey(for: machine))
         }
     }
-    @Published var fastPump = false {
+    @Published var fastPump = ContinuityOptionCatalog
+        .descriptor(.fastPump).defaultEnabled {
         didSet {
             optionDidChange(.fastPump, from: oldValue, to: fastPump)
         }
     }
-    @Published var settleSyntheticDevice = true {
+    @Published var settleSyntheticDevice = ContinuityOptionCatalog
+        .descriptor(.settleSyntheticDevice).defaultEnabled {
         didSet {
             optionDidChange(.settleSyntheticDevice, from: oldValue,
                             to: settleSyntheticDevice)
@@ -169,7 +164,8 @@ final class MirrorContinuityController: ObservableObject,
     }
     /* Default on: cooperative scheduling can stretch manager click timing.
        The measurement history lives in docs/continuity-mode.md. */
-    @Published var wideDoubleTime = true {
+    @Published var wideDoubleTime = ContinuityOptionCatalog
+        .descriptor(.wideDoubleTime).defaultEnabled {
         didSet {
             optionDidChange(.wideDoubleTime, from: oldValue,
                             to: wideDoubleTime)
@@ -178,7 +174,8 @@ final class MirrorContinuityController: ObservableObject,
     /* Default on: Finder also pairs clicks against private timing state, so
        the resident compresses synthetic `when`s at the jGNE boundary. See
        docs/continuity-mode.md for the measurements behind this mechanism. */
-    @Published var compressClickWhen = true {
+    @Published var compressClickWhen = ContinuityOptionCatalog
+        .descriptor(.compressClickWhen).defaultEnabled {
         didSet {
             optionDidChange(.compressClickWhen, from: oldValue,
                             to: compressClickWhen)
@@ -188,7 +185,8 @@ final class MirrorContinuityController: ObservableObject,
        interrupt timer delivers a deferred second press itself, because the
        Finder pairs clicks by its own clock at processing time and no
        task-time route can reach the queue while it processes click one. */
-    @Published var interruptPress = true {
+    @Published var interruptPress = ContinuityOptionCatalog
+        .descriptor(.interruptPress).defaultEnabled {
         didSet {
             optionDidChange(.interruptPress, from: oldValue,
                             to: interruptPress)
@@ -198,14 +196,16 @@ final class MirrorContinuityController: ObservableObject,
        every mouse event at the jGNE boundary with the click-relevant
        low-memory state beside it, latched past epoch exit so native
        comparison clicks land in the same uploadable log. */
-    @Published var deepClickLog = false {
+    @Published var deepClickLog = ContinuityOptionCatalog
+        .descriptor(.deepClickLog).defaultEnabled {
         didSet {
             optionDidChange(.deepClickLog, from: oldValue, to: deepClickLog)
         }
     }
     /* Default on: extend the settle machinery to idle motion so a
        starved pump's frames are drawn from whichever process holds the CPU. */
-    @Published var settleIdleCursor = true {
+    @Published var settleIdleCursor = ContinuityOptionCatalog
+        .descriptor(.settleIdleCursor).defaultEnabled {
         didSet {
             optionDidChange(.settleIdleCursor, from: oldValue,
                             to: settleIdleCursor)
@@ -1313,7 +1313,7 @@ final class MirrorContinuityController: ObservableObject,
 
     private func optionKey(_ option: ContinuityOptionDescriptor,
                            for machine: GuestID) -> String {
-        "mirror.continuity.\(option.preferenceSuffix).\(machine.slug)"
+        "mirror.continuity.\(option.id.rawValue).\(machine.slug)"
     }
 
     private func keyboardForwardingKey(for machine: GuestID) -> String {
