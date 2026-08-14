@@ -307,6 +307,14 @@ void now_ext_continuity_shape_event(EventRecord *event)
         (NowPeekU32)kNowPeekContinuityCompressedClickTicks);
     if (rewritten != 0)
         event->when = (UInt32)rewritten;
+    /* Native downs satisfy `when == MBTicks` exactly - 26 of 26 in the
+       2026-08-14 015913 probe run - and rewriting `when` alone left the
+       driver's own copy of the click clock contradicting the forged one
+       by up to 110 ticks. A consumer that cross-checks the pair tells a
+       synthetic click from a real one in a single compare. The forgery
+       must be coherent: the down's shaped `when` becomes MBTicks too. */
+    if (is_down)
+        LMSetMBTicks((long)event->when);
     gLastShapedWhen = (NowPeekU32)event->when;
     gLastShapedWasDown = (unsigned char)(is_down ? 1 : 0);
 }
@@ -577,7 +585,13 @@ static int process_event_result(NowPeekContinuityCell *cell,
     } else if (cell->pending_mouseup) {
         if (cell->event_result_err == noErr) {
             cell->event_up_posts++;
-            cell->applied_button_generation = generation;
+            /* An interrupt delivery may have applied the NEXT press while
+               this up's manager call was still in flight; committing the
+               older up generation here would regress the ledger and
+               re-arm the same press for a second application. */
+            if (now_continuity_sequence_newer(
+                    generation, cell->applied_button_generation))
+                cell->applied_button_generation = generation;
         } else {
             cell->event_post_failures++;
             cell->button_release_reason =
@@ -737,21 +751,62 @@ static int deliver_deferred_press_interrupt(NowPeekContinuityCell *cell,
 {
     EvQElPtr element = NULL;
     Point pt;
-    NowPeekU32 generation;
+    NowPeekU32 generation = 0;
+    NowPeekU32 before;
+    NowPeekU32 packet_epoch;
+    NowPeekU32 current_generation;
+    NowPeekU32 current_flags;
+    NowPeekU32 previous_generation;
+    NowPeekU32 previous_flags;
+    NowPeekI32 press_h;
+    NowPeekI32 press_v;
     OSErr err;
 
-    if (!gInterruptPress || gDeferredPressGeneration == 0)
+    if (!gInterruptPress)
         return 0;
-    /* A service invoke mid-run may be about to publish the manager-up
-       result; let the task-time path finish what it started. */
+    /* The V11 gate read gDeferredPressGeneration here and never once
+       fired on metal (11 deferrals, 0 deliveries, 235658; 3 and 0 again,
+       015913): task time set that slot and the same service invoke
+       consumed it, so it never survived to a timer tick. The press this
+       exists to deliver is already in the cell - the OT notifier wrote
+       it at interrupt time - so read the wire edges directly and depend
+       on task time for nothing. */
     if ((cell->status_seq & 1u) != 0)
         return 0;
-    if (cell->event_request_generation != 0
-            && cell->event_result_generation
-                == cell->event_request_generation
-            && cell->event_result_down == cell->event_request_down)
+    /* The manager call itself runs BETWEEN service invokes, where the
+       check above sees nothing. The application brackets it with this
+       handshake and rechecks its snapshot after setting it, so whichever
+       side moves second backs off. */
+    if (cell->button_manager_busy)
         return 0;
-    generation = gDeferredPressGeneration;
+    before = cell->packet_seq;
+    packet_epoch = cell->packet_epoch;
+    current_generation = cell->button_generation;
+    current_flags = cell->flags;
+    previous_generation = cell->previous_button_generation;
+    previous_flags = cell->previous_button_flags;
+    press_h = cell->want_h;
+    press_v = cell->want_v;
+    if (before != cell->packet_seq)
+        return 0;
+    if (packet_epoch != cell->epoch
+            || !(current_flags & kNowPeekContinuityInside))
+        return 0;
+    /* Newest press wins; under rapid clicking the current edge may
+       already be the next press while the one owed is in history. */
+    if (now_continuity_button_action(
+            cell->applied_button_generation, 0,
+            current_generation, current_flags)
+            == kNowContinuityButtonPress) {
+        generation = current_generation;
+    } else if (now_continuity_button_action(
+                   cell->applied_button_generation, 0,
+                   previous_generation, previous_flags)
+                   == kNowContinuityButtonPress) {
+        generation = previous_generation;
+    }
+    if (generation == 0)
+        return 0;
     /* Click 1's up event, which the canceled manager op will never post.
        MBState is already up; btnState in the queue element agrees. */
     err = PPostEvent(mouseUp, 0, &element);
@@ -760,20 +815,21 @@ static int deliver_deferred_press_interrupt(NowPeekContinuityCell *cell,
     cell->event_request_generation = 0;
     cell->pending_mouseup = 0;
     /* The press: state first, then the event, the order the real driver
-       uses. The queue element takes its point from the mouse global. */
-    pt.h = (short)cell->want_h;
-    pt.v = (short)cell->want_v;
+       uses. The queue element takes its point from the mouse global, and
+       MBTicks moves with MBState because a native press moves both - the
+       coherence rule shape_event enforces, applied at the source here. */
+    pt.h = (short)press_h;
+    pt.v = (short)press_v;
     LMSetMouseLocation(pt);
-    now_ext_cursor_remember_continuity_tracking_point(
-        cell->want_h, cell->want_v);
+    now_ext_cursor_remember_continuity_tracking_point(press_h, press_v);
     LMSetMouseButtonState(0x00);
+    LMSetMBTicks((long)ticks);
     now_ext_cursor_remember_continuity_button(1u);
     err = PPostEvent(mouseDown, 0, &element);
     if (err == noErr && element != NULL)
         element->evtQModifiers = 0;
     cell->button_down = 1;
     cell->applied_button_generation = generation;
-    gDeferredPressGeneration = 0;
     gNativeInputSeq = native_input_sequence(cell);
     gNativeInputBaseline = gNativeInputSeq;
     trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceInterruptPress,

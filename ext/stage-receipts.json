@@ -881,6 +881,16 @@
         "contract/peek_table.h"
       ],
       "reason": "V12 contract base for parallel MBTicks+interrupt-press lanes; bake follows with the bundle"
+    },
+    {
+      "at": "2026-08-14T02:16:59-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "fbf88547b234a85ed8e8c64b5d1a4d47944c96fa",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "MBTicks coherence + edges-driven interrupt press; bake follows with tonight's bundle"
     }
   ]
 }

@@ -96,8 +96,27 @@ check("PPostEvent" in DELIVER_CODE
       and RESIDENT_CODE.count("PPostEvent") == DELIVER_CODE.count("PPostEvent")
       and "PostEvent(" not in RESIDENT_CODE.replace("PPostEvent(", ""),
       "the resident calls the Event Manager outside the confined press")
-check("!gInterruptPress || gDeferredPressGeneration == 0" in deliver,
-      "the confined press lost its option or deferred-press gate")
+# AMENDED 2026-08-14: the V11 gate read the task-time deferred slot and
+# never once fired on metal (11 deferrals / 0 deliveries, then 3 / 0) -
+# the slot's lifetime never spanned a timer tick. The press now comes
+# from the notifier-written wire edges, read under a torn-read snapshot
+# with epoch/inside checks, and the manager-busy handshake covers the
+# window between service invokes that status_seq cannot see.
+check("if (!gInterruptPress)" in deliver,
+      "the confined press lost its option gate")
+check("gDeferredPressGeneration" not in DELIVER_CODE,
+      "the confined press depends on the task-time deferred slot again")
+check("before = cell->packet_seq;" in deliver
+      and "before != cell->packet_seq" in deliver,
+      "the confined press reads wire edges without a torn-read snapshot")
+check("packet_epoch != cell->epoch" in deliver
+      and "kNowPeekContinuityInside" in deliver,
+      "the confined press no longer checks epoch and inside before pressing")
+check("cell->button_manager_busy" in deliver,
+      "the confined press ignores the manager-busy handshake")
+check("now_continuity_button_action(" in deliver
+      and "previous_generation, previous_flags" in deliver,
+      "the confined press no longer derives the press from both edge slots")
 check(deliver.index("PPostEvent(mouseUp")
           < deliver.index("LMSetMouseButtonState(0x00)")
       and deliver.index("LMSetMouseButtonState(0x00)")
@@ -461,6 +480,33 @@ check("deepClickLog" in WIRE
       "the wire no longer maps deepClickLog onto tracking bit 9")
 check("deepClickLog: deepClickLog" in HOST,
       "the host arm no longer forwards the deep click probe flag")
+
+# MBTicks coherence. Native downs satisfy when == MBTicks exactly (26/26,
+# probe run 015913); when-compression forged `when` and left the driver's
+# copy contradicting it by up to 110 ticks. The forgery is now coherent -
+# and confined: exactly two writers, the shape rewrite and the interrupt
+# press, both moving MBTicks WITH the state they already own.
+check(RESIDENT.count("LMSetMBTicks") == 2,
+      "MBTicks gained or lost a writer outside shape and the confined press")
+check("LMSetMBTicks((long)event->when)" in shape
+      and shape.index("now_continuity_when_rewrite(")
+          < shape.index("LMSetMBTicks(")
+      and "if (is_down)" in shape,
+      "the shape rewrite no longer keeps MBTicks coherent on downs")
+check("LMSetMBTicks((long)ticks)" in deliver
+      and deliver.index("LMSetMouseButtonState(0x00)")
+          < deliver.index("LMSetMBTicks(")
+      and deliver.index("LMSetMBTicks(")
+          < deliver.index("PPostEvent(mouseDown"),
+      "the confined press no longer moves MBTicks with MBState")
+
+# An interrupt delivery can apply the NEXT press while an older up's
+# manager call is in flight; committing the older generation afterwards
+# regresses the ledger and re-arms the same press twice.
+result_up = result[result.index("cell->pending_mouseup) {"):]
+check("now_continuity_sequence_newer(" in
+          result_up[:result_up.index("applied_button_generation = generation")],
+      "a settled up can again regress an interrupt-delivered press")
 
 if failures:
     for failure in failures:
