@@ -93,6 +93,56 @@ enum ContinuityDisplayGeometry {
         return max(1, matched)
     }
 
+    /// Where a fitted guest sits ALONG its shared edge.
+    ///
+    /// Deriving the factor is only half of Fit: a guest of exactly the right
+    /// size sitting halfway up the edge is not fitted, it is merely the right
+    /// size. The scale decides how long the guest's edge is; this decides
+    /// where that edge starts, on the same axis the scale was derived from.
+    ///
+    /// - Parameter fittedSize: the guest's size WITH the fit scale already
+    ///   applied — this reads the frame it is positioning, not the pixels.
+    static func fittedOrigin(fittedSize: CGSize,
+                             edge: ContinuitySharedEdge,
+                             current: CGPoint) -> CGPoint {
+        var origin = current
+        switch edge.guestSide {
+        case .left, .right:
+            origin.y = alignedAlongEdge(guestLength: fittedSize.height,
+                                        hostMin: edge.host.frame.minY,
+                                        hostLength: edge.host.frame.height)
+        case .bottom, .top:
+            origin.x = alignedAlongEdge(guestLength: fittedSize.width,
+                                        hostMin: edge.host.frame.minX,
+                                        hostLength: edge.host.frame.width)
+        }
+        return origin
+    }
+
+    private static func alignedAlongEdge(guestLength: CGFloat,
+                                         hostMin: CGFloat,
+                                         hostLength: CGFloat) -> CGFloat {
+        /* The ordinary case: the scale made these lengths equal, so starting
+           at the host's own minimum makes the two edges flush end to end. */
+        guard guestLength > hostLength else { return hostMin }
+        /* The clamped case. The guest's edge is already longer than the
+           host's and the floor at 1 forbids shrinking it, so spanning is
+           arithmetically impossible - SOME overhang is going to exist. All
+           this can choose is where it goes, and centring is the only choice
+           that keeps the host edge fully covered while splitting the excess
+           between both ends. Pinning to the host's minimum instead would
+           pile the entire overhang onto one end, which reads as a guest
+           mis-attached at that corner rather than one that is simply too
+           big - the arrangement would look broken instead of looking honest
+           about a guest the host edge cannot contain. */
+        return hostMin + (hostLength - guestLength) / 2
+    }
+
+    static func placementIsFree(_ guest: CGRect,
+                                hosts: [HostDisplayDescriptor]) -> Bool {
+        collisionFree(guest, hosts: hosts)
+    }
+
     static func sharedEdge(hosts: [HostDisplayDescriptor], guest: CGRect)
         -> ContinuitySharedEdge? {
         guard guest.width > 0, guest.height > 0,
@@ -492,6 +542,28 @@ final class ContinuityDisplayLayout: ObservableObject {
         guard scaleMode == .fit else { return }
         apply(scale: ContinuityDisplayGeometry.fitScale(guestSize: guestSize,
                                                         edge: sharedEdge))
+        alignFittedOrigin()
+    }
+
+    /// Fit places the guest as well as sizing it. Separate from `apply` on
+    /// purpose: a scale that did not change still needs aligning, because the
+    /// guest may have been dragged along an edge it was already fitted to.
+    ///
+    /// Unattached is left alone - Fit is Native until there is an edge, and
+    /// that includes the position.
+    private func alignFittedOrigin() {
+        guard scaleMode == .fit, let edge = sharedEdge else { return }
+        let aligned = ContinuityDisplayGeometry.fittedOrigin(
+            fittedSize: guestFrame.size, edge: edge, current: guestOrigin)
+        guard aligned != guestOrigin else { return }
+        /* Sliding along the edge cannot collide with the host it is attached
+           to, but in a multi-display arrangement it can walk into a THIRD
+           display. A fitted position is not worth an overlapping one. */
+        let frame = CGRect(origin: aligned, size: guestFrame.size)
+        guard ContinuityDisplayGeometry.placementIsFree(frame,
+                                                        hosts: hostDisplays)
+        else { return }
+        guestOrigin = aligned
     }
 
     /// Changing the scale keeps the ATTACHED edge where it is and grows away
