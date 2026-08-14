@@ -793,6 +793,16 @@
         "ext/src/now_ext_continuity.c"
       ],
       "reason": "swarm-round checkpoint; bake follows with the merged stack build"
+    },
+    {
+      "at": "2026-08-13T21:53:50-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "e7541b57d08dc06ec80f885b7405d59ba9a8fe6d",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity_keyboard.c"
+      ],
+      "reason": "keyUp accounting checkpoint; bake follows with merged stack build"
     }
   ]
 }

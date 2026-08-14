@@ -176,3 +176,28 @@ Left behind entirely, and why: upstream's milestone tables, effort
 estimates, sequencing, module listings, run commands and repository
 paths. They describe a project that is parked. **The findings are the
 inheritance; the plan is not.**
+
+## Injected input diverges below the API, not at it (2026-08-13)
+
+Every Continuity input bug still open as of 2026-08-13 shares one shape:
+code that is correct against the documented Toolbox API still disagrees
+with a physically-driven event one layer down. Measured on the PowerBook
+1400c: an ownership sampler classified its own settle as physical input
+because the settled point missed the owned-point history; the
+interrupt-time `MBState` release outraces the Cursor Device Manager's
+button bookkeeping, so the manager posts no mouseUp even though low
+memory already reads up; an unbalanced manager button ledger outlives its
+epoch and republishes a phantom hold until real device input overwrites
+it; a synthetic double-click nine ticks apart at one pixel still fails
+Finder recognition after timing, spacing, completeness and window width
+are all excluded, because Finder pairs against a private copy of the
+double-click time; and host-side, a pinned-but-real cursor's own warp
+returns as a genuine AppKit motion sample while a non-consuming observer
+lets every guest click also fire as a real host click. The general rule
+lives in the parent corpus as
+`data/findings/injected-input-diverges-below-the-api.md`: injection
+correctness at the API layer says nothing about driver state, manager
+records, and private per-app caches beneath it, and the fewer layers sit
+between the injection point and the hardware, the fewer seams exist —
+for ADB Macs the floor is the ADB service-callback layer, given a
+synthetic autopoll clock via explicit `ADBOp` Talk-R0.

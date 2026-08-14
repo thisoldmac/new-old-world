@@ -97,6 +97,19 @@ void now_ext_continuity_keyboard_gne(NowPeekTable *table)
             now_ext_continuity_trace_keyboard_result(
                 event.generation, event.action,
                 (NowPeekU32)kNowPeekContinuityKeyErrorNone);
+        } else if (err == evtNotEnb && event_kind == keyUp) {
+            /* keyUp is masked out of the system event mask by default, so
+               this refusal is the OS working as documented, not a lost
+               key - the other two keyboard posters in this tree already
+               ignore it (input_cmds.c, now_ext_act.c). Counting it as
+               failure kept `failed` at ~50% of `queued` forever
+               (79 of 174, all keyUps, 2026-08-13 210811) and buried any
+               real failure under the noise. */
+            now_continuity_keyboard_commit(
+                cell, &event, kNowPeekContinuityKeyErrorNone);
+            now_ext_continuity_trace_keyboard_result(
+                event.generation, event.action,
+                (NowPeekU32)kNowPeekContinuityKeyErrorNone);
         } else {
             now_continuity_keyboard_commit(
                 cell, &event, kNowPeekContinuityKeyErrorPostFailed);
