@@ -217,6 +217,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         initial: MirrorKit.Point = .init(x: 40, y: 50),
         autoReconnect: Bool = false,
         fastPump: Bool = false,
+        deepClickLog: Bool = false,
         acknowledgementTimeout: TimeInterval = 3,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ArmingRig {
@@ -233,6 +234,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
             acknowledgementTimeout: acknowledgementTimeout, audit: audit)
         controller.autoReconnect = autoReconnect
         controller.fastPump = fastPump
+        controller.deepClickLog = deepClickLog
         controller.isEnabled = true
         controller.pointerMoved(to: initial)
         try await waitUntil("arm") {
@@ -832,6 +834,11 @@ final class MirrorContinuityControllerTests: XCTestCase {
     func testFastPumpIsRequestedOnlyWhenOptedIn() async throws {
         let fast = try await makeArmingRig(fastPump: true)
         XCTAssertEqual(fast.arm.fastPump, true)
+    }
+
+    func testDeepClickLogIsRequestedWhenOptedIn() async throws {
+        let diagnostic = try await makeArmingRig(deepClickLog: true)
+        XCTAssertEqual(diagnostic.arm.deepClickLog, true)
     }
 
     func testProductArmSendsBlessedContinuityMechanismsByDefault()

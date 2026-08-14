@@ -948,6 +948,26 @@
         "ext/src/now_ext_continuity.c"
       ],
       "reason": "No Metal access overnight; source-guard wording correction only. Shared bake and Metal verification remain due before landing."
+    },
+    {
+      "at": "2026-08-14T04:38:44-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "7867ac4d077a7f1b91d131aa2aa08da9c970e8f7",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "No Metal access overnight; private emulator clone verified the staged resident and a shared bake remains due before main"
+    },
+    {
+      "at": "2026-08-14T04:39:00-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "7867ac4d077a7f1b91d131aa2aa08da9c970e8f7",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "No Metal access overnight; private emulator clone verified the staged resident and a shared bake remains due before main"
     }
   ]
 }

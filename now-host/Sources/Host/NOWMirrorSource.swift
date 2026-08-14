@@ -681,8 +681,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Called immediately before the listener changes focus, while the
     /// outgoing guest can still receive the content owner's explicit stop.
     func activeGuestWillChange() {
-        continuity.edge.stop(reason: "the selected Mac is changing")
-        continuity.sessionWillEnd(reason: "the selected Mac is changing")
         guard let pinnedGuestKey,
               pinnedGuestKey == cycleIO.activeKey() else { return }
         endSessionReleasingContent(
@@ -719,7 +717,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         hostFinder.resetForGuestChange()
         if let pinnedGuestKey,
            pinnedGuestKey == cycleIO.activeKey() { return }
-        continuity.sessionDidChange()
         guard let pinnedGuestKey,
               pinnedGuestKey != cycleIO.activeKey() else { return }
         endSession(

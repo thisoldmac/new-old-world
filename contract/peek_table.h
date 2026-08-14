@@ -1088,8 +1088,8 @@ enum {
        (2026-08-13 225207) - and during the Finder's own click processing
        nothing cooperative runs anywhere, so interrupt time is the only
        context that can put the second press in the queue before the
-       Finder's stopwatch runs out. Off by default; the riskiest input
-       experiment in this table and labeled as such. */
+       Finder's stopwatch runs out. This is the metal-verified double-click
+       mechanism and host policy now selects it by default. */
     kNowPeekContinuityTrackingInterruptPress = 1u << 8,
     /* Diagnostic spike, logging only. Record EVERY mouse event the jGNE
        filter sees - native or synthetic - with the full event record and

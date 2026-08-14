@@ -7,7 +7,7 @@ search:
 
 # Open issues
 
-## TESTED, EMULATOR RECHECK OWED, NOT METAL-VERIFIED: the Continuity resident is consolidated to one product path (2026-08-14, `refactor/continuity-consolidation`)
+## TESTED, EMULATOR SAFETY PASSED, NOT METAL-VERIFIED: the Continuity resident is consolidated to one product path (2026-08-14, `refactor/continuity-consolidation`)
 
 The experiment surface has been reduced after the attended evidence below
 identified the mechanisms that actually carry the product. Synthetic-device
@@ -26,11 +26,18 @@ interrupt-time delivery is explicitly disabled.
 
 This classification follows the consolidation plan and does not turn absence
 of physical access into a false result. Focused native guards and both classic
-cross-builds pass on the consolidated source. The post-prune emulator sweep is
-still owed on this exact revision and must cover click, double-click, drag,
-keyboard, edge transitions, native takeover, forced release, and clean guest
-shutdown. The next attended PowerBook 1400c pass must repeat those rows before
-the combination is called metal-verified.
+cross-builds pass on the consolidated source. A private mac99/OS 9.1 clone of
+`e66db808` cold-booted resident fingerprint `5188f43addfc`, reported lifecycle
+`active` and capabilities `1023`, and passed the act-plane ABI oracle. The V4
+fault rig then applied 180 positions, observed native click and motion revoke
+ownership with reason `guest-input`, disarmed a fresh epoch, reconnected the
+reliable wire, armed and disarmed again, and completed with `failure: null`.
+The Finder performed both shutdowns and the HFS volume was cleanly unmounted.
+This is the bounded post-prune transport, takeover, reconnect, and lifecycle
+sweep; attended click, double-click, drag, keyboard, and edge-transition rows
+remain for the PowerBook rather than being inferred from headless QMP input.
+The next attended PowerBook 1400c pass must repeat those rows before the
+combination is called metal-verified.
 
 One concern is carried forward rather than used as an overnight blocker. The
 plan originally made retirement of timer pinning and the `_GetMouse` answer
@@ -50,6 +57,21 @@ bounded to 32 entries and unreachable while its diagnostic option is off, but
 the complete jGNE pass has not yet been timed on this exact emulator build.
 The emulator sweep must record that cost before absence of a cadence regression
 is claimed.
+
+The emulator run also exposed an instrument defect rather than a product
+failure: `tools/emulator-continuity-fault.py` inserts `scripts/probes` and then
+`tools` at index zero, so `tools/nowwire.py` shadows the intended probe module
+and has no `GuestLink`. The recorded run preloaded `scripts/probes/nowwire.py`
+explicitly without changing the product. Repairing that import order and
+pinning the helper's own startup path remain harness cleanup.
+
+Mixed-version V4 behavior is explicit rather than hidden: an older host may
+still send a retired option as `true`, and the consolidated V4 guest accepts
+the arm while ignoring that deprecated field. This preserves the plan's
+accretive tombstones and avoids making an experimental option a protocol-wide
+version barrier, but it does not preserve the retired behavior for a mismatched
+host/guest pair. A comparison that specifically needs that old experiment must
+use a matched legacy pair; ordinary product interop uses the blessed fields.
 
 ## PARTLY FIXED, NOT METAL-VERIFIED: the Continuity pointer stops once a second because the guest is serving a scene (2026-08-13, `claude/swarm-pump-stall`)
 

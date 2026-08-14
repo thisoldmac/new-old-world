@@ -44,14 +44,18 @@ guest-cursor hiding during drag, virtual ADB injection, and the passive ADB
 observer. The deferred task-time press path remains as the explicit fallback
 when interrupt-time delivery is opted out.
 
-The consolidated source cross-builds and its focused native guards pass. A
-post-prune emulator sweep must exercise click, double-click, drag, keyboard,
-edge transitions, native takeover, and release before this revision is called
-emulator-tested. The individual mechanisms retain the earlier attended results
-recorded below, but the pruned combination is **not metal-verified** until the
-next PowerBook 1400c pass. In particular, retiring timer pinning and the
-`_GetMouse` answer path without tonight's planned physical A/B is recorded as
-verification debt, not silently promoted to physical evidence.
+The consolidated source cross-builds and its focused native guards pass. On a
+private mac99/OS 9.1 clone, the guest identified the staged resident, applied
+180 positions, yielded ownership to native click and motion, disarmed,
+reconnected its reliable wire, rearmed, and shut down with a clean volume. That
+is emulator-tested transport, takeover, reconnect, and lifecycle evidence; the
+headless rig does not turn those rows into click, double-click, drag, keyboard,
+or edge-transition evidence. The individual mechanisms retain the earlier
+attended results recorded below, but the pruned combination is **not
+metal-verified** until the next PowerBook 1400c pass. In particular, retiring
+timer pinning and the `_GetMouse` answer path without tonight's planned
+physical A/B is recorded as verification debt, not silently promoted to
+physical evidence.
 
 ## Product direction: one input engine, several surfaces
 

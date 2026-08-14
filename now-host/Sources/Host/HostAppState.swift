@@ -71,6 +71,9 @@ final class HostAppState: ObservableObject {
     /// product controls and Logs' diagnostic controls. Keeping it here avoids
     /// constructing the Mirror runtime merely to change a logging probe.
     let continuity: MirrorContinuityController
+    /// The guest whose saved continuity settings are currently loaded.
+    /// Link events for another connected Mac must not reset active ownership.
+    private var continuityGuestKey: GuestKey?
     let mirrorEngines: MirrorStateEngineRegistry
     let agentIntegration: AgentIntegrationHostAdapter
     /// Who has been driving this host over the local agent endpoint. Fed by
@@ -219,6 +222,10 @@ final class HostAppState: ObservableObject {
     @discardableResult
     func selectGuest(_ key: GuestKey) -> Bool {
         listener.selectGuest(key) { [weak self] in
+            self?.continuity.edge.stop(
+                reason: "the selected Mac is changing")
+            self?.continuity.sessionWillEnd(
+                reason: "the selected Mac is changing")
             self?.existingMirrorRuntime?.activeGuestWillChange()
         }
     }
@@ -360,7 +367,12 @@ final class HostAppState: ObservableObject {
     /// moment, or the window shows two machines at once for a frame.
     private func repointModels() {
         let state = listener.state
-        let connection = Self.guestState(from: state, key: listener.activeKey)
+        let activeKey = listener.activeKey
+        let connection = Self.guestState(from: state, key: activeKey)
+        if activeKey != continuityGuestKey {
+            continuityGuestKey = activeKey
+            continuity.sessionDidChange()
+        }
         moduleRuntimes.focus(on: connection)
         captureSmokeIfRequested(state)
         /* Re-attached at the 019 integration, when this body moved out of
