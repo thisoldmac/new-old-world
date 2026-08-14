@@ -334,6 +334,11 @@ final class MirrorContinuityController: ObservableObject,
     private var previousButtonGeneration: UInt32 = 0
     private var previousButtonDown = false
     private var keyGeneration: UInt32 = 0
+    /// The modifier word the guest was last told about, used to suppress the
+    /// flagsChanged repeats the classic word cannot distinguish. Epoch-scoped
+    /// with `keyGeneration`: a new epoch's guest holds nothing, so a stale
+    /// baseline here would swallow the first real change of the next session.
+    private var lastForwardedModifiers: UInt16 = 0
     private var buttonCycleActive = false
     private var wireButtonDown = false
     private var pressAcknowledged = false
@@ -421,6 +426,24 @@ final class MirrorContinuityController: ObservableObject,
 
     func keyboardEvent(_ sample: HostKeySample) -> Bool {
         guard phase == .active, sample.code <= 127 else { return false }
+        /* A modifier message is state, so an unchanged word says nothing the
+           guest does not already hold. macOS raises flagsChanged for keys the
+           classic word has no bit for — Fn, the numeric-pad flag, left versus
+           right of the same modifier — and forwarding those would put a
+           packet on the reliable stream for every one of them. Dropping a
+           repeat is safe precisely because the payload is absolute: the next
+           real change carries the whole word again. */
+        if sample.action == .modifiers {
+            guard sample.modifiers != lastForwardedModifiers else {
+                audit(.info, "modifier change not forwarded, word unchanged: "
+                    + "modifiers=0x\(String(sample.modifiers, radix: 16))")
+                return true
+            }
+            audit(.info, "modifier state forwarded: "
+                + "was=0x\(String(lastForwardedModifiers, radix: 16)), "
+                + "now=0x\(String(sample.modifiers, radix: 16))")
+        }
+        lastForwardedModifiers = sample.modifiers
         keyGeneration = nextNonzero(keyGeneration)
         guard listener.sendContinuityKey(
             epoch: epoch, generation: keyGeneration,
@@ -1322,6 +1345,7 @@ final class MirrorContinuityController: ObservableObject,
         previousButtonDown = false
         resetButtonState(.transport, reason: "authority epoch ended")
         keyGeneration = 0
+        lastForwardedModifiers = 0
         /* A grab expires with the epoch by contract. Dropping the stub here
            is that rule made mechanical: the next epoch gets its own
            generation 1 and cannot redeem consent given in the last one. */
