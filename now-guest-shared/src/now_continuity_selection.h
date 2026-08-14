@@ -1,0 +1,109 @@
+#ifndef NOW_CONTINUITY_SELECTION_H
+#define NOW_CONTINUITY_SELECTION_H
+
+/* The Finder-selection stub table, and the two decisions made about it.
+   ------------------------------------------------------------------
+   A cross-the-edge drag cannot ask the guest anything. The Finder holds
+   its own nested Drag Manager loop for the whole gesture, so every fact
+   the host needs at cross time has to be on the wire BEFORE the press —
+   which is why the guest watches the SELECTION rather than the drag.
+
+   Two decisions come out of that and both are pure arithmetic, so both
+   live here where the host cc can watch them fail:
+
+     1. DID THE SELECTION CHANGE? Answered from identity plus the
+        modification date, never from contents. The Apple Event poll
+        costs a round trip through the Finder and the comparison must
+        not cost a second one.
+     2. MAY THIS GRAB BE SERVED? A grab names a generation, not a path,
+        and the answer is one of a closed set of refusals. Keeping it a
+        function rather than a chain of ifs at the wire is what lets the
+        refusal cases be watched failing without a Macintosh — and the
+        refusals are the half that matters, because a grab bypasses the
+        Files share boundary and only these checks stand in its way.
+
+   Toolbox-free on purpose. The Apple Event, the FSSpec and the wire live
+   in now-guest-ppc, where a test cannot follow them. */
+
+/* HFS's own limit, plus the NUL. A name that does not fit is not
+   truncated here — the poll refuses to build a stub it cannot name. */
+#define kNowContinuityStubNameMax 32
+
+typedef struct {
+    /* The identity triple. A PATH STRING IS DELIBERATELY ABSENT: two
+       mounted volumes may share a name, and the item must still be
+       reachable at grab time after a person has renamed a folder above
+       it. vRefNum + dirID + name is what the File Manager itself uses. */
+    short volume_ref;
+    long dir_id;
+    char name[kNowContinuityStubNameMax];
+
+    unsigned long file_type;      /* OSType; 0 for a folder */
+    unsigned long creator;        /* OSType; 0 for a folder */
+    long data_size;
+    long rsrc_size;
+    unsigned long modified;       /* classic seconds since 1904 */
+    int is_folder;
+} NowContinuityStubItem;
+
+typedef struct {
+    unsigned long epoch;
+    unsigned long generation;
+    int have_item;
+    NowContinuityStubItem item;
+} NowContinuityStubTable;
+
+/* Forget everything. Called when an epoch begins or ends: a stub cannot
+   outlive the consent it was published under, and leaving one behind is
+   the difference between "expired" and "still grantable". */
+void now_continuity_stub_reset(NowContinuityStubTable *table,
+                               unsigned long epoch);
+
+/* Are these the same item, as far as a drag is concerned? Identity and
+   modification date only. Sizes move with the date on any real edit, and
+   comparing them as well would make a Finder that touches a date without
+   changing bytes look like two different files. */
+int now_continuity_stub_same(const NowContinuityStubItem *a,
+                             const NowContinuityStubItem *b);
+
+/* Fold in what the poll saw; `item` NULL means nothing is selected.
+
+   Returns 1 when the table moved — a new generation exists and the wire
+   owes the host a continuity.selection. Returns 0 when the poll saw what
+   the table already held, which is the ordinary case at any useful
+   cadence and must cost nothing.
+
+   AN EMPTY SELECTION GETS A GENERATION OF ITS OWN. It is a change like
+   any other: the host has to be told to drop what it cached, and telling
+   it by silence is indistinguishable from a poll that stopped running. */
+int now_continuity_stub_observe(NowContinuityStubTable *table,
+                                const NowContinuityStubItem *item);
+
+enum {
+    kNowGrabOK = 0,
+    /* The epoch is not the live one — the consent has expired with the
+       session that gave it. */
+    kNowGrabBadEpoch = 1,
+    /* The generation is not the current one. Refused rather than served
+       from a history: a person consented to the item they were looking
+       at, and the guest keeps no ledger of what they used to be. */
+    kNowGrabStaleSelection = 2,
+    /* Nothing is selected under the live epoch. */
+    kNowGrabNoSelection = 3,
+    /* The named item is a folder. The stub says so, so the host can see
+       this coming; refusing by name beats serving an empty file. */
+    kNowGrabFolderNotYet = 4
+};
+
+/* May this grab be served? `live_epoch` is 0 when no epoch is running,
+   which is bad-epoch for every generation including the one the table
+   happens to still hold. */
+int now_continuity_grab_check(const NowContinuityStubTable *table,
+                              unsigned long live_epoch,
+                              unsigned long asked_epoch,
+                              unsigned long asked_generation);
+
+/* The refusal's contract code, for the wire. NULL for kNowGrabOK. */
+const char *now_continuity_grab_code(int verdict);
+
+#endif /* NOW_CONTINUITY_SELECTION_H */

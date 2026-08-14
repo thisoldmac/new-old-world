@@ -203,6 +203,12 @@ run_c now-guest-shared now_continuity_logic_test.c "" src/now_continuity_logic.c
 run_c now-guest-shared now_continuity_event_match_test.c "" \
       src/now_continuity_event_match.c
 run_py now-guest-shared continuity_lease_admission_source_test.py
+# The Finder-selection stub table: what counts as a change, and which
+# grabs may be served. The second half is a consent boundary rather than
+# an optimisation - a grab reads outside the Files share - so its
+# refusals are watched here where no Macintosh is needed to try them.
+run_c now-guest-shared now_continuity_selection_test.c "" \
+      src/now_continuity_selection.c
 run_c now-guest-shared now_continuity_keyboard_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c
 run_py now-guest-shared continuity_keyboard_safety_source_test.py
