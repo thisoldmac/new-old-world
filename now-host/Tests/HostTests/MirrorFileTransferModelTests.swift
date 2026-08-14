@@ -53,10 +53,8 @@ final class MirrorFileTransferModelTests: XCTestCase {
     }
 
     func testStoppedGlobalMonitorCannotUseAssumeIsolated() throws {
-        let source = try GateSource.hostSwift(
-            "now-host/Sources/Host/ContinuityEdgeController.swift")
-        let adapter = try XCTUnwrap(source.components(
-            separatedBy: "@MainActor\nprotocol ContinuityEdgeDriving").first)
+        let adapter = try GateSource.hostSwift(
+            "now-host/Sources/Host/AppKitContinuityPointerEnvironment.swift")
         XCTAssertFalse(adapter.contains("MainActor.assumeIsolated"))
         XCTAssertTrue(adapter.contains("monitorGeneration == generation"))
     }
