@@ -630,7 +630,14 @@ final class ContinuityEdgeControllerTests: XCTestCase {
     /// The tap path has no NSEvent, and used to reach `beginFileDrag`
     /// through a mutable field that was nil there — a synthesized gesture
     /// AppKit never owned. Absence is now a parameter, and it is named.
-    func testGuestFileCrossingWithoutARealEventRefusesOutLoud() {
+    ///
+    /// What CHANGED at slice 4 is the remedy, not the law: absence used to
+    /// end the handoff on the spot, and now it waits for the first real
+    /// event the dying tap stops swallowing. The law is the same one either
+    /// way — no drag session is ever started from an invented event — and
+    /// that is what this asserts. The wait's own ending, when the button
+    /// comes up before any real event, is pinned in ContinuityGuestDragTests.
+    func testGuestFileCrossingWithoutARealEventNeverInventsOne() {
         let layout = makeLayout()
         let driver = Driver()
         let environment = Environment()
@@ -661,11 +668,11 @@ final class ContinuityEdgeControllerTests: XCTestCase {
 
         XCTAssertTrue(environment.fileDrags.isEmpty,
                       "no real event means no drag session at all")
-        XCTAssertTrue(audits.contains { $0.1.contains("no host mouse event") },
-                      "a drag that cannot start must say why")
-        XCTAssertTrue(controller.status.contains("no mouse event"))
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("no host mouse event yet")
+        }, "a drag that cannot start yet must say so")
         XCTAssertEqual(environment.associationChanges, [false, true],
-                       "the refusal still hands the mouse back")
+                       "the pass still hands the mouse back")
     }
 
     /// A real event reaches AppKit unchanged: the seed is built from it, so
