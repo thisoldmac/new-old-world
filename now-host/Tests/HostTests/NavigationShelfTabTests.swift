@@ -60,6 +60,57 @@ final class NavigationShelfTabTests: XCTestCase {
         }
     }
 
+    func testShelfMenuListsOnlyItsModulesWithDirectSelectionsAndDragPayloads()
+        throws {
+        let shelf = try XCTUnwrap(
+            NavigationLayout.standard(for: .standard).shelf(id: .machine))
+
+        let entries = NavigationShelfMenuEntry.entries(
+            for: shelf, registry: .standard)
+
+        XCTAssertEqual(entries.map(\.title), [
+            "Hardware", "Software", "Processes", "Diagnostics",
+        ])
+        XCTAssertEqual(entries.map(\.payload), [
+            .module("census"), .module("software"), .module("processes"),
+            .module("diagnostics"),
+        ])
+        XCTAssertTrue(entries.allSatisfy {
+            $0.selection.containingShelfID == .machine
+        })
+        XCTAssertFalse(entries.contains { $0.title == "Overview" },
+            "Overview is shelf chrome, not a movable module")
+    }
+
+    func testShelfMenuHitRegionTracksTheIconInBothSidebarWidths() {
+        XCTAssertTrue(SidebarMenuHitRegion.leadingIcon.contains(
+            horizontalOffset: 20, width: 176))
+        XCTAssertFalse(SidebarMenuHitRegion.leadingIcon.contains(
+            horizontalOffset: 100, width: 176))
+        XCTAssertTrue(SidebarMenuHitRegion.centeredIcon.contains(
+            horizontalOffset: 26, width: 52))
+        XCTAssertFalse(SidebarMenuHitRegion.centeredIcon.contains(
+            horizontalOffset: 1, width: 52))
+    }
+
+    func testShelfRowsExposeNativeModuleMenusWithoutReplacingRowActivation()
+        throws {
+        let sidebar = try sidebarSource()
+        let native = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNativeDragSurface.swift")
+        let menu = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarShelfModuleMenu.swift")
+
+        XCTAssertTrue(sidebar.contains("menuItems: shelfMenuItems"))
+        XCTAssertTrue(sidebar.contains("menuHitRegion: collapsed"))
+        XCTAssertTrue(sidebar.contains("SidebarShelfIcon("))
+        XCTAssertTrue(native.contains("SidebarModuleMenuItemView"))
+        XCTAssertTrue(menu.contains("item.payload.pasteboardValue"))
+        XCTAssertTrue(menu.contains("item.action()"))
+        XCTAssertTrue(native.contains("configuration?.activate?()"),
+            "clicking outside the shelf icon must still navigate normally")
+    }
+
     func testExperimentalTierFlowsFromDescriptorIntoNavigationChrome() throws {
         let mirror = try XCTUnwrap(ModuleRegistry.standard.module(id: "mirror"))
         let shelf = NavigationShelf(

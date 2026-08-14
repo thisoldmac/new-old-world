@@ -43,6 +43,8 @@
 #include "update_activation.h"
 #include "update_model.h"
 #include "update_status.h"
+#include "web_model.h"
+#include "web_proxy_ot.h"
 
 enum {
     /* Room for the one field whose VALUE is not known until the sizing
@@ -3343,6 +3345,42 @@ static void service_cloud(void)
         && TickCount() > g_prev.deadline) {
         preview_fail("No answer to the preview");
     }
+}
+
+int now_wire_web_request(const char *method, const char *target, long *id,
+                         char *err, long cap)
+{
+    char escaped[3072];
+    char json[3520];
+
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Connect New Old World to this Mac first");
+        return -1;
+    }
+    if (strcmp(method, "GET") != 0 && strcmp(method, "HEAD") != 0) {
+        snprintf(err, (size_t)cap, "Only GET and HEAD are supported");
+        return -1;
+    }
+    now_json_escape(target, escaped, sizeof escaped);
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"web.request\",\"id\":%ld,\"method\":\"%s\","
+             "\"target\":\"%s\"}", g.offer_seq, method, escaped);
+    if (!send_control(json)) {
+        snprintf(err, (size_t)cap, "The NOW connection is busy");
+        return -1;
+    }
+    *id = g.offer_seq;
+    return 0;
+}
+
+void now_wire_web_cancel(long id)
+{
+    char json[64];
+    if (g.phase != kConnConnected || id <= 0) return;
+    snprintf(json, sizeof json,
+             "{\"type\":\"web.cancel\",\"id\":%ld}", id);
+    (void)send_control(json);
 }
 
 /* --- talking to the other machine's model --------------------------------
@@ -7462,6 +7500,36 @@ static int handle_frame(const char *reply)
         chat_result_answer(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "web.response.begin")) {
+        char content_type[96];
+        long id = now_json_find_int(reply, "id", -1);
+        long status = now_json_find_int(reply, "status", 502);
+        long bytes = now_json_find_int(reply, "bytes", -1);
+        if (!now_json_find_string(reply, "contentType", content_type,
+                                  sizeof content_type)) {
+            strcpy(content_type, "text/html");
+        }
+        now_web_proxy_response_begin(id, status, content_type, bytes);
+        return 1;
+    }
+    if (now_json_type_is(reply, "web.response.chunk")) {
+        char data[3073];
+        if (now_json_find_string(reply, "data", data, sizeof data)) {
+            now_web_proxy_response_chunk(
+                now_json_find_int(reply, "id", -1),
+                now_json_find_int(reply, "seq", -1), data);
+        }
+        return 1;
+    }
+    if (now_json_type_is(reply, "web.response.end")) {
+        char reason[193];
+        reason[0] = '\0';
+        (void)now_json_find_text(reply, "reason", reason, sizeof reason);
+        now_web_proxy_response_end(
+            now_json_find_int(reply, "id", -1),
+            now_json_find_bool(reply, "ok", 0), reason);
+        return 1;
+    }
     if (now_json_type_is(reply, "preview.begin")) {
         preview_begin(reply);
         return 1;
@@ -7763,6 +7831,13 @@ void conn_init(void)
        time and GetCurrentProcess is not a call to be making there. */
     g_self_psn_known = (GetCurrentProcess(&g_self_psn) == noErr);
     now_prefs_load(&prefs);
+    {
+        char web_reason[96];
+        if (now_web_proxy_start(prefs.web_proxy_port, web_reason,
+                                sizeof web_reason) != 0) {
+            now_log(kLogWarn, "web", "%s", web_reason);
+        }
+    }
     g_update.restart_required = now_update_activation_reconcile(&prefs);
     strncpy(g.host, prefs.host, sizeof g.host - 1);
     g.port = prefs.port;
@@ -7777,6 +7852,7 @@ void conn_init(void)
 
 void conn_shutdown(void)
 {
+    now_web_proxy_stop();
     if (g.ep != kOTInvalidEndpointRef) {
         if (g.phase == kConnConnected) {
             unsigned long flush_deadline = TickCount() + 60;
@@ -7859,6 +7935,9 @@ static void service_mirror_invalidation(void)
 void conn_service(void)
 {
     ++g_service_passes;
+    /* The browser connects to guest loopback, independently of whether the
+       host link is presently up. Its request waits only after acceptance. */
+    now_web_proxy_service();
     /* Ordinary application context, including nested Toolbox pumps. This is
        the sole drain of the resident P5 cursor; it never runs in the OT
        notifier or resident filter. */

@@ -7,8 +7,7 @@ struct WebModuleView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
-                helper
-                listener
+                relay
                 rendering
                 status
             }
@@ -22,53 +21,24 @@ struct WebModuleView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Modern web pages, translated for a classic browser")
                 .font(.title2.weight(.semibold))
-            Text("The host owns TLS, JavaScript and optional layout-model "
-                 + "work. The classic Mac receives bounded plain HTTP.")
+            Text("The browser connects to New Old World on the classic Mac. "
+                 + "Requests cross the existing NOW connection; this Mac "
+                 + "owns TLS, JavaScript, policy, and page translation.")
                 .foregroundStyle(.secondary)
         }
     }
 
-    private var helper: some View {
-        GroupBox("Web Bridge Helper") {
+    private var relay: some View {
+        GroupBox("Guest Relay") {
             VStack(alignment: .leading, spacing: 10) {
-                TextField("Helper folder", text: $model.helperRoot)
-                    .onSubmit { model.helperPathDidChange() }
-                Text("The folder must contain nowweb/__main__.py. Chromium "
-                     + "and the optional model are never downloaded on a request.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
-        }
-    }
-
-    private var listener: some View {
-        GroupBox("Classic Browser Listener") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    TextField("Bind address", text: $model.bindAddress)
-                    Button("Use This Mac's LAN Address") {
-                        model.usePrimaryLANAddress()
-                    }
-                }
-                HStack {
-                    Text("Port")
-                    TextField("Port", value: $model.port, format: .number)
-                        .frame(width: 90)
-                    Spacer()
-                }
-                TextField("Allowed classic Mac address (recommended)",
-                          text: $model.allowedClient)
-                if model.exposesLANWithoutPeerRestriction {
-                    Label("This listener will accept every peer on the selected "
-                          + "interface. Enter the classic Mac's address to restrict it.",
-                          systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                }
-                Text(model.proxyInstruction)
+                Label("Set the classic browser's HTTP proxy to 127.0.0.1:5180.",
+                      systemImage: "arrow.left.arrow.right")
+                Text("The loopback listener belongs to the guest application. "
+                     + "It is not exposed to the classic Mac's LAN, and it uses "
+                     + "the same authenticated-by-presence NOW session as the "
+                     + "rest of the app.")
                     .font(.callout)
-                    .textSelection(.enabled)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
@@ -123,9 +93,8 @@ struct WebModuleView: View {
                 }
                 switch model.lifecycle {
                 case .ready:
-                    Text(model.startURL)
-                        .font(.system(.callout, design: .monospaced))
-                        .textSelection(.enabled)
+                    Text("Renderer ready. A connected guest relay can browse now.")
+                        .font(.callout)
                 case .failed(let reason), .unavailable(let reason):
                     Text(reason).foregroundStyle(.secondary)
                 default:

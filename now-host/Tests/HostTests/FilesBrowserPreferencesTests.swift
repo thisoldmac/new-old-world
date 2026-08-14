@@ -577,7 +577,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
     @MainActor
     func testSidebarSymbolTintActuallyChangesWithEffectiveAppearance() throws {
         let button = FilesSidebarRowButton()
-        button.appearance = NSAppearance(named: .aqua)
+        button.appearance = NSAppearance(named: .vibrantDark)
         button.configure(
             title: "Desktop", symbolName: "folder", compact: true,
             isActive: false, isEnabled: true, toolTip: "Desktop",
@@ -593,6 +593,44 @@ final class FilesBrowserPreferencesTests: XCTestCase {
         XCTAssertTrue(button.image?.isTemplate == true)
         XCTAssertNotEqual(light, dark,
             "semantic sidebar tint must be re-resolved, not cached as white")
+    }
+
+    @MainActor
+    func testSidebarLabelAndSymbolFollowTheRequestedInterfaceStyle() throws {
+        let button = FilesSidebarRowButton()
+
+        button.appearance = NSAppearance(named: .aqua)
+        button.configure(
+            title: "Desktop", symbolName: "folder", compact: false,
+            isActive: false, isEnabled: true, toolTip: "Desktop",
+            interfaceStyle: .light,
+            activate: {}, validateDrop: { _ in [] }, acceptDrop: { _ in false })
+        let lightLabel = try XCTUnwrap(try XCTUnwrap(
+            button.attributedTitle.attribute(
+                .foregroundColor, at: 0, effectiveRange: nil) as? NSColor)
+            .usingColorSpace(.deviceRGB))
+        let lightSymbol = try XCTUnwrap(try XCTUnwrap(
+            button.contentTintColor).usingColorSpace(.deviceRGB))
+        XCTAssertEqual(button.effectiveAppearance.bestMatch(
+            from: [.aqua, .darkAqua]), .aqua)
+
+        button.appearance = NSAppearance(named: .vibrantLight)
+        button.configure(
+            title: "Desktop", symbolName: "folder", compact: false,
+            isActive: false, isEnabled: true, toolTip: "Desktop",
+            interfaceStyle: .dark,
+            activate: {}, validateDrop: { _ in [] }, acceptDrop: { _ in false })
+        let darkLabel = try XCTUnwrap(try XCTUnwrap(
+            button.attributedTitle.attribute(
+                .foregroundColor, at: 0, effectiveRange: nil) as? NSColor)
+            .usingColorSpace(.deviceRGB))
+        let darkSymbol = try XCTUnwrap(try XCTUnwrap(
+            button.contentTintColor).usingColorSpace(.deviceRGB))
+
+        XCTAssertLessThan(lightLabel.redComponent, darkLabel.redComponent)
+        XCTAssertLessThan(lightSymbol.redComponent, darkSymbol.redComponent)
+        XCTAssertEqual(button.effectiveAppearance.bestMatch(
+            from: [.aqua, .darkAqua]), .darkAqua)
     }
 
     func testGuestAndHostUseTheSameNativeFileBrowser() throws {

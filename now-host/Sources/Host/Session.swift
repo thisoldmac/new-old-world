@@ -86,6 +86,7 @@ final class Session {
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onServeCloud: (GuestListener.CloudAsk) -> Void
     private let onServeChat: (GuestListener.ChatAsk) -> Void
+    private let onServeWeb: (GuestListener.WebAsk) -> Void
     private let onServeHostShow: (HostShow) -> Void
     private let onServeUpdate: (UpdateRequest) -> Void
     private let onUpdateResult: (UpdateResult) -> Void
@@ -236,6 +237,8 @@ final class Session {
              = { _ in },
          onServeChat: @escaping (GuestListener.ChatAsk) -> Void
              = { _ in },
+         onServeWeb: @escaping (GuestListener.WebAsk) -> Void
+             = { _ in },
          onServeHostShow: @escaping (HostShow) -> Void
              = { _ in },
          onServeUpdate: @escaping (UpdateRequest) -> Void = { _ in },
@@ -287,6 +290,7 @@ final class Session {
         self.onServeChange = onServeChange
         self.onServeCloud = onServeCloud
         self.onServeChat = onServeChat
+        self.onServeWeb = onServeWeb
         self.onServeHostShow = onServeHostShow
         self.onServeUpdate = onServeUpdate
         self.onUpdateResult = onUpdateResult
@@ -604,6 +608,13 @@ final class Session {
             onServeChat(.cancel(request))
         case .chatReset(let request):
             onServeChat(.reset(request))
+        case .webRequest(let request):
+            onServeWeb(.request(request))
+        case .webCancel(let request):
+            onServeWeb(.cancel(request))
+        case .webResponseBegin, .webResponseChunk, .webResponseEnd:
+            // Host-owned answers; a guest never serves this Mac's renderer.
+            break
         case .cloudPreview(let request):
             onServeCloud(.preview(request))
         /* The host-surface family: the guest asking THIS Mac to bring

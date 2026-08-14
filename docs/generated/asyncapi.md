@@ -49,6 +49,8 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `hostServesCloud` | `receive` | `control` | `cloudReport`, `cloudListing`, `cloudCard`, `cloudRefuse`, `previewBegin`, `previewEnd` |
 | `guestAsksChat` | `send` | `control` | `chatModels`, `chatSend`, `chatCancel`, `chatReset` |
 | `hostServesChat` | `receive` | `control` | `chatCatalog`, `chatDelta`, `chatStatus`, `chatResult` |
+| `guestAsksWeb` | `send` | `control` | `webRequest`, `webCancel` |
+| `hostServesWeb` | `receive` | `control` | `webResponseBegin`, `webResponseChunk`, `webResponseEnd` |
 | `guestAsksHostSurface` | `send` | `control` | `hostShow` |
 | `hostServesHostSurface` | `receive` | `control` | `hostShown` |
 | `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm`, `continuityKey`, `continuityGrab` |
@@ -143,6 +145,11 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `chatResult` | `chat.result` | `ChatResult` |
 | `chatCancel` | `chat.cancel` | `ChatCancel` |
 | `chatReset` | `chat.reset` | `ChatReset` |
+| `webRequest` | `web.request` | `WebRequest` |
+| `webResponseBegin` | `web.response.begin` | `WebResponseBegin` |
+| `webResponseChunk` | `web.response.chunk` | `WebResponseChunk` |
+| `webResponseEnd` | `web.response.end` | `WebResponseEnd` |
+| `webCancel` | `web.cancel` | `WebCancel` |
 | `previewBegin` | `preview.begin` | `PreviewBegin` |
 | `previewEnd` | `preview.end` | `PreviewEnd` |
 | `hostShow` | `host.show` | `HostShow` |
@@ -165,6 +172,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 | `help` | `topic` | `help` | What commands THIS machine serves, asked of the machine that serves them. |
 | `update` | `component`, `hostApproved` | `update` | Reads the exact application and extension builds the connected host has published. |
 | `gestalt` | — | `snapshot`, `cpu`, `memory`, `os`, `network`, `hw`, `notice` | The guest's own account of itself, via the Gestalt Manager. |
+| `romdump` | — | `romdump` | Writes the responder's complete ROM to `New Old World ROM.bin` under its configured Files share. |
 | `ls` | `path` | `ls` | List a folder in the guest's share. |
 | `put` | `name` | `put` | Send a file from the guest to the host. |
 | `cancel` | — | `cancel` | Abandon the transfer in flight, in whichever direction it is going. |

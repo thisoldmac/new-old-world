@@ -830,6 +830,10 @@ static void console_model_dispatch(const char *input)
         run_gestalt_view(group, full, save);
         return;
     }
+    if (strcmp(name, "romdump") == 0) {
+        run_shared_verb(name, raw_args);
+        return;
+    }
     if (strcmp(name, "screenshot") == 0) {
         run_screenshot_local(depth_flag, bands_flag, no_save);
         return;

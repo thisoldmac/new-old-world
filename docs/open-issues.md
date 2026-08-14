@@ -183,6 +183,28 @@ or in the freshly assembled bundle yet.
   changes, every browser mode uses the same non-vibrant control background,
   and NSBrowser selection is restored by stable row identity after content
   reloads so a click no longer collapses its own child column.
+- **Files appearance — implemented, GUI recheck owed:** SwiftUI now passes its
+  effective light/dark scheme into every embedded AppKit sidebar row. Both the
+  attributed label and template symbol are resolved again when appearance
+  changes, rather than inheriting stale source-list vibrancy. The behavior test
+  distinguishes Aqua from Dark Aqua; the reported light-mode screen still
+  needs a visual recheck in the assembled app.
+- **PowerPC storage and ROM accounting — implemented, metal check owed:** wide
+  HFS volume fields remove the legacy 2047 MiB ceiling. PowerBook 1400 output
+  keeps Gestalt's measured 3 MiB Toolbox region and adds the separate 1 MiB
+  boot region. **Dump ROM** writes the full image into the Files share and the
+  host retrieves it over the existing file transfer path. The approximately
+  64 GB capacity, 4 MiB dump, and corpus checksum remain unobserved on metal.
+- **MCP transport controls — implemented:** stdio and HTTP each expose stable
+  Start/Stop actions and a persisted **Start Automatically** policy. HTTP's
+  stopped state permits an explicit loopback port and derives a copyable URL;
+  stdio exposes its client command and private socket. Launch restoration is
+  tested but has not been visually exercised in this bundle.
+- **Shelf module menus — implemented, gesture check owed:** a shelf icon opens
+  a native menu listing its modules. Choosing one navigates directly; dragging
+  a custom menu row exports the existing module drag payload so it can be moved
+  elsewhere. The menu model and payload are tested, but the drag-out gesture
+  remains GUI-unverified.
 - **iCloud ownership and access — implemented:** the host page no longer owns a
   Photos download-size preference. The guest's Size popup sends the explicit
   request; the host page owns service enablement/status and native macOS
@@ -191,7 +213,6 @@ or in the freshly assembled bundle yet.
   continuous top/center/bottom drop regions with boundary hysteresis. Invalid
   center attachment falls toward the nearest valid insertion edge, and visible
   insertion lines replace the former narrow, fickle drop strips.
-
 ## TESTED, NOT RELEASED OR METAL-VERIFIED: recorded bundle and update slice (2026-08-13, `codex/bundle-update-slice`)
 
 The alpha distribution now has one machine-readable profile and one curated
@@ -1211,22 +1232,22 @@ The private bring-up ledger retains the exact capture paths, disk identities,
 fragment inventories, and install receipt. The next diagnosis should inspect
 the embedded `Textension_CL` fragment's own import closure at load time before
 changing another application import library.
-## UNVERIFIED: NOW Web Direct needs Classilla and MacWeb acceptance (2026-08-10, `codex/web-proxy`)
+## UNVERIFIED: NOW Web guest relay needs Classilla acceptance (updated 2026-08-14, `feat/bundle-update-slice`)
 
-The Direct implementation, host supervision, PowerPC Workshop page, semantic
+The guest-loopback implementation, host supervision, PowerPC Workshop page, semantic
 rewriter, Reader, Wikipedia/Reddit handlers and optional local-model adapter
 are built and covered by local gates. None has crossed an actual classic
-browser yet. The first required rows are mac99/Classilla, PB1400c/Classilla,
-q800/MacWeb and PB180c/MacWeb. Each must record the request form the browser
+browser yet. The first required rows are mac99/Classilla and PB1400c/Classilla.
+Each must record the request form the browser
 actually sends, navigation through rewritten links, page byte/chunk behavior,
 and cooperative liveness while NOW's dialogs and controls are active.
 
-The address boundary is intentionally unresolved rather than guessed.
-`10.0.2.2` is the modern host as seen by this repository's QEMU user network;
-physical machines use the host's LAN address. No code calls `127.0.0.1` a
-classic-Mac endpoint. Open Transport and MacTCP listener/connect behavior for
-loopback and the guest's own address still require separate target probes, so
-there is no guest-local relay or relay wire contract.
+The product boundary is now explicit: the PowerPC guest accepts the browser at
+`127.0.0.1`, carries requests and bounded response chunks over NOW's existing
+connection, and the host owns fetching and translation behind an internal
+ephemeral loopback renderer. There is no second host LAN listener. The Open
+Transport listener and Classilla's actual loopback behavior are build-tested,
+not runtime-proven. NOW-68K's MacTCP row remains unimplemented.
 
 Other open rows: forms, logins, cookies, uploads, CONNECT tunneling, a complete
 image transcoder, DNS-rebinding-resistant destination pinning, a persistent

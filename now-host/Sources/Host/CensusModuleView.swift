@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The Hardware dossier: the guest's census, run and read from this Mac. A
@@ -27,29 +28,68 @@ struct CensusModuleView: View {
     // MARK: header
 
     private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Hardware")
-                    .font(.headline)
-                Text("A passive census of "
-                     + "\(MachineNaming.sentence(model.connection)).")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Hardware")
+                        .font(.headline)
+                    Text("A passive census of "
+                         + "\(MachineNaming.sentence(model.connection)).")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if model.isSweeping {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.trailing, 4)
+                }
+                Button {
+                    model.dumpROM()
+                } label: {
+                    Label("Dump ROM", systemImage: "memorychip")
+                }
+                .disabled(!model.isConnected || model.romDumpState.isRunning)
+                Button {
+                    model.runAll()
+                } label: {
+                    Label("Run Census", systemImage: "play.fill")
+                }
+                .disabled(!model.isConnected || model.isSweeping)
             }
-            Spacer()
-            if model.isSweeping {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(.trailing, 4)
-            }
-            Button {
-                model.runAll()
-            } label: {
-                Label("Run Census", systemImage: "play.fill")
-            }
-            .disabled(!model.isConnected || model.isSweeping)
+            romDumpStatus
         }
         .padding(12)
+    }
+
+    @ViewBuilder
+    private var romDumpStatus: some View {
+        switch model.romDumpState {
+        case .idle:
+            EmptyView()
+        case .writing:
+            Label("Reading the ROM into the guest Files share…",
+                  systemImage: "internaldrive")
+                .font(.caption).foregroundStyle(.secondary)
+        case .transferring:
+            Label("Transferring the ROM to this Mac…",
+                  systemImage: "arrow.down.circle")
+                .font(.caption).foregroundStyle(.secondary)
+        case .saved(let url):
+            HStack(spacing: 6) {
+                Label("Saved \(url.lastPathComponent) in Downloads",
+                      systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.secondary)
+                Button("Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+                .buttonStyle(.link)
+            }
+            .font(.caption)
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption).foregroundStyle(.red)
+        }
     }
 
     // MARK: probe list

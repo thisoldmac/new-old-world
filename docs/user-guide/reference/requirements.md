@@ -38,7 +38,11 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: 8dbb128a72f0045561ddeae450876f888522caa9
+<<<<<<< HEAD
+sources-sha1: eea47e763436dc8ee056b6b517b77b52c49170f8
+=======
+sources-sha1: eea47e763436dc8ee056b6b517b77b52c49170f8
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -166,7 +170,13 @@ rederived: 2026-08-14T14:40:04-0400 8875fe9e unchanged
 rederived: 2026-08-14T18:19:51-0400 60bb3427 unchanged
 =======
 rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
+<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:42-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:08-0400 23dc0759 unchanged
+=======
+rederived: 2026-08-14T17:12:07-0400 95841394 sources
+rederived: 2026-08-14T17:29:41-0400 95841394 unchanged
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources
 -->

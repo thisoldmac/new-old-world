@@ -364,8 +364,8 @@ private struct SidebarShelfRow: View {
                 Button { activate(shelfSelection) } label: {
                     if collapsed {
                         ZStack(alignment: .topTrailing) {
-                            SidebarNavigationIcon(symbol: symbol,
-                                                  isSelected: isSelected)
+                            SidebarShelfIcon(symbol: symbol,
+                                             isSelected: isSelected)
                                 .frame(maxWidth: .infinity, minHeight: 32)
                             if shelf.id == .network {
                                 ConnectionStatusDot(status: status)
@@ -375,8 +375,8 @@ private struct SidebarShelfRow: View {
                         }
                     } else {
                         HStack(spacing: 10) {
-                            SidebarNavigationIcon(symbol: symbol,
-                                                  isSelected: isSelected)
+                            SidebarShelfIcon(symbol: symbol,
+                                             isSelected: isSelected)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(title)
                                     .fontWeight(.semibold)
@@ -434,7 +434,9 @@ private struct SidebarShelfRow: View {
                     rowDropTargets: NavigationRowDropTargets(
                         before: beforeTarget,
                         center: .shelf(shelf.id, beforeModuleID: nil),
-                        after: afterTarget))
+                        after: afterTarget),
+                    menuItems: shelfMenuItems,
+                    menuHitRegion: collapsed ? .centeredIcon : .leadingIcon)
             }
         }
     }
@@ -468,6 +470,18 @@ private struct SidebarShelfRow: View {
     private var moduleList: String {
         shelf.moduleIDs.compactMap { registry.module(id: $0)?.title }
             .joined(separator: ", ")
+    }
+
+    private var shelfMenuItems: [SidebarNativeMenuItem] {
+        NavigationShelfMenuEntry.entries(for: shelf, registry: registry).map {
+            entry in
+            SidebarNativeMenuItem(
+                title: entry.title,
+                symbol: entry.symbol,
+                payload: entry.payload,
+                action: { select(entry.selection) },
+                dragEnded: dragActions.dragEnded)
+        }
     }
 }
 
@@ -554,6 +568,28 @@ private struct SidebarNavigationIcon: View {
                              ? Color(nsColor: .alternateSelectedControlTextColor)
                              : Color.secondary)
             .frame(width: 22, height: 22)
+    }
+}
+
+private struct SidebarShelfIcon: View {
+    let symbol: String
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            SidebarNavigationIcon(symbol: symbol, isSelected: isSelected)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 6, weight: .bold))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(isSelected
+                    ? Color(nsColor: .alternateSelectedControlTextColor)
+                    : Color.secondary)
+                .padding(2)
+                .background(.regularMaterial, in: Circle())
+                .offset(x: 3, y: 2)
+        }
+        .frame(width: 26, height: 24)
+        .accessibilityHidden(true)
     }
 }
 

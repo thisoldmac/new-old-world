@@ -18,6 +18,7 @@
 #include "machine_names.h"
 #include "capture.h"
 #include "census.h"
+#include "rom_dump.h"
 #include "cmd_help.h"
 #include "cmd_line.h"
 #include "gestalt_json.h"
@@ -1644,6 +1645,34 @@ static void run_update(const char *request_json, long id, char *out, long cap)
     }
 }
 
+static void run_romdump(long id, char *out, long cap)
+{
+    char path[kNowROMDumpPathCap];
+    char escaped[kNowROMDumpPathCap * 2];
+    char error[96];
+    char escaped_error[192];
+    NowROMLayout layout;
+
+    if (!now_rom_dump(path, sizeof path, &layout, error, sizeof error)) {
+        now_json_escape(error, escaped_error, sizeof escaped_error);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"io-error\",\"message\":\"%s\"}}",
+                 id, escaped_error);
+        return;
+    }
+    now_json_escape(path, escaped, sizeof escaped);
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"romdump\":[[\"Guest file\",\"%s\"],"
+             "[\"Full ROM\",\"%lu MB\"],[\"Toolbox section\",\"%lu MB\"],"
+             "[\"Boot section\",\"%lu MB\"]]}}",
+             id, escaped,
+             (unsigned long)layout.total_bytes / (1024UL * 1024UL),
+             (unsigned long)layout.toolbox_bytes / (1024UL * 1024UL),
+             (unsigned long)layout.boot_bytes / (1024UL * 1024UL));
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
@@ -1657,6 +1686,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "gestalt") == 0) {
         run_gestalt(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "romdump") == 0) {
+        run_romdump(id, out, cap);
         return;
     }
     if (strcmp(name, "development") == 0) {

@@ -29,6 +29,14 @@ static const char *const d_gestalt[] = {
     NULL
 };
 
+static const char *const d_romdump[] = {
+    "  Writes this Mac's complete ROM to New Old World ROM.bin",
+    "  in the configured Files share. The other Mac retrieves it",
+    "  through the ordinary file stream. On a PowerBook 1400 this",
+    "  includes both the 3 MB Toolbox and 1 MB boot sections.",
+    NULL
+};
+
 static const char *const d_development[] = {
     "  Reports only opaque registration and measured capability facts.",
     "  Toolchain and Projects paths remain on this Mac and are never",
@@ -629,6 +637,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "development-open <projectID>", d_development_open },
     { "gestalt", 1, "report this Mac: system, model, RAM, CarbonLib",
       "gestalt [group] [--full]", d_gestalt },
+    { "romdump", 1, "save this Mac's complete ROM in the Files share",
+      "romdump", d_romdump },
     { "screenshot", 1, "capture this Mac's screen to its desktop",
       "screenshot [--depth {1,2,4,8,16,32}] [--bands N] [--no-save]",
       d_screenshot },

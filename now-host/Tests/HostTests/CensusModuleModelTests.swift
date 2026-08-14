@@ -170,6 +170,59 @@ final class CensusModuleModelTests: XCTestCase {
         XCTAssertFalse(state.isRunning)
     }
 
+    func testROMDumpUsesCommandThenOrdinaryFileStream() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-rom-dump-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        model = CensusModuleModel(listener: listener,
+                                  romDumpDirectory: directory)
+        let guest = try await connectGuest()
+        let payload = Data([0x4E, 0xFA, 0x00, 0x74])
+        guest.onMessage = { [weak guest] message in
+            guard let guest else { return }
+            switch message {
+            case .commandRequest(let request) where request.name == "romdump":
+                try? guest.send(.commandResult(.init(
+                    id: request.id, ok: true,
+                    output: ["romdump": [["Guest file",
+                                           "New Old World ROM.bin"]]])))
+            case .fileGet(let request):
+                try? guest.send(.fileBegin(.init(
+                    id: request.id, transfer: 91,
+                    name: "New Old World ROM.bin", container: "data",
+                    bytes: payload.count, dataBytes: payload.count,
+                    rsrcBytes: 0, fileType: "BINA", creator: "NOWo",
+                    modified: nil)))
+                guest.sendRaw(try! FrameCodec.encode(
+                    channel: .bulk, flags: [.end], transfer: 91,
+                    payload: payload))
+                try? guest.send(.fileEnd(.init(
+                    id: request.id, transfer: 91, ok: true, sendMs: 1)))
+            default:
+                break
+            }
+        }
+
+        model.dumpROM()
+        try await waitUntil("ROM saved") {
+            if case .saved = self.model.romDumpState { return true }
+            return false
+        }
+        guard case .saved(let url) = model.romDumpState else {
+            return XCTFail("ROM dump did not settle as saved")
+        }
+        XCTAssertEqual(try Data(contentsOf: url), payload)
+        XCTAssertTrue(guest.received.contains {
+            if case .fileGet(let get) = $0 {
+                return get.path == "New Old World ROM.bin"
+                    && get.container == "data"
+            }
+            return false
+        }, "the ROM bytes use file.get rather than a second transfer family")
+    }
+
     func testRerunReplacesRowsRatherThanAppending() async throws {
         let guest = try await connectGuest()
         let script = Script()

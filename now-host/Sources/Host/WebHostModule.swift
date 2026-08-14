@@ -3,13 +3,23 @@ import SwiftUI
 @MainActor
 final class WebHostModuleRuntime: HostModuleRuntime {
     let model: WebBridgeModel
+    private let service: WebWireService
+    private weak var listener: GuestListener?
 
     init(context: HostModuleContext) {
         model = WebBridgeModel(defaults: context.defaults)
+        service = WebWireService(model: model)
+        listener = context.listener
+        context.listener.webService = service
     }
 
     func shutDown() {
+        if listener?.webService === service { listener?.webService = nil }
         model.stop()
+    }
+
+    func guestLeft(_ key: GuestKey) {
+        service.sessionClosed(key: key)
     }
 }
 

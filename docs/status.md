@@ -2,28 +2,49 @@
 
 # Status: what works and what does not
 
-## 2026-08-10 — NOW Web Direct is tested; classic-browser behavior is unverified
+## 2026-08-14 — Hardware, MCP, Files appearance, and shelf navigation are tested; runtime follow-up remains
 
-The macOS host now supervises a bundled plain-HTTP Web bridge. The helper owns
+PowerPC volume census now prefers the wide HFS volume API, avoiding the legacy
+2 GB ceiling. PowerBook 1400 ROM presentation retains the measured 3 MiB
+Toolbox region and identifies its separate 1 MiB boot region; **Dump ROM**
+writes the complete image into the guest Files share and transfers it through
+the existing file protocol. These paths build and have native and host model
+coverage, but the expected approximately 64 GB volume, 4 MiB dump, and corpus
+checksum have not yet been observed on the physical PowerBook.
+
+The host MCP module now presents independent start, stop, and persisted
+automatic-start controls for stdio and HTTP. HTTP exposes an editable loopback
+port while stopped and a derived copyable URL; stdio exposes its copyable
+client command and private socket. Transport behavior is tested and the app
+builds, but launch restoration has not been visually exercised in this bundle.
+
+Files sidebar rows now bridge the active SwiftUI appearance explicitly into
+their AppKit labels and template symbols, including live Aqua/Dark Aqua
+changes. Shelf icons open a native menu of their modules: selection navigates
+directly and a menu row exports the same drag payload used elsewhere. Automated
+appearance and navigation tests pass; the exact light-mode rendering and menu
+drag gesture remain GUI-unverified.
+
+## 2026-08-14 — NOW Web uses the guest loopback and NOW wire; browser behavior is unverified
+
+The macOS host supervises a bundled internal Web renderer. The helper owns
 modern TLS and optional JavaScript fetch, emits bounded HTML profiles for
 Classilla, MacWeb and conservative 68K browsers, and offers Compatible Page,
 Reader and structurally constrained AI Layout lenses. Wikipedia and Reddit
 have optional handlers with generic fallback. The preserved 633 MB local MLX
 layout model can be selected by directory; its weights are not distributed.
 
-The PowerPC Workshop has a native Web page and a version-24 preferences
-migration for proxy port, browser profile and lens. Its address is the existing
-Connection host: `10.0.2.2` is correct for this repository's QEMU user network,
-while physical hardware must use the modern Mac's LAN address. The page never
-claims that classic-Mac loopback is available.
+The PowerPC Workshop runs an Open Transport HTTP proxy on `127.0.0.1` at its
+saved Web port. Classilla connects only to that guest-local endpoint. Bounded
+GET and HEAD requests cross the existing NOW control connection; the host
+applies its selected browser profile, lens, and handler policy, then returns
+sequenced response chunks without acquiring the shared bulk lane.
 
-This slice is **tested**, not emulator- or metal-verified. Helper integration,
-host model tests, Debug/Release app builds, both guest cross-builds and the docs
-gate pass. No Classilla or MacWeb request has yet crossed a real or emulated
-classic TCP stack. Guest-local Open Transport and MacTCP relay remain
-probe-gated and no relay contract was added. NOW-68K has no Web configuration
-surface in the excluded-from-alpha source sibling; Direct browsing there uses
-MacWeb's own proxy preferences.
+This slice is **tested**, not emulator- or metal-verified. The pure request
+parser, wire codec and host route have automated coverage and the PowerPC guest
+cross-builds. No Classilla request has yet crossed the Open Transport listener,
+and no claim is made that classic loopback works until that runtime row passes.
+NOW-68K has no Web surface or MacTCP relay in the excluded-from-alpha sibling.
 
 ## 2026-08-09 — Onboarding carries optional CodeKitten; its runtime gate remains open
 

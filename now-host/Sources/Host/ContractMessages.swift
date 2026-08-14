@@ -87,6 +87,11 @@ enum ControlMessage: Equatable, Sendable {
     case chatResult(ChatResult)
     case chatCancel(ChatCancel)
     case chatReset(ChatReset)
+    case webRequest(WebRequest)
+    case webResponseBegin(WebResponseBegin)
+    case webResponseChunk(WebResponseChunk)
+    case webResponseEnd(WebResponseEnd)
+    case webCancel(WebCancel)
     case previewBegin(PreviewBegin)
     case previewEnd(PreviewEnd)
     case hostShow(HostShow)
@@ -1640,6 +1645,41 @@ struct SceneEnd: Codable, Equatable, Sendable {
     var sendMs: Int?
 }
 
+// MARK: - Guest-local Web proxy
+
+/// One classic-browser request accepted by the guest's loopback listener.
+/// `target` is either an absolute HTTP(S) proxy target or a NOW Web route.
+struct WebRequest: Codable, Equatable, Sendable {
+    var id: Int
+    var method: String
+    var target: String
+}
+
+struct WebResponseBegin: Codable, Equatable, Sendable {
+    var id: Int
+    var status: Int
+    var contentType: String
+    var bytes: Int
+}
+
+/// Base64 response bytes. Sequence starts at zero and is contiguous.
+struct WebResponseChunk: Codable, Equatable, Sendable {
+    var id: Int
+    var seq: Int
+    var data: String
+}
+
+struct WebResponseEnd: Codable, Equatable, Sendable {
+    var id: Int
+    var ok: Bool
+    var code: String?
+    var reason: String?
+}
+
+struct WebCancel: Codable, Equatable, Sendable {
+    var id: Int
+}
+
 enum ControlMessageError: Error, Equatable {
     case notAnObject
     case missingType
@@ -1799,6 +1839,19 @@ enum ControlMessageCodec {
                 try decoder.decode(ChatCancel.self, from: data))
         case "chat.reset":
             return .chatReset(try decoder.decode(ChatReset.self, from: data))
+        case "web.request":
+            return .webRequest(try decoder.decode(WebRequest.self, from: data))
+        case "web.response.begin":
+            return .webResponseBegin(
+                try decoder.decode(WebResponseBegin.self, from: data))
+        case "web.response.chunk":
+            return .webResponseChunk(
+                try decoder.decode(WebResponseChunk.self, from: data))
+        case "web.response.end":
+            return .webResponseEnd(
+                try decoder.decode(WebResponseEnd.self, from: data))
+        case "web.cancel":
+            return .webCancel(try decoder.decode(WebCancel.self, from: data))
         case "preview.begin":
             return .previewBegin(
                 try decoder.decode(PreviewBegin.self, from: data))
@@ -1975,6 +2028,14 @@ enum ControlMessageCodec {
         case .chatResult(let m): return try tagged("chat.result", m)
         case .chatCancel(let m): return try tagged("chat.cancel", m)
         case .chatReset(let m): return try tagged("chat.reset", m)
+        case .webRequest(let m): return try tagged("web.request", m)
+        case .webResponseBegin(let m):
+            return try tagged("web.response.begin", m)
+        case .webResponseChunk(let m):
+            return try tagged("web.response.chunk", m)
+        case .webResponseEnd(let m):
+            return try tagged("web.response.end", m)
+        case .webCancel(let m): return try tagged("web.cancel", m)
         case .previewBegin(let m): return try tagged("preview.begin", m)
         case .previewEnd(let m): return try tagged("preview.end", m)
         case .hostShow(let m): return try tagged("host.show", m)

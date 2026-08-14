@@ -57,6 +57,8 @@ add_application(now-guest-ppc
     src/screenshots/screenshots_module_definition.c
     src/census/census_module.c
     src/census/census_module_definition.c
+    src/census/hardware_sizes.c
+    src/census/rom_dump.c
     src/census/census_probes.c
     src/census/census_trap.c
     src/logs/logs_module.c
@@ -115,6 +117,8 @@ add_application(now-guest-ppc
     src/development/development_module.c
     src/development/development_module_definition.c
     src/web/web_model.c
+    src/web/web_proxy_request.c
+    src/web/web_proxy_ot.c
     src/web/web_port_dialog.c
     src/web/web_module.c
     src/web/web_module_definition.c

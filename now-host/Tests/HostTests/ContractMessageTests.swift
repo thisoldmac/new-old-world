@@ -3,6 +3,23 @@ import XCTest
 import NOWAgentIntegration
 
 final class ContractMessageTests: XCTestCase {
+    func testWebRelayFamilyRoundTrips() throws {
+        let messages: [ControlMessage] = [
+            .webRequest(WebRequest(
+                id: 7, method: "GET", target: "https://example.com/")),
+            .webResponseBegin(WebResponseBegin(
+                id: 7, status: 200, contentType: "text/html", bytes: 3)),
+            .webResponseChunk(WebResponseChunk(
+                id: 7, seq: 0, data: Data("abc".utf8).base64EncodedString())),
+            .webResponseEnd(WebResponseEnd(
+                id: 7, ok: true, code: nil, reason: nil)),
+            .webCancel(WebCancel(id: 7)),
+        ]
+        for message in messages {
+            XCTAssertEqual(try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(message)), message)
+        }
+    }
     func testMirrorFileRoutingRoundTripsOnlyOnTheExistingFileFamily()
         throws {
         let get = FileGet(

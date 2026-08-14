@@ -1363,26 +1363,31 @@ moved; the hash is the receipt, not the point.
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
 <<<<<<< HEAD
 <<<<<<< HEAD
-sources-sha1: b66489eb221464baa083d73512c9cf3ce4336cf1
+<<<<<<< HEAD
+sources-sha1: 6e0f74078ea8daca187982278795000bcb720af7
 derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
 =======
-sources-sha1: b66489eb221464baa083d73512c9cf3ce4336cf1
+sources-sha1: 6e0f74078ea8daca187982278795000bcb720af7
 derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 =======
-sources-sha1: b66489eb221464baa083d73512c9cf3ce4336cf1
+sources-sha1: 6e0f74078ea8daca187982278795000bcb720af7
 derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
+=======
+sources-sha1: 6e0f74078ea8daca187982278795000bcb720af7
+derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=84fd10914e2ab1a2301c3273ca1a3654ff7440e908d2c2e15753ded767a0d153 lines=56 published
+derive x-commands-registry sha256=7a074d9ca51db9c20f63c79ddbbfae7e25eeedfb067611149646dcabfdfd49ec lines=57 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
          f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=181d550d9238c47914955fa346934ae215b6a1f09e871cb5d6dea803d7510e71 lines=53 published
+derive ppc-verbs sha256=c4f77ee69b62d3bab01479180d6d3b6e677d499a064151579472859454fd61ce lines=54 published
     grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
         now-guest-ppc/src/commands/commands.c \
       | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
@@ -1548,7 +1553,13 @@ rederived: 2026-08-14T14:40:03-0400 8875fe9e sources
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, ppc-inbound-types 54->0, sources, ppc-inbound-types 54->0
 =======
 rederived: 2026-08-14T15:56:43-0400 835e6acf sources
+<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:41-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:06-0400 23dc0759 unchanged
+=======
+rederived: 2026-08-14T17:12:06-0400 95841394 sources, ppc-inbound-types 53->56, x-commands-registry 56->57, ppc-verbs 53->54
+rederived: 2026-08-14T17:29:40-0400 95841394 sources
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+rederived: 2026-08-14T18:23:11-0400 e2c66126 sources, sources, sources, sources
 -->

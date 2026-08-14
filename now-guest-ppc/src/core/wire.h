@@ -172,6 +172,12 @@ void now_wire_announce_agent_access(void);
    what it used to do. */
 Boolean now_wire_agent_access_told(AgentAccessTier *out);
 
+/* Browser request accepted by Web's guest-loopback listener. The host owns
+   rendering; this only puts the bounded request on NOW's existing wire. */
+int now_wire_web_request(const char *method, const char *target, long *id,
+                         char *err, long cap);
+void now_wire_web_cancel(long id);
+
 /* Captures at the panel's depth and offers it to the host (capture.offer).
    Returns 0 once the offer is on the wire; -1 with a reason in err if the
    guest cannot offer right now. The outcome — accepted and sent, refused,

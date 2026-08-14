@@ -80,8 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
            UDP path but must never own this permission. */
         state.localNetworkAccess.request()
         let preferences = MCPTransportPreferences(defaults: defaults)
-        if preferences.stdioEnabled { startMCPStdio() }
-        if preferences.httpEnabled { startMCPHTTP() }
+        if preferences.stdioStartsAutomatically { startMCPStdio() }
+        if preferences.httpStartsAutomatically { startMCPHTTP() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -505,7 +505,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
            serving, which is a worse outcome than a button that does nothing
            because there is nothing to do. */
         guard mcpStdioBridgeServer == nil else { return }
-        MCPTransportPreferences(defaults: defaults).stdioEnabled = true
         do {
             let server = try AgentIntegrationLocalServer(
                 /* The ledger is written on the accept thread; the pane that
@@ -1029,7 +1028,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// this Mac is not undone by closing the door it came through, so the
     /// activity stream and the presence ledger are left exactly as they are.
     private func stopMCPStdio() {
-        MCPTransportPreferences(defaults: defaults).stdioEnabled = false
         guard let server = mcpStdioBridgeServer else {
             state.agentActivity.stdioStopped()
             return
@@ -1047,7 +1045,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private func startMCPHTTP() {
         guard mcpHTTPListener == nil else { return }
         let preferences = MCPTransportPreferences(defaults: defaults)
-        preferences.httpEnabled = true
         guard let mcpTokenStore else {
             state.agentActivity.httpUnavailable(
                 "Application Support is unavailable for the MCP token.")
@@ -1125,7 +1122,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     private func stopMCPHTTP() {
-        MCPTransportPreferences(defaults: defaults).httpEnabled = false
         mcpHTTPRunID = nil
         mcpHTTPListener?.stop()
         mcpHTTPListener = nil

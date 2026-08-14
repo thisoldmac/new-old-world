@@ -92,11 +92,6 @@ final class WebBridgeModel: ObservableObject {
     @Published private(set) var lifecycle: WebBridgeLifecycle
     @Published private(set) var recentOutput: [String] = []
     @Published var helperRoot: String { didSet { save(helperRoot, key: .root) } }
-    @Published var bindAddress: String { didSet { save(bindAddress, key: .host) } }
-    @Published var port: Int { didSet { defaults.set(port, forKey: Key.port.rawValue) } }
-    @Published var allowedClient: String {
-        didSet { save(allowedClient, key: .allowedClient) }
-    }
     @Published var profile: WebBrowserProfile {
         didSet { save(profile.rawValue, key: .profile) }
     }
@@ -141,9 +136,6 @@ final class WebBridgeModel: ObservableObject {
 
     private enum Key: String {
         case root = "web.helperRoot"
-        case host = "web.bindAddress"
-        case port = "web.port"
-        case allowedClient = "web.allowedClient"
         case profile = "web.profile"
         case lens = "web.lens"
         case engine = "web.engine"
@@ -161,10 +153,6 @@ final class WebBridgeModel: ObservableObject {
         let initialRoot = defaults.string(forKey: Key.root.rawValue)
             ?? Self.defaultHelperRoot(environment: environment)
         helperRoot = initialRoot
-        bindAddress = defaults.string(forKey: Key.host.rawValue) ?? "127.0.0.1"
-        let storedPort = defaults.integer(forKey: Key.port.rawValue)
-        port = storedPort == 0 ? 5180 : storedPort
-        allowedClient = defaults.string(forKey: Key.allowedClient.rawValue) ?? ""
         profile = WebBrowserProfile(rawValue:
             defaults.string(forKey: Key.profile.rawValue) ?? "") ?? .classilla
         lens = WebRenderingLens(rawValue:
@@ -184,13 +172,11 @@ final class WebBridgeModel: ObservableObject {
 
     var configuration: WebBridgeConfiguration {
         WebBridgeConfiguration(
-            host: bindAddress.trimmingCharacters(in: .whitespacesAndNewlines),
-            port: port,
+            host: "127.0.0.1",
+            port: 0,
             engine: engine.rawValue,
             settleMilliseconds: 3000,
-            allowedClients: allowedClient.trimmingCharacters(
-                in: .whitespacesAndNewlines).isEmpty
-                ? [] : [allowedClient.trimmingCharacters(in: .whitespacesAndNewlines)],
+            allowedClients: ["127.0.0.1", "::1"],
             allowPrivateDestinations: allowPrivateDestinations,
             aiPlanCommand: plannerCommand,
             defaultProfile: profile.rawValue,
@@ -212,43 +198,21 @@ final class WebBridgeModel: ObservableObject {
     }
 
     var canStart: Bool {
-        guard !process.isRunning, (1...65535).contains(port),
-              Self.helperExists(at: helperRoot), !bindAddress.isEmpty else {
+        guard !process.isRunning, Self.helperExists(at: helperRoot) else {
             return false
         }
         return true
     }
 
-    var proxyInstruction: String {
-        if Self.isLoopback(bindAddress) {
-            return "Host loopback is not reachable from the classic Mac. "
-                + "Choose this Mac's LAN address before starting Direct mode."
-        }
-        return "Set the classic browser's HTTP proxy to \(bindAddress):\(port)."
-    }
-
-    var startURL: String {
-        let encoded = "https%3A%2F%2Fexample.com"
-        return "http://\(bindAddress):\(port)/go?u=\(encoded)"
-            + "&profile=\(profile.rawValue)&lens=\(lens.rawValue)"
-            + "&handlers=\(handlersEnabled ? "on" : "off")"
-    }
-
-    var exposesLANWithoutPeerRestriction: Bool {
-        !Self.isLoopback(bindAddress)
-            && allowedClient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    func usePrimaryLANAddress() {
-        if let address = HostAddressDetector.primaryIPv4() {
-            bindAddress = address
-        }
+    var rendererEndpoint: URL? {
+        guard case .ready(let address, let port) = lifecycle else { return nil }
+        return URL(string: "http://\(address):\(port)")
     }
 
     func start() {
         guard !process.isRunning else { return }
         guard canStart else {
-            lifecycle = .failed("The helper path, bind address or port is invalid.")
+            lifecycle = .failed("The bundled Web renderer is unavailable.")
             return
         }
         do {
@@ -362,10 +326,4 @@ final class WebBridgeModel: ObservableObject {
             currentDirectoryURL: helperRoot)
     }
 
-    private static func isLoopback(_ address: String) -> Bool {
-        let value = address.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        return value == "localhost" || value == "::1"
-            || value.hasPrefix("127.")
-    }
 }

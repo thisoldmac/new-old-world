@@ -52,5 +52,30 @@ final class MCPTransportOwnershipTests: XCTestCase {
                           "MCP page lost independent transport control: "
                               + required)
         }
+
+        for required in [
+            "startsAutomatically: $settings.stdioStartsAutomatically",
+            "startsAutomatically: $settings.httpStartsAutomatically",
+            "Toggle(\"Start automatically\"",
+            "TextField(\"Port\", value: $settings.httpPort",
+            ".disabled(isRunning)",
+        ] {
+            XCTAssertTrue(view.contains(required),
+                          "MCP page lost transport configuration: "
+                              + required)
+        }
+    }
+
+    func testRuntimeControlsDoNotRewriteAutomaticStartPolicy() throws {
+        let app = try GateSource.hostSwift("now-host/Sources/Host/App.swift")
+
+        XCTAssertFalse(app.contains(".stdioStartsAutomatically ="),
+                       "Starting or stopping stdio must not rewrite launch policy.")
+        XCTAssertFalse(app.contains(".httpStartsAutomatically ="),
+                       "Starting or stopping HTTP must not rewrite launch policy.")
+        XCTAssertTrue(app.contains(
+            "if preferences.stdioStartsAutomatically { startMCPStdio() }"))
+        XCTAssertTrue(app.contains(
+            "if preferences.httpStartsAutomatically { startMCPHTTP() }"))
     }
 }

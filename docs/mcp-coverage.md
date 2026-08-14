@@ -646,6 +646,9 @@ to exist:
 | `preview.begin` | message | ppc | deliberate | The transfer bracket answering a guest-initiated `cloud.preview` (the photo preview's raw indexed rows) — the PPC guest's dispatch RECEIVES it as the asker, exactly the `cloud.card` situation: the family runs guest-to-host by definition, no guest will ever serve one, and there is nothing here for a projection to ask a guest for ([command-parity.md](command-parity.md), the contract's `hostServesCloud`). |
 | `preview.end` | message | ppc | deliberate | The closing half of the same bracket, same reason ([command-parity.md](command-parity.md)). |
 | `process.shot` | message | ppc | deliberate | Excluded by name in the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md): PPC-only, and no consumer asked for a single-window capture. |
+| `web.response.begin` | message | ppc | deliberate | The host's opening answer to a guest-initiated browser request. It is an internal half of the human Web Proxy module's relay, not a guest capability an MCP caller asks for; exposing it would create a second producer that could splice arbitrary response metadata into a browser connection ([command-parity.md](command-parity.md), and the `guestAsksWeb` / `hostServesWeb` operations in the contract). |
+| `web.response.chunk` | message | ppc | deliberate | The bounded body half of the same host-owned Web response. It is sequencing inside one paired relay, not an independently meaningful agent capability, for the same ownership and injection reason as `web.response.begin` ([command-parity.md](command-parity.md)). |
+| `web.response.end` | message | ppc | deliberate | The terminal half of the same host-owned Web response. An MCP caller receives no useful independent result from ending the guest browser's in-flight relay, so this stays inside the paired module family ([command-parity.md](command-parity.md)). |
 | `scene.request` | message | ppc | planned | M6 of the [mirror integration plan](plans/2026-07-31-007-feat-now-mirror-integration-plan.md). The wire half landed with M4/M5 — the guest walks and serves an IR-v1 scene as a transfer, the host decodes it and refuses an unknown major — and the projection is deliberately not part of that landing. A scene is the input an agent *acts* on, so what a row must decide is addressing, authority and how a scene renders to a caller; settling that inside the wire change would put a projection choice where the wire shape is argued, which [streaming-a-scene.md](streaming-a-scene.md) names as the thing not to do. Nothing about the ask is unnoticed: it is built, decodable, and waiting for a row. |
 | `overview` | probe | none | deliberate | Reachable as `now_hardware_census`'s `probe` argument, like the thirteen below it — read the probe note under this table for why `Served` says `none` for all fourteen. The synthesis, in plain words: model, CPU, RAM, System, display, storage. Both guests answer it; NOW-68K adds addressing and free memory ([contract-coverage.md](contract-coverage.md)). |
 | `identity` | probe | none | deliberate | The curated dozen — model, CPU and clock, RAM, ROM, OS, CarbonLib, QuickDraw, keyboard, networking. Both guests answer; NOW-68K adds **Addressing**, which is where the 24-bit mode fact lives rather than in a fifteenth probe ([contract-coverage.md](contract-coverage.md)). |
@@ -694,6 +697,7 @@ to exist:
 | `ps` | command | both | deliberate | The console spelling of `process.list`, which is projected — same rule as `ls`, [command-parity.md](command-parity.md). |
 | `put` | command | 68k | planned | W1 #4, and the half of it that did not land. `now_guest_files_download` closed the `file.get` message; this verb is the same capability by the other mechanism — guest-initiated, a leaf name inside the same share root `ls` lists (`now68k_desktop_folder`, "ONE root, both ways"). What blocks it is host machinery rather than the guest or authority: a row's `requires` is a **conjunction**, so a row cannot say "the family OR the verb". Requiring both switches the tool off against every guest; requiring neither overstates; and routing to the verb behind a row that requires the family would make the tool work exactly where the capability report says it cannot. A disjunctive requirement in `HostProjectionCatalog`'s contract is what closes this, plus the reported bound that the verb cannot express a subfolder path. |
 | `quit` | command | both | deliberate | `now_request_quit` needs the `process.quit` **family**, not this command: the opaque-reference and PSN-revalidation model has nothing to stand on without it, and is not relaxed to make a tool work ([agent-integration.md](agent-integration.md)). |
+| `romdump` | command | ppc | deliberate | The Hardware module's explicit human action creates and downloads a complete machine ROM. That raw image is materially more identifying and redistributable than census facts, so it is not silently added to the agent surface merely because the host UI gained a button. A future projection would need its own consent, custody, size, and delivery policy under the boundary in [agent-integration.md](agent-integration.md). |
 | `screenshot` | command | both | deliberate | The console spelling of `capture.request`, which is projected as `now_capture_screen`. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"), the same rule that keeps `ls` and `ps` off this surface. |
 | `sw` | command | both | deliberate | The console spelling of `software.list`, which is projected as `now_software_inventory` — so the same rule as `ls`, `ps` and `census`: one capability, one route per face ([command-parity.md](command-parity.md), "two ways to name a target is not two faces"). It was `planned` beside the message row until 2026-07-30, and closing the message is what settled the verb. **One thing this verb has that the family does not**, recorded rather than left to be discovered: `sw` with no domain runs an OVERVIEW — per-domain counts rather than items — and `software.list` has no domainless form to project it with. That is a separate capability with a separate shape, and whether it belongs on this surface is a decision for whoever wants it, not one this row makes by omission. |
 | `vers` | command | ppc | deliberate | Build identity. `hello` already carries name, version and OS, and `now_list_machines` reports all three ([agent-integration.md](agent-integration.md)). |
@@ -1192,22 +1196,31 @@ first, and the gate names the difference.
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
 <<<<<<< HEAD
 <<<<<<< HEAD
-sources-sha1: fa316c58143fd22f8fd4bc4c51cc4f16c8e339f4
+<<<<<<< HEAD
+sources-sha1: f69f87dff917341d1b5de59e813f8e8b3912fdb3
 derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
 =======
-sources-sha1: fa316c58143fd22f8fd4bc4c51cc4f16c8e339f4
+sources-sha1: f69f87dff917341d1b5de59e813f8e8b3912fdb3
 derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 =======
-sources-sha1: fa316c58143fd22f8fd4bc4c51cc4f16c8e339f4
+sources-sha1: f69f87dff917341d1b5de59e813f8e8b3912fdb3
 derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
+=======
+sources-sha1: f69f87dff917341d1b5de59e813f8e8b3912fdb3
+derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=89e49837f65387d9ec3ca389ed51a84ef4946b432e32b35521518a166c4075ed lines=3
+<<<<<<< HEAD
+derive disposition-census sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
+=======
+derive disposition-census sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
@@ -1367,7 +1380,13 @@ rederived: 2026-08-14T14:40:04-0400 8875fe9e sources
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, ppc-inbound-types 54->0, sources, ppc-inbound-types 54->0
 =======
 rederived: 2026-08-14T15:56:43-0400 835e6acf sources
+<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:42-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
+=======
+rederived: 2026-08-14T17:12:07-0400 95841394 sources, ppc-inbound-types 53->56
+rederived: 2026-08-14T17:29:40-0400 95841394 sources, disposition-census 3->3
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources, sources, disposition-census 3->0, disposition-census 3->0
 -->

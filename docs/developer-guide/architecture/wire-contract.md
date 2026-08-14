@@ -96,16 +96,21 @@ state, and publishes only when the generation set is coherent and current.
 sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
 <<<<<<< HEAD
 <<<<<<< HEAD
-sources-sha1: 1ae4d7c356293b6d32cb0f70ebc103b790344084
+<<<<<<< HEAD
+sources-sha1: c9784b0c7278f42d6845840bc3aaa6608c94519a
 derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
 =======
-sources-sha1: 1ae4d7c356293b6d32cb0f70ebc103b790344084
+sources-sha1: c9784b0c7278f42d6845840bc3aaa6608c94519a
 derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 =======
-sources-sha1: 1ae4d7c356293b6d32cb0f70ebc103b790344084
+sources-sha1: c9784b0c7278f42d6845840bc3aaa6608c94519a
 derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
+=======
+sources-sha1: c9784b0c7278f42d6845840bc3aaa6608c94519a
+derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
     scripts/docs-source-group contract
 rederived: pending
 rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, contract-summary 6->6
@@ -231,7 +236,13 @@ rederived: 2026-08-14T14:40:04-0400 8875fe9e sources
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, contract-summary 6->0, sources, contract-summary 6->0
 =======
 rederived: 2026-08-14T15:56:43-0400 835e6acf sources
+<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:41-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
+=======
+rederived: 2026-08-14T17:12:07-0400 95841394 sources, contract-summary 6->6
+rederived: 2026-08-14T17:29:40-0400 95841394 sources
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+rederived: 2026-08-14T18:23:11-0400 e2c66126 sources, sources, sources, sources
 -->

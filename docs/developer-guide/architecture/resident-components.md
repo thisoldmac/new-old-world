@@ -173,7 +173,13 @@ rederived: 2026-08-14T14:40:03-0400 8875fe9e unchanged
 rederived: 2026-08-14T18:19:50-0400 60bb3427 unchanged
 =======
 rederived: 2026-08-14T15:56:43-0400 835e6acf unchanged
+<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:41-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:06-0400 23dc0759 unchanged
+=======
+rederived: 2026-08-14T17:12:06-0400 95841394 unchanged
+rederived: 2026-08-14T17:29:40-0400 95841394 unchanged
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+rederived: 2026-08-14T18:23:11-0400 e2c66126 unchanged
 -->

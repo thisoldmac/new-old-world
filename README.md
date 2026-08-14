@@ -57,7 +57,7 @@ pre-Carbon NOW-68K ─ retained in source; excluded from alpha
 |---|---|---|---|
 | Connection, console, files, processes, software, hardware facts | included | not required | excluded from release |
 | Screenshots and streaming | included with stated limitations | not required | excluded from release |
-| [Web compatibility bridge](docs/user-guide/reference/modules/web.md): host-side TLS/JS handling, classic HTML profiles, Reader and optional local AI layout | included; tested, not classic-browser verified | not required | Direct mode usable through browser settings; guest UI excluded |
+| [Web compatibility bridge](docs/user-guide/reference/modules/web.md): guest-loopback proxy over NOW's wire, host-side TLS/JS handling, classic HTML profiles, Reader and optional local AI layout | included; tested, not classic-browser verified | not required | unavailable |
 | [Projects and Development](docs/user-guide/reference/modules/development.md): host-owned project history, guest-native MPW builds, verified candidates, and exact-product launch | included; host-home loop metal-verified, varied autonomous loops emulator-verified | not required | unavailable |
 | Deeper Mirror observation and interaction | experimental | provides the required classic-process access | unavailable |
 | In-context interaction, transitions, modal-safe liveness, drag, and cursor following | experimental | provides resident vehicles | unavailable |
@@ -73,9 +73,10 @@ The short table is navigation, not a claim of parity. The [module reference](doc
   updates are still explicitly unsigned. They verify SHA-256, require local
   confirmation on the classic Mac, and still require fork-preserving transfer.
 - Resume-by-offset and some large-transfer behavior remain unreliable.
-- Web Direct has not yet been exercised by Classilla or MacWeb on an emulator
-  or physical Mac; guest-local relay is not implemented, and the optional
-  model weights are not distributed.
+- The guest-loopback Web relay has not yet been exercised by Classilla on an
+  emulator or physical Mac. Its parser, wire codec, host routing and both
+  builds are tested; the Open Transport listener remains runtime-unverified.
+  Optional model weights are not distributed.
 - Development is PowerPC-only. The host-owned MPW build/run loop is metal-verified; guest-home promotion, typed tests, positive CodeKitten handoff receipts, semantic settlement, and authenticated HTTP MCP loops are tested or emulator-verified but have not been repeated together on metal. A redistributable MPW starter payload remains blocked on license/provenance.
 - Pre-Carbon/NOW-68K support is excluded from the alpha; its source and contributor documentation remain for later feature-flagged work.
 - Mirror is experimental. Drawing-content tracing remains off by default and has caused Finder instability on a PowerBook 1400c.

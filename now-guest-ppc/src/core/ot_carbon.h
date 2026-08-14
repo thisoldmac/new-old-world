@@ -26,6 +26,9 @@ typedef struct {
     OSStatus (*setSynchronous)(ProviderRef ref);
     OSStatus (*setNonBlocking)(ProviderRef ref);
     OSStatus (*bind)(EndpointRef ref, TBind *req, TBind *ret);
+    OSStatus (*listen)(EndpointRef ref, TCall *call);
+    OSStatus (*accept)(EndpointRef listener, EndpointRef worker, TCall *call);
+    OTResult (*getEndpointState)(EndpointRef ref);
     OSStatus (*connect)(EndpointRef ref, TCall *sndCall, TCall *rcvCall);
     OSStatus (*rcvConnect)(EndpointRef ref, TCall *call);
     OTResult (*look)(EndpointRef ref);
@@ -34,6 +37,7 @@ typedef struct {
     OTResult (*rcv)(EndpointRef ref, void *buf, OTByteCount nbytes,
                     OTFlags *flags);
     OSStatus (*sndOrderlyDisconnect)(EndpointRef ref);
+    OSStatus (*sndDisconnect)(EndpointRef ref, TCall *call);
     OSStatus (*rcvOrderlyDisconnect)(EndpointRef ref);
     OSStatus (*rcvDisconnect)(EndpointRef ref, TDiscon *discon);
     OSStatus (*unbind)(EndpointRef ref);

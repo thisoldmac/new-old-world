@@ -19,6 +19,7 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
     var hoverDisclosure: SidebarHoverDisclosure? = nil
     var rowDropTargets: NavigationRowDropTargets? = nil
     var menuItems: [SidebarNativeMenuItem] = []
+    var menuHitRegion: SidebarMenuHitRegion = .none
 
     func makeNSView(context: Context) -> NativeNavigationDragView {
         let view = NativeNavigationDragView()
@@ -43,13 +44,34 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
             hoverChanged: hoverChanged,
             hoverDisclosure: hoverDisclosure,
             rowDropTargets: rowDropTargets,
-            menuItems: menuItems)
+            menuItems: menuItems,
+            menuHitRegion: menuHitRegion)
     }
 }
 
 struct SidebarNativeMenuItem {
     let title: String
+    let symbol: String
+    let payload: NavigationDraggedItem
     let action: () -> Void
+    let dragEnded: (NavigationDraggedItem) -> Void
+}
+
+enum SidebarMenuHitRegion {
+    case none
+    case leadingIcon
+    case centeredIcon
+
+    func contains(horizontalOffset x: CGFloat, width: CGFloat) -> Bool {
+        switch self {
+        case .none:
+            false
+        case .leadingIcon:
+            (0...44).contains(x)
+        case .centeredIcon:
+            abs(x - width / 2) <= 22
+        }
+    }
 }
 
 @MainActor
@@ -68,6 +90,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         let hoverDisclosure: SidebarHoverDisclosure?
         let rowDropTargets: NavigationRowDropTargets?
         let menuItems: [SidebarNativeMenuItem]
+        let menuHitRegion: SidebarMenuHitRegion
     }
 
     static let pasteboardType = NSPasteboard.PasteboardType(
@@ -174,7 +197,10 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
 
     override func mouseUp(with event: NSEvent) {
         if !beganDrag {
-            if configuration?.menuItems.isEmpty == false {
+            let point = convert(event.locationInWindow, from: nil)
+            if configuration?.menuItems.isEmpty == false,
+               configuration?.menuHitRegion.contains(
+                horizontalOffset: point.x, width: bounds.width) == true {
                 showConfiguredMenu(with: event)
             } else {
                 configuration?.activate?()
@@ -339,22 +365,18 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     private func showConfiguredMenu(with event: NSEvent) {
         guard let items = configuration?.menuItems, !items.isEmpty else { return }
         let menu = NSMenu()
-        for (index, item) in items.enumerated() {
+        menu.autoenablesItems = false
+        for item in items {
             let menuItem = NSMenuItem(title: item.title,
-                                      action: #selector(chooseMenuItem(_:)),
-                                      keyEquivalent: "")
-            menuItem.target = self
-            menuItem.representedObject = index
+                                      action: nil, keyEquivalent: "")
+            menuItem.isEnabled = true
+            menuItem.view = SidebarModuleMenuItemView(item: item)
             menu.addItem(menuItem)
         }
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
-    }
-
-    @objc private func chooseMenuItem(_ sender: NSMenuItem) {
-        guard let index = sender.representedObject as? Int,
-              let items = configuration?.menuItems,
-              items.indices.contains(index) else { return }
-        items[index].action()
+        let point = convert(event.locationInWindow, from: nil)
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: point.x, y: bounds.maxY),
+                   in: self)
     }
 
     override func draw(_ dirtyRect: NSRect) {

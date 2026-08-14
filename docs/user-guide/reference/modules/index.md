@@ -86,7 +86,7 @@ fallback instead of glass.
 | [Mirror](mirror.md) | Mirror | unavailable |
 | [Console](console.md) | Console | supported |
 | [Chat](chat.md) | Chat | unavailable |
-| [Web Proxy](web.md) | unavailable; use the host Direct listener | unavailable |
+| [Web Proxy](web.md) | guest-loopback relay | unavailable |
 | [Hardware](hardware.md) | Hardware | supported subset |
 | [Diagnostics](diagnostics.md) | Diagnostics | console-only diagnostics |
 | [Networking](networking.md) | Networking | main-window summary |
@@ -236,7 +236,13 @@ rederived: 2026-08-14T14:40:04-0400 8875fe9e unchanged
 rederived: 2026-08-14T18:19:51-0400 60bb3427 unchanged
 =======
 rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
+<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:42-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
+=======
+rederived: 2026-08-14T17:12:07-0400 95841394 unchanged
+rederived: 2026-08-14T17:29:41-0400 95841394 unchanged
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+rederived: 2026-08-14T18:23:12-0400 e2c66126 unchanged
 -->

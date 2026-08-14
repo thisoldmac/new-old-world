@@ -7,9 +7,9 @@ audience: operator
 lifecycle: experimental
 authority: [docs/agent-integration.md, docs/mcp-coverage.md]
 module_ids: [mcp]
-source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
+source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/Host/MCP, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
 media_ids: [mcp-host, mcp-ppc]
-last_verified: 2026-08-10
+last_verified: 2026-08-14
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -38,8 +38,13 @@ The host exposes independent controls for:
   an MCP client. Its card copies the executable command and shows the private
   same-user socket it uses to reach the already-running app.
 - **HTTP**, an authenticated loopback listener running directly inside the
-  normal NOW app. Its card shows the URL and copies the bearer token without
+  normal NOW app. Its card exposes an editable loopback port while stopped,
+  shows and copies the derived URL, and copies the bearer token without
   rendering the secret in the module or logs.
+
+Each card has independent **Start**, **Stop**, and **Start Automatically**
+controls. Start and Stop affect the current app session; Start Automatically
+is the persisted launch policy for that transport.
 
 The module also shows the shared catalog, selected machine, available
 capabilities, grant state, and auditable calls. A running transport is not a
@@ -55,8 +60,8 @@ credentials or prove that an MCP client can reach the host.
 ## Common tasks
 
 - Confirm the selected machine and requested capability before granting.
-- Start only the transport required by the client. HTTP is off by default;
-  stdio remains available by default for client-launched sessions.
+- Start only the transport required by the client, or enable **Start
+  Automatically** for a transport that should be restored whenever NOW opens.
 - Copy connection details from the relevant transport card rather than
   locating a helper executable.
 - Read the recent call record after an agent action.
@@ -87,13 +92,17 @@ and [MCP coverage](../../../mcp-coverage.md).
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
 <<<<<<< HEAD
 <<<<<<< HEAD
-sources-sha1: f504270fe66661b0056c1d9c4cb19c24e24e0169
+<<<<<<< HEAD
+sources-sha1: f1d8a010977f05fd8342bd4744ec73a52277d71f
 =======
-sources-sha1: f504270fe66661b0056c1d9c4cb19c24e24e0169
+sources-sha1: f1d8a010977f05fd8342bd4744ec73a52277d71f
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 =======
-sources-sha1: f504270fe66661b0056c1d9c4cb19c24e24e0169
+sources-sha1: f1d8a010977f05fd8342bd4744ec73a52277d71f
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
+=======
+sources-sha1: f1d8a010977f05fd8342bd4744ec73a52277d71f
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
 derive mcp-catalog sha256=dadedb438a578e94422eb5eec7337288e94e19899e6592ebaaf6d86c080258dc lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -212,7 +221,13 @@ rederived: 2026-08-14T14:40:04-0400 8875fe9e sources
 rederived: 2026-08-14T18:19:51-0400 60bb3427 sources, sources
 =======
 rederived: 2026-08-14T15:56:44-0400 835e6acf sources
+<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:42-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 sources, sources, sources
+=======
+rederived: 2026-08-14T17:12:07-0400 95841394 sources
+rederived: 2026-08-14T17:29:41-0400 95841394 sources
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources, sources
 -->

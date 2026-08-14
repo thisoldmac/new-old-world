@@ -76,10 +76,14 @@ Mutate the exact condition the guard claims to detect, prove the mutation built,
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
 <<<<<<< HEAD
-sources-sha1: c0aec1320217c95450b4acffa34c66a75f01e4dc
+<<<<<<< HEAD
+sources-sha1: 549817840268464785c5d110bb3187e00ad2f4e0
 =======
-sources-sha1: c0aec1320217c95450b4acffa34c66a75f01e4dc
+sources-sha1: 549817840268464785c5d110bb3187e00ad2f4e0
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
+=======
+sources-sha1: 549817840268464785c5d110bb3187e00ad2f4e0
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
 derive test-stages sha256=f78dc22859b46a2e58f5cfceec0ceaf149bf5b1e89be24a1705af22181842aa5 lines=8
     scripts/docs-source-group build
 rederived: pending
@@ -214,7 +218,13 @@ rederived: 2026-08-14T14:40:04-0400 8875fe9e unchanged
 rederived: 2026-08-14T18:19:50-0400 60bb3427 unchanged
 =======
 rederived: 2026-08-14T15:56:43-0400 835e6acf sources
+<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:41-0400 23dc0759 sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 sources, sources
+=======
+rederived: 2026-08-14T17:12:07-0400 95841394 sources
+rederived: 2026-08-14T17:29:40-0400 95841394 sources
+>>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources
 -->

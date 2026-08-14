@@ -45,6 +45,7 @@ struct MCPModuleView: View {
     @ObservedObject var model: AgentActivityModel
     @ObservedObject var companions: AgentCompanionModel
     @ObservedObject var listener: GuestListener
+    @ObservedObject var settings: MCPTransportSettingsModel
     /// Nil in a preview or a test that has no server to run. The buttons are
     /// then absent rather than dead — a control that does nothing is the
     /// thing every page in this app is written to avoid.
@@ -419,32 +420,46 @@ struct MCPModuleView: View {
                     + "New Old World executable runs in a narrow stdio mode "
                     + "and reaches this app through its same-user socket.",
                 state: model.stdio,
+                startsAutomatically: $settings.stdioStartsAutomatically,
                 start: startStdio,
                 stop: stopStdio,
-                openDetails: stdioDetails)
+                details: { endpoint in
+                    stdioDetails(endpoint)
+                },
+                configuration: {
+                    stdioConfiguration
+                })
             transportCard(
                 title: "HTTP",
                 summary: "For clients that connect to a URL. HTTP runs "
                     + "inside New Old World, binds only to loopback, and "
                     + "requires the private bearer token saved by this app.",
                 state: model.http,
+                startsAutomatically: $settings.httpStartsAutomatically,
                 start: startHTTP,
                 stop: stopHTTP,
-                openDetails: httpDetails)
+                details: { _ in
+                    httpDetails
+                },
+                configuration: {
+                    httpConfiguration(isRunning: model.http.isRunning)
+                })
         }
     }
 
-    private func transportCard<Details: View>(
+    private func transportCard<Details: View, Configuration: View>(
         title: String,
         summary: String,
         state: MCPTransportState,
+        startsAutomatically: Binding<Bool>,
         start: (() -> Void)?,
         stop: (() -> Void)?,
-        @ViewBuilder openDetails: (String) -> Details
+        @ViewBuilder details: (String) -> Details,
+        @ViewBuilder configuration: () -> Configuration
     ) -> some View {
         card {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .center) {
                     Text(title).font(.headline)
                     Spacer(minLength: 12)
                     lifecycleButton(state: state, start: start, stop: stop)
@@ -462,9 +477,15 @@ struct MCPModuleView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Divider()
+                Toggle("Start automatically",
+                       isOn: startsAutomatically)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                configuration()
                 switch state {
                 case .open(let endpoint):
-                    openDetails(endpoint)
+                    details(endpoint)
                 case .unavailable(let reason):
                     Text(reason)
                         .font(.system(.caption, design: .monospaced))
@@ -498,18 +519,51 @@ struct MCPModuleView: View {
         start: (() -> Void)?,
         stop: (() -> Void)?
     ) -> some View {
-        if state.isRunning, let stop {
-            Button("Stop", role: .destructive) { stop() }
-                .controlSize(.small)
-        } else if !state.isRunning, let start {
-            Button("Start") { start() }
-                .controlSize(.small)
+        if start != nil || stop != nil {
+            ControlGroup {
+                Button("Start") { start?() }
+                    .disabled(state.isRunning || start == nil)
+                Button("Stop") { stop?() }
+                    .disabled(!state.isRunning || stop == nil)
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private var stdioConfiguration: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Client command")
+                .font(.caption.weight(.medium))
+            copyRow(label: "Command", value: stdioCommand)
+            Text("Each client launches this command when it needs stdio. "
+                    + "Starting this transport opens the same-user bridge "
+                    + "that those client processes use to reach this app.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func httpConfiguration(isRunning: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            LabeledContent("Loopback port") {
+                TextField("Port", value: $settings.httpPort,
+                          format: .number.grouping(.never))
+                    .frame(width: 90)
+                    .multilineTextAlignment(.trailing)
+                    .disabled(isRunning)
+            }
+            copyRow(label: "URL", value: plannedHTTPEndpoint)
+            Text(isRunning
+                    ? "Stop HTTP before changing its port."
+                    : "HTTP is reachable only from this Mac at 127.0.0.1.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
     private func stdioDetails(_ socket: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            copyRow(label: "Command", value: stdioCommand)
             copyRow(label: "Private socket", value: socket)
             Text("The socket accepts only processes running as your macOS "
                     + "user. The client launches no separately installed "
@@ -518,9 +572,8 @@ struct MCPModuleView: View {
         }
     }
 
-    private func httpDetails(_ endpoint: String) -> some View {
+    private var httpDetails: some View {
         VStack(alignment: .leading, spacing: 6) {
-            copyRow(label: "URL", value: endpoint)
             if let token = model.httpBearerToken {
                 Button("Copy Bearer Token") { copy(token) }
                     .controlSize(.small)
@@ -550,6 +603,10 @@ struct MCPModuleView: View {
     private var stdioCommand: String {
         let path = Bundle.main.executableURL?.path ?? "New Old World"
         return "\(path) --mcp-stdio"
+    }
+
+    private var plannedHTTPEndpoint: String {
+        "http://127.0.0.1:\(settings.httpPort)/mcp"
     }
 
     // MARK: chrome

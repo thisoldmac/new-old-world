@@ -15,6 +15,7 @@ struct FilesNativeSidebarRow: NSViewRepresentable {
     let activate: () -> Void
     let validateDrop: (NSDraggingInfo) -> NSDragOperation
     let acceptDrop: (NSDraggingInfo) -> Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     func makeNSView(context: Context) -> FilesSidebarRowButton {
         let button = FilesSidebarRowButton()
@@ -31,8 +32,18 @@ struct FilesNativeSidebarRow: NSViewRepresentable {
         button.configure(title: title, symbolName: symbolName,
                          compact: compact, isActive: isActive,
                          isEnabled: isEnabled, toolTip: toolTip,
+                         interfaceStyle: colorScheme == .dark ? .dark : .light,
                          activate: activate, validateDrop: validateDrop,
                          acceptDrop: acceptDrop)
+    }
+}
+
+enum FilesSidebarInterfaceStyle: Equatable {
+    case light
+    case dark
+
+    var appearance: NSAppearance? {
+        NSAppearance(named: self == .dark ? .darkAqua : .aqua)
     }
 }
 
@@ -45,6 +56,7 @@ final class FilesSidebarRowButton: NSButton, NSSpringLoadingDestination {
     private var acceptDropHandler: (NSDraggingInfo) -> Bool = { _ in false }
     private var pointerInside = false
     private var active = false
+    private var displayedTitle = ""
     private var springHighlight: NSSpringLoadingHighlight = .none
     private var tracking: NSTrackingArea?
 
@@ -67,11 +79,14 @@ final class FilesSidebarRowButton: NSButton, NSSpringLoadingDestination {
     func configure(
         title: String, symbolName: String, compact: Bool, isActive: Bool,
         isEnabled: Bool, toolTip: String,
+        interfaceStyle: FilesSidebarInterfaceStyle? = nil,
         activate: @escaping () -> Void,
         validateDrop: @escaping (NSDraggingInfo) -> NSDragOperation,
         acceptDrop: @escaping (NSDraggingInfo) -> Bool
     ) {
-        self.title = compact ? "" : title
+        if let interfaceStyle { appearance = interfaceStyle.appearance }
+        displayedTitle = compact ? "" : title
+        self.title = displayedTitle
         image = NSImage(systemSymbolName: symbolName,
                         accessibilityDescription: title)
         image?.isTemplate = true
@@ -97,11 +112,21 @@ final class FilesSidebarRowButton: NSButton, NSSpringLoadingDestination {
     }
 
     private func refreshTint() {
-        let semanticColor: NSColor = active ? .controlAccentColor
-                                            : .secondaryLabelColor
+        let symbolColor: NSColor = active ? .alternateSelectedControlTextColor
+                                          : .secondaryLabelColor
+        let titleColor: NSColor = active ? .alternateSelectedControlTextColor
+                                         : .labelColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            contentTintColor = semanticColor.usingColorSpace(.deviceRGB)
-                ?? semanticColor
+            contentTintColor = symbolColor.usingColorSpace(.deviceRGB)
+                ?? symbolColor
+            attributedTitle = NSAttributedString(
+                string: displayedTitle,
+                attributes: [
+                    .font: font ?? NSFont.systemFont(
+                        ofSize: NSFont.systemFontSize),
+                    .foregroundColor: titleColor.usingColorSpace(.deviceRGB)
+                        ?? titleColor,
+                ])
         }
     }
 

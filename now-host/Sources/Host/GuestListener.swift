@@ -1129,6 +1129,31 @@ final class GuestListener: ObservableObject {
     /// wired (tests, mostly). Nil means chat.* asks go unanswered,
     /// which is the honest pre-family silence the contract describes.
     weak var chatService: ChatWireService?
+    /// The host-side renderer for the guest application's loopback proxy.
+    /// Nil is honest unavailability and is answered by the guest's timeout.
+    weak var webService: WebWireService?
+
+    enum WebAsk {
+        case request(WebRequest)
+        case cancel(WebCancel)
+
+        var id: Int {
+            switch self {
+            case .request(let request): return request.id
+            case .cancel(let cancel): return cancel.id
+            }
+        }
+    }
+
+    func serveWeb(_ ask: WebAsk, on asker: Session) {
+        guard let webService else {
+            asker.send(.webResponseEnd(WebResponseEnd(
+                id: ask.id, ok: false, code: "unavailable",
+                reason: "Open Web Proxy on this Mac first")))
+            return
+        }
+        webService.serve(ask, on: asker)
+    }
 
     /// Brings one of THIS Mac's own windows forward, set by the app that
     /// owns them. Nil for a headless listener (tests, the companion
@@ -3400,6 +3425,10 @@ final class GuestListener: ObservableObject {
                 guard let self, let asker = origin.session else { return }
                 self.serveChat(ask, on: asker)
             },
+            onServeWeb: { [weak self] ask in
+                guard let self, let asker = origin.session else { return }
+                self.serveWeb(ask, on: asker)
+            },
             onServeHostShow: { [weak self] request in
                 guard let self, let asker = origin.session else { return }
                 self.serveHostShow(request, on: asker)
@@ -3491,6 +3520,7 @@ final class GuestListener: ObservableObject {
                 // A conversation is per connection; a turn still
                 // streaming to a dead socket is cancelled, not leaked.
                 self.chatService?.sessionClosed(key: key)
+                self.webService?.sessionClosed(key: key)
                 self.sessions[key] = nil
                 self.machineBySession[key] = nil
                 self.healthByGuest[key] = nil

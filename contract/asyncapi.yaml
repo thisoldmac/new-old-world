@@ -331,6 +331,11 @@ channels:
       chatResult: { $ref: "#/components/messages/chatResult" }
       chatCancel: { $ref: "#/components/messages/chatCancel" }
       chatReset: { $ref: "#/components/messages/chatReset" }
+      webRequest: { $ref: "#/components/messages/webRequest" }
+      webResponseBegin: { $ref: "#/components/messages/webResponseBegin" }
+      webResponseChunk: { $ref: "#/components/messages/webResponseChunk" }
+      webResponseEnd: { $ref: "#/components/messages/webResponseEnd" }
+      webCancel: { $ref: "#/components/messages/webCancel" }
       previewBegin: { $ref: "#/components/messages/previewBegin" }
       previewEnd: { $ref: "#/components/messages/previewEnd" }
       hostShow: { $ref: "#/components/messages/hostShow" }
@@ -1206,6 +1211,31 @@ operations:
       transfer. A service that cannot render one refuses not-listable —
       the same well-formed refusal an older host's silence approximates,
       which is what keeps the ask additive.
+  guestAsksWeb:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/webRequest"
+      - $ref: "#/channels/control/messages/webCancel"
+    description: >
+      A browser connects only to the guest application's loopback listener.
+      The guest parses one bounded GET or HEAD request and asks the host to
+      render its target. The classic LAN never reaches a second host listener;
+      modern TLS, JavaScript, destination policy and page transformation remain
+      owned by the host. One request is active per guest connection.
+  hostServesWeb:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/webResponseBegin"
+      - $ref: "#/channels/control/messages/webResponseChunk"
+      - $ref: "#/channels/control/messages/webResponseEnd"
+    description: >
+      The host returns one bounded HTTP/1.0 response. Chunks are base64 so Web
+      does not acquire or stall the one-wide bulk lane used by Files, Screen,
+      Mirror and previews. Sequence is contiguous from zero and the guest
+      accepts exactly the byte count announced by begin before delivering the
+      response to its local browser.
   guestAsksHostSurface:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -1571,6 +1601,21 @@ components:
     chatReset:
       name: chat.reset
       payload: { $ref: "#/components/schemas/ChatReset" }
+    webRequest:
+      name: web.request
+      payload: { $ref: "#/components/schemas/WebRequest" }
+    webResponseBegin:
+      name: web.response.begin
+      payload: { $ref: "#/components/schemas/WebResponseBegin" }
+    webResponseChunk:
+      name: web.response.chunk
+      payload: { $ref: "#/components/schemas/WebResponseChunk" }
+    webResponseEnd:
+      name: web.response.end
+      payload: { $ref: "#/components/schemas/WebResponseEnd" }
+    webCancel:
+      name: web.cancel
+      payload: { $ref: "#/components/schemas/WebCancel" }
     previewBegin:
       name: preview.begin
       payload: { $ref: "#/components/schemas/PreviewBegin" }
@@ -2875,6 +2920,57 @@ components:
             when discarded, ok:false busy while a turn streams
             (cancel first). Reconnecting resets implicitly — this
             message exists so a person keeps the link.
+    WebRequest:
+      type: object
+      required: [type, id, method, target]
+      additionalProperties: false
+      properties:
+        type: { const: web.request }
+        id: { type: integer }
+        method: { enum: [GET, HEAD] }
+        target:
+          type: string
+          maxLength: 2048
+          description: Absolute HTTP or HTTPS proxy target, or a NOW Web path.
+    WebResponseBegin:
+      type: object
+      required: [type, id, status, contentType, bytes]
+      additionalProperties: false
+      properties:
+        type: { const: web.response.begin }
+        id: { type: integer }
+        status: { type: integer, minimum: 100, maximum: 599 }
+        contentType: { type: string, maxLength: 96 }
+        bytes: { type: integer, minimum: 0, maximum: 524288 }
+    WebResponseChunk:
+      type: object
+      required: [type, id, seq, data]
+      additionalProperties: false
+      properties:
+        type: { const: web.response.chunk }
+        id: { type: integer }
+        seq: { type: integer, minimum: 0 }
+        data:
+          type: string
+          maxLength: 3072
+          description: Base64 body bytes; decoded chunks are at most 2304 bytes.
+    WebResponseEnd:
+      type: object
+      required: [type, id, ok]
+      additionalProperties: false
+      properties:
+        type: { const: web.response.end }
+        id: { type: integer }
+        ok: { type: boolean }
+        code: { enum: [busy, unavailable, invalid, too-large, cancelled, fetch-failed] }
+        reason: { type: string, maxLength: 192 }
+    WebCancel:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: web.cancel }
+        id: { type: integer }
     Refuse:
       type: object
       required: [type, contract, reason]
@@ -4796,6 +4892,20 @@ components:
           minItems: 2
           maxItems: 2
           items: { type: string }
+    romdump:
+      description: >
+        Writes the responder's complete ROM to `New Old World ROM.bin` under
+        its configured Files share. The file is then retrieved through the
+        existing file.get / bulk stream; ROM bytes do not define a second
+        transfer protocol. On the PowerBook 1400, complete means the measured
+        4 MiB physical image: the 3 MiB Toolbox section reported by
+        gestaltROMSize plus the adjacent 1 MiB boot/nanokernel section.
+        NOW-68K does not register this command.
+      args: {}
+      output:
+        type: object
+        properties:
+          romdump: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     ls:
       description: >
         List a folder in the guest's share. No path = the share root.

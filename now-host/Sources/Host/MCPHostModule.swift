@@ -16,6 +16,7 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
     let activity: AgentActivityModel
     let companions: AgentCompanionModel
     let listener: GuestListener
+    let transportSettings: MCPTransportSettingsModel
     private(set) var startStdio: (() -> Void)?
     private(set) var stopStdio: (() -> Void)?
     private(set) var startHTTP: (() -> Void)?
@@ -29,6 +30,8 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
         self.activity = activity
         self.companions = companions
         listener = context.listener
+        transportSettings = MCPTransportSettingsModel(
+            defaults: context.defaults)
     }
 
     func configureTransports(
@@ -72,6 +75,7 @@ enum MCPHostModule {
                 model: runtime.activity,
                 companions: runtime.companions,
                 listener: runtime.listener,
+                settings: runtime.transportSettings,
                 startStdio: runtime.startStdio,
                 stopStdio: runtime.stopStdio,
                 startHTTP: runtime.startHTTP,
