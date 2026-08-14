@@ -739,6 +739,58 @@ final class GuestWireConformanceTests: XCTestCase {
         }
     }
 
+    /// Every `continuity.key` action the contract declares must be a value
+    /// the PowerPC guest's dispatch actually compares against.
+    ///
+    /// This is the finding this suite is named for, in its receiver-side
+    /// form: `two-halves-never-met-in-a-test` is usually told as a FIELD one
+    /// side sends and the other has never heard of, and a closed enum is the
+    /// same defect with a smaller blast radius and a quieter failure. An
+    /// action the guest cannot name does not crash it — `action` stays 0 and
+    /// the key is refused `malformed`, which reads on the host exactly like a
+    /// guest that is merely busy. The list is short enough to hand-maintain
+    /// and that is precisely why it needs reading rather than remembering.
+    func testTheGuestNamesEveryContinuityKeyActionTheContractDeclares()
+        throws {
+        let contract = try String(
+            contentsOf: Self.repoRoot
+                .appendingPathComponent("contract/asyncapi.yaml"),
+            encoding: .utf8)
+        guard let range = contract.range(
+            of: #"action:\s*\n?\s*enum: \[([^\]]*)\]"#,
+            options: .regularExpression)
+        else {
+            return XCTFail("contract/asyncapi.yaml no longer declares a "
+                + "continuity.key action enum in a shape this gate can read")
+        }
+        let actions = contract[range]
+            .components(separatedBy: "[").last!
+            .replacingOccurrences(of: "]", with: "")
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        XCTAssertTrue(actions.contains("down") && actions.contains("modifiers"),
+                      "read the wrong enum: \(actions)")
+
+        let dispatch = try guestSourcesWithoutComments()
+            .first { $0.name.hasSuffix("core/wire.c") }?.text
+        let text = try XCTUnwrap(dispatch, "now-guest-ppc/src/core/wire.c")
+        /* The comparison, not the word. `modifiers` is ALSO the name of a
+           field this same function reads, so a bare search for the quoted
+           string is satisfied by `now_json_find_u32(request, "modifiers", …)`
+           and stays green with the dispatch arm deleted — watched happening,
+           which is why the assertion is shaped this way. */
+        for action in actions {
+            XCTAssertTrue(
+                text.contains("strcmp(action_name, \"\(action)\")"),
+                "contract/asyncapi.yaml declares continuity.key action "
+                    + "`\(action)` and now-guest-ppc/src/core/wire.c never "
+                    + "compares `action_name` against it, so the guest "
+                    + "refuses it as malformed and the host cannot tell that "
+                    + "apart from a guest under load")
+        }
+    }
+
     /// The property names a schema declares, read the same shallow way
     /// `requiredFields()` reads its required list.
     private func contractProperties(of schema: String) throws -> Set<String> {
