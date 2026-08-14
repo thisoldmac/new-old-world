@@ -6,7 +6,7 @@ final class ModuleRegistryTests: XCTestCase {
     func testStandardRegistryHasScreenFirstAndSettings() {
         XCTAssertEqual(ModuleRegistry.standard.modules.map(\.id),
                        ["screen", "files", "icloud", "processes",
-                        "mirror", "console", "chat",
+                        "mirror", "continuity", "console", "chat",
                         "web", "development", "census", "diagnostics", "networking", "software",
                         "mcp", "logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.module(id: "screen")?.title,
@@ -31,7 +31,7 @@ final class ModuleRegistryTests: XCTestCase {
                        ["mcp", "logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.listModules.map(\.id),
                        ["screen", "files", "icloud", "processes",
-                        "mirror", "console", "chat",
+                        "mirror", "continuity", "console", "chat",
                         "web", "development", "census", "diagnostics", "networking", "software"])
     }
 

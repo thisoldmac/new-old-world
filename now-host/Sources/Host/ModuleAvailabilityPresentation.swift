@@ -48,7 +48,10 @@ struct ModuleAvailabilityPresentation: Equatable, Sendable {
         // Mirror has a richer lifecycle and refusal vocabulary of its own.
         // It is still reduced without a guest, but a second shell banner
         // would obscure rather than clarify that owned state.
-        case "mirror":
+        // Continuity is the same shape: the arrangement stays editable and
+        // usable offline, and the controller's own status line already says
+        // no Mac is connected in its own words.
+        case "mirror", "continuity":
             return ModuleAvailabilityPresentation(
                 availability: .reduced,
                 shellTreatment: .none)

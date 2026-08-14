@@ -16,6 +16,7 @@ final class ModuleAvailabilityPresentationTests: XCTestCase {
             "screen": .reduced,
             "processes": .unavailable,
             "mirror": .reduced,
+            "continuity": .reduced,
             "console": .reduced,
             "census": .reduced,
             "diagnostics": .reduced,

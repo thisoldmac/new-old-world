@@ -82,7 +82,8 @@ final class NavigationDragCoordinatorTests: XCTestCase {
                 makeShelfID: { self.shelfUUID })))
 
         XCTAssertEqual(extracted.lower.first, .module("mirror"))
-        XCTAssertEqual(extracted.shelf(id: .screen)?.moduleIDs, ["screen"])
+        XCTAssertEqual(extracted.shelf(id: .screen)?.moduleIDs,
+                       ["screen", "continuity"])
 
         let reordered = try layout.applying(try XCTUnwrap(
             NavigationDragCoordinator.command(
