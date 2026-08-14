@@ -1,6 +1,7 @@
 import XCTest
 @testable import Host
 
+@MainActor
 final class ModuleAvailabilityPresentationTests: XCTestCase {
     func testDisconnectedModulesHaveOneExplicitAvailabilityPolicy() {
         let expected: [String: ModuleAvailability] = [

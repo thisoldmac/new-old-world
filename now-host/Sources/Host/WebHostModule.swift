@@ -18,7 +18,7 @@ enum WebHostModule {
     static let definition = HostModuleDefinition(
         descriptor: ModuleDescriptor(
             id: "web",
-            title: "Web",
+            title: "Web Proxy",
             symbol: "globe",
             summary: "Translate modern pages for a browser on "
                 + "\(MachineNaming.simpleReference)",

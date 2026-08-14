@@ -7,6 +7,8 @@ artifact_readiness: implementation-ready
 execution: code
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # Host module shelves, drawer, settings, and disconnected state
 
 ## Goal Capsule

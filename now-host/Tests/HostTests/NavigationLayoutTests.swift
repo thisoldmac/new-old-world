@@ -1,6 +1,7 @@
 import XCTest
 @testable import Host
 
+@MainActor
 final class NavigationLayoutTests: XCTestCase {
     func testStandardLayoutMatchesTheAcceptedShelvesAndZones() throws {
         let layout = NavigationLayout.standard(for: .standard)

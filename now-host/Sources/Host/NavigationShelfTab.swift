@@ -15,6 +15,7 @@ struct NavigationShelfTab: Identifiable, Equatable, Sendable {
     let selection: NavigationSelection
     let moduleID: String?
 
+    @MainActor
     static func tabs(for shelf: NavigationShelf,
                      registry: ModuleRegistry) -> [NavigationShelfTab] {
         var tabs: [NavigationShelfTab] = []

@@ -236,6 +236,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
             }
     }
 
+    @MainActor
     static func standard(for registry: ModuleRegistry) -> NavigationLayout {
         let known = Set(registry.modules.map(\.id))
         func present(_ ids: [String]) -> [String] {
@@ -271,6 +272,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         return layout
     }
 
+    @MainActor
     static func migratingLegacyOrder(_ stored: [String],
                                      registry: ModuleRegistry) -> NavigationLayout {
         var layout = standard(for: registry)
@@ -311,6 +313,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
     }
 
     /// Repairs stored state into a total partition of the live registry.
+    @MainActor
     func sanitised(for registry: ModuleRegistry) -> NavigationLayout {
         let known = Set(registry.modules.map(\.id))
         var seenModules = Set<String>()

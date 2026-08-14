@@ -3,6 +3,7 @@ import Foundation
 /// Read-only compatibility for the flat sidebar order used before shelves.
 /// New writes go exclusively through `NavigationLayoutStore`.
 enum LegacySidebarOrder {
+    @MainActor
     static func normalised(_ stored: [String],
                            against known: [String]) -> [String] {
         var seen = Set<String>()
@@ -24,6 +25,7 @@ enum LegacySidebarOrder {
     }
 }
 
+@MainActor
 struct NavigationLayoutStore {
     static let layoutKey = "navigationLayout"
 

@@ -19,7 +19,7 @@ struct ModuleAvailabilityShell<Content: View>: View {
                 content()
             }
         case .unavailable:
-            ModuleUnavailableView(
+            DisconnectedModuleView(
                 moduleTitle: moduleTitle,
                 status: status,
                 showConnections: showConnections,
@@ -50,7 +50,7 @@ private struct ModuleOfflineBanner: View {
     }
 }
 
-private struct ModuleUnavailableView: View {
+private struct DisconnectedModuleView: View {
     let moduleTitle: String
     let status: GuestStatus
     let showConnections: () -> Void

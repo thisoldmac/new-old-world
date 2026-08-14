@@ -1,6 +1,7 @@
 import XCTest
 @testable import Host
 
+@MainActor
 final class NavigationShelfTabTests: XCTestCase {
     func testMachineShelfBeginsWithOverviewThenItsStableModules() throws {
         let shelf = try XCTUnwrap(

@@ -1,6 +1,7 @@
 import XCTest
 @testable import Host
 
+@MainActor
 final class NavigationDragCoordinatorTests: XCTestCase {
     private let shelfUUID = UUID(
         uuidString: "8D5B6B80-6522-4CE9-A123-A2DA410D8488")!
