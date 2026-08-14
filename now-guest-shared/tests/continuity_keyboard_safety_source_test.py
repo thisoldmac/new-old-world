@@ -31,7 +31,13 @@ check("GetFrontProcess(&front)" in KEYBOARD
       and "event.target_psn_low" in KEYBOARD
       and "now_ext_continuity_keyboard_flush(cell);" in KEYBOARD,
       "a process switch must flush input before PPostEvent")
-check("PPostEvent" not in SERVICE,
+# The confined interrupt press (deliver_deferred_press_interrupt, pinned in
+# continuity_event_safety_source_test.py with its full justification) posts
+# MOUSE events from this unit; keys stay banned here in any form.
+check("PPostEvent(keyDown" not in SERVICE
+      and "PPostEvent(keyUp" not in SERVICE
+      and "PPostEvent(autoKey" not in SERVICE
+      and "PPostEvent(event_kind" not in SERVICE,
       "the synchronous service and timer translation unit must not post keys")
 check("now_continuity_keyboard_flush(shared);" in INTAKE,
       "PPC disarm and disconnect must flush pending keyboard input")

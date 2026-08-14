@@ -559,12 +559,19 @@ int now_continuity_disarm(long id, unsigned long epoch)
     if (timing_count > (unsigned long)kNowPeekContinuityEventTimingCapacity)
         timing_count = (unsigned long)kNowPeekContinuityEventTimingCapacity;
     now_log(kLogInfo, "mirror",
-            "button timing epoch=%lu double=%lu count=%lu dropped=%lu",
+            "button timing epoch=%lu double=%lu count=%lu overwritten=%lu",
             epoch, (unsigned long)shared->double_time_ticks, timing_count,
             (unsigned long)shared->event_timing_dropped);
     for (timing_index = 0; timing_index < timing_count; timing_index++) {
+        /* The ring keeps the LAST capacity edges; walk chronologically
+           from the oldest surviving slot, the CDM interval ring's idiom. */
+        unsigned long slot =
+            ((unsigned long)shared->event_timing_count
+             + (unsigned long)kNowPeekContinuityEventTimingCapacity
+             - timing_count + timing_index)
+            % (unsigned long)kNowPeekContinuityEventTimingCapacity;
         const NowPeekContinuityEventTiming *timing =
-            &shared->event_timing[timing_index];
+            &shared->event_timing[slot];
 
         now_log(kLogInfo, "mirror",
                 "button timing n=%lu gen=%lu down=%lu req=%ld,%ld "

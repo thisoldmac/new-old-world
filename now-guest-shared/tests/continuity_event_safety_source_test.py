@@ -69,8 +69,43 @@ check("now_continuity_cursor_button(" in PPC,
 check("now_cdm_button_down(gDevice)" in PPC_CURSOR
       and "now_cdm_button_up(gDevice)" in PPC_CURSOR,
       "primary transitions no longer use the synthetic Cursor Device")
-check("PPostEvent" not in RESIDENT and "PostEvent(" not in RESIDENT,
-      "the 68K resident again calls Event Manager")
+# THE PRESS TABOO, NARROWED DELIBERATELY (2026-08-13 225207): the Finder
+# pairs clicks by its own clock at processing time, not event.when - a
+# compressed pair reading 8 ticks apart failed while its dequeue spacing
+# was 54 ticks - and during the Finder's own click processing nothing
+# cooperative runs anywhere, so only interrupt time can put a second press
+# in the queue inside its window. The resident may therefore press ONLY
+# inside deliver_deferred_press_interrupt (option-gated, keyboard-plane
+# PPostEvent precedent); everywhere else the old bans hold, enforced by
+# counting so a second press site cannot appear silently.
+deliver = body(RESIDENT,
+               "static int deliver_deferred_press_interrupt(",
+               "/* Raw 68K entry published in the V3 cell.")
+
+
+def strip_comments(source: str) -> str:
+    # Confinement is counted on CODE; the justification comments name the
+    # banned calls and must not satisfy (or trip) the count.
+    import re
+    return re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+
+
+RESIDENT_CODE = strip_comments(RESIDENT)
+DELIVER_CODE = strip_comments(deliver)
+check("PPostEvent" in DELIVER_CODE
+      and RESIDENT_CODE.count("PPostEvent") == DELIVER_CODE.count("PPostEvent")
+      and "PostEvent(" not in RESIDENT_CODE.replace("PPostEvent(", ""),
+      "the resident calls the Event Manager outside the confined press")
+check("!gInterruptPress || gDeferredPressGeneration == 0" in deliver,
+      "the confined press lost its option or deferred-press gate")
+check(deliver.index("PPostEvent(mouseUp")
+          < deliver.index("LMSetMouseButtonState(0x00)")
+      and deliver.index("LMSetMouseButtonState(0x00)")
+          < deliver.index("PPostEvent(mouseDown"),
+      "the confined press no longer completes click 1 before pressing")
+check("cell->event_request_generation = 0;" in deliver
+      and "cell->pending_mouseup = 0;" in deliver,
+      "the confined press no longer cancels the pending manager up")
 for token in ("PostEvent", "PPostEvent", "HideCursor", "ShowCursor",
               "now_cdm_", "GetFrontProcess", "SetFrontProcess", "NewPtr",
               "DisposePtr", "now_log", "LMSetMouseTemp",
@@ -88,8 +123,9 @@ check("position_seq, cell->request_position_seq" in tick
       and "cell->applied_position_seq = position_seq" not in tick,
       "the timer again claims a manager apply or repeats one tracking point")
 check("LMSetMouseButtonState(0x80)" in release
-      and "LMSetMouseButtonState(0x00)" not in RESIDENT,
-      "the resident's only button write is no longer unconditional up")
+      and RESIDENT_CODE.count("LMSetMouseButtonState(0x00)")
+          == DELIVER_CODE.count("LMSetMouseButtonState(0x00)"),
+      "the resident presses MBState outside the confined press")
 check("event_request_generation = 0" in request
       and request.index("event_request_generation = 0")
           < request.index("event_request_down ="),

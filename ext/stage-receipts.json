@@ -849,6 +849,17 @@
         "ext/src/now_ext_continuity.c"
       ],
       "reason": "observer-match merge; orchestrator bakes the merged stack"
+    },
+    {
+      "at": "2026-08-13T23:16:02-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "fdda28b224e9f406bdab595098f45e49f4f5acc8",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "convergence round; bake follows with the final stack build"
     }
   ]
 }

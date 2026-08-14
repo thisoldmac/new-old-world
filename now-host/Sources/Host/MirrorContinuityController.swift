@@ -155,6 +155,24 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
+    /* Experiment, default off, the riskiest input option: the resident's
+       interrupt timer delivers a deferred second press itself, because the
+       Finder pairs clicks by its own clock at processing time and no
+       task-time route can reach the queue while it processes click one. */
+    @Published var interruptPress = false {
+        didSet {
+            guard interruptPress != oldValue else { return }
+            if !loadingSettings,
+               let machine = listener.activeContinuityTarget?.key.machine {
+                defaults.set(interruptPress,
+                             forKey: interruptPressKey(for: machine))
+            }
+            if phase != .idle {
+                rearmAfterConfigurationChange(
+                    reason: "interrupt press delivery changed")
+            }
+        }
+    }
     /* Spike, default off: extend the settle machinery to idle motion so a
        starved pump's frames are drawn from whichever process holds the CPU. */
     @Published var settleIdleCursor = false {
@@ -534,6 +552,7 @@ final class MirrorContinuityController: ObservableObject,
             settleSyntheticDevice: settleSyntheticDevice,
             wideDoubleTime: wideDoubleTime,
             compressClickWhen: compressClickWhen,
+            interruptPress: interruptPress,
             settleIdleCursor: settleIdleCursor,
             hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)
         guard armID != nil else {
@@ -1284,6 +1303,8 @@ final class MirrorContinuityController: ObservableObject,
         let compressKey = compressClickWhenKey(for: machine)
         compressClickWhen = defaults.object(forKey: compressKey) == nil
             ? true : defaults.bool(forKey: compressKey)
+        interruptPress = defaults.bool(
+            forKey: interruptPressKey(for: machine))
         settleIdleCursor = defaults.bool(
             forKey: settleIdleCursorKey(for: machine))
         hideGuestCursorWhileDragging = defaults.bool(
@@ -1348,6 +1369,10 @@ final class MirrorContinuityController: ObservableObject,
 
     private func compressClickWhenKey(for machine: GuestID) -> String {
         "mirror.continuity.compressClickWhen.\(machine.slug)"
+    }
+
+    private func interruptPressKey(for machine: GuestID) -> String {
+        "mirror.continuity.interruptPress.\(machine.slug)"
     }
 
     private func keyboardForwardingKey(for machine: GuestID) -> String {

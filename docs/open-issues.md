@@ -469,6 +469,43 @@ in the application's own pump. Untested pending front-layer discipline:
 double-click with Finder already frontmost (protocol: single-click the
 desktop first, then double-click).
 
+**2026-08-13 23:xx convergence round (four parallel lanes plus the
+orchestrator), all tested-not-metal-verified:** the three remaining
+symptom threads turned out to share one root. The pump-stall lane traced
+the once-per-second motion stall to the host's 0.75 s Mirror scene poll,
+served synchronously by the guest (30-tick settle plus an unyielding
+walk); the plane-gating lane found `service_shot()` re-fronting this
+application 45 ticks after every `process.shot`, and measured that
+Continuity's guest intake claims exactly ONE plane while the host armed
+five. Continuity surface mode now arms only `.structure` (an
+intersection - a mode can narrow policy, never widen it), the P5 tail is
+explicitly handed back, and the nested wire pump gained a
+continuity-only path so request handlers renew the lease mid-serve.
+Expected on metal, unverified: the rhythmic stall gone at its source,
+entry-lag gone, no more uninvited front-layer changes, and possibly
+double-click working with no further help - the ~54-tick post-click
+starvation matches the scene-serve signature, not Finder's own
+processing.
+
+If double-click still fails with the planes quiet, the fallback shipped
+in the same round: **interruptPress** (bit 0x100, default off) - the
+resident's interrupt timer delivers a deferred second press itself
+(mouseUp event, MBState down, mouseDown event; pending manager-up
+canceled; ledger reconciles at the next task-time boundary), because the
+Finder pairs clicks by ITS OWN CLOCK at processing time (proven 225207:
+an 8-tick when-compressed pair failed while dequeue spacing was 54
+ticks) and no task-time route can reach the queue while it processes
+click one. This deliberately NARROWED the two oldest resident safety
+pins (no Event Manager, no MBState-down) to confinement pins on one
+function, with the keyboard plane's shipping PPostEvent as precedent and
+the matured release safety (two-slot release, ledger corrective - fired
+live tonight - and host cycle abandon) as the argument. Also landed:
+single-driver position authority (the spike and the pump are now
+exclusive by sequence, with the spike advancing the ack currency), an
+honest observer matcher (most-recent-applied-edge rule, extracted pure
+and native-tested), the button-timing ring now ROLLING so late-epoch
+attempts stop vanishing, and per-down true-front process logging.
+
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
 While the guest owns the pointer, the host now captures key-down, key-up, and

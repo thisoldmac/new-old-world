@@ -1055,6 +1055,18 @@ enum {
        window, 2026-08-13), so the interval itself must shrink; widening
        the global cannot reach a private copy. */
     kNowPeekContinuityTrackingCompressClickWhen = 1u << 7,
+    /* Deliver a deferred second press from the resident's interrupt timer:
+       mouseUp event, MBState down, mouseDown event, with the pending
+       manager-up canceled and the ledger reconciling at the next task-time
+       boundary. Exists because the Finder pairs clicks by ITS OWN CLOCK at
+       processing time, not by event.when - a compressed pair reading 8
+       ticks apart still failed while its dequeue spacing was 54 ticks
+       (2026-08-13 225207) - and during the Finder's own click processing
+       nothing cooperative runs anywhere, so interrupt time is the only
+       context that can put the second press in the queue before the
+       Finder's stopwatch runs out. Off by default; the riskiest input
+       experiment in this table and labeled as such. */
+    kNowPeekContinuityTrackingInterruptPress = 1u << 8,
     kNowPeekContinuityTrackingKnownMask =
         kNowPeekContinuityTrackingPinHeldPoint
             | kNowPeekContinuityTrackingVirtualGetMouse
@@ -1064,6 +1076,7 @@ enum {
             | kNowPeekContinuityTrackingWideDoubleTime
             | kNowPeekContinuityTrackingSettleIdleCursor
             | kNowPeekContinuityTrackingCompressClickWhen
+            | kNowPeekContinuityTrackingInterruptPress
 };
 
 enum {
@@ -1092,6 +1105,9 @@ enum {
        process's CurApName - WHO dequeued the event, which no other
        instrument records. */
     kNowPeekContinuityTraceEventObserved = 11,
+    /* An interrupt-time deferred-press delivery: arg0 is the generation
+       delivered, arg1 the tick it entered the queue. */
+    kNowPeekContinuityTraceInterruptPress = 12,
     kNowPeekContinuityTraceCapacity = 8
 };
 
@@ -1353,7 +1369,9 @@ typedef struct {
     NowPeekI32 tracking_device_last_held_v;
     NowPeekU32 tracking_device_last_ticks;
     /* Guest-domain timing for the first eight button edges. Capacity is
-       deliberately non-overwriting; later edges increment dropped. */
+       a ROLLING window of the last capacity edges - the original first-N
+       choice predates rapid-click testing and hid exactly the late-epoch
+       attempts that mattered; `dropped` counts overwritten entries. */
     NowPeekU32 double_time_ticks;
     NowPeekU32 event_request_arrival_ticks;
     NowPeekU32 event_request_exposure_ticks;

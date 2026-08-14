@@ -384,6 +384,9 @@ private struct ContinuityControlCard: View {
                 Toggle("Compress click timing for private windows",
                        isOn: $controller.compressClickWhen)
                     .disabled(!controller.isEnabled || !mirrorRunning)
+                Toggle("Interrupt press delivery (experiment)",
+                       isOn: $controller.interruptPress)
+                    .disabled(!controller.isEnabled || !mirrorRunning)
                 Toggle("Settle device while idle (spike)",
                        isOn: $controller.settleIdleCursor)
                     .disabled(!controller.isEnabled || !mirrorRunning)

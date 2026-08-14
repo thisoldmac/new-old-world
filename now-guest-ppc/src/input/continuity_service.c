@@ -92,13 +92,19 @@ static void record_button_timing(NowPeekContinuityCell *cell,
                                  NowPeekU32 begin, NowPeekU32 end,
                                  NowPeekI32 error)
 {
-    NowPeekU32 index = cell->event_timing_count;
+    /* Rolling: keep the LAST capacity edges. The first-N choice predates
+       rapid-click testing and hid exactly the late-epoch double-click
+       attempts that mattered (count=8 dropped=20+ across the 2026-08-13
+       22:3x runs, every interesting pair in the dropped tail). `dropped`
+       now counts overwritten entries, and the teardown printer walks the
+       ring from its oldest surviving slot. */
+    NowPeekU32 index = cell->event_timing_count
+        % (NowPeekU32)kNowPeekContinuityEventTimingCapacity;
     NowPeekContinuityEventTiming *entry;
 
-    if (index >= (NowPeekU32)kNowPeekContinuityEventTimingCapacity) {
+    if (cell->event_timing_count
+            >= (NowPeekU32)kNowPeekContinuityEventTimingCapacity)
         cell->event_timing_dropped++;
-        return;
-    }
     entry = &cell->event_timing[index];
     entry->write_seq++;
     entry->generation = generation;
@@ -115,7 +121,7 @@ static void record_button_timing(NowPeekContinuityCell *cell,
     entry->event_h = 0;
     entry->event_v = 0;
     entry->write_seq++;
-    cell->event_timing_count = index + 1u;
+    cell->event_timing_count++;
 }
 
 static int resolve_call_upp(void)

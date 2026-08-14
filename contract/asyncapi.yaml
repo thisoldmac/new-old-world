@@ -2233,6 +2233,19 @@ components:
             guest ticks between manager downs, which a stock 32-tick
             DoubleTime can never recognize; the recognition window is the
             only half of that comparison Continuity can honestly control.
+        interruptPress:
+          type: boolean
+          default: false
+          description: >
+            Experiment, host-selected, off by default, and the riskiest
+            input option in this contract. When a second press sits
+            deferred behind an unsettled manager-up, the resident's
+            interrupt timer delivers the completed pair itself - mouseUp
+            event, MBState down, mouseDown event - because the Finder
+            pairs clicks by its own clock at processing time and no
+            task-time route can enter the queue while it processes the
+            first click. The pending manager-up is canceled and the
+            manager ledger reconciles at the next task-time boundary.
         compressClickWhen:
           type: boolean
           default: false

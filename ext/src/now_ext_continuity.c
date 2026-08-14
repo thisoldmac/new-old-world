@@ -249,6 +249,7 @@ static void request_button(NowPeekContinuityCell *cell,
    chain resets whenever a gap falls outside the wide window, so unrelated
    clicks keep their real spacing. */
 static volatile unsigned char gCompressClickWhen = 0;
+static volatile unsigned char gInterruptPress = 0;
 static NowPeekU32 gLastShapedWhen = 0;
 static unsigned char gLastShapedWasDown = 0;
 
@@ -258,6 +259,9 @@ void now_ext_continuity_configure_compression(NowPeekU32 options)
 {
     gCompressClickWhen =
         (options & (NowPeekU32)kNowPeekContinuityTrackingCompressClickWhen)
+            != 0;
+    gInterruptPress =
+        (options & (NowPeekU32)kNowPeekContinuityTrackingInterruptPress)
             != 0;
     gLastShapedWhen = 0;
     gLastShapedWasDown = 0;
@@ -611,6 +615,80 @@ static void apply_button_edge(NowPeekContinuityCell *cell,
     }
 }
 
+/* THE ONE PLACE THE RESIDENT PRESSES, AND WHY THE TABOO BENT.
+   Every rule this file ever pinned said the resident never calls the Event
+   Manager and never writes MBState down - and those pins were right until
+   the measurement that ended them: the Finder pairs clicks by ITS OWN
+   CLOCK at processing time, not by event.when. A synthetic pair whose
+   `when`s read 8 ticks apart still failed while its dequeue spacing was
+   54 ticks (2026-08-13 225207), because during the Finder's own click
+   processing NOTHING cooperative runs anywhere - not this application,
+   not another pump, no jGNE - so the second press cannot enter the queue
+   by any task-time route before the Finder's stopwatch runs out.
+   Interrupt time is the only context left, and the keyboard plane has
+   posted from resident context since it shipped (PPostEvent is the OS
+   Event Manager's documented interrupt-safe entry - device drivers post
+   with it). The safety that made the old pins necessary now exists
+   elsewhere: the two-slot interrupt release, the unconditional MBState-up
+   on every exit, the manager-ledger corrective (fired live tonight), and
+   the host's cycle abandon. Option-gated, off by default, and the pins
+   were NARROWED to confine presses to this function rather than deleted.
+
+   Sequence: complete click 1's event stream (the manager up is canceled,
+   so its PostEvent will never run), then press: MBState down, tracking
+   point, mouseDown event. The manager ledger stays down from click 1's
+   ButtonDown until click 2's normal manager up balances it. Returns 1
+   when it delivered, so the tick keeps the timer alive in the held
+   state. */
+static int deliver_deferred_press_interrupt(NowPeekContinuityCell *cell,
+                                            NowPeekU32 ticks)
+{
+    EvQElPtr element = NULL;
+    Point pt;
+    NowPeekU32 generation;
+    OSErr err;
+
+    if (!gInterruptPress || gDeferredPressGeneration == 0)
+        return 0;
+    /* A service invoke mid-run may be about to publish the manager-up
+       result; let the task-time path finish what it started. */
+    if ((cell->status_seq & 1u) != 0)
+        return 0;
+    if (cell->event_request_generation != 0
+            && cell->event_result_generation
+                == cell->event_request_generation
+            && cell->event_result_down == cell->event_request_down)
+        return 0;
+    generation = gDeferredPressGeneration;
+    /* Click 1's up event, which the canceled manager op will never post.
+       MBState is already up; btnState in the queue element agrees. */
+    err = PPostEvent(mouseUp, 0, &element);
+    if (err == noErr && element != NULL)
+        element->evtQModifiers = (short)0x0080;
+    cell->event_request_generation = 0;
+    cell->pending_mouseup = 0;
+    /* The press: state first, then the event, the order the real driver
+       uses. The queue element takes its point from the mouse global. */
+    pt.h = (short)cell->want_h;
+    pt.v = (short)cell->want_v;
+    LMSetMouseLocation(pt);
+    now_ext_cursor_remember_continuity_tracking_point(
+        cell->want_h, cell->want_v);
+    LMSetMouseButtonState(0x00);
+    now_ext_cursor_remember_continuity_button(1u);
+    err = PPostEvent(mouseDown, 0, &element);
+    if (err == noErr && element != NULL)
+        element->evtQModifiers = 0;
+    cell->button_down = 1;
+    cell->applied_button_generation = generation;
+    gDeferredPressGeneration = 0;
+    gNativeInputSeq = native_input_sequence(cell);
+    gNativeInputBaseline = gNativeInputSeq;
+    trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceInterruptPress,
+                ticks, (NowPeekI32)generation, (NowPeekI32)ticks);
+    return 1;
+}
+
 /* Raw 68K entry published in the V3 cell. It is not a PPC function pointer:
    the application wraps the address in a kM68kISA|kOld68kRTA descriptor and
    calls it variadically through CallUniversalProc. No args keeps the ABI seam
@@ -884,6 +962,11 @@ void now_ext_continuity_tick(TMTaskPtr task)
     if (!cell->button_down) {
         if (!cell->pending_mouseup) {
             gButtonTaskRunning = false;
+            return;
+        }
+        if (deliver_deferred_press_interrupt(cell, ticks)) {
+            PrimeTime((QElemPtr)&gButtonTask.task,
+                      (long)kNowPeekContinuityTickMs);
             return;
         }
         if ((NowPeekU32)(ticks - gReleaseSettleStarted)

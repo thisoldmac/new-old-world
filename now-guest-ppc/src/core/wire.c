@@ -6891,6 +6891,8 @@ static void serve_continuity_arm(const char *request)
         tracking_options |= kNowPeekContinuityTrackingSettleIdleCursor;
     if (now_json_find_bool(request, "compressClickWhen", 0))
         tracking_options |= kNowPeekContinuityTrackingCompressClickWhen;
+    if (now_json_find_bool(request, "interruptPress", 0))
+        tracking_options |= kNowPeekContinuityTrackingInterruptPress;
     result = now_continuity_arm(id, g.port, nonce_hi, nonce_lo, epoch,
                                 hz, lease, fast_pump, tracking_options);
     if (result == kNowContinuityArmUnsupported)
