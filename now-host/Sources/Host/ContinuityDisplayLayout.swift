@@ -10,20 +10,24 @@ import Foundation
    why the module split removed the mode rather than keeping a narrowing
    enum for it. */
 
-enum GuestDisplayScale: Double, CaseIterable, Identifiable, Sendable {
-    case half = 0.5
-    case actual = 1
-    case double = 2
-    case quadruple = 4
+/* The arrangement is sized by INTENT, not by a number. A numeric zoom asked
+   a person to solve "which of 50/100/200/400 makes my 640x480 guest meet the
+   side of this display", which has no right answer on most arrangements and
+   a different one on every host. The two states below are the only two
+   answers anybody wanted: leave it true-size, or make it meet the edge. */
+enum GuestDisplayScaleMode: String, CaseIterable, Identifiable, Sendable {
+    /// The guest occupies its true pixel size — the old 100% scale.
+    case native
+    /// The guest is scaled up until its attached edge spans the whole host
+    /// edge. Derived, not stored: see `ContinuityDisplayGeometry.fitScale`.
+    case fit
 
-    var id: Double { rawValue }
+    var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .half: return "50%"
-        case .actual: return "100%"
-        case .double: return "200%"
-        case .quadruple: return "400%"
+        case .native: return "Native"
+        case .fit: return "Fit"
         }
     }
 }
@@ -55,12 +59,38 @@ enum ContinuityDisplayGeometry {
 
     static func defaultGuestOrigin(hosts: [HostDisplayDescriptor],
                                    guestSize: CGSize,
-                                   scale: GuestDisplayScale) -> CGPoint {
+                                   scale: CGFloat) -> CGPoint {
         guard let host = hosts.max(by: { $0.frame.maxX < $1.frame.maxX }) else {
             return .zero
         }
-        let height = guestSize.height * scale.rawValue
+        let height = guestSize.height * scale
         return CGPoint(x: host.frame.maxX, y: host.frame.maxY - height)
+    }
+
+    /// The factor which makes the guest's attached edge span the whole of the
+    /// host edge it touches. The shared edge decides the AXIS: a vertical
+    /// shared edge (the guest's left or right side) matches heights, a
+    /// horizontal one (top or bottom) matches widths.
+    ///
+    /// Two deliberate floors. Without a shared edge there is nothing to match,
+    /// so Fit is Native until the guest is attached. And the result never goes
+    /// below 1: a guest whose edge is already longer than the host's stays at
+    /// its true pixel size rather than being shrunk, because shrinking throws
+    /// away guest pixels the mirror is still delivering, and "Fit" was asked
+    /// for to reach the edge, not to hide detail.
+    static func fitScale(guestSize: CGSize,
+                         edge: ContinuitySharedEdge?) -> CGFloat {
+        guard let edge, guestSize.width > 0, guestSize.height > 0 else {
+            return 1
+        }
+        let matched: CGFloat
+        switch edge.guestSide {
+        case .left, .right:
+            matched = edge.host.frame.height / guestSize.height
+        case .bottom, .top:
+            matched = edge.host.frame.width / guestSize.width
+        }
+        return max(1, matched)
     }
 
     static func sharedEdge(hosts: [HostDisplayDescriptor], guest: CGRect)
@@ -104,11 +134,11 @@ enum ContinuityDisplayGeometry {
     }
 
     static func snappedOrigin(proposed: CGPoint, guestSize: CGSize,
-                              scale: GuestDisplayScale,
+                              scale: CGFloat,
                               hosts: [HostDisplayDescriptor],
                               threshold: CGFloat = 48) -> CGPoint {
-        let size = CGSize(width: guestSize.width * scale.rawValue,
-                          height: guestSize.height * scale.rawValue)
+        let size = CGSize(width: guestSize.width * scale,
+                          height: guestSize.height * scale)
         let raw = CGRect(origin: proposed, size: size)
         var answers: [(distance: CGFloat, aligned: Bool, origin: CGPoint)] = []
 
@@ -154,10 +184,10 @@ enum ContinuityDisplayGeometry {
     }
 
     static func resolvedOrigin(proposed: CGPoint, previous: CGPoint,
-                               guestSize: CGSize, scale: GuestDisplayScale,
+                               guestSize: CGSize, scale: CGFloat,
                                hosts: [HostDisplayDescriptor]) -> CGPoint {
-        let size = CGSize(width: guestSize.width * scale.rawValue,
-                          height: guestSize.height * scale.rawValue)
+        let size = CGSize(width: guestSize.width * scale,
+                          height: guestSize.height * scale)
         let snapped = snappedOrigin(proposed: proposed, guestSize: guestSize,
                                     scale: scale, hosts: hosts)
         if collisionFree(CGRect(origin: snapped, size: size), hosts: hosts) {
@@ -202,25 +232,24 @@ enum ContinuityDisplayGeometry {
                                 edge: ContinuitySharedEdge,
                                 guestFrame: CGRect,
                                 guestPixels: CGSize,
-                                scale: GuestDisplayScale) -> CGPoint {
-        let factor = CGFloat(scale.rawValue)
+                                scale: CGFloat) -> CGPoint {
         let insetX = min(entryInsetPixels, max(0, guestPixels.width - 1))
         let insetY = min(entryInsetPixels, max(0, guestPixels.height - 1))
         switch edge.guestSide {
         case .left:
             return CGPoint(x: insetX,
-                           y: clamped((guestFrame.maxY - hostPoint.y) / factor,
+                           y: clamped((guestFrame.maxY - hostPoint.y) / scale,
                                       upper: guestPixels.height - 1))
         case .right:
             return CGPoint(x: max(0, guestPixels.width - 1 - insetX),
-                           y: clamped((guestFrame.maxY - hostPoint.y) / factor,
+                           y: clamped((guestFrame.maxY - hostPoint.y) / scale,
                                       upper: guestPixels.height - 1))
         case .bottom:
-            return CGPoint(x: clamped((hostPoint.x - guestFrame.minX) / factor,
+            return CGPoint(x: clamped((hostPoint.x - guestFrame.minX) / scale,
                                       upper: guestPixels.width - 1),
                            y: max(0, guestPixels.height - 1 - insetY))
         case .top:
-            return CGPoint(x: clamped((hostPoint.x - guestFrame.minX) / factor,
+            return CGPoint(x: clamped((hostPoint.x - guestFrame.minX) / scale,
                                       upper: guestPixels.width - 1),
                            y: insetY)
         }
@@ -229,24 +258,23 @@ enum ContinuityDisplayGeometry {
     static func hostReturnPoint(for guestPoint: CGPoint,
                                 edge: ContinuitySharedEdge,
                                 guestFrame: CGRect,
-                                scale: GuestDisplayScale) -> CGPoint {
-        let factor = CGFloat(scale.rawValue)
+                                scale: CGFloat) -> CGPoint {
         switch edge.guestSide {
         case .left:
             return CGPoint(x: edge.host.frame.maxX - 1,
                            y: edge.overlap.clamped(
-                            guestFrame.maxY - guestPoint.y * factor))
+                            guestFrame.maxY - guestPoint.y * scale))
         case .right:
             return CGPoint(x: edge.host.frame.minX + 1,
                            y: edge.overlap.clamped(
-                            guestFrame.maxY - guestPoint.y * factor))
+                            guestFrame.maxY - guestPoint.y * scale))
         case .bottom:
             return CGPoint(x: edge.overlap.clamped(
-                            guestFrame.minX + guestPoint.x * factor),
+                            guestFrame.minX + guestPoint.x * scale),
                            y: edge.host.frame.maxY - 1)
         case .top:
             return CGPoint(x: edge.overlap.clamped(
-                            guestFrame.minX + guestPoint.x * factor),
+                            guestFrame.minX + guestPoint.x * scale),
                            y: edge.host.frame.minY + 1)
         }
     }
@@ -310,14 +338,22 @@ enum ContinuityDisplayGeometry {
 final class ContinuityDisplayLayout: ObservableObject {
     @Published private(set) var hostDisplays: [HostDisplayDescriptor]
     @Published private(set) var guestSize: CGSize
-    @Published private(set) var guestScale: GuestDisplayScale
+    @Published private(set) var scaleMode: GuestDisplayScaleMode
+    /// The factor actually applied to `guestSize` — 1 under Native, derived
+    /// from the shared edge under Fit. Everything downstream (the arrangement
+    /// frame, the snapping, and the pointer/edge mapping in
+    /// `ContinuityEdgeController`) reads THIS and not the mode, so Fit is a
+    /// real coordinate scale rather than a drawing trick.
+    @Published private(set) var guestScale: CGFloat
     @Published private(set) var guestOrigin: CGPoint
 
     private let defaults: UserDefaults?
     private let displayProvider: @MainActor () -> [HostDisplayDescriptor]
     private var screenSubscription: AnyCancellable?
 
-    private static let scaleKey = "mirror.continuity.guestDisplayScale"
+    private static let scaleModeKey = "mirror.continuity.guestDisplayScaleMode"
+    /// The numeric zoom this pill replaced. Read once, only to be discarded.
+    private static let legacyScaleKey = "mirror.continuity.guestDisplayScale"
     private static let originXKey = "mirror.continuity.guestDisplayOriginX"
     private static let originYKey = "mirror.continuity.guestDisplayOriginY"
     private static let hasOriginKey = "mirror.continuity.hasGuestDisplayOrigin"
@@ -334,13 +370,23 @@ final class ContinuityDisplayLayout: ObservableObject {
         let resolvedGuestSize = Self.validGuestSize(guestSize)
         self.hostDisplays = resolvedHosts
         self.guestSize = resolvedGuestSize
-        let resolvedScale: GuestDisplayScale
-        if let raw = defaults?.double(forKey: Self.scaleKey),
-           let stored = GuestDisplayScale(rawValue: raw), raw != 0 {
-            resolvedScale = stored
-        } else {
-            resolvedScale = .actual
+        /* Migration: a stored numeric zoom becomes Native, whatever number it
+           held. 200% is not "Fit" on some other arrangement and 50% has no
+           successor at all, so there is no honest mapping from the old value
+           to the new pair — and Native is the one state that means the same
+           thing it always did (the old 100%). The stale key is removed so the
+           next launch takes the ordinary path. */
+        let storedMode = defaults?.string(forKey: Self.scaleModeKey)
+            .flatMap(GuestDisplayScaleMode.init(rawValue:))
+        if storedMode == nil, defaults?.object(forKey: Self.legacyScaleKey) != nil {
+            defaults?.removeObject(forKey: Self.legacyScaleKey)
         }
+        let resolvedMode = storedMode ?? .native
+        scaleMode = resolvedMode
+        /* Fit needs a shared edge to derive from and the edge needs a frame,
+           so the guest starts at its native size and the fit factor is taken
+           below, once there is a resolved placement to read an edge from. */
+        let resolvedScale: CGFloat = 1
         guestScale = resolvedScale
         if defaults?.bool(forKey: Self.hasOriginKey) == true {
             guestOrigin = CGPoint(
@@ -358,6 +404,7 @@ final class ContinuityDisplayLayout: ObservableObject {
             proposed: guestOrigin, previous: safeDefault,
             guestSize: resolvedGuestSize, scale: resolvedScale,
             hosts: resolvedHosts)
+        applyFitScaleIfNeeded()
         if observeScreens {
             screenSubscription = NotificationCenter.default.publisher(
                 for: NSApplication.didChangeScreenParametersNotification)
@@ -369,8 +416,8 @@ final class ContinuityDisplayLayout: ObservableObject {
 
     var guestFrame: CGRect {
         CGRect(origin: guestOrigin,
-               size: CGSize(width: guestSize.width * guestScale.rawValue,
-                            height: guestSize.height * guestScale.rawValue))
+               size: CGSize(width: guestSize.width * guestScale,
+                            height: guestSize.height * guestScale))
     }
 
     var sharedEdge: ContinuitySharedEdge? {
@@ -393,6 +440,9 @@ final class ContinuityDisplayLayout: ObservableObject {
                 hosts: refreshed, guestSize: guestSize, scale: guestScale)
             persistOrigin()
         }
+        // A display can change size without the guest moving, and Fit is a
+        // function of the host edge it is attached to.
+        applyFitScaleIfNeeded()
     }
 
     func updateGuestSize(_ proposed: CGSize) {
@@ -405,6 +455,8 @@ final class ContinuityDisplayLayout: ObservableObject {
         guestOrigin = ContinuityDisplayGeometry.resolvedOrigin(
             proposed: guestOrigin, previous: oldFrame.origin,
             guestSize: guestSize, scale: guestScale, hosts: hostDisplays)
+        // The guest's own resolution changed, so the fit factor did too.
+        applyFitScaleIfNeeded()
         persistOrigin()
     }
 
@@ -418,10 +470,33 @@ final class ContinuityDisplayLayout: ObservableObject {
         guestOrigin = ContinuityDisplayGeometry.resolvedOrigin(
             proposed: guestOrigin, previous: guestOrigin,
             guestSize: guestSize, scale: guestScale, hosts: hostDisplays)
+        // The attachment settled here: a different edge, or a different host
+        // on the same side, is a different fit. Deliberately not during the
+        // drag - resizing the tile under the pointer fights the gesture.
+        applyFitScaleIfNeeded()
         persistOrigin()
     }
 
-    func selectScale(_ scale: GuestDisplayScale) {
+    func selectScaleMode(_ mode: GuestDisplayScaleMode) {
+        guard mode != scaleMode else { return }
+        scaleMode = mode
+        defaults?.set(mode.rawValue, forKey: Self.scaleModeKey)
+        switch mode {
+        case .native: apply(scale: 1)
+        case .fit: applyFitScaleIfNeeded()
+        }
+        persistOrigin()
+    }
+
+    private func applyFitScaleIfNeeded() {
+        guard scaleMode == .fit else { return }
+        apply(scale: ContinuityDisplayGeometry.fitScale(guestSize: guestSize,
+                                                        edge: sharedEdge))
+    }
+
+    /// Changing the scale keeps the ATTACHED edge where it is and grows away
+    /// from it, so a resize never silently detaches the guest.
+    private func apply(scale: CGFloat) {
         guard scale != guestScale else { return }
         let oldEdge = sharedEdge
         let oldFrame = guestFrame
@@ -430,8 +505,6 @@ final class ContinuityDisplayLayout: ObservableObject {
         guestOrigin = ContinuityDisplayGeometry.resolvedOrigin(
             proposed: guestOrigin, previous: oldFrame.origin,
             guestSize: guestSize, scale: guestScale, hosts: hostDisplays)
-        defaults?.set(scale.rawValue, forKey: Self.scaleKey)
-        persistOrigin()
     }
 
     private func preserve(edge: ContinuitySharedEdge?, oldFrame: CGRect) {

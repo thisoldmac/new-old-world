@@ -41,13 +41,12 @@ struct ContinuityDisplayLayoutView: View {
                 Text("Layout scale")
                     .font(.headline)
                 HStack(spacing: 4) {
-                    ForEach(GuestDisplayScale.allCases) { scale in
-                        Button(scale.label) { layout.selectScale(scale) }
+                    ForEach(GuestDisplayScaleMode.allCases) { mode in
+                        Button(mode.label) { layout.selectScaleMode(mode) }
                             .buttonStyle(ContinuityChoiceButtonStyle(
-                                selected: layout.guestScale == scale))
+                                selected: layout.scaleMode == mode))
                     }
                 }
-                .frame(maxWidth: 320)
                 Spacer()
             }
 
@@ -168,7 +167,7 @@ private struct ContinuityArrangementCanvas: View {
                 Text(guestName)
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
-                Text("Guest · \(layout.guestScale.label)")
+                Text("Guest · \(layout.scaleMode.label)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

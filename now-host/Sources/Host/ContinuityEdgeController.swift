@@ -275,7 +275,7 @@ final class ContinuityEdgeController: ObservableObject {
             pinHostCursor(for: ownership)
             return
         }
-        let factor = CGFloat(layout.guestScale.rawValue)
+        let factor = layout.guestScale
         let next = CGPoint(
             x: ownership.guestPoint.x + sample.delta.x / factor,
             y: ownership.guestPoint.y - sample.delta.y / factor)
