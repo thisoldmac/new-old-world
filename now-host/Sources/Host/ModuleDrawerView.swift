@@ -11,6 +11,7 @@ struct ModuleDrawerView: View {
     let dragActions: SidebarNavigationDragActions
     var openShelf: ((NavigationShelf) -> Void)? = nil
     let select: (NavigationSelection) -> Void
+    @State private var isHovering = false
 
     private var summary: NavigationDrawerSummary {
         NavigationDrawerSummary(items: items)
@@ -46,6 +47,13 @@ struct ModuleDrawerView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(isHovering
+                      ? Color(nsColor: .selectedContentBackgroundColor)
+                          .opacity(0.10)
+                      : .clear))
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .help("Modules Drawer")
         .overlay(SidebarNativeDragSurface(
             payload: nil,
@@ -54,7 +62,8 @@ struct ModuleDrawerView: View {
             previewDrop: dragActions.previewDrop,
             performDrop: dragActions.performDrop,
             activate: { isPresented.toggle() },
-            springLoad: { isPresented = true }))
+            springLoad: { isPresented = true },
+            hoverChanged: { isHovering = $0 }))
         .popover(isPresented: $isPresented, arrowEdge: .trailing) {
             drawerContents
         }

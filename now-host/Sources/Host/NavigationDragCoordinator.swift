@@ -408,7 +408,8 @@ extension NavigationDropTarget {
         switch self {
         case .module: true
         case .zone(.drawer, _): true
-        case .zone, .shelf: false
+        case .shelf: true
+        case .zone: false
         }
     }
 }

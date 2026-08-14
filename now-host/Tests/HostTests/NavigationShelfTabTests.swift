@@ -184,10 +184,64 @@ final class NavigationShelfTabTests: XCTestCase {
 
         XCTAssertTrue(dragSurface.contains(
             "let image = renderedElementSnapshot()"))
+        XCTAssertTrue(dragSurface.contains(
+            "effectiveAppearance.performAsCurrentDrawingAppearance"))
+        XCTAssertFalse(dragSurface.contains(
+            "NSApp.effectiveAppearance.performAsCurrentDrawingAppearance"))
         XCTAssertTrue(dragSurface.contains("cacheDisplay(in: sourceRect"))
         XCTAssertFalse(dragSurface.contains("NSImage(systemSymbolName:"))
         XCTAssertFalse(dragSurface.contains("private func dragImage(for payload"))
         XCTAssertFalse(dragSurface.contains("width: 24, height: 24"))
+    }
+
+    func testClosedShelfRowsSpringOpenForIndexedModuleDrops() throws {
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNavigationContent.swift")
+        let dragSurface = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNativeDragSurface.swift")
+
+        XCTAssertTrue(sidebar.contains(
+            "springLoad: { activate(shelfSelection) }"))
+        XCTAssertTrue(dragSurface.contains(
+            "configuration?.springLoad != nil"))
+    }
+
+    func testNativeDragOverlayPublishesReliableHoverChanges() throws {
+        let dragSurface = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNativeDragSurface.swift")
+
+        XCTAssertTrue(dragSurface.contains("var hoverChanged: ((Bool) -> Void)?"))
+        XCTAssertTrue(dragSurface.contains("NSTrackingArea("))
+        XCTAssertTrue(dragSurface.contains("configuration?.hoverChanged?(true)"))
+        XCTAssertTrue(dragSurface.contains("configuration?.hoverChanged?(false)"))
+    }
+
+    func testInteractiveNavigationChromeUsesNativeHoverTracking() throws {
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNavigationContent.swift")
+        let tabs = try GateSource.hostSwift(
+            "now-host/Sources/Host/ShelfDetailView.swift")
+        let drawer = try GateSource.hostSwift(
+            "now-host/Sources/Host/ModuleDrawerView.swift")
+
+        XCTAssertGreaterThanOrEqual(
+            sidebar.components(separatedBy: "hoverChanged:").count, 3)
+        XCTAssertTrue(tabs.contains("hoverChanged: { isHovering = $0 }"))
+        XCTAssertTrue(drawer.contains("hoverChanged: { isHovering = $0 }"))
+    }
+
+    func testShelvesRemainSelectableRowsWithDistinctSystemGlass() throws {
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNavigationContent.swift")
+        let glass = try GateSource.hostSwift(
+            "now-host/Sources/Host/GlassStyle.swift")
+
+        XCTAssertTrue(sidebar.contains("kind: .shelf"))
+        XCTAssertTrue(sidebar.contains("Color.clear.nowGlassShelf()"))
+        XCTAssertTrue(glass.contains("func nowGlassShelf("))
+        XCTAssertTrue(glass.contains("content.glassEffect(.clear"))
+        XCTAssertTrue(glass.contains("content.background(.thinMaterial"))
+        XCTAssertFalse(sidebar.contains("Section(header:"))
     }
 
     func testNativeHoverReflowsStableRowsAndCancelRestoresTheLayout() throws {

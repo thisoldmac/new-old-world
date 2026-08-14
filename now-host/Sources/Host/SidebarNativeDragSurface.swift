@@ -15,6 +15,7 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
     var dragEnded: ((NavigationDraggedItem) -> Void)?
     var activate: (() -> Void)?
     var springLoad: (() -> Void)?
+    var hoverChanged: ((Bool) -> Void)?
     var menuItems: [SidebarNativeMenuItem] = []
 
     func makeNSView(context: Context) -> NativeNavigationDragView {
@@ -37,6 +38,7 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
             dragEnded: dragEnded,
             activate: activate,
             springLoad: springLoad,
+            hoverChanged: hoverChanged,
             menuItems: menuItems)
     }
 }
@@ -58,6 +60,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         let dragEnded: ((NavigationDraggedItem) -> Void)?
         let activate: (() -> Void)?
         let springLoad: (() -> Void)?
+        let hoverChanged: ((Bool) -> Void)?
         let menuItems: [SidebarNativeMenuItem]
     }
 
@@ -68,6 +71,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     private var mouseDownEvent: NSEvent?
     private var beganDrag = false
     private var feedback = NavigationDragFeedbackState()
+    private var hoverTrackingArea: NSTrackingArea?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -86,6 +90,36 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     override var isFlipped: Bool { true }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow,
+                      .inVisibleRect],
+            owner: self,
+            userInfo: nil)
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+        super.updateTrackingAreas()
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            configuration?.hoverChanged?(false)
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        configuration?.hoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        configuration?.hoverChanged?(false)
+    }
 
     override func mouseDown(with event: NSEvent) {
         mouseDownEvent = event
@@ -203,6 +237,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     func springLoadingEntered(_ draggingInfo: any NSDraggingInfo)
         -> NSSpringLoadingOptions {
         guard accepted(draggingInfo) != nil,
+              configuration?.springLoad != nil,
               configuration?.target?.supportsSpringLoading == true else {
             return []
         }
@@ -251,12 +286,16 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         guard !bounds.isEmpty,
               let contentView = window?.contentView else { return nil }
         let sourceRect = convert(bounds, to: contentView)
-        guard let representation = contentView
-            .bitmapImageRepForCachingDisplay(in: sourceRect) else { return nil }
-        contentView.cacheDisplay(in: sourceRect, to: representation)
-        let image = NSImage(size: sourceRect.size)
-        image.addRepresentation(representation)
-        return image
+        var snapshot: NSImage?
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            guard let representation = contentView
+                .bitmapImageRepForCachingDisplay(in: sourceRect) else { return }
+            contentView.cacheDisplay(in: sourceRect, to: representation)
+            let image = NSImage(size: sourceRect.size)
+            image.addRepresentation(representation)
+            snapshot = image
+        }
+        return snapshot
     }
 
     private func showConfiguredMenu(with event: NSEvent) {

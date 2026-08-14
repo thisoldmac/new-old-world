@@ -88,6 +88,13 @@ extension View {
     func nowGlassButton() -> some View {
         modifier(NowGlassButton())
     }
+
+    /// A quiet navigation surface for a shelf row. Shelves are destinations,
+    /// not source-list group headers, so they keep ordinary row semantics and
+    /// use a restrained material difference to communicate containment.
+    func nowGlassShelf(cornerRadius: CGFloat = 8) -> some View {
+        modifier(NowGlassShelf(cornerRadius: cornerRadius))
+    }
 }
 
 /// Whether the person has asked the system to stop rendering translucency.
@@ -202,6 +209,36 @@ private struct NowGlassButton: ViewModifier {
         }
 #else
         content.buttonStyle(.bordered)
+#endif
+    }
+}
+
+private struct NowGlassShelf: ViewModifier {
+    let cornerRadius: CGFloat
+
+    @Environment(\.accessibilityReduceTransparency) private var reduce
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.nowLiquidGlassPreference) private var preference
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius,
+                                     style: .continuous)
+#if compiler(>=6.2)
+        if #available(macOS 26, *),
+           GlassSelection.resolve(
+               preference: preference,
+               supportsLiquidGlass: true,
+               reduceTransparency: reduce,
+               increasedContrast: contrast == .increased) != .material {
+            // Clear glass keeps a shelf quieter than the floating panels and
+            // bars around it while still letting macOS own its material.
+            content.glassEffect(.clear, in: shape)
+        } else {
+            content.background(.thinMaterial, in: shape)
+        }
+#else
+        content.background(.thinMaterial, in: shape)
 #endif
     }
 }

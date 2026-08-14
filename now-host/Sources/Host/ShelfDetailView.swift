@@ -68,12 +68,13 @@ private struct ShelfPillRow: View {
     var body: some View {
         HStack(spacing: 3) {
             ForEach(tabs) { tab in
-                ShelfPillButton(
+                ShelfPillItem(
+                    shelfID: shelfID,
                     tab: tab,
                     isSelected: tab.selection.destination
                         == selectedDestination,
+                    dragActions: dragActions,
                     select: { select(tab.selection) })
-                    .overlay(tabDragSurface(tab))
             }
             ShelfPillDropSlot(
                 target: .shelf(shelfID, beforeModuleID: nil),
@@ -83,19 +84,36 @@ private struct ShelfPillRow: View {
         .background(.bar, in: Capsule())
         .animation(.easeInOut(duration: 0.16), value: tabs)
     }
+}
 
-    @ViewBuilder
-    private func tabDragSurface(_ tab: NavigationShelfTab) -> some View {
-        if let moduleID = tab.moduleID {
-            SidebarNativeDragSurface(
-                payload: .module(moduleID),
-                target: .shelf(shelfID, beforeModuleID: moduleID),
-                canDrop: dragActions.canDrop,
-                previewDrop: dragActions.previewDrop,
-                performDrop: dragActions.performDrop,
-                dragEnded: dragActions.dragEnded,
-                activate: { select(tab.selection) })
-        }
+private struct ShelfPillItem: View {
+    let shelfID: NavigationShelfID
+    let tab: NavigationShelfTab
+    let isSelected: Bool
+    let dragActions: SidebarNavigationDragActions
+    let select: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        ShelfPillButton(
+            tab: tab,
+            isSelected: isSelected,
+            isHovering: isHovering,
+            select: select)
+            .overlay {
+                if let moduleID = tab.moduleID {
+                    SidebarNativeDragSurface(
+                        payload: .module(moduleID),
+                        target: .shelf(shelfID,
+                                       beforeModuleID: moduleID),
+                        canDrop: dragActions.canDrop,
+                        previewDrop: dragActions.previewDrop,
+                        performDrop: dragActions.performDrop,
+                        dragEnded: dragActions.dragEnded,
+                        activate: select,
+                        hoverChanged: { isHovering = $0 })
+                }
+            }
     }
 }
 
@@ -118,6 +136,7 @@ private struct ShelfPillDropSlot: View {
 private struct ShelfPillButton: View {
     let tab: NavigationShelfTab
     let isSelected: Bool
+    let isHovering: Bool
     let select: () -> Void
 
     var body: some View {
@@ -131,12 +150,22 @@ private struct ShelfPillButton: View {
         }
         .buttonStyle(.plain)
         .background(
-            Capsule().fill(isSelected
-                           ? Color(nsColor: .selectedContentBackgroundColor)
-                           : .clear))
+            Capsule().fill(backgroundColor))
         .foregroundStyle(isSelected
                          ? Color(nsColor: .alternateSelectedControlTextColor)
                          : Color.primary)
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return Color(nsColor: .selectedContentBackgroundColor)
+        }
+        if isHovering {
+            return Color(nsColor: .selectedContentBackgroundColor)
+                .opacity(0.12)
+        }
+        return .clear
     }
 }

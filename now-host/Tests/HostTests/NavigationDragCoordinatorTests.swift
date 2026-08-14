@@ -272,9 +272,16 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertFalse(NavigationSpringLoadActivation.shouldActivate(
             activated: true, acceptedTarget: target, feedback: &feedback))
 
-        var unsupportedFeedback = NavigationDragFeedbackState()
-        let unsupported = NavigationDropTarget.shelf(
+        var shelfFeedback = NavigationDragFeedbackState()
+        let shelf = NavigationDropTarget.shelf(
             .screen, beforeModuleID: nil)
+        shelfFeedback.enter(shelf)
+        XCTAssertTrue(NavigationSpringLoadActivation.shouldActivate(
+            activated: true, acceptedTarget: shelf,
+            feedback: &shelfFeedback))
+
+        var unsupportedFeedback = NavigationDragFeedbackState()
+        let unsupported = NavigationDropTarget.zone(.upper, index: 0)
         unsupportedFeedback.enter(unsupported)
         XCTAssertFalse(NavigationSpringLoadActivation.shouldActivate(
             activated: true, acceptedTarget: unsupported,

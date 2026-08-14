@@ -86,7 +86,12 @@ private struct SidebarWidth: ViewModifier {
 
     func body(content: Content) -> some View {
         if collapsed {
-            content.navigationSplitViewColumnWidth(64)
+            /* The full-size unified titlebar places AppKit's traffic lights
+               over the sidebar material. SwiftUI already expanded the old
+               64-point request to roughly 96 points, where the split divider
+               still clipped the zoom button. 136 points clears the native
+               control cluster without moving or restyling those controls. */
+            content.navigationSplitViewColumnWidth(136)
         } else {
             content.navigationSplitViewColumnWidth(min: 230, ideal: 265,
                                                    max: 320)
@@ -96,6 +101,7 @@ private struct SidebarWidth: ViewModifier {
 
 struct GuestSelectionMenu: View {
     @ObservedObject var listener: GuestListener
+    let status: GuestStatus
     let collapsed: Bool
     let select: (GuestKey) -> Void
     let add: () -> Void
@@ -122,24 +128,78 @@ struct GuestSelectionMenu: View {
             Button("Add Guest…", action: add)
         } label: {
             if collapsed {
-                Image(systemName: "desktopcomputer")
-                    .frame(width: 18, height: 18)
+                GuestSelectionCompactLabel(status: status)
             } else {
-                Label {
-                    Text(activeLabel)
-                        .lineLimit(1)
-                } icon: {
-                    Image(systemName: "desktopcomputer")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                GuestSelectionLabel(name: activeLabel, status: status)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .help("Choose the guest every host module is attached to")
+        .accessibilityLabel(
+            Text("Selected guest: \(activeLabel)",
+                 comment:
+                    "Label for the toolbar menu that chooses the classic Mac controlled by this window."))
+        .accessibilityValue(Text(status.menuLine))
     }
 
     private var activeLabel: String {
         listener.guests.first(where: \.isActive)?.label
             ?? "No Guest Attached"
+    }
+}
+
+private struct GuestSelectionLabel: View {
+    let name: String
+    let status: GuestStatus
+
+    var body: some View {
+        HStack(spacing: 7) {
+            GuestConnectionStatusDot(status: status)
+            Text(name)
+                .lineLimit(1)
+        }
+    }
+}
+
+private struct GuestSelectionCompactLabel: View {
+    let status: GuestStatus
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Image(systemName: "desktopcomputer")
+                .frame(width: 18, height: 18)
+            GuestConnectionStatusDot(status: status)
+                .background(Circle().fill(.background))
+                .offset(x: 2, y: 2)
+        }
+    }
+}
+
+private struct GuestConnectionStatusDot: View {
+    let status: GuestStatus
+
+    var body: some View {
+        Circle()
+            .fill(tint)
+            .frame(width: 8, height: 8)
+            .overlay {
+                Circle().strokeBorder(Color.primary.opacity(0.14),
+                                      lineWidth: 0.5)
+            }
+            .accessibilityHidden(true)
+    }
+
+    private var tint: Color {
+        switch status {
+        case .notListening:
+            Color(nsColor: .secondaryLabelColor)
+        case .waiting:
+            .orange
+        case .connected:
+            status.isQuiet ? .orange : .green
+        case .failed:
+            .red
+        }
     }
 }
 

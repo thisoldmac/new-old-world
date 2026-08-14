@@ -56,6 +56,7 @@ struct HostRootView: View {
         .toolbar {
             HostShellToolbar(
                 listener: state.listener,
+                monitor: state.guestStatus,
                 collapsed: sidebar.collapsed,
                 toggleCollapsed: { sidebar.collapsed.toggle() },
                 selectGuest: { state.selectGuest($0) },
@@ -140,6 +141,7 @@ struct HostRootView: View {
 /// remain system-owned. Module views below this shell do not participate.
 private struct HostShellToolbar: ToolbarContent {
     @ObservedObject var listener: GuestListener
+    @ObservedObject var monitor: GuestStatusMonitor
     let collapsed: Bool
     let toggleCollapsed: () -> Void
     let selectGuest: (GuestKey) -> Void
@@ -181,6 +183,7 @@ private struct HostShellToolbar: ToolbarContent {
     private var guestMenu: some View {
         GuestSelectionMenu(
             listener: listener,
+            status: monitor.status,
             collapsed: false,
             select: selectGuest,
             add: showConnections)

@@ -230,6 +230,7 @@ private struct SidebarNavigationItemView: View {
     let cancelShelfCreation: (NavigationShelfID) -> Void
     let openShelf: ((NavigationShelf) -> Void)?
     let select: (NavigationSelection) -> Void
+    @State private var isHovering = false
 
     var body: some View {
         switch item {
@@ -241,7 +242,8 @@ private struct SidebarNavigationItemView: View {
                     module: module,
                     compact: compact,
                     collapsed: collapsed,
-                    isSelected: selection.destination == .module(moduleID)) {
+                    isSelected: selection.destination == .module(moduleID),
+                    isHovering: isHovering) {
                         select(moduleSelection)
                     }
                     .overlay(SidebarNativeDragSurface(
@@ -253,7 +255,8 @@ private struct SidebarNavigationItemView: View {
                         dragEnded: dragActions.dragEnded,
                         activate: {
                             select(moduleSelection)
-                        }))
+                        },
+                        hoverChanged: { isHovering = $0 }))
             }
         case .shelf(let shelf):
             SidebarShelfRow(
@@ -278,6 +281,7 @@ private struct SidebarLooseModuleRow: View {
     let compact: Bool
     let collapsed: Bool
     let isSelected: Bool
+    let isHovering: Bool
     let select: () -> Void
 
     var body: some View {
@@ -310,7 +314,11 @@ private struct SidebarLooseModuleRow: View {
         .foregroundStyle(isSelected
                          ? Color(nsColor: .alternateSelectedControlTextColor)
                          : Color.primary)
-        .background(SidebarNavigationRowBackground(isSelected: isSelected))
+        .background(SidebarNavigationRowBackground(
+            kind: .module,
+            isSelected: isSelected,
+            isHovering: isHovering))
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityLabel(module.title)
         .help(collapsed || compact ? module.summary : "")
@@ -331,6 +339,7 @@ private struct SidebarShelfRow: View {
     let cancelShelfCreation: (NavigationShelfID) -> Void
     let openShelf: ((NavigationShelf) -> Void)?
     let select: (NavigationSelection) -> Void
+    @State private var isHovering = false
 
     var body: some View {
         let shelfSelection = NavigationSelection.selectingHero(of: shelf)
@@ -390,7 +399,11 @@ private struct SidebarShelfRow: View {
         .foregroundStyle(isSelected
                          ? Color(nsColor: .alternateSelectedControlTextColor)
                          : Color.primary)
-        .background(SidebarNavigationRowBackground(isSelected: isSelected))
+        .background(SidebarNavigationRowBackground(
+            kind: .shelf,
+            isSelected: isSelected,
+            isHovering: isHovering))
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .accessibilityAddTraits(
             selection.containingShelfID == shelf.id ? [.isSelected] : [])
         .accessibilityLabel(title)
@@ -404,7 +417,9 @@ private struct SidebarShelfRow: View {
                     previewDrop: dragActions.previewDrop,
                     performDrop: dragActions.performDrop,
                     dragEnded: dragActions.dragEnded,
-                    activate: { activate(shelfSelection) })
+                    activate: { activate(shelfSelection) },
+                    springLoad: { activate(shelfSelection) },
+                    hoverChanged: { isHovering = $0 })
             }
         }
     }
@@ -528,12 +543,39 @@ private struct SidebarNavigationIcon: View {
 }
 
 private struct SidebarNavigationRowBackground: View {
+    enum Kind {
+        case module
+        case shelf
+    }
+
+    let kind: Kind
     let isSelected: Bool
+    let isHovering: Bool
     @Environment(\.controlActiveState) private var controlActiveState
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(isSelected ? selectionColor : .clear)
+        ZStack {
+            if kind == .shelf && !isSelected {
+                Color.clear.nowGlassShelf()
+            }
+
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(backgroundColor)
+
+            if kind == .shelf && !isSelected {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
+            }
+        }
+    }
+
+    private var backgroundColor: Color {
+        if isSelected { return selectionColor }
+        if isHovering {
+            return Color(nsColor: .selectedContentBackgroundColor)
+                .opacity(kind == .shelf ? 0.14 : 0.10)
+        }
+        return .clear
     }
 
     private var selectionColor: Color {
