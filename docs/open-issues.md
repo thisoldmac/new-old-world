@@ -7,6 +7,59 @@ search:
 
 # Open issues
 
+## BUILDS AND TESTED, NEVER RUN ON ANY MACINTOSH: the Finder-selection stub and its gesture-scoped grab (2026-08-14, `feat/continuity-selection-stub`)
+
+Slices 2 and 3 of the cross-edge file drag plan. The contract gains
+`continuity.selection` (guest to host, unsolicited while an epoch is
+live) and `continuity.grab` (host to guest, answered through the
+existing file lane), and the PowerPC guest polls the Finder's selection
+and serves a grab against it.
+
+**Why a stub exists at all**, since it is the part that looks like extra
+machinery: during a drag the guest is unqueryable. The Finder sits in
+its own nested Drag Manager loop and will not answer an Apple Event
+until the gesture ends, so everything the host needs at cross-the-edge
+time has to be on the wire BEFORE the press. That makes selection, not
+the drag, the thing worth watching.
+
+**The consent boundary, decided and written down.** `file.get` is
+share-scoped and a Finder selection can name anything on the machine, so
+a grab is deliberately not a wider `file.get`: it names no path, only a
+generation the guest itself published, it must match the guest's CURRENT
+generation, and it dies with the epoch. The drag gesture is the consent,
+exactly as a host-to-guest drop already is. That argument is in
+`contract/asyncapi.yaml` beside the schema, where both halves read it.
+
+**What is proven and what is not, stated separately.**
+
+- Proven here: both guests cross-compile; `scripts/test-native` is
+  197/197; `now-host` is 2403/0. The stub table's change rule and all
+  four grab refusals are watched failing against their own mutations
+  (`now_continuity_selection_test.c`), and the poll's epoch gate, button
+  gate, caller and idle proc are watched failing against theirs
+  (`continuity_selection_gates_source_test.py`).
+- NOT proven, and this is the whole of the risk: **no Macintosh, real or
+  emulated, has ever run this code.** The Apple Event itself - a `getd`
+  of the `sele` property with `keyAERequestedType` of `typeAlias`, sent
+  to `MACS` - is the classic AppleScript idiom written in C, and it has
+  never been answered by an actual Finder. Whether the reply arrives as
+  an alias list, whether the `typeFSS` coercion or the `ResolveAlias`
+  fallback is the live path, and whether the 2-second bounded wait is
+  generous or tight are all UNMEASURED. The named log lines exist so the
+  first metal pass produces a symptom rather than a shrug, which is the
+  v1 post-mortem's one durable complaint.
+- Also unmeasured: the 90-tick cadence. It was chosen against the
+  measured neighbour - the host asks this guest for a scene every 0.75 s
+  while armed - rather than against an observed cost of the poll itself.
+
+**Deliberately not built.** The `icon` field is declared in the contract
+and sent by nothing: extraction from the desktop database costs more
+than the rest of the poll, so its shape is fixed and its work deferred.
+A multiple selection reports its FIRST item only. A folder grab is
+refused `folder-not-yet` by name; folders are slice 6. The host decodes
+the stub and does nothing with it - `Session.onContinuitySelection` is
+nil, which is why it is a `var` and not an init parameter.
+
 ## TESTED, NOT RELEASED OR METAL-VERIFIED: recorded bundle and update slice (2026-08-13, `codex/bundle-update-slice`)
 
 The alpha distribution now has one machine-readable profile and one curated
