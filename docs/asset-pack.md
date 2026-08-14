@@ -78,7 +78,7 @@ flowchart LR
 | Adapter | Source | Current state |
 |---|---|---|
 | **Stopped-volume** | Read-only HFS/HFS+ image and resource forks through `tools/extract-assets-offline` | Implemented; fastest deterministic bulk/reference route. |
-| **Connected guest** | Read-only fork-bearing `file.*` pulls from the machine NOW is connected to | Built and host-tested; **never yet run against a real Macintosh**. The Mirror module's Asset Packs card starts it, the host stages the pulled forks, and `tools/extract-assets-offline --from-tree` does the extraction. Per-machine pack KEYING is still unbuilt and still needs the `hello` contract change in [plan 021 §5.1.1](plans/2026-08-07-021-feat-asset-packs-plan.md). |
+| **Connected guest** | Read-only fork-bearing `file.*` pulls from the machine NOW is connected to | Built; **run against a PowerBook 1400c on 2026-08-14 and refused** — the machine shares a folder, so its System Folder was out of reach. No pack has been ingested from a Macintosh; only the refusal path has metal behind it. **Requires the classic Mac to share its whole disk** (see below). Per-machine pack KEYING is still unbuilt and still needs the `hello` contract change in [plan 021 §5.1.1](plans/2026-08-07-021-feat-asset-packs-plan.md). |
 | **Visual oracle derivation** | Receipt-bound SheepShaver/QEMU framebuffer regions declared by an explicit visual profile | Implemented for bounded, static marks and framebuffer proof; it is not a general screenshot-atlas path. |
 
 All three publish into the same external versioned pack shape and obey the
@@ -96,7 +96,30 @@ parser. `tools/extract-assets-offline --required-files` is the single
 statement of what a machine must hand over, so the fetching side keeps no
 second copy of the list.
 
-Measured on the OS 8.6 image, 2026-08-14: extracting from a full mount and
+**The connected route can only reach what the machine shares, and that is
+the thing to check first.** `file.get` resolves every path inside the
+folder the classic Mac is sharing. The share defaults to the volume root
+only when no folder has been chosen (`now_files_share_root` falls back to
+`fsRtDirID`); a working desk has chosen one — the 1400c shares `Lab`, where
+deploys land — and the System Folder is then simply not addressable. That
+is not a bug in the share, it is the share doing its job. So ingestion
+lists the share root first and refuses with the remedy before moving any
+bytes, rather than failing on the first pull.
+
+`file.get`'s `mirrorSource` CAN resolve an absolute HFS path outside the
+share — `now_files_mirror_stage` calls `absolute_folder`, which does an
+unconstrained `FSMakeFSSpec` with no containment check and no test that a
+Finder window is open. It is deliberately **not** used here: the contract
+scopes that field to "a source chosen by a person dragging an item out of
+Mirror" and states outright that it "is not a general absolute-path
+`file.get`". Reaching system files through it would make that sentence
+false. The gap between that prose and what the guest actually enforces is
+recorded in [open-issues.md](open-issues.md).
+
+Measured against the SheepShaver **Mac OS 8.6** image
+(`os86-carbon16-…-rgbv2.hfv`), 2026-08-14 — note this is 8.6 rather than
+the 1400c's 9.1, and that the image was mounted directly, so **no share
+and no wire were involved in any of these numbers**: extracting from a full mount and
 from `--from-tree` over that same mount produced **834 files, byte-identical,
 differing only in the acquisition receipt**. That is the evidence for
 "the two routes cannot disagree", and it is a property of the code rather

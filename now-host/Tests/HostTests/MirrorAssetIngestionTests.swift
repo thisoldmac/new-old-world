@@ -67,6 +67,62 @@ final class MirrorAssetIngestionTests: XCTestCase {
                             missing.path]))
     }
 
+    // MARK: - the share has to contain the art
+
+    private func file(_ path: String, required: Bool) -> MirrorAssetIngestion
+        .RequiredFile {
+        .init(path: path, role: "test", required: required, why: "because")
+    }
+
+    /// The folders the share must hold are the FIRST SEGMENT of each
+    /// required path — the whole path is not a folder in the share root,
+    /// and checking for one would refuse every share that works.
+    func testRequiredRootsAreTopLevelFoldersNotWholePaths() {
+        let roots = MirrorAssetIngestion.requiredRoots([
+            file("System Folder/System", required: true),
+            file("System Folder/Fonts/Chicago", required: true),
+        ])
+        XCTAssertEqual(roots, ["System Folder"])
+    }
+
+    /// An optional file's folder is not a precondition. Its absence is
+    /// already a note, so demanding the folder would refuse a share that
+    /// can build a perfectly good pack.
+    func testOptionalFilesDoNotConstrainTheShare() {
+        let roots = MirrorAssetIngestion.requiredRoots([
+            file("System Folder/System", required: true),
+            file("Documents/Wallpaper", required: false),
+        ])
+        XCTAssertEqual(roots, ["System Folder"])
+    }
+
+    /// The refusal a PowerBook 1400c earned on 2026-08-14. It must name
+    /// the remedy — the old one named a path, which told the person where
+    /// it broke and nothing about what to do.
+    func testShareRefusalNamesTheRemedyAndWhatIsShared() {
+        let refusal = MirrorAssetIngestion.shareRefusal(
+            missing: ["System Folder"], share: "Lab")
+        XCTAssertEqual(refusal.code, "now-assets-not-in-share")
+        XCTAssertTrue(refusal.message.contains("System Folder"),
+                      refusal.message)
+        XCTAssertTrue(refusal.message.contains("Lab"), refusal.message)
+        XCTAssertTrue(refusal.message.contains("whole disk"),
+                      refusal.message)
+        XCTAssertTrue(refusal.message.contains("Nothing has been copied"),
+                      refusal.message)
+    }
+
+    /// A guest that did not say what it shares must not produce a
+    /// sentence with a hole in it.
+    func testShareRefusalReadsWhenTheShareIsUnnamed() {
+        let refusal = MirrorAssetIngestion.shareRefusal(
+            missing: ["System Folder"], share: nil)
+        XCTAssertFalse(refusal.message.contains("“”"), refusal.message)
+        XCTAssertFalse(refusal.message.contains("is ."), refusal.message)
+        XCTAssertTrue(refusal.message.contains("whole disk"),
+                      refusal.message)
+    }
+
     // MARK: - what the pack says it holds
 
     /// The counts come out of the pack's OWN manifest. This is the check

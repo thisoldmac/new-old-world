@@ -104,111 +104,61 @@ refused `folder-not-yet` by name; folders are slice 6. The host decodes
 the stub and does nothing with it - `Session.onContinuitySelection` is
 nil, which is why it is a `var` and not an init parameter.
 
-## TESTED, NEVER RUN AGAINST A MACINTOSH: an asset pack can be ingested from the connected machine (2026-08-14, `feat/mirror-asset-ingestion`)
+## REFUSED ON METAL, CAUSE FIXED, STILL NO PACK FROM A MACINTOSH: ingesting an asset pack from the connected machine (2026-08-14, `feat/mirror-asset-ingestion`)
 
-The Asset Packs card could only SELECT a pack built from a disk image; the
-connected-guest adapter had been documented as designed-but-absent since
-2026-08-06, while `AssetPack.swift` promised the connected route would "feed
-the same domain parsers and manifest". It now exists: a button on that card
-pulls the machine's own System file, theme file and font suitcases over
-`file.get` with `container: macbinary`, stages their resource forks as a
-volume tree, and runs `tools/extract-assets-offline --from-tree` over it.
+**The metal result came back a refusal**, on an attended run against the
+PowerBook 1400c: `The classic Mac would not send System Folder/System: no
+such item in the share.`
 
-**No contract surface was added and neither guest changed.** `file.get`
-already carries both forks and the share root already defaults to the volume
-root, so `System Folder:System` was addressable the whole time.
+The refusal machinery was right; the addressing was wrong, and the error
+is worth naming exactly because it is a cheap one to repeat. Grounding
+read `now_files_share_root` returning `fsRtDirID` and concluded the share
+was the volume root. **That is the fallback for a machine that has chosen
+no share folder.** The 1400c has chosen one — `Lab`, where deploys land —
+so the System Folder was outside the share and no path could reach it.
+A default read as an invariant.
 
-What is proven, and by what:
+Fixed by asking first: ingestion now lists the share root before any bytes
+move and refuses with a remedy ("set NOW's shared folder to the whole disk
+— the volume itself rather than a folder inside it"), naming what the
+share currently is. The old refusal was honest but arrived mid-transfer
+and named a path instead of an action.
 
-- The transport swap changes nothing about extraction. Extracting from a full
-  mount and from `--from-tree` over that same mount produced 834 files,
-  byte-identical, differing only in the acquisition receipt.
-- The bounded pull is sufficient. Six files, 7.6 MB of resource fork, passes
-  every hard gate the extractor has.
-- The host suite is green (2423 tests) with pack gates ENFORCED.
+**A system-scoped read path was evaluated and deliberately not used.**
+`file.get`'s `mirrorSource` resolves an absolute HFS path outside the
+share — `now_files_mirror_stage` → `absolute_folder` does an
+unconstrained `FSMakeFSSpec`. The contract scopes that field to "a source
+chosen by a person dragging an item out of Mirror" and says it "is not a
+general absolute-path `file.get`", so using it for system files would
+make the contract prose false. It needs a decision, not a lane's
+judgement. `software.list`/`sw` enumerates the System Folder's special
+folders but cannot read forks ("versions need a resource fork open per
+file and are deliberately not here"), so it is not a route either.
 
-What is NOT proven, and this is the whole of it: **no Macintosh has ever been
-ingested from.** Every measurement above was taken against a stopped disk
-image on this Mac. The wire leg — six sequential `file.get` pulls, roughly 25
-seconds by plan 017's ~330 KB/s figure — has never run. It is next on
-emulation, then metal.
+**Unresolved, and separable from this work: the guest does not enforce
+what that prose claims.** There is no share containment check and no test
+that a Finder window is open behind `mirrorSource`; "an unknown Finder
+path fails closed" means only that a bad path fails. Any host that sends
+a well-formed `mirrorSource` can read any file on the volume. Worth a
+decision on its own.
 
-Two things a reader should carry away rather than rediscover:
+### What is proven, and what is still untouched
 
-- **A wire pack is a strict SUBSET of a disk-image pack**, and the newest
-  valid pack wins. The bounded route yielded 12 application icons against the
-  same image's 512, with every shared file byte-identical — nothing wrong in
-  it, things missing from it. So ingesting can silently demote a richer pack.
-  The card now reads the new pack's own manifest counts back and shows them,
-  which is the cheap half of the fix; the real fix is per-machine keying.
-- **Per-machine keying is still unbuilt** and still blocked on the `hello`
-  contract change in plan 021 §5.1.1, which is deliberately not attempted
-  here. Until then every ingested pack lands in the one shared dated store.
+Everything measured below came off a **stopped Mac OS 8.6 disk image**
+mounted directly on this Mac — not 9.1, and with no share and no wire
+involved. The required-file list has therefore never been checked against
+what a 1400c under 9.1 actually holds.
 
-## TESTED, NOT METAL-VERIFIED: host shell and module dogfood follow-up (2026-08-14, `feat/bundle-update-slice`)
+- Transport swap changes nothing: full mount vs `--from-tree` over that
+  same mount gave 834 files, byte-identical, differing only in the
+  acquisition receipt.
+- The bounded pull (6 files, 7.6 MB of fork) passes every hard gate.
+- Host suite green with pack gates ENFORCED.
 
-The integrated 0.2.0 development bundle exposed this batch. The host changes
-below are covered by focused tests and Debug/Release app builds; the guest
-capture changes compile for PPC and 68K. None has been watched on the PowerBook
-or in the freshly assembled bundle yet.
+**The pull, the staging and the extraction have still never run against a
+Macintosh.** Only the refusal path has metal behind it. Next: an attended
+run with the 1400c sharing its volume root.
 
-- **Guest shelf overview — implemented:** the shelf consumes the existing
-  Hardware Overview and Processes runtimes, formats the overview data, lists
-  non-background applications frontmost first, and stores an imported,
-  bounded PNG per stable GuestID. The redundant module buttons are gone; the
-  tab bar remains the route to the complete pages.
-- **Screenshot native depth — implemented:** `0` is now the contract's native
-  depth request, the host defaults Screen and process captures to it, PPC
-  resolves it from the main display PixMap, guest-initiated streaming now asks
-  for that sentinel instead of the saved 8-bit preference, and the 8-bit 68K
-  guest accepts it as its native capture.
-- **Screen cursor and open menus — still open:** streaming currently carries
-  only guest framebuffer pixels. The attempted host-side cursor overlay did
-  not reproduce the guest cursor faithfully and has been removed. Independently
-  opened menu-bar menus are also absent while `MenuSelect` owns its nested
-  Toolbox loop. That loop exposes no pump callback; forcing capture through a
-  timer would be unverified reentrant Toolbox work, so both remain explicit
-  architectural issues rather than hidden workarounds.
-- **Mirror status — implemented:** experimental/debug badges derive from the
-  module tier and appear anywhere descriptors are presented, with no Mirror ID
-  special case.
-- **Files — Host sidebar — implemented:** the collapsed rail is one continuous
-  AppKit handle with a centered chevron, pointing-hand cursor, restrained hover
-  response, and delayed centered transient label; mouse exit hides it without
-  moving the split. Symbols re-resolve their semantic tint when appearance
-  changes, every browser mode uses the same non-vibrant control background,
-  and NSBrowser selection is restored by stable row identity after content
-  reloads so a click no longer collapses its own child column.
-- **Files appearance — implemented, GUI recheck owed:** SwiftUI now passes its
-  effective light/dark scheme into every embedded AppKit sidebar row. Both the
-  attributed label and template symbol are resolved again when appearance
-  changes, rather than inheriting stale source-list vibrancy. The behavior test
-  distinguishes Aqua from Dark Aqua; the reported light-mode screen still
-  needs a visual recheck in the assembled app.
-- **PowerPC storage and ROM accounting — implemented, metal check owed:** wide
-  HFS volume fields remove the legacy 2047 MiB ceiling. PowerBook 1400 output
-  keeps Gestalt's measured 3 MiB Toolbox region and adds the separate 1 MiB
-  boot region. **Dump ROM** writes the full image into the Files share and the
-  host retrieves it over the existing file transfer path. The approximately
-  64 GB capacity, 4 MiB dump, and corpus checksum remain unobserved on metal.
-- **MCP transport controls — implemented:** stdio and HTTP each expose stable
-  Start/Stop actions and a persisted **Start Automatically** policy. HTTP's
-  stopped state permits an explicit loopback port and derives a copyable URL;
-  stdio exposes its client command and private socket. Launch restoration is
-  tested but has not been visually exercised in this bundle.
-- **Shelf module menus — implemented, gesture check owed:** a shelf icon opens
-  a native menu listing its modules. Choosing one navigates directly; dragging
-  a custom menu row exports the existing module drag payload so it can be moved
-  elsewhere. The menu model and payload are tested, but the drag-out gesture
-  remains GUI-unverified.
-- **iCloud ownership and access — implemented:** the host page no longer owns a
-  Photos download-size preference. The guest's Size popup sends the explicit
-  request; the host page owns service enablement/status and native macOS
-  authorization, foregrounding the app before the Photos or Contacts request.
-- **Navigation attachment — implemented:** populated module/shelf rows now use
-  continuous top/center/bottom drop regions with boundary hysteresis. Invalid
-  center attachment falls toward the nearest valid insertion edge, and visible
-  insertion lines replace the former narrow, fickle drop strips.
 ## TESTED, NOT RELEASED OR METAL-VERIFIED: recorded bundle and update slice (2026-08-13, `codex/bundle-update-slice`)
 
 The alpha distribution now has one machine-readable profile and one curated
