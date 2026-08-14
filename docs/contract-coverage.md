@@ -190,6 +190,9 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `scene.begin` / `scene.end` | — | — | **The ANSWERER's half, and neither guest handles one inbound.** The PPC guest SENDS them (`wire.c:1786` and the transfer it brackets); a host never sends them to a guest, so these can never grow guest-handling ticks. The answer's transfer pair. `scene.begin` gained `digest` / `delta` / `baseline` / `wholeBytes` on 2026-08-06 |
 | `scene.same` | — | — | Same: SENT by the PPC guest (`wire.c:1826`), handled by neither. The no-change answer, added 2026-08-06: a control frame with no transfer, sent only in answer to a request that quoted `since`. See [scene-deltas.md](scene-deltas.md) |
 | `mirror.invalidate` | — | — | Optional symmetric event, currently SENT by the PPC guest from ordinary wire service and handled by the host; neither guest handles one inbound. It carries monotonic domain generations and sampled/gap/unknown evidence quality, never replacement state. NOW-68K emits none and old peers continue cadence polling |
+| `continuity.arm` / `continuity.disarm` / `continuity.key` | ✅ | ❌ | the optional pointer/keyboard plane. Host-to-guest authority throughout: the PPC guest serves all three and answers `continuity.report` / `continuity.keyReport`, which it SENDS and never handles. NOW-68K has no Continuity plane at all - no resident, no UDP lane - so this is a subsystem asymmetry rather than three rows |
+| `continuity.grab` | ✅ | ❌ | **The one place a guest reads outside the Files share on the host's word**, and it is inside the row above rather than beside it: a grab is valid only for a generation the guest itself published, during the live epoch, and dies with it. The host names no path, so the reachable set is exactly what a person selected by hand. Served by PPC through the ORDINARY file lane (`file.begin` / bulk / `file.end` / `file.refuse`), which is why a grabbed file cancels and reports progress like a Files pull. NOW-68K serves nothing of Continuity |
+| `continuity.selection` | — | — | The Finder-selection stub, SENT by the PPC guest while an epoch is live and handled by neither guest - a host never sends one. It exists because a drag cannot ask: the Finder holds its own nested Drag Manager loop for the whole gesture, so the facts a cross-the-edge drag needs must be on the wire before the press. v1 carries the FIRST item of a multiple selection only, declared in the contract |
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 | `cloud.report` / `cloud.listing` / `cloud.card` / `cloud.refuse` | ✅ | ❌ | the ASKER's half: the PPC guest consumes these as answers for its iCloud page and SENDS `cloud.services` / `cloud.list` / `cloud.detail` / `cloud.get` / `cloud.preview`. No guest serves the family — its subject is the host's own iCloud (contract `guestAsksCloud`), so these rows can never grow guest ticks |
 | `chat.catalog` / `chat.delta` / `chat.status` / `chat.result` | ✅ | ❌ | the ASKER's half of the chat family (contract `guestAsksChat`): the PPC guest SENDS `chat.models` / `chat.send` / `chat.cancel` / `chat.reset` — from its Chat page and its console-only `chat` verb — and consumes these as answers; the host serves the family from its harness (`ChatWireService`). `chat.models` is TWO asks in one message and `chat.catalog` two answer shapes: without a provider it lists providers; with one it pages that provider's models (cursor/more, asked lazily on selection), each row carrying a HOST-MINTED `ref` that `chat.send` returns — a provider's model name never crosses the wire. Like cloud, its subject is the host's own model harness, so this row can never grow guest-SERVING ticks. 68K never asks, deliberately: the page is PPC-only and the family is a luxury a 384 KB partition does not buy |
@@ -197,7 +200,11 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `preview.begin` / `preview.end` | ✅ | ❌ | the photo preview's transfer bracket, answering the PPC guest's own `cloud.preview`: raw indexed rows the HOST already dithered, landed in the iCloud page's pane by one CopyBits. Asker's half again — no guest will ever serve it |
 | `update.offer` | ✅ | ❌ | the host-owned updater's publication half. PPC consumes the offer, compares release version and exact build, and may SEND `update.request`; it later SENDS `update.result` after the existing `file.*` transfer and local install. NOW-68K implements none of the family |
 
-PPC handles **50** inbound types; NOW-68K handles **23**. **That count
+PPC handles **54** inbound types; NOW-68K handles **25**. Both numbers
+are copied from the `derived-doc` block at the foot rather than counted
+here — the block is what `tools/derived-doc-gate` re-runs, and this
+sentence had drifted to 50 / 23 behind it, which is the third time this
+paragraph has been wrong in exactly this way. **That count
 understates the difference** — see the next two sections, where two of
 these rows open into 49 command verbs and 14 hardware probes.
 
@@ -1354,8 +1361,8 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: f6baf107ba8cfa162b62e3b1369d59609d8b731f
-derive ppc-inbound-types sha256=1aad1e912a333898e94ca678d768a85c901845b3e7826945f94ed0033553d7b7 lines=53 published
+sources-sha1: a210108c9cb302bf1d768d18bebf8d2df1adacff
+derive ppc-inbound-types sha256=66cb7aa2e96f04461ee4c0d93ca9fe944143f89854d7db8110f44dd8b366361a lines=54 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
@@ -1516,4 +1523,6 @@ rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:13-0400 90cfd8fa sources
 rederived: 2026-08-14T13:16:42-0400 90cfd8fa unchanged
 rederived: 2026-08-14T14:27:57-0400 6d037a57 sources
+rederived: 2026-08-14T16:31:02-0400 b8f808e4 sources, ppc-inbound-types 53->54
+rederived: 2026-08-14T16:31:39-0400 b8f808e4 unchanged
 -->

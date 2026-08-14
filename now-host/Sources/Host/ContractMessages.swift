@@ -96,6 +96,8 @@ enum ControlMessage: Equatable, Sendable {
     case continuityDisarm(ContinuityDisarm)
     case continuityKey(ContinuityKey)
     case continuityKeyReport(ContinuityKeyReport)
+    case continuitySelection(ContinuitySelection)
+    case continuityGrab(ContinuityGrab)
     case mirrorInvalidate(MirrorInvalidate)
     case updateOffer(UpdateOffer)
     case updateRequest(UpdateRequest)
@@ -271,6 +273,57 @@ struct ContinuityKeyReport: Codable, Equatable, Sendable {
     var generation: UInt32
     var state: State
     var reason: Reason?
+}
+
+/// What the person at the classic Mac has selected in the Finder, pushed
+/// unsolicited while a Continuity epoch is live.
+///
+/// It arrives BEFORE any press, and that is the whole design: during a
+/// drag the guest is unqueryable — the Finder sits in its own nested Drag
+/// Manager loop — so anything needed at cross-the-edge time has to be on
+/// this side of the wire already.
+struct ContinuitySelection: Codable, Equatable, Sendable {
+    /// The item, by the identity the File Manager itself uses. There is
+    /// deliberately no path: two mounted volumes may share a name, and the
+    /// item must stay reachable after a person renames a folder above it.
+    struct Item: Codable, Equatable, Sendable {
+        var name: String
+        var volumeRef: Int
+        var dirID: Int
+        var fileType: String?
+        var creator: String?
+        var dataSize: Int?
+        var resourceSize: Int?
+        /// Classic seconds since 1904.
+        var modifiedAt: UInt32?
+        var isFolder: Bool
+        /// Declared by the contract, not sent by any guest yet.
+        var icon: String?
+    }
+
+    /* Optional at the decoder for the same reason every other Continuity
+       message treats it so: a missing version must become a readable
+       wrong-version answer, not an undecodable frame. */
+    var version: Int?
+    var epoch: UInt32
+    var generation: UInt32
+    /// Absent means nothing is selected — an instruction to drop whatever
+    /// was cached, not a poll that found nothing to say.
+    var item: Item?
+}
+
+/// Serve the item one `ContinuitySelection` generation named.
+///
+/// It carries no path on purpose. The host can only ask for what the guest
+/// already told it about, so the reachable set is exactly what a person
+/// selected by hand during a live epoch — which is what makes a read
+/// outside the Files share honest here and nowhere else.
+struct ContinuityGrab: Codable, Equatable, Sendable {
+    var version: Int
+    var id: Int
+    var epoch: UInt32
+    var generation: UInt32
+    var container: String?
 }
 
 /// An arm/disarm answer when `id` is present; an unsolicited local-takeover
@@ -1773,6 +1826,12 @@ enum ControlMessageCodec {
         case "continuity.keyReport":
             return .continuityKeyReport(
                 try decoder.decode(ContinuityKeyReport.self, from: data))
+        case "continuity.selection":
+            return .continuitySelection(
+                try decoder.decode(ContinuitySelection.self, from: data))
+        case "continuity.grab":
+            return .continuityGrab(
+                try decoder.decode(ContinuityGrab.self, from: data))
         case "mirror.invalidate":
             return .mirrorInvalidate(
                 try decoder.decode(MirrorInvalidate.self, from: data))
@@ -1930,6 +1989,10 @@ enum ControlMessageCodec {
         case .continuityKey(let m): return try tagged("continuity.key", m)
         case .continuityKeyReport(let m):
             return try tagged("continuity.keyReport", m)
+        case .continuitySelection(let m):
+            return try tagged("continuity.selection", m)
+        case .continuityGrab(let m):
+            return try tagged("continuity.grab", m)
         case .mirrorInvalidate(let m):
             return try tagged("mirror.invalidate", m)
         case .streamRequest(let m): return try tagged("stream.request", m)
