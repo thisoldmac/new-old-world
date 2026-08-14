@@ -347,6 +347,12 @@ run_py now-guest-ppc peek_self_init_source_test.py
 # The nested-loop half of the pump rule, which the wire's reentrancy guard
 # quietly exempted the cursor plane from.
 run_py now-guest-ppc continuity_nested_pump_source_test.py
+# The Finder-selection poll's three gates and its caller. All four are
+# Toolbox or ordering properties a host cc cannot reach: no epoch means
+# no poll, a held button means no poll, and being called from
+# conn_service alone is what guarantees no Apple Event is ever sent from
+# inside a nested Toolbox loop.
+run_py now-guest-ppc continuity_selection_gates_source_test.py
 # The acquisition sweep's rationing. Its Toolbox half (GetNextProcess,
 # WakeUpProcess, the yield) is not covered here and does not pretend to be.
 run_c now-guest-ppc anchor_acquire_test.c \
