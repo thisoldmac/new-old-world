@@ -19,6 +19,40 @@ configurable and remembered per guest. Fast Pump reuses the guest event loop's
 one-tick work-in-flight sleep while an epoch is armed; it does not move any
 manager or drawing work into the Open Transport notifier or resident timer.
 
+## Current mechanism set
+
+The 2026-08-14 consolidation leaves one product input path. Five mechanisms
+default on and remain explicit per-machine opt-outs so a regression can still
+be isolated: synthetic Cursor Device settlement, the widened double-click
+window, coherent `when`/`MBTicks` compression, interrupt-time press delivery,
+and idle cursor settlement. The first four are the measured click and held-
+tracking corrections; idle settlement is the measured cadence correction.
+They are product behavior now, not experiments.
+
+Fast Pump and the deep-click probe remain default off in the Logs module's
+advanced diagnostic tier, not in Mirror's ordinary controls. Fast Pump changes
+the guest's cooperative scheduling cadence for a bounded comparison; deep
+click records unusually detailed mouse-event and low-memory evidence. The
+rolling button-timing ring and front-process-at-down evidence remain bounded
+diagnostics. The noisy per-epoch Cursor Device interval table does not print on
+the ordinary path.
+
+The following experimental mechanisms are retired from the implementation and
+wire surface; their contract slots remain reserved so an older field can never
+be reinterpreted: timer pinning of the held point, the `_GetMouse` answer path,
+guest-cursor hiding during drag, virtual ADB injection, and the passive ADB
+observer. The deferred task-time press path remains as the explicit fallback
+when interrupt-time delivery is opted out.
+
+The consolidated source cross-builds and its focused native guards pass. A
+post-prune emulator sweep must exercise click, double-click, drag, keyboard,
+edge transitions, native takeover, and release before this revision is called
+emulator-tested. The individual mechanisms retain the earlier attended results
+recorded below, but the pruned combination is **not metal-verified** until the
+next PowerBook 1400c pass. In particular, retiring timer pinning and the
+`_GetMouse` answer path without tonight's planned physical A/B is recorded as
+verification debt, not silently promoted to physical evidence.
+
 ## Product direction: one input engine, several surfaces
 
 The movement slice began inside Mirror because that made ownership observable:
@@ -181,16 +215,15 @@ A click-drag-release remains native, and leaving the Mirror or ending the lease
 still forces the held button up. This stays on the raw pointer plane rather
 than silently routing a menu through Mirror's semantic act.
 
-Resident table V10 adds diagnostics without changing the default input path.
-It retains non-overwriting tracking-conflict latches and the first eight
-button-stage records in the guest's `TickCount` domain, while the host keeps
-AppKit source/send/ack timestamps in macOS monotonic time. The two domains are
-reported separately. V10 also exposes one default-off **Settle synthetic
-device** experiment: the target-context hook discovers the app-owned `NOWc`
-device by ID, never through a pointer in the resident contract, and records its
-bounded manager call. PPC movement intervals are kept in a preallocated local
-ring and serialized only when the epoch disarms. None of these additions is a
-metal-verified behavior correction.
+Historically, resident table V10 added diagnostics without changing the
+then-default input path. Its tracking-conflict latches and PPC movement-
+interval ring are now dormant or removed; their accretive contract slots remain
+reserved. The bounded button-stage records remain in the guest's `TickCount`
+domain, while the host keeps source/send/ack timestamps in macOS monotonic
+time. V10 also introduced the initially default-off **Settle synthetic device**
+mechanism: the target-context hook discovers the app-owned `NOWc` device by ID,
+never through a pointer in the resident contract, and records its bounded
+manager call.
 
 The 17:48 attended run of that stack measured what the diagnostics were built
 to separate. Settle synthetic device ran 567 hook-context manager moves with
@@ -243,13 +276,31 @@ needed up in the previous slot behind the drag its own press started; and
 the PPC side keeps a manager button ledger, settled at arm, at the pump
 while the epoch is inactive, and at shutdown, so a dead epoch can never
 leave the Cursor Device record asserting a phantom hold that low memory
-keeps inheriting. For the remaining ordinary-motion hitches, epoch
-teardown now logs a motion-aware gap histogram (`CDM motion`) that
-excludes stationary intervals, and a default-off **Settle device while
-idle** spike lets the jGNE pass settle the synthetic device from whatever
-process is pumping whenever the application is behind the wire. The
-redesign is tested; nothing in it is metal-verified until the next
-attended pass.
+keeps inheriting. The initially default-off **Settle device while idle** spike
+lets the jGNE pass settle the synthetic device from whatever process is pumping
+whenever the application is behind the wire. It is now a default-on product
+mechanism; the temporary `CDM motion` histogram that measured its effect has
+been retired. The consolidated redesign is tested; the exact pruned combination
+is not metal-verified until the next attended pass.
+
+## Resident low-memory write inventory
+
+Continuity keeps the context boundary explicit. These are its surviving
+low-memory writes; reads used for diagnosis are not ownership:
+
+| Global | Write context | Purpose and bound |
+|---|---|---|
+| `MBState` | Time Manager tick; target-context jGNE/task service | Unconditional emergency release, the confined deferred press, and ordinary manager edge settlement. |
+| `MBTicks` | Time Manager deferred-press helper; target-context jGNE shaping | Keep a synthetic down's driver clock coherent with its event `when`. |
+| `MouseLocation` | Time Manager tick; target-context jGNE cursor settlement | Publish the currently owned point to tracking loops. The timer never writes `RawMouse` or `MTemp`. |
+| `DoubleTime` | Cooperative resident service at epoch begin/end | Temporarily widen the system window, preserving and restoring the human's prior value on every exit. |
+| `CrsrObscure` and cursor redraw request state | target-context jGNE/task cursor path only | Reconcile the visible cursor after the manager accepts a synthetic point; never touched from the timer. |
+
+The Time Manager path performs no allocation, QuickDraw, Process Manager, or
+logging work. Its sole Event Manager exception is the bounded, option-gated
+`PPostEvent` up/down pair inside `deliver_deferred_press_interrupt`; the safety
+source guard confines all resident presses to that helper. Keyboard delivery
+remains target-context jGNE work with an A5 and foreground-process check.
 
 The post-metal candidate was then cold-booted independently on
 `mac99,via=pmu` and `mac99,via=cuda` with Fast Pump enabled. Both guests

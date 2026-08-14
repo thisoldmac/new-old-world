@@ -34,7 +34,7 @@ disk.
 |---|---|---|
 | Folder | `now-logs` beside the application | `~/Library/Logs/now-logs` |
 | Name | `2026-07-20 225612.log` | `2026-07-20 225612.log` |
-| In memory | 2000 lines (the Logs page dumps them) | 100 lines (the Connection window) |
+| In memory | 2000 lines (the Logs page dumps them) | 2000 lines (the Logs module follows them) |
 | Line endings | CR (this machine's) | LF |
 
 Per launch rather than one growing file: the question is almost always
@@ -92,7 +92,7 @@ way (AGENTS.md, *Enumerated lists rot at merges*).
 | `update` | update offers rejected by validation, requests refused, and installation results |
 | `dev` | project candidate publication and Development build/run settlement |
 | `mirror` | the Mirror: the writer verdict, plane arm/disarm requests and outcomes, the Workshop page, and the resident's own counters read back |
-| `adb` | guest application only: drained ADB mouse observations and bounded trace-integrity faults from the resident Continuity probe |
+| `adb` | guest application only: historical Continuity ADB observations and intake diagnostics; the retired passive observer no longer adds new callback traces |
 | `sw` | the software family: the `catsearch` probe, and `launch` outcomes (the `sw` listing itself is a read and stays quiet) |
 | `agent` | host only: the optional agent-integration surface — one line per capability a non-user face invoked, and the local endpoint's own failures |
 
@@ -177,6 +177,17 @@ load-bearing rather than tidy — see below. The writer verdict is compared
 against the last one before anything is written, an arm request that asks
 for what is already asked for is not an event, and identical consecutive
 settle failures collapse into a count.
+
+Advanced Continuity controls are surfaced from the Logs module rather than
+from Mirror's primary controls. Fast Pump changes cooperative scheduling for a
+bounded comparison. The default-off deep-click probe is deliberately dense,
+but still bounded and memory-first: it records the jGNE event stream and click-
+relevant low-memory state for a short comparison run. The rolling button timing
+ring and front-process-at-down evidence remain available. The former V10 per-
+epoch Cursor Device interval dump is retired from the ordinary teardown path
+because its volume dominated the event-shaped log it was meant to help. None
+of these exceptions permits logging from resident or interrupt context; the
+resident records bounded state for the application to drain at task time.
 
 The verdict line exists for one failure in particular. `AGENTS.md`
 records that a binary not named exactly `New Old World` (creator `NOWo`)

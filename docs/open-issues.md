@@ -7,6 +7,50 @@ search:
 
 # Open issues
 
+## TESTED, EMULATOR RECHECK OWED, NOT METAL-VERIFIED: the Continuity resident is consolidated to one product path (2026-08-14, `refactor/continuity-consolidation`)
+
+The experiment surface has been reduced after the attended evidence below
+identified the mechanisms that actually carry the product. Synthetic-device
+settlement, widened DoubleTime, coherent `when`/`MBTicks` compression,
+interrupt-time press delivery, and idle cursor settlement now default on with
+explicit per-machine opt-outs. Fast Pump and deep-click capture remain default
+off in the Logs module's advanced diagnostic tier. The bounded rolling button-
+timing ring and front-process-at-down record remain; the noisy per-epoch Cursor
+Device interval table is no longer an ordinary teardown dump.
+
+Timer pinning of the held point, the target-context `_GetMouse` answer,
+guest-cursor hiding, virtual ADB injection, and the passive ADB observer are
+retired. Their wire/contract positions stay reserved; they cannot be reused for
+a new meaning. The task-time deferred-press path remains as the fallback when
+interrupt-time delivery is explicitly disabled.
+
+This classification follows the consolidation plan and does not turn absence
+of physical access into a false result. Focused native guards and both classic
+cross-builds pass on the consolidated source. The post-prune emulator sweep is
+still owed on this exact revision and must cover click, double-click, drag,
+keyboard, edge transitions, native takeover, forced release, and clean guest
+shutdown. The next attended PowerBook 1400c pass must repeat those rows before
+the combination is called metal-verified.
+
+One concern is carried forward rather than used as an overnight blocker. The
+plan originally made retirement of timer pinning and the `_GetMouse` answer
+conditional on an emulator plus PowerBook A/B with the blessed set enabled.
+Those experiments predate the later settlement mechanisms and are removed now,
+but tonight has no Metal access. Tomorrow's attended pass therefore owes the
+physical comparison, with drag/menu tracking and native takeover as the sharp
+regression rows. A failure reopens the disposition; it does not justify
+quietly restoring all of the retired writers.
+
+The post-prune INIT review found no new unbounded interrupt path and corrected
+the timer header to name its one confined Event Manager exception. Shared-cell
+layout remains statically asserted and cross-built by both compilers; keyboard
+delivery remains target-context jGNE work behind the A5/front-process checks.
+One performance claim remains deliberately open: the deep-click queue walk is
+bounded to 32 entries and unreachable while its diagnostic option is off, but
+the complete jGNE pass has not yet been timed on this exact emulator build.
+The emulator sweep must record that cost before absence of a cadence regression
+is claimed.
+
 ## PARTLY FIXED, NOT METAL-VERIFIED: the Continuity pointer stops once a second because the guest is serving a scene (2026-08-13, `claude/swarm-pump-stall`)
 
 With the resident's idle-settle spike off, the pointer moves in a
