@@ -44,7 +44,20 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
 
     @Published private(set) var notice: String?
 
-    private let listener: GuestListener
+    /// The wire, as one function. Named rather than reached through the
+    /// listener so a test can watch a refusal arrive without a socket — the
+    /// refusal paths are the half v1 shipped silent, and they must be
+    /// exercisable.
+    typealias GrabRequest = (
+        _ epoch: UInt32,
+        _ generation: UInt32,
+        _ container: String?,
+        _ stagingDirectory: URL,
+        _ completion: @escaping (Result<GuestListener.FileDelivery,
+                                        GuestListener.FileFailure>) -> Void
+    ) -> Void
+
+    private let grab: GrabRequest
     private let audit: Audit
     private let promiseQueue: OperationQueue = {
         let queue = OperationQueue()
@@ -59,10 +72,25 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     /// word than this one.
     private var grabInFlight = false
 
-    init(listener: GuestListener, audit: Audit? = nil) {
-        self.listener = listener
+    init(grab: @escaping GrabRequest, audit: Audit? = nil) {
+        self.grab = grab
         self.audit = audit ?? { HostLog.shared.write($0, "continuity", $1) }
         super.init()
+    }
+
+    convenience init(listener: GuestListener, audit: Audit? = nil) {
+        self.init(grab: { [weak listener] epoch, generation, container,
+                          staging, completion in
+            guard let listener else {
+                completion(.failure(.init(
+                    code: "disconnected",
+                    message: "This Mac is shutting down.")))
+                return
+            }
+            listener.grabContinuityFile(
+                epoch: epoch, generation: generation, container: container,
+                stagingDirectory: staging, completion: completion)
+        }, audit: audit)
     }
 
     var isBusy: Bool { grabInFlight }
@@ -133,11 +161,8 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
         audit(.info, "grab requested: epoch=\(stub.epoch), "
             + "generation=\(stub.generation), name=\(stub.item.name), "
             + "container=\(stub.wireContainer ?? "auto")")
-        listener.grabContinuityFile(
-            epoch: stub.epoch, generation: stub.generation,
-            container: stub.wireContainer,
-            stagingDirectory: url.deletingLastPathComponent()
-        ) { [weak self] result in
+        grab(stub.epoch, stub.generation, stub.wireContainer,
+             url.deletingLastPathComponent()) { [weak self] result in
             guard let self else {
                 completion.finish(GrabError.noStub)
                 return
