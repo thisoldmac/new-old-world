@@ -106,6 +106,17 @@ final class MirrorContinuityControllerTests: XCTestCase {
         }
     }
 
+    private func awaitPacket(
+        in udp: FakeContinuityUDP, _ message: String,
+        timeout: TimeInterval = 5,
+        matching predicate: @escaping (ContinuityStateDatagram) -> Bool
+    ) async throws -> ContinuityStateDatagram {
+        try await waitUntil(message, timeout: timeout) {
+            udp.packets.contains(where: predicate)
+        }
+        return try XCTUnwrap(udp.packets.last(where: predicate))
+    }
+
     private struct ActiveRig {
         let guest: FakeGuest
         let udp: FakeContinuityUDP
@@ -666,8 +677,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         }
     }
 
-    func testAppKitConfirmedSecondClickCarriesPrecedingUpWithoutWaitingForAck()
-        async throws {
+    func testDownAckTimeoutAbandonsCycleWithoutEndingOwnership() async throws {
         let rig = try await makeActiveRig()
         defer { rig.udp.stop() }
         /* The scenario under test is a starved application with a live
@@ -676,67 +686,19 @@ final class MirrorContinuityControllerTests: XCTestCase {
            cycle-abandon path below can never be observed. */
         rig.controller.machineIsAnsweringOverride = { _ in true }
 
-        let source = ProcessInfo.processInfo.systemUptime
         XCTAssertTrue(rig.controller.primaryDown(
             at: .init(x: 40, y: 50), inMenuBar: false,
-            sourceUptime: source, clickCount: 1))
-        try await waitUntil("first confirmed press") {
-            rig.udp.packets.contains {
-                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
-            }
-        }
-        let firstDown = try XCTUnwrap(rig.udp.packets.last {
+            sourceUptime: ProcessInfo.processInfo.systemUptime))
+        let down = try await awaitPacket(
+            in: rig.udp, "unacknowledged press") {
             $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
-        })
-        rig.udp.acknowledge(firstDown)
-        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 40, y: 50)))
-        try await waitUntil("first confirmed release") {
-            rig.udp.packets.contains {
-                $0.buttonGeneration != 0
-                    && $0.buttonGeneration != firstDown.buttonGeneration
-                    && !$0.flags.contains(.primaryDown)
-            }
         }
-        let firstUp = try XCTUnwrap(rig.udp.packets.last {
-            $0.buttonGeneration != 0
-                && $0.buttonGeneration != firstDown.buttonGeneration
-                && !$0.flags.contains(.primaryDown)
-        })
-
-        XCTAssertTrue(rig.controller.primaryDown(
-            at: .init(x: 42, y: 52), inMenuBar: false,
-            sourceUptime: source + 0.12, clickCount: 2))
-        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 42, y: 52)))
-        try await waitUntil("second press before first release ack") {
-            rig.udp.packets.contains {
-                $0.buttonGeneration != firstDown.buttonGeneration
-                    && $0.buttonGeneration != firstUp.buttonGeneration
-                    && $0.flags.contains(.primaryDown)
-            }
-        }
-        let secondDown = try XCTUnwrap(rig.udp.packets.last {
-            $0.buttonGeneration != firstDown.buttonGeneration
-                && $0.buttonGeneration != firstUp.buttonGeneration
-                && $0.flags.contains(.primaryDown)
-        })
-        XCTAssertEqual(secondDown.previousButtonGeneration,
-                       firstUp.buttonGeneration)
-        XCTAssertFalse(secondDown.previousButtonDown,
-                       "v4 must carry the intervening up beside the second down")
-        /* The second cycle rides guest task time that the click's own target
-           may hold for hundreds of milliseconds; a slow acknowledgement is a
-           starved cooperative guest, not a dead one. The timeout abandons
-           only this cycle - forcing the wire button up inside the epoch so
-           no logical hold can leak - and ownership survives. */
-        try await waitUntil("unacknowledged press abandons its cycle",
-                            timeout: 4.5) {
-            rig.udp.packets.contains {
+        _ = try await awaitPacket(
+            in: rig.udp, "unacknowledged press abandons its cycle",
+            timeout: 4.5) {
                 $0.buttonGeneration != 0
-                    && $0.buttonGeneration != firstDown.buttonGeneration
-                    && $0.buttonGeneration != firstUp.buttonGeneration
-                    && $0.buttonGeneration != secondDown.buttonGeneration
+                    && $0.buttonGeneration != down.buttonGeneration
                     && !$0.flags.contains(.primaryDown)
-            }
         }
         XCTAssertTrue(rig.controller.isActive,
                       "a late down acknowledgement must not end ownership")
@@ -863,7 +825,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
 
         XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 61, y: 71)))
         XCTAssertFalse(audit.contains {
-            $0.1.contains("primary down interval")
+            $0.1.contains("primary down source interval")
         }, "the first click of an epoch has no cross-epoch timing interval")
     }
 

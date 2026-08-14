@@ -192,6 +192,41 @@ struct ContinuityArm: Codable, Equatable, Sendable {
     var settleIdleCursor: Bool? = nil
 }
 
+struct ContinuityArmOptions: Equatable, Sendable {
+    var fastPump = false
+    var settleSyntheticDevice = false
+    var wideDoubleTime = false
+    var compressClickWhen = false
+    var interruptPress = false
+    var deepClickLog = false
+    var settleIdleCursor = false
+
+    subscript(_ id: ContinuityOptionID) -> Bool {
+        get {
+            switch id {
+            case .fastPump: fastPump
+            case .settleSyntheticDevice: settleSyntheticDevice
+            case .wideDoubleTime: wideDoubleTime
+            case .compressClickWhen: compressClickWhen
+            case .interruptPress: interruptPress
+            case .deepClickLog: deepClickLog
+            case .settleIdleCursor: settleIdleCursor
+            }
+        }
+        set {
+            switch id {
+            case .fastPump: fastPump = newValue
+            case .settleSyntheticDevice: settleSyntheticDevice = newValue
+            case .wideDoubleTime: wideDoubleTime = newValue
+            case .compressClickWhen: compressClickWhen = newValue
+            case .interruptPress: interruptPress = newValue
+            case .deepClickLog: deepClickLog = newValue
+            case .settleIdleCursor: settleIdleCursor = newValue
+            }
+        }
+    }
+}
+
 struct ContinuityDisarm: Codable, Equatable, Sendable {
     var version: Int
     var id: Int

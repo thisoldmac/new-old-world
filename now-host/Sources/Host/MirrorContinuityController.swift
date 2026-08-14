@@ -167,21 +167,17 @@ final class MirrorContinuityController: ObservableObject,
                             to: settleSyntheticDevice)
         }
     }
-    /* Default on: the guest cannot recognize a double click when cooperative
-       scheduling stretches the manager-down interval past its 32-tick
-       DoubleTime (measured 40-45 ticks, 2026-08-13). The toggle remains for
-       A/B against a stock window. */
+    /* Default on: cooperative scheduling can stretch manager click timing.
+       The measurement history lives in docs/continuity-mode.md. */
     @Published var wideDoubleTime = true {
         didSet {
             optionDidChange(.wideDoubleTime, from: oldValue,
                             to: wideDoubleTime)
         }
     }
-    /* Default on: the Finder pairs clicks against a private copy of the
-       double-click time that widening the global cannot reach (a 56-tick
-       pair failed under an active 60-tick window while SimpleText accepted
-       the same stream, 2026-08-13). The resident compresses synthetic
-       click `when`s at the jGNE boundary instead. */
+    /* Default on: Finder also pairs clicks against private timing state, so
+       the resident compresses synthetic `when`s at the jGNE boundary. See
+       docs/continuity-mode.md for the measurements behind this mechanism. */
     @Published var compressClickWhen = true {
         didSet {
             optionDidChange(.compressClickWhen, from: oldValue,
@@ -297,14 +293,12 @@ final class MirrorContinuityController: ObservableObject,
     private var buttonCycleActive = false
     private var wireButtonDown = false
     private var pressAcknowledged = false
-    private var releasePending = false
     private var deferredButtonPoint: MirrorKit.Point?
     private var primaryDownInMenuBar = false
     private var primaryCycleDragged = false
     private var menuLatched = false
     private var menuReleaseArmed = false
     private var pointerInside = false
-    private var idleIntervals = 0
     private var udp: NWConnection?
     /* Network.framework may spend time preparing a physical interface while
        the main actor is also reconciling Mirror scenes. The UDP state machine
@@ -399,20 +393,20 @@ final class MirrorContinuityController: ObservableObject,
     func primaryDown(at point: MirrorKit.Point,
                      inMenuBar: Bool = false) -> Bool {
         primaryDown(at: point, inMenuBar: inMenuBar,
-                    sourceUptime: nil, clickCount: 1)
+                    sourceUptime: nil)
     }
 
     @discardableResult
     func primaryDown(at point: MirrorKit.Point, inMenuBar: Bool,
-                     sourceUptime: TimeInterval?, clickCount: Int) -> Bool {
+                     sourceUptime: TimeInterval?) -> Bool {
         guard phase == .active else { return false }
         let now = ProcessInfo.processInfo.systemUptime
         let eventUptime = sourceUptime ?? now
         if let lastPrimaryDownUptime {
             audit(.info, String(
-                format: "primary down source interval %.1f ms, clickCount=%d, deliveryAge=%.1f ms",
+                format: "primary down source interval %.1f ms, deliveryAge=%.1f ms",
                 (eventUptime - lastPrimaryDownUptime) * 1_000,
-                clickCount, max(0, now - eventUptime) * 1_000))
+                max(0, now - eventUptime) * 1_000))
         }
         lastPrimaryDownUptime = eventUptime
         if menuLatched, buttonCycleActive, wireButtonDown {
@@ -422,14 +416,9 @@ final class MirrorContinuityController: ObservableObject,
             menuReleaseArmed = true
             return true
         }
-        /* The host streams edges; it does not classify clicks. Every AppKit
-           down becomes the next wire generation immediately, whatever the
-           acknowledgement state of the cycle before it: the v4 packet
-           carries the preceding edge beside it, the resident's interrupt
-           release reads both slots, and the guest's widened DoubleTime owns
-           recognition. Classification lived here once - one buffered cycle
-           plus an AppKit clickCount fast path - and its interactions with a
-           starved guest piled clicks into drags (2026-08-13 185037). */
+        /* The host streams edges; it does not classify clicks. The v4 packet
+           carries the preceding edge beside the current one, while guest
+           timing owns recognition. See docs/continuity-mode.md. */
         if buttonCycleActive, wireButtonDown {
             audit(.warn, "ignored primary down while button is held")
             return true
@@ -449,7 +438,6 @@ final class MirrorContinuityController: ObservableObject,
         advanceButton(to: true)
         buttonCycleActive = true
         pressAcknowledged = false
-        releasePending = releasedAt != nil
         deferredButtonPoint = releasedAt
         primaryDownInMenuBar = inMenuBar
         primaryCycleDragged = false
@@ -510,7 +498,6 @@ final class MirrorContinuityController: ObservableObject,
         }
         isMenuTracking = false
         deferredButtonPoint = point
-        releasePending = true
         /* The release streams immediately: the wire's previous/current pair
            carries it beside an unacknowledged down, and the resident's
            interrupt-time release path reads both slots. Holding it for the
@@ -535,7 +522,7 @@ final class MirrorContinuityController: ObservableObject,
     /// A disconnect has no peer left to answer, and a focus switch must never
     /// send the old epoch's disarm to the newly selected guest.
     func sessionDidChange() {
-        resetTransport()
+        clearTransportState()
         setEnabledWithoutTeardown(false)
         status = "off"
         pointerInside = false
@@ -556,15 +543,13 @@ final class MirrorContinuityController: ObservableObject,
             nonceLo = UInt32.random(in: UInt32.min ... UInt32.max)
         } while nonceHi == 0 && nonceLo == 0
         self.target = target
+        var armOptions = ContinuityArmOptions()
+        for option in ContinuityOptionCatalog.all {
+            armOptions[option.id] = self[keyPath: option.keyPath]
+        }
         armID = listener.armContinuity(
             nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
-            requestedHz: rate, leaseTicks: 90, fastPump: fastPump,
-            settleSyntheticDevice: settleSyntheticDevice,
-            wideDoubleTime: wideDoubleTime,
-            compressClickWhen: compressClickWhen,
-            interruptPress: interruptPress,
-            deepClickLog: deepClickLog,
-            settleIdleCursor: settleIdleCursor)
+            requestedHz: rate, leaseTicks: 90, options: armOptions)
         guard armID != nil else {
             status = "unavailable: no Mac is connected"
             self.target = nil
@@ -830,7 +815,6 @@ final class MirrorContinuityController: ObservableObject,
                 self.sendState(inside: true, keepalive: false)
                 return
             }
-            self.idleIntervals += 1
         }
         self.timer = timer
         timer.resume()
@@ -994,13 +978,7 @@ final class MirrorContinuityController: ObservableObject,
         } else {
             buttonAckTimeout?.cancel()
             buttonAckTimeout = nil
-            buttonCycleActive = false
-            releasePending = false
-            deferredButtonPoint = nil
-            primaryDownInMenuBar = false
-            primaryCycleDragged = false
-            menuLatched = false
-            menuReleaseArmed = false
+            resetButtonState(.cycle, reason: "release acknowledged")
         }
     }
 
@@ -1015,7 +993,6 @@ final class MirrorContinuityController: ObservableObject,
         positionDirty = true
         advancePositionIfNeeded()
         advanceButton(to: false)
-        releasePending = false
         buttonAckTimeout?.cancel()
         buttonAckTimeout = nil
         sendState(inside: true, keepalive: false)
@@ -1032,15 +1009,9 @@ final class MirrorContinuityController: ObservableObject,
         wireButtonDown = down
     }
 
-    /* A slow down acknowledgement is a starved cooperative guest, not a
-       dead one: measured second-click downs ran 520-630 ms source-to-ack
-       while the target held task time, and the old 1-second epoch teardown
-       turned every such double-click into a full ownership bounce
-       (2026-08-13 174816 run, three times in three minutes). Abandoning
-       forces the wire button up inside the epoch - the guest applies the
-       ordered down/up pair whenever it wakes, so no logical hold can leak -
-       and unwinds only this cycle's state. The epoch lives or dies by its
-       lease and liveness, never by one late click. */
+    /* A slow down acknowledgement can mean a starved cooperative guest, not
+       a dead one. Force the wire button up and unwind only this cycle; lease
+       and liveness still own the epoch. See docs/continuity-mode.md. */
     private func abandonPrimaryCycle(reason: String) {
         /* Streaming edges means there is no buffered cycle to resume; the
            next AppKit down simply becomes the next generation. */
@@ -1052,14 +1023,7 @@ final class MirrorContinuityController: ObservableObject,
         }
         buttonTransitionSentUptime = nil
         buttonTransitionSourceUptime = nil
-        buttonCycleActive = false
-        releasePending = false
-        deferredButtonPoint = nil
-        primaryDownInMenuBar = false
-        primaryCycleDragged = false
-        menuLatched = false
-        menuReleaseArmed = false
-        isMenuTracking = false
+        resetButtonState(.cycle, reason: reason)
         audit(.warn, "primary cycle abandoned: \(reason), "
             + "generation=\(buttonGeneration), epoch=\(epoch) stays owned")
     }
@@ -1069,10 +1033,9 @@ final class MirrorContinuityController: ObservableObject,
     ) {
         buttonAckTimeout?.cancel()
         buttonAckTimeout = Task { @MainActor [weak self] in
-            /* Three seconds covers the measured starvation tail of a target
-               holding task time after a click. Up is already safe in low
-               memory and can wait longer for a starved NOW task to regain
-               cooperative time after the target tracking loop unwinds. */
+            /* Down timeout abandons only the click cycle. Up waits longer,
+               then ends the epoch because an unconfirmed release cannot be
+               carried safely into another cycle. */
             let timeout: UInt64 = down ? 3_000_000_000 : 5_000_000_000
             try? await Task.sleep(nanoseconds: timeout)
             guard let self, !Task.isCancelled,
@@ -1134,7 +1097,6 @@ final class MirrorContinuityController: ObservableObject,
         guard positionDirty else { return }
         positionSequence = nextNonzero(positionSequence)
         positionDirty = false
-        idleIntervals = 0
     }
 
     private func relinquish(reason: String, keepEnabled: Bool) {
@@ -1170,7 +1132,7 @@ final class MirrorContinuityController: ObservableObject,
         audit(.warn, "guest ended Continuity: reason=\(reason), "
             + "epoch=\(epoch), sent=\(sentDatagrams), "
             + "validAcks=\(validAcks), " + clockDescription(clock))
-        resetTransport()
+        clearTransportState()
         onOwnershipEnded?(reason)
         if maintainsOptInAfterGuestExit && retryable && isEnabled {
             status = "Guest returned pointer control: \(reason); move across "
@@ -1228,10 +1190,6 @@ final class MirrorContinuityController: ObservableObject,
             && reason != "resident-unavailable"
     }
 
-    private func resetTransport() {
-        clearTransportState()
-    }
-
     /// End one authority epoch without deciding what the UI should say next.
     /// Local relinquish and guest-reported exit must clear the same state: in
     /// particular, click timing cannot cross an epoch boundary and masquerade
@@ -1255,7 +1213,6 @@ final class MirrorContinuityController: ObservableObject,
         armID = nil
         target = nil
         positionDirty = false
-        idleIntervals = 0
         sentDatagrams = 0
         validAcks = 0
         lastAcknowledgementUptime = nil
@@ -1266,21 +1223,28 @@ final class MirrorContinuityController: ObservableObject,
         buttonTransitionSourceUptime = nil
         previousButtonGeneration = 0
         previousButtonDown = false
-        resetButtonState()
+        resetButtonState(.transport, reason: "authority epoch ended")
         keyGeneration = 0
     }
 
-    private func resetButtonState() {
+    private enum ButtonResetScope {
+        case cycle
+        case transport
+    }
+
+    private func resetButtonState(_ scope: ButtonResetScope, reason: String) {
+        precondition(!reason.isEmpty)
         buttonCycleActive = false
-        wireButtonDown = false
-        pressAcknowledged = false
-        releasePending = false
         deferredButtonPoint = nil
         primaryDownInMenuBar = false
         primaryCycleDragged = false
         menuLatched = false
         menuReleaseArmed = false
         isMenuTracking = false
+        if scope == .transport {
+            wireButtonDown = false
+            pressAcknowledged = false
+        }
     }
 
     private func setEnabledWithoutTeardown(_ enabled: Bool) {

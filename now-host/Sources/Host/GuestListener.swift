@@ -702,13 +702,7 @@ final class GuestListener: ObservableObject {
     @discardableResult
     func armContinuity(nonceHi: UInt32, nonceLo: UInt32, epoch: UInt32,
                        requestedHz: Int, leaseTicks: Int,
-                       fastPump: Bool = false,
-                       settleSyntheticDevice: Bool = false,
-                       wideDoubleTime: Bool = false,
-                       compressClickWhen: Bool = false,
-                       interruptPress: Bool = false,
-                       deepClickLog: Bool = false,
-                       settleIdleCursor: Bool = false) -> Int? {
+                       options: ContinuityArmOptions = .init()) -> Int? {
         guard let session else { return nil }
         let id = nextContinuityId
         nextContinuityId &+= 1
@@ -716,13 +710,13 @@ final class GuestListener: ObservableObject {
             version: ContinuityContract.version,
             id: id, nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
             requestedHz: requestedHz, leaseTicks: leaseTicks,
-            fastPump: fastPump,
-            settleSyntheticDevice: settleSyntheticDevice,
-            wideDoubleTime: wideDoubleTime,
-            compressClickWhen: compressClickWhen,
-            interruptPress: interruptPress,
-            deepClickLog: deepClickLog,
-            settleIdleCursor: settleIdleCursor)))
+            fastPump: options.fastPump,
+            settleSyntheticDevice: options.settleSyntheticDevice,
+            wideDoubleTime: options.wideDoubleTime,
+            compressClickWhen: options.compressClickWhen,
+            interruptPress: options.interruptPress,
+            deepClickLog: options.deepClickLog,
+            settleIdleCursor: options.settleIdleCursor)))
         return id
     }
 
