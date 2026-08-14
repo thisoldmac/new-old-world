@@ -8,7 +8,7 @@ lifecycle: current
 authority: [docs/module-manifest.yaml, docs/contract-coverage.md, now-host/Sources/Host/NavigationLayout.swift]
 source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
 media_ids: []
-last_verified: 2026-08-13
+last_verified: 2026-08-14
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -48,8 +48,11 @@ the Connections shelf.
 
 Drag normally to reorder modules, move them between the upper and lower
 stacks, or put them in the drawer at the bottom. Empty sidebar space is also a
-drop target: the nearest half chooses the upper or lower stack. Dropping one
-module on another creates a shelf and immediately opens its editable name,
+drop target: the nearest half chooses the upper or lower stack. Sidebar rows
+and a shelf's pill tabs move out of the way as the dragged item crosses their
+insertion points; releasing saves that arrangement, while cancelling the drag
+restores the saved layout. Dropping one module on another creates a shelf only
+when released and immediately opens its editable name,
 starting at **New Shelf** (or the next numbered name). Press **Escape** while
 that field is active to cancel the shelf and restore both modules to their
 previous positions. A user-created shelf

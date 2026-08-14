@@ -75,9 +75,13 @@ private struct ShelfPillRow: View {
                     select: { select(tab.selection) })
                     .overlay(tabDragSurface(tab))
             }
+            ShelfPillDropSlot(
+                target: .shelf(shelfID, beforeModuleID: nil),
+                dragActions: dragActions)
         }
         .padding(4)
         .nowGlassPanel(cornerRadius: 18)
+        .animation(.easeInOut(duration: 0.16), value: tabs)
     }
 
     @ViewBuilder
@@ -87,9 +91,27 @@ private struct ShelfPillRow: View {
                 payload: .module(moduleID),
                 target: .shelf(shelfID, beforeModuleID: moduleID),
                 canDrop: dragActions.canDrop,
+                previewDrop: dragActions.previewDrop,
                 performDrop: dragActions.performDrop,
+                dragEnded: dragActions.dragEnded,
                 activate: { select(tab.selection) })
         }
+    }
+}
+
+private struct ShelfPillDropSlot: View {
+    let target: NavigationDropTarget
+    let dragActions: SidebarNavigationDragActions
+
+    var body: some View {
+        Color.clear
+            .frame(width: 10, height: 30)
+            .overlay(SidebarNativeDragSurface(
+                payload: nil,
+                target: target,
+                canDrop: dragActions.canDrop,
+                previewDrop: dragActions.previewDrop,
+                performDrop: dragActions.performDrop))
     }
 }
 

@@ -8,7 +8,7 @@ lifecycle: current
 authority: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, docs/architecture.md]
 source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationLayoutStore.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/NavigationShelfTab.swift, now-host/Sources/Host/HostRootView.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/NavigationDragCoordinator.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/GuestScopedState.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/OnboardingPortal.swift]
 media_ids: []
-last_verified: 2026-08-13
+last_verified: 2026-08-14
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -87,8 +87,15 @@ adopted into their known family or appended as a standalone upper item.
 `SidebarNativeDragSurface` is the AppKit drag surface used from SwiftUI,
 including on the detail-pane pills so a shelf member can still be reordered or
 extracted. Ordinary dragging produces pure commands through
-`NavigationDragCoordinator`; hover and spring-loading provide feedback,
-including the double flash, but mutation occurs only on drop. The AppKit bridge
+`NavigationDragCoordinator`. Accepted insertion targets derive a transient
+`NavigationDragPreview` from the persisted baseline on every hover update, so
+stable sidebar rows and pill tabs animate around the dragged item without
+accumulating index drift. The preview never writes preferences: a completed
+drop commits the command, while the native source's ended callback discards it
+after cancellation. Combining two loose modules still waits for release because
+forming a shelf during hover would remove the active hit-tested rows. Hover and
+spring-loading continue to provide target feedback, including the double flash.
+The AppKit bridge
 snapshots the rendered row or pill for its drag image instead of substituting a
 generic label. Feature entry points remain unchanged: navigation routes the
 registered leaf into the existing module view rather than wrapping feature
@@ -98,7 +105,9 @@ The row overlays keep precise reorder and combine targets. A registered native
 ancestor of the list owns the remaining canvas, so the scroll view's empty
 document area cannot block drops. It resolves the pointer to the
 nearest stack: the end of the upper stack or the beginning of the lower stack,
-which makes the latter grow upward. Combining two loose modules assigns the
+which makes the latter grow upward. A trailing pill insertion target lets a
+module move to the end of its shelf as well as before another tab. Combining two
+loose modules assigns the
 first available **New Shelf** name and `SidebarPreferences` requests one
 focused inline rename. Escape restores the exact layout from before that
 creation; committing or leaving the field keeps the shelf. `NavigationShelfSessionState` is deliberately

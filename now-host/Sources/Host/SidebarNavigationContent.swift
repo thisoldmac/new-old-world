@@ -38,6 +38,7 @@ struct SidebarNavigationCanvas: View {
                             select: select)
                     }
                     .listStyle(.sidebar)
+                    .animation(.easeInOut(duration: 0.16), value: upperItems)
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         SidebarPinnedStack(
                             items: lowerItems,
@@ -95,12 +96,15 @@ private struct SidebarPinnedStack: View {
                 .padding(.vertical, 5)
         }
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.72))
+        .animation(.easeInOut(duration: 0.16), value: items)
     }
 }
 
 struct SidebarNavigationDragActions {
     let canDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
+    let previewDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
     let performDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
+    let dragEnded: (NavigationDraggedItem) -> Void
 }
 
 struct SidebarNavigationItems: View {
@@ -208,6 +212,7 @@ private struct SidebarNavigationDropSlot: View {
                 payload: nil,
                 target: target,
                 canDrop: dragActions.canDrop,
+                previewDrop: dragActions.previewDrop,
                 performDrop: dragActions.performDrop))
     }
 }
@@ -243,7 +248,9 @@ private struct SidebarNavigationItemView: View {
                         payload: .module(moduleID),
                         target: .module(moduleID),
                         canDrop: dragActions.canDrop,
+                        previewDrop: dragActions.previewDrop,
                         performDrop: dragActions.performDrop,
+                        dragEnded: dragActions.dragEnded,
                         activate: {
                             select(moduleSelection)
                         }))
@@ -390,7 +397,9 @@ private struct SidebarShelfRow: View {
                     payload: .shelf(shelf.id),
                     target: .shelf(shelf.id, beforeModuleID: nil),
                     canDrop: dragActions.canDrop,
+                    previewDrop: dragActions.previewDrop,
                     performDrop: dragActions.performDrop,
+                    dragEnded: dragActions.dragEnded,
                     activate: { activate(shelfSelection) })
             }
         }

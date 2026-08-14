@@ -3,6 +3,7 @@ import SwiftUI
 struct HostSidebarView: View {
     let registry: ModuleRegistry
     @ObservedObject var sidebar: SidebarPreferences
+    let layout: NavigationLayout
     @ObservedObject var listener: GuestListener
     @ObservedObject var monitor: GuestStatusMonitor
     let selection: NavigationSelection
@@ -14,8 +15,8 @@ struct HostSidebarView: View {
 
     var body: some View {
         SidebarNavigationCanvas(
-            upperItems: sidebar.layout.upper,
-            lowerItems: sidebar.layout.lower,
+            upperItems: layout.upper,
+            lowerItems: layout.lower,
             registry: registry,
             status: monitor.status,
             compact: sidebar.compact,
@@ -35,12 +36,12 @@ struct HostSidebarView: View {
                 selectGuest: selectGuest,
                 showConnections: {
                     select(NavigationSelection.selecting(
-                        moduleID: "settings", in: sidebar.layout))
+                        moduleID: "settings", in: layout))
                 })
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ModuleDrawerView(
-                items: sidebar.layout.drawer,
+                items: layout.drawer,
                 registry: registry,
                 status: monitor.status,
                 compact: sidebar.compact,
@@ -67,7 +68,7 @@ struct HostSidebarView: View {
     }
 
     private func revealDrawerSelection() {
-        if selection.requiresDrawerPresentation(in: sidebar.layout) {
+        if selection.requiresDrawerPresentation(in: layout) {
             drawerPresented = true
         }
     }

@@ -39,6 +39,7 @@ struct SidebarCanvasDropHost<Content: View>: NSViewRepresentable {
             upperItemCount: upperItemCount,
             lowerItemCount: lowerItemCount,
             canDrop: dragActions.canDrop,
+            previewDrop: dragActions.previewDrop,
             performDrop: dragActions.performDrop)
     }
 }
@@ -47,6 +48,7 @@ struct SidebarCanvasDropConfiguration {
     let upperItemCount: Int
     let lowerItemCount: Int
     let canDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
+    let previewDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
     let performDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
 }
 
@@ -81,14 +83,17 @@ final class NativeSidebarCanvasDropView<Content: View>: NSView {
 
     override func draggingEntered(_ sender: any NSDraggingInfo)
         -> NSDragOperation {
-        guard accepted(sender) != nil else { return [] }
+        guard let (payload, target) = accepted(sender),
+              configuration.previewDrop(payload, target) else { return [] }
         sender.numberOfValidItemsForDrop = 1
         return .move
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo)
         -> NSDragOperation {
-        accepted(sender) == nil ? [] : .move
+        guard let (payload, target) = accepted(sender),
+              configuration.previewDrop(payload, target) else { return [] }
+        return .move
     }
 
     override func prepareForDragOperation(_ sender: any NSDraggingInfo)

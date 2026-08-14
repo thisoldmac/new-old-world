@@ -6,6 +6,7 @@ struct HostRootView: View {
     @ObservedObject var sidebar: SidebarPreferences
     @State private var selectedHeroShelfID: NavigationShelfID?
     @State private var shelfSession = NavigationShelfSessionState()
+    @State private var dragPreview: NavigationDragPreview?
 
     init(registry: ModuleRegistry,
          state: HostAppState,
@@ -15,6 +16,7 @@ struct HostRootView: View {
         self.sidebar = sidebar
         _selectedHeroShelfID = State(initialValue: nil)
         _shelfSession = State(initialValue: NavigationShelfSessionState())
+        _dragPreview = State(initialValue: nil)
     }
 
     var body: some View {
@@ -22,6 +24,7 @@ struct HostRootView: View {
             HostSidebarView(
                 registry: registry,
                 sidebar: sidebar,
+                layout: presentationLayout,
                 listener: state.listener,
                 monitor: state.guestStatus,
                 selection: selection,
@@ -33,7 +36,7 @@ struct HostRootView: View {
             HostDetailView(
                 selection: selection,
                 registry: registry,
-                layout: sidebar.layout,
+                layout: presentationLayout,
                 state: state,
                 monitor: state.guestStatus,
                 dragActions: dragActions,
@@ -54,14 +57,18 @@ struct HostRootView: View {
         }
     }
 
+    private var presentationLayout: NavigationLayout {
+        dragPreview?.layout ?? sidebar.layout
+    }
+
     private var selection: NavigationSelection {
         if let selectedHeroShelfID,
-           let shelf = sidebar.layout.shelf(id: selectedHeroShelfID) {
+           let shelf = presentationLayout.shelf(id: selectedHeroShelfID) {
             return NavigationSelection.selectingHero(of: shelf)
         }
         return NavigationSelection.selecting(
             moduleID: state.selectedModuleID,
-            in: sidebar.layout)
+            in: presentationLayout)
     }
 
     private func select(_ newSelection: NavigationSelection) {
@@ -91,14 +98,33 @@ struct HostRootView: View {
                     for: payload, droppingOn: target,
                     in: sidebar.layout) != nil
             },
+            previewDrop: { payload, target in
+                guard let preview = NavigationDragPreview(
+                    dragged: payload, target: target,
+                    baseline: sidebar.layout) else { return false }
+                guard preview != dragPreview else { return true }
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    dragPreview = preview
+                }
+                return true
+            },
             performDrop: { payload, target in
                 guard let command = NavigationDragCoordinator.command(
                     for: payload, droppingOn: target,
                     in: sidebar.layout),
                       let changed = try? sidebar.layout.applying(command)
                 else { return false }
-                sidebar.replaceLayout(changed)
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    sidebar.replaceLayout(changed)
+                    dragPreview = nil
+                }
                 return true
+            },
+            dragEnded: { payload in
+                guard dragPreview?.dragged == payload else { return }
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    dragPreview = nil
+                }
             })
     }
 }

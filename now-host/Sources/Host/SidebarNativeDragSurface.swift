@@ -10,7 +10,9 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
     let payload: NavigationDraggedItem?
     let target: NavigationDropTarget?
     let canDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
+    let previewDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
     let performDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
+    var dragEnded: ((NavigationDraggedItem) -> Void)?
     var activate: (() -> Void)?
     var springLoad: (() -> Void)?
     var menuItems: [SidebarNativeMenuItem] = []
@@ -30,7 +32,9 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
             payload: payload,
             target: target,
             canDrop: canDrop,
+            previewDrop: previewDrop,
             performDrop: performDrop,
+            dragEnded: dragEnded,
             activate: activate,
             springLoad: springLoad,
             menuItems: menuItems)
@@ -49,7 +53,9 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         let payload: NavigationDraggedItem?
         let target: NavigationDropTarget?
         let canDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
+        let previewDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
         let performDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
+        let dragEnded: ((NavigationDraggedItem) -> Void)?
         let activate: (() -> Void)?
         let springLoad: (() -> Void)?
         let menuItems: [SidebarNativeMenuItem]
@@ -136,9 +142,17 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         true
     }
 
+    func draggingSession(_ session: NSDraggingSession,
+                         endedAt screenPoint: NSPoint,
+                         operation: NSDragOperation) {
+        guard let payload = configuration?.payload else { return }
+        configuration?.dragEnded?(payload)
+    }
+
     override func draggingEntered(_ sender: any NSDraggingInfo)
         -> NSDragOperation {
-        guard let (_, target) = accepted(sender) else {
+        guard let (payload, target) = accepted(sender),
+              configuration?.previewDrop(payload, target) == true else {
             feedback = NavigationDragFeedbackState()
             return []
         }
@@ -150,7 +164,11 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
 
     override func draggingUpdated(_ sender: any NSDraggingInfo)
         -> NSDragOperation {
-        accepted(sender) == nil ? [] : .move
+        guard let (payload, target) = accepted(sender),
+              configuration?.previewDrop(payload, target) == true else {
+            return []
+        }
+        return .move
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {

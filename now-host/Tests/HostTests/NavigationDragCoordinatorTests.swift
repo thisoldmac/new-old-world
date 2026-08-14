@@ -113,6 +113,49 @@ final class NavigationDragCoordinatorTests: XCTestCase {
                        ["development", "chat"])
     }
 
+    func testPreviewReflowsTopLevelItemsWithoutMutatingTheBaseline() throws {
+        let baseline = NavigationLayout.standard(for: .standard)
+
+        let preview = try XCTUnwrap(NavigationDragPreview(
+            dragged: .shelf(.screen),
+            target: .zone(.upper, index: 0),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
+
+        XCTAssertEqual(preview.layout.upper.first?.id,
+                       NavigationShelfID.screen.rawValue)
+        XCTAssertEqual(baseline.upper.first?.id,
+                       NavigationShelfID.machine.rawValue)
+    }
+
+    func testPreviewReflowsShelfTabsBeforeDrop() throws {
+        let baseline = NavigationLayout.standard(for: .standard)
+
+        let preview = try XCTUnwrap(NavigationDragPreview(
+            dragged: .module("mcp"),
+            target: .shelf(.network, beforeModuleID: "settings"),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
+
+        XCTAssertEqual(preview.layout.shelf(id: .network)?.moduleIDs,
+                       ["mcp", "settings", "networking", "web"])
+        XCTAssertEqual(baseline.shelf(id: .network)?.moduleIDs,
+                       ["settings", "networking", "mcp", "web"])
+    }
+
+    func testCombiningModulesWaitsForDropInsteadOfCollapsingTheDragTarget() throws {
+        let baseline = NavigationLayout.standard(for: .standard)
+
+        let preview = try XCTUnwrap(NavigationDragPreview(
+            dragged: .module("development"),
+            target: .module("chat"),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
+
+        XCTAssertEqual(preview.layout, baseline)
+        XCTAssertEqual(preview.target, .module("chat"))
+    }
+
     func testFixedModuleHeroesCannotProduceDragCommands() {
         let layout = NavigationLayout.standard(for: .standard)
 

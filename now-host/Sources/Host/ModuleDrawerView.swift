@@ -50,6 +50,7 @@ struct ModuleDrawerView: View {
                 payload: nil,
                 target: .zone(.drawer, index: items.endIndex),
                 canDrop: dragActions.canDrop,
+                previewDrop: dragActions.previewDrop,
                 performDrop: dragActions.performDrop,
                 activate: { isPresented.toggle() },
                 springLoad: { isPresented = true }))
@@ -93,6 +94,7 @@ struct ModuleDrawerView: View {
                             select: select)
                     }
                     .padding(4)
+                    .animation(.easeInOut(duration: 0.16), value: items)
                 }
                 .frame(minHeight: 100, maxHeight: 420)
             }

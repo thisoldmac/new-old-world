@@ -87,6 +87,43 @@ struct NavigationDragCoordinator {
     }
 }
 
+/// The non-persisted arrangement shown while a native drag crosses an
+/// insertion target. Every preview is derived from the layout at drag start,
+/// so moving back and forth never compounds index adjustments. Combining two
+/// loose modules waits for drop because replacing both hit-tested rows with a
+/// new shelf would remove the active destination from beneath the pointer.
+struct NavigationDragPreview: Equatable, Sendable {
+    let dragged: NavigationDraggedItem
+    let target: NavigationDropTarget
+    let layout: NavigationLayout
+
+    init?(
+        dragged: NavigationDraggedItem,
+        target: NavigationDropTarget,
+        baseline: NavigationLayout,
+        makeShelfID: () -> UUID = UUID.init
+    ) {
+        guard let command = NavigationDragCoordinator.command(
+            for: dragged, droppingOn: target, in: baseline,
+            makeShelfID: makeShelfID) else { return nil }
+
+        let previewLayout: NavigationLayout
+        switch command {
+        case .combine:
+            previewLayout = baseline
+        case .move, .insert:
+            guard let changed = try? baseline.applying(command) else {
+                return nil
+            }
+            previewLayout = changed
+        }
+
+        self.dragged = dragged
+        self.target = target
+        layout = previewLayout
+    }
+}
+
 extension NavigationLayout {
     func applying(_ command: NavigationLayoutCommand) throws
         -> NavigationLayout {
