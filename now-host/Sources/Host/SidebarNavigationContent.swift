@@ -256,7 +256,13 @@ private struct SidebarNavigationItemView: View {
                         activate: {
                             select(moduleSelection)
                         },
-                        hoverChanged: { isHovering = $0 }))
+                        hoverChanged: { isHovering = $0 },
+                        hoverDisclosure: collapsed
+                            ? SidebarHoverDisclosure(
+                                title: module.title,
+                                detail: module.summary,
+                                symbol: module.symbol)
+                            : nil))
             }
         case .shelf(let shelf):
             SidebarShelfRow(
@@ -321,7 +327,7 @@ private struct SidebarLooseModuleRow: View {
         .animation(.easeOut(duration: 0.12), value: isHovering)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityLabel(module.title)
-        .help(collapsed || compact ? module.summary : "")
+        .help(!collapsed && compact ? module.summary : "")
     }
 
 }
@@ -407,7 +413,6 @@ private struct SidebarShelfRow: View {
         .accessibilityAddTraits(
             selection.containingShelfID == shelf.id ? [.isSelected] : [])
         .accessibilityLabel(title)
-        .help(title)
         .overlay {
             if !isRenaming {
                 SidebarNativeDragSurface(
@@ -419,7 +424,13 @@ private struct SidebarShelfRow: View {
                     dragEnded: dragActions.dragEnded,
                     activate: { activate(shelfSelection) },
                     springLoad: { activate(shelfSelection) },
-                    hoverChanged: { isHovering = $0 })
+                    hoverChanged: { isHovering = $0 },
+                    hoverDisclosure: collapsed
+                        ? SidebarHoverDisclosure(
+                            title: title,
+                            detail: moduleList,
+                            symbol: symbol)
+                        : nil)
             }
         }
     }

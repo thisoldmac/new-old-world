@@ -28,6 +28,34 @@ final class AppearancePreferencesTests: XCTestCase {
         XCTAssertEqual(restored.liquidGlass, .clear)
     }
 
+    func testGlassAmountMovesContinuouslyAndPersistsExactValue() throws {
+        let suite = "AppearancePreferences.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removeSuite(named: suite) }
+        let preferences = AppearancePreferences(defaults: defaults) { _ in }
+
+        preferences.liquidGlass = LiquidGlassPreference(amount: 0.37)
+
+        XCTAssertEqual(preferences.liquidGlass.amount, 0.37,
+                       accuracy: 0.000_001)
+        let restored = AppearancePreferences(defaults: defaults) { _ in }
+        XCTAssertEqual(restored.liquidGlass.amount, 0.37,
+                       accuracy: 0.000_001)
+    }
+
+    func testLegacyThreeStopGlassPreferenceMigratesToTheSameNativeStyle()
+        throws {
+        let suite = "AppearancePreferences.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removeSuite(named: suite) }
+        defaults.set(1, forKey: "appearance.liquidGlass")
+
+        let preferences = AppearancePreferences(defaults: defaults) { _ in }
+
+        XCTAssertEqual(preferences.liquidGlass, .clear)
+        XCTAssertEqual(preferences.liquidGlass.amount, 0.5)
+    }
+
     func testEffectiveGlassFallsBackForRuntimeAndAccessibility() {
         XCTAssertEqual(
             GlassSelection.resolve(preference: .regular,
@@ -41,7 +69,8 @@ final class AppearancePreferencesTests: XCTestCase {
                                    reduceTransparency: false,
                                    increasedContrast: false),
             .clear)
-        for preference in LiquidGlassPreference.allCases {
+        for preference in [LiquidGlassPreference.material, .clear, .regular,
+                           LiquidGlassPreference(amount: 0.37)] {
             XCTAssertEqual(
                 GlassSelection.resolve(preference: preference,
                                        supportsLiquidGlass: false,

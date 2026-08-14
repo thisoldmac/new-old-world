@@ -16,16 +16,17 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
     var activate: (() -> Void)?
     var springLoad: (() -> Void)?
     var hoverChanged: ((Bool) -> Void)?
+    var hoverDisclosure: SidebarHoverDisclosure? = nil
     var menuItems: [SidebarNativeMenuItem] = []
 
     func makeNSView(context: Context) -> NativeNavigationDragView {
         let view = NativeNavigationDragView()
-        view.configuration = configuration
+        view.apply(configuration)
         return view
     }
 
     func updateNSView(_ view: NativeNavigationDragView, context: Context) {
-        view.configuration = configuration
+        view.apply(configuration)
     }
 
     private var configuration: NativeNavigationDragView.Configuration {
@@ -39,6 +40,7 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
             activate: activate,
             springLoad: springLoad,
             hoverChanged: hoverChanged,
+            hoverDisclosure: hoverDisclosure,
             menuItems: menuItems)
     }
 }
@@ -61,6 +63,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         let activate: (() -> Void)?
         let springLoad: (() -> Void)?
         let hoverChanged: ((Bool) -> Void)?
+        let hoverDisclosure: SidebarHoverDisclosure?
         let menuItems: [SidebarNativeMenuItem]
     }
 
@@ -72,6 +75,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     private var beganDrag = false
     private var feedback = NavigationDragFeedbackState()
     private var hoverTrackingArea: NSTrackingArea?
+    private let hoverDisclosurePresenter = SidebarHoverDisclosurePresenter()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -91,6 +95,13 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    func apply(_ newConfiguration: Configuration) {
+        configuration = newConfiguration
+        hoverDisclosurePresenter.update(
+            disclosure: newConfiguration.hoverDisclosure,
+            anchor: self)
+    }
+
     override func updateTrackingAreas() {
         if let hoverTrackingArea {
             removeTrackingArea(hoverTrackingArea)
@@ -109,19 +120,23 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
             configuration?.hoverChanged?(false)
+            hoverDisclosurePresenter.pointerExited()
         }
         super.viewWillMove(toWindow: newWindow)
     }
 
     override func mouseEntered(with event: NSEvent) {
         configuration?.hoverChanged?(true)
+        hoverDisclosurePresenter.pointerEntered()
     }
 
     override func mouseExited(with event: NSEvent) {
         configuration?.hoverChanged?(false)
+        hoverDisclosurePresenter.pointerExited()
     }
 
     override func mouseDown(with event: NSEvent) {
+        hoverDisclosurePresenter.cancel()
         mouseDownEvent = event
         beganDrag = false
     }
@@ -133,6 +148,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         let dx = event.locationInWindow.x - start.locationInWindow.x
         let dy = event.locationInWindow.y - start.locationInWindow.y
         guard hypot(dx, dy) >= 3 else { return }
+        hoverDisclosurePresenter.cancel()
 
         let pasteboardItem = NSPasteboardItem()
         pasteboardItem.setString(string, forType: Self.pasteboardType)

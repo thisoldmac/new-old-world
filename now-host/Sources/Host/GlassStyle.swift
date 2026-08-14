@@ -123,7 +123,7 @@ private struct NowGlassPanel: ViewModifier {
                 preference: preference,
                 supportsLiquidGlass: true,
                 reduceTransparency: reduce,
-                increasedContrast: contrast == .increased) {
+                increasedContrast: contrast == .increased).nativeStyle {
             case .material:
                 content.background(.regularMaterial, in: shape)
             case .clear:
@@ -164,7 +164,7 @@ private struct NowGlassBar: ViewModifier {
                 preference: preference,
                 supportsLiquidGlass: true,
                 reduceTransparency: reduce,
-                increasedContrast: contrast == .increased) {
+                increasedContrast: contrast == .increased).nativeStyle {
             case .material:
                 content.background(.bar)
             case .clear:
@@ -199,7 +199,8 @@ private struct NowGlassButton: ViewModifier {
                 preference: preference,
                 supportsLiquidGlass: true,
                 reduceTransparency: reduce,
-                increasedContrast: contrast == .increased) != .material {
+                increasedContrast: contrast == .increased).nativeStyle
+                != .material {
             /* SwiftUI's native glass button style does not expose the
                clear/regular material choice. It still follows Off versus On;
                panels and bars show the two SDK-supported glass materials. */
@@ -230,7 +231,8 @@ private struct NowGlassShelf: ViewModifier {
                preference: preference,
                supportsLiquidGlass: true,
                reduceTransparency: reduce,
-               increasedContrast: contrast == .increased) != .material {
+               increasedContrast: contrast == .increased).nativeStyle
+                != .material {
             // Clear glass keeps a shelf quieter than the floating panels and
             // bars around it while still letting macOS own its material.
             content.glassEffect(.clear, in: shape)

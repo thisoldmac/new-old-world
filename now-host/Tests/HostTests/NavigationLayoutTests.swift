@@ -75,7 +75,7 @@ final class NavigationLayoutTests: XCTestCase {
         assertTotalPartition(repaired, registry: .standard)
     }
 
-    func testMachineStaysUpperAndConnectionsCanOccupyThePinnedZone() {
+    func testPermanentShelvesPreserveTheirChosenVisibleZone() {
         let stored = NavigationLayout(
             upper: [.module("chat")],
             lower: [
@@ -90,10 +90,11 @@ final class NavigationLayoutTests: XCTestCase {
 
         let repaired = stored.sanitised(for: .standard)
 
-        XCTAssertEqual(repaired.zone(of: .machine), .upper)
+        XCTAssertEqual(repaired.zone(of: .machine), .lower)
         XCTAssertEqual(repaired.zone(of: .network), .lower)
         XCTAssertEqual(repaired.lower.map(\.id),
-                       [NavigationShelfID.network.rawValue,
+                       [NavigationShelfID.machine.rawValue,
+                        NavigationShelfID.network.rawValue,
                         "module.console", "module.logs"])
         assertTotalPartition(repaired, registry: .standard)
     }

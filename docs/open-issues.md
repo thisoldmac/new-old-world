@@ -36,17 +36,28 @@ produces an advisory launch warning with a durable **Don't Warn Again** choice.
 The integrated continuity branch stores these additions in preference format
 26 because format 25 already owns launch-log retention.
 
-The native host shell now keeps a 136-point collapsed source-list rail clear
+The native host shell now keeps a 120-point collapsed source-list rail clear
 of AppKit's traffic lights, presents the selected guest and live connection
 status in the toolbar, uses AppKit tracking areas for hover, spring-loads
 closed shelves into their indexed tab targets, and renders drag snapshots
-under the source view's effective appearance. Shelves remain selectable drop
-destinations with a subtle clear-glass or material surface; source-list group
-rows were rejected because their native semantics are supplementary headers.
+under the source view's effective appearance. Collapsed rows disclose their
+expanded identity in a delayed transient AppKit popover without changing the
+rail's geometry. Shelves remain selectable drop destinations with a subtle
+clear-glass or material surface; source-list group rows were rejected because
+their native semantics are supplementary headers. Shelves and modules may move
+between both visible sidebar stacks, while the drawer control remains fixed.
+
+The Liquid Glass preference now stores and exposes a continuous value instead
+of snapping its slider to three positions, including migration of the previous
+three-state preference. Apple's public SDK still exposes discrete material,
+clear and regular glass styles rather than an arbitrary intensity, so rendering
+selects the nearest native style while preserving the person's exact value.
 The host gate passed and the shell was visually observed in dark and light
-appearances on macOS 27. The actual spring-loaded drag gesture and drag image
-remain UI-unverified, and the Ventura fallback is built and tested but not
-runtime-observed.
+appearances on macOS 27. The 120-point rail cleared the traffic lights, and the
+slider was driven to and reported an exact intermediate 37% value before the
+test preference was restored. The actual spring-loaded drag gesture,
+cross-stack drag, drag image and delayed disclosure remain UI-unverified, and
+the Ventura fallback is built and tested but not runtime-observed.
 
 Still open: a real release assembly using the intended Apple installer and
 signing identity; notarization and website publication; classic-browser direct

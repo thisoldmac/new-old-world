@@ -54,7 +54,6 @@ struct ModuleDrawerView: View {
                           .opacity(0.10)
                       : .clear))
         .animation(.easeOut(duration: 0.12), value: isHovering)
-        .help("Modules Drawer")
         .overlay(SidebarNativeDragSurface(
             payload: nil,
             target: .zone(.drawer, index: items.endIndex),
@@ -63,7 +62,13 @@ struct ModuleDrawerView: View {
             performDrop: dragActions.performDrop,
             activate: { isPresented.toggle() },
             springLoad: { isPresented = true },
-            hoverChanged: { isHovering = $0 }))
+            hoverChanged: { isHovering = $0 },
+            hoverDisclosure: collapsed
+                ? SidebarHoverDisclosure(
+                    title: "Modules Drawer",
+                    detail: drawerHoverDetail,
+                    symbol: "archivebox")
+                : nil))
         .popover(isPresented: $isPresented, arrowEdge: .trailing) {
             drawerContents
         }
@@ -111,6 +116,11 @@ struct ModuleDrawerView: View {
         .padding(12)
         .frame(width: 280)
         .nowGlassPanel()
+    }
+
+    private var drawerHoverDetail: String {
+        if summary.moduleCount == 0 { return "Drag modules here to put them away." }
+        return "\(summary.moduleCount) modules"
     }
 }
 

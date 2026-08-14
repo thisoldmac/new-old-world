@@ -39,7 +39,9 @@ enum NavigationShelfID: Hashable, Sendable {
     func canOccupy(_ zone: NavigationZone) -> Bool {
         switch self {
         case .machine:
-            zone == .upper
+            // Permanent means it cannot be deleted, not that it is pinned.
+            // It may live in either visible stack but not in the drawer.
+            zone != .drawer
         case .network:
             true
         case .screen, .files, .debug, .user:

@@ -222,17 +222,22 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertNotNil(changed.shelf(id: .machine))
     }
 
-    func testMachineCannotMoveIntoThePinnedZoneButConnectionsCan() throws {
+    func testPermanentShelvesCanMoveBetweenMainAndFooterZones() throws {
         let layout = NavigationLayout.standard(for: .standard)
 
-        XCTAssertNil(NavigationDragCoordinator.command(
+        let machineCommand = try XCTUnwrap(NavigationDragCoordinator.command(
             for: .shelf(.machine),
             droppingOn: .zone(.lower, index: 0),
             in: layout, makeShelfID: { shelfUUID }))
-        XCTAssertNotNil(NavigationDragCoordinator.command(
+        let machineMoved = try layout.applying(machineCommand)
+        XCTAssertEqual(machineMoved.zone(of: .machine), .lower)
+
+        let networkCommand = try XCTUnwrap(NavigationDragCoordinator.command(
             for: .shelf(.network),
             droppingOn: .zone(.upper, index: 0),
             in: layout, makeShelfID: { shelfUUID }))
+        let networkMoved = try layout.applying(networkCommand)
+        XCTAssertEqual(networkMoved.zone(of: .network), .upper)
     }
 
     func testDrawerSummaryCountsContainedLeavesAndSurfacesNetworkStatus() {

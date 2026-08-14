@@ -89,9 +89,9 @@ private struct SidebarWidth: ViewModifier {
             /* The full-size unified titlebar places AppKit's traffic lights
                over the sidebar material. SwiftUI already expanded the old
                64-point request to roughly 96 points, where the split divider
-               still clipped the zoom button. 136 points clears the native
-               control cluster without moving or restyling those controls. */
-            content.navigationSplitViewColumnWidth(136)
+               still clipped the zoom button. 120 points clears the native
+               control cluster without leaving an oversized icon rail. */
+            content.navigationSplitViewColumnWidth(120)
         } else {
             content.navigationSplitViewColumnWidth(min: 230, ideal: 265,
                                                    max: 320)

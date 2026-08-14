@@ -10,7 +10,7 @@ final class HostShellPresentationTests: XCTestCase {
             "now-host/Sources/Host/HostSidebarView.swift")
 
         XCTAssertTrue(source.contains(
-            "content.navigationSplitViewColumnWidth(136)"))
+            "content.navigationSplitViewColumnWidth(120)"))
         XCTAssertFalse(source.contains(
             "content.navigationSplitViewColumnWidth(64)"))
     }
@@ -30,5 +30,26 @@ final class HostShellPresentationTests: XCTestCase {
             "GuestSelectionLabel(name: activeLabel, status: status)"))
         XCTAssertTrue(sidebar.contains(
             "GuestConnectionStatusDot(status: status)"))
+    }
+
+    func testCollapsedRowsUseDelayedNativeHoverDisclosure() throws {
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNavigationContent.swift")
+        let native = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarHoverDisclosure.swift")
+
+        XCTAssertTrue(sidebar.contains("hoverDisclosure: collapsed"))
+        XCTAssertTrue(native.contains("NSPopover"))
+        XCTAssertTrue(native.contains("450_000_000"),
+                      "the disclosure should wait long enough to ignore cursor transit")
+        XCTAssertTrue(native.contains("behavior = .transient"))
+    }
+
+    func testLiquidGlassControlIsContinuous() throws {
+        let settings = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostSettingsView.swift")
+
+        XCTAssertTrue(settings.contains("Slider(value: glassAmount, in: 0...1)"))
+        XCTAssertFalse(settings.contains("Slider(value: glassAmount, in: 0...1, step:"))
     }
 }

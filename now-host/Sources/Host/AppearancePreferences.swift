@@ -26,18 +26,31 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 }
 
-enum LiquidGlassPreference: Int, CaseIterable, Identifiable {
-    case material
-    case clear
-    case regular
+struct LiquidGlassPreference: Equatable, Sendable {
+    enum NativeStyle: Equatable, Sendable {
+        case material
+        case clear
+        case regular
+    }
 
-    var id: Self { self }
+    static let material = LiquidGlassPreference(amount: 0)
+    static let clear = LiquidGlassPreference(amount: 0.5)
+    static let regular = LiquidGlassPreference(amount: 1)
 
-    var title: String {
-        switch self {
-        case .material: "Off"
-        case .clear: "Clear"
-        case .regular: "Regular"
+    let amount: Double
+
+    init(amount: Double) {
+        self.amount = amount.isFinite ? min(max(amount, 0), 1) : 1
+    }
+
+    /// Apple exposes identity/material, clear, and regular glass rather than
+    /// an intensity parameter. The person's value remains continuous and is
+    /// persisted exactly; rendering selects the nearest native material.
+    var nativeStyle: NativeStyle {
+        switch amount {
+        case ..<0.25: .material
+        case ..<0.75: .clear
+        default: .regular
         }
     }
 }
@@ -49,7 +62,8 @@ enum LiquidGlassPreference: Int, CaseIterable, Identifiable {
 final class AppearancePreferences: ObservableObject {
     private enum Key {
         static let theme = "appearance.theme"
-        static let liquidGlass = "appearance.liquidGlass"
+        static let legacyLiquidGlass = "appearance.liquidGlass"
+        static let liquidGlassAmount = "appearance.liquidGlassAmount"
     }
 
     @Published var theme: AppTheme {
@@ -63,7 +77,7 @@ final class AppearancePreferences: ObservableObject {
     @Published var liquidGlass: LiquidGlassPreference {
         didSet {
             guard liquidGlass != oldValue else { return }
-            defaults.set(liquidGlass.rawValue, forKey: Key.liquidGlass)
+            defaults.set(liquidGlass.amount, forKey: Key.liquidGlassAmount)
         }
     }
 
@@ -82,9 +96,16 @@ final class AppearancePreferences: ObservableObject {
         self.applyAppearance = applyAppearance
         theme = defaults.string(forKey: Key.theme)
             .flatMap(AppTheme.init(rawValue:)) ?? .system
-        liquidGlass = LiquidGlassPreference(
-            rawValue: defaults.object(forKey: Key.liquidGlass) as? Int ?? -1)
-            ?? .regular
+        if defaults.object(forKey: Key.liquidGlassAmount) != nil {
+            liquidGlass = LiquidGlassPreference(
+                amount: defaults.double(forKey: Key.liquidGlassAmount))
+        } else if let legacy = defaults.object(
+            forKey: Key.legacyLiquidGlass) as? Int,
+                  (0...2).contains(legacy) {
+            liquidGlass = LiquidGlassPreference(amount: Double(legacy) / 2)
+        } else {
+            liquidGlass = .regular
+        }
         applyAppearance(theme.appearance)
     }
 
