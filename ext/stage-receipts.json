@@ -938,6 +938,16 @@
         "ext/src/now_ext_continuity.c"
       ],
       "reason": "No Metal access overnight; INIT audit corrected the interrupt-context contract comment after the built prune. Shared bake and Metal verification remain due before landing."
+    },
+    {
+      "at": "2026-08-14T04:03:13-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "ec54ece03736b4ba8a8a12df3eb2e7064bc5773f",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "No Metal access overnight; source-guard wording correction only. Shared bake and Metal verification remain due before landing."
     }
   ]
 }

@@ -1012,7 +1012,7 @@ void now_ext_continuity_service(void)
    path; touching either from this unrelated timer caused the metal wedge this
    split exists to prevent. There is no manager, QuickDraw, Process Manager,
    allocation or logging here. The one Event Manager exception is the bounded,
-   gated PPostEvent pair in deliver_deferred_press_interrupt above. */
+   gated post pair in deliver_deferred_press_interrupt above. */
 void now_ext_continuity_tick(TMTaskPtr task)
 {
     ContinuityButtonTask *self = (ContinuityButtonTask *)task;
