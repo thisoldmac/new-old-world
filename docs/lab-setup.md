@@ -149,3 +149,30 @@ lsof -nP -iTCP -sTCP:LISTEN | grep "New"
 
 Clean up the suite afterwards with `defaults delete
 dev.newoldworld.now.settings.my-thread`.
+
+## Signed release assembly
+
+`scripts/release-dmg` assembles a signed development-channel DMG from
+three desk facts in `.env.lab`, refusing by name when one is missing:
+
+- `NOW_RELEASE_SIGN_IDENTITY` — the codesign identity string, exactly as
+  `security find-identity -v -p codesigning` prints it.
+- `NOW_RELEASE_CARBONLIB_DESCRIPTOR` — absolute path to the CarbonLib
+  descriptor JSON, with the installer's license material beside it (the
+  descriptor grammar is in the distribution standard reference).
+- `NOW_RELEASE_PROVISION_PROFILE` — a **macOS** team provisioning
+  profile to embed before signing. This one has a failure mode worth its
+  own sentence: an identity-signed app carries restricted entitlements,
+  and without an embedded profile authorizing them AMFI kills the
+  process at spawn while the Finder reports only "can't be opened" —
+  which is how the first signed DMG from this desk shipped unlaunchable
+  with every gate green. Xcode's managed `Mac Team Provisioning
+  Profile: *` (found inside any Xcode-built app of the same team as
+  `Contents/embedded.provisionprofile`) is the right file; the assembler
+  refuses wrong-platform, wrong-team, and expired profiles by name.
+  Note the iOS wildcard profile in the same Xcode directory differs only
+  in its Platform array and produces the identical unlaunchable app.
+
+A real release (`--channel release`) is deliberately not wrapped: it is
+a decision with more inputs than a desk file, and
+`scripts/assemble-release`'s own refusals are its interface.

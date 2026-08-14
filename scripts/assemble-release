@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import os
 import plistlib
@@ -118,10 +119,50 @@ def stage_embedded(bundle: Path, application: ComponentArtifact,
         raise ReleaseRefusal(f"unexpected embedded assets: {sorted(unexpected)}")
 
 
+def validate_provision_profile(profile: Path) -> None:
+    """The restricted entitlements below are dead weight without a profile
+    that authorizes them: AMFI kills the process at spawn and the Finder
+    says only "can't be opened", which is how the first identity-signed
+    DMG shipped unlaunchable while every gate read green (2026-08-14).
+    Validate the three facts that made that failure possible - the profile
+    exists, it is a macOS profile, and it covers this team - so a wrong
+    desk file is refused by name here rather than by AMFI at the user."""
+    decoded = subprocess.run(
+        ["/usr/bin/security", "cms", "-D", "-i", str(profile)],
+        capture_output=True)
+    if decoded.returncode != 0:
+        raise ReleaseRefusal(f"{profile}: not a readable provisioning profile")
+    document = plistlib.loads(decoded.stdout)
+    platforms = document.get("Platform", [])
+    if "OSX" not in platforms:
+        raise ReleaseRefusal(
+            f"{profile}: platform {platforms} is not a macOS profile")
+    app_id = document.get("Entitlements", {}).get(
+        "com.apple.application-identifier", "")
+    if not app_id.startswith(f"{TEAM_ID}."):
+        raise ReleaseRefusal(
+            f"{profile}: profile covers {app_id!r}, not team {TEAM_ID}")
+    expires = document.get("ExpirationDate")
+    if expires is not None and expires < datetime.datetime.now():
+        raise ReleaseRefusal(f"{profile}: profile expired {expires}")
+
+
 def sign_host(bundle: Path, identity: str | None, adhoc: bool,
-              workspace: Path) -> None:
+              workspace: Path, provision_profile: Path | None) -> None:
     if not adhoc and not identity:
         raise ReleaseRefusal("name --sign-identity or use --adhoc for a local fixture")
+    if adhoc and provision_profile is not None:
+        raise ReleaseRefusal(
+            "--provision-profile is meaningless with --adhoc: an ad-hoc "
+            "signature carries no restricted entitlements to authorize")
+    if not adhoc and provision_profile is None:
+        raise ReleaseRefusal(
+            "an identity signature needs --provision-profile: the restricted "
+            "entitlements are unlaunchable without an embedded macOS profile")
+    if provision_profile is not None:
+        validate_provision_profile(provision_profile)
+        copy_exact(provision_profile,
+                   bundle / "Contents/embedded.provisionprofile")
     signing_identity = "-" if adhoc else identity
     arguments = [
         "/usr/bin/codesign", "--force", "--deep", "--options", "runtime",
@@ -197,7 +238,8 @@ def assemble(args: argparse.Namespace) -> None:
             shutil.copytree(bundle, prepared_host, symlinks=True)
             bundle = prepared_host
         stage_embedded(bundle, application, extension, licensed)
-        sign_host(bundle, args.sign_identity, args.adhoc, workspace)
+        sign_host(bundle, args.sign_identity, args.adhoc, workspace,
+                  args.provision_profile)
 
         publication = workspace / "publication"
         publication.mkdir()
@@ -242,6 +284,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--channel", choices=("development", "release"),
                         default="development")
     parser.add_argument("--sign-identity")
+    parser.add_argument("--provision-profile", type=Path,
+                        help="macOS provisioning profile embedded before an "
+                             "identity signature; required with "
+                             "--sign-identity, refused with --adhoc")
     parser.add_argument("--adhoc", action="store_true")
     parser.add_argument("--application", type=Path,
                         help="prepared exact PPC MacBinary (tests/development)")

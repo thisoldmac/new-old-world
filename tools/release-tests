@@ -282,6 +282,39 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(decoded.name, "New Old World Setup.img")
         self.assertGreaterEqual(len(decoded.data_fork), 2 * 1024 * 1024)
 
+    def test_identity_signature_requires_a_provision_profile(self) -> None:
+        # The first identity-signed DMG shipped with restricted
+        # entitlements and no embedded profile: AMFI killed it at spawn,
+        # the Finder said only "can't be opened", and every gate read
+        # green (2026-08-14). The refusal must arrive at assembly time,
+        # named, not at the user's double-click.
+        namespace = runpy.run_path(str(ROOT / "scripts/assemble-release"))
+        with self.assertRaises(namespace["ReleaseRefusal"]) as refusal:
+            namespace["sign_host"](self.root / "New Old World.app",
+                                   "Any Identity", False, self.root, None)
+        self.assertIn("needs --provision-profile", str(refusal.exception))
+
+    def test_adhoc_signature_refuses_a_provision_profile(self) -> None:
+        namespace = runpy.run_path(str(ROOT / "scripts/assemble-release"))
+        with self.assertRaises(namespace["ReleaseRefusal"]) as refusal:
+            namespace["sign_host"](self.root / "New Old World.app",
+                                   None, True, self.root,
+                                   self.root / "any.provisionprofile")
+        self.assertIn("meaningless with --adhoc", str(refusal.exception))
+
+    def test_provision_profile_must_be_a_macos_team_profile(self) -> None:
+        # An iOS wildcard profile sits in the same Xcode directory and
+        # differs only in its Platform array; embedding it produces the
+        # identical unlaunchable app. Wrong-platform and wrong-team are
+        # refused by name before signing.
+        profile = self.root / "wrong.provisionprofile"
+        profile.write_bytes(b"not a cms blob")
+        namespace = runpy.run_path(str(ROOT / "scripts/assemble-release"))
+        with self.assertRaises(namespace["ReleaseRefusal"]) as refusal:
+            namespace["validate_provision_profile"](profile)
+        self.assertIn("not a readable provisioning profile",
+                      str(refusal.exception))
+
     def test_release_channel_refuses_prepared_inputs(self) -> None:
         command = [
             sys.executable, str(ROOT / "scripts/assemble-release"),
