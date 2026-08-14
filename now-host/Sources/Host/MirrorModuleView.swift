@@ -52,6 +52,9 @@ struct MirrorModuleView: View {
     let connectedMachineName: String
     @ObservedObject var timeline: MirrorActTimeline
     @ObservedObject var cycles: MirrorCycleTimeline
+    /// Optional so the layout render tests, which have no wire, keep
+    /// constructing this view unchanged.
+    var assetIngestion: MirrorAssetIngestion?
 
     /// The event drawer's height. Fixed rather than draggable, and the
     /// reason is the review loop rather than taste: a `VSplitView` is the
@@ -99,7 +102,9 @@ struct MirrorModuleView: View {
                        room as the Macintosh. */
                     MirrorControlView(model: model, run: run,
                                       presentation: presentation,
-                                      source: source, cycles: cycles)
+                                      source: source, cycles: cycles,
+                                      ingestion: assetIngestion,
+                                      machineName: connectedMachineName)
                         .frame(width: 260)
                 }
             }

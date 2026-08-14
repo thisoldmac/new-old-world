@@ -56,6 +56,10 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
     private(set) lazy var window = NOWMirrorWindow(
         source: source, presentation: presentation,
         fileTransfer: fileTransfer)
+    /* Page-owned, unlike `fileTransfer`: an ingestion is started from the
+       Asset Packs card and has no life outside somebody looking at it. */
+    private(set) lazy var assetIngestion = MirrorAssetIngestion(
+        listener: context.listener)
 
     init(context: HostModuleContext) throws {
         guard let engines = context.mirrorEngines,
@@ -197,6 +201,7 @@ enum MirrorHostModule {
                 fileTransfer: runtime.fileTransfer,
                 connectedMachineName: runtime.connectedMachineName,
                 timeline: runtime.source.actTimeline,
-                cycles: runtime.source.cycleTimeline))
+                cycles: runtime.source.cycleTimeline,
+                assetIngestion: runtime.assetIngestion))
         })
 }

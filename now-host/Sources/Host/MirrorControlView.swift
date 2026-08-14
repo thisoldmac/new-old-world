@@ -149,6 +149,10 @@ struct MirrorControlView: View {
     @ObservedObject var presentation: MirrorPresentation
     @ObservedObject var source: NOWMirrorSource
     @ObservedObject var cycles: MirrorCycleTimeline
+    /// Absent in previews and layout tests, which have no wire to pull
+    /// over. The card still draws; only the ingest control is missing.
+    var ingestion: MirrorAssetIngestion?
+    var machineName: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -277,9 +281,79 @@ struct MirrorControlView: View {
                     Text("A changed pack is loaded on next launch.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
+                if let ingestion {
+                    Divider()
+                    MirrorAssetIngestCard(
+                        ingestion: ingestion,
+                        machineName: machineName,
+                        canReachGuest: model.connection.canCapture)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// The one action on the Asset Packs card: build a pack from the machine
+/// that is connected right now.
+///
+/// It is a separate view because the ingestion is an `ObservableObject`
+/// the enclosing card holds optionally, and an optional cannot be
+/// observed. That is the whole reason; there is no second policy here.
+private struct MirrorAssetIngestCard: View {
+    @ObservedObject var ingestion: MirrorAssetIngestion
+    var machineName: String
+    var canReachGuest: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Button(ingestion.isRunning
+                       ? "Stop" : "Ingest from \(label)") {
+                    if ingestion.isRunning { ingestion.cancel() }
+                    else { ingestion.ingest(machineName: label) }
+                }
+                .disabled(!canReachGuest && !ingestion.isRunning)
+                /* Says what it does and what it has NOT been shown to do.
+                   No pack has been built from a real Macintosh yet — over
+                   emulation or on metal — and a control that reads as
+                   finished work is how this project has been bitten. */
+                .help("Copy this Mac's own System file, theme and fonts "
+                      + "over the wire and build an asset pack from them. "
+                      + "Minutes, not seconds. Never yet run against a "
+                      + "real Macintosh — the transport is proven, this "
+                      + "use of it is not.")
+                if ingestion.isRunning {
+                    ProgressView().controlSize(.small)
+                }
+                Spacer()
+            }
+            if !ingestion.statusLine.isEmpty {
+                Text(ingestion.statusLine)
+                    .font(.caption2)
+                    .foregroundStyle(isRefused ? .red : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(ingestion.notes, id: \.self) { note in
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if case .finished = ingestion.phase {
+                Text("Select it above to use it; it loads on next launch.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var label: String {
+        machineName.isEmpty ? "this Mac" : machineName
+    }
+
+    private var isRefused: Bool {
+        if case .refused = ingestion.phase { return true }
+        return false
     }
 }
 
