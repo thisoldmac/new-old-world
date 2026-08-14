@@ -213,8 +213,8 @@ static void drain_trace(const NowPeekContinuityCell *cell)
                     (unsigned long)(packed & 0xFFFFu));
             } else if (entry->event
                         == kNowPeekContinuityTraceIdleSettle) {
-                now_log_memory(kLogInfo, "mirror",
-                               "idle settle count=%lu max-gap=%lu ticks=%lu",
+                now_log(kLogInfo, "mirror",
+                        "idle settle count=%lu max-gap=%lu ticks=%lu",
                                (unsigned long)(NowPeekU32)entry->arg0,
                                (unsigned long)(NowPeekU32)entry->arg1,
                                (unsigned long)entry->ticks);
@@ -234,9 +234,9 @@ static void drain_trace(const NowPeekContinuityCell *cell)
                     if (app[c] < 0x20 || app[c] > 0x7E)
                         app[c] = '.';
                 }
-                now_log_memory(kLogInfo, "mirror",
-                               "synthetic event observed down=%lu "
-                               "when-low=%lu ticks=%lu app=%s",
+                now_log(kLogInfo, "mirror",
+                        "synthetic event observed down=%lu "
+                        "when-low=%lu ticks=%lu app=%s",
                                (unsigned long)((packed >> 16) & 0xFFFFu),
                                (unsigned long)(packed & 0xFFFFu),
                                (unsigned long)entry->ticks, app);

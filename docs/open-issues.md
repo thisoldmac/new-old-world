@@ -336,6 +336,33 @@ All of this is **tested, not metal-verified**; the histogram has not yet
 been read against a run with human-reported hitch timing, and the spike's
 smoothness claim is exactly what the next attended pass exists to answer.
 
+**2026-08-13 20:49 attended run:** the entry inset ended the click-returns
+(operator-confirmed, zero suspect crossings), and the run eliminated the
+last timing suspects for double-click: epoch 2 carries a pair with down
+events NINE ticks apart, the posted up event five ticks between them, at
+the identical pixel, under an active 60-tick window and a human-set
+48-tick original - and recognition still failed. Timing, spacing, event
+completeness and window width are all now excluded. The dequeuer identity
+instrument was routed to the guest's memory log rather than the uploaded
+file (the same split that keeps CDM button begin/return lines out of
+uploads), so WHO receives the synthetic events is still unanswered; the
+routing is corrected and that answer is one attended pass away.
+
+Two new open items from the same run:
+
+- **BROKEN: guest clicks can raise a host window touching the shared
+  edge.** The host cursor is pinned at the edge anchor while the guest
+  owns the pointer, and the host listens with an observe-only global
+  monitor, which cannot consume events - so every guest click also lands
+  as a real host click at the anchor. A host window under that point gets
+  raised. The fix is a consuming CGEventTap during ownership; not yet
+  implemented.
+- **BROKEN: guest sliders do not track** - neither click-to-spot nor
+  thumb drags (found in the Mouse control panel; the operator adjusted it
+  with the physical trackpad instead). Control tracking loops are served
+  by the hooks and ordinary drags work, so a slider-specific mouse-state
+  source is being missed. Uninvestigated.
+
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
 While the guest owns the pointer, the host now captures key-down, key-up, and
