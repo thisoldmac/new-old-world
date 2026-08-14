@@ -55,12 +55,11 @@ final class Session {
     private let onCensusReport: (CensusReport) -> Void
     private let onContinuityReport: (ContinuityReport) -> Void
     private let onContinuityKeyReport: (ContinuityKeyReport) -> Void
-    /* A `var` rather than an init parameter, unlike its neighbours: the
-       stub's consumer is the drag lane, which does not exist yet. Making
-       it required would put an empty closure at every construction site
-       and read as a wired-up capability. Nil is the honest state — the
-       frame decodes, so it can never drop the connection, and nothing
-       claims to be doing anything with it. */
+    /* A `var` rather than an init parameter, unlike its neighbours. It was
+       nil when the stub had no consumer; the listener now sets it, and the
+       shape stays because nil remains the honest state for a session that
+       is not the active one — the frame still decodes, so an unbound stub
+       can never drop a connection. */
     var onContinuitySelection: ((ContinuitySelection) -> Void)?
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
