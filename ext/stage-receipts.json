@@ -827,6 +827,28 @@
         "ext/src/now_ext_cursor_input.h"
       ],
       "reason": "single-driver unit; orchestrator bakes the merged stack"
+    },
+    {
+      "at": "2026-08-13T22:54:01-0400",
+      "branch": "claude/swarm-observer-match",
+      "extDigest": "e85711dd956a467808499f2ab0e0c484733b0d08",
+      "kind": "deferral",
+      "paths": [
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "observer-match unit; orchestrator bakes merged stack"
+    },
+    {
+      "at": "2026-08-13T22:57:30-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "369ad09afa5694319c80b00344074d50f88453ae",
+      "kind": "deferral",
+      "paths": [
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "observer-match merge; orchestrator bakes the merged stack"
     }
   ]
 }

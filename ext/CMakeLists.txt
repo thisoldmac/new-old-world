@@ -126,6 +126,7 @@ add_executable(NowExt
     # word between them; neither plane guesses from the other's cell.
     ../now-guest-shared/src/now_input_owner.c
     ../now-guest-shared/src/now_continuity_logic.c
+    ../now-guest-shared/src/now_continuity_event_match.c
     ../now-guest-shared/src/now_continuity_keyboard_logic.c
     ../now-guest-shared/src/now_adb_injection_logic.c
     ../now-guest-shared/src/now_semantic_guard.c)

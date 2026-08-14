@@ -12,6 +12,7 @@
 
 #include "peek_table.h"
 #include "now_continuity_logic.h"
+#include "now_continuity_event_match.h"
 #include "now_ext_core_logic.h"
 #include "now_ext_adb_observer.h"
 #include "now_ext_continuity_keyboard.h"
@@ -302,15 +303,26 @@ void now_ext_continuity_shape_event(EventRecord *event)
 }
 
 /* Capture the Event Manager's synthetic mouse record in the same guest clock
-   domain as arrival, exposure and manager apply. The first unmatched edge of
-   the same direction owns the observation; actual event coordinates are kept
-   so that this diagnostic never assumes they equal the requested point. */
+   domain as arrival, exposure and manager apply. The event is claimed by the
+   pending timing entry whose manager window it plausibly belongs to - see
+   now_continuity_event_match.h for the rule and why "first unmatched edge of
+   the same direction" (the prior behaviour) misattributes under rapid
+   clicking. Actual event coordinates are kept so that this diagnostic never
+   assumes they equal the requested point. The trace fires for every observed
+   synthetic mouse event during an active epoch regardless of whether a
+   timing entry matched - an unmatched event is itself diagnostic evidence,
+   not nothing to report. */
 void now_ext_continuity_observe_event(EventRecord *event, NowPeekU32 ticks)
 {
     NowPeekContinuityCell *cell = continuity_cell(gTable);
     NowPeekU32 down;
     NowPeekU32 count;
     NowPeekU32 index;
+    NowPeekU32 begin_ticks[kNowPeekContinuityEventTimingCapacity];
+    NowPeekU32 end_ticks[kNowPeekContinuityEventTimingCapacity];
+    int eligible[kNowPeekContinuityEventTimingCapacity];
+    int chosen;
+    NowPeekU32 observer;
 
     if (cell == NULL || event == NULL || !cell->enabled)
         return;
@@ -326,32 +338,46 @@ void now_ext_continuity_observe_event(EventRecord *event, NowPeekU32 ticks)
     for (index = 0; index < count; index++) {
         NowPeekContinuityEventTiming *entry = &cell->event_timing[index];
         NowPeekU32 before = entry->write_seq;
-        NowPeekU32 observer;
 
-        if ((before & 1u) != 0 || entry->down != down
-                || entry->event_observed_ticks != 0)
-            continue;
-        entry->write_seq = before + 1u;
-        entry->event_when = (NowPeekU32)event->when;
-        entry->event_observed_ticks = ticks;
-        entry->event_h = (NowPeekI32)event->where.h;
-        entry->event_v = (NowPeekI32)event->where.v;
-        entry->write_seq = before + 2u;
-        /* Every other stage of the chain is recorded; WHICH PROCESS
-           dequeued the event is not, and misrouting is indistinguishable
-           from non-recognition without it. jGNE runs in the dequeuing
-           process, so CurApName here names it. */
-        observer = ((NowPeekU32)gCurApName[1] << 24)
-            | ((NowPeekU32)gCurApName[2] << 16)
-            | ((NowPeekU32)gCurApName[3] << 8)
-            | (NowPeekU32)gCurApName[4];
-        trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceEventObserved,
-                    ticks,
-                    (NowPeekI32)((down << 16)
-                                 | ((NowPeekU32)event->when & 0xFFFFu)),
-                    (NowPeekI32)observer);
-        return;
+        eligible[index] = (before & 1u) == 0 && entry->down == down
+            && entry->event_observed_ticks == 0;
+        begin_ticks[index] = entry->manager_begin_ticks;
+        end_ticks[index] = entry->manager_end_ticks;
     }
+    chosen = now_continuity_match_event(begin_ticks, end_ticks, eligible,
+                                        count, ticks);
+    if (chosen >= 0) {
+        NowPeekContinuityEventTiming *entry =
+            &cell->event_timing[(NowPeekU32)chosen];
+        NowPeekU32 before = entry->write_seq;
+
+        /* Re-validate immediately before committing. Nothing else runs
+           between the scan above and here in this cooperative context, but
+           the check costs nothing and keeps the seqlock discipline honest
+           rather than merely assumed. */
+        if ((before & 1u) == 0 && entry->down == down
+                && entry->event_observed_ticks == 0) {
+            entry->write_seq = before + 1u;
+            entry->event_when = (NowPeekU32)event->when;
+            entry->event_observed_ticks = ticks;
+            entry->event_h = (NowPeekI32)event->where.h;
+            entry->event_v = (NowPeekI32)event->where.v;
+            entry->write_seq = before + 2u;    /* commit last */
+        }
+    }
+    /* Every other stage of the chain is recorded; WHICH PROCESS dequeued
+       the event is not, and misrouting is indistinguishable from
+       non-recognition without it. jGNE runs in the dequeuing process, so
+       CurApName here names it. */
+    observer = ((NowPeekU32)gCurApName[1] << 24)
+        | ((NowPeekU32)gCurApName[2] << 16)
+        | ((NowPeekU32)gCurApName[3] << 8)
+        | (NowPeekU32)gCurApName[4];
+    trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceEventObserved,
+                ticks,
+                (NowPeekI32)((down << 16)
+                             | ((NowPeekU32)event->when & 0xFFFFu)),
+                (NowPeekI32)observer);
 }
 
 static void release_button(NowPeekContinuityCell *cell,
