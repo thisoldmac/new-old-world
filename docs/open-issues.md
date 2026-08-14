@@ -363,6 +363,43 @@ Two new open items from the same run:
   by the hooks and ordinary drags work, so a slider-specific mouse-state
   source is being missed. Uninvestigated.
 
+**2026-08-13 late-evening swarm round (`claude/mirror-continuity-input-47eb68`),
+all tested-not-metal-verified:** six changes landed in one round after the
+20:49 log proved the Finder wall (`app=Find` dequeued a complete, correctly
+timed stream and recognition still failed; SimpleText accepted the same
+stream) and the human confirmed the entry inset ended the click-returns.
+
+- **compressClickWhen (bit 0x80, default on):** the resident rewrites
+  synthetic mouse-event `when`s at the jGNE boundary so any consumer's
+  pairing arithmetic — including a private cached window like Finder's —
+  accepts a pair produced within the wide window. Option/state/kind gated,
+  never forward in time, shaped before the observer records.
+- **Host input capture:** while the guest owns the pointer, the host
+  cursor is dissociated (`CGAssociateMouseAndMouseCursorPosition`) and a
+  consuming tap eats mouse/scroll events, so guest clicks can no longer
+  raise host windows and warp echoes can no longer integrate phantom
+  deltas. Keyboard mask deliberately untouched so the escape chord's own
+  consuming tap keeps first claim. Falls back to the observe-only monitor
+  with an audited warning when the tap cannot be created. Every ownership
+  exit path funnels through one restore, mutation-proven per-exit. While
+  owned, the host's own UI is unclickable by design; escape chord and
+  edge-return remain the ways out.
+- **Keyboard specials fixed:** arrows/backspace/nav were sent as lossy
+  Mac-Roman conversions of AppKit function-key scalars — every arrow
+  arrived as `?` (0x3F). A virtual-code-keyed table now sends the classic
+  bytes (0x1C-0x1F arrows, 0x08 backspace, ...). Separately, the guest
+  counted PPostEvent's `evtNotEnb` on keyUp as failure — keyUp is masked
+  out of the system event mask by default, and 79 of the run's 174 edges
+  "failed" by that arithmetic alone; now counted as applied, matching the
+  tree's two other keyboard posters. Still open guest-side: a 16-slot
+  queue drained 4 per pass drops edges on typing bursts (`dropped=5`).
+- **Reconnect delay configurable** (0.1–5 s, per machine, default 0.75 s).
+- **Handback obscures the guest sprite** (ObscureCursor — hidden until the
+  next real mouse move), excluding guest-input takeovers.
+- The distinguishability principle is now durable: parent corpus finding
+  `injected-input-diverges-below-the-api` and a section in
+  [docs/mirror-knowledge.md](mirror-knowledge.md).
+
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
 While the guest owns the pointer, the host now captures key-down, key-up, and
