@@ -219,6 +219,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 continuity.cancel(reason: "switched to Continuity Mode")
             }
             reconcilePointerOwnership()
+            /* The armed set is a function of the mode, so a mode change is a
+               policy change: the same path re-arms it. Entering Continuity
+               this way is what RELEASES the content plane rather than
+               leaving it armed until something else happens to poll. */
+            planePolicyDidChange()
         }
     }
     /// A Mirror feature, deliberately independent of Continuity Mode. Its
@@ -557,6 +562,26 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
     }
 
+    // MARK: - What this surface asks the Macintosh to arm
+
+    /// **What policy allows, narrowed to what the visible surface needs.**
+    ///
+    /// `planePolicy` stays the authority on what is PERMITTED — this only
+    /// ever intersects, so no mode can arm a plane a person or the guest
+    /// has refused. It is separate from `planePolicy` on purpose: the
+    /// engine's projection keeps following the full policy, because hiding
+    /// retained evidence is a display decision and this is a guest cost.
+    private func armedPlanes(for key: GuestKey) -> Set<MirrorPlaneID> {
+        planePolicy(key).intersection(surfaceMode.armablePlanes)
+    }
+
+    /// The same question for the planes armed outside the scene cycle. The
+    /// transition tail is started by front-process change rather than by the
+    /// cycle, so it needs its own reading of the mode.
+    private var armsTransitionTail: Bool {
+        surfaceMode.armablePlanes.contains(.transitions)
+    }
+
     // MARK: - The poll
 
     func start() {
@@ -794,7 +819,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         guard !cycleIO.isScenePending() else { return rearm() }
         let generation = runGeneration
         cycleGeneration = generation
-        let planes = planePolicy(pinnedGuestKey)
+        let planes = armedPlanes(for: pinnedGuestKey)
         cycleAsked = (at: Date(),
                       semantics: planes.contains(.semantics),
                       interaction: planes.contains(.interaction))
@@ -890,8 +915,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     private func armTransitionSampler(for scene: MirrorKit.Scene) {
-        guard transitionInvalidationEnabled, running,
-              let process = Self.frontProcess(in: scene) else { return }
+        guard transitionInvalidationEnabled, running else { return }
+        guard armsTransitionTail else { return releaseTransitionTail() }
+        guard let process = Self.frontProcess(in: scene) else { return }
         let target = "\(process.high).\(process.low)"
         guard target != transitionTarget else { return }
         transitionTarget = target
@@ -928,6 +954,29 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                             self.armTransitionSampler(for: latest)
                         }
                     }
+                }
+            }
+    }
+
+    /// **Ending the P5 tail, not merely declining to renew it.**
+    ///
+    /// Its lease is 36 000 ticks — ten minutes — so a surface that stops
+    /// reading transitions and says nothing leaves the Macintosh sampling
+    /// them for the rest of that lease. Clearing `transitionTarget` matters
+    /// just as much: it is the "already armed for this process" memo, and
+    /// keeping it would make the return to Mirror read as armed and never
+    /// renew.
+    private func releaseTransitionTail() {
+        transitionLeaseTask?.cancel()
+        transitionLeaseTask = nil
+        guard transitionTarget != nil else { return }
+        transitionTarget = nil
+        workScheduler.submitCallback(
+            .command("transitions stop"), as: .structuralRepair,
+            coalescingKey: "mirror:transitions") { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.sendCommand("transitions", ["op": .text("stop")]) { _ in
+                    finish()
                 }
             }
     }
@@ -991,8 +1040,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard isCurrentCycle(generation), let key = pinnedGuestKey else {
                 return
             }
-            let planes = planePolicy(key)
-            _ = shadowEngine?.setEnabledPlanes(planes)
+            /* Two different questions, and they were one call. The engine
+               projects whatever POLICY allows, so retained semantic and
+               content evidence survives a trip through Continuity; the
+               content join below follows what this surface actually ARMED. */
+            let planes = armedPlanes(for: key)
+            _ = shadowEngine?.setEnabledPlanes(planePolicy(key))
             _ = shadowEngine?.accept(decoded)
             observeOperations()
             let sameGuest = delivery.guestKey != nil
