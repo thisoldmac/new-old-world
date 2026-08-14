@@ -1194,33 +1194,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 sources-sha1: f69f87dff917341d1b5de59e813f8e8b3912fdb3
-derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
-=======
-sources-sha1: f69f87dff917341d1b5de59e813f8e8b3912fdb3
-derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
->>>>>>> 835e6acf (feat: polish guest workflows and navigation)
-=======
-sources-sha1: f69f87dff917341d1b5de59e813f8e8b3912fdb3
-derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
->>>>>>> 95841394 (fix: honor native depth and Files appearance)
-=======
-sources-sha1: f69f87dff917341d1b5de59e813f8e8b3912fdb3
-derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
->>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-<<<<<<< HEAD
-derive disposition-census sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
-=======
-derive disposition-census sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
->>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+derive disposition-census sha256=e9fa8ef19d3631871ba65a66d80db57d4538e43dec4a268cab2fe2d0764611cf lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
@@ -1366,27 +1347,20 @@ rederived: 2026-08-14T12:44:43-0400 4d52ba1a sources
 rederived: 2026-08-14T12:47:23-0400 804be291 sources
 rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
-<<<<<<< HEAD
 rederived: 2026-08-14T14:27:57-0400 6d037a57 sources
 rederived: 2026-08-14T16:58:27-0400 cf962dbb sources, ppc-inbound-types 53->54, disposition-census 3->3
 rederived: 2026-08-14T17:12:28-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
-=======
-rederived: 2026-08-14T14:40:04-0400 8875fe9e sources
-<<<<<<< HEAD
->>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, ppc-inbound-types 54->0, sources, ppc-inbound-types 54->0
 =======
 rederived: 2026-08-14T15:56:43-0400 835e6acf sources
-<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:42-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
-=======
-rederived: 2026-08-14T17:12:07-0400 95841394 sources, ppc-inbound-types 53->56
-rederived: 2026-08-14T17:29:40-0400 95841394 sources, disposition-census 3->3
->>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
 rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources, sources, disposition-census 3->0, disposition-census 3->0
+rederived: 2026-08-14T18:30:53-0400 b248c9a1 disposition-census 0->3
+rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:25-0400 b248c9a1 ppc-inbound-types 0->57
 -->

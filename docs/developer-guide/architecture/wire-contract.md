@@ -94,23 +94,8 @@ state, and publishes only when the generation set is coherent and current.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 sources-sha1: c9784b0c7278f42d6845840bc3aaa6608c94519a
-derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
-=======
-sources-sha1: c9784b0c7278f42d6845840bc3aaa6608c94519a
-derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
->>>>>>> 835e6acf (feat: polish guest workflows and navigation)
-=======
-sources-sha1: c9784b0c7278f42d6845840bc3aaa6608c94519a
-derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
->>>>>>> 95841394 (fix: honor native depth and Files appearance)
-=======
-sources-sha1: c9784b0c7278f42d6845840bc3aaa6608c94519a
-derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
->>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+derive contract-summary sha256=8f6f7fd03ea8af70207e29b42fafeee48c4c5b823cc760563374216d5eb10b18 lines=6
     scripts/docs-source-group contract
 rederived: pending
 rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, contract-summary 6->6
@@ -222,27 +207,20 @@ rederived: 2026-08-14T12:44:43-0400 4d52ba1a sources
 rederived: 2026-08-14T12:47:23-0400 804be291 sources
 rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
-<<<<<<< HEAD
 rederived: 2026-08-14T14:27:57-0400 6d037a57 sources
 rederived: 2026-08-14T16:58:27-0400 cf962dbb sources, contract-summary 6->6
 rederived: 2026-08-14T17:12:28-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:41-0400 d9ed70d2 unchanged
-=======
-rederived: 2026-08-14T14:40:04-0400 8875fe9e sources
-<<<<<<< HEAD
->>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, contract-summary 6->0, sources, contract-summary 6->0
 =======
 rederived: 2026-08-14T15:56:43-0400 835e6acf sources
-<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:41-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
-=======
-rederived: 2026-08-14T17:12:07-0400 95841394 sources, contract-summary 6->6
-rederived: 2026-08-14T17:29:40-0400 95841394 sources
->>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
 rederived: 2026-08-14T18:23:11-0400 e2c66126 sources, sources, sources, sources
+rederived: 2026-08-14T18:30:52-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:25-0400 b248c9a1 contract-summary 0->6
 -->

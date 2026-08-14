@@ -159,27 +159,20 @@ rederived: 2026-08-14T12:44:43-0400 4d52ba1a unchanged
 rederived: 2026-08-14T12:47:23-0400 804be291 unchanged
 rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:42-0400 90cfd8fa unchanged
-<<<<<<< HEAD
 rederived: 2026-08-14T14:27:57-0400 6d037a57 unchanged
 rederived: 2026-08-14T16:58:27-0400 cf962dbb unchanged
 rederived: 2026-08-14T17:12:27-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:38-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:41-0400 d9ed70d2 unchanged
-=======
-rederived: 2026-08-14T14:40:03-0400 8875fe9e unchanged
-<<<<<<< HEAD
->>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 rederived: 2026-08-14T18:19:50-0400 60bb3427 unchanged
 =======
 rederived: 2026-08-14T15:56:43-0400 835e6acf unchanged
-<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:41-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:06-0400 23dc0759 unchanged
-=======
-rederived: 2026-08-14T17:12:06-0400 95841394 unchanged
-rederived: 2026-08-14T17:29:40-0400 95841394 unchanged
->>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
 rederived: 2026-08-14T18:23:11-0400 e2c66126 unchanged
+rederived: 2026-08-14T18:30:52-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:25-0400 b248c9a1 unchanged
 -->

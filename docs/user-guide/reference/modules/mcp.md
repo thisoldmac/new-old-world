@@ -90,19 +90,7 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-sources-sha1: f1d8a010977f05fd8342bd4744ec73a52277d71f
-=======
-sources-sha1: f1d8a010977f05fd8342bd4744ec73a52277d71f
->>>>>>> 835e6acf (feat: polish guest workflows and navigation)
-=======
-sources-sha1: f1d8a010977f05fd8342bd4744ec73a52277d71f
->>>>>>> 95841394 (fix: honor native depth and Files appearance)
-=======
-sources-sha1: f1d8a010977f05fd8342bd4744ec73a52277d71f
->>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
+sources-sha1: 7ac9d5eb7751f0c625bb17d21979306544bd1992
 derive mcp-catalog sha256=dadedb438a578e94422eb5eec7337288e94e19899e6592ebaaf6d86c080258dc lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -207,27 +195,20 @@ rederived: 2026-08-14T12:44:43-0400 4d52ba1a sources
 rederived: 2026-08-14T12:47:23-0400 804be291 sources
 rederived: 2026-08-14T12:49:06-0400 655b2bf1 sources
 rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
-<<<<<<< HEAD
 rederived: 2026-08-14T14:27:58-0400 6d037a57 sources
 rederived: 2026-08-14T16:58:28-0400 cf962dbb sources
 rederived: 2026-08-14T17:12:28-0400 32ac9165 sources
 rederived: 2026-08-14T17:36:05-0400 02e9de5e sources
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a sources
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 sources
-=======
-rederived: 2026-08-14T14:40:04-0400 8875fe9e sources
-<<<<<<< HEAD
->>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 rederived: 2026-08-14T18:19:51-0400 60bb3427 sources, sources
 =======
 rederived: 2026-08-14T15:56:44-0400 835e6acf sources
-<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:42-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 sources, sources, sources
-=======
-rederived: 2026-08-14T17:12:07-0400 95841394 sources
-rederived: 2026-08-14T17:29:41-0400 95841394 sources
->>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
 rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources, sources
+rederived: 2026-08-14T18:30:53-0400 b248c9a1 sources, sources, sources, sources
+rederived: 2026-08-14T18:31:13-0400 b248c9a1 sources, sources, sources
+rederived: 2026-08-14T18:31:26-0400 b248c9a1 sources
 -->

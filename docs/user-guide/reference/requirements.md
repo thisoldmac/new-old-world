@@ -38,11 +38,7 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-<<<<<<< HEAD
 sources-sha1: eea47e763436dc8ee056b6b517b77b52c49170f8
-=======
-sources-sha1: eea47e763436dc8ee056b6b517b77b52c49170f8
->>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -156,27 +152,20 @@ rederived: 2026-08-14T12:44:43-0400 4d52ba1a sources
 rederived: 2026-08-14T12:47:23-0400 804be291 unchanged
 rederived: 2026-08-14T12:49:06-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:43-0400 90cfd8fa unchanged
-<<<<<<< HEAD
 rederived: 2026-08-14T14:27:58-0400 6d037a57 unchanged
 rederived: 2026-08-14T16:58:28-0400 cf962dbb sources
 rederived: 2026-08-14T17:12:29-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:05-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
-=======
-rederived: 2026-08-14T14:40:04-0400 8875fe9e unchanged
-<<<<<<< HEAD
->>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 rederived: 2026-08-14T18:19:51-0400 60bb3427 unchanged
 =======
 rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
-<<<<<<< HEAD
 >>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:42-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:08-0400 23dc0759 unchanged
-=======
-rederived: 2026-08-14T17:12:07-0400 95841394 sources
-rederived: 2026-08-14T17:29:41-0400 95841394 unchanged
->>>>>>> 0ce677be (feat: complete host polish and guest service fixes)
 rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources
+rederived: 2026-08-14T18:30:53-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:13-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:26-0400 b248c9a1 unchanged
 -->
