@@ -369,8 +369,10 @@ check("now_log(kLogInfo" in front and "now_log_memory" not in front,
       "the front-process line went to memory, where uploads never see it")
 check("if (length > 31)" in front,
       "the foreign process name is copied without a bound")
+# Indent tracks the V12 busy handshake, which nests the manager call one
+# level deeper; the pin is about the pairing, not the column.
 check("if (event_down != 0 && err == noErr)\n"
-      "                log_front_process_at_down(event_generation);" in PPC,
+      "                    log_front_process_at_down(event_generation);" in PPC,
       "the front process is no longer captured at an accepted manager down")
 
 # when-compression may only run on our own events: option-gated, active
@@ -424,6 +426,42 @@ check("ObscureCursor();" in INTAKE
 check("PostEvent(mouseUp, 0)" in PPC
       and "event_down == 0 && err == noErr" in PPC,
       "the application no longer posts the mouseUp the manager cannot")
+
+# V12 MANAGER-BUSY HANDSHAKE. The manager call sits BETWEEN resident invokes,
+# where status_seq is even and the resident's mid-invoke guard sees nothing at
+# all, so the interrupt-press delivery has exactly one way to learn that an
+# exposed request is already being served: this flag. It is only a handshake if
+# the flag is up before the call and the request is re-read after raising it -
+# a flag raised after the read closes nothing, and a flag cleared before the
+# result is published re-opens the window it exists to shut.
+invoke = body(PPC, "int now_continuity_service_invoke(",
+              "void now_continuity_service_begin_epoch(")
+BUSY_SET = "cell->button_manager_busy = 1;"
+BUSY_CLEAR = "cell->button_manager_busy = 0;"
+check(BUSY_SET in invoke
+      and BUSY_CLEAR in invoke
+      and invoke.index(BUSY_SET) < invoke.index("now_continuity_cursor_button(")
+      and invoke.index("cell->event_result_generation = event_generation;")
+          < invoke.rindex(BUSY_CLEAR),
+      "the manager call is unannounced to the interrupt press, or clears its "
+      "busy flag before the result it protects is published")
+check(BUSY_SET in invoke
+      and "cell->event_request_generation != event_generation" in invoke
+      and "cell->event_request_down != event_down" in invoke
+      and invoke.index(BUSY_SET)
+          < invoke.index("cell->event_request_generation != event_generation")
+          < invoke.index("now_continuity_cursor_button("),
+      "the exposed request is not re-read after the busy flag goes up, so a "
+      "delivery that cancelled first is still served")
+# The probe drain's own window: a cell that resets under an armed drain turns
+# the unsigned subtraction into a four-billion-entry window, which prints as
+# zeroed rows and reads exactly like a live probe capturing nothing.
+click_drain = body(PPC, "static void drain_click_probe(",
+                   "int now_continuity_service_ready(")
+check("total < gLastClickProbeCount" in click_drain
+      and "click probe reset" in click_drain,
+      "a click probe reset again underflows the drain window instead of "
+      "re-baselining and saying so")
 
 # The V11 deep click probe is a RECORDER: it exists because both timestamp
 # theories of the double-click failure died by measurement, and its whole
