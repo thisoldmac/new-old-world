@@ -807,8 +807,14 @@ final class ContinuityEdgeController: ObservableObject {
         inputCapture = environment.startInputCapture(
             handler: { [weak self] sample, sourceEvent in
                 /* The tap hops to the main actor, so a sample can outlive the
-                   pass that captured it. */
-                guard let self, self.state == .active else { return }
+                   pass that captured it — but not the custody that outlives
+                   the pass ON PURPOSE. A capture still swallowing events
+                   whose samples this controller drops is the worst of both:
+                   the human's input reaches nothing, and nothing here can
+                   see the release that would give it back. */
+                guard let self,
+                      self.state == .active || self.heldGesture != nil
+                        || self.pendingReturnDrag != nil else { return }
                 self.received(sample, sourceEvent: sourceEvent)
             },
             tapDisabled: { [weak self] reason in
