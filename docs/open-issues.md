@@ -60,6 +60,47 @@ refused `folder-not-yet` by name; folders are slice 6. The host decodes
 the stub and does nothing with it - `Session.onContinuitySelection` is
 nil, which is why it is a `var` and not an init parameter.
 
+## TESTED, NEVER RUN AGAINST A MACINTOSH: an asset pack can be ingested from the connected machine (2026-08-14, `feat/mirror-asset-ingestion`)
+
+The Asset Packs card could only SELECT a pack built from a disk image; the
+connected-guest adapter had been documented as designed-but-absent since
+2026-08-06, while `AssetPack.swift` promised the connected route would "feed
+the same domain parsers and manifest". It now exists: a button on that card
+pulls the machine's own System file, theme file and font suitcases over
+`file.get` with `container: macbinary`, stages their resource forks as a
+volume tree, and runs `tools/extract-assets-offline --from-tree` over it.
+
+**No contract surface was added and neither guest changed.** `file.get`
+already carries both forks and the share root already defaults to the volume
+root, so `System Folder:System` was addressable the whole time.
+
+What is proven, and by what:
+
+- The transport swap changes nothing about extraction. Extracting from a full
+  mount and from `--from-tree` over that same mount produced 834 files,
+  byte-identical, differing only in the acquisition receipt.
+- The bounded pull is sufficient. Six files, 7.6 MB of resource fork, passes
+  every hard gate the extractor has.
+- The host suite is green (2423 tests) with pack gates ENFORCED.
+
+What is NOT proven, and this is the whole of it: **no Macintosh has ever been
+ingested from.** Every measurement above was taken against a stopped disk
+image on this Mac. The wire leg — six sequential `file.get` pulls, roughly 25
+seconds by plan 017's ~330 KB/s figure — has never run. It is next on
+emulation, then metal.
+
+Two things a reader should carry away rather than rediscover:
+
+- **A wire pack is a strict SUBSET of a disk-image pack**, and the newest
+  valid pack wins. The bounded route yielded 12 application icons against the
+  same image's 512, with every shared file byte-identical — nothing wrong in
+  it, things missing from it. So ingesting can silently demote a richer pack.
+  The card now reads the new pack's own manifest counts back and shows them,
+  which is the cheap half of the fix; the real fix is per-machine keying.
+- **Per-machine keying is still unbuilt** and still blocked on the `hello`
+  contract change in plan 021 §5.1.1, which is deliberately not attempted
+  here. Until then every ingested pack lands in the one shared dated store.
+
 ## TESTED, NOT RELEASED OR METAL-VERIFIED: recorded bundle and update slice (2026-08-13, `codex/bundle-update-slice`)
 
 The alpha distribution now has one machine-readable profile and one curated

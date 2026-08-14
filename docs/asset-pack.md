@@ -78,21 +78,45 @@ flowchart LR
 | Adapter | Source | Current state |
 |---|---|---|
 | **Stopped-volume** | Read-only HFS/HFS+ image and resource forks through `tools/extract-assets-offline` | Implemented; fastest deterministic bulk/reference route. |
-| **Connected guest** | Read-only fork-bearing `file.*` pulls from the machine NOW is connected to | Pull transport and the earlier wire extraction are proven; product integration remains the work in [plan 017](plans/2026-08-06-017-feat-assets-from-the-connected-guest-plan.md) and [plan 021](plans/2026-08-07-021-feat-asset-packs-plan.md). |
+| **Connected guest** | Read-only fork-bearing `file.*` pulls from the machine NOW is connected to | Built and host-tested; **never yet run against a real Macintosh**. The Mirror module's Asset Packs card starts it, the host stages the pulled forks, and `tools/extract-assets-offline --from-tree` does the extraction. Per-machine pack KEYING is still unbuilt and still needs the `hello` contract change in [plan 021 §5.1.1](plans/2026-08-07-021-feat-asset-packs-plan.md). |
 | **Visual oracle derivation** | Receipt-bound SheepShaver/QEMU framebuffer regions declared by an explicit visual profile | Implemented for bounded, static marks and framebuffer proof; it is not a general screenshot-atlas path. |
 
 All three publish into the same external versioned pack shape and obey the
 same rules: immutable source identities, per-asset provenance, atomic
 `manifest.json` publication last, private/non-shipping Apple bytes, and loud
-absence. The connected route should add a machine/session acquisition receipt,
-not a second runtime cache format; its progressive system/fonts/appearance/
-applications domains remain the cost model already designed in plan 021.
+absence.
+
+**The connected route is a TRANSPORT, not a second extractor**, and that is
+the load-bearing decision rather than an implementation detail. Plan 017
+proposed reimplementing the parsers in Swift and named the risk in its own
+stop condition — two implementations of `icl8` quietly disagreeing produces
+art that is wrong in a way nobody can see. Instead the host stages the pulled
+forks as a volume tree and runs the same extractor over it, so there is one
+parser. `tools/extract-assets-offline --required-files` is the single
+statement of what a machine must hand over, so the fetching side keeps no
+second copy of the list.
+
+Measured on the OS 8.6 image, 2026-08-14: extracting from a full mount and
+from `--from-tree` over that same mount produced **834 files, byte-identical,
+differing only in the acquisition receipt**. That is the evidence for
+"the two routes cannot disagree", and it is a property of the code rather
+than of a claim.
+
+**A wire pack is a strict subset of a disk-image pack.** The bounded pull —
+six files, 7.6 MB of resource fork — passes every hard gate and produces
+byte-identical art, but has only what those files hold: 12 application icons
+against the same image's 512, and no custom Finder icons, because those come
+from sweeping a whole volume. Nothing in it is wrong; things are missing from
+it. Since `AssetPack` resolves the NEWEST valid pack, ingesting can silently
+demote a richer pack, so the card reads the new pack's own manifest counts
+back and shows them.
 
 Pack format 0.3.0 adds a typed top-level `acquisition` receipt and the
 `fileicons/manifest.json` exact-HFS-path index. The stopped-volume adapter
-publishes `adapter: stopped-volume`, `readOnly: true`, and its source image.
-The connected adapter will publish its machine/session and pull receipt in the
-same field. Both terminate at `tools/asset-pack/fileicons.py`'s bytes-only
+publishes `adapter: stopped-volume`, `readOnly: true`, and its source image;
+the connected adapter publishes `adapter: connected-guest` with the machine's
+name as its source, and omits `source_image` because there is no image to
+name. Both terminate at `tools/asset-pack/fileicons.py`'s bytes-only
 decoder: FinderInfo bytes plus resource-fork bytes in, attributed icon suite
 out. Connection permissions, session choice, and transfer are adapter concerns;
 icon selection and pack layout are not.
