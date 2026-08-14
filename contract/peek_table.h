@@ -945,6 +945,12 @@ enum {
        conflict latches, an opt-in synthetic-device settle probe, and a
        bounded button timing chain in the guest's TickCount domain. */
     kNowPeekContinuityFormatV10 = 10,
+    /* V11 appends the deep click probe: a rolling, logging-only record of
+       every mouse event at the jGNE boundary with the click-relevant
+       low-memory state beside it, armed by tracking bit 9 and latched past
+       epoch exit so native comparison clicks land in the same ring. It
+       changes no default behaviour and injects nothing. */
+    kNowPeekContinuityFormatV11 = 11,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -957,7 +963,7 @@ enum {
    contain a new application and an older resident while every artifact was
    individually well formed.  The update manifests also publish this value,
    so a stack assembler can reject that pair before it reaches a Macintosh. */
-#define NOW_CONTINUITY_FORMAT_CURRENT 10u
+#define NOW_CONTINUITY_FORMAT_CURRENT 11u
 
 enum {
     kNowPeekContinuityExitNone = 0,
@@ -1067,6 +1073,22 @@ enum {
        Finder's stopwatch runs out. Off by default; the riskiest input
        experiment in this table and labeled as such. */
     kNowPeekContinuityTrackingInterruptPress = 1u << 8,
+    /* Diagnostic spike, logging only. Record EVERY mouse event the jGNE
+       filter sees - native or synthetic - with the full event record and
+       the click-relevant low-memory state at that instant. Exists because
+       both timestamp theories of the Finder double-click failure are now
+       eliminated by measurement: a pair 8 ticks apart by `when` AND 54
+       ticks apart by dequeue failed under an active 60-tick window
+       (2026-08-13 235658), so whatever distinguishes our pair from a
+       native one is not a clock. The discriminating field has to be
+       CAPTURED, not theorized about.
+
+       LATCH SEMANTICS, deliberate: the resident arms this at epoch start
+       and does NOT clear it on epoch exit - only the next arm without the
+       bit stops it. A native comparison click can only happen after
+       guest-input takeover has exited the epoch, so a capture that died
+       with the epoch could never record the other half of the diff. */
+    kNowPeekContinuityTrackingDeepClickLog = 1u << 9,
     kNowPeekContinuityTrackingKnownMask =
         kNowPeekContinuityTrackingPinHeldPoint
             | kNowPeekContinuityTrackingVirtualGetMouse
@@ -1077,6 +1099,7 @@ enum {
             | kNowPeekContinuityTrackingSettleIdleCursor
             | kNowPeekContinuityTrackingCompressClickWhen
             | kNowPeekContinuityTrackingInterruptPress
+            | kNowPeekContinuityTrackingDeepClickLog
 };
 
 enum {
@@ -1160,6 +1183,43 @@ typedef struct {
 } NowPeekADBTraceEntry;
 
 enum { kNowPeekContinuityEventTimingCapacity = 8 };
+
+enum { kNowPeekContinuityClickProbeCapacity = 24 };
+
+/* V11's deep click probe: one entry per mouse event observed at the jGNE
+   boundary while the deep-click latch is armed, native and synthetic alike.
+   The record is captured POST-shape - the `when` here is the one the
+   dequeuing application received. Everything else is the state a click
+   consumer could possibly consult at that instant; the point of the ring
+   is to DIFF a native double-click's entries against a synthetic one's,
+   field by field, and read off the discriminator instead of guessing it.
+   `write_seq` is odd during the write and even when committed; the ring is
+   ROLLING (index = total count % capacity) with an overwrite counter,
+   because the first-N mistake already hid the attempts that mattered once
+   (event_timing, 2026-08-13). */
+typedef struct {
+    NowPeekU32 write_seq;
+    NowPeekU32 ticks;             /* TickCount at observation */
+    NowPeekU32 what;              /* mouseDown / mouseUp */
+    NowPeekU32 message;           /* full 32-bit event message, unparsed */
+    NowPeekU32 when;              /* post-shape, as the application saw it */
+    NowPeekI32 where_h;
+    NowPeekI32 where_v;
+    NowPeekU32 modifiers;         /* full 16 bits incl. btnState, zero-extended */
+    NowPeekU32 mb_state;          /* low-memory MBState byte */
+    NowPeekU32 mb_ticks;          /* low-memory MBTicks: tick of last button change */
+    NowPeekI32 mouse_h;           /* Mouse */
+    NowPeekI32 mouse_v;
+    NowPeekI32 raw_h;             /* RawMouse */
+    NowPeekI32 raw_v;
+    NowPeekI32 temp_h;            /* MTemp */
+    NowPeekI32 temp_v;
+    NowPeekU32 double_time;       /* live DoubleTime at observation */
+    NowPeekU32 queue_mouse_depth; /* mouse events still in the raw event queue */
+    NowPeekU32 queue_next_when;   /* `when` of the oldest queued mouse event, 0=none */
+    NowPeekU32 observer;          /* first four CurApName bytes: who dequeued */
+    NowPeekU32 cell_state;        /* continuity state at capture: separates phases */
+} NowPeekContinuityClickProbe;
 
 /* V10's non-overwriting button timing chain. All times are guest TickCount
    values: the host logs its own monotonic source/send/ack chain separately,
@@ -1379,6 +1439,13 @@ typedef struct {
     NowPeekU32 event_timing_dropped;
     NowPeekContinuityEventTiming
         event_timing[kNowPeekContinuityEventTimingCapacity];
+    /* V11 deep click probe. `click_probe_count` is the TOTAL ever captured
+       (the ring index derives from it); `click_probe_overwritten` counts
+       entries the rolling window discarded before the drain read them. */
+    NowPeekU32 click_probe_count;
+    NowPeekU32 click_probe_overwritten;
+    NowPeekContinuityClickProbe
+        click_probe[kNowPeekContinuityClickProbeCapacity];
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -2302,7 +2369,9 @@ _Static_assert(sizeof(NowPeekContinuityKeyEntry) == 36,
                "continuity key entry ABI drift");
 _Static_assert(sizeof(NowPeekContinuityEventTiming) == 56,
                "continuity event timing ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 2416,
+_Static_assert(sizeof(NowPeekContinuityClickProbe) == 84,
+               "continuity click probe ABI drift");
+_Static_assert(sizeof(NowPeekContinuityCell) == 4440,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -2352,6 +2421,10 @@ _Static_assert(offsetof(NowPeekContinuityCell, double_time_ticks) == 1948,
                "continuity V10 timing header offset");
 _Static_assert(offsetof(NowPeekContinuityCell, event_timing) == 1968,
                "continuity V10 timing ring offset");
+_Static_assert(offsetof(NowPeekContinuityCell, click_probe_count) == 2416,
+               "continuity V11 click probe header offset");
+_Static_assert(offsetof(NowPeekContinuityCell, click_probe) == 2424,
+               "continuity V11 click probe ring offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

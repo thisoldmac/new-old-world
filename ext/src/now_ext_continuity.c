@@ -250,6 +250,11 @@ static void request_button(NowPeekContinuityCell *cell,
    clicks keep their real spacing. */
 static volatile unsigned char gCompressClickWhen = 0;
 static volatile unsigned char gInterruptPress = 0;
+/* Deep-click latch. Armed and disarmed ONLY by start_epoch_locked, from
+   tracking bit 9 - deliberately NOT cleared by any exit path, because the
+   native half of the comparison this probe exists for can only be clicked
+   after guest-input takeover has already exited the epoch. */
+static volatile unsigned char gDeepClickLog = 0;
 static NowPeekU32 gLastShapedWhen = 0;
 static unsigned char gLastShapedWasDown = 0;
 
@@ -316,6 +321,9 @@ void now_ext_continuity_shape_event(EventRecord *event)
    synthetic mouse event during an active epoch regardless of whether a
    timing entry matched - an unmatched event is itself diagnostic evidence,
    not nothing to report. */
+static void deep_click_capture(NowPeekContinuityCell *cell,
+                               EventRecord *event, NowPeekU32 ticks);
+
 void now_ext_continuity_observe_event(EventRecord *event, NowPeekU32 ticks)
 {
     NowPeekContinuityCell *cell = continuity_cell(gTable);
@@ -328,7 +336,13 @@ void now_ext_continuity_observe_event(EventRecord *event, NowPeekU32 ticks)
     int chosen;
     NowPeekU32 observer;
 
-    if (cell == NULL || event == NULL || !cell->enabled)
+    if (cell == NULL || event == NULL)
+        return;
+    /* The deep probe runs ahead of the enabled gate on purpose: its native
+       comparison clicks arrive AFTER takeover or disarm has ended the
+       epoch, and it captures nothing unless its own latch is armed. */
+    deep_click_capture(cell, event, ticks);
+    if (!cell->enabled)
         return;
     if (event->what == mouseDown)
         down = 1;
@@ -382,6 +396,79 @@ void now_ext_continuity_observe_event(EventRecord *event, NowPeekU32 ticks)
                 (NowPeekI32)((down << 16)
                              | ((NowPeekU32)event->when & 0xFFFFu)),
                 (NowPeekI32)observer);
+}
+
+/* V11 deep click probe: READS ONLY. Both timestamp theories of the Finder
+   double-click failure died by measurement (8 ticks by `when` AND 54 by
+   dequeue, active window 60, 2026-08-13 235658), so whatever distinguishes
+   a synthetic pair from a native one is a field or side-state, and this
+   records every candidate a click consumer could consult, for native and
+   synthetic events alike. The raw-queue walk is bounded and tear-tolerant:
+   an interrupt can unlink an element mid-walk, which costs this diagnostic
+   one sample's queue columns, never a wild dereference past the bound. */
+static void deep_click_capture(NowPeekContinuityCell *cell,
+                               EventRecord *event, NowPeekU32 ticks)
+{
+    NowPeekContinuityClickProbe *entry;
+    NowPeekU32 index;
+    NowPeekU32 depth = 0;
+    NowPeekU32 next_when = 0;
+    NowPeekU32 seq;
+    Point pt;
+    QHdrPtr queue;
+    EvQElPtr link;
+    int guard;
+
+    if (!gDeepClickLog)
+        return;
+    if (event->what != mouseDown && event->what != mouseUp)
+        return;
+    queue = GetEvQHdr();
+    if (queue != NULL) {
+        for (link = (EvQElPtr)queue->qHead, guard = 0;
+             link != NULL && guard < 32;
+             link = (EvQElPtr)link->qLink, guard++) {
+            if (link->evtQWhat == mouseDown
+                    || link->evtQWhat == mouseUp) {
+                depth++;
+                if (next_when == 0)
+                    next_when = (NowPeekU32)link->evtQWhen;
+            }
+        }
+    }
+    index = cell->click_probe_count
+        % (NowPeekU32)kNowPeekContinuityClickProbeCapacity;
+    entry = &cell->click_probe[index];
+    seq = entry->write_seq;
+    entry->write_seq = seq + 1u;
+    entry->ticks = ticks;
+    entry->what = (NowPeekU32)event->what;
+    entry->message = (NowPeekU32)event->message;
+    entry->when = (NowPeekU32)event->when;
+    entry->where_h = (NowPeekI32)event->where.h;
+    entry->where_v = (NowPeekI32)event->where.v;
+    entry->modifiers = (NowPeekU32)(unsigned short)event->modifiers;
+    entry->mb_state = (NowPeekU32)LMGetMouseButtonState();
+    entry->mb_ticks = (NowPeekU32)LMGetMBTicks();
+    pt = LMGetMouseLocation();
+    entry->mouse_h = (NowPeekI32)pt.h;
+    entry->mouse_v = (NowPeekI32)pt.v;
+    pt = LMGetRawMouseLocation();
+    entry->raw_h = (NowPeekI32)pt.h;
+    entry->raw_v = (NowPeekI32)pt.v;
+    pt = LMGetMouseTemp();
+    entry->temp_h = (NowPeekI32)pt.h;
+    entry->temp_v = (NowPeekI32)pt.v;
+    entry->double_time = (NowPeekU32)LMGetDoubleTime();
+    entry->queue_mouse_depth = depth;
+    entry->queue_next_when = next_when;
+    entry->observer = ((NowPeekU32)gCurApName[1] << 24)
+        | ((NowPeekU32)gCurApName[2] << 16)
+        | ((NowPeekU32)gCurApName[3] << 8)
+        | (NowPeekU32)gCurApName[4];
+    entry->cell_state = cell->state;
+    entry->write_seq = seq + 2u;    /* commit last */
+    cell->click_probe_count++;
 }
 
 static void release_button(NowPeekContinuityCell *cell,
@@ -576,6 +663,11 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
         LMSetDoubleTime((UInt32)kNowPeekContinuityWideDoubleTimeTicks);
     }
     gDeferredPressGeneration = 0;
+    /* The deep-click latch lives HERE and only here: set by the bit, and
+       cleared only by a later arm without it. Exit paths leave it alone -
+       see the latch's own comment for why that is the entire point. */
+    gDeepClickLog = (cell->tracking_options
+        & (NowPeekU32)kNowPeekContinuityTrackingDeepClickLog) != 0;
     now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(cell->tracking_options);
     now_ext_continuity_configure_compression(cell->tracking_options);

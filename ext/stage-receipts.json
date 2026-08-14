@@ -860,6 +860,17 @@
         "ext/src/now_ext_continuity.c"
       ],
       "reason": "convergence round; bake follows with the final stack build"
+    },
+    {
+      "at": "2026-08-14T00:45:31-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "b5e9e60bdfe899223ff30cfd01a7cbbe01f2b121",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "deep click probe checkpoint; bake follows with the bundle for the metal diff run"
     }
   ]
 }

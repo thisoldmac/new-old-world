@@ -384,6 +384,81 @@ static void drain_adb_trace(const NowPeekContinuityCell *cell)
     gLastADBTraceSeq = newest;
 }
 
+/* V11 deep click probe drain. Uploadable evidence, so now_log and never
+   now_log_memory - this ring exists to be diffed off-machine, and the last
+   probe that printed to the crash-forensics buffer cost a full metal round
+   before anyone noticed the log it fed never uploads (2026-08-13).
+   The ring is rolling; total count drives the window, and anything the
+   drain arrived too late for is COUNTED rather than silently absent. Two
+   lines per entry because kLogLineMax is 120. */
+static NowPeekU32 gLastClickProbeCount = 0;
+
+static void drain_click_probe(NowPeekContinuityCell *cell)
+{
+    NowPeekU32 total = cell->click_probe_count;
+    NowPeekU32 fresh;
+    NowPeekU32 n;
+
+    if (total == gLastClickProbeCount)
+        return;
+    fresh = total - gLastClickProbeCount;
+    if (fresh > (NowPeekU32)kNowPeekContinuityClickProbeCapacity) {
+        NowPeekU32 missed = fresh
+            - (NowPeekU32)kNowPeekContinuityClickProbeCapacity;
+
+        cell->click_probe_overwritten += missed;
+        now_log(kLogWarn, "mirror",
+                "click probe overran drain missed=%lu total=%lu",
+                (unsigned long)missed, (unsigned long)total);
+        fresh = (NowPeekU32)kNowPeekContinuityClickProbeCapacity;
+    }
+    for (n = total - fresh; n != total; ++n) {
+        NowPeekContinuityClickProbe snap;
+        const NowPeekContinuityClickProbe *slot =
+            &cell->click_probe[n
+                % (NowPeekU32)kNowPeekContinuityClickProbeCapacity];
+        NowPeekU32 before = slot->write_seq;
+        char app[5];
+        int c;
+
+        snap = *slot;
+        if ((before & 1u) != 0 || slot->write_seq != before) {
+            now_log(kLogWarn, "mirror", "click probe torn n=%lu",
+                    (unsigned long)(n + 1u));
+            continue;
+        }
+        app[0] = (char)((snap.observer >> 24) & 0xFFu);
+        app[1] = (char)((snap.observer >> 16) & 0xFFu);
+        app[2] = (char)((snap.observer >> 8) & 0xFFu);
+        app[3] = (char)(snap.observer & 0xFFu);
+        app[4] = '\0';
+        for (c = 0; c < 4; c++) {
+            if (app[c] < 0x20 || app[c] > 0x7E)
+                app[c] = '.';
+        }
+        now_log(kLogInfo, "mirror",
+                "click probe n=%lu st=%lu tk=%lu what=%lu when=%lu "
+                "at=%ld,%ld mod=%04lx app=%s",
+                (unsigned long)(n + 1u), (unsigned long)snap.cell_state,
+                (unsigned long)snap.ticks, (unsigned long)snap.what,
+                (unsigned long)snap.when,
+                (long)snap.where_h, (long)snap.where_v,
+                (unsigned long)snap.modifiers, app);
+        now_log(kLogInfo, "mirror",
+                "click probe n=%lu msg=%08lx mb=%02lx mbt=%lu m=%ld,%ld "
+                "r=%ld,%ld t=%ld,%ld dbl=%lu q=%lu/%lu",
+                (unsigned long)(n + 1u), (unsigned long)snap.message,
+                (unsigned long)snap.mb_state, (unsigned long)snap.mb_ticks,
+                (long)snap.mouse_h, (long)snap.mouse_v,
+                (long)snap.raw_h, (long)snap.raw_v,
+                (long)snap.temp_h, (long)snap.temp_v,
+                (unsigned long)snap.double_time,
+                (unsigned long)snap.queue_mouse_depth,
+                (unsigned long)snap.queue_next_when);
+    }
+    gLastClickProbeCount = total;
+}
+
 int now_continuity_service_ready(const NowPeekContinuityCell *cell)
 {
     return resident_ready(cell) && now_continuity_cursor_ready();
@@ -418,6 +493,7 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
         }
         drain_trace(cell);
         drain_adb_trace(cell);
+        drain_click_probe(cell);
         status_seq = cell->status_seq;
         if ((status_seq & 1u) != 0)
             break;
@@ -493,6 +569,7 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
         }
         drain_trace(cell);
         drain_adb_trace(cell);
+        drain_click_probe(cell);
     }
     gInvoking = 0;
     return 1;
