@@ -197,6 +197,12 @@ run_c now-guest-shared now_continuity_wire_test.c "-DNOW_CONTINUITY_HOST" \
       src/now_continuity_wire.c
 run_c now-guest-shared now_input_owner_test.c "" src/now_input_owner.c
 run_c now-guest-shared now_continuity_logic_test.c "" src/now_continuity_logic.c
+# The observer-match decision alone: which pending event_timing entry an
+# observed synthetic mouse event belongs to. Extracted so the host cc can
+# watch it against the metal evidence that caught "first unmatched edge"
+# misattributing under rapid clicking (2026-08-13 223137.log).
+run_c now-guest-shared now_continuity_event_match_test.c "" \
+      src/now_continuity_event_match.c
 run_py now-guest-shared continuity_lease_admission_source_test.py
 run_c now-guest-shared now_continuity_keyboard_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c

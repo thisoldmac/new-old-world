@@ -815,6 +815,17 @@
         "ext/src/now_ext_cursor.c"
       ],
       "reason": "chain-window fix; bake follows with stack build"
+    },
+    {
+      "at": "2026-08-13T22:54:01-0400",
+      "branch": "claude/swarm-observer-match",
+      "extDigest": "e85711dd956a467808499f2ab0e0c484733b0d08",
+      "kind": "deferral",
+      "paths": [
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "observer-match unit; orchestrator bakes merged stack"
     }
   ]
 }
