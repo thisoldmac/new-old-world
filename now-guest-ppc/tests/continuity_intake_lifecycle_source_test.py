@@ -96,10 +96,11 @@ if "gEpoch != 0 && gFastPump" not in fast_pump:
     failures.append("Fast Pump is no longer bounded to a live authority epoch")
 if 'now_json_find_bool(request, "fastPump", 0)' not in WIRE:
     failures.append("continuity.arm no longer defaults optional Fast Pump off")
-if 'now_json_find_bool(request, "hideGuestCursorWhileDragging", 0)' not in WIRE:
-    failures.append("continuity.arm no longer defaults optional cursor hiding off")
-if 'now_json_find_bool(request, "virtualADB", 0)' not in WIRE:
-    failures.append("continuity.arm no longer defaults optional virtual ADB off")
+for retired_option in ("pinHeldPoint", "virtualGetMouse",
+                       "hideGuestCursorWhileDragging", "virtualADB"):
+    if f'now_json_find_bool(request, "{retired_option}", 0)' in WIRE:
+        failures.append(
+            f"continuity.arm still parses retired option {retired_option}")
 if "now_continuity_wants_fast_pump()" not in body(
         "Boolean conn_wants_fast_pump", WIRE):
     failures.append(

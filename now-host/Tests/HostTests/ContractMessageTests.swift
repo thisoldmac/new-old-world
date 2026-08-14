@@ -72,11 +72,9 @@ final class ContractMessageTests: XCTestCase {
                                 id: 9, nonceHi: 0x0123_4567,
                                 nonceLo: 0x89AB_CDEF, epoch: 4,
                                 requestedHz: 30, leaseTicks: 90,
-                                fastPump: true, pinHeldPoint: true,
-                                virtualGetMouse: true,
                                 settleSyntheticDevice: true,
-                                virtualADB: true,
-                                hideGuestCursorWhileDragging: true)
+                                interruptPress: true,
+                                settleIdleCursor: true)
         let report = ContinuityReport(
             version: ContinuityContract.version,
             id: 9, epoch: 4, state: "armed", acceptedHz: 30,
@@ -101,6 +99,29 @@ final class ContractMessageTests: XCTestCase {
             XCTAssertEqual(
                 try ControlMessageCodec.decode(
                     ControlMessageCodec.encode(message)), message)
+        }
+    }
+
+    func testRetiredContinuityOptionsHaveNoProductPlumbing() throws {
+        let retired = ["pinHeldPoint", "virtualGetMouse",
+                       "hideGuestCursorWhileDragging", "virtualADB"]
+        let sources = [
+            "now-host/Sources/Host/ContractMessages.swift",
+            "now-host/Sources/Host/GuestListener.swift",
+            "now-host/Sources/Host/MirrorContinuityController.swift",
+            "now-host/Sources/Host/MirrorControlView.swift",
+        ]
+        for path in sources {
+            let source = try GateSource.hostSwift(path)
+            for option in retired {
+                XCTAssertFalse(source.contains(option),
+                               "\(path) still carries retired \(option)")
+            }
+        }
+        let wire = try GateSource.guestC("now-guest-ppc/src/core/wire.c")
+        for option in retired {
+            XCTAssertFalse(wire.contains("\"\(option)\""),
+                           "guest wire still parses retired \(option)")
         }
     }
     func testSceneRequestCarriesNamedPlanePolicy() throws {

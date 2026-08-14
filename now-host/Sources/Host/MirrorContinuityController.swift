@@ -78,32 +78,6 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
-    @Published var pinHeldPoint = false {
-        didSet {
-            guard pinHeldPoint != oldValue else { return }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(pinHeldPoint,
-                             forKey: pinHeldPointKey(for: machine))
-            }
-            if phase != .idle {
-                rearmAfterConfigurationChange(reason: "held-point pin changed")
-            }
-        }
-    }
-    @Published var virtualGetMouse = false {
-        didSet {
-            guard virtualGetMouse != oldValue else { return }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(virtualGetMouse,
-                             forKey: virtualGetMouseKey(for: machine))
-            }
-            if phase != .idle {
-                rearmAfterConfigurationChange(reason: "GetMouse mode changed")
-            }
-        }
-    }
     @Published var settleSyntheticDevice = true {
         didSet {
             guard settleSyntheticDevice != oldValue else { return }
@@ -155,11 +129,11 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
-    /* Experiment, default off, the riskiest input option: the resident's
+    /* Default on: the resident's
        interrupt timer delivers a deferred second press itself, because the
        Finder pairs clicks by its own clock at processing time and no
        task-time route can reach the queue while it processes click one. */
-    @Published var interruptPress = false {
+    @Published var interruptPress = true {
         didSet {
             guard interruptPress != oldValue else { return }
             if !loadingSettings,
@@ -191,9 +165,9 @@ final class MirrorContinuityController: ObservableObject,
             }
         }
     }
-    /* Spike, default off: extend the settle machinery to idle motion so a
+    /* Default on: extend the settle machinery to idle motion so a
        starved pump's frames are drawn from whichever process holds the CPU. */
-    @Published var settleIdleCursor = false {
+    @Published var settleIdleCursor = true {
         didSet {
             guard settleIdleCursor != oldValue else { return }
             if !loadingSettings,
@@ -203,21 +177,7 @@ final class MirrorContinuityController: ObservableObject,
             }
             if phase != .idle {
                 rearmAfterConfigurationChange(
-                    reason: "idle settle spike changed")
-            }
-        }
-    }
-    @Published var hideGuestCursorWhileDragging = false {
-        didSet {
-            guard hideGuestCursorWhileDragging != oldValue else { return }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(hideGuestCursorWhileDragging,
-                             forKey: hideGuestCursorKey(for: machine))
-            }
-            if phase != .idle {
-                rearmAfterConfigurationChange(
-                    reason: "guest cursor visibility changed")
+                    reason: "idle cursor settlement changed")
             }
         }
     }
@@ -565,15 +525,12 @@ final class MirrorContinuityController: ObservableObject,
         armID = listener.armContinuity(
             nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
             requestedHz: rate, leaseTicks: 90, fastPump: fastPump,
-            pinHeldPoint: pinHeldPoint,
-            virtualGetMouse: virtualGetMouse,
             settleSyntheticDevice: settleSyntheticDevice,
             wideDoubleTime: wideDoubleTime,
             compressClickWhen: compressClickWhen,
             interruptPress: interruptPress,
             deepClickLog: deepClickLog,
-            settleIdleCursor: settleIdleCursor,
-            hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)
+            settleIdleCursor: settleIdleCursor)
         guard armID != nil else {
             status = "unavailable: no Mac is connected"
             self.target = nil
@@ -1309,8 +1266,6 @@ final class MirrorContinuityController: ObservableObject,
         requestedHz = rate
         autoReconnect = defaults.bool(forKey: reconnectKey(for: machine))
         fastPump = defaults.bool(forKey: fastPumpKey(for: machine))
-        pinHeldPoint = defaults.bool(forKey: pinHeldPointKey(for: machine))
-        virtualGetMouse = defaults.bool(forKey: virtualGetMouseKey(for: machine))
         /* Default-true settings use the object-nil pattern so a machine the
            human explicitly opted out of stays opted out. */
         let settleKey = settleSyntheticDeviceKey(for: machine)
@@ -1322,14 +1277,14 @@ final class MirrorContinuityController: ObservableObject,
         let compressKey = compressClickWhenKey(for: machine)
         compressClickWhen = defaults.object(forKey: compressKey) == nil
             ? true : defaults.bool(forKey: compressKey)
-        interruptPress = defaults.bool(
-            forKey: interruptPressKey(for: machine))
+        let interruptKey = interruptPressKey(for: machine)
+        interruptPress = defaults.object(forKey: interruptKey) == nil
+            ? true : defaults.bool(forKey: interruptKey)
         deepClickLog = defaults.bool(
             forKey: deepClickLogKey(for: machine))
-        settleIdleCursor = defaults.bool(
-            forKey: settleIdleCursorKey(for: machine))
-        hideGuestCursorWhileDragging = defaults.bool(
-            forKey: hideGuestCursorKey(for: machine))
+        let idleCursorKey = settleIdleCursorKey(for: machine)
+        settleIdleCursor = defaults.object(forKey: idleCursorKey) == nil
+            ? true : defaults.bool(forKey: idleCursorKey)
         let keyboardKey = keyboardForwardingKey(for: machine)
         keyboardForwardingEnabled = defaults.object(forKey: keyboardKey) == nil
             ? true : defaults.bool(forKey: keyboardKey)
@@ -1364,20 +1319,8 @@ final class MirrorContinuityController: ObservableObject,
         "mirror.continuity.fastPump.\(machine.slug)"
     }
 
-    private func pinHeldPointKey(for machine: GuestID) -> String {
-        "mirror.continuity.pinHeldPoint.\(machine.slug)"
-    }
-
-    private func virtualGetMouseKey(for machine: GuestID) -> String {
-        "mirror.continuity.virtualGetMouse.\(machine.slug)"
-    }
-
     private func settleSyntheticDeviceKey(for machine: GuestID) -> String {
         "mirror.continuity.settleSyntheticDevice.\(machine.slug)"
-    }
-
-    private func hideGuestCursorKey(for machine: GuestID) -> String {
-        "mirror.continuity.hideGuestCursorWhileDragging.\(machine.slug)"
     }
 
     private func wideDoubleTimeKey(for machine: GuestID) -> String {

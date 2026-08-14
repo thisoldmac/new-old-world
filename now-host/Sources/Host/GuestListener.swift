@@ -703,16 +703,12 @@ final class GuestListener: ObservableObject {
     func armContinuity(nonceHi: UInt32, nonceLo: UInt32, epoch: UInt32,
                        requestedHz: Int, leaseTicks: Int,
                        fastPump: Bool = false,
-                       pinHeldPoint: Bool = false,
-                       virtualGetMouse: Bool = false,
                        settleSyntheticDevice: Bool = false,
                        wideDoubleTime: Bool = false,
                        compressClickWhen: Bool = false,
                        interruptPress: Bool = false,
                        deepClickLog: Bool = false,
-                       settleIdleCursor: Bool = false,
-                       virtualADB: Bool = false,
-                       hideGuestCursorWhileDragging: Bool = false) -> Int? {
+                       settleIdleCursor: Bool = false) -> Int? {
         guard let session else { return nil }
         let id = nextContinuityId
         nextContinuityId &+= 1
@@ -720,16 +716,13 @@ final class GuestListener: ObservableObject {
             version: ContinuityContract.version,
             id: id, nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
             requestedHz: requestedHz, leaseTicks: leaseTicks,
-            fastPump: fastPump, pinHeldPoint: pinHeldPoint,
-            virtualGetMouse: virtualGetMouse,
+            fastPump: fastPump,
             settleSyntheticDevice: settleSyntheticDevice,
             wideDoubleTime: wideDoubleTime,
             compressClickWhen: compressClickWhen,
             interruptPress: interruptPress,
             deepClickLog: deepClickLog,
-            settleIdleCursor: settleIdleCursor,
-            virtualADB: virtualADB,
-            hideGuestCursorWhileDragging: hideGuestCursorWhileDragging)))
+            settleIdleCursor: settleIdleCursor)))
         return id
     }
 

@@ -369,12 +369,6 @@ private struct ContinuityControlCard: View {
                 Toggle("Fast Pump (experimental)",
                        isOn: $controller.fastPump)
                     .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Pin held point (experimental)",
-                       isOn: $controller.pinHeldPoint)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Virtual GetMouse (experimental)",
-                       isOn: $controller.virtualGetMouse)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
                 Toggle("Settle synthetic device (diagnostic)",
                        isOn: $controller.settleSyntheticDevice)
                     .disabled(!controller.isEnabled || !mirrorRunning)
@@ -384,17 +378,14 @@ private struct ContinuityControlCard: View {
                 Toggle("Compress click timing for private windows",
                        isOn: $controller.compressClickWhen)
                     .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Interrupt press delivery (experiment)",
+                Toggle("Keep double-click delivery responsive",
                        isOn: $controller.interruptPress)
                     .disabled(!controller.isEnabled || !mirrorRunning)
                 Toggle("Deep click probe (diagnostic, logs every click)",
                        isOn: $controller.deepClickLog)
                     .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Settle device while idle (spike)",
+                Toggle("Keep guest cursor motion smooth",
                        isOn: $controller.settleIdleCursor)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Hide guest cursor during drag (experimental)",
-                       isOn: $controller.hideGuestCursorWhileDragging)
                     .disabled(!controller.isEnabled || !mirrorRunning)
                 Text(controller.status)
                     .font(.caption)
@@ -403,9 +394,8 @@ private struct ContinuityControlCard: View {
                 Text("Primary clicks and held motion follow the pointer into "
                      + "the guest. Guest mouse input immediately returns control "
                      + "to that Mac. Fast Pump asks the guest to yield every "
-                     + "tick. The held-point experiments test ADB contention "
-                     + "without modifying the physical device; cursor hiding "
-                     + "isolates the guest sprite during a drag.")
+                     + "tick. The continuity timing controls preserve responsive "
+                     + "clicks and smooth motion when the guest is busy.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

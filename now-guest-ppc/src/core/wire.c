@@ -6874,17 +6874,9 @@ static void serve_continuity_arm(const char *request)
         (void)continuity_refuse(id, epoch, "unavailable");
         return;
     }
-    if (now_json_find_bool(request, "pinHeldPoint", 0))
-        tracking_options |= kNowPeekContinuityTrackingPinHeldPoint;
-    if (now_json_find_bool(request, "virtualGetMouse", 0))
-        tracking_options |= kNowPeekContinuityTrackingVirtualGetMouse;
     if (now_json_find_bool(request, "settleSyntheticDevice", 0))
         tracking_options |=
             kNowPeekContinuityTrackingSettleSyntheticDevice;
-    if (now_json_find_bool(request, "hideGuestCursorWhileDragging", 0))
-        tracking_options |= kNowPeekContinuityTrackingHideGuestCursor;
-    if (now_json_find_bool(request, "virtualADB", 0))
-        tracking_options |= kNowPeekContinuityTrackingVirtualADB;
     if (now_json_find_bool(request, "wideDoubleTime", 0))
         tracking_options |= kNowPeekContinuityTrackingWideDoubleTime;
     if (now_json_find_bool(request, "settleIdleCursor", 0))

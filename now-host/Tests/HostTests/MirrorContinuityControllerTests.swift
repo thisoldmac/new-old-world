@@ -206,10 +206,6 @@ final class MirrorContinuityControllerTests: XCTestCase {
         initial: MirrorKit.Point = .init(x: 40, y: 50),
         autoReconnect: Bool = false,
         fastPump: Bool = false,
-        pinHeldPoint: Bool = false,
-        virtualGetMouse: Bool = false,
-        settleSyntheticDevice: Bool = false,
-        hideGuestCursorWhileDragging: Bool = false,
         acknowledgementTimeout: TimeInterval = 3,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ArmingRig {
@@ -226,11 +222,6 @@ final class MirrorContinuityControllerTests: XCTestCase {
             acknowledgementTimeout: acknowledgementTimeout, audit: audit)
         controller.autoReconnect = autoReconnect
         controller.fastPump = fastPump
-        controller.pinHeldPoint = pinHeldPoint
-        controller.virtualGetMouse = virtualGetMouse
-        controller.settleSyntheticDevice = settleSyntheticDevice
-        controller.hideGuestCursorWhileDragging =
-            hideGuestCursorWhileDragging
         controller.isEnabled = true
         controller.pointerMoved(to: initial)
         try await waitUntil("arm") {
@@ -881,21 +872,14 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(fast.arm.fastPump, true)
     }
 
-    func testHeldPointExperimentsAreRequestedOnlyWhenOptedIn() async throws {
-        let experiments = try await makeArmingRig(
-            pinHeldPoint: true, virtualGetMouse: true,
-            settleSyntheticDevice: true,
-            hideGuestCursorWhileDragging: true)
-        XCTAssertEqual(experiments.arm.pinHeldPoint, true)
-        XCTAssertEqual(experiments.arm.virtualGetMouse, true)
-        XCTAssertEqual(experiments.arm.settleSyntheticDevice, true)
-        XCTAssertEqual(experiments.arm.hideGuestCursorWhileDragging, true)
-    }
-
-    func testProductArmDoesNotEnableRejectedADBCarrierExperiment()
+    func testProductArmSendsBlessedContinuityMechanismsByDefault()
         async throws {
         let rig = try await makeArmingRig()
-        XCTAssertEqual(rig.arm.virtualADB, false)
+        XCTAssertEqual(rig.arm.settleSyntheticDevice, true)
+        XCTAssertEqual(rig.arm.wideDoubleTime, true)
+        XCTAssertEqual(rig.arm.compressClickWhen, true)
+        XCTAssertEqual(rig.arm.interruptPress, true)
+        XCTAssertEqual(rig.arm.settleIdleCursor, true)
     }
 
     func testClicksFallThroughUntilTheRawLaneIsActive() async throws {
@@ -1074,10 +1058,11 @@ final class MirrorContinuityControllerTests: XCTestCase {
         controller?.requestedHz = 60
         controller?.autoReconnect = true
         controller?.fastPump = true
-        controller?.pinHeldPoint = true
-        controller?.virtualGetMouse = true
         controller?.settleSyntheticDevice = true
-        controller?.hideGuestCursorWhileDragging = true
+        XCTAssertTrue(controller?.interruptPress == true)
+        XCTAssertTrue(controller?.settleIdleCursor == true)
+        controller?.interruptPress = false
+        controller?.settleIdleCursor = false
         controller?.keyboardForwardingEnabled = false
         controller?.escapeShortcut = .controlOptionReturn
         controller?.isEnabled = true
@@ -1088,10 +1073,9 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(reopened.requestedHz, 60)
         XCTAssertTrue(reopened.autoReconnect)
         XCTAssertTrue(reopened.fastPump)
-        XCTAssertTrue(reopened.pinHeldPoint)
-        XCTAssertTrue(reopened.virtualGetMouse)
         XCTAssertTrue(reopened.settleSyntheticDevice)
-        XCTAssertTrue(reopened.hideGuestCursorWhileDragging)
+        XCTAssertFalse(reopened.interruptPress)
+        XCTAssertFalse(reopened.settleIdleCursor)
         XCTAssertFalse(reopened.keyboardForwardingEnabled)
         XCTAssertEqual(reopened.escapeShortcut, .controlOptionReturn)
         XCTAssertFalse(reopened.isEnabled,
