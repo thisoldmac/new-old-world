@@ -14,6 +14,37 @@ enum MirrorSurfaceMode: String, CaseIterable, Identifiable, Sendable {
         case .continuity: return "Continuity"
         }
     }
+
+    /// **Which resident planes this surface is entitled to arm.**
+    ///
+    /// The host's plane policy says what a person and the guest ALLOW; this
+    /// says what the surface currently on screen actually NEEDS. The armed
+    /// set is the intersection, so a mode can only ever ask for less — never
+    /// for a plane policy has refused.
+    ///
+    /// Continuity renders nothing (`MirrorPaneView` says so in as many
+    /// words), and its guest-side intake claims exactly one plane for
+    /// itself: `continuity_intake.c` claims `kNowPeekCapAnchors` and no
+    /// other. Every further plane the Mirror's cycle used to arm underneath
+    /// it was paid for by the Macintosh and read by nobody:
+    ///
+    /// - `.semantics` / `.interaction` widen the structural walk
+    ///   (`wire.c` claims `Tree` and `Act` from the scene owner only when
+    ///   the request asks for them),
+    /// - `.content` arms and releases the ~64 KiB draw-capture plane, which
+    ///   on 2026-08-13 cycled `arm_request` between 0x1f and 0x17 for a
+    ///   whole session, repaired its hook every two seconds, and spammed
+    ///   `content refused wrong-a5` while the pointer needed the CPU,
+    /// - `.transitions` starts the P5 tail whose only consumer is the
+    ///   Mirror's own scene invalidation.
+    var armablePlanes: Set<MirrorPlaneID> {
+        switch self {
+        case .mirror:
+            return Set(MirrorPlaneID.allCases)
+        case .continuity:
+            return [.structure]
+        }
+    }
 }
 
 enum GuestDisplayScale: Double, CaseIterable, Identifiable, Sendable {
