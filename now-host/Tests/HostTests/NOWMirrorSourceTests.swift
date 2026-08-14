@@ -256,6 +256,28 @@ final class NOWMirrorSourceTests: XCTestCase {
 
     // MARK: - What each surface arms on the Macintosh
 
+    /// **Indexed through XCTUnwrap, because the mutation these tests are
+    /// written against is "the request never went out".**
+    ///
+    /// Subscripting the harness for a request a mutation suppressed is a
+    /// fatal index crash, and a crashed test process reports nothing about
+    /// the rest of the run — a mutation that reads as a silent green
+    /// elsewhere is exactly the failure mode this project has already paid
+    /// for once.
+    private func sceneRequest(_ index: Int, of harness: MirrorCycleHarness)
+        throws -> (GuestKey, Bool, Bool) {
+        try XCTUnwrap(harness.sceneRequests.indices.contains(index)
+                      ? harness.sceneRequests[index] : nil,
+                      "scene request #\(index) was never made")
+    }
+
+    private func completeScene(_ index: Int, of harness: MirrorCycleHarness,
+                               for key: GuestKey) throws {
+        _ = try sceneRequest(index, of: harness)
+        harness.completeScene(index,
+                              with: .success(try fixtureDelivery(for: key)))
+    }
+
     /// **A surface that renders nothing must not arm the planes that feed a
     /// render.**
     ///
@@ -284,12 +306,10 @@ final class NOWMirrorSourceTests: XCTestCase {
         defer { source.stop() }
 
         source.start()
-        XCTAssertEqual(harness.sceneRequests.count, 1)
-        XCTAssertTrue(harness.sceneRequests[0].1,
-                      "Mirror mode still asks for the semantic tree")
-        XCTAssertTrue(harness.sceneRequests[0].2,
-                      "Mirror mode still asks for the act plane")
-        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        let mirrorAsk = try sceneRequest(0, of: harness)
+        XCTAssertTrue(mirrorAsk.1, "Mirror mode still asks for the semantic tree")
+        XCTAssertTrue(mirrorAsk.2, "Mirror mode still asks for the act plane")
+        try completeScene(0, of: harness, for: key)
         XCTAssertEqual(harness.joinedScenes.count, 1,
                        "Mirror mode still joins the content plane")
         harness.completeJoin(0)
@@ -299,12 +319,12 @@ final class NOWMirrorSourceTests: XCTestCase {
         XCTAssertEqual(harness.sceneRequests.count, 2,
                        "entering Continuity must re-arm now, not whenever "
                        + "something else happens to poll")
-        XCTAssertFalse(harness.sceneRequests[1].1,
-                       "Continuity reads no semantic tree")
-        XCTAssertFalse(harness.sceneRequests[1].2,
+        let continuityAsk = try sceneRequest(1, of: harness)
+        XCTAssertFalse(continuityAsk.1, "Continuity reads no semantic tree")
+        XCTAssertFalse(continuityAsk.2,
                        "Continuity drives the pointer over UDP, not the "
                        + "act plane")
-        harness.completeScene(1, with: .success(try fixtureDelivery(for: key)))
+        try completeScene(1, of: harness, for: key)
         XCTAssertEqual(harness.joinedScenes.count, 1,
                        "the content plane must not be re-armed for a surface "
                        + "that renders nothing")
@@ -328,17 +348,18 @@ final class NOWMirrorSourceTests: XCTestCase {
         defer { source.stop() }
 
         source.start()
-        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        try completeScene(0, of: harness, for: key)
         harness.completeJoin(0)
         source.surfaceMode = .continuity
-        harness.completeScene(1, with: .success(try fixtureDelivery(for: key)))
+        try completeScene(1, of: harness, for: key)
 
         source.surfaceMode = .mirror
 
         XCTAssertEqual(harness.sceneRequests.count, 3)
-        XCTAssertTrue(harness.sceneRequests[2].1)
-        XCTAssertTrue(harness.sceneRequests[2].2)
-        harness.completeScene(2, with: .success(try fixtureDelivery(for: key)))
+        let back = try sceneRequest(2, of: harness)
+        XCTAssertTrue(back.1)
+        XCTAssertTrue(back.2)
+        try completeScene(2, of: harness, for: key)
         XCTAssertEqual(harness.joinedScenes.count, 2,
                        "the content plane comes back with the render")
     }
@@ -365,18 +386,17 @@ final class NOWMirrorSourceTests: XCTestCase {
         defer { source.stop() }
 
         source.start()
-        XCTAssertEqual(harness.sceneRequests.count, 1)
-        XCTAssertFalse(harness.sceneRequests[0].1,
-                       "Mirror may not widen the walk past policy")
-        XCTAssertFalse(harness.sceneRequests[0].2,
+        let narrowed = try sceneRequest(0, of: harness)
+        XCTAssertFalse(narrowed.1, "Mirror may not widen the walk past policy")
+        XCTAssertFalse(narrowed.2,
                        "Mirror may not arm the act plane past policy")
-        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        try completeScene(0, of: harness, for: key)
         XCTAssertEqual(harness.joinedScenes.count, 1,
                        "content is allowed here, and Mirror reads it")
         harness.completeJoin(0)
 
         source.surfaceMode = .continuity
-        harness.completeScene(1, with: .success(try fixtureDelivery(for: key)))
+        try completeScene(1, of: harness, for: key)
 
         XCTAssertEqual(harness.joinedScenes.count, 1,
                        "an allowed plane is still not an armed one: nothing "
@@ -415,18 +435,18 @@ final class NOWMirrorSourceTests: XCTestCase {
         defer { source.stop() }
 
         source.start()
-        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        try completeScene(0, of: harness, for: key)
         harness.completeJoin(0)
         XCTAssertEqual(transitionOps, ["start"])
 
         source.surfaceMode = .continuity
-        harness.completeScene(1, with: .success(try fixtureDelivery(for: key)))
+        try completeScene(1, of: harness, for: key)
 
         XCTAssertEqual(transitionOps, ["start", "stop"],
                        "Continuity must hand the tail back")
 
         source.surfaceMode = .mirror
-        harness.completeScene(2, with: .success(try fixtureDelivery(for: key)))
+        try completeScene(2, of: harness, for: key)
 
         XCTAssertEqual(transitionOps, ["start", "stop", "start"],
                        "and the return must re-arm it — the release also "
