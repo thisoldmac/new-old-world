@@ -212,6 +212,26 @@ wire button up inside the epoch so no logical hold can leak, because the
 bounce. Both changes are tested against source guards and cross-builds;
 neither is metal-verified.
 
+**2026-08-14 — double-click is METAL-VERIFIED, and the two mechanisms
+above were necessary but not sufficient.** Resident table V11 added a
+logging-only deep click probe (every mouse event at the jGNE boundary,
+native and synthetic, with the click-relevant low memory beside it);
+one three-phase attended run — wire clicks, then trackpad, then an
+external ADB mouse — isolated the two real discriminators: native
+downs satisfy `when == MBTicks` exactly while compressed synthetic
+ones diverged, and native fast clicks queue the second click during
+the first's processing while synthetic ones arrived one at a time.
+V12 closes both: the when-compression rewrite moves MBTicks with the
+shaped `when` (two writers, count-pinned), and interrupt press
+delivery — rebuilt to read the notifier-written wire edges under a
+torn-read snapshot, guarded by the `button_manager_busy` handshake the
+PPC application brackets its manager button calls with — puts the
+second press in the queue while the target is still processing the
+first click. The 02:39 attended run shows generations 2-5 of a
+double-click delivered entirely at interrupt time, the second down
+dequeued the same tick as the first click's up, and a working Finder
+double-click on the PowerBook 1400c.
+
 The 18:50 attended pass then confirmed the dual-position cursor fixed on
 metal and replaced the click machinery outright. The host no longer
 classifies clicks at all: every AppKit edge streams as the next wire

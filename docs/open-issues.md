@@ -104,7 +104,9 @@ needs one attended log before the investigation can move outward to Event
 Manager/tracking state. Until then the accepted product status is explicit:
 cursor, click, keyboard and logical drag work on metal, but held drags may
 flicker between origin and current position, double-click is intermittent, and
-cooperative scheduling produces periodic motion hitches. Those hitches have
+cooperative scheduling produces periodic motion hitches. (Superseded where
+dated entries below say otherwise — the drag flicker and double-click lines
+were resolved 2026-08-13/14; the dated record is authoritative.) Those hitches have
 not been observed while a drag is held, which is a useful discriminator for
 the input-pump investigation rather than evidence that cooperative scheduling
 alone is the cause. Mirror guest-to-host native file drag and Continuity edge
@@ -505,6 +507,57 @@ exclusive by sequence, with the spike advancing the ack currency), an
 honest observer matcher (most-recent-applied-edge rule, extracted pure
 and native-tested), the button-timing ring now ROLLING so late-epoch
 attempts stop vanishing, and per-down true-front process logging.
+
+**2026-08-14 — METAL-VERIFIED: Finder double-click over Continuity
+works, and the mechanism that fixed it is recorded because two theories
+died first.** The 235658 run killed BOTH timestamp theories by
+measurement: a pair 8 ticks apart by `when` AND 54 ticks apart by
+dequeue failed under an active 60-tick window, so nothing temporal
+distinguished our pair — and the honest reaction was to stop theorizing
+and capture fields. The V11 deep click probe (tracking bit 0x200,
+logging only, latched past epoch exit so native comparison clicks land
+in the same ring) recorded every mouse event at the jGNE boundary with
+the full record and the click-relevant low memory beside it. One run
+(015913: wire clicks, then trackpad, then an external ADB mouse, whose
+two native phases proved field-identical) produced exactly two
+discriminators:
+
+- **`when == MBTicks` holds on every native down (26/26) and broke on
+  ours by up to 110 ticks** — when-compression forged one timestamp and
+  left the driver's cross-check behind. Fixed: the shape rewrite moves
+  MBTicks with the shaped `when`, and the interrupt press moves it with
+  MBState; exactly two writers, count-pinned.
+- **Native fast clicks pile the second click INTO the raw event queue
+  (depth 1-4) while the first is processed; ours arrived one at a time
+  at task time (depth 0)** — so any peek-ahead sees a queued pair
+  natively and nothing from us. Fixed: interrupt press delivery rebuilt
+  to read the notifier-written wire edges directly (the V10/V11
+  deferred-slot gate NEVER FIRED on metal — 11 then 3 deferrals, zero
+  deliveries — because task time set the slot and the same service
+  invoke consumed it; that gate is now pin-banned), guarded by a V12
+  `button_manager_busy` handshake the PPC application brackets its
+  CursorDeviceButton calls with, plus a newer-generation guard so a
+  settled older up cannot regress an interrupt-delivered press.
+
+The 023932 verification run shows the whole chain live: manager timing
+ring holds only generations 1 and 6 while generations 2-5 were
+interrupt-delivered; the probe recorded `q=1` at the up's dequeue with
+the second down consumed the SAME tick; every synthetic down reads
+`when == mbt`. Human-attested working on the PowerBook 1400c.
+
+Still open from this arc, in rough priority: the ordinary-motion cursor
+hitch (plane gating removed the once-per-second stall; a residual
+~10-second guest-wide starvation fires ONCE at continuity entry — `wire
+? not scheduled for 10s` — then motion is smooth; and the human wants
+the remaining texture investigated); control-panel sliders (probe
+evidence exonerates event delivery — the Mouse cpanel received clean
+downs at the thumb — and shows RawMouse/MTemp never track synthetic
+input, so a CDEF reading RawMouse is the standing suspect); the passive
+ADB observer fails to install with an external ADB mouse present
+(`state=3 err=-50 devices=2` — it assumed one pointing device); and the
+experiment-flag surface itself now needs pruning to a blessed set — ten
+tracking bits exist and at most five belong in the product
+configuration (see the 2026-08-14 consolidation plan).
 
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 

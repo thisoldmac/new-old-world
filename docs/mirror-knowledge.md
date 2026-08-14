@@ -201,3 +201,20 @@ records, and private per-app caches beneath it, and the fewer layers sit
 between the injection point and the hardware, the fewer seams exist —
 for ADB Macs the floor is the ADB service-callback layer, given a
 synthetic autopoll clock via explicit `ADBOp` Talk-R0.
+
+**2026-08-14 coda — the seam was finally FOUND by capturing it, and it
+was two seams.** After both timestamp theories died by measurement (a
+pair 8 ticks by `when` AND 54 by dequeue failed under a 60-tick
+window), a jGNE-boundary probe recorded every field of native versus
+synthetic mouse events in one log. Native downs satisfy
+`when == MBTicks` exactly (26/26; forging `when` without moving the
+driver's cross-check had made every compressed click detectable), and
+native fast clicks pile the second click INTO the raw event queue
+(depth 1-4) while the first is processed, where synthetic ones arrived
+one at a time (depth 0) — an empty queue at peek-ahead time is itself a
+signature. Closing both — MBTicks moved with the forged `when`, and the
+second press delivered at interrupt time so it is queued during click-1
+processing — made Finder double-click work on metal. Method lesson for
+the corpus: when the last theory dies, stop theorizing and record every
+candidate field of the real thing next to the fake; the diff IS the
+answer, and it took one attended run.
