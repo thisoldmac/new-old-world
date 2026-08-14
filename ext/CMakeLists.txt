@@ -109,11 +109,6 @@ add_executable(NowExt
     src/now_ext_continuity.c
     src/now_ext_continuity_keyboard.c
     src/now_ext_continuity_tm.S
-    # P9 ADB authority spike: passively wrap the existing relative device by
-    # default. One explicit V7 option substitutes bounded packets through a
-    # pure shared-C transform; the register ABI remains in the adjacent shim.
-    src/now_ext_adb_observer.c
-    src/now_ext_adb_observer.S
     src/now_content_qdext.S
     ../now-guest-shared/src/now_act_guard.c
     # P7's decisions, where the host cc can compile them and
@@ -128,7 +123,6 @@ add_executable(NowExt
     ../now-guest-shared/src/now_continuity_logic.c
     ../now-guest-shared/src/now_continuity_event_match.c
     ../now-guest-shared/src/now_continuity_keyboard_logic.c
-    ../now-guest-shared/src/now_adb_injection_logic.c
     ../now-guest-shared/src/now_semantic_guard.c)
 add_dependencies(NowExt generate_now_ext_identity)
 set_source_files_properties(src/now_ext.c

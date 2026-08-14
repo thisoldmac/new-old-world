@@ -68,8 +68,6 @@ tracking_remember = body(
     "void now_ext_cursor_remember_continuity_tracking_point(", EXT_CURSOR)
 tracking_end = body(
     "void now_ext_cursor_end_continuity_tracking(", EXT_CURSOR)
-tracking_begin = body(
-    "void now_ext_cursor_begin_continuity_tracking_visuals(", EXT_CURSOR)
 tracking_complete = body(
     "void now_ext_cursor_complete_continuity_tracking(", EXT_CURSOR)
 release_button = body("static void release_button(", EXT_CONTINUITY)
@@ -307,13 +305,14 @@ if "now_ext_cursor_remember_continuity_tracking_point(" not in event_result \
 elif event_result.index("now_ext_cursor_remember_continuity_tracking_point(") \
         > event_result.index("cell->button_down = 1"):
     failures.append("button-down enters tracking before publishing its initial source")
-if "now_ext_cursor_begin_continuity_tracking_visuals();" not in event_result:
-    failures.append("button-down no longer starts optional tracking visuals in task time")
-if "HideCursor();" not in tracking_begin:
-    failures.append("the optional guest-cursor experiment no longer hides its sprite")
+# RETIRED 2026-08-14: the optional hide-guest-cursor branch had no accepted
+# product result. Normal release still has to revoke the tracking source and
+# redraw the final point; there is no longer a separately hidden sprite to
+# balance.
 if "now_ext_cursor_end_continuity_tracking();" not in tracking_complete \
+        or "HideCursor();" not in tracking_complete \
         or "ShowCursor();" not in tracking_complete:
-    failures.append("normal release no longer ends tracking before balancing cursor visibility")
+    failures.append("normal release no longer ends tracking before its final redraw")
 if tracking_install.count("NGetTrapAddress") < 3:
     failures.append("tracking install no longer snapshots all three incumbents")
 if tracking_install.count("NSetTrapAddress") != 3:

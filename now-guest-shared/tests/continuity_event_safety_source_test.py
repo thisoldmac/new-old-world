@@ -41,9 +41,6 @@ service = body(RESIDENT, "void now_ext_continuity_service(",
                "void now_ext_continuity_tick(")
 reveal = body(CURSOR, "void now_ext_cursor_reveal_continuity(",
               "void now_ext_cursor_remember_continuity_tracking_point(")
-tracking_begin = body(
-    CURSOR, "void now_ext_cursor_begin_continuity_tracking_visuals(",
-    "void now_ext_cursor_end_continuity_tracking(")
 tracking_complete = body(
     CURSOR, "void now_ext_cursor_complete_continuity_tracking(",
     "int now_ext_cursor_enable_continuity_tracking(")
@@ -135,9 +132,6 @@ check("LMSetMouseLocation(pt)" in tick,
       "the timer no longer advances tracking-loop MouseLocation")
 check("now_ext_cursor_remember_continuity_tracking_point(h, v)" in tick,
       "tracking-loop points are no longer excluded from native takeover")
-check("now_ext_cursor_reassert_continuity_tracking()" in tick
-      and "kNowPeekContinuityTrackingPinHeldPoint" in tick,
-      "the optional held-point pin no longer runs from the bounded timer")
 check("position_seq, cell->request_position_seq" in tick
       and "cell->applied_position_seq = position_seq" not in tick,
       "the timer again claims a manager apply or repeats one tracking point")
@@ -183,27 +177,38 @@ check("now_ext_cursor_reveal_continuity();" in service,
       "task-time synthetic movement no longer reveals an obscured cursor")
 check("now_ext_cursor_reveal_continuity" not in tick,
       "the interrupt timer again reaches cursor visibility/QuickDraw work")
-for token in ("HideCursor", "ShowCursor", "LMSetRawMouseLocation",
-              "LMSetMouseTemp", "now_cdm_"):
-    pin = body(CURSOR, "int now_ext_cursor_reassert_continuity_tracking(",
-               "int now_ext_cursor_answer_continuity_getmouse(")
-    check(token not in pin,
-          f"the optional held-point pin reaches unsafe work: {token}")
-check("jsr now_ext_cursor_answer_continuity_getmouse" in TRACKING_ASM
-      and "addq.l #4,%sp" in TRACKING_ASM,
-      "Virtual GetMouse no longer owns its Pascal argument cleanup")
 check("*gCrsrObscure = 0" in reveal
       and "HideCursor();" in reveal and "ShowCursor();" in reveal,
       "Continuity no longer reproduces the native mouse visibility wake")
-check("HideCursor();" in tracking_begin
-      and "gNowCursorTrackingCursorHidden = 1" in tracking_begin,
-      "the optional drag-visibility experiment no longer hides exactly in task time")
-check("now_ext_cursor_end_continuity_tracking();" in tracking_complete
-      and "ShowCursor();" in tracking_complete,
-      "normal release no longer balances the optional hidden cursor")
-check("!gNowCursorTrackingSourceActive" in tracking_gne
-      and "ShowCursor();" in tracking_gne,
-      "the task-time watchdog recovery no longer balances a hidden cursor")
+check("now_ext_cursor_end_continuity_tracking();" in tracking_complete,
+      "normal release no longer revokes the held tracking source")
+
+# RETIRED 2026-08-14: four experiments predated the blessed settle/input
+# mechanisms and are deliberately absent from the resident. Their accretive
+# contract bits and counters remain reserved, but no resident branch may make
+# them active again. The passive ADB observer and its injection transform were
+# diagnostic scaffolding for a closed investigation, so their implementation
+# files and build edges are gone rather than left dormant and callable.
+for retired in (
+        "kNowPeekContinuityTrackingPinHeldPoint",
+        "kNowPeekContinuityTrackingVirtualGetMouse",
+        "kNowPeekContinuityTrackingHideGuestCursor",
+        "kNowPeekContinuityTrackingVirtualADB"):
+    check(retired not in RESIDENT and retired not in CURSOR,
+          f"retired resident experiment is still executable: {retired}")
+check("now_ext_cursor_answer_continuity_getmouse" not in TRACKING_ASM,
+      "the retired Virtual GetMouse answer path remains in the trap shim")
+for retired_path in (
+        "ext/src/now_ext_adb_observer.c",
+        "ext/src/now_ext_adb_observer.S",
+        "ext/src/now_ext_adb_observer.h",
+        "now-guest-shared/src/now_adb_injection_logic.c",
+        "now-guest-shared/src/now_adb_injection_logic.h"):
+    check(not (ROOT / retired_path).exists(),
+          f"retired ADB implementation remains: {retired_path}")
+check("now_ext_adb_observer" not in EXT_CMAKE
+      and "now_adb_injection_logic" not in EXT_CMAKE,
+      "the extension still links the retired ADB implementation")
 check("applied_button_generation" in result,
       "the resident no longer acknowledges button transitions")
 check("guard phase == .active" in host_buttons,

@@ -192,7 +192,6 @@ run_c now-guest-shared log_retention_test.c "" src/log_retention.c
 # Mixed Mode, and that service reports only through its owned Cursor Device.
 run_py now-guest-shared cursor_interrupt_safety_source_test.py
 run_py now-guest-shared continuity_event_safety_source_test.py
-run_py now-guest-shared adb_observer_safety_source_test.py
 run_c now-guest-shared now_continuity_wire_test.c "-DNOW_CONTINUITY_HOST" \
       src/now_continuity_wire.c
 run_c now-guest-shared now_input_owner_test.c "" src/now_input_owner.c
@@ -207,8 +206,6 @@ run_py now-guest-shared continuity_lease_admission_source_test.py
 run_c now-guest-shared now_continuity_keyboard_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c
 run_py now-guest-shared continuity_keyboard_safety_source_test.py
-run_c now-guest-shared now_adb_injection_logic_test.c "" \
-      src/now_adb_injection_logic.c
 run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c
 run_py now-guest-shared act_inflight_wiring_source_test.py
 # The gestaltSystemVersion decode `hello.os` carries since 2026-08-07.

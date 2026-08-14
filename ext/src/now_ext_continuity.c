@@ -14,7 +14,6 @@
 #include "now_continuity_logic.h"
 #include "now_continuity_event_match.h"
 #include "now_ext_core_logic.h"
-#include "now_ext_adb_observer.h"
 #include "now_ext_continuity_keyboard.h"
 #include "now_ext_continuity_trace.h"
 #include "now_ext_cursor_input.h"
@@ -60,12 +59,8 @@ static volatile NowPeekU32 gReleaseSettleStarted;
 static NowPeekU32 gSavedDoubleTime;
 static volatile Boolean gSavedDoubleTimeValid;
 
-static NowPeekU32 native_input_sequence(const NowPeekContinuityCell *cell)
+static NowPeekU32 native_input_sequence(void)
 {
-    if (cell != NULL
-            && (cell->tracking_options
-                & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB) != 0)
-        return now_ext_adb_observer_physical_seq();
     return now_ext_cursor_physical_input_seq();
 }
 
@@ -561,16 +556,12 @@ static int process_event_result(NowPeekContinuityCell *cell,
            ours before sampling position, then arm the interrupt-time escape
            path. The resident never impersonates the ADB/PMU device on down. */
         now_ext_cursor_remember_continuity_button(1u);
-        if (!(cell->tracking_options
-                & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB)) {
-            gNativeInputSeq = native_input_sequence(cell);
-            gNativeInputBaseline = gNativeInputSeq;
-        }
+        gNativeInputSeq = native_input_sequence();
+        gNativeInputBaseline = gNativeInputSeq;
         /* Publish the press point before the target enters its nested loop.
            The timer replaces it with newer host points while held. */
         now_ext_cursor_remember_continuity_tracking_point(
             cell->request_h, cell->request_v);
-        now_ext_cursor_begin_continuity_tracking_visuals();
         cell->button_down = 1;
         cell->applied_button_generation = generation;
         cell->event_down_posts++;
@@ -628,7 +619,6 @@ static void finish_locked(NowPeekContinuityCell *cell, NowPeekU32 reason,
     now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(0);
     now_ext_continuity_configure_compression(0);
-    now_ext_adb_observer_stop();
     cell->state = (NowPeekU32)kNowPeekContinuityStateExited;
     cell->exit_reason = reason;
     cell->apply_ticks = ticks;
@@ -685,12 +675,8 @@ static void start_epoch_locked(NowPeekContinuityCell *cell, NowPeekU32 ticks)
     now_ext_continuity_keyboard_flush(cell);
     now_ext_cursor_configure_continuity_tracking(cell->tracking_options);
     now_ext_continuity_configure_compression(cell->tracking_options);
-    gNativeInputSeq = native_input_sequence(cell);
+    gNativeInputSeq = native_input_sequence();
     gNativeInputBaseline = gNativeInputSeq;
-    now_ext_adb_observer_start(
-        gTable, cell->epoch,
-        cell->tracking_options
-            & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB);
     publish_tasktime_counters(cell);
 }
 
@@ -830,7 +816,7 @@ static int deliver_deferred_press_interrupt(NowPeekContinuityCell *cell,
         element->evtQModifiers = 0;
     cell->button_down = 1;
     cell->applied_button_generation = generation;
-    gNativeInputSeq = native_input_sequence(cell);
+    gNativeInputSeq = native_input_sequence();
     gNativeInputBaseline = gNativeInputSeq;
     trace_event(cell, (NowPeekU32)kNowPeekContinuityTraceInterruptPress,
                 ticks, (NowPeekI32)generation, (NowPeekI32)ticks);
@@ -983,10 +969,7 @@ void now_ext_continuity_service(void)
         gButtonTaskRunning = false;
     }
 
-    /* Passive mode samples RawMouse. Virtual-ADB mode instead trusts the
-       wrapper's exact packet classification, because the incumbent's later
-       system update is downstream of both injected and physical packets. */
-    native_input_seq = native_input_sequence(cell);
+    native_input_seq = native_input_sequence();
     gNativeInputSeq = native_input_seq;
     if (native_input_seq != gNativeInputBaseline) {
         gNativeInputBaseline = native_input_seq;
@@ -994,20 +977,6 @@ void now_ext_continuity_service(void)
                       (NowPeekU32)kNowPeekContinuityExitGuestInput, ticks);
         service_return(cell);
         return;
-    }
-    if (cell->tracking_options
-            & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB) {
-        Point actual = LMGetMouseLocation();
-
-        cell->at_h = actual.h;
-        cell->at_v = actual.v;
-        if (actual.h == (short)cell->want_h
-                && actual.v == (short)cell->want_v
-                && now_continuity_sequence_newer(
-                    cell->position_seq, cell->applied_position_seq)) {
-            cell->applied_position_seq = cell->position_seq;
-            cell->apply_ticks = ticks;
-        }
     }
     /* Admit a coherent packet before evaluating its lease. The Open Transport
        notifier can publish a keepalive while the application is starved in a
@@ -1046,12 +1015,9 @@ void now_ext_continuity_service(void)
             if (now_continuity_sequence_newer(
                     position_seq, cell->applied_position_seq)
                     && !idle_settle_already_drew(cell, position_seq)) {
-                if (!(cell->tracking_options
-                        & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB)) {
-                    cell->request_h = h;
-                    cell->request_v = v;
-                    cell->request_position_seq = position_seq;
-                }
+                cell->request_h = h;
+                cell->request_v = v;
+                cell->request_position_seq = position_seq;
                 trace_event(cell,
                             (NowPeekU32)kNowPeekContinuityTraceRequest,
                             ticks, (NowPeekI32)position_seq, h);
@@ -1130,7 +1096,7 @@ void now_ext_continuity_tick(TMTaskPtr task)
         return;
     }
     cell->button_timer_ticks++;
-    if (native_input_sequence(cell) != gNativeInputBaseline) {
+    if (native_input_sequence() != gNativeInputBaseline) {
         release_button(cell, cell->button_generation,
                        (NowPeekU32)kNowPeekContinuityExitGuestInput);
         return;
@@ -1180,10 +1146,6 @@ void now_ext_continuity_tick(TMTaskPtr task)
         cell->at_h = h;
         cell->at_v = v;
     }
-    if ((cell->tracking_options
-            & (NowPeekU32)kNowPeekContinuityTrackingPinHeldPoint) != 0
-            && now_ext_cursor_reassert_continuity_tracking())
-        cell->tracking_pin_writes++;
     /* An up in EITHER edge slot must reach MBState from here. Under rapid
        clicking the current edge is already the next press by the time this
        timer looks, and the release it needs is in the previous slot -
@@ -1244,7 +1206,6 @@ int now_ext_continuity_boot(NowPeekTable *table)
 
 void now_ext_continuity_rollback(NowPeekTable *table)
 {
-    now_ext_adb_observer_rollback(table);
     if (table != NULL && table->continuity.button_down)
         release_button_lowmem();
     restore_double_time();
