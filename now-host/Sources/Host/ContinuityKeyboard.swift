@@ -63,6 +63,60 @@ enum ContinuityEscapeShortcut: String, CaseIterable, Identifiable, Sendable {
         (1 << 8) | (1 << 9) | (1 << 11) | (1 << 12)
 }
 
+/// The classic Mac character byte for the keys AppKit cannot express in one.
+///
+/// A classic `EventRecord` carries a single-byte `message` low byte, and the
+/// Mac OS keyboard drivers give the non-printing keys real byte values (Inside
+/// Macintosh: Text, "ASCII character codes"). AppKit instead reports arrows,
+/// page keys and home/end as private-use Unicode function-key scalars in the
+/// 0xF700 range, which no single-byte encoding holds: converting them lossily
+/// to Mac OS Roman yields '?' (0x3F), and that is literally what the guest
+/// typed on metal on 2026-08-13. Two more disagree without being lossy —
+/// AppKit's Delete key reports DEL (0x7F), which classic Mac reads as FORWARD
+/// delete, so backspace silently did nothing.
+///
+/// The virtual codes themselves need no translation: macOS inherited the ADB
+/// codes, so 0x7B is Left on both machines. Only the character byte moves.
+enum ClassicKeyByte {
+    /// Keyed by virtual code, because that is the layout-independent identity
+    /// of a physical key — the same entry must win with Command or Option
+    /// held, where AppKit's `characters` changes and the classic byte does not.
+    static let byVirtualCode: [UInt16: UInt8] = [
+        0x7B: 0x1C,  // left arrow
+        0x7C: 0x1D,  // right arrow
+        0x7E: 0x1E,  // up arrow
+        0x7D: 0x1F,  // down arrow
+        0x33: 0x08,  // backspace (AppKit reports DEL here)
+        0x75: 0x7F,  // forward delete
+        0x24: 0x0D,  // return
+        0x30: 0x09,  // tab
+        0x35: 0x1B,  // escape
+        0x74: 0x0B,  // page up
+        0x79: 0x0C,  // page down
+        0x73: 0x01,  // home
+        0x77: 0x04,  // end
+    ]
+
+    /// Unicode's private-use block that AppKit borrows for function keys
+    /// (`NSUpArrowFunctionKey` … `NSModeSwitchFunctionKey`).
+    private static let functionKeyScalars: ClosedRange<UInt32> = 0xF700...0xF8FF
+
+    /// - Parameter characters: `NSEvent.characters`, already layout-resolved.
+    /// - Returns: the byte to put on the wire, or 0 when this key has no
+    ///   classic character. Zero is deliberate for the unmapped function keys
+    ///   (F1…F15, Help): the classic machine has no byte that means them, and a
+    ///   lossy '?' would TYPE a question mark rather than do nothing.
+    static func character(forVirtualCode code: UInt16,
+                          characters: String?) -> UInt8 {
+        if let mapped = byVirtualCode[code] { return mapped }
+        guard let characters, let scalar = characters.unicodeScalars.first
+        else { return 0 }
+        if functionKeyScalars.contains(scalar.value) { return 0 }
+        return characters
+            .data(using: .macOSRoman, allowLossyConversion: true)?.first ?? 0
+    }
+}
+
 @MainActor
 protocol ContinuityKeyboardEnvironment: AnyObject {
     func start(
@@ -175,12 +229,12 @@ final class AppKitContinuityKeyboardEnvironment:
         } else {
             action = .down
         }
-        let byte = appEvent.characters?
-            .data(using: .macOSRoman, allowLossyConversion: true)?.first ?? 0
+        let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         return HostKeySample(
             action: action,
-            code: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
-            character: byte,
+            code: code,
+            character: ClassicKeyByte.character(forVirtualCode: code,
+                                                characters: appEvent.characters),
             modifiers: classicModifiers(appEvent.modifierFlags))
     }
 
