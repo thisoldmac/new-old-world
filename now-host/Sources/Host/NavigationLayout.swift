@@ -10,12 +10,14 @@ enum NavigationShelfID: Hashable, Sendable {
     case machine
     case screen
     case files
+    case debug
     case network
     case user(UUID)
 
     static let machineRawValue = "shelf.machine"
     static let screenRawValue = "shelf.screen"
     static let filesRawValue = "shelf.files"
+    static let debugRawValue = "shelf.debug"
     static let networkRawValue = "shelf.network"
     private static let userPrefix = "shelf.user."
 
@@ -24,6 +26,7 @@ enum NavigationShelfID: Hashable, Sendable {
         case .machine: Self.machineRawValue
         case .screen: Self.screenRawValue
         case .files: Self.filesRawValue
+        case .debug: Self.debugRawValue
         case .network: Self.networkRawValue
         case .user(let id): Self.userPrefix + id.uuidString.lowercased()
         }
@@ -38,8 +41,8 @@ enum NavigationShelfID: Hashable, Sendable {
         case .machine:
             zone == .upper
         case .network:
-            zone != .lower
-        case .screen, .files, .user:
+            true
+        case .screen, .files, .debug, .user:
             true
         }
     }
@@ -49,7 +52,7 @@ enum NavigationShelfID: Hashable, Sendable {
         case .screen: "screen"
         case .files: "files"
         case .network: "settings"
-        case .machine, .user: nil
+        case .machine, .debug, .user: nil
         }
     }
 }
@@ -61,6 +64,7 @@ extension NavigationShelfID: Codable {
         case Self.machineRawValue: self = .machine
         case Self.screenRawValue: self = .screen
         case Self.filesRawValue: self = .files
+        case Self.debugRawValue: self = .debug
         case Self.networkRawValue: self = .network
         default:
             guard raw.hasPrefix(Self.userPrefix),
@@ -101,6 +105,7 @@ struct NavigationShelf: Codable, Equatable, Sendable, Identifiable {
         case .machine: .overview
         case .screen: .module("screen")
         case .files: .module("files")
+        case .debug: moduleIDs.first.map(NavigationShelfHero.module)
         case .network: .module("settings")
         case .user: moduleIDs.first.map(NavigationShelfHero.module)
         }
@@ -165,7 +170,7 @@ extension NavigationItem: Codable {
 /// The serializable navigation contract. It stores identities and composition,
 /// never registry descriptors or derived presentation such as drawer counts.
 struct NavigationLayout: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 3
 
     var version: Int
     var upper: [NavigationItem]
@@ -248,11 +253,15 @@ struct NavigationLayout: Codable, Equatable, Sendable {
                 .shelf(NavigationShelf(
                     id: .files,
                     moduleIDs: present(Self.members(of: .files)))),
+            ] + present(["chat", "development"]).map(NavigationItem.module),
+            lower: [
+                .shelf(NavigationShelf(
+                    id: .debug,
+                    moduleIDs: present(Self.members(of: .debug)))),
                 .shelf(NavigationShelf(
                     id: .network,
                     moduleIDs: present(Self.members(of: .network)))),
-            ] + present(["chat", "development"]).map(NavigationItem.module),
-            lower: present(["console", "logs"]).map(NavigationItem.module),
+            ],
             drawer: [])
         let placed = Set(layout.allModuleIDs)
         layout.upper.append(contentsOf: registry.modules
@@ -278,6 +287,27 @@ struct NavigationLayout: Codable, Equatable, Sendable {
             return left == right ? lhs.offset < rhs.offset : left < right
         }.map(\.item)
         return layout
+    }
+
+    /// Version 2 turns the old outer utility strip into a second stack inside
+    /// the sidebar canvas. Version 3 groups the two loose debug tools and puts
+    /// Connections at the bottom when it already belongs to that stack.
+    /// User shelves and items deliberately moved to other zones stay put.
+    func migratedToCurrentVersion() -> NavigationLayout {
+        guard version < Self.currentVersion else { return self }
+        var migrated = self
+        if version < 2,
+           let index = migrated.upper.firstIndex(where: {
+               $0.id == NavigationShelfID.network.rawValue
+           }) {
+            migrated.lower.insert(migrated.upper.remove(at: index), at: 0)
+        }
+        if version < 3 {
+            migrated.groupLooseDebugModules()
+            migrated.moveConnectionsToBottomOfLowerStack()
+        }
+        migrated.version = Self.currentVersion
+        return migrated
     }
 
     /// Repairs stored state into a total partition of the live registry.
@@ -325,7 +355,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         }
 
         output.ensurePermanentShelf(.machine, in: .upper, seen: &seenShelves)
-        output.ensurePermanentShelf(.network, in: .upper, seen: &seenShelves)
+        output.ensurePermanentShelf(.network, in: .lower, seen: &seenShelves)
 
         for id in registry.modules.map(\.id) where !seenModules.contains(id) {
             if id == "continuity" {
@@ -356,6 +386,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         ShelfSpecification(id: .screen,
             moduleIDs: ["screen", "mirror", "continuity"]),
         ShelfSpecification(id: .files, moduleIDs: ["files", "icloud"]),
+        ShelfSpecification(id: .debug, moduleIDs: ["console", "logs"]),
         ShelfSpecification(id: .network,
             moduleIDs: ["settings", "networking", "mcp", "web"]),
     ]
@@ -409,6 +440,47 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         removeModule("screen")
         upper.append(.shelf(NavigationShelf(id: .screen,
             moduleIDs: ["screen", "continuity"])))
+    }
+
+    private mutating func groupLooseDebugModules() {
+        guard shelf(id: .debug) == nil,
+              hasLooseModule("console"),
+              hasLooseModule("logs") else { return }
+        _ = removeLooseModule("console")
+        _ = removeLooseModule("logs")
+        let shelf = NavigationItem.shelf(NavigationShelf(
+            id: .debug, moduleIDs: ["console", "logs"]))
+        let networkIndex = lower.firstIndex {
+            $0.id == NavigationShelfID.network.rawValue
+        } ?? lower.endIndex
+        lower.insert(shelf, at: networkIndex)
+    }
+
+    private mutating func moveConnectionsToBottomOfLowerStack() {
+        guard let index = lower.firstIndex(where: {
+            $0.id == NavigationShelfID.network.rawValue
+        }) else { return }
+        lower.append(lower.remove(at: index))
+    }
+
+    @discardableResult
+    private mutating func removeLooseModule(_ moduleID: String) -> Bool {
+        for zone in NavigationZone.allCases {
+            var items = items(in: zone)
+            guard let index = items.firstIndex(of: .module(moduleID)) else {
+                continue
+            }
+            items.remove(at: index)
+            setItems(items, in: zone)
+            return true
+        }
+        return false
+    }
+
+    private func hasLooseModule(_ moduleID: String) -> Bool {
+        NavigationZone.allCases.contains { zone in
+            items(in: zone).contains(.module(moduleID))
+        }
     }
 
     private mutating func enforceSpecialHeroes(known: Set<String>) {

@@ -9,10 +9,12 @@ final class NavigationLayoutTests: XCTestCase {
             [NavigationShelfID.machine.rawValue,
              NavigationShelfID.screen.rawValue,
              NavigationShelfID.files.rawValue,
-             NavigationShelfID.network.rawValue,
              "module.chat", "module.development"])
         XCTAssertEqual(layout.lower.map(\.id),
-            ["module.console", "module.logs"])
+            [NavigationShelfID.debug.rawValue,
+             NavigationShelfID.network.rawValue])
+        XCTAssertEqual(layout.shelf(id: .debug)?.moduleIDs,
+                       ["console", "logs"])
         XCTAssertEqual(layout.shelf(id: .machine)?.hero, .overview)
         XCTAssertEqual(layout.shelf(id: .network)?.hero, .module("settings"))
         XCTAssertTrue(layout.drawer.isEmpty)
@@ -72,7 +74,7 @@ final class NavigationLayoutTests: XCTestCase {
         assertTotalPartition(repaired, registry: .standard)
     }
 
-    func testSpecialShelvesCannotBeSanitisedIntoThePinnedUtilityArea() {
+    func testMachineStaysUpperAndConnectionsCanOccupyThePinnedZone() {
         let stored = NavigationLayout(
             upper: [.module("chat")],
             lower: [
@@ -88,9 +90,10 @@ final class NavigationLayoutTests: XCTestCase {
         let repaired = stored.sanitised(for: .standard)
 
         XCTAssertEqual(repaired.zone(of: .machine), .upper)
-        XCTAssertEqual(repaired.zone(of: .network), .upper)
+        XCTAssertEqual(repaired.zone(of: .network), .lower)
         XCTAssertEqual(repaired.lower.map(\.id),
-                       ["module.console", "module.logs"])
+                       [NavigationShelfID.network.rawValue,
+                        "module.console", "module.logs"])
         assertTotalPartition(repaired, registry: .standard)
     }
 
@@ -233,6 +236,52 @@ final class NavigationLayoutStoreTests: XCTestCase {
 
         XCTAssertEqual(defaults.data(forKey: NavigationLayoutStore.layoutKey),
                        data)
+    }
+
+    func testVersionOneLayoutMigratesConnectionsIntoThePinnedZone() throws {
+        let defaults = try defaults()
+        var versionOne = NavigationLayout.standard(for: .standard)
+        versionOne.version = 1
+        let networkIndex = try XCTUnwrap(versionOne.lower.firstIndex {
+            $0.id == NavigationShelfID.network.rawValue
+        })
+        versionOne.upper.insert(versionOne.lower.remove(at: networkIndex), at: 3)
+        defaults.set(try JSONEncoder().encode(versionOne),
+                     forKey: NavigationLayoutStore.layoutKey)
+
+        let loaded = NavigationLayoutStore(defaults: defaults,
+            registry: .standard).load()
+
+        XCTAssertEqual(loaded.version, NavigationLayout.currentVersion)
+        XCTAssertEqual(loaded.zone(of: .network), .lower)
+        XCTAssertEqual(loaded.lower.last?.id,
+                       NavigationShelfID.network.rawValue)
+        XCTAssertEqual(loaded.shelf(id: .debug)?.moduleIDs,
+                       ["console", "logs"])
+    }
+
+    func testVersionTwoLayoutGroupsLooseDebugModulesAboveConnections() throws {
+        let defaults = try defaults()
+        var versionTwo = NavigationLayout.standard(for: .standard)
+        versionTwo.version = 2
+        versionTwo.lower = [
+            .shelf(NavigationShelf(
+                id: .network,
+                moduleIDs: ["settings", "networking", "mcp", "web"])),
+            .module("console"),
+            .module("logs"),
+        ]
+        defaults.set(try JSONEncoder().encode(versionTwo),
+                     forKey: NavigationLayoutStore.layoutKey)
+
+        let loaded = NavigationLayoutStore(defaults: defaults,
+            registry: .standard).load()
+
+        XCTAssertEqual(loaded.lower.map(\.id),
+                       [NavigationShelfID.debug.rawValue,
+                        NavigationShelfID.network.rawValue])
+        XCTAssertEqual(loaded.shelf(id: .debug)?.moduleIDs,
+                       ["console", "logs"])
     }
 
     func testLayoutSurvivesRelaunch() throws {

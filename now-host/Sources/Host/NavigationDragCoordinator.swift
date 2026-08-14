@@ -25,7 +25,7 @@ enum NavigationDropTarget: Equatable, Sendable {
 
 enum NavigationLayoutCommand: Equatable, Sendable {
     case move(NavigationDraggedItem, to: NavigationZone, index: Int)
-    case combine(moduleID: String, with: String, shelfID: UUID)
+    case combine(moduleID: String, with: String, shelfID: UUID, title: String)
     case insert(moduleID: String, into: NavigationShelfID,
                 beforeModuleID: String?)
 }
@@ -71,7 +71,8 @@ struct NavigationDragCoordinator {
             let shelfID = makeShelfID()
             guard layout.shelf(id: .user(shelfID)) == nil else { return nil }
             return .combine(moduleID: sourceID, with: targetID,
-                            shelfID: shelfID)
+                            shelfID: shelfID,
+                            title: layout.nextNewShelfTitle)
 
         case .shelf(let shelfID, let beforeModuleID):
             guard case .module(let moduleID) = dragged,
@@ -111,7 +112,7 @@ extension NavigationLayout {
             }
             changed.insert(movingItem, in: zone, at: index)
 
-        case .combine(let moduleID, let targetID, let shelfUUID):
+        case .combine(let moduleID, let targetID, let shelfUUID, let title):
             guard moduleID != targetID,
                   changed.contains(.module(moduleID)) else {
                 throw NavigationLayoutCommandError.missingSource
@@ -129,7 +130,8 @@ extension NavigationLayout {
             }
             var items = changed.items(in: target.zone)
             items[target.index] = .shelf(NavigationShelf(
-                id: shelfID, moduleIDs: [targetID, moduleID]))
+                id: shelfID, title: title,
+                moduleIDs: [targetID, moduleID]))
             changed.setItems(items, in: target.zone)
 
         case .insert(let moduleID, let shelfID, let beforeModuleID):
@@ -173,6 +175,20 @@ extension NavigationLayout {
             changed.setItems(items, in: location.zone)
         }
         return changed
+    }
+
+    var nextNewShelfTitle: String {
+        let titles = Set(NavigationZone.allCases
+            .flatMap { items(in: $0) }
+            .compactMap { item -> String? in
+                guard case .shelf(let shelf) = item,
+                      case .user = shelf.id else { return nil }
+                return shelf.title
+            })
+        guard titles.contains("New Shelf") else { return "New Shelf" }
+        var suffix = 2
+        while titles.contains("New Shelf \(suffix)") { suffix += 1 }
+        return "New Shelf \(suffix)"
     }
 
     fileprivate func contains(_ dragged: NavigationDraggedItem) -> Bool {
@@ -277,6 +293,18 @@ extension NavigationLayout {
         var items = items(in: zone)
         items.insert(item, at: index)
         setItems(items, in: zone)
+    }
+}
+
+enum NavigationSidebarDropResolver {
+    static func target(distanceFromTop: CGFloat, height: CGFloat,
+                       upperItemCount: Int,
+                       lowerItemCount: Int) -> NavigationDropTarget {
+        if distanceFromTop < height / 2 {
+            return .zone(.upper, index: upperItemCount)
+        }
+        // Lower items grow upward: new drops enter at the top of that stack.
+        return .zone(.lower, index: 0)
     }
 }
 

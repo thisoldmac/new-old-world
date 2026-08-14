@@ -59,3 +59,33 @@ struct NavigationSelection: Equatable, Sendable {
         return nil
     }
 }
+
+/// Window-local history. Layout and module preferences continue to persist
+/// stable IDs; this only makes reopening a shelf return to the tab used in the
+/// current window session.
+struct NavigationShelfSessionState: Equatable, Sendable {
+    private var destinations: [NavigationShelfID: NavigationDestination] = [:]
+
+    mutating func remember(_ selection: NavigationSelection) {
+        guard let shelfID = selection.containingShelfID else { return }
+        destinations[shelfID] = selection.destination
+    }
+
+    func selection(forOpening shelf: NavigationShelf) -> NavigationSelection {
+        guard let destination = destinations[shelf.id],
+              shelf.contains(destination) else {
+            return .selectingHero(of: shelf)
+        }
+        return NavigationSelection(destination: destination,
+                                   containingShelfID: shelf.id)
+    }
+}
+
+private extension NavigationShelf {
+    func contains(_ destination: NavigationDestination) -> Bool {
+        switch destination {
+        case .module(let moduleID): moduleIDs.contains(moduleID)
+        case .shelfHero(let shelfID): shelfID == id
+        }
+    }
+}

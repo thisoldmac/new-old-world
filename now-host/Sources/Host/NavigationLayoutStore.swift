@@ -42,12 +42,13 @@ struct NavigationLayoutStore {
     func load() -> NavigationLayout {
         if let data = defaults.data(forKey: Self.layoutKey),
            let stored = try? decoder.decode(NavigationLayout.self, from: data) {
-            guard stored.version == NavigationLayout.currentVersion else {
+            guard stored.version <= NavigationLayout.currentVersion else {
                 // A newer app owns this payload. Let this process use a safe
                 // layout without destroying state it does not understand.
                 return NavigationLayout.standard(for: registry)
             }
-            let loaded = stored.sanitised(for: registry)
+            let loaded = stored.migratedToCurrentVersion()
+                .sanitised(for: registry)
             persist(loaded, replacing: data)
             return loaded
         }

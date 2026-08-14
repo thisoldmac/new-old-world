@@ -93,4 +93,33 @@ final class NavigationSelectionTests: XCTestCase {
         XCTAssertEqual(GuestStatus.failed("busy").machineShelfTitle,
                        "No Mac Connected")
     }
+
+    func testOpeningShelfRestoresItsMostRecentTabForThisSession() throws {
+        let layout = NavigationLayout.standard(for: .standard)
+        let screen = try XCTUnwrap(layout.shelf(id: .screen))
+        let files = try XCTUnwrap(layout.shelf(id: .files))
+        var history = NavigationShelfSessionState()
+
+        history.remember(NavigationSelection(
+            destination: .module("mirror"), containingShelfID: .screen))
+        history.remember(NavigationSelection(
+            destination: .module("icloud"), containingShelfID: .files))
+
+        XCTAssertEqual(history.selection(forOpening: screen),
+                       NavigationSelection(destination: .module("mirror"),
+                                           containingShelfID: .screen))
+        XCTAssertEqual(history.selection(forOpening: files),
+                       NavigationSelection(destination: .module("icloud"),
+                                           containingShelfID: .files))
+    }
+
+    func testShelfHistoryFallsBackWhenRememberedModuleLeftTheShelf() throws {
+        let shelf = NavigationShelf(id: .screen, moduleIDs: ["screen"])
+        var history = NavigationShelfSessionState()
+        history.remember(NavigationSelection(
+            destination: .module("mirror"), containingShelfID: .screen))
+
+        XCTAssertEqual(history.selection(forOpening: shelf),
+                       NavigationSelection.selectingHero(of: shelf))
+    }
 }

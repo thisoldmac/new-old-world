@@ -6,7 +6,7 @@ doc_type: reference
 audience: user
 lifecycle: current
 authority: [docs/module-manifest.yaml, docs/contract-coverage.md, now-host/Sources/Host/NavigationLayout.swift]
-source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
+source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
 media_ids: []
 last_verified: 2026-08-13
 ---
@@ -27,16 +27,18 @@ is:
 | Upper sidebar | This Mac | Overview, Hardware, Software, Processes, Diagnostics |
 | Upper sidebar | Screen | Screen, Mirror |
 | Upper sidebar | Files | Files, iCloud |
-| Upper sidebar | Connections | Connections, Networking, MCP, Web Proxy |
 | Upper sidebar | Chat | Chat |
 | Upper sidebar | Development | Development |
-| Lower sidebar | Console | Console |
-| Lower sidebar | Logs | Logs |
+| Lower pinned stack | Debug | Console, Logs |
+| Lower pinned stack | Connections | Connections, Networking, MCP, Web Proxy |
 
 Each shelf is one sidebar item. Selecting it opens a shelf page with its pages
 as centered pill tabs at the top of the main area; the selected module renders
-under that strip. Console and Logs form a compact group pinned to the bottom
-of the sidebar. The labeled Drawer sits directly beneath them.
+under that strip. The sidebar canvas has two stacks: ordinary destinations
+grow down from the top, while Debug and then Connections are initially pinned
+upward from its bottom, with Connections bottommost. The labeled Drawer is the only destination in
+the separate footer beneath that canvas. In Full row mode, a shelf lists its
+member modules; a standalone module keeps its own description.
 
 **Overview** is the landing page for the This Mac shelf. It summarizes the
 selected classic Mac; it is not another module. When no guest is attached,
@@ -45,12 +47,19 @@ the saved layout. **Connections** is also the landing page and visible name of
 the Connections shelf.
 
 Drag normally to reorder modules, move them between the upper and lower
-sidebar, or put them in the drawer at the bottom. Dropping one module on
-another creates a shelf; a user-created shelf returns to a standalone module
+stacks, or put them in the drawer at the bottom. Empty sidebar space is also a
+drop target: the nearest half chooses the upper or lower stack. Dropping one
+module on another creates a shelf and immediately opens its editable name,
+starting at **New Shelf** (or the next numbered name). Press **Escape** while
+that field is active to cancel the shelf and restore both modules to their
+previous positions. A user-created shelf
+returns to a standalone module
 when only one item remains. This Mac is permanent and cannot enter the drawer.
 Connections is permanent but can be put away; its live connection dot then
 appears on the drawer beside the drawer's module count. The current Screen shelf
 contains Screen and Mirror; there is no placeholder Continuity page.
+Opening a shelf again in the same app session returns to the tab most recently
+used in that shelf.
 
 Losing the guest does not remove or navigate away from modules. Host-owned
 tools remain usable, cached machine information is marked offline where it can

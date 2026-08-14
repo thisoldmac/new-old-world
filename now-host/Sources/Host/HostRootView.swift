@@ -5,6 +5,7 @@ struct HostRootView: View {
     @ObservedObject var state: HostAppState
     @ObservedObject var sidebar: SidebarPreferences
     @State private var selectedHeroShelfID: NavigationShelfID?
+    @State private var shelfSession = NavigationShelfSessionState()
 
     init(registry: ModuleRegistry,
          state: HostAppState,
@@ -13,6 +14,7 @@ struct HostRootView: View {
         self.state = state
         self.sidebar = sidebar
         _selectedHeroShelfID = State(initialValue: nil)
+        _shelfSession = State(initialValue: NavigationShelfSessionState())
     }
 
     var body: some View {
@@ -25,6 +27,7 @@ struct HostRootView: View {
                 selection: selection,
                 dragActions: dragActions,
                 selectGuest: { state.selectGuest($0) },
+                openShelf: openShelf,
                 select: select)
         } detail: {
             HostDetailView(
@@ -45,6 +48,9 @@ struct HostRootView: View {
         // reveals its containing shelf and tab.
         .onReceive(state.$selectedModuleID) { _ in
             selectedHeroShelfID = nil
+            shelfSession.remember(NavigationSelection.selecting(
+                moduleID: state.selectedModuleID,
+                in: sidebar.layout))
         }
     }
 
@@ -59,12 +65,17 @@ struct HostRootView: View {
     }
 
     private func select(_ newSelection: NavigationSelection) {
+        shelfSession.remember(newSelection)
         switch newSelection.destination {
         case .module(let moduleID):
             selectModule(moduleID)
         case .shelfHero(let shelfID):
             selectedHeroShelfID = shelfID
         }
+    }
+
+    private func openShelf(_ shelf: NavigationShelf) {
+        select(shelfSession.selection(forOpening: shelf))
     }
 
     private func selectModule(_ moduleID: String) {

@@ -31,8 +31,44 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         let shelf = try XCTUnwrap(changed.shelf(id: .user(shelfUUID)))
 
         XCTAssertEqual(shelf.moduleIDs, ["chat", "development"])
+        XCTAssertEqual(shelf.title, "New Shelf")
         XCTAssertFalse(changed.upper.contains(.module("chat")))
         XCTAssertFalse(changed.upper.contains(.module("development")))
+    }
+
+    func testNewShelfNamesAdvancePastExistingDefaults() throws {
+        var layout = NavigationLayout.standard(for: .standard)
+        let existingID = UUID(
+            uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
+        layout.lower.removeAll {
+            $0.id == NavigationShelfID.debug.rawValue
+        }
+        layout.lower.insert(.shelf(NavigationShelf(
+            id: .user(existingID), title: "New Shelf",
+            moduleIDs: ["console", "logs"])), at: 0)
+
+        let command = try XCTUnwrap(NavigationDragCoordinator.command(
+            for: .module("development"),
+            droppingOn: .module("chat"),
+            in: layout,
+            makeShelfID: { self.shelfUUID }))
+        let changed = try layout.applying(command)
+
+        XCTAssertEqual(changed.shelf(id: .user(shelfUUID))?.title,
+                       "New Shelf 2")
+    }
+
+    func testWholeSidebarDropResolverSnapsToTheNearestStack() {
+        XCTAssertEqual(
+            NavigationSidebarDropResolver.target(
+                distanceFromTop: 40, height: 400,
+                upperItemCount: 5, lowerItemCount: 3),
+            .zone(.upper, index: 5))
+        XCTAssertEqual(
+            NavigationSidebarDropResolver.target(
+                distanceFromTop: 360, height: 400,
+                upperItemCount: 5, lowerItemCount: 3),
+            .zone(.lower, index: 0))
     }
 
     func testModuleCanBeExtractedFromShelfAndShelfModuleCanBeReordered() throws {
@@ -142,23 +178,25 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertNotNil(changed.shelf(id: .machine))
     }
 
-    func testSpecialShelvesCannotMoveIntoThePinnedUtilityArea() {
+    func testMachineCannotMoveIntoThePinnedZoneButConnectionsCan() throws {
         let layout = NavigationLayout.standard(for: .standard)
 
-        for shelfID in [NavigationShelfID.machine, .network] {
-            XCTAssertNil(NavigationDragCoordinator.command(
-                for: .shelf(shelfID),
-                droppingOn: .zone(.lower, index: 0),
-                in: layout, makeShelfID: { shelfUUID }))
-        }
+        XCTAssertNil(NavigationDragCoordinator.command(
+            for: .shelf(.machine),
+            droppingOn: .zone(.lower, index: 0),
+            in: layout, makeShelfID: { shelfUUID }))
+        XCTAssertNotNil(NavigationDragCoordinator.command(
+            for: .shelf(.network),
+            droppingOn: .zone(.upper, index: 0),
+            in: layout, makeShelfID: { shelfUUID }))
     }
 
     func testDrawerSummaryCountsContainedLeavesAndSurfacesNetworkStatus() {
         var layout = NavigationLayout.standard(for: .standard)
-        let networkIndex = layout.upper.firstIndex {
+        let networkIndex = layout.lower.firstIndex {
             $0.id == NavigationShelfID.network.rawValue
         }!
-        layout.drawer.append(layout.upper.remove(at: networkIndex))
+        layout.drawer.append(layout.lower.remove(at: networkIndex))
         layout.drawer.append(.module("chat"))
         layout.upper.removeAll { $0 == .module("chat") }
 

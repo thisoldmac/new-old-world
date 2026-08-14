@@ -9,6 +9,7 @@ struct ModuleDrawerView: View {
     let selection: NavigationSelection
     @Binding var isPresented: Bool
     let dragActions: SidebarNavigationDragActions
+    var openShelf: ((NavigationShelf) -> Void)? = nil
     let select: (NavigationSelection) -> Void
 
     private var summary: NavigationDrawerSummary {
@@ -88,6 +89,7 @@ struct ModuleDrawerView: View {
                             collapsed: false,
                             selection: selection,
                             dragActions: dragActions,
+                            openShelf: openShelf,
                             select: select)
                     }
                     .padding(4)

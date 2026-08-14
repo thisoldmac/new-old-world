@@ -56,4 +56,53 @@ final class SidebarPreferencesTests: XCTestCase {
 
         XCTAssertNotNil(defaults.data(forKey: "navigationLayout"))
     }
+
+    func testCreatingAUserShelfRequestsInlineRenameAndPersistsItsTitle() throws {
+        let (prefs, _) = try makePreferences()
+        let id = UUID(uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
+        var changed = prefs.layout
+        changed.upper.removeAll {
+            $0 == .module("chat") || $0 == .module("development")
+        }
+        changed.upper.append(.shelf(NavigationShelf(
+            id: .user(id), title: "New Shelf",
+            moduleIDs: ["chat", "development"])))
+
+        prefs.replaceLayout(changed)
+        XCTAssertEqual(prefs.shelfBeingRenamed, .user(id))
+
+        prefs.renameShelf(id: .user(id), title: "Work")
+        XCTAssertEqual(prefs.layout.shelf(id: .user(id))?.title, "Work")
+        XCTAssertNil(prefs.shelfBeingRenamed)
+    }
+
+    func testCancellingNewShelfRenameRestoresTheExactPreviousLayout() throws {
+        let (prefs, _) = try makePreferences()
+        let previous = prefs.layout
+        let id = UUID(uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
+        var changed = previous
+        changed.upper.removeAll {
+            $0 == .module("chat") || $0 == .module("development")
+        }
+        changed.upper.append(.shelf(NavigationShelf(
+            id: .user(id), title: "New Shelf",
+            moduleIDs: ["chat", "development"])))
+
+        prefs.replaceLayout(changed)
+        prefs.cancelShelfCreation(id: .user(id))
+
+        XCTAssertEqual(prefs.layout, previous)
+        XCTAssertNil(prefs.shelfBeingRenamed)
+        XCTAssertNil(prefs.layout.shelf(id: .user(id)))
+    }
+
+    func testCancellingAnOldShelfRenameDoesNotRewindTheLayout() throws {
+        let (prefs, _) = try makePreferences()
+        let unchanged = prefs.layout
+
+        prefs.cancelShelfCreation(id: .screen)
+
+        XCTAssertEqual(prefs.layout, unchanged)
+        XCTAssertNil(prefs.shelfBeingRenamed)
+    }
 }

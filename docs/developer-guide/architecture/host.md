@@ -6,7 +6,7 @@ doc_type: explanation
 audience: developer
 lifecycle: current
 authority: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, docs/architecture.md]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationLayoutStore.swift, now-host/Sources/Host/NavigationShelfTab.swift, now-host/Sources/Host/HostRootView.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/NavigationDragCoordinator.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/GuestScopedState.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/OnboardingPortal.swift]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationLayoutStore.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/NavigationShelfTab.swift, now-host/Sources/Host/HostRootView.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/NavigationDragCoordinator.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/GuestScopedState.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/OnboardingPortal.swift]
 media_ids: []
 last_verified: 2026-08-13
 ---
@@ -59,7 +59,8 @@ The default machine shelf has an Overview hero plus `census`, `software`,
 contains `files` and `icloud`. The main Connections shelf (internally
 `shelf.network`) uses `settings` as its hero, followed by `networking`, `mcp`,
 and `web`; `web` keeps its wire and preference identity while presenting the
-title **Web Proxy**. Console and Logs are lower standalone modules. There is no
+title **Web Proxy**. The default lower stack is the Debug shelf (`console`,
+`logs`) followed by Connections as the bottommost row. There is no
 registered `continuity` descriptor in this revision, so the Screen shelf does
 not manufacture one.
 
@@ -67,15 +68,19 @@ The sidebar renders one row per shelf, not one row per shelf member.
 `NavigationShelfTab` derives the stable tabs for that shelf, and
 `ShelfDetailView` renders them as a centered pill strip above the existing
 module view. The synthetic machine Overview remains window-local; every other
-pill retains its real module ID. Connections stays in the main scrolling list;
-Console and Logs occupy the compact pinned utility area immediately above the
-labeled drawer. The primary destinations use SwiftUI's native sidebar `List`;
+pill retains its real module ID. Debug and Connections occupy the lower stack inside the same sidebar
+canvas, while the upper stack grows downward. The labeled drawer alone uses
+the separate footer. Full rows list shelf member titles while loose modules
+retain their registry summaries. The primary destinations use SwiftUI's native sidebar `List`;
 the shell does not recreate list scrolling or row layout.
 
 `NavigationLayoutStore` migrates the earlier flat order and sanitizes stored
-layouts against the current registry. The machine and Connections shelves
-remain structurally present and out of the pinned utility area; the machine
-shelf cannot enter the drawer, while Connections can and carries its status
+layouts against the current registry. Version 2 moves an existing Connections
+shelf into the new lower stack. Version 3 groups loose Console and Logs rows
+as Debug and moves Connections to the bottom when it already occupies that
+stack; shelves deliberately moved elsewhere remain there.
+The machine and Connections shelves remain structurally present; the machine
+shelf cannot enter the lower stack or drawer, while Connections can and carries its status
 indicator there. User shelves decompose at one module. New registry leaves are
 adopted into their known family or appended as a standalone upper item.
 
@@ -88,6 +93,17 @@ snapshots the rendered row or pill for its drag image instead of substituting a
 generic label. Feature entry points remain unchanged: navigation routes the
 registered leaf into the existing module view rather than wrapping feature
 ownership in the shelf.
+
+The row overlays keep precise reorder and combine targets. A registered native
+ancestor of the list owns the remaining canvas, so the scroll view's empty
+document area cannot block drops. It resolves the pointer to the
+nearest stack: the end of the upper stack or the beginning of the lower stack,
+which makes the latter grow upward. Combining two loose modules assigns the
+first available **New Shelf** name and `SidebarPreferences` requests one
+focused inline rename. Escape restores the exact layout from before that
+creation; committing or leaving the field keeps the shelf. `NavigationShelfSessionState` is deliberately
+window-local; it remembers the last selected tab per shelf without adding
+transient navigation history to the persisted module preference.
 
 ## Disconnection and appearance
 
