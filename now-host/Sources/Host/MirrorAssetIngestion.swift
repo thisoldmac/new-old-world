@@ -336,10 +336,18 @@ final class MirrorAssetIngestion: ObservableObject {
                 + "built from a disk image will have far more of them."]
     }
 
-    static func newPackID() -> String {
+    /// The directory the pack is written to.
+    ///
+    /// `AssetPack` searches for the `pack-` prefix and takes the newest by
+    /// sorting the ids as STRINGS, so this stamp must be fixed-width and
+    /// zero-padded or "newest" quietly stops meaning newest. The date is a
+    /// parameter so that property can be tested against two known times
+    /// rather than against whatever second the suite happens to run in.
+    static func newPackID(at date: Date = Date()) -> String {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd-HHmmss"
-        return "pack-\(formatter.string(from: Date()))"
+        return "pack-\(formatter.string(from: date))"
     }
 
     /// Read from the detached process launch too, so not actor-bound.
