@@ -482,6 +482,200 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
                       "returning to Mirror restores its own cursor feature")
     }
 
+    func testGuestOwnershipDetachesTheHostCursorAndCapturesHostInput() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        XCTAssertTrue(environment.associationChanges.isEmpty,
+                      "arming is not ownership; the mouse is still the host's")
+        XCTAssertEqual(environment.captureStarts, 0)
+
+        controller.transportPhaseChanged(.active)
+        XCTAssertEqual(environment.associationChanges, [false])
+        XCTAssertEqual(environment.captureStarts, 1)
+
+        environment.emitCaptured(.init(kind: .primaryDown,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: .zero, buttonsDown: true))
+        XCTAssertEqual(driver.downPoints, [MirrorKit.Point(x: 24, y: 450)],
+                       "a consumed click must still reach the guest")
+        XCTAssertEqual(controller.state, .active)
+    }
+
+    /// Every exit is asserted here rather than only the one a change happens
+    /// to touch: a dissociation left armed is a host mouse that cannot be
+    /// moved, which is the worst failure this seam can produce.
+    func testEveryOwnershipExitReattachesTheCursorAndDropsTheCapture() {
+        typealias Exit = (ContinuityEdgeController, Environment,
+                          KeyboardEnvironment) -> Void
+        let exits: [(name: String, run: Exit)] = [
+            ("shared edge crossed", { _, environment, _ in
+                environment.emitCaptured(.init(
+                    kind: .moved, location: CGPoint(x: 1420, y: 450),
+                    delta: CGPoint(x: -60, y: 0), buttonsDown: false))
+            }),
+            ("escape shortcut", { _, _, keyboard in
+                _ = keyboard.emit(.init(
+                    action: .down, code: 53, character: 27,
+                    modifiers: (1 << 11) | (1 << 12)))
+            }),
+            ("guest hung up", { controller, _, _ in
+                controller.transportEnded(reason: "guest hung up")
+            }),
+            ("transport went idle", { controller, _, _ in
+                controller.transportPhaseChanged(.idle)
+            }),
+            ("continuity switched off", { controller, _, _ in
+                controller.stop()
+            }),
+        ]
+        for exit in exits {
+            let layout = makeLayout()
+            let driver = Driver()
+            let environment = Environment()
+            let keyboard = KeyboardEnvironment()
+            let controller = ContinuityEdgeController(
+                layout: layout, driver: driver, environment: environment,
+                keyboardEnvironment: keyboard)
+            controller.start()
+            environment.emit(.init(kind: .moved,
+                                   location: CGPoint(x: 1439, y: 450),
+                                   delta: CGPoint(x: 2, y: 0),
+                                   buttonsDown: false))
+            controller.transportPhaseChanged(.active)
+            XCTAssertEqual(environment.associationChanges, [false], exit.name)
+            XCTAssertEqual(environment.captureStarts, 1, exit.name)
+
+            exit.run(controller, environment, keyboard)
+
+            XCTAssertEqual(
+                environment.associationChanges, [false, true],
+                "\(exit.name) left the host cursor detached from the mouse")
+            XCTAssertEqual(
+                environment.captureStops, 1,
+                "\(exit.name) left host input captured")
+        }
+    }
+
+    func testGuestFileReturnAlsoReattachesTheHostCursor() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.configureFileDragging(
+            guestFileAtPoint: { _ in
+                HostFileDragItem(writer: NSPasteboardItem(),
+                                 image: NSImage(size: NSSize(width: 32,
+                                                             height: 32)))
+            },
+            hostFilesDropped: { _, _ in false })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        environment.emitCaptured(.init(kind: .primaryDown,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: .zero, buttonsDown: true))
+        environment.emitCaptured(.init(kind: .moved,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: CGPoint(x: -100, y: 0),
+                                       buttonsDown: true))
+
+        XCTAssertEqual(environment.fileDrags.count, 1,
+                       "the native copy drag still starts")
+        XCTAssertEqual(environment.associationChanges, [false, true],
+                       "a file handed back must not keep the mouse detached")
+        XCTAssertEqual(environment.captureStops, 1)
+    }
+
+    /// A host file drag is a real host drag: the human is holding a real
+    /// cursor over a real drag session, so nothing may be detached or eaten.
+    func testHostFileDragNeverDetachesTheCursorOrCapturesInput() throws {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.configureFileDragging(guestFileAtPoint: { _ in nil },
+                                         hostFilesDropped: { _, _ in true })
+        controller.start()
+
+        let callbacks = try XCTUnwrap(environment.fileCallbacks)
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450)))
+        controller.transportPhaseChanged(.active)
+        XCTAssertTrue(environment.associationChanges.isEmpty)
+        XCTAssertEqual(environment.captureStarts, 0)
+
+        XCTAssertTrue(callbacks.dropped(.init(name: .drag)))
+        XCTAssertEqual(controller.state, .ready)
+        XCTAssertTrue(environment.associationChanges.isEmpty,
+                      "nothing was detached, so nothing is re-attached")
+    }
+
+    func testWithoutInputCaptureOwnershipDegradesToTheObservingMonitor() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        environment.captureAvailable = false
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            audit: { audits.append(($0, $1)) })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        XCTAssertEqual(controller.state, .active,
+                       "a refused tap is degraded, not broken")
+        XCTAssertTrue(audits.contains { $0.1.contains("Accessibility") },
+                      "the leak must be named, not left silent")
+        XCTAssertTrue(controller.status.contains("Accessibility"))
+
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 12, y: 0),
+                               buttonsDown: false))
+        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 36, y: 450))
+
+        controller.stop()
+        XCTAssertEqual(environment.associationChanges, [false, true],
+                       "the cursor is handed back even when the tap failed")
+    }
+
+    func testDisabledInputTapIsReportedAndOwnershipSurvivesIt() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            audit: { audits.append(($0, $1)) })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        environment.captureTapDisabled?("timeout")
+        XCTAssertTrue(audits.contains { $0.1.contains("timeout") })
+        XCTAssertEqual(controller.state, .active)
+    }
+
     private func makeLayout() -> ContinuityDisplayLayout {
         ContinuityDisplayLayout(hostDisplays: [host],
                                 guestSize: CGSize(width: 800, height: 600),

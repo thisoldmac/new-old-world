@@ -496,14 +496,17 @@ final class ContinuityEdgeController: ObservableObject {
             guard let pending else { return }
             self.pending = nil
             ownership = pending
-            if !hostFileDrag {
-                hideHostCursor(for: pending)
-                startKeyboardCapture()
-            }
+            /* State and the plain status are settled before the captures are
+               armed, so a capture that has to report a missing permission
+               overwrites the plain line instead of being overwritten by it. */
             state = .active
             status = hostFileDrag
                 ? "Dragging a host file on the guest display"
                 : "Pointer is on the guest display"
+            if !hostFileDrag {
+                hideHostCursor(for: pending)
+                startKeyboardCapture()
+            }
         case .idle:
             guard state == .arming || state == .active else { return }
             restoreHostCursor(from: ownership ?? pending)
