@@ -39,14 +39,96 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertEqual(layout.sharedEdge?.guestSide, .left)
     }
 
-    func testScaleKeepsTheAttachedGuestEdgeFixed() {
+    func testGuestStartsNativeAndFitGrowsFromTheAttachedEdge() {
         let layout = makeLayout()
 
-        layout.selectScale(.half)
+        XCTAssertEqual(layout.scaleMode, .native)
+        XCTAssertEqual(layout.guestScale, 1)
 
+        layout.selectScaleMode(.fit)
+
+        // 900-tall host against a 600-tall guest across a vertical edge.
+        XCTAssertEqual(layout.guestScale, 1.5)
         XCTAssertEqual(layout.guestFrame,
-                       CGRect(x: 1440, y: 300, width: 400, height: 300))
+                       CGRect(x: 1440, y: 300, width: 1200, height: 900))
         XCTAssertEqual(layout.sharedEdge?.guestSide, .left)
+
+        layout.selectScaleMode(.native)
+
+        XCTAssertEqual(layout.guestScale, 1)
+        XCTAssertEqual(layout.guestFrame,
+                       CGRect(x: 1440, y: 300, width: 800, height: 600))
+        XCTAssertEqual(layout.sharedEdge?.guestSide, .left)
+    }
+
+    /* The axis is the whole of this derivation: a vertical shared edge is
+       matched on height and a horizontal one on width, and picking the wrong
+       one still produces a plausible number on any host that is not square. */
+    func testFitScaleMatchesTheAxisOfTheSharedEdge() throws {
+        let vertical = try XCTUnwrap(ContinuityDisplayGeometry.sharedEdge(
+            hosts: [host],
+            guest: CGRect(x: 1440, y: 300, width: 800, height: 600)))
+        let horizontal = try XCTUnwrap(ContinuityDisplayGeometry.sharedEdge(
+            hosts: [host],
+            guest: CGRect(x: 0, y: 900, width: 800, height: 600)))
+
+        XCTAssertEqual(vertical.guestSide, .left)
+        XCTAssertEqual(horizontal.guestSide, .bottom)
+        XCTAssertEqual(
+            ContinuityDisplayGeometry.fitScale(
+                guestSize: CGSize(width: 800, height: 600), edge: vertical),
+            1.5, "a vertical edge matches the host's 900 height / 600")
+        XCTAssertEqual(
+            ContinuityDisplayGeometry.fitScale(
+                guestSize: CGSize(width: 800, height: 600), edge: horizontal),
+            1.8, "a horizontal edge matches the host's 1440 width / 800")
+    }
+
+    func testFitNeverScalesTheGuestBelowNative() throws {
+        let vertical = try XCTUnwrap(ContinuityDisplayGeometry.sharedEdge(
+            hosts: [host],
+            guest: CGRect(x: 1440, y: 0, width: 1600, height: 2000)))
+
+        // 900 / 2000 is 0.45; a guest taller than the host edge stays native.
+        XCTAssertEqual(
+            ContinuityDisplayGeometry.fitScale(
+                guestSize: CGSize(width: 1600, height: 2000), edge: vertical), 1)
+        // And with nothing attached there is no edge to match at all.
+        XCTAssertEqual(
+            ContinuityDisplayGeometry.fitScale(
+                guestSize: CGSize(width: 800, height: 600), edge: nil), 1)
+    }
+
+    func testStoredNumericScaleIsMigratedToNative() {
+        let suite = "ContinuityDisplayLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(4.0, forKey: "mirror.continuity.guestDisplayScale")
+
+        let layout = ContinuityDisplayLayout(
+            hostDisplays: [host], guestSize: CGSize(width: 800, height: 600),
+            defaults: defaults, observeScreens: false)
+
+        XCTAssertEqual(layout.scaleMode, .native)
+        XCTAssertEqual(layout.guestScale, 1)
+        XCTAssertNil(defaults.object(forKey: "mirror.continuity.guestDisplayScale"))
+    }
+
+    func testScaleModeIsRestoredPerMachine() {
+        let suite = "ContinuityDisplayLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        ContinuityDisplayLayout(
+            hostDisplays: [host], guestSize: CGSize(width: 800, height: 600),
+            defaults: defaults, observeScreens: false).selectScaleMode(.fit)
+
+        let restored = ContinuityDisplayLayout(
+            hostDisplays: [host], guestSize: CGSize(width: 800, height: 600),
+            defaults: defaults, observeScreens: false)
+
+        XCTAssertEqual(restored.scaleMode, .fit)
+        XCTAssertEqual(restored.guestScale, 1.5)
     }
 
     func testMovingGuestNearHostSnapsItToARealSharedEdge() {
@@ -108,9 +190,11 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertNotNil(layout.sharedEdge)
     }
 
-    func testGuestEdgeCoordinatesMapAtScaledResolution() throws {
+    /* Fit is a coordinate scale, not a drawing size: the pointer mapping has
+       to divide by the same factor the arrangement grew by. */
+    func testGuestEdgeCoordinatesMapAtTheFittedResolution() throws {
         let layout = makeLayout()
-        layout.selectScale(.double)
+        layout.selectScaleMode(.fit)
         let edge = try XCTUnwrap(layout.sharedEdge)
 
         let guest = ContinuityDisplayGeometry.guestEntryPoint(
@@ -122,7 +206,8 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
             scale: layout.guestScale)
 
         XCTAssertEqual(guest.x, 24)
-        XCTAssertEqual(guest.y, 450)
+        // (1200 top of the fitted frame - 600) / 1.5, not the native 600.
+        XCTAssertEqual(guest.y, 400)
         XCTAssertEqual(returned.x, 1439)
         XCTAssertEqual(returned.y, 600)
     }
