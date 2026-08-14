@@ -1021,7 +1021,18 @@ enum {
     /* The spacing a compressed synthetic click pair reads as. Small
        enough to pass any plausible private window, large enough that
        event order stays unambiguous. */
-    kNowPeekContinuityCompressedClickTicks = 4
+    kNowPeekContinuityCompressedClickTicks = 4,
+    /* The chain window for an up FOLLOWING its own down. A held click's
+       up is late by hold time plus manager starvation - measured 55-60
+       ticks on a plain click (gen 5/6, 2026-08-13 221822), which broke a
+       chain windowed at the recognition width exactly where compression
+       was needed. Downs keep the strict recognition window; only the
+       down-to-its-own-up leg gets this slack, and never for a gesture
+       that moved beyond click slop. */
+    kNowPeekContinuityHeldUpChainTicks = 120,
+    /* A gesture that moved farther than this from its press point is a
+       drag; its up keeps real timing. */
+    kNowPeekContinuityClickSlopPixels = 6
 };
 
 enum {

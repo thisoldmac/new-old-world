@@ -495,6 +495,31 @@ void now_ext_cursor_configure_continuity_tracking(NowPeekU32 options)
     gNowCursorTrackingDevice = NULL;
 }
 
+/* Did the current (or most recent) gesture travel beyond click slop from
+   its press point? A drag's up must keep its real timing - compressing it
+   would misrepresent the gesture's duration to its own target - so the
+   when-compression chain asks this before shaping an up. Resident state
+   only; safe from the jGNE pass. */
+int now_ext_cursor_tracking_press_moved(void)
+{
+    Point cur;
+    short dh;
+    short dv;
+
+    if (!gNowCursorTrackingPressValid)
+        return 0;
+    if (!continuity_tracking_source_point(&cur))
+        return 0;
+    dh = (short)(cur.h - gNowCursorTrackingPressPoint.h);
+    dv = (short)(cur.v - gNowCursorTrackingPressPoint.v);
+    if (dh < 0)
+        dh = (short)-dh;
+    if (dv < 0)
+        dv = (short)-dv;
+    return dh > (short)kNowPeekContinuityClickSlopPixels
+        || dv > (short)kNowPeekContinuityClickSlopPixels;
+}
+
 /* Interrupt-safe held-point pin. This deliberately touches MouseLocation
    only: RawMouse, MTemp and the physical Cursor Device remain owned by the
    ADB/USB path, preserving optimistic local takeover. */

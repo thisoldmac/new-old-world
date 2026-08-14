@@ -286,6 +286,16 @@ check("!gCompressClickWhen" in shape
       "when-compression lost its option, state, or event-kind gate")
 check("now_continuity_when_rewrite(" in shape,
       "when-compression no longer uses the guarded pure rewrite")
+# The down-to-its-own-up leg is late by hold plus manager starvation
+# (55-60 ticks measured on a plain click, gen 5/6, 2026-08-13 221822) and
+# broke a single-window chain exactly where compression was needed. The up
+# leg gets the wider chain window; a gesture that dragged keeps its up's
+# real timing and resets the chain.
+check("kNowPeekContinuityHeldUpChainTicks" in shape
+      and "kNowPeekContinuityWideDoubleTimeTicks" in shape,
+      "the up leg no longer has its own wider chain window")
+check("now_ext_cursor_tracking_press_moved()" in shape,
+      "a dragged gesture's up can again be time-compressed")
 check("now_ext_continuity_shape_event(event);" in EXT_CORE
       and EXT_CORE.index("now_ext_continuity_shape_event(event);")
           < EXT_CORE.index("now_ext_continuity_observe_event(event, ticks);"),

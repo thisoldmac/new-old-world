@@ -803,6 +803,18 @@
         "ext/src/now_ext_continuity_keyboard.c"
       ],
       "reason": "keyUp accounting checkpoint; bake follows with merged stack build"
+    },
+    {
+      "at": "2026-08-13T22:28:58-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "e85d31c9dc94429487fc674f88ad9d4f9334602f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "chain-window fix; bake follows with stack build"
     }
   ]
 }

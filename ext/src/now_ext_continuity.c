@@ -227,6 +227,9 @@ static void request_button(NowPeekContinuityCell *cell,
    clicks keep their real spacing. */
 static volatile unsigned char gCompressClickWhen = 0;
 static NowPeekU32 gLastShapedWhen = 0;
+static unsigned char gLastShapedWasDown = 0;
+
+extern int now_ext_cursor_tracking_press_moved(void);
 
 void now_ext_continuity_configure_compression(NowPeekU32 options)
 {
@@ -234,12 +237,15 @@ void now_ext_continuity_configure_compression(NowPeekU32 options)
         (options & (NowPeekU32)kNowPeekContinuityTrackingCompressClickWhen)
             != 0;
     gLastShapedWhen = 0;
+    gLastShapedWasDown = 0;
 }
 
 void now_ext_continuity_shape_event(EventRecord *event)
 {
     NowPeekContinuityCell *cell;
     NowPeekU32 rewritten;
+    NowPeekU32 window;
+    int is_down;
 
     if (!gCompressClickWhen || event == NULL)
         return;
@@ -249,13 +255,28 @@ void now_ext_continuity_shape_event(EventRecord *event)
     if (cell == NULL || !cell->enabled
             || cell->state != (NowPeekU32)kNowPeekContinuityStateActive)
         return;
+    is_down = event->what == mouseDown;
+    /* The down-to-its-own-up leg is late by hold time plus manager
+       starvation (55-60 ticks measured on a plain click), so it gets a
+       wider chain window than the recognition-width leg between clicks -
+       unless the gesture dragged, in which case its up keeps real timing
+       and the chain resets. */
+    if (!is_down && gLastShapedWasDown
+            && now_ext_cursor_tracking_press_moved()) {
+        gLastShapedWhen = (NowPeekU32)event->when;
+        gLastShapedWasDown = 0;
+        return;
+    }
+    window = (!is_down && gLastShapedWasDown)
+        ? (NowPeekU32)kNowPeekContinuityHeldUpChainTicks
+        : (NowPeekU32)kNowPeekContinuityWideDoubleTimeTicks;
     rewritten = now_continuity_when_rewrite(
-        gLastShapedWhen, (NowPeekU32)event->when,
-        (NowPeekU32)kNowPeekContinuityWideDoubleTimeTicks,
+        gLastShapedWhen, (NowPeekU32)event->when, window,
         (NowPeekU32)kNowPeekContinuityCompressedClickTicks);
     if (rewritten != 0)
         event->when = (UInt32)rewritten;
     gLastShapedWhen = (NowPeekU32)event->when;
+    gLastShapedWasDown = (unsigned char)(is_down ? 1 : 0);
 }
 
 /* Capture the Event Manager's synthetic mouse record in the same guest clock
