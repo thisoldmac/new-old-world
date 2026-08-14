@@ -45,6 +45,20 @@ int now_continuity_key(unsigned long epoch, unsigned long generation,
 void now_continuity_disconnect(void);
 void now_continuity_shutdown(void);
 int now_continuity_take_report(NowContinuityReport *out);
+/* The epoch this application is currently armed for, or 0 for none.
+
+   Everything gated on "is Continuity live" reads it from here rather than
+   keeping its own copy: an epoch ends in several ways (disarm, lease
+   expiry, guest input, disconnect) and a second notion of live would be
+   wrong in whichever of them nobody remembered. */
+unsigned long now_continuity_live_epoch(void);
+/* Is the host holding the primary button down right now?
+
+   The Finder-selection poll asks, because a poll mid-gesture is the exact
+   starvation the drag work is trying to avoid: the Finder is inside its
+   nested Drag Manager loop and an Apple Event to it will not be answered
+   until the button comes up. False when there is no epoch or no resident. */
+int now_continuity_button_is_down(void);
 unsigned short now_continuity_udp_port(void);
 int now_continuity_wants_fast_pump(void);
 /* The apply handshake and owner-lease renewal on their own, for the nested

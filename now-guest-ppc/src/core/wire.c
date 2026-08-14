@@ -17,6 +17,7 @@
 #include "census.h"
 #include "console_model.h"   /* the exec plane runs the Console's dispatch */
 #include "continuity_intake.h"
+#include "continuity_selection.h"
 #include "json.h"
 #include "loopstat.h"
 #include "mirror_policy.h"
@@ -520,6 +521,11 @@ static void link_drop_transfers(void)
     g_update.pending = false;
     now_update_model_reset();
     now_continuity_disconnect();
+    /* The stub table dies with the link, not just with the epoch. A
+       grant is consent given to ONE host over ONE connection; leaving a
+       generation grantable across a reconnect would let the next session
+       collect a drag the previous one set up. */
+    now_continuity_selection_forget();
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -6125,6 +6131,114 @@ static void serve_file_get(const char *request)
     }
 }
 
+/* Serve the item one continuity.selection generation named.
+
+   THIS IS THE ONE PLACE THE GUEST READS OUTSIDE THE FILES SHARE ON THE
+   HOST'S WORD, so it is worth being plain about what makes that safe.
+   The host cannot name a file here: it names a GENERATION this guest
+   published, and the guest serves whatever its own cache holds under
+   that number. The reachable set is therefore exactly what a person
+   selected in the Finder with their own hand, during a live epoch, and
+   it shrinks to nothing the moment the epoch ends. The gesture is the
+   consent — the same bargain a host-to-guest drop already strikes.
+
+   Everything after the check is the ORDINARY file lane: the same stage,
+   the same file.begin, the same transfer. There is no second bulk path,
+   which is why a grabbed file cancels and reports progress the way a
+   Files pull does. */
+static void serve_continuity_grab(const char *request)
+{
+    NowPrefs prefs;
+    FileStage stage;
+    FSSpec spec;
+    char container_arg[16];
+    char json[512];
+    long id = now_json_find_int(request, "id", 0);
+    unsigned long epoch =
+        (unsigned long)now_json_find_int(request, "epoch", 0);
+    unsigned long generation =
+        (unsigned long)now_json_find_int(request, "generation", 0);
+    unsigned long live = now_continuity_live_epoch();
+    FileContainer want = kContainerAuto;
+    long chunk;
+    short pace_ms;
+    Boolean pack_unused;
+    unsigned short xfer;
+    int verdict;
+    int rc;
+
+    if (wire_busy()) {
+        file_refuse(id, "busy", "a transfer is already in flight");
+        return;
+    }
+    verdict = now_continuity_selection_grab(live, epoch, generation, &spec);
+    if (verdict != kNowGrabOK) {
+        const char *code = now_continuity_grab_code(verdict);
+
+        /* NAMED, both on the wire and in the log. A refusal here is the
+           consent boundary doing its job, and the one thing worse than
+           refusing is refusing in a way nobody can tell apart from a
+           transfer that failed. */
+        now_log(kLogWarn, "mirror",
+                "grab refused #%ld epoch=%lu/%lu gen=%lu: %s",
+                id, epoch, live, generation, code);
+        file_refuse(id, code, "the drag no longer names what it was given");
+        return;
+    }
+    if (now_json_find_string(request, "container", container_arg,
+                             sizeof container_arg)) {
+        if (strcmp(container_arg, "macbinary") == 0) {
+            want = kContainerMacBinary;
+        } else if (strcmp(container_arg, "data") == 0) {
+            want = kContainerData;
+        }
+    }
+    rc = now_files_stage_spec(&spec, want, &stage);
+    if (rc != kFilesOK) {
+        now_log(kLogWarn, "mirror",
+                "grab #%ld could not stage gen=%lu rc=%d",
+                id, generation, rc);
+        file_refuse_rc(id, rc);
+        return;
+    }
+    now_prefs_load(&prefs);
+    tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack_unused);
+    xfer = next_xfer();
+    {
+        char type[8], creator[8];
+        char esc_name[200], esc_type[40], esc_creator[40];
+
+        memcpy(type, &stage.file_type, 4);
+        type[4] = '\0';
+        memcpy(creator, &stage.creator, 4);
+        creator[4] = '\0';
+        now_json_escape(stage.name, esc_name, sizeof esc_name);
+        now_json_escape(type, esc_type, sizeof esc_type);
+        now_json_escape(creator, esc_creator, sizeof esc_creator);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.begin\",\"id\":%ld,\"transfer\":%u,"
+                 "\"name\":\"%s\",\"container\":\"%s\","
+                 "\"bytes\":%ld,\"dataBytes\":%ld,\"rsrcBytes\":%ld,"
+                 "\"fileType\":\"%s\",\"creator\":\"%s\","
+                 "\"modified\":%lu}",
+                 id, xfer, esc_name,
+                 stage.container == kContainerMacBinary ? "macbinary" : "data",
+                 stage.total_bytes, stage.data_bytes, stage.rsrc_bytes,
+                 esc_type, esc_creator, stage.modified);
+    }
+    now_log(kLogInfo, "mirror", "grab granted #%ld epoch=%lu gen=%lu %.31s",
+            id, epoch, generation, stage.name);
+    if (!send_control(json)) {
+        now_files_stage_dispose(&stage);
+        return;
+    }
+    if (!arm_file_transfer(id, xfer, &stage, chunk, pace_ms)) {
+        now_files_stage_dispose(&stage);
+        file_start_failed(id, xfer);
+        return;
+    }
+}
+
 /* --- live stream ------------------------------------------------------- */
 
 static void stream_pipeline_clear(void)
@@ -7048,6 +7162,87 @@ static void serve_continuity_key(const char *request)
                                     "malformed");
 }
 
+/* Poll the Finder's selection and push a stub when it moved.
+
+   CALLED FROM conn_service() AND NOWHERE ELSE, which is the whole safety
+   argument: now_wire_pump() bounces every nested entry (see its guard),
+   so this cannot be reached from inside a Toolbox loop. An Apple Event
+   sent from a nested loop would be one wait inside another, and the
+   Finder's answer would arrive underneath a machine already waiting for
+   something else.
+
+   The gates that decide whether to ask at all — epoch, held button,
+   cadence — belong to the poll rather than to this caller, so they hold
+   for anyone who ever calls it from a second place. */
+static void service_continuity_selection(void)
+{
+    const NowContinuityStubTable *table;
+    char json[512];
+    char esc_name[128];
+
+    if (!now_continuity_selection_poll(now_continuity_live_epoch())) {
+        return;
+    }
+    table = now_continuity_selection_table();
+    if (!table->have_item) {
+        /* An empty selection is a stub with a generation and no item, and
+           it is sent for a reason: the host has a cached stub to drop,
+           and telling it by silence is indistinguishable from a poll that
+           stopped running. */
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.selection\",\"version\":%u,"
+                 "\"epoch\":%lu,\"generation\":%lu}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 table->epoch, table->generation);
+        send_control(json);
+        return;
+    }
+    now_json_escape(table->item.name, esc_name, sizeof esc_name);
+    if (table->item.is_folder) {
+        /* A folder gets its own frame rather than four NUL bytes in a
+           fileType: it HAS no type or creator, and the contract says so
+           by making both optional. Two templates cost a branch; one
+           template with empty strings would put a lie on the wire that
+           a host would have to know to ignore. */
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.selection\",\"version\":%u,"
+                 "\"epoch\":%lu,\"generation\":%lu,\"item\":{"
+                 "\"name\":\"%s\",\"volumeRef\":%d,\"dirID\":%ld,"
+                 "\"dataSize\":0,\"resourceSize\":0,"
+                 "\"modifiedAt\":%lu,\"isFolder\":true}}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 table->epoch, table->generation,
+                 esc_name, (int)table->item.volume_ref, table->item.dir_id,
+                 table->item.modified);
+    } else {
+        char type[8], creator[8];
+        char esc_type[40], esc_creator[40];
+        unsigned long type_code = table->item.file_type;
+        unsigned long creator_code = table->item.creator;
+
+        memcpy(type, &type_code, 4);
+        type[4] = '\0';
+        memcpy(creator, &creator_code, 4);
+        creator[4] = '\0';
+        now_json_escape(type, esc_type, sizeof esc_type);
+        now_json_escape(creator, esc_creator, sizeof esc_creator);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.selection\",\"version\":%u,"
+                 "\"epoch\":%lu,\"generation\":%lu,\"item\":{"
+                 "\"name\":\"%s\",\"volumeRef\":%d,\"dirID\":%ld,"
+                 "\"fileType\":\"%s\",\"creator\":\"%s\","
+                 "\"dataSize\":%ld,\"resourceSize\":%ld,"
+                 "\"modifiedAt\":%lu,\"isFolder\":false}}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 table->epoch, table->generation,
+                 esc_name, (int)table->item.volume_ref, table->item.dir_id,
+                 esc_type, esc_creator,
+                 table->item.data_size, table->item.rsrc_size,
+                 table->item.modified);
+    }
+    send_control(json);
+}
+
 static void service_continuity(void)
 {
     NowContinuityReport report;
@@ -7108,6 +7303,10 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "continuity.key")) {
         serve_continuity_key(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "continuity.grab")) {
+        serve_continuity_grab(reply);
         return 1;
     }
     if (now_json_type_is(reply, "capture.request")) {
@@ -7714,6 +7913,9 @@ void conn_service(void)
         }
         if (g.phase == kConnConnected) {
             service_transfer();
+        }
+        if (g.phase == kConnConnected) {
+            service_continuity_selection();
         }
         if (g.phase == kConnConnected) {
             service_mirror_invalidation();

@@ -663,6 +663,26 @@ int now_continuity_wants_fast_pump(void)
     return gEpoch != 0 && gFastPump;
 }
 
+unsigned long now_continuity_live_epoch(void)
+{
+    return (unsigned long)gEpoch;
+}
+
+int now_continuity_button_is_down(void)
+{
+    NowPeekContinuityCell *shared;
+
+    if (gEpoch == 0) {
+        return 0;
+    }
+    shared = cell();
+    /* The resident's own view of the button, not GetMouse or Button():
+       this is the SYNTHETIC gesture the host is driving, and the question
+       being asked is whether the host is mid-drag - not whether somebody
+       is also pressing the guest's own mouse. */
+    return shared != NULL && shared->button_down != 0;
+}
+
 /* THE CURSOR PLANE'S PUMP, SEPARATE FROM THE WIRE'S.
 
    now_continuity_take_report() is the only other caller of the service

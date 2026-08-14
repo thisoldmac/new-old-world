@@ -312,6 +312,8 @@ channels:
       continuityDisarm: { $ref: "#/components/messages/continuityDisarm" }
       continuityKey: { $ref: "#/components/messages/continuityKey" }
       continuityKeyReport: { $ref: "#/components/messages/continuityKeyReport" }
+      continuitySelection: { $ref: "#/components/messages/continuitySelection" }
+      continuityGrab: { $ref: "#/components/messages/continuityGrab" }
       cloudServices: { $ref: "#/components/messages/cloudServices" }
       cloudReport: { $ref: "#/components/messages/cloudReport" }
       cloudList: { $ref: "#/components/messages/cloudList" }
@@ -1262,6 +1264,7 @@ operations:
       - $ref: "#/channels/control/messages/continuityArm"
       - $ref: "#/channels/control/messages/continuityDisarm"
       - $ref: "#/channels/control/messages/continuityKey"
+      - $ref: "#/channels/control/messages/continuityGrab"
     description: >
       Reliable session ownership for the optional Continuity input plane.
       The host arms before sending UDP state and disarms on disable,
@@ -1275,11 +1278,26 @@ operations:
     messages:
       - $ref: "#/channels/control/messages/continuityReport"
       - $ref: "#/channels/control/messages/continuityKeyReport"
+      - $ref: "#/channels/control/messages/continuitySelection"
     description: >
       The PowerPC guest answers every arm and disarm and may also report an
       asynchronous guest-input or lease-expiry exit. The `state` and `reason`
       fields are the authoritative ownership answer; UDP acknowledgements are
       transport telemetry and cannot re-arm an exited session.
+
+      continuity.selection is unsolicited and rides the same epoch. The
+      guest sends one whenever the Finder selection it can see changes,
+      and never outside a live epoch.
+
+      DECLARED ASYMMETRY. Neither continuity.selection nor continuity.grab
+      has a console verb, for the same reason continuity.arm and
+      continuity.key do not: the capability is a pointer plane the person
+      at the guest drives with their own hand and eyes. There is nothing a
+      typed word at the Macintosh could add to "the thing you have
+      selected", and a `grab` a person could type would be exactly the
+      general read outside the share that the gesture boundary below
+      exists to refuse. NOW-68K serves neither; it has no Continuity
+      plane at all.
   peerAnnouncesMirrorInvalidation:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -1496,6 +1514,12 @@ components:
     continuityKeyReport:
       name: continuity.keyReport
       payload: { $ref: "#/components/schemas/ContinuityKeyReport" }
+    continuitySelection:
+      name: continuity.selection
+      payload: { $ref: "#/components/schemas/ContinuitySelection" }
+    continuityGrab:
+      name: continuity.grab
+      payload: { $ref: "#/components/schemas/ContinuityGrab" }
     cloudServices:
       name: cloud.services
       payload: { $ref: "#/components/schemas/CloudServices" }
@@ -2400,6 +2424,148 @@ components:
         reason:
           enum: [wrong-version, bad-epoch, target-unavailable, queue-full,
                  malformed]
+    ContinuitySelection:
+      type: object
+      required: [type, version, epoch, generation]
+      additionalProperties: false
+      description: >
+        What the person at the Macintosh has selected in the Finder right
+        now, pushed unsolicited while a Continuity epoch is live.
+
+        WHY A STUB EXISTS AT ALL. During a drag the guest is unqueryable:
+        the Finder sits inside its own nested Drag Manager loop and will
+        not answer an Apple Event until the gesture ends. So everything
+        the host needs at cross-the-edge time has to be on this side of
+        the wire BEFORE the press — which makes selection, not the drag,
+        the thing worth watching. The guest polls at ordinary task time
+        at a bounded cadence and only while the epoch runs.
+
+        v1 SENDS THE FIRST ITEM ONLY. A multiple selection is reported as
+        its first item, and the host is told nothing about the rest. That
+        is a deliberate narrowing rather than a limit of the poll: a
+        multi-item drag needs a promise group and a host-side answer to
+        "some of these arrived", which single-item drags do not, so it is
+        a later slice and not a field to be added quietly here.
+      properties:
+        type: { const: continuity.selection }
+        version:
+          const: 4
+          description: The Continuity control-contract version, as elsewhere.
+        epoch: { type: integer, minimum: 1, maximum: 4294967295 }
+        generation:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            Monotonic per SELECTION CHANGE within the epoch, not per send.
+            It is the name a later continuity.grab uses, so it must move
+            whenever the item behind it could differ — including to an
+            empty selection, which gets a generation of its own.
+        item:
+          type: object
+          additionalProperties: false
+          description: >
+            Absent when nothing is selected. An absent item with a fresh
+            generation is the instruction to clear whatever the host
+            cached; it is not "the poll found nothing to say".
+          required: [name, volumeRef, dirID, isFolder]
+          properties:
+            name:
+              type: string
+              maxLength: 31
+              description: The item's displayed name, HFS's own 31-byte limit.
+            volumeRef:
+              type: integer
+              minimum: -32768
+              maximum: 32767
+              description: >
+                Classic vRefNum. Together with dirID and name this is the
+                item's identity as the File Manager understands it. A PATH
+                STRING IS NOT OFFERED and never will be: HFS paths are
+                ambiguous across mounted volumes with the same name, and
+                the whole point of carrying the triple is that the guest
+                can reach the item again at grab time without re-parsing
+                anything a person may have renamed in between.
+            dirID: { type: integer, description: Parent directory ID. }
+            fileType:
+              type: string
+              maxLength: 4
+              description: Four-byte OSType. Absent for a folder.
+            creator:
+              type: string
+              maxLength: 4
+              description: Four-byte creator. Absent for a folder.
+            dataSize: { type: integer, minimum: 0 }
+            resourceSize: { type: integer, minimum: 0 }
+            modifiedAt:
+              type: integer
+              minimum: 0
+              description: >
+                Classic seconds since 1904, the File Manager's own clock.
+                Paired with the identity triple it is also how the guest
+                decides the selection CHANGED without re-reading contents.
+            isFolder: { type: boolean }
+            icon:
+              type: string
+              contentEncoding: base64
+              description: >
+                DECLARED, NOT IMPLEMENTED as of this slice. A small icon
+                payload so the host's drag image is honest before any wire
+                round-trip. Extraction from the desktop database costs more
+                than the rest of the poll put together, so it is named here
+                to fix its shape and left unsent; a host must treat its
+                absence as ordinary.
+    ContinuityGrab:
+      type: object
+      required: [type, version, id, epoch, generation]
+      additionalProperties: false
+      description: >
+        Serve the item named by one continuity.selection generation.
+
+        WHY THIS BYPASSES THE SHARE BOUNDARY, said plainly because it is
+        the only place in this contract where a guest reads a file outside
+        the Files share on a host's word. file.get is share-scoped by
+        design, and a Finder selection can name anything on the machine —
+        so a grab is not a wider file.get, it is a DIFFERENT KIND OF
+        AUTHORITY: the drag gesture is the consent, exactly as a
+        host-to-guest drop is already consent-by-gesture. A person picked
+        this item with their own hand and then pulled it across the edge.
+
+        Three properties keep that honest, and all three are checked by
+        the guest before a byte moves:
+
+          - It is bound to ONE generation. The guest serves the item its
+            own cache holds under that number and nothing else; a
+            generation it does not hold is refused, not resolved.
+          - It expires with the epoch. Continuity ending revokes every
+            grant, so a grab cannot outlive the session that consented.
+          - It names no path. The host cannot ASK for an arbitrary file
+            here — it can only ask for the one the guest already told it
+            about, so the reachable set is whatever a human selected.
+
+        The answer is the ordinary file lane: file.begin, the bulk stream,
+        file.end, and file.refuse for every failure. There is no second
+        bulk path — reusing it is why a grabbed file resumes, cancels and
+        reports progress the same way a Files pull does.
+      properties:
+        type: { const: continuity.grab }
+        version: { const: 4 }
+        id: { type: integer }
+        epoch: { type: integer, minimum: 1, maximum: 4294967295 }
+        generation:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            Must equal the guest's CURRENT selection generation. An older
+            one is refused `stale-selection` rather than served from a
+            history: the consent was given for what the person was looking
+            at, and the guest keeps no ledger of what they used to be.
+        container:
+          enum: [auto, data, macbinary]
+          description: >
+            The file lane's own knob, unchanged in meaning. auto (default)
+            applies the container rule.
     MirrorInvalidate:
       type: object
       required: [type, generation, domains, quality]
@@ -3733,7 +3899,23 @@ components:
         id: { type: integer }
         code:
           enum: [busy, exists, bad-path, not-found, io-error, too-big,
-                 changed]
+                 changed, bad-source, project-file-unavailable,
+                 bad-epoch, stale-selection, no-selection, folder-not-yet]
+          description: >
+            The first seven are the file lane's own answers. The rest name
+            a REQUEST SHAPE the responder would not resolve, and they are
+            listed here because the message is one message: bad-source and
+            project-file-unavailable have been on the wire since the Mirror
+            drag and Development lanes shipped and were simply never
+            written down, which is the drift this enum exists to prevent.
+
+            bad-epoch, stale-selection and no-selection are
+            continuity.grab's refusals — the epoch is not the live one, the
+            generation is not the current one, and nothing is selected.
+            folder-not-yet is the honest edge of the first grab slice: the
+            selection stub carries isFolder, so a host can see a folder
+            coming, and a folder grab is refused by name rather than
+            served as an empty file.
         reason: { type: string }
     FileBegin:
       type: object

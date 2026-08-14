@@ -203,6 +203,12 @@ run_c now-guest-shared now_continuity_logic_test.c "" src/now_continuity_logic.c
 run_c now-guest-shared now_continuity_event_match_test.c "" \
       src/now_continuity_event_match.c
 run_py now-guest-shared continuity_lease_admission_source_test.py
+# The Finder-selection stub table: what counts as a change, and which
+# grabs may be served. The second half is a consent boundary rather than
+# an optimisation - a grab reads outside the Files share - so its
+# refusals are watched here where no Macintosh is needed to try them.
+run_c now-guest-shared now_continuity_selection_test.c "" \
+      src/now_continuity_selection.c
 run_c now-guest-shared now_continuity_keyboard_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c
 run_py now-guest-shared continuity_keyboard_safety_source_test.py
@@ -341,6 +347,12 @@ run_py now-guest-ppc peek_self_init_source_test.py
 # The nested-loop half of the pump rule, which the wire's reentrancy guard
 # quietly exempted the cursor plane from.
 run_py now-guest-ppc continuity_nested_pump_source_test.py
+# The Finder-selection poll's three gates and its caller. All four are
+# Toolbox or ordering properties a host cc cannot reach: no epoch means
+# no poll, a held button means no poll, and being called from
+# conn_service alone is what guarantees no Apple Event is ever sent from
+# inside a nested Toolbox loop.
+run_py now-guest-ppc continuity_selection_gates_source_test.py
 # The acquisition sweep's rationing. Its Toolbox half (GetNextProcess,
 # WakeUpProcess, the yield) is not covered here and does not pretend to be.
 run_c now-guest-ppc anchor_acquire_test.c \

@@ -55,6 +55,13 @@ final class Session {
     private let onCensusReport: (CensusReport) -> Void
     private let onContinuityReport: (ContinuityReport) -> Void
     private let onContinuityKeyReport: (ContinuityKeyReport) -> Void
+    /* A `var` rather than an init parameter, unlike its neighbours: the
+       stub's consumer is the drag lane, which does not exist yet. Making
+       it required would put an empty closure at every construction site
+       and read as a wired-up capability. Nil is the honest state — the
+       frame decodes, so it can never drop the connection, and nothing
+       claims to be doing anything with it. */
+    var onContinuitySelection: ((ContinuitySelection) -> Void)?
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
         -> Void
@@ -532,10 +539,16 @@ final class Session {
             onContinuityReport(report)
         case .continuityKeyReport(let report):
             onContinuityKeyReport(report)
-        case .continuityArm, .continuityDisarm, .continuityKey:
+        case .continuitySelection(let selection):
+            onContinuitySelection?(selection)
+        case .continuityArm, .continuityDisarm, .continuityKey,
+             .continuityGrab:
             /* Declared asymmetry: authority is host-to-guest. A guest may
                report that its resident relinquished ownership, but it may
-               never arm the host's input lane or disarm another session. */
+               never arm the host's input lane or disarm another session -
+               nor grab from it, which is the same rule one layer on: a
+               grant is something the guest gives, never something it
+               collects. */
             break
         case .fileListing(let listing):
             onFileListing(listing)

@@ -639,6 +639,7 @@ to exist:
 | `cloud.refuse` | message | ppc | deliberate | The refusal half of the same family, same reason ([command-parity.md](command-parity.md)). |
 | `cloud.report` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.services` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
 | `continuity.report` | message | none | deliberate | The bounded status and negotiation answer to the host Mirror module's internal `continuity.arm` request. The host consumes it to settle one optional human pointer-control epoch; exposing the raw report would make that transport handshake a second public control surface even though Continuity explicitly excludes MCP and agent integration. The ownership and surface boundary are stated in [continuity-mode.md](continuity-mode.md). Both guests emit a report, but neither dispatches one as an incoming request, which is why the mechanically derived Served column says `none`. |
+| `continuity.selection` | message | none | deliberate | The Finder-selection stub the guest pushes while a Continuity epoch is live, so a cross-the-edge drag has something to name before the press. Excluded for the same reason `continuity.report` is: Continuity is one human's pointer epoch and has no MCP or agent surface ([continuity-mode.md](continuity-mode.md)). The exclusion is sharper here than for the report - the stub says what a person has selected on their own machine, and exposing it would make an agent able to watch that, which is a capability nobody asked for and the drag does not need. The guest emits it and dispatches nothing, which is why the derived Served column says `none`. |
 | `exec.cancel` | message | both | deliberate | Ends an exec, and is excluded with the rest of the console plane — [agent-integration.md](agent-integration.md). |
 | `exec.input` | message | both | deliberate | Part of the console plane excluded under rule 3 — [agent-integration.md](agent-integration.md) and the parity slice plan. |
 | `exec.request` | message | both | deliberate | The console plane. A shell is not user-initiable in any meaningful sense and is the one thing [agent-integration.md](agent-integration.md) is right to keep out. |
@@ -1189,14 +1190,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 7b7bedf868f69b1331ba653c74ffa4aed7ef0ebd
-derive ppc-inbound-types sha256=1aad1e912a333898e94ca678d768a85c901845b3e7826945f94ed0033553d7b7 lines=53 published
+sources-sha1: d93c5a0dc8a307a641b1283a9af7037b00d0deb6
+derive ppc-inbound-types sha256=66cb7aa2e96f04461ee4c0d93ca9fe944143f89854d7db8110f44dd8b366361a lines=54 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=72111076c8035b5bd9cceacc45e74c81bbcb8059cc93b1468147c1141a29dabe lines=3
+derive disposition-census sha256=89e49837f65387d9ec3ca389ed51a84ef4946b432e32b35521518a166c4075ed lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
@@ -1343,4 +1344,5 @@ rederived: 2026-08-14T12:47:23-0400 804be291 sources
 rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
 rederived: 2026-08-14T14:27:57-0400 6d037a57 sources
+rederived: 2026-08-14T16:58:27-0400 cf962dbb sources, ppc-inbound-types 53->54, disposition-census 3->3
 -->
