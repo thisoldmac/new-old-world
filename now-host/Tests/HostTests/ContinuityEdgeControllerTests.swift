@@ -303,7 +303,8 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         environment.emit(.init(kind: .moved,
                                location: CGPoint(x: 1439, y: 450),
                                delta: CGPoint(x: -100, y: 0),
-                               buttonsDown: true))
+                               buttonsDown: true),
+                         event: Self.mouseEvent())
 
         XCTAssertEqual(controller.state, .ready)
         XCTAssertEqual(driver.leftCount, 1)
@@ -476,7 +477,8 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         environment.emitCaptured(.init(kind: .moved,
                                        location: CGPoint(x: 1439, y: 450),
                                        delta: CGPoint(x: -100, y: 0),
-                                       buttonsDown: true))
+                                       buttonsDown: true),
+                                 event: Self.mouseEvent())
 
         XCTAssertEqual(environment.fileDrags.count, 1,
                        "the native copy drag still starts")
@@ -562,6 +564,154 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .active)
     }
 
+    /// **Edge mode alone must have somewhere for a file to land.**
+    ///
+    /// The regression this pins: the callbacks were installed inside the
+    /// Mirror runtime's lazy source, so starting edge mode from the
+    /// Continuity module — which never constructs Mirror — left
+    /// `refreshFileEdge` refusing to create ANY AppKit destination. Nothing
+    /// logged, nothing refused; the strip simply was not there.
+    ///
+    /// Nothing here constructs a Mirror. The destination must exist anyway,
+    /// and the dependency Mirror really does own — the scene — must be
+    /// refused BY NAME rather than by being absent.
+    func testEdgeModeWithoutMirrorStillHasALiveDropDestination() throws {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        let listener = GuestListener(
+            identity: .init(version: "test", name: "Host"))
+        defer { listener.stop() }
+        var audits: [(HostLog.LogLevel, String)] = []
+        /* Held for the length of the test: the seam keeps the file lane
+           weakly, the way the app owns it. */
+        let fileTransfer = MirrorFileTransferModel(listener: listener)
+        ContinuityFileDrag.configure(
+            edge: controller,
+            fileTransfer: fileTransfer,
+            /* No Mirror runtime exists in this test, which is the point. */
+            scene: { nil },
+            audit: { audits.append(($0, $1)) })
+        controller.start()
+
+        let callbacks = try XCTUnwrap(
+            environment.fileCallbacks,
+            "edge mode with no Mirror had no AppKit drop destination")
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450)),
+                      "the strip must accept the drag to be steerable")
+        controller.transportPhaseChanged(.active)
+
+        XCTAssertFalse(callbacks.dropped(.init(name: .drag)),
+                       "with no scene there is no honest drop target")
+        XCTAssertTrue(
+            audits.contains { $0.1.contains(ContinuityFileDrag.noSceneReason) },
+            "the refusal must name what is missing, not fail silently")
+        XCTAssertEqual(controller.state, .ready)
+    }
+
+    /// The same claim against the REAL wiring: the app installs the seam on
+    /// its own edge controller, with no module page touched. The test above
+    /// proves the seam behaves; this proves somebody actually installs it,
+    /// which is the half the regression broke.
+    func testAppInstallsTheFileSeamWithoutConstructingMirror() {
+        let suite = "ContinuityFileSeam.\(UUID().uuidString)"
+        // swiftlint:disable:next force_unwrapping
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let state = HostAppState(registry: .standard, defaults: defaults)
+        defer { state.shutDownModules() }
+
+        XCTAssertTrue(state.continuity.edge.fileDraggingConfigured,
+                      "edge mode would start with no drop destination")
+    }
+
+    /// The tap path has no NSEvent, and used to reach `beginFileDrag`
+    /// through a mutable field that was nil there — a synthesized gesture
+    /// AppKit never owned. Absence is now a parameter, and it is named.
+    func testGuestFileCrossingWithoutARealEventRefusesOutLoud() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            audit: { audits.append(($0, $1)) })
+        controller.configureFileDragging(
+            guestFileAtPoint: { _ in
+                HostFileDragItem(writer: NSPasteboardItem(),
+                                 image: NSImage(size: NSSize(width: 32,
+                                                             height: 32)))
+            },
+            hostFilesDropped: { _, _ in false })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+        environment.emitCaptured(.init(kind: .primaryDown,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: .zero, buttonsDown: true))
+        environment.emitCaptured(.init(kind: .moved,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: CGPoint(x: -100, y: 0),
+                                       buttonsDown: true))
+
+        XCTAssertTrue(environment.fileDrags.isEmpty,
+                      "no real event means no drag session at all")
+        XCTAssertTrue(audits.contains { $0.1.contains("no host mouse event") },
+                      "a drag that cannot start must say why")
+        XCTAssertTrue(controller.status.contains("no mouse event"))
+        XCTAssertEqual(environment.associationChanges, [false, true],
+                       "the refusal still hands the mouse back")
+    }
+
+    /// A real event reaches AppKit unchanged: the seed is built from it, so
+    /// a test that only counted drags would not notice it being invented.
+    func testHostDragCarriesTheRealSourceEvent() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.configureFileDragging(
+            guestFileAtPoint: { _ in
+                HostFileDragItem(writer: NSPasteboardItem(),
+                                 image: NSImage(size: NSSize(width: 32,
+                                                             height: 32)))
+            },
+            hostFilesDropped: { _, _ in false })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+        environment.emitCaptured(.init(kind: .primaryDown,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: .zero, buttonsDown: true))
+        let event = Self.mouseEvent(eventNumber: 4242)
+        environment.emitCaptured(.init(kind: .moved,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: CGPoint(x: -100, y: 0),
+                                       buttonsDown: true),
+                                 event: event)
+
+        XCTAssertEqual(environment.fileDrags.count, 1)
+        XCTAssertEqual(environment.fileDrags.first?.event.eventNumber, 4242)
+    }
+
+    /// A real host mouse event, which the CGEvent tap can never supply.
+    private static func mouseEvent(eventNumber: Int = 7) -> NSEvent {
+        // swiftlint:disable:next force_unwrapping
+        NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: CGPoint(x: 10, y: 10),
+            modifierFlags: [], timestamp: 12, windowNumber: 0, context: nil,
+            eventNumber: eventNumber, clickCount: 1, pressure: 1)!
+    }
+
     private func makeLayout() -> ContinuityDisplayLayout {
         ContinuityDisplayLayout(hostDisplays: [host],
                                 guestSize: CGSize(width: 800, height: 600),
@@ -607,22 +757,23 @@ private extension ContinuityEdgeControllerTests {
 
     final class Environment: ContinuityPointerEnvironment {
         final class Token: NSObject {}
-        var handler: (@MainActor (HostPointerSample) -> Void)?
+        var handler: ContinuityPointerEnvironment.SampleHandler?
         var hidden: [UInt32] = []
         var shown: [UInt32] = []
         var moves: [(displayID: UInt32, point: CGPoint)] = []
         var fileCallbacks: ContinuityFileEdge.Callbacks?
-        var fileDrags: [(item: HostFileDragItem, point: CGPoint)] = []
+        var fileDrags: [(item: HostFileDragItem, point: CGPoint,
+                         event: NSEvent)] = []
         var associationChanges: [Bool] = []
         var captureStarts = 0
         var captureStops = 0
-        var captureHandler: (@MainActor (HostPointerSample) -> Void)?
+        var captureHandler: ContinuityPointerEnvironment.SampleHandler?
         var captureTapDisabled: (@MainActor (String) -> Void)?
         /// Set false to stand in for a Mac without Accessibility permission.
         var captureAvailable = true
 
-        func start(_ handler: @escaping @MainActor (HostPointerSample) -> Void)
-            -> AnyObject {
+        func start(_ handler: @escaping ContinuityPointerEnvironment
+                    .SampleHandler) -> AnyObject {
             self.handler = handler
             return Token()
         }
@@ -637,7 +788,7 @@ private extension ContinuityEdgeControllerTests {
             return true
         }
         func startInputCapture(
-            handler: @escaping @MainActor (HostPointerSample) -> Void,
+            handler: @escaping ContinuityPointerEnvironment.SampleHandler,
             tapDisabled: @escaping @MainActor (String) -> Void
         ) -> AnyObject? {
             guard captureAvailable else { return nil }
@@ -651,9 +802,13 @@ private extension ContinuityEdgeControllerTests {
             captureStops += 1
             captureHandler = nil
         }
-        /// Delivers through the consuming tap rather than the monitor.
-        func emitCaptured(_ sample: HostPointerSample) {
-            captureHandler?(sample)
+        /// Delivers through the consuming tap rather than the monitor. The
+        /// tap has no NSEvent by construction — that is the whole reason the
+        /// source event is an explicit parameter — so this delivers nil
+        /// unless a test states otherwise.
+        func emitCaptured(_ sample: HostPointerSample,
+                          event: NSEvent? = nil) {
+            captureHandler?(sample, event)
         }
         func showFileEdge(_ edge: ContinuitySharedEdge,
                           callbacks: ContinuityFileEdge.Callbacks)
@@ -673,12 +828,14 @@ private extension ContinuityEdgeControllerTests {
             _ = token
             fileCallbacks = nil
         }
-        func beginFileDrag(_ item: HostFileDragItem,
-                           at screenPoint: CGPoint) -> Bool {
-            fileDrags.append((item, screenPoint))
+        func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
+                           sourceEvent: NSEvent) -> Bool {
+            fileDrags.append((item, screenPoint, sourceEvent))
             return true
         }
-        func emit(_ sample: HostPointerSample) { handler?(sample) }
+        func emit(_ sample: HostPointerSample, event: NSEvent? = nil) {
+            handler?(sample, event)
+        }
     }
 
     final class KeyboardEnvironment: ContinuityKeyboardEnvironment {

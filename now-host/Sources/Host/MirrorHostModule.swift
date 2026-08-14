@@ -41,39 +41,11 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
             lifecycleDidChange: { [weak self] in
                 self?.model.refreshLifecycle()
             })
-        source.continuity.edge.configureFileDragging(
-            guestFileAtPoint: {
-                [weak source, weak fileTransfer = self.fileTransfer] point in
-                guard let source, let fileTransfer,
-                      let scene = source.scene else { return nil }
-                guard case .success(let subject) = DragTargeting.subject(
-                    scene, x: point.x, y: point.y) else { return nil }
-                switch CrossMachineFileTargeting.source(subject, in: scene) {
-                case .failure(let refusal):
-                    source.note(refusal.message)
-                    return nil
-                case .success(let guestFile):
-                    guard let promise = fileTransfer.promise(for: guestFile)
-                    else { return nil }
-                    return HostFileDragItem(
-                        writer: promise, subject: subject, scene: scene)
-                }
-            },
-            hostFilesDropped: {
-                [weak source, weak fileTransfer = self.fileTransfer]
-                                pasteboard, point in
-                guard let source, let fileTransfer,
-                      let scene = source.scene else { return false }
-                switch CrossMachineFileTargeting.destination(
-                    scene, x: point.x, y: point.y) {
-                case .failure(let refusal):
-                    source.note(refusal.message)
-                    return false
-                case .success(let target):
-                    return fileTransfer.copyHostPasteboard(
-                        pasteboard, to: target)
-                }
-            })
+        /* The cross-edge file callbacks used to be installed here, which
+           made an AppKit drop destination exist only once somebody had
+           opened the Mirror page. They belong to edge mode's lifetime and
+           now live in ContinuityFileDragWiring, app-owned; this runtime
+           supplies only the thing that genuinely is Mirror's — the scene. */
         model.bindPolicyProjection { [weak source] in
             source?.planePolicyDidChange()
         }
@@ -95,20 +67,27 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
         model = MirrorControlModel(
             guestProbe: MirrorGuestWireProbe(listener: context.listener))
         presentation = MirrorPresentation(defaults: context.defaults)
-        fileTransfer = MirrorFileTransferModel(listener: context.listener)
+        /* App-owned: the file lane outlives this page, and the edge seam
+           needs it whether or not anybody ever opens the Mirror. */
+        fileTransfer = context.fileTransfer
     }
 
     func activeGuestWillChange() {
-        fileTransfer.activeGuestWillChange()
         guard madeSource else { return }
         run.activeGuestWillChange()
     }
 
     func focus(on connection: GuestConnectionState) {
         model.connection = connection
-        fileTransfer.connection = connection
         guard madeSource else { return }
         run.activeGuestDidChange()
+    }
+
+    /// The live guest scene, without constructing anything to get it. Asking
+    /// what has been seen must not create the thing that sees.
+    var sceneIfKnown: MirrorKit.Scene? {
+        guard madeSource else { return nil }
+        return source.scene
     }
 
     var guestScreenIfKnown: MirrorKit.Scene.ScreenSize? {

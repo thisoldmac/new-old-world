@@ -34,8 +34,15 @@ struct HostPointerSample: Equatable, Sendable {
 
 @MainActor
 protocol ContinuityPointerEnvironment: AnyObject {
-    func start(_ handler: @escaping @MainActor (HostPointerSample) -> Void)
-        -> AnyObject
+    /// The AppKit event a sample came from, when one exists. It is delivered
+    /// BESIDE the sample rather than remembered in a mutable field on the
+    /// environment: the CGEvent tap has no NSEvent at all, and the field it
+    /// used to be read from was provably nil on exactly the path that needed
+    /// it — a smuggled value that failed silently. Explicit and optional
+    /// makes the absence a thing the caller must answer for.
+    typealias SampleHandler = @MainActor (HostPointerSample, NSEvent?) -> Void
+
+    func start(_ handler: @escaping SampleHandler) -> AnyObject
     func stop(_ token: AnyObject)
     func hideCursor(on displayID: UInt32)
     func showCursor(on displayID: UInt32)
@@ -51,7 +58,7 @@ protocol ContinuityPointerEnvironment: AnyObject {
     /// Accessibility permission); the caller degrades to the observe-only
     /// monitor rather than failing.
     func startInputCapture(
-        handler: @escaping @MainActor (HostPointerSample) -> Void,
+        handler: @escaping SampleHandler,
         tapDisabled: @escaping @MainActor (String) -> Void
     ) -> AnyObject?
     func stopInputCapture(_ token: AnyObject)
@@ -60,8 +67,13 @@ protocol ContinuityPointerEnvironment: AnyObject {
     func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
                         callbacks: ContinuityFileEdge.Callbacks)
     func hideFileEdge(_ token: AnyObject)
-    func beginFileDrag(_ item: HostFileDragItem,
-                       at screenPoint: CGPoint) -> Bool
+    /// Starts the native drag from a REAL host mouse event. Non-optional on
+    /// purpose: AppKit owns a gesture only when it can see the event that
+    /// began it, and a synthesized stand-in is the shape that failed
+    /// attended testing. A caller with no event must refuse out loud instead
+    /// of calling this.
+    func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
+                       sourceEvent: NSEvent) -> Bool
 }
 
 
@@ -165,13 +177,21 @@ final class ContinuityEdgeController: ObservableObject {
         refreshFileEdge()
     }
 
+    /// Whether the file seam has an owner at all. Both callbacks are a
+    /// precondition for creating the AppKit destination, so their absence is
+    /// the difference between a drop that refuses and a strip that is not
+    /// there — worth being able to ask from outside.
+    var fileDraggingConfigured: Bool {
+        guestFileAtPoint != nil && hostFilesDropped != nil
+    }
+
     func start() {
         guard monitor == nil else {
             refreshReadyStatus()
             return
         }
-        monitor = environment.start { [weak self] sample in
-            self?.received(sample)
+        monitor = environment.start { [weak self] sample, sourceEvent in
+            self?.received(sample, sourceEvent: sourceEvent)
         }
         refreshFileEdge()
         state = .ready
@@ -220,7 +240,8 @@ final class ContinuityEdgeController: ObservableObject {
             status: "Guest returned pointer control: \(reason)")
     }
 
-    private func received(_ sample: HostPointerSample) {
+    private func received(_ sample: HostPointerSample,
+                          sourceEvent: NSEvent?) {
         if consumeExpectedCursorWarp(sample) { return }
         switch state {
         case .disabled:
@@ -230,7 +251,7 @@ final class ContinuityEdgeController: ObservableObject {
         case .arming:
             break
         case .active:
-            driveGuest(with: sample)
+            driveGuest(with: sample, sourceEvent: sourceEvent)
         }
     }
 
@@ -252,7 +273,8 @@ final class ContinuityEdgeController: ObservableObject {
         driver?.pointerMoved(to: .init(x: Int(guest.x), y: Int(guest.y)))
     }
 
-    private func driveGuest(with sample: HostPointerSample) {
+    private func driveGuest(with sample: HostPointerSample,
+                            sourceEvent: NSEvent?) {
         guard var ownership else { return }
         if hostFileDrag,
            sample.kind == .primaryDown || sample.kind == .primaryUp {
@@ -289,7 +311,8 @@ final class ContinuityEdgeController: ObservableObject {
                 + "\(Int(sample.location.x)),\(Int(sample.location.y)), "
                 + "suppressedWarps=\(suppressedCursorWarps)")
             if sample.buttonsDown, let item = guestFileCandidate {
-                returnGuestFileToHost(item, from: ownership)
+                returnGuestFileToHost(item, from: ownership,
+                                      sourceEvent: sourceEvent)
             } else {
                 returnToHost(ownership, reason: "shared edge crossed")
             }
@@ -391,8 +414,15 @@ final class ContinuityEdgeController: ObservableObject {
         self.keyboardMonitor = nil
     }
 
+    /// Hands a held guest item to AppKit as the pointer crosses back.
+    ///
+    /// `sourceEvent` is the real host mouse event behind the crossing
+    /// sample. The consuming CGEvent tap has none — it delivers CGEvents —
+    /// so this refuses by name there rather than feeding AppKit a
+    /// synthesized gesture, which is what shipped and failed before.
     private func returnGuestFileToHost(_ item: HostFileDragItem,
-                                       from ownership: Ownership) {
+                                       from ownership: Ownership,
+                                       sourceEvent: NSEvent?) {
         let returnPoint = ContinuityDisplayGeometry.hostReturnPoint(
             for: ownership.guestPoint, edge: ownership.edge,
             guestFrame: layout.guestFrame, scale: layout.guestScale)
@@ -402,9 +432,20 @@ final class ContinuityEdgeController: ObservableObject {
         pending = nil
         guestFileCandidate = nil
         state = .ready
-        if environment.beginFileDrag(item, at: returnPoint) {
+        guard let sourceEvent else {
+            audit(.error, "cannot hand the guest file to this Mac: the "
+                + "crossing sample carried no host mouse event, so AppKit "
+                + "has no gesture to start a drag from")
+            status = "Could not start the host file drag: this Mac saw no "
+                + "mouse event behind the crossing"
+            return
+        }
+        if environment.beginFileDrag(item, at: returnPoint,
+                                     sourceEvent: sourceEvent) {
             status = "Copying the guest file to this Mac on release"
         } else {
+            audit(.error, "the host file drag was refused by AppKit at "
+                + "\(Int(returnPoint.x)),\(Int(returnPoint.y))")
             status = "Could not start the host file drag"
         }
     }
@@ -462,11 +503,11 @@ final class ContinuityEdgeController: ObservableObject {
         }
         guard inputCapture == nil else { return }
         inputCapture = environment.startInputCapture(
-            handler: { [weak self] sample in
+            handler: { [weak self] sample, sourceEvent in
                 /* The tap hops to the main actor, so a sample can outlive the
                    pass that captured it. */
                 guard let self, self.state == .active else { return }
-                self.received(sample)
+                self.received(sample, sourceEvent: sourceEvent)
             },
             tapDisabled: { [weak self] reason in
                 self?.audit(.warn, "pointer event tap was disabled by "

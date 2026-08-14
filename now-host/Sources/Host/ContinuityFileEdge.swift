@@ -60,21 +60,24 @@ final class ContinuityFileEdge: NSObject {
         }
 
         func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
-                           sourceEvent: NSEvent?) -> Bool {
+                           sourceEvent: NSEvent) -> Bool {
             guard let window else { return false }
             let windowPoint = window.convertPoint(fromScreen: screenPoint)
             let viewPoint = convert(windowPoint, from: nil)
+            /* Every field here comes from the caller's real event. The
+               defaults this used to fall back to were reached whenever the
+               event was nil, and a drag seeded from invented timestamps and
+               click counts is exactly the fake session that failed. */
             let seed = NSEvent.mouseEvent(
                 with: .leftMouseDragged,
                 location: windowPoint,
-                modifierFlags: sourceEvent?.modifierFlags ?? [],
-                timestamp: sourceEvent?.timestamp
-                    ?? ProcessInfo.processInfo.systemUptime,
+                modifierFlags: sourceEvent.modifierFlags,
+                timestamp: sourceEvent.timestamp,
                 windowNumber: window.windowNumber,
                 context: nil,
-                eventNumber: sourceEvent?.eventNumber ?? 0,
-                clickCount: sourceEvent?.clickCount ?? 1,
-                pressure: sourceEvent?.pressure ?? 1)
+                eventNumber: sourceEvent.eventNumber,
+                clickCount: sourceEvent.clickCount,
+                pressure: sourceEvent.pressure)
             guard let seed else { return false }
 
             let dragging = NSDraggingItem(pasteboardWriter: item.writer)
@@ -143,7 +146,7 @@ final class ContinuityFileEdge: NSObject {
     }
 
     func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
-                       sourceEvent: NSEvent?) -> Bool {
+                       sourceEvent: NSEvent) -> Bool {
         edgeView.beginFileDrag(item, at: screenPoint,
                                sourceEvent: sourceEvent)
     }

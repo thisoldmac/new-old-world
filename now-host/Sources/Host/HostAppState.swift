@@ -71,6 +71,11 @@ final class HostAppState: ObservableObject {
     /// product controls and Logs' diagnostic controls. Keeping it here avoids
     /// constructing the Mirror runtime merely to change a logging probe.
     let continuity: MirrorContinuityController
+    /// The one host-side file lane. App-owned rather than Mirror-owned
+    /// because the Continuity edge seam copies files with no Mirror page
+    /// constructed, and because its cache dies with the connection, not
+    /// with a page.
+    let fileTransfer: MirrorFileTransferModel
     /// The guest whose saved continuity settings are currently loaded.
     /// Link events for another connected Mac must not reset active ownership.
     private var continuityGuestKey: GuestKey?
@@ -192,6 +197,7 @@ final class HostAppState: ObservableObject {
             agentCompanions: agentCompanions,
             logs: logs,
             continuity: continuity,
+            fileTransfer: fileTransfer,
             settings: settings,
             onboarding: onboarding,
             localNetworkAccess: localNetworkAccess,
@@ -226,6 +232,7 @@ final class HostAppState: ObservableObject {
                 reason: "the selected Mac is changing")
             self?.continuity.sessionWillEnd(
                 reason: "the selected Mac is changing")
+            self?.fileTransfer.activeGuestWillChange()
             self?.existingMirrorRuntime?.activeGuestWillChange()
         }
     }
@@ -252,6 +259,7 @@ final class HostAppState: ObservableObject {
         continuity = MirrorContinuityController(
             listener: listener, defaults: defaults,
             localNetworkAccess: localNetworkAccess)
+        fileTransfer = MirrorFileTransferModel(listener: listener)
         artifactApprovals = try? AgentIntegrationArtifactApprovalStore()
         let integration = AgentIntegrationHostAdapter(
             listener: listener,
@@ -341,6 +349,16 @@ final class HostAppState: ObservableObject {
         integration.bindMirrorMetrics { [weak self] in
             self?.existingMirrorRuntime?.metrics
         }
+        /* Installed here, once, for the length of the app: the AppKit drop
+           destination at the shared edge exists whenever edge mode runs, and
+           no longer waits for somebody to open the Mirror page. The scene it
+           resolves against is still Mirror's, and is read WITHOUT
+           constructing it — a missing scene is a named refusal, not an
+           absent destination. */
+        fileTransfer.connection = currentConnection
+        ContinuityFileDrag.configure(
+            edge: continuity.edge, fileTransfer: fileTransfer,
+            scene: { [weak self] in self?.existingMirrorRuntime?.sceneIfKnown })
         if settings.listenAtLaunch {
             startListening()
         }
@@ -373,6 +391,7 @@ final class HostAppState: ObservableObject {
             continuityGuestKey = activeKey
             continuity.sessionDidChange()
         }
+        fileTransfer.connection = connection
         moduleRuntimes.focus(on: connection)
         captureSmokeIfRequested(state)
         /* Re-attached at the 019 integration, when this body moved out of

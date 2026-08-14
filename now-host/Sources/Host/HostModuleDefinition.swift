@@ -18,6 +18,9 @@ struct HostModuleContext {
     let agentCompanions: AgentCompanionModel?
     let logs: LogsModel?
     let continuity: MirrorContinuityController?
+    /// One host-side file lane, app-owned because the Continuity edge seam
+    /// uses it with no Mirror page in the picture.
+    let fileTransfer: MirrorFileTransferModel
     let settings: SettingsModel?
     let onboarding: OnboardingPortal?
     let localNetworkAccess: LocalNetworkAccessController
@@ -40,6 +43,7 @@ struct HostModuleContext {
          agentCompanions: AgentCompanionModel? = nil,
          logs: LogsModel? = nil,
          continuity: MirrorContinuityController? = nil,
+         fileTransfer: MirrorFileTransferModel? = nil,
          settings: SettingsModel? = nil,
          onboarding: OnboardingPortal? = nil,
          localNetworkAccess: LocalNetworkAccessController? = nil,
@@ -64,6 +68,8 @@ struct HostModuleContext {
         self.agentCompanions = agentCompanions
         self.logs = logs
         self.continuity = continuity
+        self.fileTransfer = fileTransfer
+            ?? MirrorFileTransferModel(listener: listener)
         self.settings = settings
         self.onboarding = onboarding
         self.localNetworkAccess = localNetworkAccess

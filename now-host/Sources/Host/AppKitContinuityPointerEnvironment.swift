@@ -22,11 +22,9 @@ final class AppKitContinuityPointerEnvironment:
         init(_ event: NSEvent) { self.event = event }
     }
 
-    private var currentEvent: NSEvent?
     private var monitorGeneration: UInt64 = 0
 
-    func start(_ handler: @escaping @MainActor (HostPointerSample) -> Void)
-        -> AnyObject {
+    func start(_ handler: @escaping SampleHandler) -> AnyObject {
         monitorGeneration &+= 1
         let generation = monitorGeneration
         let monitors = Monitors(generation: generation)
@@ -46,7 +44,7 @@ final class AppKitContinuityPointerEnvironment:
                 guard let self, self.monitorGeneration == generation else {
                     return
                 }
-                self.deliver(sample, sourceEvent: eventBox.event, to: handler)
+                handler(sample, eventBox.event)
             }
         }
         return monitors
@@ -83,7 +81,7 @@ final class AppKitContinuityPointerEnvironment:
     }
 
     func startInputCapture(
-        handler: @escaping @MainActor (HostPointerSample) -> Void,
+        handler: @escaping SampleHandler,
         tapDisabled: @escaping @MainActor (String) -> Void
     ) -> AnyObject? {
         let context = TapContext(
@@ -134,7 +132,11 @@ final class AppKitContinuityPointerEnvironment:
                 if let sample = AppKitContinuityPointerEnvironment.sample(
                     event, type: type, flipHeight: context.flipHeight) {
                     let deliver = context.handler
-                    Task { @MainActor in deliver(sample) }
+                    /* No NSEvent exists on this path — the tap sees
+                       CGEvents, and the CGEvent itself is only valid inside
+                       this callback. The caller is told so rather than
+                       handed a stand-in. */
+                    Task { @MainActor in deliver(sample, nil) }
                 }
                 return nil
             }, userInfo: Unmanaged.passUnretained(context).toOpaque()) else {
@@ -158,12 +160,13 @@ final class AppKitContinuityPointerEnvironment:
     }
 
     private final class TapContext: NSObject {
-        let handler: @MainActor (HostPointerSample) -> Void
+        let handler: @MainActor (HostPointerSample, NSEvent?) -> Void
         let tapDisabled: @MainActor (String) -> Void
         let flipHeight: CGFloat
         var port: CFMachPort?
 
-        init(handler: @escaping @MainActor (HostPointerSample) -> Void,
+        init(handler: @escaping @MainActor (HostPointerSample, NSEvent?)
+                -> Void,
              tapDisabled: @escaping @MainActor (String) -> Void,
              flipHeight: CGFloat) {
             self.handler = handler
@@ -247,30 +250,18 @@ final class AppKitContinuityPointerEnvironment:
         if activeFileEdge === fileEdge { activeFileEdge = nil }
     }
 
-    func beginFileDrag(_ item: HostFileDragItem,
-                       at screenPoint: CGPoint) -> Bool {
+    func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
+                       sourceEvent: NSEvent) -> Bool {
         guard let edge = activeFileEdge else { return false }
         return edge.beginFileDrag(item, at: screenPoint,
-                                  sourceEvent: currentEvent)
+                                  sourceEvent: sourceEvent)
     }
 
     private weak var activeFileEdge: ContinuityFileEdge?
 
-    private func deliver(
-        _ event: NSEvent,
-        to handler: @escaping @MainActor (HostPointerSample) -> Void
-    ) {
-        deliver(Self.sample(event), sourceEvent: event, to: handler)
-    }
-
-    private func deliver(
-        _ sample: HostPointerSample,
-        sourceEvent: NSEvent,
-        to handler: @escaping @MainActor (HostPointerSample) -> Void
-    ) {
-        currentEvent = sourceEvent
-        handler(sample)
-        currentEvent = nil
+    private func deliver(_ event: NSEvent,
+                         to handler: @escaping SampleHandler) {
+        handler(Self.sample(event), event)
     }
 
     nonisolated private static func sample(_ event: NSEvent)
