@@ -400,6 +400,24 @@ stream) and the human confirmed the entry inset ended the click-returns.
   `injected-input-diverges-below-the-api` and a section in
   [docs/mirror-knowledge.md](mirror-knowledge.md).
 
+**2026-08-13 22:38 run — the double-click failure moved above the input
+stack entirely.** The dequeuer trace shows the pair's first down consumed
+by `app=New ` (this application was frontmost) and only the second click
+reaching `app=Find`: the first click of every attempt is being spent as a
+LAYER-ACTIVATION click, exactly as it would be on a physically-driven Mac
+whose Finder is backgrounded. The click stack itself is now provably
+faithful end to end — events complete, when-compression firing (9358
+rewritten to 9306 in the same rows), SimpleText fully usable — so "are
+synthetic clicks too abstract" is answered NO by measurement; the residual
+defect is that this application (and the plane machinery keeping it busy)
+keeps taking the guest's front layer during Continuity. Companion
+measurement, same evening (223137/223323 A/B): the idle-settle spike ON
+removes the rhythmic hitch (97% of applies at <=2-tick cadence,
+human-confirmed smooth); OFF reproduces ~50-72-tick stalls at ~1 s period
+in the application's own pump. Untested pending front-layer discipline:
+double-click with Finder already frontmost (protocol: single-click the
+desktop first, then double-click).
+
 ## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
 
 While the guest owns the pointer, the host now captures key-down, key-up, and
