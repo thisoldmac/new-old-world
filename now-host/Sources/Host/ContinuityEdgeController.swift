@@ -72,8 +72,9 @@ protocol ContinuityPointerEnvironment: AnyObject {
     /// Two physical pixels are enough to DETECT a crossing and far too few
     /// to CATCH one: the returning pointer is already moving, and the drag
     /// must begin over a real view of ours. The surface is widened for the
-    /// length of one handoff only, so the rest of the time the boundary
-    /// pixel pair is all this app takes from whatever is underneath.
+    /// length of one handoff — arming to the end of the drag session it
+    /// starts — so the rest of the time the boundary pixel pair is all this
+    /// app takes from whatever is underneath.
     func setFileEdgeCatching(_ token: AnyObject, _ catching: Bool)
     /// Starts the native drag from a REAL host mouse event. Non-optional on
     /// purpose: AppKit owns a gesture only when it can see the event that
@@ -601,8 +602,11 @@ final class ContinuityEdgeController: ObservableObject {
     ///    crossing sample usually arrives through the consuming tap, which
     ///    has no NSEvent by construction; the physical button is still held,
     ///    so the first real `mouseDragged` after the tap dies is the gesture
-    ///    AppKit can own. The strip widens into a catch surface for that
-    ///    instant so the returning pointer is over a view of ours.
+    ///    AppKit can own. The strip widens into a catch surface BEFORE the
+    ///    tap dies, so the window under the returning pointer is ours and
+    ///    not whatever it is about to inherit the press, and it stays wide
+    ///    until the session ends — narrowing it at the start moved the drag
+    ///    source's own window out from under a live drag.
     private func returnGuestFileToHost(_ item: HostFileDragItem,
                                        from ownership: Ownership,
                                        sourceEvent: NSEvent?) {
