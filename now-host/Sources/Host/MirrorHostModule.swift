@@ -30,6 +30,7 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
                 currentSessionID: { [unowned self] in
                     self.context.agentIntegration?.connectedSessionID()
                 }),
+            continuity: context.continuity,
             localNetworkAccess: context.localNetworkAccess,
             planePolicy: { [unowned self] key in
                 self.model.requestedPlaneIDs(for: key)

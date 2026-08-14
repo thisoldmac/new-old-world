@@ -6,11 +6,15 @@ import SwiftUI
 struct LogsModuleView: View {
     @ObservedObject var model: LogsModel
     @ObservedObject var log: HostLog
+    @ObservedObject var continuity: MirrorContinuityController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
                 .padding(28)
+            ContinuityDiagnosticsView(controller: continuity)
+                .padding(.horizontal, 28)
+                .padding(.bottom, 18)
             Divider()
             scrollback
         }
@@ -85,5 +89,34 @@ struct LogsModuleView: View {
 
     private var inkColor: Color {
         model.invert ? .white : .primary
+    }
+}
+
+/// Advanced logging controls belong beside the output they produce. This
+/// view intentionally receives the app-owned controller rather than reaching
+/// through the Mirror module and constructing its scene runtime as a side
+/// effect of opening Logs.
+private struct ContinuityDiagnosticsView: View {
+    @ObservedObject var controller: MirrorContinuityController
+
+    var body: some View {
+        DisclosureGroup("Advanced continuity diagnostics") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(ContinuityOptionCatalog.options(in: .diagnostic)) {
+                    option in
+                    Toggle(option.label, isOn: Binding(
+                        get: { controller[keyPath: option.keyPath] },
+                        set: { controller[keyPath: option.keyPath] = $0 }))
+                        .help(option.detail)
+                }
+                Text("These settings re-arm an active continuity session. "
+                     + "Deep click logging can be high volume and remains "
+                     + "off by default.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 8)
+        }
     }
 }

@@ -17,6 +17,7 @@ struct HostModuleContext {
     let agentActivity: AgentActivityModel?
     let agentCompanions: AgentCompanionModel?
     let logs: LogsModel?
+    let continuity: MirrorContinuityController?
     let settings: SettingsModel?
     let onboarding: OnboardingPortal?
     let localNetworkAccess: LocalNetworkAccessController
@@ -38,6 +39,7 @@ struct HostModuleContext {
          agentActivity: AgentActivityModel? = nil,
          agentCompanions: AgentCompanionModel? = nil,
          logs: LogsModel? = nil,
+         continuity: MirrorContinuityController? = nil,
          settings: SettingsModel? = nil,
          onboarding: OnboardingPortal? = nil,
          localNetworkAccess: LocalNetworkAccessController? = nil,
@@ -61,6 +63,7 @@ struct HostModuleContext {
         self.agentActivity = agentActivity
         self.agentCompanions = agentCompanions
         self.logs = logs
+        self.continuity = continuity
         self.settings = settings
         self.onboarding = onboarding
         self.localNetworkAccess = localNetworkAccess

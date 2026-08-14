@@ -67,6 +67,10 @@ final class HostAppState: ObservableObject {
     /// module that needs to prove a direct path to the guest.
     let localNetworkAccess: LocalNetworkAccessController
     let listener: GuestListener
+    /// One continuity transport and preference owner, shared by Mirror's
+    /// product controls and Logs' diagnostic controls. Keeping it here avoids
+    /// constructing the Mirror runtime merely to change a logging probe.
+    let continuity: MirrorContinuityController
     let mirrorEngines: MirrorStateEngineRegistry
     let agentIntegration: AgentIntegrationHostAdapter
     /// Who has been driving this host over the local agent endpoint. Fed by
@@ -184,6 +188,7 @@ final class HostAppState: ObservableObject {
             agentActivity: agentActivity,
             agentCompanions: agentCompanions,
             logs: logs,
+            continuity: continuity,
             settings: settings,
             onboarding: onboarding,
             localNetworkAccess: localNetworkAccess,
@@ -237,6 +242,9 @@ final class HostAppState: ObservableObject {
                memory-only default and cannot write into a real desk's
                book of Macs. */
             registry: GuestRegistry(defaults: defaults))
+        continuity = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            localNetworkAccess: localNetworkAccess)
         artifactApprovals = try? AgentIntegrationArtifactApprovalStore()
         let integration = AgentIntegrationHostAdapter(
             listener: listener,

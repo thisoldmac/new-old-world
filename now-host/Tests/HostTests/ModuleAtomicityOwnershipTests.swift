@@ -484,13 +484,18 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(false, forKey: "logsPersistsToDisk")
         let logs = LogsModel(log: .shared, defaults: defaults)
+        let continuity = MirrorContinuityController(
+            listener: listener, defaults: defaults)
         let runtime = try LogsHostModuleRuntime(context: HostModuleContext(
             listener: listener,
             currentConnection: { .disconnected },
-            logs: logs))
+            logs: logs,
+            continuity: continuity))
 
         XCTAssertTrue(runtime.model === logs,
                       "the module must reference the eager logging service")
+        XCTAssertTrue(runtime.continuity === continuity,
+                      "Logs must share the app continuity service")
     }
 
     func testLogsPageOwnershipDidNotRemainAtEitherCompositionRoot() throws {

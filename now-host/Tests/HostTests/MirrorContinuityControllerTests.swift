@@ -882,6 +882,20 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(rig.arm.settleIdleCursor, true)
     }
 
+    func testOptionCatalogSeparatesProductMechanismsFromDiagnostics() {
+        XCTAssertEqual(
+            ContinuityOptionCatalog.options(in: .product).map(\.id),
+            [.settleSyntheticDevice, .wideDoubleTime, .compressClickWhen,
+             .interruptPress, .settleIdleCursor])
+        XCTAssertEqual(
+            ContinuityOptionCatalog.options(in: .diagnostic).map(\.id),
+            [.fastPump, .deepClickLog])
+        XCTAssertTrue(ContinuityOptionCatalog.options(in: .product)
+            .allSatisfy(\.defaultEnabled))
+        XCTAssertTrue(ContinuityOptionCatalog.options(in: .diagnostic)
+            .allSatisfy { !$0.defaultEnabled })
+    }
+
     func testClicksFallThroughUntilTheRawLaneIsActive() async throws {
         let rig = try await makeArmingRig()
         XCTAssertFalse(rig.controller.primaryDown(at: .init(x: 45, y: 55)))

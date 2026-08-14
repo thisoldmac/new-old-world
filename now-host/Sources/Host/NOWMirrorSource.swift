@@ -448,6 +448,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     init(listener: GuestListener,
          engineRegistry: MirrorStateEngineRegistry? = nil,
          act: AgentIntegrationActControl,
+         continuity: MirrorContinuityController? = nil,
          localNetworkAccess: LocalNetworkAccessController? = nil,
          interval: TimeInterval = 0.75,
          planePolicy: @escaping @MainActor (GuestKey) -> Set<MirrorPlaneID> = {
@@ -470,7 +471,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
         self.localNetworkAccess = localNetworkAccess
-        self.continuity = MirrorContinuityController(
+        self.continuity = continuity ?? MirrorContinuityController(
             listener: listener, localNetworkAccess: localNetworkAccess)
         self.workScheduler = listener.workScheduler
         self.hostFinder = hostFinderDefaults.map {
@@ -491,7 +492,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         self.finderRefreshOverride = finderRefreshOverride
         self.visibilityRefreshOverride = visibilityRefreshOverride
         self.lifecycleDidChange = lifecycleDidChange
-        self.continuitySubscription = continuity.objectWillChange.sink {
+        self.continuitySubscription = self.continuity.objectWillChange.sink {
             [weak self] _ in self?.objectWillChange.send()
         }
         self.hostFinder.onChange = { [weak self] in

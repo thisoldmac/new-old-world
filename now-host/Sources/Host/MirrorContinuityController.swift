@@ -4,6 +4,96 @@ import MirrorKit
 import MirrorKitUI
 import Network
 
+enum ContinuityOptionTier: Sendable {
+    case product
+    case diagnostic
+}
+
+enum ContinuityOptionID: String, CaseIterable, Sendable {
+    case fastPump
+    case settleSyntheticDevice
+    case wideDoubleTime
+    case compressClickWhen
+    case interruptPress
+    case deepClickLog
+    case settleIdleCursor
+}
+
+struct ContinuityOptionDescriptor: Identifiable {
+    let id: ContinuityOptionID
+    let label: String
+    let detail: String
+    let tier: ContinuityOptionTier
+    let defaultEnabled: Bool
+    let preferenceSuffix: String
+    let rearmReason: String
+    let keyPath: ReferenceWritableKeyPath<MirrorContinuityController, Bool>
+}
+
+/// The one classification and persistence table for every guest-arm option.
+/// Contract fields remain accretive, but retired fields never enter this list.
+@MainActor
+enum ContinuityOptionCatalog {
+    static let all: [ContinuityOptionDescriptor] = [
+        .init(id: .fastPump, label: "Fast Pump",
+              detail: "Ask the guest to yield every tick while diagnosing scheduling.",
+              tier: .diagnostic, defaultEnabled: false,
+              preferenceSuffix: "fastPump", rearmReason: "Fast Pump changed",
+              keyPath: \MirrorContinuityController.fastPump),
+        .init(id: .settleSyntheticDevice,
+              label: "Settle synthetic pointer state",
+              detail: "Keep the guest's pointer manager coherent after host motion.",
+              tier: .product, defaultEnabled: true,
+              preferenceSuffix: "settleSyntheticDevice",
+              rearmReason: "synthetic-device settlement changed",
+              keyPath: \MirrorContinuityController.settleSyntheticDevice),
+        .init(id: .wideDoubleTime,
+              label: "Preserve the double-click window",
+              detail: "Allow for cooperative scheduling delays between click edges.",
+              tier: .product, defaultEnabled: true,
+              preferenceSuffix: "wideDoubleTime",
+              rearmReason: "double-click window changed",
+              keyPath: \MirrorContinuityController.wideDoubleTime),
+        .init(id: .compressClickWhen,
+              label: "Preserve Finder click timing",
+              detail: "Keep synthetic click timestamps inside Finder's private window.",
+              tier: .product, defaultEnabled: true,
+              preferenceSuffix: "compressClickWhen",
+              rearmReason: "click-when compression changed",
+              keyPath: \MirrorContinuityController.compressClickWhen),
+        .init(id: .interruptPress,
+              label: "Keep double-click delivery responsive",
+              detail: "Deliver a deferred second press while the guest is busy.",
+              tier: .product, defaultEnabled: true,
+              preferenceSuffix: "interruptPress",
+              rearmReason: "interrupt press delivery changed",
+              keyPath: \MirrorContinuityController.interruptPress),
+        .init(id: .deepClickLog, label: "Deep click logging",
+              detail: "Record click timing and guest low-memory state for diagnosis.",
+              tier: .diagnostic, defaultEnabled: false,
+              preferenceSuffix: "deepClickLog",
+              rearmReason: "deep click probe changed",
+              keyPath: \MirrorContinuityController.deepClickLog),
+        .init(id: .settleIdleCursor,
+              label: "Keep guest cursor motion smooth",
+              detail: "Settle idle motion even while a guest process starves its pump.",
+              tier: .product, defaultEnabled: true,
+              preferenceSuffix: "settleIdleCursor",
+              rearmReason: "idle cursor settlement changed",
+              keyPath: \MirrorContinuityController.settleIdleCursor),
+    ]
+
+    static func descriptor(_ id: ContinuityOptionID)
+        -> ContinuityOptionDescriptor {
+        all.first { $0.id == id }!
+    }
+
+    static func options(in tier: ContinuityOptionTier)
+        -> [ContinuityOptionDescriptor] {
+        all.filter { $0.tier == tier }
+    }
+}
+
 /// Owns the optional raw-pointer lane. TCP grants authority; UDP carries
 /// replaceable latest state and acknowledgements. Nothing here is reachable
 /// from the command or agent surfaces.
@@ -68,28 +158,13 @@ final class MirrorContinuityController: ObservableObject,
     }
     @Published var fastPump = false {
         didSet {
-            guard fastPump != oldValue else { return }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(fastPump, forKey: fastPumpKey(for: machine))
-            }
-            if phase != .idle {
-                rearmAfterConfigurationChange(reason: "Fast Pump changed")
-            }
+            optionDidChange(.fastPump, from: oldValue, to: fastPump)
         }
     }
     @Published var settleSyntheticDevice = true {
         didSet {
-            guard settleSyntheticDevice != oldValue else { return }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(settleSyntheticDevice,
-                             forKey: settleSyntheticDeviceKey(for: machine))
-            }
-            if phase != .idle {
-                rearmAfterConfigurationChange(
-                    reason: "synthetic-device settlement changed")
-            }
+            optionDidChange(.settleSyntheticDevice, from: oldValue,
+                            to: settleSyntheticDevice)
         }
     }
     /* Default on: the guest cannot recognize a double click when cooperative
@@ -98,16 +173,8 @@ final class MirrorContinuityController: ObservableObject,
        A/B against a stock window. */
     @Published var wideDoubleTime = true {
         didSet {
-            guard wideDoubleTime != oldValue else { return }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(wideDoubleTime,
-                             forKey: wideDoubleTimeKey(for: machine))
-            }
-            if phase != .idle {
-                rearmAfterConfigurationChange(
-                    reason: "double-click window changed")
-            }
+            optionDidChange(.wideDoubleTime, from: oldValue,
+                            to: wideDoubleTime)
         }
     }
     /* Default on: the Finder pairs clicks against a private copy of the
@@ -117,16 +184,8 @@ final class MirrorContinuityController: ObservableObject,
        click `when`s at the jGNE boundary instead. */
     @Published var compressClickWhen = true {
         didSet {
-            guard compressClickWhen != oldValue else { return }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(compressClickWhen,
-                             forKey: compressClickWhenKey(for: machine))
-            }
-            if phase != .idle {
-                rearmAfterConfigurationChange(
-                    reason: "click-when compression changed")
-            }
+            optionDidChange(.compressClickWhen, from: oldValue,
+                            to: compressClickWhen)
         }
     }
     /* Default on: the resident's
@@ -135,16 +194,8 @@ final class MirrorContinuityController: ObservableObject,
        task-time route can reach the queue while it processes click one. */
     @Published var interruptPress = true {
         didSet {
-            guard interruptPress != oldValue else { return }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(interruptPress,
-                             forKey: interruptPressKey(for: machine))
-            }
-            if phase != .idle {
-                rearmAfterConfigurationChange(
-                    reason: "interrupt press delivery changed")
-            }
+            optionDidChange(.interruptPress, from: oldValue,
+                            to: interruptPress)
         }
     }
     /* Diagnostic spike, default off, logging only: the resident records
@@ -153,32 +204,15 @@ final class MirrorContinuityController: ObservableObject,
        comparison clicks land in the same uploadable log. */
     @Published var deepClickLog = false {
         didSet {
-            guard deepClickLog != oldValue else { return }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(deepClickLog,
-                             forKey: deepClickLogKey(for: machine))
-            }
-            if phase != .idle {
-                rearmAfterConfigurationChange(
-                    reason: "deep click probe changed")
-            }
+            optionDidChange(.deepClickLog, from: oldValue, to: deepClickLog)
         }
     }
     /* Default on: extend the settle machinery to idle motion so a
        starved pump's frames are drawn from whichever process holds the CPU. */
     @Published var settleIdleCursor = true {
         didSet {
-            guard settleIdleCursor != oldValue else { return }
-            if !loadingSettings,
-               let machine = listener.activeContinuityTarget?.key.machine {
-                defaults.set(settleIdleCursor,
-                             forKey: settleIdleCursorKey(for: machine))
-            }
-            if phase != .idle {
-                rearmAfterConfigurationChange(
-                    reason: "idle cursor settlement changed")
-            }
+            optionDidChange(.settleIdleCursor, from: oldValue,
+                            to: settleIdleCursor)
         }
     }
     @Published var keyboardForwardingEnabled = true {
@@ -1265,26 +1299,11 @@ final class MirrorContinuityController: ObservableObject,
         loadingSettings = true
         requestedHz = rate
         autoReconnect = defaults.bool(forKey: reconnectKey(for: machine))
-        fastPump = defaults.bool(forKey: fastPumpKey(for: machine))
-        /* Default-true settings use the object-nil pattern so a machine the
-           human explicitly opted out of stays opted out. */
-        let settleKey = settleSyntheticDeviceKey(for: machine)
-        settleSyntheticDevice = defaults.object(forKey: settleKey) == nil
-            ? true : defaults.bool(forKey: settleKey)
-        let wideKey = wideDoubleTimeKey(for: machine)
-        wideDoubleTime = defaults.object(forKey: wideKey) == nil
-            ? true : defaults.bool(forKey: wideKey)
-        let compressKey = compressClickWhenKey(for: machine)
-        compressClickWhen = defaults.object(forKey: compressKey) == nil
-            ? true : defaults.bool(forKey: compressKey)
-        let interruptKey = interruptPressKey(for: machine)
-        interruptPress = defaults.object(forKey: interruptKey) == nil
-            ? true : defaults.bool(forKey: interruptKey)
-        deepClickLog = defaults.bool(
-            forKey: deepClickLogKey(for: machine))
-        let idleCursorKey = settleIdleCursorKey(for: machine)
-        settleIdleCursor = defaults.object(forKey: idleCursorKey) == nil
-            ? true : defaults.bool(forKey: idleCursorKey)
+        for option in ContinuityOptionCatalog.all {
+            let key = optionKey(option, for: machine)
+            self[keyPath: option.keyPath] = defaults.object(forKey: key) == nil
+                ? option.defaultEnabled : defaults.bool(forKey: key)
+        }
         let keyboardKey = keyboardForwardingKey(for: machine)
         keyboardForwardingEnabled = defaults.object(forKey: keyboardKey) == nil
             ? true : defaults.bool(forKey: keyboardKey)
@@ -1315,32 +1334,22 @@ final class MirrorContinuityController: ObservableObject,
         "mirror.continuity.autoReconnect.\(machine.slug)"
     }
 
-    private func fastPumpKey(for machine: GuestID) -> String {
-        "mirror.continuity.fastPump.\(machine.slug)"
+    private func optionDidChange(_ id: ContinuityOptionID,
+                                 from oldValue: Bool, to newValue: Bool) {
+        guard newValue != oldValue else { return }
+        let option = ContinuityOptionCatalog.descriptor(id)
+        if !loadingSettings,
+           let machine = listener.activeContinuityTarget?.key.machine {
+            defaults.set(newValue, forKey: optionKey(option, for: machine))
+        }
+        if phase != .idle {
+            rearmAfterConfigurationChange(reason: option.rearmReason)
+        }
     }
 
-    private func settleSyntheticDeviceKey(for machine: GuestID) -> String {
-        "mirror.continuity.settleSyntheticDevice.\(machine.slug)"
-    }
-
-    private func wideDoubleTimeKey(for machine: GuestID) -> String {
-        "mirror.continuity.wideDoubleTime.\(machine.slug)"
-    }
-
-    private func settleIdleCursorKey(for machine: GuestID) -> String {
-        "mirror.continuity.settleIdleCursor.\(machine.slug)"
-    }
-
-    private func compressClickWhenKey(for machine: GuestID) -> String {
-        "mirror.continuity.compressClickWhen.\(machine.slug)"
-    }
-
-    private func interruptPressKey(for machine: GuestID) -> String {
-        "mirror.continuity.interruptPress.\(machine.slug)"
-    }
-
-    private func deepClickLogKey(for machine: GuestID) -> String {
-        "mirror.continuity.deepClickLog.\(machine.slug)"
+    private func optionKey(_ option: ContinuityOptionDescriptor,
+                           for machine: GuestID) -> String {
+        "mirror.continuity.\(option.preferenceSuffix).\(machine.slug)"
     }
 
     private func keyboardForwardingKey(for machine: GuestID) -> String {

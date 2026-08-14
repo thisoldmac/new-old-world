@@ -366,36 +366,23 @@ private struct ContinuityControlCard: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Toggle("Fast Pump (experimental)",
-                       isOn: $controller.fastPump)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Settle synthetic device (diagnostic)",
-                       isOn: $controller.settleSyntheticDevice)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Widen double-click window while connected",
-                       isOn: $controller.wideDoubleTime)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Compress click timing for private windows",
-                       isOn: $controller.compressClickWhen)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Keep double-click delivery responsive",
-                       isOn: $controller.interruptPress)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Deep click probe (diagnostic, logs every click)",
-                       isOn: $controller.deepClickLog)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
-                Toggle("Keep guest cursor motion smooth",
-                       isOn: $controller.settleIdleCursor)
-                    .disabled(!controller.isEnabled || !mirrorRunning)
+                ForEach(ContinuityOptionCatalog.options(in: .product)) {
+                    option in
+                    Toggle(option.label, isOn: Binding(
+                        get: { controller[keyPath: option.keyPath] },
+                        set: { controller[keyPath: option.keyPath] = $0 }))
+                        .help(option.detail)
+                        .disabled(!controller.isEnabled || !mirrorRunning)
+                }
                 Text(controller.status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Primary clicks and held motion follow the pointer into "
                      + "the guest. Guest mouse input immediately returns control "
-                     + "to that Mac. Fast Pump asks the guest to yield every "
-                     + "tick. The continuity timing controls preserve responsive "
-                     + "clicks and smooth motion when the guest is busy.")
+                     + "to that Mac. The continuity mechanisms preserve "
+                     + "responsive clicks and smooth motion when the guest "
+                     + "is busy. Diagnostic probes live in Logs.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
