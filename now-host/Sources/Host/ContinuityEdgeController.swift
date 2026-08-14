@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreGraphics
 import Foundation
 import MirrorKit
 import MirrorKitUI
@@ -41,6 +42,21 @@ protocol ContinuityPointerEnvironment: AnyObject {
     func hideCursor(on displayID: UInt32)
     func showCursor(on displayID: UInt32)
     func moveCursor(on displayID: UInt32, to point: CGPoint)
+    /// Detaches the on-screen cursor from the mouse hardware, or re-attaches
+    /// it. Deltas keep arriving either way; only the drawn cursor stops
+    /// moving. Returns false when the window server refused, which the
+    /// caller must report — a cursor left detached is a mouse the human
+    /// cannot use.
+    func setCursorMovementAssociated(_ associated: Bool) -> Bool
+    /// A *consuming* capture of host mouse input, alive only while the guest
+    /// owns the pointer. Returns nil when the platform refused (no
+    /// Accessibility permission); the caller degrades to the observe-only
+    /// monitor rather than failing.
+    func startInputCapture(
+        handler: @escaping @MainActor (HostPointerSample) -> Void,
+        tapDisabled: @escaping @MainActor (String) -> Void
+    ) -> AnyObject?
+    func stopInputCapture(_ token: AnyObject)
     func showFileEdge(_ edge: ContinuitySharedEdge,
                       callbacks: ContinuityFileEdge.Callbacks) -> AnyObject
     func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
@@ -119,6 +135,160 @@ private final class AppKitContinuityPointerEnvironment:
 
     func moveCursor(on displayID: UInt32, to point: CGPoint) {
         CGDisplayMoveCursorToPoint(CGDirectDisplayID(displayID), point)
+    }
+
+    func setCursorMovementAssociated(_ associated: Bool) -> Bool {
+        /* The association is a property of this process's window-server
+           connection, so a crash restores it. A live-but-wedged app is the
+           case the caller's teardown paths exist for. */
+        CGAssociateMouseAndMouseCursorPosition(associated ? 1 : 0) == .success
+    }
+
+    func startInputCapture(
+        handler: @escaping @MainActor (HostPointerSample) -> Void,
+        tapDisabled: @escaping @MainActor (String) -> Void
+    ) -> AnyObject? {
+        let context = TapContext(
+            handler: handler, tapDisabled: tapDisabled,
+            /* Sampled once here rather than read per event: NSScreen is main
+               actor state and the callback is a bare C function. The value
+               only orients the audit trail — ownership is driven by deltas —
+               so a rearrangement mid-pass costs a log line, not a click. */
+            flipHeight: NSScreen.screens.first?.frame.maxY ?? 0)
+        let types: [CGEventType] = [
+            .mouseMoved, .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+            .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+            .otherMouseDown, .otherMouseUp, .otherMouseDragged, .scrollWheel,
+        ]
+        /* Deliberately no keyDown/keyUp: the keyboard already has its own
+           consuming tap, and that tap is what lets the escape chord end
+           ownership. A second head-inserted tap would sit in front of it and
+           could swallow the chord before the handler that acts on it. */
+        let mask = types.reduce(UInt64(0)) { $0 | (1 << $1.rawValue) }
+        guard let port = CGEvent.tapCreate(
+            tap: .cgSessionEventTap, place: .headInsertEventTap,
+            options: .defaultTap, eventsOfInterest: CGEventMask(mask),
+            callback: { _, type, event, refcon in
+                guard let refcon else {
+                    return Unmanaged.passUnretained(event)
+                }
+                let context = Unmanaged<TapContext>.fromOpaque(refcon)
+                    .takeUnretainedValue()
+                if type == .tapDisabledByTimeout
+                    || type == .tapDisabledByUserInput {
+                    if let port = context.port {
+                        CGEvent.tapEnable(tap: port, enable: true)
+                    }
+                    let reason = type == .tapDisabledByTimeout
+                        ? "timeout" : "user input"
+                    let notify = context.tapDisabled
+                    Task { @MainActor in notify(reason) }
+                    return Unmanaged.passUnretained(event)
+                }
+                /* Swallowing has to be decided synchronously — the tap's
+                   watchdog covers this callback, not the main-actor hop.
+                   Everything in the mask belongs to the guest for the
+                   duration, so it is consumed whether or not it maps to a
+                   sample the guest can be told about (scroll, extra
+                   buttons): a classic Mac has one button and no wheel, and
+                   letting those through is exactly the host click leak this
+                   tap exists to close. */
+                if let sample = AppKitContinuityPointerEnvironment.sample(
+                    event, type: type, flipHeight: context.flipHeight) {
+                    let deliver = context.handler
+                    Task { @MainActor in deliver(sample) }
+                }
+                return nil
+            }, userInfo: Unmanaged.passUnretained(context).toOpaque()) else {
+            return nil
+        }
+        context.port = port
+        guard let source = CFMachPortCreateRunLoopSource(nil, port, 0) else {
+            CFMachPortInvalidate(port)
+            return nil
+        }
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: port, enable: true)
+        return TapToken(port: port, source: source, context: context)
+    }
+
+    func stopInputCapture(_ token: AnyObject) {
+        guard let token = token as? TapToken else { return }
+        CGEvent.tapEnable(tap: token.port, enable: false)
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), token.source, .commonModes)
+        CFMachPortInvalidate(token.port)
+    }
+
+    private final class TapContext: NSObject {
+        let handler: @MainActor (HostPointerSample) -> Void
+        let tapDisabled: @MainActor (String) -> Void
+        let flipHeight: CGFloat
+        var port: CFMachPort?
+
+        init(handler: @escaping @MainActor (HostPointerSample) -> Void,
+             tapDisabled: @escaping @MainActor (String) -> Void,
+             flipHeight: CGFloat) {
+            self.handler = handler
+            self.tapDisabled = tapDisabled
+            self.flipHeight = flipHeight
+        }
+    }
+
+    private final class TapToken: NSObject {
+        let port: CFMachPort
+        let source: CFRunLoopSource
+        let context: TapContext
+
+        init(port: CFMachPort, source: CFRunLoopSource, context: TapContext) {
+            self.port = port
+            self.source = source
+            self.context = context
+        }
+    }
+
+    nonisolated private static func sample(
+        _ event: CGEvent, type: CGEventType, flipHeight: CGFloat
+    ) -> HostPointerSample? {
+        let kind: HostPointerSample.Kind
+        let buttonsDown: Bool
+        switch type {
+        case .leftMouseDown:
+            kind = .primaryDown
+            buttonsDown = true
+        case .leftMouseUp:
+            kind = .primaryUp
+            buttonsDown = false
+        case .leftMouseDragged:
+            kind = .moved
+            buttonsDown = true
+        case .mouseMoved:
+            kind = .moved
+            buttonsDown = false
+        case .rightMouseDragged, .otherMouseDragged:
+            /* The pointer really is moving, so the guest must follow — but
+               only the primary button drags, on a machine that has one. */
+            kind = .moved
+            buttonsDown = false
+        default:
+            return nil
+        }
+        let location = event.location
+        return HostPointerSample(
+            kind: kind,
+            /* CGEvent locations are top-left origin against the primary
+               display; the rest of this file is AppKit's bottom-left space. */
+            location: CGPoint(x: location.x, y: flipHeight - location.y),
+            /* Same device orientation as NSEvent.deltaY — positive is down —
+               so it is inverted once here, as the monitor adapter does. */
+            delta: CGPoint(
+                x: event.getDoubleValueField(.mouseEventDeltaX),
+                y: -event.getDoubleValueField(.mouseEventDeltaY)),
+            buttonsDown: buttonsDown,
+            /* Captured before the main-actor hop, on the same clock
+               NSEvent.timestamp reports, so click timing survives the queue. */
+            eventUptime: ProcessInfo.processInfo.systemUptime,
+            clickCount: Int(
+                event.getIntegerValueField(.mouseEventClickState)))
     }
 
     func showFileEdge(_ edge: ContinuitySharedEdge,
@@ -240,6 +410,8 @@ final class ContinuityEdgeController: ObservableObject {
     private var pending: Ownership?
     private var ownership: Ownership?
     private var cursorHiddenOn: UInt32?
+    private var inputCapture: AnyObject?
+    private var cursorDissociated = false
     private var keyboardMonitor: AnyObject?
     private var pendingCursorWarp: PendingCursorWarp?
     private var suppressedCursorWarps: UInt32 = 0
@@ -564,7 +736,66 @@ final class ContinuityEdgeController: ObservableObject {
         guard cursorHiddenOn == nil else { return }
         environment.hideCursor(on: id)
         cursorHiddenOn = id
+        beginHostInputCapture()
         pinHostCursor(for: ownership)
+    }
+
+    /// Takes the host's mouse away from the host for the length of the pass:
+    /// the cursor stops following the hardware, and the events are consumed
+    /// rather than merely observed. Measured on metal 2026-08-13, the
+    /// observe-only monitor left every guest click landing a second time as a
+    /// real host click at the pinned point.
+    private func beginHostInputCapture() {
+        if !cursorDissociated {
+            /* The pin warps below stay in place but go inert: with the cursor
+               detached there is nothing for them to drag, and nothing comes
+               back as a phantom delta for the echo filter to miss under
+               load. */
+            if environment.setCursorMovementAssociated(false) {
+                cursorDissociated = true
+            } else {
+                audit(.warn, "could not detach the host cursor from the "
+                    + "mouse; warp-echo suppression is carrying this pass")
+            }
+        }
+        guard inputCapture == nil else { return }
+        inputCapture = environment.startInputCapture(
+            handler: { [weak self] sample in
+                /* The tap hops to the main actor, so a sample can outlive the
+                   pass that captured it. */
+                guard let self, self.state == .active else { return }
+                self.received(sample)
+            },
+            tapDisabled: { [weak self] reason in
+                self?.audit(.warn, "pointer event tap was disabled by "
+                    + "\(reason); re-enabled immediately")
+            })
+        if inputCapture == nil {
+            /* Degraded, not broken: the observe-only monitor still drives the
+               guest. Name the consequence, because a leak nobody can see is
+               how this one survived to be measured on metal. */
+            audit(.error, "could not capture host input (Accessibility "
+                + "permission); host clicks will also reach host apps")
+            status = "Pointer is on the guest display; host clicks also "
+                + "reach this Mac without Accessibility permission"
+        }
+    }
+
+    private func endHostInputCapture() {
+        if let inputCapture { environment.stopInputCapture(inputCapture) }
+        inputCapture = nil
+    }
+
+    private func reassociateHostCursor() {
+        guard cursorDissociated else { return }
+        if environment.setCursorMovementAssociated(true) {
+            cursorDissociated = false
+        } else {
+            /* Leave the flag set so the next exit tries again: the worst
+               failure this whole change can produce is a mouse the human
+               cannot move. */
+            audit(.error, "could not re-attach the host cursor to the mouse")
+        }
     }
 
     private func pinHostCursor(for ownership: Ownership) {
@@ -575,21 +806,31 @@ final class ContinuityEdgeController: ObservableObject {
         environment.moveCursor(on: ownership.edge.host.id, to: point)
     }
 
+    /// The single funnel every ownership exit passes through. Input capture
+    /// and cursor re-association are torn down OUTSIDE the hidden-cursor
+    /// guard on purpose: a host file drag arms neither, and an exit that
+    /// skipped the teardown because nothing was hidden would leave the mouse
+    /// detached.
     private func restoreHostCursor(from ownership: Ownership?) {
-        guard let id = cursorHiddenOn else { return }
-        if let ownership {
-            let hostPoint = ContinuityDisplayGeometry.hostReturnPoint(
-                for: ownership.guestPoint, edge: ownership.edge,
-                guestFrame: layout.guestFrame, scale: layout.guestScale)
-            let host = ownership.edge.host.frame
-            expectCursorWarp(to: hostPoint)
-            environment.moveCursor(
-                on: ownership.edge.host.id,
-                to: CGPoint(x: hostPoint.x - host.minX,
-                            y: host.maxY - hostPoint.y))
+        endHostInputCapture()
+        if let id = cursorHiddenOn {
+            if let ownership {
+                let hostPoint = ContinuityDisplayGeometry.hostReturnPoint(
+                    for: ownership.guestPoint, edge: ownership.edge,
+                    guestFrame: layout.guestFrame, scale: layout.guestScale)
+                let host = ownership.edge.host.frame
+                expectCursorWarp(to: hostPoint)
+                environment.moveCursor(
+                    on: ownership.edge.host.id,
+                    to: CGPoint(x: hostPoint.x - host.minX,
+                                y: host.maxY - hostPoint.y))
+            }
+            environment.showCursor(on: id)
+            cursorHiddenOn = nil
         }
-        environment.showCursor(on: id)
-        cursorHiddenOn = nil
+        /* Last, so the return warp above lands while the cursor is still
+           detached and cannot echo back as motion. */
+        reassociateHostCursor()
     }
 
     private func expectCursorWarp(to point: CGPoint) {
@@ -698,9 +939,15 @@ final class ContinuityEdgeController: ObservableObject {
     deinit {
         MainActor.assumeIsolated {
             if let monitor { environment.stop(monitor) }
+            if let inputCapture { environment.stopInputCapture(inputCapture) }
             if let keyboardMonitor { keyboardEnvironment.stop(keyboardMonitor) }
             if let fileEdge { environment.hideFileEdge(fileEdge) }
             if let id = cursorHiddenOn { environment.showCursor(on: id) }
+            /* The last chance to give the mouse back, and unlike the audited
+               paths above there is nobody left to report a failure to. */
+            if cursorDissociated {
+                _ = environment.setCursorMovementAssociated(true)
+            }
         }
     }
 }

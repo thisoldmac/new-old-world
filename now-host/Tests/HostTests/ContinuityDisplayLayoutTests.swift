@@ -535,6 +535,13 @@ private extension ContinuityDisplayLayoutTests {
         var moves: [(displayID: UInt32, point: CGPoint)] = []
         var fileCallbacks: ContinuityFileEdge.Callbacks?
         var fileDrags: [(item: HostFileDragItem, point: CGPoint)] = []
+        var associationChanges: [Bool] = []
+        var captureStarts = 0
+        var captureStops = 0
+        var captureHandler: (@MainActor (HostPointerSample) -> Void)?
+        var captureTapDisabled: (@MainActor (String) -> Void)?
+        /// Set false to stand in for a Mac without Accessibility permission.
+        var captureAvailable = true
 
         func start(_ handler: @escaping @MainActor (HostPointerSample) -> Void)
             -> AnyObject {
@@ -546,6 +553,29 @@ private extension ContinuityDisplayLayoutTests {
         func showCursor(on displayID: UInt32) { shown.append(displayID) }
         func moveCursor(on displayID: UInt32, to point: CGPoint) {
             moves.append((displayID, point))
+        }
+        func setCursorMovementAssociated(_ associated: Bool) -> Bool {
+            associationChanges.append(associated)
+            return true
+        }
+        func startInputCapture(
+            handler: @escaping @MainActor (HostPointerSample) -> Void,
+            tapDisabled: @escaping @MainActor (String) -> Void
+        ) -> AnyObject? {
+            guard captureAvailable else { return nil }
+            captureStarts += 1
+            captureHandler = handler
+            captureTapDisabled = tapDisabled
+            return Token()
+        }
+        func stopInputCapture(_ token: AnyObject) {
+            _ = token
+            captureStops += 1
+            captureHandler = nil
+        }
+        /// Delivers through the consuming tap rather than the monitor.
+        func emitCaptured(_ sample: HostPointerSample) {
+            captureHandler?(sample)
         }
         func showFileEdge(_ edge: ContinuitySharedEdge,
                           callbacks: ContinuityFileEdge.Callbacks)
