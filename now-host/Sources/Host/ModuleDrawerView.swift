@@ -17,46 +17,46 @@ struct ModuleDrawerView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            Spacer(minLength: 0)
-            Button { isPresented.toggle() } label: {
-                HStack(spacing: 6) {
+        Button { isPresented.toggle() } label: {
+            HStack(spacing: 6) {
+                if collapsed {
                     Image(systemName: "archivebox")
-                    if !collapsed {
-                        Text("Drawer")
-                            .font(.caption.weight(.medium))
-                    }
-                    if summary.moduleCount > 0 {
-                        Text(String(summary.moduleCount))
-                            .font(.caption2.monospacedDigit().weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .frame(minHeight: 16)
-                            .background(Capsule().fill(Color.accentColor))
-                            .accessibilityLabel(
-                                "\(summary.moduleCount) modules in drawer")
-                    }
-                    if summary.containsNetworkShelf {
-                        DrawerConnectionStatusDot(status: status)
-                    }
+                } else {
+                    Label("Drawer", systemImage: "archivebox")
+                        .font(.caption.weight(.medium))
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 8)
-                .frame(minHeight: 26)
-                .contentShape(Rectangle())
+                if summary.moduleCount > 0 {
+                    Text(String(summary.moduleCount))
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .frame(minHeight: 18)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                        .accessibilityLabel(
+                            "\(summary.moduleCount) modules in drawer")
+                }
+                if summary.containsNetworkShelf {
+                    DrawerConnectionStatusDot(status: status)
+                }
             }
-            .buttonStyle(.plain)
-            .help("Modules Drawer")
-            .overlay(SidebarNativeDragSurface(
-                payload: nil,
-                target: .zone(.drawer, index: items.endIndex),
-                canDrop: dragActions.canDrop,
-                previewDrop: dragActions.previewDrop,
-                performDrop: dragActions.performDrop,
-                activate: { isPresented.toggle() },
-                springLoad: { isPresented = true }))
-            .popover(isPresented: $isPresented, arrowEdge: .trailing) {
-                drawerContents
-            }
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: 28,
+                   alignment: collapsed ? .center : .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Modules Drawer")
+        .overlay(SidebarNativeDragSurface(
+            payload: nil,
+            target: .zone(.drawer, index: items.endIndex),
+            canDrop: dragActions.canDrop,
+            previewDrop: dragActions.previewDrop,
+            performDrop: dragActions.performDrop,
+            activate: { isPresented.toggle() },
+            springLoad: { isPresented = true }))
+        .popover(isPresented: $isPresented, arrowEdge: .trailing) {
+            drawerContents
         }
         .padding(.horizontal, collapsed ? 6 : 10)
         .padding(.vertical, 5)

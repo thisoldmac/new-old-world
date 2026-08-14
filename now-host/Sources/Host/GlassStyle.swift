@@ -66,9 +66,9 @@ struct GlassPreferenceScope<Content: View>: View {
 /// The fallback is not "render nothing" — it is the material look this app
 /// had before, which is why each modifier below names the exact material it
 /// falls back to rather than dropping the background entirely. That matters
-/// beyond taste: the sidebar's header and footer are `safeAreaInset`s that
-/// rows scroll *underneath*, so an inset that lost its background would put
-/// text on top of text. Both paths keep one.
+/// beyond taste: the sidebar footer is a `safeAreaInset` that rows scroll
+/// *underneath*, so an inset that lost its background would put text on top
+/// of text. Both paths keep one.
 extension View {
     /// A floating card: the placeholder pane, an overlay, anything that
     /// reads as sitting *above* the window's content.
@@ -76,7 +76,7 @@ extension View {
         modifier(NowGlassPanel(cornerRadius: cornerRadius))
     }
 
-    /// An attached strip — a sidebar header or footer — that content
+    /// An attached strip — such as the sidebar footer — that content
     /// scrolls underneath.
     func nowGlassBar() -> some View {
         modifier(NowGlassBar())

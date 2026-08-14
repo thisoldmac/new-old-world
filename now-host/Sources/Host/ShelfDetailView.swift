@@ -79,8 +79,8 @@ private struct ShelfPillRow: View {
                 target: .shelf(shelfID, beforeModuleID: nil),
                 dragActions: dragActions)
         }
-        .padding(4)
-        .nowGlassPanel(cornerRadius: 18)
+        .padding(3)
+        .background(.bar, in: Capsule())
         .animation(.easeInOut(duration: 0.16), value: tabs)
     }
 
@@ -131,7 +131,12 @@ private struct ShelfPillButton: View {
         }
         .buttonStyle(.plain)
         .background(
-            Capsule().fill(Color.accentColor.opacity(isSelected ? 0.22 : 0)))
+            Capsule().fill(isSelected
+                           ? Color(nsColor: .selectedContentBackgroundColor)
+                           : .clear))
+        .foregroundStyle(isSelected
+                         ? Color(nsColor: .alternateSelectedControlTextColor)
+                         : Color.primary)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }

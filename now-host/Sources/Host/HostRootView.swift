@@ -25,11 +25,9 @@ struct HostRootView: View {
                 registry: registry,
                 sidebar: sidebar,
                 layout: presentationLayout,
-                listener: state.listener,
                 monitor: state.guestStatus,
                 selection: selection,
                 dragActions: dragActions,
-                selectGuest: { state.selectGuest($0) },
                 openShelf: openShelf,
                 select: select)
         } detail: {
@@ -54,6 +52,14 @@ struct HostRootView: View {
             shelfSession.remember(NavigationSelection.selecting(
                 moduleID: state.selectedModuleID,
                 in: sidebar.layout))
+        }
+        .toolbar {
+            HostShellToolbar(
+                listener: state.listener,
+                collapsed: sidebar.collapsed,
+                toggleCollapsed: { sidebar.collapsed.toggle() },
+                selectGuest: { state.selectGuest($0) },
+                showConnections: { selectModule("settings") })
         }
     }
 
@@ -126,6 +132,59 @@ struct HostRootView: View {
                     dragPreview = nil
                 }
             })
+    }
+}
+
+/// Window-level controls stay in AppKit's toolbar so the titlebar, sidebar
+/// material, overflow behavior, keyboard focus, and accessibility hierarchy
+/// remain system-owned. Module views below this shell do not participate.
+private struct HostShellToolbar: ToolbarContent {
+    @ObservedObject var listener: GuestListener
+    let collapsed: Bool
+    let toggleCollapsed: () -> Void
+    let selectGuest: (GuestKey) -> Void
+    let showConnections: () -> Void
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button(action: toggleCollapsed) {
+                /* This symbol predates the macOS 13 floor. The toolbar's
+                   accessibility label carries the current direction; newer
+                   split-layout symbols would render as an empty slot on
+                   some supported systems. */
+                Image(systemName: "sidebar.leading")
+            }
+            .help(collapsed ? "Show module names" : "Collapse to icons")
+            .accessibilityLabel(collapsed
+                                ? "Show module names"
+                                : "Collapse sidebar to icons")
+        }
+
+#if compiler(>=6.4)
+        if #available(macOS 26.1, *) {
+            ToolbarItem(placement: .principal) {
+                guestMenu
+            }
+            .visibilityPriority(.high)
+        } else {
+            ToolbarItem(placement: .principal) {
+                guestMenu
+            }
+        }
+#else
+        ToolbarItem(placement: .principal) {
+            guestMenu
+        }
+#endif
+    }
+
+    private var guestMenu: some View {
+        GuestSelectionMenu(
+            listener: listener,
+            collapsed: false,
+            select: selectGuest,
+            add: showConnections)
+            .frame(minWidth: 150, idealWidth: 190, maxWidth: 240)
     }
 }
 

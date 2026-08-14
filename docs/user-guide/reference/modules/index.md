@@ -34,7 +34,9 @@ is:
 
 Each shelf is one sidebar item. Selecting it opens a shelf page with its pages
 as centered pill tabs at the top of the main area; the selected module renders
-under that strip. The sidebar canvas has two stacks: ordinary destinations
+under that strip. The window toolbar chooses the active guest and can collapse
+the sidebar to its module icons without changing the saved arrangement. The
+sidebar canvas has two stacks: ordinary destinations
 grow down from the top, while Debug and then Connections are initially pinned
 upward from its bottom, with Connections bottommost. The labeled Drawer is the only destination in
 the separate footer beneath that canvas. In Full row mode, a shelf lists its

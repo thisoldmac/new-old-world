@@ -4,11 +4,9 @@ struct HostSidebarView: View {
     let registry: ModuleRegistry
     @ObservedObject var sidebar: SidebarPreferences
     let layout: NavigationLayout
-    @ObservedObject var listener: GuestListener
     @ObservedObject var monitor: GuestStatusMonitor
     let selection: NavigationSelection
     let dragActions: SidebarNavigationDragActions
-    let selectGuest: (GuestKey) -> Void
     let openShelf: (NavigationShelf) -> Void
     let select: (NavigationSelection) -> Void
     @State private var drawerPresented = false
@@ -28,17 +26,6 @@ struct HostSidebarView: View {
             cancelShelfCreation: sidebar.cancelShelfCreation,
             openShelf: openShelf,
             select: select)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            HostSidebarHeader(
-                listener: listener,
-                collapsed: sidebar.collapsed,
-                toggleCollapsed: { sidebar.collapsed.toggle() },
-                selectGuest: selectGuest,
-                showConnections: {
-                    select(NavigationSelection.selecting(
-                        moduleID: "settings", in: layout))
-                })
-        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ModuleDrawerView(
                 items: layout.drawer,
@@ -71,42 +58,6 @@ struct HostSidebarView: View {
         if selection.requiresDrawerPresentation(in: layout) {
             drawerPresented = true
         }
-    }
-}
-
-private struct HostSidebarHeader: View {
-    @ObservedObject var listener: GuestListener
-    let collapsed: Bool
-    let toggleCollapsed: () -> Void
-    let selectGuest: (GuestKey) -> Void
-    let showConnections: () -> Void
-
-    var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 0) {
-                Button(action: toggleCollapsed) {
-                    Image(systemName: "sidebar.leading")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help(collapsed
-                      ? "Show module names"
-                      : "Collapse the sidebar to icons")
-                .accessibilityLabel(collapsed
-                                    ? "Show module names"
-                                    : "Collapse sidebar to icons")
-                Spacer(minLength: 0)
-            }
-            SidebarGuestMenu(
-                listener: listener,
-                collapsed: collapsed,
-                select: selectGuest,
-                add: showConnections)
-        }
-        .padding(.horizontal, collapsed ? 8 : 12)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity)
-        .nowGlassBar()
     }
 }
 
@@ -143,7 +94,7 @@ private struct SidebarWidth: ViewModifier {
     }
 }
 
-struct SidebarGuestMenu: View {
+struct GuestSelectionMenu: View {
     @ObservedObject var listener: GuestListener
     let collapsed: Bool
     let select: (GuestKey) -> Void
@@ -174,24 +125,15 @@ struct SidebarGuestMenu: View {
                 Image(systemName: "desktopcomputer")
                     .frame(width: 18, height: 18)
             } else {
-                HStack(spacing: 7) {
-                    Image(systemName: "desktopcomputer")
-                        .foregroundStyle(.secondary)
+                Label {
                     Text(activeLabel)
                         .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "desktopcomputer")
                 }
-                .padding(.horizontal, 8)
-                .frame(maxWidth: .infinity, minHeight: 26,
-                       alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(nsColor: .controlBackgroundColor)))
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .menuStyle(.borderlessButton)
         .help("Choose the guest every host module is attached to")
     }
 

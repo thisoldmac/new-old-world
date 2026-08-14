@@ -445,6 +445,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             controller.sizingOptions = []
             let newWindow = NSWindow(contentViewController: controller)
             newWindow.title = ProductIdentity.displayName
+            /* The split view is the window's shell, so its chrome belongs to
+               the window rather than to simulated bars inside the sidebar.
+               A unified full-size titlebar lets AppKit carry the sidebar
+               material through the toolbar on current macOS while
+               NavigationSplitView still supplies the Ventura layout. */
+            newWindow.styleMask.insert(.fullSizeContentView)
+            newWindow.titleVisibility = .hidden
+            newWindow.titlebarAppearsTransparent = true
+            newWindow.toolbarStyle = .unified
+            newWindow.titlebarSeparatorStyle = .none
             newWindow.setContentSize(NSSize(width: 980, height: 650))
             /* A floor, so the window cannot be dragged down to a size where
                the sidebar and the detail pane have nothing left to render. */

@@ -131,22 +131,51 @@ final class NavigationShelfTabTests: XCTestCase {
         XCTAssertTrue(native.contains("NavigationSidebarDropResolver.target("))
     }
 
-    func testGlassChromeOverlaysTheScrollingSidebarContent() throws {
+    func testNativeToolbarOwnsTopChromeAndFooterOverlaysTheList() throws {
         let sidebar = try sidebarSource()
 
-        XCTAssertTrue(sidebar.contains(".safeAreaInset(edge: .top"))
+        XCTAssertFalse(sidebar.contains(".safeAreaInset(edge: .top"))
         XCTAssertTrue(sidebar.contains(".safeAreaInset(edge: .bottom"))
         XCTAssertEqual(sidebar.components(separatedBy: ".nowGlassBar()").count,
-                       3)
+                       2)
     }
 
     func testExpandedDrawerCarriesAPersistentLabel() throws {
         let drawer = try GateSource.hostSwift(
             "now-host/Sources/Host/ModuleDrawerView.swift")
 
-        XCTAssertTrue(drawer.contains("if !collapsed"))
-        XCTAssertTrue(drawer.contains("Text(\"Drawer\")"))
+        XCTAssertTrue(drawer.contains(
+            "Label(\"Drawer\", systemImage: \"archivebox\")"))
         XCTAssertFalse(drawer.contains("if hovering"))
+    }
+
+    func testWindowShellUsesNativeUnifiedToolbarChrome() throws {
+        let app = try GateSource.hostSwift(
+            "now-host/Sources/Host/App.swift")
+        let root = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostRootView.swift")
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostSidebarView.swift")
+
+        XCTAssertTrue(app.contains(
+            "newWindow.styleMask.insert(.fullSizeContentView)"))
+        XCTAssertTrue(app.contains("newWindow.toolbarStyle = .unified"))
+        XCTAssertTrue(root.contains("HostShellToolbar("))
+        XCTAssertTrue(root.contains("ToolbarItem(placement: .principal)"))
+        XCTAssertTrue(root.contains("#if compiler(>=6.4)"))
+        XCTAssertTrue(root.contains("#available(macOS 26.1, *)"))
+        XCTAssertFalse(sidebar.contains("safeAreaInset(edge: .top"))
+    }
+
+    func testSidebarSelectionUsesSystemActiveAndInactiveColors() throws {
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNavigationContent.swift")
+
+        XCTAssertTrue(sidebar.contains("@Environment(\\.controlActiveState)"))
+        XCTAssertTrue(sidebar.contains(
+            ".unemphasizedSelectedContentBackgroundColor"))
+        XCTAssertTrue(sidebar.contains(".selectedContentBackgroundColor"))
+        XCTAssertFalse(sidebar.contains("Color.accentColor.opacity(0.17)"))
     }
 
     func testNativeDragPreviewSnapshotsTheRenderedNavigationElement() throws {

@@ -64,7 +64,11 @@ title **Web Proxy**. The default lower stack is the Debug shelf (`console`,
 registered `continuity` descriptor in this revision, so the Screen shelf does
 not manufacture one.
 
-The sidebar renders one row per shelf, not one row per shelf member.
+The window uses AppKit's unified full-size toolbar. Guest selection and the
+compact-sidebar control live there instead of in a simulated sidebar header;
+macOS 26.1 and newer keep the guest selector visible ahead of lower-priority
+toolbar content, while the same selector remains a normal toolbar item on the
+macOS 13 fallback. The sidebar renders one row per shelf, not one row per shelf member.
 `NavigationShelfTab` derives the stable tabs for that shelf, and
 `ShelfDetailView` renders them as a centered pill strip above the existing
 module view. The synthetic machine Overview remains window-local; every other
@@ -72,7 +76,8 @@ pill retains its real module ID. Debug and Connections occupy the lower stack in
 canvas, while the upper stack grows downward. The labeled drawer alone uses
 the separate footer. Full rows list shelf member titles while loose modules
 retain their registry summaries. The primary destinations use SwiftUI's native sidebar `List`;
-the shell does not recreate list scrolling or row layout.
+selected rows use AppKit's active or inactive selection colors, and the shell
+does not recreate list scrolling or row layout.
 
 `NavigationLayoutStore` migrates the earlier flat order and sanitizes stored
 layouts against the current registry. Version 2 moves an existing Connections

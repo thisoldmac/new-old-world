@@ -95,7 +95,7 @@ private struct SidebarPinnedStack: View {
                 .padding(.horizontal, collapsed ? 4 : 8)
                 .padding(.vertical, 5)
         }
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.72))
+        .background(.bar)
         .animation(.easeInOut(duration: 0.16), value: items)
     }
 }
@@ -307,8 +307,10 @@ private struct SidebarLooseModuleRow: View {
             }
         }
         .buttonStyle(.plain)
-        .background(SidebarNavigationRowBackground(
-            kind: .module, isSelected: isSelected))
+        .foregroundStyle(isSelected
+                         ? Color(nsColor: .alternateSelectedControlTextColor)
+                         : Color.primary)
+        .background(SidebarNavigationRowBackground(isSelected: isSelected))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityLabel(module.title)
         .help(collapsed || compact ? module.summary : "")
@@ -385,8 +387,10 @@ private struct SidebarShelfRow: View {
                 .buttonStyle(.plain)
             }
         }
-        .background(SidebarNavigationRowBackground(
-            kind: .shelf, isSelected: isSelected))
+        .foregroundStyle(isSelected
+                         ? Color(nsColor: .alternateSelectedControlTextColor)
+                         : Color.primary)
+        .background(SidebarNavigationRowBackground(isSelected: isSelected))
         .accessibilityAddTraits(
             selection.containingShelfID == shelf.id ? [.isSelected] : [])
         .accessibilityLabel(title)
@@ -516,28 +520,27 @@ private struct SidebarNavigationIcon: View {
         Image(systemName: symbol)
             .font(.body.weight(.medium))
             .symbolRenderingMode(.monochrome)
-            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+            .foregroundStyle(isSelected
+                             ? Color(nsColor: .alternateSelectedControlTextColor)
+                             : Color.secondary)
             .frame(width: 22, height: 22)
     }
 }
 
 private struct SidebarNavigationRowBackground: View {
-    enum Kind { case module, shelf }
-
-    let kind: Kind
     let isSelected: Bool
+    @Environment(\.controlActiveState) private var controlActiveState
 
     var body: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(isSelected
-                  ? Color.accentColor.opacity(0.17)
-                  : Color.primary.opacity(kind == .shelf ? 0.075 : 0.025))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(
-                        isSelected ? 0 : (kind == .shelf ? 0.12 : 0.035)),
-                                  lineWidth: 0.5)
-            }
+            .fill(isSelected ? selectionColor : .clear)
+    }
+
+    private var selectionColor: Color {
+        if controlActiveState == .inactive {
+            return Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+        }
+        return Color(nsColor: .selectedContentBackgroundColor)
     }
 }
 
