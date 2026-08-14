@@ -357,6 +357,32 @@ Turning forwarding off leaves ordinary keys on the host but keeps that escape
 chord active. Key codes outside the classic 0–127 table are also left on the
 host rather than sent as malformed guest input.
 
+**Forwarding and swallowing are two decisions, not one.** The tap also
+captures `flagsChanged` — a modifier pressed or released while no key moves —
+and sends it as `continuity.key`'s `modifiers` action. That one is *copied*
+rather than swallowed: a modifier is state, not an edge, and suppressing it
+would leave macOS's own idea of what is held drifting for as long as the
+pointer is on the guest, and wrong at the moment control returns. Nothing on
+the host acts on a bare modifier, so there is nothing to swallow it for.
+An unchanged word is not re-sent, because macOS raises `flagsChanged` for
+keys the classic five-bit word cannot name.
+
+It exists because the classic Event Manager **has no modifier event at all**.
+Modifier state reaches a classic application on the events that carry it and
+through `GetKeys`/`KeyMap`, and nothing else — so without this action the
+guest's word could only advance when some other key happened to travel.
+
+**The word is held and is not yet visible to `GetKeys`.** The PowerPC
+application is Carbon: it can neither post an event nor write the low-memory
+key map, so it keeps the live word and logs every change, naming on both
+edges whether a modifier was forwarded or skipped. Until a resident half
+reads it, a modifier pressed **mid-drag** changes the word and changes nothing
+the Finder can see — which is the case that motivated the action, because
+move / copy / alias is chosen inside the Drag Manager's own tracking loop from
+live modifier state rather than from an event. Treat that half as
+**unimplemented**, not as tested-and-working; the log line is what tells the
+two apart on metal.
+
 Keys travel on the reliable TCP conversation, not the coalescing UDP pointer
 lane. The PPC application verifies the live epoch, resolves the foreground
 process and its A5 world, and publishes into a fixed 16-entry V8 resident queue.
@@ -368,7 +394,9 @@ also flush or abandon pending input.
 
 This first slice models Event Manager input, including modifiers on ordinary
 key events. It does not synthesize `GetKeys`, physical ADB keyboard state, or
-hardware-level repeat. `continuity.keyReport` means the event was accepted by
+hardware-level repeat — and the resident stamps synthetic **mouse** events
+with a fixed word (`0x0080` on the release, `0` on the press), so a held
+modifier is absent from a guest drag on both routes it could take. `continuity.keyReport` means the event was accepted by
 the bounded queue; resident applied/failed/dropped counters remain the evidence
 for delivery on the guest. An attended PowerBook run of the exact `2207f3da`
 host, guest, and resident package confirmed the keyboard-control slice end to

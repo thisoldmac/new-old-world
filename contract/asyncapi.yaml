@@ -130,6 +130,13 @@
 #   them for the foreground process and the resident posts them only from that
 #   process's target-context jGNE pass. They model Event Manager input, not
 #   physical ADB state or GetKeys.
+#   The `modifiers` action on that same message reports a bare modifier
+#   change — the thing macOS calls flagsChanged and the classic Event Manager
+#   has no event for. It is the ONLY way the guest learns that a modifier
+#   moved while no key did, which is the case a Finder drag reads to choose
+#   between move, copy and alias. Carrying it does not by itself make
+#   `GetKeys` answer with it; see continuity-mode.md for what the resident
+#   does and does not do with the live word.
 # - Control messages that expect an answer carry `id`; answers echo it.
 # - Bulk transfers are announced on control (`capture.begin`), stream on the
 #   bulk channel in chunks (default 8192 bytes, negotiable in hello), and
@@ -2429,22 +2436,54 @@ components:
         id: { type: integer }
         epoch: { type: integer, minimum: 1, maximum: 4294967295 }
         generation: { type: integer, minimum: 1, maximum: 4294967295 }
-        action: { enum: [down, up, repeat] }
+        action:
+          enum: [down, up, repeat, modifiers]
+          description: >
+            `down`/`up`/`repeat` are key events and carry a real `code`.
+
+            `modifiers` IS NOT A KEY. It reports that the person's held
+            modifiers changed while no key moved, and it exists because the
+            two machines disagree about whether that is an event at all.
+            macOS raises `flagsChanged`; the classic Event Manager has no
+            such event, so a classic application learns a bare modifier
+            change only by reading `GetKeys`/`KeyMap` — which is exactly
+            what a Finder drag does when it decides between move, copy and
+            alias mid-gesture. Without this action the guest's live
+            modifier word can only advance when some other key happens to
+            move, and a modifier pressed during a drag is invisible.
+
+            A `modifiers` message sends `code: 0` and `character: 0`; both
+            are meaningless and a receiver must not post a key event for
+            it. It is state, not an edge: it carries the whole modifier
+            word after the change rather than which modifier moved, so a
+            dropped one is corrected by the next.
+
+            ADDITIVE — no version bump. A receiver that has never heard of
+            it parses no known action and answers `refused`/`malformed` on
+            the existing `continuity.keyReport`, which costs that guest
+            nothing it had.
         code:
           type: integer
           minimum: 0
           maximum: 127
-          description: Classic virtual key code; macOS inherits this table.
+          description: >
+            Classic virtual key code; macOS inherits this table. Zero and
+            meaningless when `action` is `modifiers`.
         character:
           type: integer
           minimum: 0
           maximum: 255
-          description: MacRoman byte placed in the EventRecord message.
+          description: >
+            MacRoman byte placed in the EventRecord message. Zero and
+            meaningless when `action` is `modifiers`.
         modifiers:
           type: integer
           minimum: 0
           maximum: 65535
-          description: Classic Event Manager modifier bits.
+          description: >
+            Classic Event Manager modifier bits. On a key action these are
+            the modifiers held while that key moved; on `modifiers` they
+            are the whole live word and the entire payload.
     ContinuityKeyReport:
       type: object
       required: [type, version, id, epoch, generation, state]

@@ -542,19 +542,29 @@ final class ContinuityEdgeController: ObservableObject {
             handler: { [weak self] sample in
                 guard let self, self.state == .active,
                       let driver = self.driver else { return }
-                if driver.escapeShortcut.matches(sample) {
+                /* One policy decides, in one place. The tap has already
+                   applied it to choose whether to swallow the original; this
+                   side must reach the same verdict or the two halves
+                   disagree about an event that is already gone. */
+                switch policy.disposition(sample) {
+                case .chord:
                     if let ownership = self.ownership {
                         self.returnToHost(
                             ownership, reason: "escape shortcut")
                     }
-                    return
-                }
-                guard driver.keyboardForwardingEnabled else { return }
-                if !driver.keyboardEvent(sample) {
+                case .ignored:
                     self.audit(
-                        .error,
-                        "captured keyboard event could not be queued: "
-                            + "action=\(sample.action), code=\(sample.code)")
+                        .info,
+                        "keyboard sample left on the host: "
+                            + "action=\(sample.action.rawValue), "
+                            + "code=\(sample.code), forwarding=off")
+                case .forwarded, .modifierState:
+                    if !driver.keyboardEvent(sample) {
+                        self.audit(
+                            .error,
+                            "captured keyboard event could not be queued: "
+                                + "action=\(sample.action), code=\(sample.code)")
+                    }
                 }
             }, tapDisabled: { [weak self] reason in
                 self?.audit(

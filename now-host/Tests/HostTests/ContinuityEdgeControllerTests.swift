@@ -262,6 +262,144 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .ready)
     }
 
+    /// The discrimination the whole plane rests on, asserted as one table so
+    /// that a change to any single arm shows up beside the others: what the
+    /// chord claims, what is forwarded, and — separately — what is swallowed.
+    /// Forwarding and swallowing are two decisions and were one boolean until
+    /// a modifier needed to cross while staying on this machine.
+    func testEveryDispositionSaysBothWhetherItForwardsAndWhetherItSwallows() {
+        let policy = ContinuityKeyboardCapturePolicy(
+            forwardingEnabled: true, escapeShortcut: .controlOptionEscape)
+        let chord = HostKeySample(
+            action: .down, code: 53, character: 27,
+            modifiers: (1 << 11) | (1 << 12))
+        let key = HostKeySample(action: .down, code: 12, character: 113,
+                                modifiers: 0)
+        let flags = HostKeySample(action: .modifiers, code: 0, character: 0,
+                                  modifiers: 1 << 11)
+
+        XCTAssertEqual(policy.disposition(chord), .chord)
+        XCTAssertFalse(ContinuityKeyDisposition.chord.forwards)
+        XCTAssertTrue(ContinuityKeyDisposition.chord.consumesOnHost)
+
+        XCTAssertEqual(policy.disposition(key), .forwarded)
+        XCTAssertTrue(ContinuityKeyDisposition.forwarded.forwards)
+        XCTAssertTrue(ContinuityKeyDisposition.forwarded.consumesOnHost)
+
+        XCTAssertEqual(policy.disposition(flags), .modifierState)
+        XCTAssertTrue(ContinuityKeyDisposition.modifierState.forwards)
+        XCTAssertFalse(
+            ContinuityKeyDisposition.modifierState.consumesOnHost,
+            "a modifier is state: swallowing it leaves macOS's own idea of "
+                + "what is held wrong for as long as the guest owns the "
+                + "pointer, and wrong when control returns")
+
+        let off = ContinuityKeyboardCapturePolicy(
+            forwardingEnabled: false, escapeShortcut: .controlOptionEscape)
+        XCTAssertEqual(off.disposition(key), .ignored)
+        XCTAssertEqual(off.disposition(flags), .ignored)
+        XCTAssertEqual(off.disposition(chord), .chord,
+                       "the way out never depends on the forwarding switch")
+    }
+
+    /// The (a) regression: a Command combination must cross whole.
+    ///
+    /// Command-Backspace is Move To Trash in the guest Finder, and it reaches
+    /// that menu only through `EventRecord.modifiers`. The chord matcher is
+    /// the thing in a position to eat it — it is the only rule on this side
+    /// that reads the modifier word — so what is pinned here is that a
+    /// Command combination it does not match is forwarded UNCHANGED rather
+    /// than partially matched, downgraded, or stripped of its modifiers.
+    func testACommandCombinationTheChordDoesNotMatchCrossesWithItsModifiers() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let keyboard = KeyboardEnvironment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            keyboardEnvironment: keyboard)
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        // Command down on its own, then Command-Backspace, then the release.
+        let commandDown = HostKeySample(action: .modifiers, code: 0,
+                                        character: 0, modifiers: 1 << 8)
+        let backspace = HostKeySample(action: .down, code: 51, character: 8,
+                                      modifiers: 1 << 8)
+        let commandUp = HostKeySample(action: .modifiers, code: 0,
+                                      character: 0, modifiers: 0)
+        XCTAssertTrue(keyboard.emit(commandDown))
+        XCTAssertTrue(keyboard.emit(backspace))
+        XCTAssertTrue(keyboard.emit(commandUp))
+
+        XCTAssertEqual(driver.keys, [commandDown, backspace, commandUp])
+        XCTAssertEqual(driver.keys.dropFirst().first?.modifiers, 1 << 8,
+                       "Command must survive the crossing intact")
+        XCTAssertEqual(controller.state, .active,
+                       "a Command combination is not a way out")
+        XCTAssertEqual(driver.leftCount, 0)
+    }
+
+    /// Coexistence, stated as a sequence rather than as two separate claims:
+    /// the modifiers the chord itself is made of travel to the guest as
+    /// state, and the chord still fires on the key that completes it — which
+    /// is not forwarded.
+    func testTheChordStillFiresAfterItsOwnModifiersHaveBeenForwarded() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let keyboard = KeyboardEnvironment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            keyboardEnvironment: keyboard)
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        XCTAssertTrue(keyboard.emit(.init(action: .modifiers, code: 0,
+                                          character: 0,
+                                          modifiers: 1 << 12)))
+        XCTAssertTrue(keyboard.emit(.init(
+            action: .modifiers, code: 0, character: 0,
+            modifiers: (1 << 11) | (1 << 12))))
+        XCTAssertEqual(driver.keys.count, 2)
+
+        XCTAssertTrue(keyboard.emit(.init(
+            action: .down, code: 53, character: 27,
+            modifiers: (1 << 11) | (1 << 12))))
+        XCTAssertEqual(controller.state, .ready)
+        XCTAssertEqual(driver.leftCount, 1)
+        XCTAssertEqual(driver.keys.count, 2,
+                       "the chord key itself is never forwarded")
+    }
+
+    /// The tap mask is the one link in this chain no unit test can reach:
+    /// `AppKitContinuityKeyboardEnvironment` builds a real CGEventTap, so
+    /// every test above drives a stub and would stay green with flagsChanged
+    /// dropped from the mask — the plane would then be correct about a
+    /// modifier change it is never handed. A source guard is a poor test and
+    /// a better one than nothing at all, which is what covered it before.
+    func testTheEventTapAsksForFlagsChanged() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent(
+                "now-host/Sources/Host/ContinuityKeyboard.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(
+            source.contains("1 << CGEventType.flagsChanged.rawValue"),
+            "the CGEventTap must ask for flagsChanged; without it a modifier "
+                + "pressed while no key moves never reaches this host at all")
+    }
+
     func testKeyboardCapturePolicyOwnsBothCommandOEdges() {
         let policy = ContinuityKeyboardCapturePolicy(
             forwardingEnabled: true,

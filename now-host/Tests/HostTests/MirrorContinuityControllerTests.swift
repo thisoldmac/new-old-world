@@ -899,6 +899,53 @@ final class MirrorContinuityControllerTests: XCTestCase {
         }, sentKeys, "unrepresentable host keys must remain host-owned")
     }
 
+    /// A bare modifier change crosses as state, and only when it is news.
+    ///
+    /// macOS raises flagsChanged for keys the classic word has no bit for —
+    /// Fn, the numeric-pad flag, left versus right of the same modifier — so
+    /// without the comparison every one of them would put a packet on the
+    /// reliable stream saying exactly what the guest already held.
+    func testOnlyAChangedModifierWordReachesTheGuest() async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig { audit.append(($0, $1)) }
+        defer { rig.udp.stop() }
+
+        func modifierMessages() -> [ContinuityKey] {
+            rig.guest.received.compactMap {
+                guard case .continuityKey(let key) = $0,
+                      key.action == .modifiers else { return nil }
+                return key
+            }
+        }
+
+        /* Option down, Option down again (macOS says this for keys the
+           classic word cannot name), then Command joins it. All three are
+           accepted; only two are news. Asserted as the WHOLE sequence after
+           the last one has landed rather than as a count between sends: a
+           count sampled mid-flight reads correct while the extra packet is
+           still on the wire, which is how this test first passed against the
+           very mutation it exists for. */
+        for word: UInt16 in [1 << 11, 1 << 11, (1 << 8) | (1 << 11)] {
+            XCTAssertTrue(rig.controller.keyboardEvent(
+                .init(action: .modifiers, code: 0, character: 0,
+                      modifiers: word)))
+        }
+        try await waitUntil("the changed word arrived") {
+            modifierMessages().last?.modifiers == (1 << 8) | (1 << 11)
+        }
+        XCTAssertEqual(modifierMessages().map(\.modifiers),
+                       [1 << 11, (1 << 8) | (1 << 11)],
+                       "the repeated word must not reach the wire")
+        XCTAssertEqual(modifierMessages().map(\.code), [0, 0])
+        XCTAssertEqual(modifierMessages().map(\.character), [0, 0])
+        XCTAssertTrue(audit.contains {
+            $0.1.contains("modifier change not forwarded, word unchanged")
+        }, "the skipped decision must be named, not silent")
+        XCTAssertTrue(audit.contains {
+            $0.1.contains("modifier state forwarded")
+        })
+    }
+
     func testLeavingV0DisarmsImmediately() async throws {
         var audit: [(HostLog.LogLevel, String)] = []
         let rig = try await makeActiveRig {

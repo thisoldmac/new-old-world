@@ -246,6 +246,9 @@ struct ContinuityKey: Codable, Equatable, Sendable {
         case down
         case up
         case repeatKey = "repeat"
+        /// A bare modifier change — macOS `flagsChanged`. Not a key: `code`
+        /// and `character` are zero and the receiver posts no key event.
+        case modifiers
     }
 
     var version: Int

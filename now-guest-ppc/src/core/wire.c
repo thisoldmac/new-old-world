@@ -7169,6 +7169,7 @@ static void serve_continuity_key(const char *request)
     unsigned long modifiers = now_json_find_u32(request, "modifiers", 65536);
     unsigned long action = 0;
     char action_name[12];
+    int is_modifier_state = 0;
     int result;
 
     if (version != NOW_CONTINUITY_VERSION) {
@@ -7184,6 +7185,31 @@ static void serve_continuity_key(const char *request)
             action = kNowPeekContinuityKeyUp;
         else if (strcmp(action_name, "repeat") == 0)
             action = kNowPeekContinuityKeyRepeat;
+        else if (strcmp(action_name, "modifiers") == 0)
+            is_modifier_state = 1;
+    }
+    /* A bare modifier change is not a key and takes no queue slot. It is
+       served before the key validation below because that validation is
+       about a keystroke: `code` and `character` are zero here by contract
+       and mean nothing, so checking them would only be a way to refuse a
+       well-formed message. */
+    if (is_modifier_state) {
+        if (id == 0 || generation == 0 || modifiers > 65535) {
+            (void)continuity_key_report(id, epoch, generation, "refused",
+                                        "malformed");
+            return;
+        }
+        result = now_continuity_modifiers(epoch, generation, modifiers);
+        if (result == kNowContinuityKeyQueued)
+            (void)continuity_key_report(id, epoch, generation, "queued",
+                                        NULL);
+        else if (result == kNowContinuityKeyBadEpoch)
+            (void)continuity_key_report(id, epoch, generation, "refused",
+                                        "bad-epoch");
+        else
+            (void)continuity_key_report(id, epoch, generation, "refused",
+                                        "malformed");
+        return;
     }
     if (id == 0 || generation == 0 || action == 0
             || code > 127 || character > 255 || modifiers > 65535) {

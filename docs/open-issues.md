@@ -7,6 +7,69 @@ search:
 
 # Open issues
 
+## HOST DONE, GUEST HALF UNIMPLEMENTED: a bare modifier change now crosses the edge (2026-08-14, `fix/continuity-modifier-passthrough`)
+
+Reported from metal: during Continuity, Command-Backspace does not move a
+guest Finder item to the Trash, and holding a modifier mid-drag does not
+switch the guest drag to copy or alias. They are **two different defects**
+and only one of them is fixed here.
+
+**(b), the drag modifier — root cause found, host half landed.** macOS raises
+`flagsChanged` when a modifier moves while no key does. The tap's mask was
+`keyDown | keyUp`, so that event was never sampled, never forwarded, and the
+guest's modifier word could only advance when some other key happened to
+travel. `continuity.key` gains a fourth action, `modifiers`, additively; the
+host forwards the whole word on every real change and, deliberately, does
+**not** swallow the original, because a modifier is state rather than an edge
+and suppressing it leaves macOS's own idea of what is held wrong at the
+moment control returns.
+
+That is only half the route, and the missing half is the one that produces
+behaviour. The classic Finder chooses move / copy / alias **inside the Drag
+Manager's tracking loop**, from live modifier state — `GetKeys`/`KeyMap` —
+not from an event record, and the resident stamps synthetic mouse events with
+a fixed word (`0x0080` on the release, `0` on the press). The PowerPC
+application is Carbon and can write neither, so it holds the word and logs
+every change. **Nothing reads it yet.** The resident change needed is stated
+in the handoff below; until it lands, treat guest drag modifiers as
+unimplemented rather than as broken.
+
+**(a), Command-Backspace — the host was NOT the cause, and that is a
+finding.** The prime suspect was a chord matcher eating non-matching modifier
+combinations, and it is innocent: the matcher requires an exact code AND an
+exact masked-modifier equality, has no partial-match rule, and everything it
+does not claim is forwarded by its own kind. The modifier word was then
+traced whole through `sendContinuityKey`, the JSON, `serve_continuity_key`,
+`now_continuity_key`, the V8 queue slot and into `evtQModifiers` on the
+posted queue element. **Every link carries it.** A guard now pins the
+Command combination crossing intact, and it was watched failing against the
+matcher mutation it was written for.
+
+So (a) is still open and its remaining suspects are all resident-side. The
+sharpest one is already written down in this tree: `now_ext_act.c` spins a
+bounded three ticks between a key-down and its key-up because *"the modifier
+stamp was measured unreliable when the up event followed in the same tick"*,
+and the Continuity drain posts up to four queued entries in one jGNE pass
+with no spacing at all. The other is that the Finder may read `GetKeys` here
+too, which would make (a) and (b) one defect with one fix. **Neither is
+distinguishable from this side without metal**, which is why every modifier
+decision on both halves now emits a named log line: "never arrived" and
+"arrived and nothing reads it" were previously the same silence.
+
+**What is proven.** `now-host` is 2484/0. `scripts/build-guests` cross-
+compiles both guests and the extension. Five mutations were watched failing
+against the guard that names them — and **two of those guards passed their
+own mutation first**: the dedupe counted messages between two sends and read
+correct while the extra packet was still in flight, and the contract-to-guest
+action gate searched for the quoted word `modifiers`, which is also the name
+of a field that same function reads, so it stayed green with the dispatch arm
+deleted. Both are recorded because the failure mode is the one this
+repository keeps paying for.
+
+**Not proven:** nothing has run on metal, no guest has received a `modifiers`
+message, and the tap mask is covered only by a source guard because every
+other test here drives a stub environment.
+
 ## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
 
 Slice 4 of the cross-edge file drag plan, and the consumer the entry
