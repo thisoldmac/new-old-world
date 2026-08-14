@@ -145,6 +145,34 @@ Two things a reader should carry away rather than rediscover:
   contract change in plan 021 §5.1.1, which is deliberately not attempted
   here. Until then every ingested pack lands in the one shared dated store.
 
+## DOGFOOD FINDINGS, NOT YET TRIAGED: host shell and module follow-up (2026-08-14, `feat/bundle-update-slice` at `83f10653`)
+
+The integrated 0.2.0 development bundle exposed the following product gaps and
+broken behavior. These are observations and accepted direction, not claims that
+the corresponding implementation has started.
+
+- **Guest shelf overview:** replace the redundant Hardware, Software, and
+  Processes buttons with a formatted overview assembled from the existing
+  Hardware Overview data, the currently running non-background applications,
+  and a custom photo the person can upload. The existing module tabs remain the
+  routes to the complete Hardware, Software, and Processes surfaces.
+- **Screenshot defaults:** a screenshot should default to the guest's native
+  display depth rather than choosing a transformed depth by default.
+- **Screen streaming:** the streamed screen currently omits open menu-bar menus
+  and the cursor. Both belong in the visible stream.
+- **Mirror status:** mark the Mirror module as experimental anywhere its product
+  status is presented.
+- **Files — Host sidebar:** the collapsed sidebar should read as one continuous
+  handle. On hover, its centered label should appear with a polished animation;
+  mouse exit should hide the label without recompressing or otherwise moving the
+  sidebar. Browser sidebar symbols currently render white in light appearance,
+  showing that theme propagation is inconsistent across view types. Column-view
+  clicks also sometimes dismiss their own selection or navigation state.
+- **iCloud ownership and access:** the guest owns download and downsampling;
+  the host is limited to connection and authentication. **Grant Access**
+  currently has no effect and must hand authorization off through the host OS's
+  native access flow.
+
 ## TESTED, NOT RELEASED OR METAL-VERIFIED: recorded bundle and update slice (2026-08-13, `codex/bundle-update-slice`)
 
 The alpha distribution now has one machine-readable profile and one curated
