@@ -76,6 +76,10 @@ final class HostAppState: ObservableObject {
     /// constructed, and because its cache dies with the connection, not
     /// with a page.
     let fileTransfer: MirrorFileTransferModel
+    /// Redeems a cross-edge drag over `continuity.grab`. App-owned for the
+    /// same reason the lane above is: the gesture it answers to happens at
+    /// the shared edge, where no page need ever have been opened.
+    let continuityGrab: ContinuityGrabTransfer
     /// The guest whose saved continuity settings are currently loaded.
     /// Link events for another connected Mac must not reset active ownership.
     private var continuityGuestKey: GuestKey?
@@ -260,6 +264,7 @@ final class HostAppState: ObservableObject {
             listener: listener, defaults: defaults,
             localNetworkAccess: localNetworkAccess)
         fileTransfer = MirrorFileTransferModel(listener: listener)
+        continuityGrab = ContinuityGrabTransfer(listener: listener)
         artifactApprovals = try? AgentIntegrationArtifactApprovalStore()
         let integration = AgentIntegrationHostAdapter(
             listener: listener,
@@ -358,7 +363,14 @@ final class HostAppState: ObservableObject {
         fileTransfer.connection = currentConnection
         ContinuityFileDrag.configure(
             edge: continuity.edge, fileTransfer: fileTransfer,
-            scene: { [weak self] in self?.existingMirrorRuntime?.sceneIfKnown })
+            scene: { [weak self] in self?.existingMirrorRuntime?.sceneIfKnown },
+            /* The guest→host lane reads the stub, never the scene: what a
+               person selected is knowable before the press, and a scene is
+               not. The epoch scoping lives inside the controller. */
+            selection: { [weak self] in
+                self?.continuity.bindableSelection() ?? .failure(.noSelection)
+            },
+            grab: continuityGrab)
         if settings.listenAtLaunch {
             startListening()
         }

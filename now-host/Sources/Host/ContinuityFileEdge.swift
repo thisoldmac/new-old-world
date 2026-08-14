@@ -115,11 +115,14 @@ final class ContinuityFileEdge: NSObject {
 
     private let panel: EdgePanel
     private let edgeView: EdgeView
+    private var edge: ContinuitySharedEdge
+    private var catching = false
 
     init(edge: ContinuitySharedEdge, callbacks: Callbacks) {
+        self.edge = edge
         edgeView = EdgeView(callbacks: callbacks)
         panel = EdgePanel(
-            contentRect: Self.frame(for: edge),
+            contentRect: Self.frame(for: edge, catching: false),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
         super.init()
@@ -137,7 +140,20 @@ final class ContinuityFileEdge: NSObject {
     }
 
     func update(edge: ContinuitySharedEdge) {
-        panel.setFrame(Self.frame(for: edge), display: false)
+        self.edge = edge
+        panel.setFrame(Self.frame(for: edge, catching: catching),
+                       display: false)
+        panel.orderFrontRegardless()
+    }
+
+    /// Widens the strip into a catch surface for one handoff, or narrows it
+    /// back. See `ContinuityPointerEnvironment.setFileEdgeCatching` for why
+    /// two pixels detect a crossing but cannot catch one.
+    func setCatching(_ catching: Bool) {
+        guard catching != self.catching else { return }
+        self.catching = catching
+        panel.setFrame(Self.frame(for: edge, catching: catching),
+                       display: false)
         panel.orderFrontRegardless()
     }
 
@@ -156,8 +172,18 @@ final class ContinuityFileEdge: NSObject {
     /// Two points live inside the real host display. That makes the strip a
     /// valid AppKit destination while preserving all but the boundary pixel
     /// pair for the application already under the pointer.
-    private static func frame(for edge: ContinuitySharedEdge) -> CGRect {
-        let thickness: CGFloat = 2
+    ///
+    /// `catching` trades that courtesy for one handoff. A pointer returning
+    /// with a held button is already moving at speed, and the drag has to
+    /// begin over a view of ours; a two-point strip is a target the human
+    /// has already left by the time the tap dies. Restored the moment the
+    /// drag starts or the handoff is abandoned — a permanently wide surface
+    /// would eat the edge of whatever app lives there.
+    static let catchThickness: CGFloat = 160
+
+    private static func frame(for edge: ContinuitySharedEdge,
+                              catching: Bool) -> CGRect {
+        let thickness: CGFloat = catching ? catchThickness : 2
         switch edge.guestSide {
         case .left:
             return CGRect(x: edge.host.frame.maxX - thickness,

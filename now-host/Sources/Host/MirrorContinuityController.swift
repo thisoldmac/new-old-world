@@ -312,6 +312,9 @@ final class MirrorContinuityController: ObservableObject,
     private let listener: GuestListener
     private let defaults: UserDefaults
     private let audit: Audit
+    /// The guest's published Finder selection, scoped to the epoch that
+    /// published it. Owned here because the epoch is owned here.
+    private lazy var selectionCache = ContinuitySelectionCache(audit: audit)
     /// Test seam for the resident liveness answer. Production always reads the
     /// listener's exact one-machine match.
     var machineIsAnsweringOverride: ((GuestKey) -> Bool)?
@@ -390,6 +393,9 @@ final class MirrorContinuityController: ObservableObject,
         }
         listener.onContinuityKeyReport = { [weak self] key, report in
             self?.received(report, from: key)
+        }
+        listener.onContinuitySelection = { [weak self] key, selection in
+            self?.received(selection, from: key)
         }
         loadSettingsForActiveGuest()
     }
@@ -692,6 +698,24 @@ final class MirrorContinuityController: ObservableObject,
             status = "Keyboard input was refused: "
                 + (report.reason?.rawValue ?? "unknown reason")
         }
+    }
+
+    private func received(_ selection: ContinuitySelection, from key: GuestKey) {
+        guard target?.key == key else {
+            audit(.warn, "selection ignored: it came from "
+                + "\(key.machine.slug), which does not own this epoch")
+            return
+        }
+        selectionCache.apply(selection, activeEpoch: epoch)
+    }
+
+    /// What a press may be bound to right now, or the named reason it may
+    /// not. The epoch is applied HERE rather than by the caller: it is this
+    /// object's, and a consent scoped by somebody else's copy of it is the
+    /// grant outliving its session.
+    func bindableSelection()
+        -> Result<ContinuityDragStub, ContinuitySelectionCache.Unusable> {
+        selectionCache.bindable(activeEpoch: epoch)
     }
 
     private func openUDP(host: String, port: UInt16) {
@@ -1273,6 +1297,10 @@ final class MirrorContinuityController: ObservableObject,
         previousButtonDown = false
         resetButtonState(.transport, reason: "authority epoch ended")
         keyGeneration = 0
+        /* A grab expires with the epoch by contract. Dropping the stub here
+           is that rule made mechanical: the next epoch gets its own
+           generation 1 and cannot redeem consent given in the last one. */
+        selectionCache.clear(reason: "the Continuity epoch ended")
     }
 
     private enum ButtonResetScope {

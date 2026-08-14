@@ -824,6 +824,23 @@ final class Session {
                               mirrorSource: source)))
     }
 
+    /// Redeems one drag gesture's consent for the item a selection
+    /// generation named. The answer is the ordinary file lane, so the staging
+    /// and sink reset here are identical to `sendMirrorFileGet` on purpose:
+    /// there is one bulk receiver on this side and a grab uses it.
+    func sendContinuityGrab(id: Int, epoch: UInt32, generation: UInt32,
+                            container: String?, stagingDirectory: URL) {
+        fileBegin = nil
+        fileSink?.abort()
+        fileSink = nil
+        fileStagingDirectory = stagingDirectory
+        fileStart = Date()
+        send(.continuityGrab(.init(version: ContinuityContract.version,
+                                   id: id, epoch: epoch,
+                                   generation: generation,
+                                   container: container)))
+    }
+
     func sendDevelopmentProjectFileGet(id: Int, projectID: String,
                                        path: String,
                                        stagingDirectory: URL) {

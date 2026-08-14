@@ -765,6 +765,7 @@ private extension ContinuityEdgeControllerTests {
         var fileDrags: [(item: HostFileDragItem, point: CGPoint,
                          event: NSEvent)] = []
         var associationChanges: [Bool] = []
+        var catchChanges: [Bool] = []
         var captureStarts = 0
         var captureStops = 0
         var captureHandler: ContinuityPointerEnvironment.SampleHandler?
@@ -823,6 +824,10 @@ private extension ContinuityEdgeControllerTests {
             _ = token
             _ = edge
             fileCallbacks = callbacks
+        }
+        func setFileEdgeCatching(_ token: AnyObject, _ catching: Bool) {
+            _ = token
+            catchChanges.append(catching)
         }
         func hideFileEdge(_ token: AnyObject) {
             _ = token
