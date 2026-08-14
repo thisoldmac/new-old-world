@@ -19,6 +19,9 @@ private enum ContinuityHostModuleError: Error, CustomStringConvertible {
 final class ContinuityHostModuleRuntime: HostModuleRuntime {
     let controller: MirrorContinuityController
     let connectedMachineName: () -> String
+    /// Page-scoped, unlike the controller: the stills are worth exactly as
+    /// long as somebody is looking at the arrangement.
+    let previews: ContinuityDisplayPreviewStore
 
     init(context: HostModuleContext) throws {
         guard let controller = context.continuity else {
@@ -26,6 +29,9 @@ final class ContinuityHostModuleRuntime: HostModuleRuntime {
         }
         self.controller = controller
         self.connectedMachineName = context.connectedMachineName
+        self.previews = ContinuityDisplayPreviewStore(
+            guestSource: ContinuityGuestListenerCapture(
+                listener: context.listener))
     }
 
     func shutDown() {
@@ -52,6 +58,7 @@ enum ContinuityHostModule {
             }
             return AnyView(ContinuityModuleView(
                 controller: runtime.controller,
+                previews: runtime.previews,
                 connectedMachineName: runtime.connectedMachineName))
         })
 }
@@ -63,6 +70,7 @@ enum ContinuityHostModule {
 /// down through one funnel.
 struct ContinuityModuleView: View {
     @ObservedObject var controller: MirrorContinuityController
+    @ObservedObject var previews: ContinuityDisplayPreviewStore
     let connectedMachineName: () -> String
 
     private var connected: Bool {
@@ -74,6 +82,7 @@ struct ContinuityModuleView: View {
             ContinuityDisplayLayoutView(
                 layout: controller.layout,
                 edge: controller.edge,
+                previews: previews,
                 guestName: connectedMachineName(),
                 mirrorRunning: controller.edgeModeActive)
                 .padding(14)

@@ -3,6 +3,7 @@ import SwiftUI
 struct ContinuityDisplayLayoutView: View {
     @ObservedObject var layout: ContinuityDisplayLayout
     @ObservedObject var edge: ContinuityEdgeController
+    @ObservedObject var previews: ContinuityDisplayPreviewStore
     let guestName: String
     let mirrorRunning: Bool
 
@@ -21,7 +22,7 @@ struct ContinuityDisplayLayoutView: View {
                 Button("Refresh Host Displays") { layout.refreshDisplays() }
             }
 
-            ContinuityArrangementCanvas(layout: layout,
+            ContinuityArrangementCanvas(layout: layout, previews: previews,
                                         guestName: guestName)
                 .frame(minHeight: 280)
                 .background(Color(nsColor: .controlBackgroundColor))
@@ -29,6 +30,23 @@ struct ContinuityDisplayLayoutView: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(Color(nsColor: .separatorColor))
+                }
+                .overlay(alignment: .bottomLeading) {
+                    /* A preview that could not be taken says why, in the
+                       canvas. The alternative - flat fills with no
+                       explanation - is indistinguishable from a Mac whose
+                       displays are simply grey, and a black rectangle is
+                       worse still. */
+                    if let note = previews.note {
+                        Text(note.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.thinMaterial,
+                                        in: RoundedRectangle(cornerRadius: 6))
+                            .padding(8)
+                    }
                 }
 
             HStack(alignment: .center, spacing: 16) {
@@ -112,6 +130,7 @@ struct ContinuityChoiceButtonStyle: ButtonStyle {
 
 private struct ContinuityArrangementCanvas: View {
     @ObservedObject var layout: ContinuityDisplayLayout
+    @ObservedObject var previews: ContinuityDisplayPreviewStore
     let guestName: String
     @State private var dragOrigin: CGPoint?
 
@@ -127,6 +146,12 @@ private struct ContinuityArrangementCanvas: View {
             }
         }
         .padding(8)
+        .task { await previews.refresh(hosts: layout.hostDisplays) }
+        /* The two moments a still can go stale, and the only two: the shape
+           of the arrangement changed, or the guest arrived. Not a timer. */
+        .onChange(of: layout.hostDisplays) { hosts in
+            Task { await previews.refresh(hosts: hosts) }
+        }
     }
 
     private func displayTile(_ display: HostDisplayDescriptor,
@@ -135,6 +160,14 @@ private struct ContinuityArrangementCanvas: View {
         return ZStack {
             RoundedRectangle(cornerRadius: 7)
                 .fill(Color(nsColor: .underPageBackgroundColor))
+            if let preview = previews.hostPreviews[display.id] {
+                Image(decorative: preview, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    // The name has to stay readable over a wallpaper.
+                    .overlay(Color.black.opacity(0.25))
+            }
             RoundedRectangle(cornerRadius: 7)
                 .stroke(display.isPrimary ? Color.primary.opacity(0.65)
                                           : Color.secondary.opacity(0.55),
@@ -149,6 +182,7 @@ private struct ContinuityArrangementCanvas: View {
                     .foregroundStyle(.secondary)
             }
             .padding(6)
+            .shadow(radius: previews.hostPreviews[display.id] == nil ? 0 : 3)
         }
         .frame(width: rect.width, height: rect.height)
         .position(x: rect.midX, y: rect.midY)
@@ -161,6 +195,15 @@ private struct ContinuityArrangementCanvas: View {
         return ZStack {
             RoundedRectangle(cornerRadius: 7)
                 .fill(Color.accentColor.opacity(0.22))
+            // No guest connected is not a failure: the tile keeps the flat
+            // fill and the machine name, exactly as before previews existed.
+            if let preview = previews.guestPreview {
+                Image(decorative: preview, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .overlay(Color.black.opacity(0.2))
+            }
             RoundedRectangle(cornerRadius: 7)
                 .stroke(Color.accentColor, lineWidth: 2)
             VStack(spacing: 3) {

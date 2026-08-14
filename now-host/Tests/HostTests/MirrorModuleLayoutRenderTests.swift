@@ -106,6 +106,7 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
             at: outDir, withIntermediateDirectories: true)
         let view = AnyView(
             ContinuityModuleView(controller: rig.source.continuity,
+                                 previews: .capturingNothing,
                                  connectedMachineName: { "Power Mac G4" })
                 .frame(width: 900, height: 720))
 
