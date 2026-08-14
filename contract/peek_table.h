@@ -1051,17 +1051,28 @@ enum {
 };
 
 enum {
+    /* Reserved after the held-point pin was superseded by synthetic-device
+       settlement. The value remains a tombstone and is never reused. */
     kNowPeekContinuityTrackingPinHeldPoint = 1u << 0,
+    /* Reserved after the target-context GetMouse override was superseded by
+       the same settlement mechanism. The value is never reused. */
     kNowPeekContinuityTrackingVirtualGetMouse = 1u << 1,
+    /* Reserved after the rejected cursor-hiding experiment. Keep the bit
+       named and numbered so an older application cannot accidentally arm a
+       future mechanism by sending its former option. Current residents
+       ignore it. */
     kNowPeekContinuityTrackingHideGuestCursor = 1u << 2,
+    /* Reserved after the rejected virtual-ADB carrier experiment. Its
+       observer and injection code are retired; the accretive bit remains a
+       tombstone and is never reused. */
     kNowPeekContinuityTrackingVirtualADB = 1u << 3,
     kNowPeekContinuityTrackingSettleSyntheticDevice = 1u << 4,
     kNowPeekContinuityTrackingWideDoubleTime = 1u << 5,
-    /* Spike: ordinary motion is smooth exactly where the settle machinery
-       drives the device (drags, menus) and hitches where it rides the PPC
+    /* Ordinary motion is smooth exactly where the settle machinery drives
+       the device (drags, menus) and hitches where it rides the PPC
        application's own scheduling. When set, the jGNE pass settles the
        NOWc device to the freshest wire point whenever the application is
-       behind, in whatever process is pumping. Off by default. */
+       behind, in whatever process is pumping. */
     kNowPeekContinuityTrackingSettleIdleCursor = 1u << 6,
     /* Rewrite synthetic mouse-event `when`s at the jGNE boundary so any
        consumer's click-pairing arithmetic accepts a pair we produced
@@ -2100,10 +2111,10 @@ enum {
        removed until reboot; idle hooks perform only a byte test and tail
        jump to the incumbent. */
     kNowPeekRestCursorTrackingPatched = 1u << 7,
-    /* A passive wrapper is installed around the relative ADB device's
-       incumbent service routine. It remains pass-through until reboot even
-       while recording is idle, because unlinking from an extended chain is
-       unsafe. */
+    /* Reserved. V6 installed a passive wrapper around the relative ADB
+       device's incumbent service routine. The observer was retired after it
+       could not coexist with two pointing devices; the accretive rest bit is
+       retained so its old meaning is never reassigned. */
     kNowPeekRestADBObserverInstalled = 1u << 8
 };
 

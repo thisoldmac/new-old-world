@@ -891,6 +891,66 @@
         "ext/src/now_ext_continuity.c"
       ],
       "reason": "MBTicks coherence + edges-driven interrupt press; bake follows with tonight's bundle"
+    },
+    {
+      "at": "2026-08-14T03:21:41-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "72d0abf933aa6dab58fbae28f4db7aace1e0db4f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "Continuity consolidation contract classification; resident prune and emulator validation will follow in this branch before the shared landing bake."
+    },
+    {
+      "at": "2026-08-14T03:22:26-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "72d0abf933aa6dab58fbae28f4db7aace1e0db4f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "Continuity consolidation contract classification; resident prune and emulator validation will follow in this branch before the shared landing bake."
+    },
+    {
+      "at": "2026-08-14T03:23:09-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "72d0abf933aa6dab58fbae28f4db7aace1e0db4f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "Continuity consolidation contract classification; resident prune and emulator validation will follow in this branch before the shared landing bake."
+    },
+    {
+      "at": "2026-08-14T03:24:01-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "72d0abf933aa6dab58fbae28f4db7aace1e0db4f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "Continuity consolidation contract classification; resident prune and emulator validation will follow in this branch before the shared landing bake."
+    },
+    {
+      "at": "2026-08-14T03:24:17-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "72d0abf933aa6dab58fbae28f4db7aace1e0db4f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "Continuity consolidation contract classification; resident prune and emulator validation will follow in this branch before the shared landing bake."
+    },
+    {
+      "at": "2026-08-14T03:26:05-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "72d0abf933aa6dab58fbae28f4db7aace1e0db4f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "Continuity consolidation contract classification; resident prune and emulator validation will follow in this branch before the shared landing bake."
     }
   ]
 }

@@ -2197,30 +2197,30 @@ components:
         pinHeldPoint:
           type: boolean
           default: false
+          deprecated: true
           description: >
-            Experimental and host-selected. While the primary button is held,
-            the resident reasserts its latest host-owned MouseLocation on
-            every bounded timer tick, including ticks with no newer position
-            datagram. This tests contention from a physical ADB or USB device
-            without mutating that device or its driver-owned state.
+            Reserved compatibility field from the held-point pin experiment.
+            Synthetic-device settlement superseded it; current guests ignore
+            the field and its name is never reused.
         virtualGetMouse:
           type: boolean
           default: false
+          deprecated: true
           description: >
-            Experimental and host-selected. While the primary button is held,
-            the resident's target-context GetMouse hook answers from the
-            host-owned tracking point instead of tail-chaining to the
-            incumbent trap. Inactive calls always retain the original chain.
+            Reserved compatibility field from the target-context GetMouse
+            experiment. Synthetic-device settlement superseded it; current
+            guests ignore the field and its name is never reused.
         settleSyntheticDevice:
           type: boolean
           default: false
           description: >
-            Diagnostic experiment. From the tracked application's task-time
+            From the tracked application's task-time
             hook, the resident discovers the synthetic Cursor Device whose
             devID is NOWc and moves that device to the held host point before
             tail-chaining. The walk is bounded, epoch-bound and guarded
             against reentry. No CursorDevice pointer crosses the resident
-            contract and the experiment is inactive unless explicitly set.
+            contract. This is the product mechanism that keeps the drawn
+            device coherent with the held tracking point.
         wideDoubleTime:
           type: boolean
           default: false
@@ -2237,15 +2237,15 @@ components:
           type: boolean
           default: false
           description: >
-            Experiment, host-selected, off by default, and the riskiest
-            input option in this contract. When a second press sits
+            Host-selected. When a second press sits
             deferred behind an unsettled manager-up, the resident's
             interrupt timer delivers the completed pair itself - mouseUp
-            event, MBState down, mouseDown event - because the Finder
-            pairs clicks by its own clock at processing time and no
-            task-time route can enter the queue while it processes the
-            first click. The pending manager-up is canceled and the
-            manager ledger reconciles at the next task-time boundary.
+            event, MBState down, mouseDown event - so the second click can
+            enter the queue while the target application holds cooperative
+            task time processing the first click. The manager-busy handshake
+            prevents concurrent task-time delivery, and the manager ledger
+            reconciles at the next safe boundary. This is the metal-verified
+            double-click mechanism; its product default remains host policy.
         deepClickLog:
           type: boolean
           default: false
@@ -2277,36 +2277,31 @@ components:
           type: boolean
           default: false
           description: >
-            Spike, host-selected, off by default. On every jGNE pass, in
+            Host-selected. On every jGNE pass, in
             whatever process is pumping, the resident settles the NOWc
             synthetic device to the freshest wire point when the PPC
             application is provably behind it, with one balanced redraw.
             Ordinary motion hitches exactly where the sprite rides the
             application's own cooperative scheduling and is smooth where
-            the settle machinery drives it; this extends that machinery to
-            idle motion to test the remaining hitch attribution.
+            the settle machinery drives it; this extends the product
+            mechanism to idle motion.
         hideGuestCursorWhileDragging:
           type: boolean
           default: false
+          deprecated: true
           description: >
-            Experimental and host-selected. The guest balances one
-            HideCursor/ShowCursor pair around a held primary gesture while
-            the host cursor remains visible over Mirror. This isolates the
-            native cursor sprite from ADB and Cursor Device position
-            contention without changing either device's state.
+            Reserved compatibility field from a rejected cursor-hiding
+            experiment. Current guests ignore it. The field remains in the
+            accretive contract so its name cannot acquire a new meaning.
         virtualADB:
           type: boolean
           default: false
+          deprecated: true
           description: >
-            Rejected carrier-substitution experiment, absent from the product
-            UI and false in ordinary host arms. Tiny relative ADB register-0
-            packets become carriers for bounded deltas toward the latest host
-            point, and the ordinary Cursor Device position apply is bypassed.
-            Larger physical deltas remain native and revoke Continuity. A
-            PowerBook metal run established that the physical trackpad does
-            not provide the independent report clock this mechanism needs and
-            that it does not resolve held-pointer contention. Retained only
-            for bounded emulator and passive-observer research.
+            Reserved compatibility field from the rejected virtual-ADB
+            carrier experiment. Current guests ignore it. The observer and
+            injection implementation are retired; the field remains so the
+            accretive contract never reuses its name for another mechanism.
     ContinuityDisarm:
       type: object
       required: [type, version, id, epoch, reason]
