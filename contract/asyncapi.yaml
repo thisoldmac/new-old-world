@@ -1872,18 +1872,11 @@ components:
               defaultSize:
                 type: string
                 description: >
-                  For a service that sizes its deliveries (photos
-                  today): the host's OWN configured CloudGet.size
-                  token. It exists so a guest that offers the choice
-                  can PRESELECT the host's setting instead of carrying
-                  a "host default" item whose meaning it cannot name
-                  on screen — the setting arrives as data and the
-                  guest's ask is always an explicit token.
-                  Additive and optional: a host that omits it, or that
-                  names a token this guest has never heard of, leaves
-                  the guest to open on a size of its own choosing.
-                  Data, not a command — the guest may still send any
-                  token the CloudGet.size enum allows.
+                  Legacy compatibility hint from hosts that owned a
+                  download-size preference. Current hosts omit it because
+                  the guest owns download size and sends an explicit token.
+                  A guest may still accept this optional hint from an older
+                  host without giving it authority over a later local pick.
     CloudList:
       type: object
       required: [type, id, service]
@@ -2045,12 +2038,9 @@ components:
             long edge — the asker already has both numbers, and a
             fifth wire round trip to learn their ratio would be the
             wire doing the asker's arithmetic for it.
-            The field stays optional. Absent means the host's
-            configured default, which is what a guest with no size UI
-            of its own sends. A guest that OFFERS the choice does not
-            use absence for it: it learns the host's configured token
-            from cloud.report's defaultSize, preselects that, and
-            always sends an explicit token — so what a person sees
+            The field stays optional for older guests. Absent asks the host
+            for its conservative compatibility default. A guest that offers
+            the choice always sends an explicit token, so what a person sees
             selected and what actually arrives cannot disagree. A
             token outside the enum is refused with a reason, never
             guessed at; a service that does not size its deliveries
@@ -3211,7 +3201,11 @@ components:
       properties:
         type: { const: capture.request }
         id: { type: integer }
-        depth: { enum: [1, 2, 4, 8, 16, 32] }
+        depth:
+          enum: [0, 1, 2, 4, 8, 16, 32]
+          description: >
+            0 asks the guest to capture at its main display's current native
+            depth. The positive values request an explicit conversion depth.
         chunkKb: { type: integer, minimum: 1, maximum: 32 }
         paceMs: { type: integer, minimum: 0, maximum: 100 }
         pack: { type: boolean }
@@ -3221,7 +3215,11 @@ components:
       additionalProperties: false
       properties:
         type: { const: stream.request }
-        depth: { enum: [1, 2, 4, 8, 16, 32] }
+        depth:
+          enum: [0, 1, 2, 4, 8, 16, 32]
+          description: >
+            0 asks the receiving guest to use its main display's current
+            native depth; positive values request an explicit depth.
     StreamStart:
       type: object
       required: [type, id, depth]
@@ -3231,7 +3229,11 @@ components:
         id:
           type: integer
           description: Stream id; every frame's capture.begin carries it.
-        depth: { enum: [1, 2, 4, 8, 16, 32] }
+        depth:
+          enum: [0, 1, 2, 4, 8, 16, 32]
+          description: >
+            0 follows the guest display's current native depth for the whole
+            stream. Positive values request an explicit conversion depth.
         minIntervalMs:
           type: integer
           description: >
@@ -3496,8 +3498,10 @@ components:
             ok:false with this id, so the requester never waits forever.
         psnLow: { type: integer }
         depth:
-          enum: [1, 2, 4, 8, 16, 32]
-          description: Capture bit depth; the guest's preference if omitted.
+          enum: [0, 1, 2, 4, 8, 16, 32]
+          description: >
+            Capture bit depth. 0 asks for the main display's current native
+            depth; omission keeps the guest's saved preference.
     ProcessResult:
       type: object
       required: [type, id, ok]
@@ -4133,6 +4137,17 @@ components:
         encodeMs:
           type: integer
           description: Guest-side encode time, for tuning.
+        cursorX:
+          type: integer
+          description: >
+            Stream frames only: current global cursor hot-spot x in guest
+            screen coordinates. Paired with cursorY; omission means the
+            guest cannot report a cursor for this frame.
+        cursorY:
+          type: integer
+          description: >
+            Stream frames only: current global cursor hot-spot y in guest
+            screen coordinates. Paired with cursorX.
         id:
           type: integer
           description: The capture.request id, or a guest-chosen id for

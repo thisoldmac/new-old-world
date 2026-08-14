@@ -8,6 +8,16 @@ Boolean capture_depth_is_supported(short depth)
         || depth == 16 || depth == 32;
 }
 
+short capture_native_depth(void)
+{
+    GDHandle device = GetMainDevice();
+
+    if (device == NULL || (**device).gdPMap == NULL) {
+        return 0;
+    }
+    return (**(**device).gdPMap).pixelSize;
+}
+
 int banded_capture_begin_spans(short depth, const CaptureSpan *spans,
                                short n_spans, short row_scale,
                                short row_phase, BandedCapture *cap)

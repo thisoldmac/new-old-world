@@ -196,10 +196,15 @@ rederived: 2026-08-14T12:44:43-0400 4d52ba1a sources
 rederived: 2026-08-14T12:47:23-0400 804be291 sources
 rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
+<<<<<<< HEAD
 rederived: 2026-08-14T14:27:57-0400 6d037a57 unchanged
 rederived: 2026-08-14T16:58:27-0400 cf962dbb sources
 rederived: 2026-08-14T17:12:28-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
+=======
+rederived: 2026-08-14T14:40:04-0400 8875fe9e unchanged
+>>>>>>> 835e6acf (feat: polish guest workflows and navigation)
+rederived: 2026-08-14T18:19:50-0400 60bb3427 unchanged
 -->

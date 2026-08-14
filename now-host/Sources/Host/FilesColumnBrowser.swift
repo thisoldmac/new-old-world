@@ -22,6 +22,22 @@ enum FilesColumnPath {
         }
         return directory == target ? indexes : nil
     }
+
+    static func selectionIndexes(
+        root: String, itemIDs: [FilesBrowserRow.ID],
+        children: (String) -> [FilesBrowserRow]
+    ) -> [Int]? {
+        var directory = root
+        var indexes: [Int] = []
+        for itemID in itemIDs {
+            let rows = children(directory)
+            guard let index = rows.firstIndex(where: { $0.id == itemID })
+            else { return nil }
+            indexes.append(index)
+            directory = rows[index].path
+        }
+        return indexes
+    }
 }
 
 /// One item-based AppKit column browser used by both file-system targets.
@@ -147,15 +163,7 @@ struct FilesColumnBrowser: NSViewRepresentable {
         }
         if coordinator.contentRevision != contentRevision {
             coordinator.contentRevision = contentRevision
-            coordinator.invalidateChildren()
-            if browser.lastColumn < 0 {
-                browser.loadColumnZero()
-            } else {
-                for column in stride(from: browser.lastColumn,
-                                     through: 0, by: -1) {
-                    browser.reloadColumn(column)
-                }
-            }
+            coordinator.reloadColumnsPreservingSelection(in: browser)
         }
         if coordinator.currentDirectoryKey != currentDirectoryKey {
             coordinator.currentDirectoryKey = currentDirectoryKey
@@ -173,6 +181,7 @@ struct FilesColumnBrowser: NSViewRepresentable {
         weak var browser: NSBrowser?
         private var nodes: [String: Node] = [:]
         private var childrenByDirectory: [String: [Node]] = [:]
+        private var isRestoringSelection = false
         private let promiseQueue: OperationQueue = {
             let queue = OperationQueue()
             queue.maxConcurrentOperationCount = 1
@@ -210,6 +219,28 @@ struct FilesColumnBrowser: NSViewRepresentable {
         func invalidateChildren() {
             childrenByDirectory.removeAll(keepingCapacity: true)
             nodes.removeAll(keepingCapacity: true)
+        }
+
+        func reloadColumnsPreservingSelection(in browser: NSBrowser) {
+            let selectedIDs = selectedItemIDs(in: browser)
+            invalidateChildren()
+            if browser.lastColumn < 0 {
+                browser.loadColumnZero()
+            } else {
+                for column in stride(from: browser.lastColumn,
+                                     through: 0, by: -1) {
+                    browser.reloadColumn(column)
+                }
+            }
+            guard !selectedIDs.isEmpty,
+                  let indexes = FilesColumnPath.selectionIndexes(
+                    root: rootDirectoryKey,
+                    itemIDs: selectedIDs,
+                    children: parent.children) else { return }
+            isRestoringSelection = true
+            browser.selectionIndexPath = IndexPath(indexes: indexes)
+            isRestoringSelection = false
+            browser.scrollColumnToVisible(browser.lastColumn)
         }
 
         func browser(_ browser: NSBrowser,
@@ -318,6 +349,7 @@ struct FilesColumnBrowser: NSViewRepresentable {
         }
 
         @objc func selectionChanged(_ sender: NSBrowser) {
+            guard !isRestoringSelection else { return }
             guard let node = selectedNode(in: sender) else { return }
             parent.select(node.row)
         }
@@ -375,6 +407,15 @@ struct FilesColumnBrowser: NSViewRepresentable {
             let row = browser.selectedRow(inColumn: column)
             guard row >= 0 else { return nil }
             return browser.item(atRow: row, inColumn: column) as? Node
+        }
+
+        private func selectedItemIDs(in browser: NSBrowser)
+            -> [FilesBrowserRow.ID] {
+            guard let indexPath = browser.selectionIndexPath else { return [] }
+            return (0..<indexPath.count).compactMap { column in
+                browser.item(atRow: indexPath[column], inColumn: column)
+                    .flatMap { ($0 as? Node)?.row.id }
+            }
         }
 
         private func directoryKey(for item: Any?) -> String {

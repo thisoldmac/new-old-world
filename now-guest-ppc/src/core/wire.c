@@ -1651,15 +1651,21 @@ static long begin_frame_fields(const ShotMeta *meta, char *out, long cap)
 {
     long pos = 0;
     short i;
+    Point cursor;
 
     if (meta->kind == kFrameStandalone) {
         out[0] = '\0';
         return 0;
     }
+    GetGlobalMouse(&cursor);
     if (meta->kind == kFrameKey) {
-        return snprintf(out, (size_t)cap, ",\"frame\":\"key\"");
+        return snprintf(out, (size_t)cap,
+                        ",\"frame\":\"key\",\"cursorX\":%d,\"cursorY\":%d",
+                        (int)cursor.h, (int)cursor.v);
     }
-    pos = snprintf(out, (size_t)cap, ",\"frame\":\"delta\",\"rects\":[");
+    pos = snprintf(out, (size_t)cap,
+                   ",\"frame\":\"delta\",\"cursorX\":%d,\"cursorY\":%d,"
+                   "\"rects\":[", (int)cursor.h, (int)cursor.v);
     for (i = 0; i < meta->n_rects; ++i) {
         short scale = meta->row_scale > 1 ? meta->row_scale : 1;
         long canvas_row = (long)meta->rects[i].row * scale
@@ -1814,8 +1820,10 @@ static void serve_capture(const char *request)
         return;                       /* one transfer at a time */
     }
     now_prefs_load(&prefs);
-    depth = capture_depth_is_supported((short)depth_arg)
-        ? (short)depth_arg : prefs.shot_depth;
+    depth = depth_arg == 0 ? capture_native_depth() : (short)depth_arg;
+    if (!capture_depth_is_supported(depth)) {
+        depth = prefs.shot_depth;
+    }
     tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack);
     xfer = next_xfer();
 
@@ -2386,8 +2394,11 @@ static void serve_process_shot(const char *request)
     now_prefs_load(&prefs);
     g_shot.target = psn;
     g_shot.id = id;
-    g_shot.depth = capture_depth_is_supported((short)depth_arg)
-        ? (short)depth_arg : prefs.shot_depth;
+    g_shot.depth = depth_arg == 0 ? capture_native_depth()
+        : (short)depth_arg;
+    if (!capture_depth_is_supported(g_shot.depth)) {
+        g_shot.depth = prefs.shot_depth;
+    }
     tuning_from_json(request, &prefs, &g_shot.chunk, &g_shot.pace_ms,
                      &g_shot.pack);
     now_proc_bring_to_front(&psn);
@@ -6335,8 +6346,11 @@ static void stream_start(const char *reply)
 
     memset(&g_stream, 0, sizeof g_stream);
     g_stream.id = id;
-    g_stream.depth = capture_depth_is_supported((short)depth_arg)
-        ? (short)depth_arg : prefs.shot_depth;
+    g_stream.depth = depth_arg == 0 ? capture_native_depth()
+        : (short)depth_arg;
+    if (!capture_depth_is_supported(g_stream.depth)) {
+        g_stream.depth = prefs.shot_depth;
+    }
     tuning_from_json(reply, &prefs, &g_stream.chunk, &g_stream.pace_ms,
                      &g_stream.pack);
     g_stream.predictive =
@@ -6678,18 +6692,21 @@ static void stream_send_empty_frame(void)
 {
     char json[256];
     unsigned short xfer = next_xfer();
+    Point cursor;
+
+    GetGlobalMouse(&cursor);
 
     snprintf(json, sizeof json,
              "{\"type\":\"capture.begin\",\"id\":%ld,\"transfer\":%u,"
              "\"width\":%d,\"height\":%d,\"depth\":%d,"
              "\"rowBytes\":%d,\"bytes\":0,\"paletteBytes\":0,"
              "\"encoding\":\"raw\",\"captureMs\":%ld,"
-             "\"frame\":\"empty\"}",
+             "\"frame\":\"empty\",\"cursorX\":%d,\"cursorY\":%d}",
              g_stream.id, xfer, (int)g_stream.ready_meta.width,
              (int)g_stream.ready_meta.height,
              (int)g_stream.ready_meta.depth,
              (int)g_stream.ready_meta.row_bytes,
-             g_stream.ready_meta.capture_ms);
+             g_stream.ready_meta.capture_ms, (int)cursor.h, (int)cursor.v);
     send_control(json);
     snprintf(json, sizeof json,
              "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"

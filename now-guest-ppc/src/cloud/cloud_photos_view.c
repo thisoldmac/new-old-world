@@ -101,15 +101,15 @@ enum {
    and the largest-stop item are stated once in cloud_model.h so the
    resource, the table and the map cannot drift apart.
    There is no "host default" item: an item that cannot say on screen
-   what it will deliver is not an answer to "at what size?", so the
-   host's setting arrives as data (cloud.report defaultSize) and is
-   preselected below instead. */
+   what it will deliver is not an answer to "at what size?". A legacy
+   defaultSize hint may still preselect the popup, but current hosts omit it
+   and the guest opens on its own safe bounded choice. */
 static const long k_size_stops[kCloudSizeItemCount] = {
     0, 1600, 1024, 640
 };
 
-/* Which item the popup opens on: the host's own configured size when
-   the report named one this guest offers, the largest bounded stop
+/* Which item the popup opens on: a legacy host hint when the report named
+   one this guest offers, the largest bounded stop
    otherwise (cloud_size_default_item). A person's own pick outranks a
    later report — g_size_chosen — because a Refresh that silently
    moved the size out from under them would be the same class of lie
@@ -441,8 +441,8 @@ static OSErr view_create(WindowRef owner)
     g_dl_bar = now_control_new(owner, &seed, text, false, 0, 0, 1000,
                                kControlProgressBarProc, 0);
     /* A missing control degrades that control, not the page: the ask
-       still works at the host default, a save still lands in the
-       share, the byte line still draws. */
+       still works at the guest's safe bounded default, a save still lands
+       in the share, the byte line still draws. */
 
     /* This view's own Data Browser (see the file header): built the
        same defensive way Drive's is — a failure here degrades this

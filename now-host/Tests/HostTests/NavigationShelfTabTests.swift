@@ -60,6 +60,25 @@ final class NavigationShelfTabTests: XCTestCase {
         }
     }
 
+    func testExperimentalTierFlowsFromDescriptorIntoNavigationChrome() throws {
+        let mirror = try XCTUnwrap(ModuleRegistry.standard.module(id: "mirror"))
+        let shelf = NavigationShelf(
+            id: .user(UUID()), title: "Experiments",
+            moduleIDs: [mirror.id])
+
+        let tab = try XCTUnwrap(NavigationShelfTab.tabs(
+            for: shelf, registry: .standard).first)
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNavigationContent.swift")
+        let detail = try GateSource.hostSwift(
+            "now-host/Sources/Host/ShelfDetailView.swift")
+
+        XCTAssertEqual(mirror.tier, .experimental)
+        XCTAssertEqual(tab.tier, .experimental)
+        XCTAssertTrue(sidebar.contains("ModuleTierBadge(tier: module.tier"))
+        XCTAssertTrue(detail.contains("ModuleTierBadge(tier: tab.tier"))
+    }
+
     func testShelfMembersRenderAsDetailPillsInsteadOfSidebarRows() throws {
         let sidebar = try sidebarSource()
         let detail = try GateSource.hostSwift(
@@ -108,11 +127,16 @@ final class NavigationShelfTabTests: XCTestCase {
         XCTAssertFalse(sidebar.contains("case .network: \"Network\""))
     }
 
-    func testDropTargetsOverlayRowsInsteadOfBecomingEmptyListRows() throws {
+    func testPopulatedRowsUseContinuousNativeDropRegions() throws {
         let sidebar = try sidebarSource()
 
         XCTAssertTrue(sidebar.contains("SidebarNavigationListRow("))
-        XCTAssertTrue(sidebar.contains(".overlay(alignment: .top)"))
+        XCTAssertTrue(sidebar.contains("rowDropTargets:"))
+        XCTAssertTrue(sidebar.contains(
+            "beforeTarget: .zone(zone, index: index)"))
+        XCTAssertTrue(sidebar.contains(
+            "afterTarget: .zone(zone, index: index + 1)"))
+        XCTAssertFalse(sidebar.contains(".offset(y: -10)"))
         XCTAssertFalse(sidebar.contains(".listRowInsets(EdgeInsets())"))
     }
 

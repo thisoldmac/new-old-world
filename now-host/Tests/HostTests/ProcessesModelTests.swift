@@ -219,7 +219,7 @@ final class ProcessesModelTests: XCTestCase {
         fake.table = [target]
         let model = connected(fake)
 
-        XCTAssertEqual(model.captureDepth, .indexed)
+        XCTAssertEqual(model.captureDepth, .native)
         model.captureDepth = .mono
         model.screenshotApp(target)
         XCTAssertEqual(fake.lastDepth, CaptureDepth.mono.rawValue)

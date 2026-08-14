@@ -226,8 +226,7 @@ private struct HostDetailView: View {
         case .shelfHero(.machine):
             MachineOverviewView(
                 monitor: state.guestStatus,
-                modules: machineModules,
-                selectModule: selectModule)
+                state: state)
         case .shelfHero:
             unavailable
         case .module(let moduleID):
@@ -251,11 +250,6 @@ private struct HostDetailView: View {
             startListening: { state.startListening() }) {
                 state.moduleView(registry: registry, id: moduleID)
             }
-    }
-
-    private var machineModules: [ModuleDescriptor] {
-        layout.shelf(id: .machine)?.moduleIDs
-            .compactMap(registry.module(id:)) ?? []
     }
 
     private var unavailable: some View {

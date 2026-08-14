@@ -60,24 +60,6 @@ struct CloudModuleView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-                if model.hasDownloadSize(service.service) {
-                    /* What a fetch delivers, applied host-side before
-                       the JPEG leaves: the classic Mac never sees the
-                       original unless this says so. */
-                    Picker("Downloads:", selection: Binding(
-                        get: { model.downloadSize(service.service) },
-                        set: { model.setDownloadSize(service.service, $0) }
-                    )) {
-                        ForEach(PhotosCloudProvider.DownloadSize.allCases,
-                                id: \.self) { size in
-                            Text(size.label).tag(size)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .fixedSize()
-                    .font(.callout)
-                    .padding(.top, 2)
-                }
             }
             Spacer()
             controls(service)
@@ -149,10 +131,9 @@ struct CloudModuleView: View {
     private var footnote: some View {
         Text("Serving is per-service and answers any "
              + "\(MachineNaming.commonNoun) connected. "
-             + "Drive travels through the file share; Photos arrive as "
-             + "JPEGs \(MachineNaming.simpleReference) opens by "
-             + "double-click, downsized "
-             + "per the Downloads setting before they leave.")
+             + "Drive travels through the file share. Photo download size "
+             + "and destination belong to \(MachineNaming.simpleReference); "
+             + "this Mac only provides the connection and macOS access.")
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)

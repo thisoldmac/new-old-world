@@ -107,6 +107,66 @@ final class FilesBrowserNavigationTests: XCTestCase {
         XCTAssertEqual(indexes, [0, 0])
     }
 
+    func testColumnPathRestoresStableItemsAfterAListingRefresh() {
+        let folder: (String, String) -> FilesBrowserRow = { name, path in
+            .guest(FileRow(entry: FileEntry(
+                name: name, kind: "folder", fileType: nil, creator: nil,
+                dataBytes: nil, rsrcBytes: nil, modified: nil), path: path))
+        }
+        let rows = [
+            "": [folder("Applications", "Applications"),
+                 folder("System Folder", "System Folder")],
+            "System Folder": [folder("Extensions",
+                                      "System Folder:Extensions")],
+        ]
+
+        let indexes = FilesColumnPath.selectionIndexes(
+            root: "",
+            itemIDs: [rows[""]![1].id,
+                      rows["System Folder"]![0].id],
+            children: { rows[$0] ?? [] })
+
+        XCTAssertEqual(indexes, [1, 0],
+            "a refresh must restore the same items rather than dismissing the open column")
+    }
+
+    func testColumnRefreshKeepsTheOpenColumnSelection() throws {
+        let folder = FilesBrowserRow.guest(FileRow(entry: FileEntry(
+            name: "System Folder", kind: "folder", fileType: nil,
+            creator: nil, dataBytes: nil, rsrcBytes: nil, modified: nil),
+            path: "System Folder"))
+        let child = FilesBrowserRow.guest(FileRow(entry: FileEntry(
+            name: "Extensions", kind: "folder", fileType: nil,
+            creator: nil, dataBytes: nil, rsrcBytes: nil, modified: nil),
+            path: "System Folder:Extensions"))
+        let rows = ["": [folder], "System Folder": [child]]
+        let component = FilesColumnBrowser(
+            rootDirectoryKey: "", currentDirectoryKey: "",
+            autosaveName: "ColumnRefreshTest", contentRevision: 0,
+            localDragOperation: .copy,
+            contains: { candidate, root in
+                root.isEmpty || candidate == root
+                    || candidate.hasPrefix(root + ":")
+            },
+            children: { rows[$0] ?? [] },
+            requestChildren: { _ in },
+            icon: { _ in NSImage() },
+            select: { _ in }, open: { _ in })
+        let coordinator = component.makeCoordinator()
+        let browser = NSBrowser()
+        browser.delegate = coordinator
+        browser.allowsEmptySelection = true
+        browser.loadColumnZero()
+        browser.selectionIndexPath = IndexPath(indexes: [0])
+        XCTAssertEqual(browser.selectionIndexPath, IndexPath(indexes: [0]))
+
+        coordinator.reloadColumnsPreservingSelection(in: browser)
+
+        XCTAssertEqual(browser.selectionIndexPath, IndexPath(indexes: [0]))
+        XCTAssertGreaterThanOrEqual(browser.lastColumn, 1,
+            "loading a child listing must not make its selected parent collapse")
+    }
+
     func testSupportedHostPlacesIncludeHomeFavoritesAndVolumes() {
         let root = URL(fileURLWithPath: "/tmp/Shared")
         let home = URL(fileURLWithPath: "/Users/Test")

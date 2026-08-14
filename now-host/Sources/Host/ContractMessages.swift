@@ -415,10 +415,8 @@ struct CloudServiceEntry: Codable, Equatable, Sendable, Identifiable {
     /// serving, so the guest's dropdown can say WHY a thing is missing.
     var state: String
     var detail: String?
-    /// For a service that sizes its deliveries: this host's own
-    /// configured CloudGet.size token, so a guest that offers the
-    /// choice preselects the setting instead of carrying a "host
-    /// default" item it cannot name on screen. nil everywhere else.
+    /// Legacy compatibility hint from hosts that owned a download-size
+    /// preference. Current hosts omit it: the guest owns that choice.
     var defaultSize: String?
 
     var id: String { service }
@@ -489,10 +487,10 @@ struct CloudGet: Codable, Equatable, Sendable {
     /// The per-ask delivery size (original / long640 / long1024 /
     /// long1600), each naming the LONGEST edge the host scales the
     /// original's longer dimension onto, aspect preserved, never up.
-    /// Absent means the host's configured Downloads default — which a
-    /// guest with a size picker no longer uses, since cloud.report's
-    /// defaultSize tells it what that setting is. The retired fitN
-    /// boxes are refused by name, never aliased (contract).
+    /// The guest's picker sends this explicitly. Absent asks for the host's
+    /// conservative compatibility default for an older guest. Retired fitN
+    /// boxes
+    /// are refused by name, never aliased (contract).
     var size: String?
 
     init(id: Int, service: String, item: String, size: String? = nil) {
@@ -1523,6 +1521,9 @@ struct CaptureBegin: Codable, Equatable, Sendable {
     var rects: [[Int]]?
     var captureMs: Int?
     var encodeMs: Int?
+    /// Stream-only global cursor hot spot in guest screen coordinates.
+    var cursorX: Int? = nil
+    var cursorY: Int? = nil
 }
 
 struct CaptureEnd: Codable, Equatable, Sendable {

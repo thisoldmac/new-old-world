@@ -5,6 +5,7 @@ import CoreGraphics
 import NOWAgentIntegration
 
 enum CaptureDepth: Int, CaseIterable, Identifiable, Sendable {
+    case native = 0
     case mono = 1
     case gray4 = 2
     case indexed16 = 4
@@ -13,7 +14,7 @@ enum CaptureDepth: Int, CaseIterable, Identifiable, Sendable {
     case millions = 32
 
     var id: Int { rawValue }
-    var title: String { "\(rawValue)-bit" }
+    var title: String { self == .native ? "Native" : "\(rawValue)-bit" }
 }
 
 enum GuestConnectionState: Equatable, Sendable {
@@ -121,7 +122,7 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     @Published var connection: GuestConnectionState = .disconnected {
         didSet { connectionChanged(from: oldValue) }
     }
-    @Published var selectedDepth: CaptureDepth = .indexed
+    @Published var selectedDepth: CaptureDepth = .native
     /// The host's tuning knobs, sent with every request and stream so the
     /// initiator's settings win; the guest's panel remains the fallback
     /// for guest-initiated work. All persisted.

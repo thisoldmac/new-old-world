@@ -126,7 +126,6 @@ struct SidebarNavigationItems: View {
         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
             SidebarNavigationListRow(
                 index: index,
-                isLast: index == items.index(before: items.endIndex),
                 item: item,
                 zone: zone,
                 registry: registry,
@@ -155,7 +154,6 @@ struct SidebarNavigationItems: View {
 
 private struct SidebarNavigationListRow: View {
     let index: Int
-    let isLast: Bool
     let item: NavigationItem
     let zone: NavigationZone
     let registry: ModuleRegistry
@@ -173,6 +171,8 @@ private struct SidebarNavigationListRow: View {
     var body: some View {
         SidebarNavigationItemView(
             item: item,
+            beforeTarget: .zone(zone, index: index),
+            afterTarget: .zone(zone, index: index + 1),
             registry: registry,
             status: status,
             compact: compact,
@@ -184,20 +184,6 @@ private struct SidebarNavigationListRow: View {
             cancelShelfCreation: cancelShelfCreation,
             openShelf: openShelf,
             select: select)
-            .overlay(alignment: .top) {
-                SidebarNavigationDropSlot(
-                    target: .zone(zone, index: index),
-                    dragActions: dragActions)
-                    .offset(y: -10)
-            }
-            .overlay(alignment: .bottom) {
-                if isLast {
-                    SidebarNavigationDropSlot(
-                        target: .zone(zone, index: index + 1),
-                        dragActions: dragActions)
-                        .offset(y: 10)
-                }
-            }
     }
 }
 
@@ -219,6 +205,8 @@ private struct SidebarNavigationDropSlot: View {
 
 private struct SidebarNavigationItemView: View {
     let item: NavigationItem
+    let beforeTarget: NavigationDropTarget
+    let afterTarget: NavigationDropTarget
     let registry: ModuleRegistry
     let status: GuestStatus
     let compact: Bool
@@ -262,7 +250,11 @@ private struct SidebarNavigationItemView: View {
                                 title: module.title,
                                 detail: module.summary,
                                 symbol: module.symbol)
-                            : nil))
+                            : nil,
+                        rowDropTargets: NavigationRowDropTargets(
+                            before: beforeTarget,
+                            center: .module(moduleID),
+                            after: afterTarget)))
             }
         case .shelf(let shelf):
             SidebarShelfRow(
@@ -273,6 +265,8 @@ private struct SidebarNavigationItemView: View {
                 collapsed: collapsed,
                 selection: selection,
                 isRenaming: renamingShelfID == shelf.id,
+                beforeTarget: beforeTarget,
+                afterTarget: afterTarget,
                 dragActions: dragActions,
                 renameShelf: renameShelf,
                 cancelShelfCreation: cancelShelfCreation,
@@ -301,7 +295,11 @@ private struct SidebarLooseModuleRow: View {
                     SidebarNavigationIcon(symbol: module.symbol,
                                           isSelected: isSelected)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(module.title)
+                        HStack(spacing: 7) {
+                            Text(module.title)
+                            ModuleTierBadge(tier: module.tier,
+                                            selected: isSelected)
+                        }
                         if !compact {
                             Text(module.summary)
                                 .font(.caption)
@@ -340,6 +338,8 @@ private struct SidebarShelfRow: View {
     let collapsed: Bool
     let selection: NavigationSelection
     let isRenaming: Bool
+    let beforeTarget: NavigationDropTarget
+    let afterTarget: NavigationDropTarget
     let dragActions: SidebarNavigationDragActions
     let renameShelf: (NavigationShelfID, String) -> Void
     let cancelShelfCreation: (NavigationShelfID) -> Void
@@ -430,7 +430,11 @@ private struct SidebarShelfRow: View {
                             title: title,
                             detail: moduleList,
                             symbol: symbol)
-                        : nil)
+                        : nil,
+                    rowDropTargets: NavigationRowDropTargets(
+                        before: beforeTarget,
+                        center: .shelf(shelf.id, beforeModuleID: nil),
+                        after: afterTarget))
             }
         }
     }

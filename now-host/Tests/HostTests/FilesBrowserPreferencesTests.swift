@@ -76,6 +76,26 @@ final class FilesBrowserPreferencesTests: XCTestCase {
                        accuracy: 2)
     }
 
+    func testCollapsedHostRailUsesItsWholeSurfaceToReopen() throws {
+        let rail = FilesRightSidebarRailView(
+            frame: NSRect(x: 0, y: 0, width: 54, height: 600))
+        var expansionCount = 0
+        rail.onExpand = { expansionCount += 1 }
+
+        XCTAssertTrue(rail.hitTest(NSPoint(x: 27, y: 500)) === rail,
+            "the rail below its icon must remain an active native handle")
+        let mouseUp = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: NSPoint(x: 27, y: 500),
+            modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, eventNumber: 1, clickCount: 1, pressure: 0))
+        rail.mouseUp(with: mouseUp)
+        XCTAssertEqual(expansionCount, 1,
+            "a click anywhere on the rail must reopen the host browser")
+        XCTAssertTrue(rail.accessibilityPerformPress())
+        XCTAssertEqual(expansionCount, 2,
+            "the whole-surface handle and VoiceOver press share one action")
+    }
+
     func testCollapsedHostRailWinsOverHostedContentsMinimumWidthInAWindow() {
         let controller = FilesRightSidebarSplitController()
         let hostedContent = NSHostingController(rootView:
@@ -494,13 +514,16 @@ final class FilesBrowserPreferencesTests: XCTestCase {
         let source = try GateSource.hostSwift(
             "now-host/Sources/Host/FilesNativeSplitViews.swift")
         XCTAssertTrue(source.contains("NSTrackingArea("))
-        XCTAssertTrue(source.contains("deadline: .now() + 0.35"))
-        XCTAssertTrue(source.contains("labelWithString: \"This Mac\""))
+        XCTAssertTrue(source.contains("static let hoverDelay"))
+        XCTAssertTrue(source.contains("NSPopover()"))
+        XCTAssertTrue(source.contains("preferredEdge: .minX"),
+            "the trailing rail label should float inward, centered on the rail")
+        XCTAssertTrue(source.contains("contentTintColor = .secondaryLabelColor"),
+            "the symbol tint must resolve through the active AppKit appearance")
         XCTAssertTrue(source.contains("NSSpringLoadingDestination"))
-        XCTAssertTrue(source.contains("splitView.animator().setPosition"))
-        XCTAssertTrue(source.contains(
-            "setDisclosed(false, notify: false)"),
-            "reopening must not overlap disclosure and restore animations")
+        XCTAssertFalse(source.contains("disclosedRailWidth"),
+            "hover disclosure must never resize and then recompress the split")
+        XCTAssertFalse(source.contains("onDisclosureChanged"))
         XCTAssertTrue(source.contains("allowsSidebarDividerResize = !collapsed"),
             "the integrated rail must lock its native divider while collapsed")
     }

@@ -1628,10 +1628,14 @@ final class Session {
         let blob = captureBuffer
         captureBuffer = []
         do {
-            let image: CGImage
+            var image: CGImage
             if streaming {
                 image = try compositeStreamFrame(begin, blob: blob,
                                                  format: format)
+                if let x = begin.cursorX, let y = begin.cursorY {
+                    image = StreamCursorCompositor.drawSystemArrow(
+                        on: image, at: CGPoint(x: x, y: y)) ?? image
+                }
             } else {
                 image = try CaptureDecoder.makeImage(blob: blob,
                                                      format: format)

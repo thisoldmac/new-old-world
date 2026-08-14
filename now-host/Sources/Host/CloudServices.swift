@@ -51,7 +51,8 @@ protocol CloudProvider: AnyObject {
     func card(item: String) throws -> [[String]]
     /// One item as a file. `size` is the ask's own delivery-size token
     /// (contract enum, already validated by the serve), nil for the
-    /// host's configured default; a service that does not size its
+    /// conservative compatibility default used by guests without a picker;
+    /// a service that does not size its
     /// deliveries ignores it — which is what the contract says absence
     /// and irrelevance both mean.
     func get(item: String, size: String?) throws -> OutboundFile.Plan
@@ -173,7 +174,6 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
     PHPhotoLibraryChangeObserver {
     let service = "photos"
     static let enabledKey = "cloud.photos.enabled"
-    static let downloadSizeKey = "cloud.photos.downloadSize"
     private let defaults: UserDefaults
     private var cachedAssets: PHFetchResult<PHAsset>?
     private var observing = false
@@ -227,14 +227,6 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
         }
     }
 
-    var downloadSize: DownloadSize {
-        get {
-            defaults.string(forKey: Self.downloadSizeKey)
-                .flatMap(DownloadSize.init(rawValue:)) ?? .long640
-        }
-        set { defaults.set(newValue.rawValue, forKey: Self.downloadSizeKey) }
-    }
-
     init(defaults: UserDefaults = ProductIdentity.defaults) {
         self.defaults = defaults
         super.init()
@@ -248,17 +240,12 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
 
     private var enabled: Bool { defaults.bool(forKey: Self.enabledKey) }
 
-    /* defaultSize rides EVERY state, not just serving: it is a fact
-       about this host's setting, not about the library, and a guest
-       that sees the service off and then on again should not have to
-       ask twice to learn what a save would deliver. */
     func entry() -> CloudServiceEntry {
-        let configured = downloadSize.rawValue
         guard enabled else {
             return CloudServiceEntry(
                 service: service, label: "Photos", state: "off",
                 detail: "Turn on in the host's iCloud page",
-                defaultSize: configured)
+                defaultSize: nil)
         }
         switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
         case .authorized, .limited:
@@ -266,17 +253,17 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
             return CloudServiceEntry(
                 service: service, label: "Photos", state: "serving",
                 detail: "\(count) photo\(count == 1 ? "" : "s")",
-                defaultSize: configured)
+                defaultSize: nil)
         case .notDetermined:
             return CloudServiceEntry(
                 service: service, label: "Photos", state: "no-access",
                 detail: "Grant access in the host's iCloud page",
-                defaultSize: configured)
+                defaultSize: nil)
         default:
             return CloudServiceEntry(
                 service: service, label: "Photos", state: "no-access",
                 detail: "Photos access is denied on the host",
-                defaultSize: configured)
+                defaultSize: nil)
         }
     }
 
@@ -406,12 +393,13 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
                 reason: "iCloud is fetching that photo; ask again shortly")
         }
         /* The whole pipeline in one line: decode -> resize per the
-           ask's own size (or the host's Downloads setting when the ask
-           carried none) -> JPEG. Original skips the resize but still
+           guest's own explicit size (or the conservative compatibility
+           default when an old guest carries none) -> JPEG. Original skips
+           the resize but still
            transcodes anything modern (HEIC, mostly). */
         let jpeg = try Self.processedJPEG(
             original, size: Self.chosenSize(token: size,
-                                            configured: downloadSize))
+                                            configured: .long640))
         let stem = (Self.title(of: asset) as NSString).deletingPathExtension
         var plan = OutboundFile.plan(name: stem + ".jpg", data: jpeg,
                                      convertText: false)
@@ -489,8 +477,8 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
         return (max(1, width * edge / height), edge)
     }
 
-    /// The get pipeline's second half: resize per the Downloads setting,
-    /// then encode. `original` keeps every pixel (transcoding only when
+    /// The get pipeline's second half: resize per the guest's request, then
+    /// encode. `original` keeps every pixel (transcoding only when
     /// the container is modern); a longN size decodes, scales so the
     /// LONGER dimension lands on that number — aspect preserved, never
     /// up — and re-encodes. Static and data-in/data-out so a test needs

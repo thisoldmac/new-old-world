@@ -141,7 +141,10 @@ private struct ShelfPillButton: View {
 
     var body: some View {
         Button(action: select) {
-            Label(tab.title, systemImage: tab.symbol)
+            HStack(spacing: 7) {
+                Label(tab.title, systemImage: tab.symbol)
+                ModuleTierBadge(tier: tab.tier, selected: isSelected)
+            }
                 .font(.callout.weight(isSelected ? .semibold : .regular))
                 .lineLimit(1)
                 .padding(.horizontal, 11)

@@ -12,6 +12,7 @@ struct NavigationShelfTab: Identifiable, Equatable, Sendable {
     let id: ID
     let title: String
     let symbol: String
+    let tier: ModuleTier
     let selection: NavigationSelection
     let moduleID: String?
 
@@ -24,6 +25,7 @@ struct NavigationShelfTab: Identifiable, Equatable, Sendable {
                 id: .overview(.machine),
                 title: "Overview",
                 symbol: "rectangle.grid.2x2",
+                tier: .core,
                 selection: NavigationSelection.selectingHero(of: shelf),
                 moduleID: nil))
         }
@@ -33,6 +35,7 @@ struct NavigationShelfTab: Identifiable, Equatable, Sendable {
                 id: .module(moduleID),
                 title: module.title,
                 symbol: module.symbol,
+                tier: module.tier,
                 selection: NavigationSelection(
                     destination: .module(moduleID),
                     containingShelfID: shelf.id),

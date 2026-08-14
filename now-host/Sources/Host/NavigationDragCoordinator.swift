@@ -23,6 +23,78 @@ enum NavigationDropTarget: Equatable, Sendable {
     case shelf(NavigationShelfID, beforeModuleID: String?)
 }
 
+/// One navigation row is both a drag source and a continuous destination.
+/// Its outer thirds insert before or after the row while its middle third
+/// activates the row's own combine/shelf destination. A small dead band keeps
+/// tiny pointer movements from flickering between adjacent targets.
+struct NavigationRowDropTargets: Equatable, Sendable {
+    enum Feedback: Equatable, Sendable {
+        case insertionBefore
+        case center
+        case insertionAfter
+    }
+
+    let before: NavigationDropTarget
+    let center: NavigationDropTarget
+    let after: NavigationDropTarget
+
+    func target(at verticalOffset: CGFloat, height: CGFloat,
+                previous: NavigationDropTarget?) -> NavigationDropTarget {
+        guard height > 0 else { return center }
+        let firstBoundary = height / 3
+        let secondBoundary = height * 2 / 3
+        let hysteresis = min(4, max(2, height * 0.06))
+
+        if previous == before,
+           verticalOffset <= firstBoundary + hysteresis {
+            return before
+        }
+        if previous == center,
+           verticalOffset >= firstBoundary - hysteresis,
+           verticalOffset <= secondBoundary + hysteresis {
+            return center
+        }
+        if previous == after,
+           verticalOffset >= secondBoundary - hysteresis {
+            return after
+        }
+
+        if verticalOffset < firstBoundary { return before }
+        if verticalOffset > secondBoundary { return after }
+        return center
+    }
+
+    func candidates(at verticalOffset: CGFloat, height: CGFloat,
+                    previous: NavigationDropTarget?) -> [NavigationDropTarget] {
+        let preferred = target(at: verticalOffset, height: height,
+                               previous: previous)
+        let nearestInsertion = verticalOffset < height / 2 ? before : after
+        let fartherInsertion = nearestInsertion == before ? after : before
+        var candidates = [preferred]
+        for candidate in [center, nearestInsertion, fartherInsertion]
+        where !candidates.contains(candidate) {
+            candidates.append(candidate)
+        }
+        return candidates
+    }
+
+    func acceptedTarget(
+        at verticalOffset: CGFloat,
+        height: CGFloat,
+        previous: NavigationDropTarget?,
+        accepting: (NavigationDropTarget) -> Bool
+    ) -> NavigationDropTarget? {
+        candidates(at: verticalOffset, height: height, previous: previous)
+            .first(where: accepting)
+    }
+
+    func feedback(for target: NavigationDropTarget) -> Feedback {
+        if target == before { return .insertionBefore }
+        if target == after { return .insertionAfter }
+        return .center
+    }
+}
+
 enum NavigationLayoutCommand: Equatable, Sendable {
     case move(NavigationDraggedItem, to: NavigationZone, index: Int)
     case combine(moduleID: String, with: String, shelfID: UUID, title: String)

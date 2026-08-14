@@ -7,6 +7,7 @@ search:
 
 # Open issues
 
+<<<<<<< HEAD
 ## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
 
 Slice 4 of the cross-edge file drag plan, and the consumer the entry
@@ -146,32 +147,47 @@ Two things a reader should carry away rather than rediscover:
   here. Until then every ingested pack lands in the one shared dated store.
 
 ## DOGFOOD FINDINGS, NOT YET TRIAGED: host shell and module follow-up (2026-08-14, `feat/bundle-update-slice` at `83f10653`)
+=======
+## TESTED, NOT METAL-VERIFIED: host shell and module dogfood follow-up (2026-08-14, `feat/bundle-update-slice`)
+>>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 
-The integrated 0.2.0 development bundle exposed the following product gaps and
-broken behavior. These are observations and accepted direction, not claims that
-the corresponding implementation has started.
+The integrated 0.2.0 development bundle exposed this batch. The host changes
+below are covered by focused tests and Debug/Release app builds; the guest
+capture changes compile for PPC and 68K. None has been watched on the PowerBook
+or in the freshly assembled bundle yet.
 
-- **Guest shelf overview:** replace the redundant Hardware, Software, and
-  Processes buttons with a formatted overview assembled from the existing
-  Hardware Overview data, the currently running non-background applications,
-  and a custom photo the person can upload. The existing module tabs remain the
-  routes to the complete Hardware, Software, and Processes surfaces.
-- **Screenshot defaults:** a screenshot should default to the guest's native
-  display depth rather than choosing a transformed depth by default.
-- **Screen streaming:** the streamed screen currently omits open menu-bar menus
-  and the cursor. Both belong in the visible stream.
-- **Mirror status:** mark the Mirror module as experimental anywhere its product
-  status is presented.
-- **Files — Host sidebar:** the collapsed sidebar should read as one continuous
-  handle. On hover, its centered label should appear with a polished animation;
-  mouse exit should hide the label without recompressing or otherwise moving the
-  sidebar. Browser sidebar symbols currently render white in light appearance,
-  showing that theme propagation is inconsistent across view types. Column-view
-  clicks also sometimes dismiss their own selection or navigation state.
-- **iCloud ownership and access:** the guest owns download and downsampling;
-  the host is limited to connection and authentication. **Grant Access**
-  currently has no effect and must hand authorization off through the host OS's
-  native access flow.
+- **Guest shelf overview — implemented:** the shelf consumes the existing
+  Hardware Overview and Processes runtimes, formats the overview data, lists
+  non-background applications frontmost first, and stores an imported,
+  bounded PNG per stable GuestID. The redundant module buttons are gone; the
+  tab bar remains the route to the complete pages.
+- **Screenshot native depth — implemented:** `0` is now the contract's native
+  depth request, the host defaults Screen and process captures to it, PPC
+  resolves it from the main display PixMap, and the 8-bit 68K guest accepts it
+  as its native capture.
+- **Screen cursor — implemented; open menus remain broken:** every PPC stream
+  frame now reports the global cursor hot spot and the host composites the
+  system arrow after the retained frame, so a delta never burns an old cursor
+  into the canvas. Independently opened menu-bar menus are still absent while
+  `MenuSelect` owns its nested Toolbox loop. That loop exposes no pump callback;
+  forcing capture through a timer would be unverified reentrant Toolbox work,
+  so this remains an architectural issue rather than a hidden workaround.
+- **Mirror status — implemented:** experimental/debug badges derive from the
+  module tier and appear anywhere descriptors are presented, with no Mirror ID
+  special case.
+- **Files — Host sidebar — implemented:** the collapsed rail is one continuous
+  AppKit handle with a delayed centered transient label; mouse exit hides it
+  without moving the split. Symbols use dynamic system tint, and NSBrowser
+  selection is restored by stable row identity after content reloads so a click
+  no longer collapses its own child column.
+- **iCloud ownership and access — implemented:** the host page no longer owns a
+  Photos download-size preference. The guest's Size popup sends the explicit
+  request; the host page owns service enablement/status and native macOS
+  authorization, foregrounding the app before the Photos or Contacts request.
+- **Navigation attachment — implemented:** populated module/shelf rows now use
+  continuous top/center/bottom drop regions with boundary hysteresis. Invalid
+  center attachment falls toward the nearest valid insertion edge, and visible
+  insertion lines replace the former narrow, fickle drop strips.
 
 ## TESTED, NOT RELEASED OR METAL-VERIFIED: recorded bundle and update slice (2026-08-13, `codex/bundle-update-slice`)
 

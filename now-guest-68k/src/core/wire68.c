@@ -3463,11 +3463,10 @@ static void handle_capture_request(const char *json, long len)
     if (!now68k_json_find_int(json, (size_t)len, "id", &id)) {
         return;                 /* nothing to answer to */
     }
-    /* depth is required by the schema; this guest serves 8-bit only and
-     * says so with a refusal rather than converting - shot68.h carries
-     * why a non-native depth is a separate, unmeasured decision. */
+    /* depth 0 means native. This guest's capture plane is its native 8-bit
+     * framebuffer, so 0 and 8 are the two honest spellings it serves. */
     if (now68k_json_find_int(json, (size_t)len, "depth", &depth)
-        && depth != 8) {
+        && depth != 0 && depth != 8) {
         now68k_log_num("wire: capture refused, depth", depth);
         n = n68_shotwire_end_json(id, 0, 0, payload, (long)sizeof payload);
         if (n > 0) {

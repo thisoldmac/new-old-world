@@ -11,8 +11,49 @@ final class ScreenshotModelTests: XCTestCase {
 
     func testSupportedDepthsMatchGuestContract() {
         XCTAssertEqual(CaptureDepth.allCases.map(\.rawValue),
-                       [1, 2, 4, 8, 16, 32])
+                       [0, 1, 2, 4, 8, 16, 32])
+        XCTAssertEqual(CaptureDepth.native.title, "Native")
+        XCTAssertEqual(makeModel().selectedDepth, .native)
     }
+
+    func testStreamCursorIsDrawnAtTheReportedHotSpot() throws {
+        let base = try solidImage(width: 4, height: 4,
+                                  rgba: [0, 0, 0, 255])
+        let cursor = try solidImage(width: 1, height: 1,
+                                    rgba: [255, 255, 255, 255])
+        let result = try XCTUnwrap(StreamCursorCompositor.draw(
+            cursor, hotSpot: .zero, on: base, at: CGPoint(x: 2, y: 1)))
+        let bitmap = NSBitmapImageRep(cgImage: result)
+        let white = (0..<4).flatMap { y in
+            (0..<4).compactMap { x -> String? in
+                guard let c = bitmap.colorAt(x: x, y: y),
+                      c.redComponent > 0.9 else { return nil }
+                return "\(x),\(y)"
+            }
+        }
+        let color = try XCTUnwrap(bitmap.colorAt(x: 2, y: 1),
+                                  "white pixels: \(white)")
+        XCTAssertEqual(white, ["2,1"])
+        XCTAssertEqual(color.redComponent, 1, accuracy: 0.01)
+        XCTAssertEqual(color.greenComponent, 1, accuracy: 0.01)
+        XCTAssertEqual(color.blueComponent, 1, accuracy: 0.01)
+    }
+
+    private func solidImage(width: Int, height: Int, rgba: [UInt8]) throws
+        -> CGImage {
+        let bytes = Array(repeating: rgba, count: width * height).flatMap { $0 }
+        let provider = try XCTUnwrap(CGDataProvider(
+            data: Data(bytes) as CFData))
+        return try XCTUnwrap(CGImage(
+            width: width, height: height, bitsPerComponent: 8,
+            bitsPerPixel: 32, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(
+                rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false,
+            intent: .defaultIntent))
+    }
+
 
     func testCaptureRequiresARealConnection() {
         let model = makeModel()

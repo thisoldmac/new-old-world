@@ -56,6 +56,10 @@ typedef struct {
 
 Boolean capture_depth_is_supported(short depth);
 
+/* Resolves the wire's depth 0 sentinel to the main display's current pixel
+   depth. Returns 0 only when no main display PixMap is available. */
+short capture_native_depth(void);
+
 int banded_capture_begin(short depth, short bands, BandedCapture *cap);
 
 /* Capture only `spans` (destination rows), each step blitting one bounded

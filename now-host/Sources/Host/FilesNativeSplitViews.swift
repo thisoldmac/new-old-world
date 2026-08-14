@@ -38,16 +38,16 @@ struct FilesRightSidebarToggle: View {
 }
 
 @MainActor
-private final class FilesRightSidebarRailView: NSVisualEffectView,
+final class FilesRightSidebarRailView: NSVisualEffectView,
     NSSpringLoadingDestination {
+    static let hoverDelay: TimeInterval = 0.45
+
     var onExpand: () -> Void = {}
-    var onDisclosureChanged: (Bool) -> Void = { _ in }
-    private let button = NSButton()
-    private let label = NSTextField(labelWithString: "This Mac")
+    private let iconView = NSImageView()
     private let grip = NSBox()
     private var hoverWorkItem: DispatchWorkItem?
     private var trackingArea: NSTrackingArea?
-    private var isDisclosed = false
+    private var disclosurePopover: NSPopover?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -58,44 +58,31 @@ private final class FilesRightSidebarRailView: NSVisualEffectView,
             [.fileURL] + NSFilePromiseReceiver.readableDraggedTypes.map {
                 NSPasteboard.PasteboardType($0)
             })
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.image = NSImage(systemSymbolName: "sidebar.trailing",
-                               accessibilityDescription: "Show This Mac")
-        button.imagePosition = .imageOnly
-        button.isBordered = false
-        button.toolTip = "Show This Mac"
-        button.target = self
-        button.action = #selector(expand(_:))
-        button.setAccessibilityLabel("Show This Mac")
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize,
-                                 weight: .medium)
-        label.textColor = .secondaryLabelColor
-        label.lineBreakMode = .byTruncatingTail
-        label.alphaValue = 0
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.image = NSImage(systemSymbolName: "sidebar.trailing",
+                                 accessibilityDescription: "Show This Mac")
+        iconView.symbolConfiguration = NSImage.SymbolConfiguration(
+            pointSize: 16, weight: .regular)
+        iconView.contentTintColor = .secondaryLabelColor
+        iconView.imageScaling = .scaleProportionallyDown
+        toolTip = "Show This Mac"
         grip.translatesAutoresizingMaskIntoConstraints = false
         grip.boxType = .separator
-        addSubview(button)
-        addSubview(label)
+        addSubview(iconView)
         addSubview(grip)
         NSLayoutConstraint.activate([
-            button.topAnchor.constraint(equalTo: topAnchor),
-            button.leadingAnchor.constraint(equalTo: leadingAnchor),
-            button.widthAnchor.constraint(equalToConstant: 44),
-            button.heightAnchor.constraint(equalToConstant: 44),
-            label.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-            label.leadingAnchor.constraint(equalTo: button.trailingAnchor,
-                                           constant: 2),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor,
-                                             constant: -8),
+            iconView.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 20),
+            iconView.heightAnchor.constraint(equalToConstant: 20),
             grip.leadingAnchor.constraint(equalTo: leadingAnchor),
             grip.topAnchor.constraint(equalTo: topAnchor),
             grip.bottomAnchor.constraint(equalTo: bottomAnchor),
             grip.widthAnchor.constraint(equalToConstant: 2),
         ])
         setAccessibilityElement(true)
-        setAccessibilityRole(.group)
-        setAccessibilityLabel("This Mac sidebar")
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Show This Mac")
         wantsLayer = true
         layer?.cornerRadius = FilesStyle.outerSurfaceCornerRadius
         layer?.cornerCurve = .continuous
@@ -118,37 +105,79 @@ private final class FilesRightSidebarRailView: NSVisualEffectView,
     override func mouseEntered(with event: NSEvent) {
         hoverWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            self?.setDisclosed(true)
+            self?.showDisclosure()
         }
         hoverWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35,
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hoverDelay,
                                       execute: work)
     }
 
     override func mouseExited(with event: NSEvent) {
         hoverWorkItem?.cancel()
-        setDisclosed(false, notify: false)
+        hideDisclosure()
     }
 
-    private func setDisclosed(_ disclosed: Bool, notify: Bool = true) {
-        guard disclosed != isDisclosed else { return }
-        isDisclosed = disclosed
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
-            label.animator().alphaValue = disclosed ? 1 : 0
-        }
-        if notify {
-            onDisclosureChanged(disclosed)
-        }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
     }
 
-    @objc private func expand(_ sender: Any?) {
+    override func mouseDown(with event: NSEvent) {
         hoverWorkItem?.cancel()
-        // Expansion restores the saved divider directly. Do not also animate
-        // the disclosed rail back to its compact width: overlapping AppKit
-        // divider animations can persist an intermediate split fraction.
-        setDisclosed(false, notify: false)
+        hideDisclosure()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(point) else { return }
+        expand()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        expand()
+        return true
+    }
+
+    private func expand() {
+        hoverWorkItem?.cancel()
+        hideDisclosure()
         onExpand()
+    }
+
+    private func showDisclosure() {
+        guard disclosurePopover == nil, window != nil else { return }
+        let label = NSTextField(labelWithString: String(localized: "This Mac"))
+        label.alignment = .center
+        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize,
+                                 weight: .medium)
+        label.textColor = .labelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let controller = NSViewController()
+        let content = NSView()
+        content.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: content.leadingAnchor,
+                                           constant: 12),
+            label.trailingAnchor.constraint(equalTo: content.trailingAnchor,
+                                            constant: -12),
+            label.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+        ])
+        controller.view = content
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentSize = NSSize(width: 92, height: 38)
+        popover.contentViewController = controller
+        let anchor = NSRect(x: bounds.minX, y: bounds.midY,
+                            width: 1, height: 1)
+        popover.show(relativeTo: anchor, of: self, preferredEdge: .minX)
+        disclosurePopover = popover
+    }
+
+    private func hideDisclosure() {
+        disclosurePopover?.performClose(nil)
+        disclosurePopover = nil
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo)
@@ -170,7 +199,7 @@ private final class FilesRightSidebarRailView: NSVisualEffectView,
 
     func springLoadingActivated(_ activated: Bool,
                                 draggingInfo: NSDraggingInfo) {
-        if activated { expand(nil) }
+        if activated { expand() }
     }
 
     func springLoadingHighlightChanged(_ draggingInfo: NSDraggingInfo) {
@@ -185,7 +214,7 @@ private final class FilesRightSidebarRailView: NSVisualEffectView,
 
     override func draggingEnded(_ sender: NSDraggingInfo) {
         clearSpringHighlight()
-        setDisclosed(false)
+        hideDisclosure()
         super.draggingEnded(sender)
     }
 
@@ -402,14 +431,12 @@ class FilesSplitViewController: NSSplitViewController {
 final class FilesRightSidebarSplitController: FilesSplitViewController {
     static let defaultLeadingFraction: CGFloat = 0.5
     static let collapsedRailWidth: CGFloat = 54
-    static let disclosedRailWidth: CGFloat = 112
 
     weak var trailingItem: NSSplitViewItem?
     var leadingFractionChanged: ((CGFloat) -> Void)?
     var trailingCollapseRequested: ((Bool) -> Void)?
     private var hasPlacedInitialDivider = false
     private var isChangingDivider = false
-    private var railIsDisclosed = false
     private weak var trailingContainer: FilesRightSidebarContainerController?
     private(set) var isTrailingCollapsed = false
     private(set) var expandedLeadingFraction =
@@ -452,9 +479,6 @@ final class FilesRightSidebarSplitController: FilesSplitViewController {
             self.setTrailingCollapsed(false)
             self.trailingCollapseRequested?(false)
         }
-        trailingContainer.railView.onDisclosureChanged = { [weak self] in
-            self?.setRailDisclosed($0)
-        }
         configureTrailingThickness(
             collapsed: trailingCollapsed,
             width: Self.collapsedRailWidth)
@@ -469,7 +493,6 @@ final class FilesRightSidebarSplitController: FilesSplitViewController {
         if collapsed {
             rememberExpandedDivider()
             isTrailingCollapsed = true
-            railIsDisclosed = false
             trailingContainer?.setCollapsed(true)
             configureTrailingThickness(collapsed: true,
                                        width: Self.collapsedRailWidth)
@@ -477,7 +500,6 @@ final class FilesRightSidebarSplitController: FilesSplitViewController {
                 trailingWidth: Self.collapsedRailWidth))
         } else {
             isTrailingCollapsed = false
-            railIsDisclosed = false
             configureTrailingThickness(collapsed: false, width: 0)
             trailingContainer?.setCollapsed(false)
             restoreExpandedDivider(animated: view.window != nil)
@@ -514,9 +536,7 @@ final class FilesRightSidebarSplitController: FilesSplitViewController {
                             constrainSplitPosition proposedPosition: CGFloat,
                             ofSubviewAt dividerIndex: Int) -> CGFloat {
         guard isTrailingCollapsed else { return proposedPosition }
-        let width = railIsDisclosed
-            ? Self.disclosedRailWidth : Self.collapsedRailWidth
-        return dividerPosition(trailingWidth: width)
+        return dividerPosition(trailingWidth: Self.collapsedRailWidth)
     }
 
     private func rememberExpandedDivider() {
@@ -540,15 +560,6 @@ final class FilesRightSidebarSplitController: FilesSplitViewController {
         } else {
             setDividerImmediately(to: position)
         }
-    }
-
-    private func setRailDisclosed(_ disclosed: Bool) {
-        guard isTrailingCollapsed, disclosed != railIsDisclosed else { return }
-        railIsDisclosed = disclosed
-        let width = disclosed ? Self.disclosedRailWidth
-                              : Self.collapsedRailWidth
-        configureTrailingThickness(collapsed: true, width: width)
-        animateDivider(to: dividerPosition(trailingWidth: width))
     }
 
     private func configureTrailingThickness(collapsed: Bool, width: CGFloat) {

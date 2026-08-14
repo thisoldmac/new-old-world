@@ -1190,8 +1190,13 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: d93c5a0dc8a307a641b1283a9af7037b00d0deb6
-derive ppc-inbound-types sha256=66cb7aa2e96f04461ee4c0d93ca9fe944143f89854d7db8110f44dd8b366361a lines=54 published
+<<<<<<< HEAD
+sources-sha1: 3e15b0515582c71de9b67f1772c457a8de0fa1c5
+derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
+=======
+sources-sha1: 3e15b0515582c71de9b67f1772c457a8de0fa1c5
+derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
+>>>>>>> 835e6acf (feat: polish guest workflows and navigation)
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
@@ -1343,10 +1348,15 @@ rederived: 2026-08-14T12:44:43-0400 4d52ba1a sources
 rederived: 2026-08-14T12:47:23-0400 804be291 sources
 rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
+<<<<<<< HEAD
 rederived: 2026-08-14T14:27:57-0400 6d037a57 sources
 rederived: 2026-08-14T16:58:27-0400 cf962dbb sources, ppc-inbound-types 53->54, disposition-census 3->3
 rederived: 2026-08-14T17:12:28-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
+=======
+rederived: 2026-08-14T14:40:04-0400 8875fe9e sources
+>>>>>>> 835e6acf (feat: polish guest workflows and navigation)
+rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, ppc-inbound-types 54->0, sources, ppc-inbound-types 54->0
 -->

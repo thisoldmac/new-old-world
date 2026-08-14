@@ -4,6 +4,47 @@ import Contacts
 import Foundation
 import Photos
 
+@MainActor
+protocol CloudAuthorizationHandling {
+    func photosStatus() -> PHAuthorizationStatus
+    func contactsStatus() -> CNAuthorizationStatus
+    func requestPhotos(_ completion: @escaping @MainActor @Sendable () -> Void)
+    func requestContacts(_ completion: @escaping @MainActor @Sendable () -> Void)
+}
+
+@MainActor
+final class SystemCloudAuthorization: CloudAuthorizationHandling {
+    func photosStatus() -> PHAuthorizationStatus {
+        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    }
+
+    func contactsStatus() -> CNAuthorizationStatus {
+        CNContactStore.authorizationStatus(for: .contacts)
+    }
+
+    private func foregroundHost() {
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
+    }
+
+    func requestPhotos(
+        _ completion: @escaping @MainActor @Sendable () -> Void
+    ) {
+        foregroundHost()
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { _ in
+            Task { @MainActor in completion() }
+        }
+    }
+
+    func requestContacts(
+        _ completion: @escaping @MainActor @Sendable () -> Void
+    ) {
+        foregroundHost()
+        CNContactStore().requestAccess(for: .contacts) { _, _ in
+            Task { @MainActor in completion() }
+        }
+    }
+}
+
 /// The host's side of the iCloud page: which services this Mac offers a
 /// classic one, and the switches and grants that change the answer. The
 /// truth lives in the provider registry — this model only reads it,
@@ -15,14 +56,18 @@ final class CloudModuleModel: ObservableObject {
     private let defaults: UserDefaults
     /// Injectable so a test is not a claim about this Mac's sign-in.
     private let driveURL: URL
+    private let authorization: any CloudAuthorizationHandling
 
     @Published private(set) var services: [CloudServiceEntry] = []
 
     init(listener: GuestListener, defaults: UserDefaults = ProductIdentity.defaults,
-         driveURL: URL = DriveCloudProvider.iCloudDrive) {
+         driveURL: URL = DriveCloudProvider.iCloudDrive,
+         authorization: any CloudAuthorizationHandling =
+            SystemCloudAuthorization()) {
         self.listener = listener
         self.defaults = defaults
         self.driveURL = driveURL
+        self.authorization = authorization
     }
 
     func refresh() {
@@ -50,34 +95,6 @@ final class CloudModuleModel: ObservableObject {
         refresh()
     }
 
-    // MARK: - Downloads
-
-    /* The per-service Downloads setting: what a cloud.get delivers.
-       Photos-only today — the one service whose originals routinely
-       dwarf the machine they are bound for. Read and written through
-       the same defaults the provider observes, the enabledKeys shape. */
-
-    func hasDownloadSize(_ service: String) -> Bool {
-        service == "photos"
-    }
-
-    func downloadSize(_ service: String)
-        -> PhotosCloudProvider.DownloadSize {
-        guard hasDownloadSize(service) else { return .long640 }
-        return defaults.string(
-            forKey: PhotosCloudProvider.downloadSizeKey)
-            .flatMap(PhotosCloudProvider.DownloadSize.init(rawValue:))
-            ?? .long640
-    }
-
-    func setDownloadSize(_ service: String,
-                         _ size: PhotosCloudProvider.DownloadSize) {
-        guard hasDownloadSize(service) else { return }
-        defaults.set(size.rawValue,
-                     forKey: PhotosCloudProvider.downloadSizeKey)
-        refresh()
-    }
-
     // MARK: - Grants
 
     /// Whether the row should offer a grant button: on, but macOS has
@@ -87,11 +104,9 @@ final class CloudModuleModel: ObservableObject {
         guard isEnabled(service) else { return false }
         switch service {
         case "photos":
-            return PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                == .notDetermined
+            return authorization.photosStatus() == .notDetermined
         case "contacts":
-            return CNContactStore.authorizationStatus(for: .contacts)
-                == .notDetermined
+            return authorization.contactsStatus() == .notDetermined
         default:
             return false
         }
@@ -104,10 +119,10 @@ final class CloudModuleModel: ObservableObject {
         guard isEnabled(service) else { return false }
         switch service {
         case "photos":
-            let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            let status = authorization.photosStatus()
             return status == .denied || status == .restricted
         case "contacts":
-            let status = CNContactStore.authorizationStatus(for: .contacts)
+            let status = authorization.contactsStatus()
             return status == .denied || status == .restricted
         default:
             return false
@@ -126,13 +141,9 @@ final class CloudModuleModel: ObservableObject {
     func requestAccess(_ service: String) {
         switch service {
         case "photos":
-            PHPhotoLibrary.requestAuthorization(for: .readWrite) { _ in
-                Task { @MainActor in self.refresh() }
-            }
+            authorization.requestPhotos { [weak self] in self?.refresh() }
         case "contacts":
-            CNContactStore().requestAccess(for: .contacts) { _, _ in
-                Task { @MainActor in self.refresh() }
-            }
+            authorization.requestContacts { [weak self] in self?.refresh() }
         default:
             break
         }

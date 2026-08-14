@@ -299,4 +299,83 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(NavigationSpringLoadFlash.animationRepeatCount,
                        Float(NavigationSpringLoadFlash.count))
     }
+
+    func testNavigationRowUsesContinuousTopCenterBottomDropRegions() {
+        let targets = NavigationRowDropTargets(
+            before: .zone(.upper, index: 1),
+            center: .module("chat"),
+            after: .zone(.upper, index: 2))
+
+        XCTAssertEqual(targets.target(at: 0, height: 90, previous: nil),
+                       targets.before)
+        XCTAssertEqual(targets.target(at: 29, height: 90, previous: nil),
+                       targets.before)
+        XCTAssertEqual(targets.target(at: 31, height: 90, previous: nil),
+                       targets.center)
+        XCTAssertEqual(targets.target(at: 59, height: 90, previous: nil),
+                       targets.center)
+        XCTAssertEqual(targets.target(at: 61, height: 90, previous: nil),
+                       targets.after)
+        XCTAssertEqual(targets.target(at: 90, height: 90, previous: nil),
+                       targets.after)
+    }
+
+    func testNavigationRowDropRegionHysteresisPreventsBoundaryFlicker() {
+        let targets = NavigationRowDropTargets(
+            before: .zone(.upper, index: 1),
+            center: .module("chat"),
+            after: .zone(.upper, index: 2))
+
+        XCTAssertEqual(targets.target(at: 28, height: 90,
+                                      previous: targets.center),
+                       targets.center)
+        XCTAssertEqual(targets.target(at: 25, height: 90,
+                                      previous: targets.center),
+                       targets.before)
+        XCTAssertEqual(targets.target(at: 33, height: 90,
+                                      previous: targets.before),
+                       targets.before)
+        XCTAssertEqual(targets.target(at: 35, height: 90,
+                                      previous: targets.before),
+                       targets.center)
+        XCTAssertEqual(targets.target(at: 57, height: 90,
+                                      previous: targets.after),
+                       targets.after)
+        XCTAssertEqual(targets.target(at: 55, height: 90,
+                                      previous: targets.after),
+                       targets.center)
+    }
+
+    func testNavigationRowFeedbackDistinguishesInsertionFromAttachment() {
+        let targets = NavigationRowDropTargets(
+            before: .zone(.upper, index: 1),
+            center: .shelf(.files, beforeModuleID: nil),
+            after: .zone(.upper, index: 2))
+
+        XCTAssertEqual(targets.feedback(for: targets.before),
+                       .insertionBefore)
+        XCTAssertEqual(targets.feedback(for: targets.center), .center)
+        XCTAssertEqual(targets.feedback(for: targets.after),
+                       .insertionAfter)
+    }
+
+    func testNavigationRowFallsBackToNearestInsertionWhenCenterCannotAttach() {
+        let targets = NavigationRowDropTargets(
+            before: .zone(.upper, index: 1),
+            center: .module("chat"),
+            after: .zone(.upper, index: 2))
+
+        XCTAssertEqual(targets.candidates(at: 40, height: 90,
+                                          previous: nil),
+                       [targets.center, targets.before, targets.after])
+        XCTAssertEqual(targets.candidates(at: 50, height: 90,
+                                          previous: nil),
+                       [targets.center, targets.after, targets.before])
+        XCTAssertEqual(targets.acceptedTarget(
+            at: 40, height: 90, previous: nil,
+            accepting: { $0 != targets.center }), targets.before)
+        XCTAssertEqual(targets.acceptedTarget(
+            at: 50, height: 90, previous: nil,
+            accepting: { $0 != targets.center }), targets.after)
+    }
 }

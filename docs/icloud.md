@@ -44,13 +44,11 @@ the host" instead of not mentioning Photos.
   photo IN the page (below); `cloud.get` delivers ONE photo as an
   ordinary `file.offer` into the guest's share — JPEG whatever modern
   container the library holds (HEIC included), typed `JPEG`/`ogle` so
-  it opens by double-click, and **downsized automatically** per the
-  host's per-service Downloads setting (Original / Long side 1600 /
-  Long side 1024 / Long side 640, default Long side 640,
-  `cloud.photos.downloadSize`), applied in the get pipeline before the
-  JPEG is encoded — unless the ask itself carries the additive `size`
-  token (same four renders), in which case the asker's choice
-  outranks the setting; an unrecognized token refuses with a reason.
+  it opens by double-click, and downsized to the guest's explicit Size
+  choice (Original / Long side 1600 / Long side 1024 / Long side 640)
+  before the JPEG is encoded. An older guest that sends no `size` gets the
+  conservative Long side 640 compatibility default; an unrecognized token
+  refuses with a reason.
   Every `longN` token names the **LONGEST EDGE** (aspect preserved,
   never upscaled): a portrait 3024x4032 at `long640` is 480x640, and
   the same photo landscape is 640x480. The `fitN` fit boxes this
@@ -63,9 +61,9 @@ the host" instead of not mentioning Photos.
   resolution a stop produces for a given photo — a guest that wants
   to SHOW that number computes it itself from the entry's own
   width/height and the chosen long edge, on numbers it already has
-  rather than sent a fifth way. The report's `defaultSize` carries the
-  host's own configured token, so a guest can PRESELECT it instead of
-  offering a "host default" item it cannot name. An
+  rather than sent a fifth way. `defaultSize` remains an optional legacy
+  hint for older hosts; current hosts omit it because the guest owns the
+  choice. An
   original iCloud has not materialized
   starts its download and refuses `busy`, the same bargain the share
   strikes for Drive placeholders.
@@ -285,16 +283,15 @@ The download UX (2026-08-02) lives in the same view, below the pane:
   side 640, MENU 136 — the services-popup recipe) puts the `size`
   token on Save's `cloud.get`, and ALWAYS an explicit one. There is no
   "host default" item: an item that cannot say on screen what it will
-  deliver is not an answer to "at what size?". The host's setting
-  arrives as data instead (`cloud.report`'s `defaultSize`) and is
-  PRESELECTED — the popup opens on it, and a report that names a token
+  deliver is not an answer to "at what size?". A legacy host may still
+  provide `cloud.report.defaultSize`, but current hosts omit it; the popup
+  opens on the largest bounded stop. A report that names a token
   this guest does not offer opens on the largest bounded stop, never
   on Original (a 48-megapixel original landing unasked on a 6 MB
   partition is the one fallback that could hurt). A pick the person
   has made outranks a later report, so Refresh never moves the size
-  out from under them. The choice is session-state, deliberately not
-  persisted — the host default is the remembered preference and the
-  popup is the per-ask exception.
+  out from under them. The choice is guest session-state and belongs to the
+  machine making the download.
 - **A destination row** shows where a saved photo lands ("Save into:"
   plus the folder's path, truncated middle) with a Choose... button —
   the shared `NavChooseFolder` door (`now_files_choose_folder`, the
@@ -543,14 +540,12 @@ and what shipped is the revision, not the sketch:
   surfaced honestly ("Preview after the download"); the preview is
   contract-additive (`cloud.preview`, `preview.begin`/`preview.end`,
   the fourth bulk payload kind).
-- **Downloads are processed per the host's configurable setting, with
-  a per-ask override since 2026-08-02.** `cloud.get` always converts
-  to JPEG (HEIC included) and downsizes per the iCloud page's
-  Downloads picker (Original / Long side 1600 / Long side 1024 / Long
-  side 640, default Long side 640, each naming the LONGEST edge)
-  unless the ask carries the `size` token from the guest's own Size
-  popup — which it now always does, preselected from the report's
-  `defaultSize`. The estimated-size arithmetic the
+- **The guest owns download size.** `cloud.get` always converts to JPEG
+  (HEIC included) and downsizes to the explicit `size` token from the
+  guest's Size popup (Original / Long side 1600 / Long side 1024 / Long
+  side 640, each naming the LONGEST edge). The host iCloud page owns only
+  service connection, status and native macOS authorization. The
+  estimated-size arithmetic the
   original sketch paired with the dropdown remains unbuilt,
   deliberately — the popup states renders, not byte guesses.
 

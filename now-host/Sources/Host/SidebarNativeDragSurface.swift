@@ -17,6 +17,7 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
     var springLoad: (() -> Void)?
     var hoverChanged: ((Bool) -> Void)?
     var hoverDisclosure: SidebarHoverDisclosure? = nil
+    var rowDropTargets: NavigationRowDropTargets? = nil
     var menuItems: [SidebarNativeMenuItem] = []
 
     func makeNSView(context: Context) -> NativeNavigationDragView {
@@ -41,6 +42,7 @@ struct SidebarNativeDragSurface: NSViewRepresentable {
             springLoad: springLoad,
             hoverChanged: hoverChanged,
             hoverDisclosure: hoverDisclosure,
+            rowDropTargets: rowDropTargets,
             menuItems: menuItems)
     }
 }
@@ -64,6 +66,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         let springLoad: (() -> Void)?
         let hoverChanged: ((Bool) -> Void)?
         let hoverDisclosure: SidebarHoverDisclosure?
+        let rowDropTargets: NavigationRowDropTargets?
         let menuItems: [SidebarNativeMenuItem]
     }
 
@@ -76,6 +79,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     private var feedback = NavigationDragFeedbackState()
     private var hoverTrackingArea: NSTrackingArea?
     private let hoverDisclosurePresenter = SidebarHoverDisclosurePresenter()
+    private var dropFeedback: NavigationRowDropTargets.Feedback?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -203,11 +207,10 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         -> NSDragOperation {
         guard let (payload, target) = accepted(sender),
               configuration?.previewDrop(payload, target) == true else {
-            feedback = NavigationDragFeedbackState()
+            clearDropFeedback()
             return []
         }
-        feedback.enter(target)
-        showDropHighlight(true)
+        transitionFeedback(to: target)
         sender.numberOfValidItemsForDrop = 1
         return .move
     }
@@ -216,14 +219,15 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         -> NSDragOperation {
         guard let (payload, target) = accepted(sender),
               configuration?.previewDrop(payload, target) == true else {
+            clearDropFeedback()
             return []
         }
+        transitionFeedback(to: target)
         return .move
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
-        if let target = feedback.target { feedback.exit(target) }
-        showDropHighlight(false)
+        clearDropFeedback()
     }
 
     override func prepareForDragOperation(_ sender: any NSDraggingInfo)
@@ -234,27 +238,25 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         guard let (payload, target) = accepted(sender) else { return false }
         let performed = configuration?.performDrop(payload, target) ?? false
-        if let active = feedback.target { feedback.exit(active) }
-        showDropHighlight(false)
+        clearDropFeedback()
         return performed
     }
 
     override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
-        showDropHighlight(false)
+        clearDropFeedback()
     }
 
     override func draggingEnded(_ sender: any NSDraggingInfo) {
-        if let target = feedback.target { feedback.exit(target) }
-        showDropHighlight(false)
+        clearDropFeedback()
     }
 
     override func wantsPeriodicDraggingUpdates() -> Bool { false }
 
     func springLoadingEntered(_ draggingInfo: any NSDraggingInfo)
         -> NSSpringLoadingOptions {
-        guard accepted(draggingInfo) != nil,
+        guard let target = accepted(draggingInfo)?.1,
               configuration?.springLoad != nil,
-              configuration?.target?.supportsSpringLoading == true else {
+              target.supportsSpringLoading else {
             return []
         }
         return .enabled
@@ -276,23 +278,43 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     }
 
     func springLoadingHighlightChanged(_ draggingInfo: any NSDraggingInfo) {
-        showDropHighlight(draggingInfo.springLoadingHighlight != .none)
+        guard draggingInfo.springLoadingHighlight != .none,
+              let target = accepted(draggingInfo)?.1 else { return }
+        showDropFeedback(for: target)
     }
 
     func springLoadingExited(_ draggingInfo: any NSDraggingInfo) {
-        if let target = feedback.target { feedback.exit(target) }
-        showDropHighlight(false)
+        clearDropFeedback()
     }
 
     private func accepted(_ sender: any NSDraggingInfo)
         -> (NavigationDraggedItem, NavigationDropTarget)? {
         guard let configuration,
-              let target = configuration.target,
+              let fallbackTarget = configuration.target,
               let value = sender.draggingPasteboard.string(
                 forType: Self.pasteboardType),
               let payload = NavigationDraggedItem(pasteboardValue: value),
-              configuration.canDrop(payload, target) else { return nil }
+              let target = resolvedTarget(
+                sender, configuration: configuration,
+                fallback: fallbackTarget, payload: payload) else { return nil }
         return (payload, target)
+    }
+
+    private func resolvedTarget(
+        _ sender: any NSDraggingInfo,
+        configuration: Configuration,
+        fallback: NavigationDropTarget,
+        payload: NavigationDraggedItem
+    ) -> NavigationDropTarget? {
+        guard let targets = configuration.rowDropTargets else {
+            return configuration.canDrop(payload, fallback) ? fallback : nil
+        }
+        let location = convert(sender.draggingLocation, from: nil)
+        return targets.acceptedTarget(
+            at: location.y, height: bounds.height,
+            previous: feedback.target) {
+                configuration.canDrop(payload, $0)
+            }
     }
 
     /// The representable itself is transparent because it sits over the
@@ -335,11 +357,47 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         items[index].action()
     }
 
-    private func showDropHighlight(_ shown: Bool) {
-        layer?.borderWidth = shown ? 1.5 : 0
-        layer?.borderColor = shown
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let dropFeedback,
+              dropFeedback != .center else { return }
+        let lineHeight: CGFloat = 2
+        let y = dropFeedback == .insertionBefore
+            ? 0 : max(0, bounds.height - lineHeight)
+        NSColor.controlAccentColor.setFill()
+        NSRect(x: 7, y: y,
+               width: max(0, bounds.width - 14),
+               height: lineHeight).fill()
+    }
+
+    private func transitionFeedback(to target: NavigationDropTarget) {
+        if let active = feedback.target, active != target {
+            feedback.exit(active)
+        }
+        if feedback.target != target {
+            feedback.enter(target)
+        }
+        showDropFeedback(for: target)
+    }
+
+    private func showDropFeedback(for target: NavigationDropTarget) {
+        let presentation = configuration?.rowDropTargets?
+            .feedback(for: target) ?? .center
+        dropFeedback = presentation
+        let showsCenter = presentation == .center
+        layer?.borderWidth = showsCenter ? 1.5 : 0
+        layer?.borderColor = showsCenter
             ? NSColor.controlAccentColor.withAlphaComponent(0.72).cgColor
             : NSColor.clear.cgColor
+        needsDisplay = true
+    }
+
+    private func clearDropFeedback() {
+        if let active = feedback.target { feedback.exit(active) }
+        dropFeedback = nil
+        layer?.borderWidth = 0
+        layer?.borderColor = NSColor.clear.cgColor
+        needsDisplay = true
     }
 
     private func flashTwice() {

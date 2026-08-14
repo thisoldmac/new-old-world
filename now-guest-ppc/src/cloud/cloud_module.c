@@ -652,11 +652,9 @@ static void note_report(const char *reply)
 
     g_loading = false;
     cloud_parse_report(reply, &g_store);
-    /* The host's own download-size setting rides the report as data
-       (contract: CloudReport defaultSize), so the Photos popup can
-       PRESELECT it instead of carrying a "host default" item it could
-       not name on screen. An absent field reads as "the host named
-       none", which the view has its own answer for. */
+    /* Older hosts may report their former download-size setting as a legacy
+       defaultSize hint. Current hosts omit it because the guest owns this
+       choice; absence selects the view's own safe bounded default. */
     for (i = 0; i < g_store.service_count; ++i) {
         if (strcmp(g_store.services[i].service, "photos") == 0) {
             cloud_photos_view_note_default_size(
