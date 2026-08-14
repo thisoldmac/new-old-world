@@ -163,8 +163,10 @@ def acquisition_files() -> list[dict]:
     files += [
         {"path": APPEARANCE_CP, "role": "appearance", "required": False,
          "why": "the named Appearance desktop patterns"},
+        # `why` is read back into a sentence on the host ("the pack will be
+        # built without ..."), so every one of these is a noun phrase.
         {"path": DESKTOP_PREFS, "role": "desktop", "required": False,
-         "why": "which desktop picture this machine is set to"},
+         "why": "the desktop picture this machine is set to"},
     ]
     return files
 
