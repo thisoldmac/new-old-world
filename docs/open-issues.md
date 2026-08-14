@@ -7,6 +7,57 @@ search:
 
 # Open issues
 
+## PARTLY FIXED, NOT METAL-VERIFIED: the Continuity pointer stops once a second because the guest is serving a scene (2026-08-13, `claude/swarm-pump-stall`)
+
+With the resident's idle-settle spike off, the pointer moves in a
+smooth-smooth-stop rhythm. It is a loop that is not running, not a loop
+running slowly: guest log `2026-08-13 223323`, epoch 12, has position
+applies 48-72 ticks apart with a clean 1-tick cadence between them, and
+17 applies in 900 ticks where the wire asked `WaitNextEvent` for one.
+
+**The thief is the host's own Mirror cycle, and it is structural.**
+`NOWMirrorSource.swift:447` polls `scene.request` on a **gap-based**
+0.75 s cadence — it sleeps 0.75 s *after* the previous cycle publishes —
+and it deliberately does not stand down while Continuity is armed,
+because the anchor plane's 600-tick owner lease renews on that request
+alone (`NOWMirrorSource.swift:1355-1361`). The guest serves it inline:
+`serve_scene` waits up to `kNowSceneArmSettleTicks` (30) for the plane's
+echo (`wire.c:2113`) and then walks the machine without yielding, by
+design, because foreign addresses are live (`wire.c:2132-2140`). Period
+and duration both fall out of that: 0.75 s plus one serve, and the serve
+itself.
+
+**What is fixed here is the half that was pure waiting.** The position
+pump was reachable from `conn_service` alone, so it inherited the wire's
+reentrancy guard — inside a request `now_wire_pump()` bounced and pumped
+*nothing*, though `continuity_intake.c` already claimed the renewal
+happened "from the ordinary and nested wire pump". `now_continuity_pump()`
+is now that seam, the bounce calls it, and `now_peek_settle` — a nested
+loop that yielded without pumping at all — pumps after its yield. Pinned
+by `continuity_nested_pump_source_test.py`, watched failing against three
+mutations.
+
+**What is not fixed.** The walk itself still owns the machine for its
+duration and nothing here shortens it. Three options, none taken:
+
+- **Host-side, cheapest:** back the scene cycle off while Continuity is
+  armed and the pointer is moving. The lease is 600 ticks and the poll is
+  45; there is a wide margin to spend.
+- **Resident-side:** the idle-settle spike already bridges the stall from
+  other processes' jGNE passes, which is why it hides this. Making it the
+  default is a decision about `ext/`, not about the application.
+- **Guest-side:** interleave a cursor pump between the walk's phases.
+  `wire.c:2135-2140` says plainly that it does not yield while foreign
+  addresses are live, so this is a redesign of the walk, not an insertion.
+
+**Two instruments are blind to this and were not changed.**
+`kSlowSceneLogMs` is 2000 (`wire.c:71`), above the ~1 s stall, so a walk
+that eats a full second of task time writes nothing; and `kStarvedPassTicks`
+is 600 (`wire.c:67`), so the loop's own starvation guard cannot see it
+either. Neither can currently tell "a request took a second" from "we were
+not scheduled for a second", which is the exact distinction
+`service_heartbeat`'s own comment turns on.
+
 ## INTEGRATED CANDIDATE: Continuity, keyboard, screen-edge and Mirror file dragging share one continuation point (2026-08-12, `feat/continuity-integration-candidate`)
 
 The parked screen-edge lane through `a5211f98` and metal-verified keyboard lane

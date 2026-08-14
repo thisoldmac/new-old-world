@@ -7532,6 +7532,16 @@ void now_wire_pump(void)
     static Boolean pumping = false;
 
     if (pumping) {
+        /* A BOUNCE IS NOT A REASON TO STOP THE CURSOR.
+           The guard protects the wire's state machine, which is genuinely
+           not re-entrant while a request is being served. The Continuity
+           plane shares none of that: it reads one shared cell, calls the
+           Cursor Device Manager and writes the result back, and it carries
+           its own re-entry guard. Bouncing it here made every nested loop
+           reached from a request handler a full stop of the pointer, which
+           is what a person feels as smooth-smooth-stop while the Mirror is
+           driving. See now_continuity_pump(). */
+        now_continuity_pump();
         return;
     }
     pumping = true;

@@ -739,6 +739,48 @@ int now_continuity_wants_fast_pump(void)
     return gEpoch != 0 && gFastPump;
 }
 
+/* THE CURSOR PLANE'S PUMP, SEPARATE FROM THE WIRE'S.
+
+   now_continuity_take_report() is the only other caller of the service
+   handshake, and it is reachable from conn_service() alone. That made the
+   position pump a passenger on the wire's own reentrancy guard: while this
+   application is inside a request, now_wire_pump() bounces (wire.c) and the
+   cursor stops for the whole of it, however many nested loops pump in
+   between. The comment in take_report already claims the renewal happens
+   "from the ordinary and NESTED wire pump" - this is the half of that
+   sentence that was never true.
+
+   MEASURED 2026-08-13 (log "223323", epoch 12): the host's Mirror cycle
+   asks for a scene every 0.75 s of guest-idle time and does not stand down
+   while Continuity is armed, so serving it is the once-a-second event. The
+   applies came 48-72 ticks apart with a clean 1-tick cadence between, which
+   is a loop that is not running rather than a loop running slowly.
+
+   WHAT THIS DELIBERATELY OMITS. No ack, no report, no transport: all three
+   need the wire's state machine, which is exactly what cannot be re-entered
+   here. The ack is retried by the next ordinary pass and Continuity state is
+   absolute, so a skipped one costs nothing. What remains is the owner lease
+   and the apply handshake - both idempotent, allocation-free, and already
+   guarded against re-entry by now_continuity_service_invoke itself. */
+void now_continuity_pump(void)
+{
+    NowPeekContinuityCell *shared;
+
+    if (gEpoch == 0) {
+        return;                       /* no epoch: nothing owns the cursor */
+    }
+    shared = cell();
+    if (shared == NULL) {
+        return;
+    }
+    /* The lease is finite and 90 ticks is inside the stall this exists to
+       cover, so it is renewed here for the same reason take_report renews
+       it: time we spent serving a request is not time the host went away. */
+    now_peek_claim(kNowPeekOwnerContinuity,
+                   (unsigned long)kNowPeekCapAnchors);
+    (void)now_continuity_service_invoke(shared);
+}
+
 int now_continuity_take_report(NowContinuityReport *out)
 {
     NowPeekContinuityCell *shared = cell();
