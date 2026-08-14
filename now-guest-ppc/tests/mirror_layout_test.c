@@ -179,10 +179,9 @@ static void test_rest_words(void)
 
     facts.rest_state |= kNowPeekRestADBObserverInstalled;
     now_mirror_rest_text(&facts, out, sizeof out);
-    check(strncmp(out, "ADB observer linked", 19) == 0
-              && strstr(out, "Cursor tracking patched") != NULL
-              && strstr(out, "restart") != NULL,
-          "the permanent passive ADB link is visible until restart");
+    check(strstr(out, "ADB observer") == NULL
+              && strstr(out, "Cursor tracking patched") != NULL,
+          "the retired passive ADB bit remains a silent tombstone");
     memset(tiny, 'x', sizeof tiny);
     now_mirror_rest_text(&facts, tiny, sizeof tiny);
     check(tiny[sizeof tiny - 1] == '\0',

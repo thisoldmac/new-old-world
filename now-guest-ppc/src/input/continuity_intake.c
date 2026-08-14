@@ -402,13 +402,12 @@ int now_continuity_arm(long id, unsigned short port,
     shared->button_edge_deferrals = 0;
     shared->button_edge_overflows = 0;
     shared->tracking_settle_calls = 0;
-    shared->tracking_settle_moved = 0;
     shared->tracking_settle_redraws = 0;
     shared->tracking_settle_reasserts = 0;
-    memset(&shared->tracking_conflict_current_run, 0,
+    memset(&shared->tracking_device_attempts, 0,
            sizeof(*shared)
              - offsetof(NowPeekContinuityCell,
-                        tracking_conflict_current_run));
+                        tracking_device_attempts));
     bump_nonzero(&shared->control_seq);
     gPendingReplyID = id;
     gPendingControlSeq = shared->control_seq;
@@ -429,10 +428,6 @@ int now_continuity_arm(long id, unsigned short port,
        epoch. A datagram can never outrun construction of its consumer. */
     gEpoch = (NowCU32)epoch;
     gFastPump = fast_pump != 0;
-    /* Persist the observer installation boundary in the same task-time line
-       that proves the epoch armed. A reboot loses the resident ring, and an
-       empty ADB trace is otherwise ambiguous between "no physical packets"
-       and "the wrapper never installed". */
     /* double-active is GetDblTime() AFTER the resident armed: with the wide
        window bit set it must read the widened value, so this line is the
        proof the widening actually installed on this machine - the teardown
@@ -443,23 +438,6 @@ int now_continuity_arm(long id, unsigned short port,
             "double-active=%lu",
             epoch, requested_hz, lease_ticks, gFastPump, tracking_options,
             (unsigned long)GetDblTime());
-    now_log(kLogInfo, "adb",
-            "observer epoch=%lu state=%lu addr=%ld handler=%ld devices=%lu "
-            "err=%ld",
-            epoch,
-            (unsigned long)shared->adb_observer_state,
-            (long)shared->adb_observer_address,
-            (long)shared->adb_observer_handler_id,
-            (unsigned long)shared->adb_observer_device_count,
-            (long)shared->adb_observer_install_result);
-    now_log(kLogInfo, "adb",
-            "counters epoch=%lu installs=%lu callbacks=%lu reentries=%lu "
-            "trace=%lu",
-            epoch,
-            (unsigned long)shared->adb_observer_installs,
-            (unsigned long)shared->adb_observer_callbacks,
-            (unsigned long)shared->adb_observer_reentries,
-            (unsigned long)shared->adb_trace_write_seq);
     now_log_flush();
     return kNowContinuityArmOK;
 }
@@ -470,7 +448,6 @@ int now_continuity_disarm(long id, unsigned long epoch)
     NowContinuityCursorDiagnostics cursor;
     unsigned long timing_count;
     unsigned long timing_index;
-    unsigned long interval_index;
 
     if (shared == NULL || (NowPeekU32)epoch != shared->epoch) {
         now_log(kLogWarn, "mirror", "disarm refused epoch=%lu", epoch);
@@ -489,21 +466,13 @@ int now_continuity_disarm(long id, unsigned long epoch)
     gAckRetrying = false;
     (void)now_continuity_service_invoke(shared);
     now_log(kLogInfo, "mirror", "disarm epoch=%lu reset requested", epoch);
-    now_log(kLogInfo, "adb",
-            "observer epoch=%lu state=%lu callbacks=%lu reentries=%lu "
-            "trace=%lu",
-            epoch, (unsigned long)shared->adb_observer_state,
-            (unsigned long)shared->adb_observer_callbacks,
-            (unsigned long)shared->adb_observer_reentries,
-            (unsigned long)shared->adb_trace_write_seq);
     now_log(kLogInfo, "mirror",
             "tracking epoch=%lu options=0x%lx pin=%lu getmouse=%lu "
-            "settle=%lu moved=%lu redraw=%lu reassert=%lu",
+            "settle=%lu redraw=%lu reassert=%lu",
             epoch, (unsigned long)shared->tracking_options,
             (unsigned long)shared->tracking_pin_writes,
             (unsigned long)shared->tracking_getmouse_answers,
             (unsigned long)shared->tracking_settle_calls,
-            (unsigned long)shared->tracking_settle_moved,
             (unsigned long)shared->tracking_settle_redraws,
             (unsigned long)shared->tracking_settle_reasserts);
     now_log(kLogInfo, "mirror",
@@ -518,26 +487,6 @@ int now_continuity_disarm(long id, unsigned long epoch)
             epoch, (long)shared->at_h, (long)shared->at_v,
             (long)shared->native_input_h, (long)shared->native_input_v,
             (long)shared->native_owned_h, (long)shared->native_owned_v);
-    now_log(kLogInfo, "mirror",
-            "tracking conflict epoch=%lu current=%lu max=%lu returns=%lu",
-            epoch,
-            (unsigned long)shared->tracking_conflict_current_run,
-            (unsigned long)shared->tracking_conflict_max_run,
-            (unsigned long)shared->tracking_press_return_count);
-    now_log(kLogInfo, "mirror",
-            "tracking conflict first ticks=%lu live=%ld,%ld held=%ld,%ld",
-            (unsigned long)shared->tracking_conflict_first_ticks,
-            (long)shared->tracking_conflict_first_live_h,
-            (long)shared->tracking_conflict_first_live_v,
-            (long)shared->tracking_conflict_first_held_h,
-            (long)shared->tracking_conflict_first_held_v);
-    now_log(kLogInfo, "mirror",
-            "tracking conflict last ticks=%lu live=%ld,%ld held=%ld,%ld",
-            (unsigned long)shared->tracking_conflict_last_ticks,
-            (long)shared->tracking_conflict_last_live_h,
-            (long)shared->tracking_conflict_last_live_v,
-            (long)shared->tracking_conflict_last_held_h,
-            (long)shared->tracking_conflict_last_held_v);
     now_log(kLogInfo, "mirror",
             "tracking device epoch=%lu attempts=%lu found=%lu moves=%lu "
             "fail=%lu reentry=%lu err=%ld",
@@ -564,7 +513,7 @@ int now_continuity_disarm(long id, unsigned long epoch)
             (unsigned long)shared->event_timing_dropped);
     for (timing_index = 0; timing_index < timing_count; timing_index++) {
         /* The ring keeps the LAST capacity edges; walk chronologically
-           from the oldest surviving slot, the CDM interval ring's idiom. */
+           from the oldest surviving slot. */
         unsigned long slot =
             ((unsigned long)shared->event_timing_count
              + (unsigned long)kNowPeekContinuityEventTimingCapacity
@@ -615,38 +564,6 @@ int now_continuity_disarm(long id, unsigned long epoch)
             "CDM observed epoch=%lu before=%ld,%ld after=%ld,%ld valid=%d",
             epoch, cursor.before_h, cursor.before_v,
             cursor.after_h, cursor.after_v, cursor.device_point_valid);
-    now_log(kLogInfo, "mirror",
-            "CDM intervals epoch=%lu samples=%lu kept=%lu max=%lu "
-            "max-seq=%lu max-at=%lu",
-            epoch, cursor.interval_samples, cursor.interval_used,
-            cursor.interval_max_ticks, cursor.interval_max_sequence,
-            cursor.interval_max_begin_ticks);
-    /* Gaps counted only between moves whose points differ: the cadence a
-       human perceives as hitching, with stationary intervals excluded. */
-    now_log(kLogInfo, "mirror",
-            "CDM motion epoch=%lu samples=%lu le2=%lu le5=%lu le11=%lu "
-            "le29=%lu ge30=%lu max=%lu max-at=%lu",
-            epoch, cursor.motion_gap_samples,
-            cursor.motion_gap_hist[0], cursor.motion_gap_hist[1],
-            cursor.motion_gap_hist[2], cursor.motion_gap_hist[3],
-            cursor.motion_gap_hist[4], cursor.motion_gap_max_ticks,
-            cursor.motion_gap_max_begin_ticks);
-    for (interval_index = 0; interval_index < cursor.interval_used;
-         interval_index++) {
-        unsigned long slot =
-            (cursor.interval_next
-             + (unsigned long)kNowContinuityMoveIntervalCapacity
-             - cursor.interval_used + interval_index)
-            % (unsigned long)kNowContinuityMoveIntervalCapacity;
-        const NowContinuityMoveInterval *interval =
-            &cursor.intervals[slot];
-
-        now_log(kLogInfo, "mirror",
-                "CDM interval n=%lu seq=%lu begin=%lu gap=%lu at=%ld,%ld",
-                interval_index + 1u, interval->sequence,
-                interval->begin_ticks, interval->gap_ticks,
-                interval->h, interval->v);
-    }
     now_log_flush();
     /* The endpoint is transport, not authority. Keep the asynchronous OT
        endpoint bound for this TCP session and reject every packet while the

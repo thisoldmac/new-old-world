@@ -1,20 +1,6 @@
 #ifndef NOW_CONTINUITY_CURSOR_H
 #define NOW_CONTINUITY_CURSOR_H
 
-enum { kNowContinuityMoveIntervalCapacity = 32 };
-/* Inter-move gap buckets in ticks: <=2, 3-5, 6-11, 12-29, >=30. Counted
-   only between moves whose points differ, because a stationary pointer
-   and a starved pump both read as large gaps in the raw ring. */
-enum { kNowContinuityMotionGapBuckets = 5 };
-
-typedef struct {
-    unsigned long sequence;
-    unsigned long begin_ticks;
-    unsigned long gap_ticks;
-    long h;
-    long v;
-} NowContinuityMoveInterval;
-
 typedef struct {
     unsigned long samples;
     unsigned long before_request_mismatches;
@@ -34,18 +20,6 @@ typedef struct {
     int press_valid;
     int requested_valid;
     int device_point_valid;
-    unsigned long interval_samples;
-    unsigned long interval_used;
-    unsigned long interval_next;
-    unsigned long interval_max_ticks;
-    unsigned long interval_max_sequence;
-    unsigned long interval_max_begin_ticks;
-    NowContinuityMoveInterval
-        intervals[kNowContinuityMoveIntervalCapacity];
-    unsigned long motion_gap_samples;
-    unsigned long motion_gap_hist[kNowContinuityMotionGapBuckets];
-    unsigned long motion_gap_max_ticks;
-    unsigned long motion_gap_max_begin_ticks;
 } NowContinuityCursorDiagnostics;
 
 int now_continuity_cursor_ready(void);

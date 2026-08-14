@@ -19,9 +19,14 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = (ROOT / "now-guest-ppc/src/input/continuity_intake.c").read_text()
 WIRE = (ROOT / "now-guest-ppc/src/core/wire.c").read_text()
 CURSOR = (ROOT / "now-guest-ppc/src/input/continuity_cursor.c").read_text()
+CURSOR_HEADER = (
+    ROOT / "now-guest-ppc/src/input/continuity_cursor.h").read_text()
 EXT_CURSOR = (ROOT / "ext/src/now_ext_cursor.c").read_text()
 EXT_CONTINUITY = (ROOT / "ext/src/now_ext_continuity.c").read_text()
 SERVICE = (ROOT / "now-guest-ppc/src/input/continuity_service.c").read_text()
+INPUT_COMMANDS = (ROOT / "now-guest-ppc/src/input/input_cmds.c").read_text()
+MIRROR_LAYOUT = (ROOT / "now-guest-ppc/src/mirror/mirror_layout.c").read_text()
+PEEK_TABLE = (ROOT / "contract/peek_table.h").read_text()
 TRACKING_PATCH = (ROOT / "ext/src/now_ext_cursor_tracking.S").read_text()
 
 
@@ -62,8 +67,6 @@ tracking_device_find = body(
     "static CursorDevicePtr continuity_tracking_device(", EXT_CURSOR)
 tracking_configure = body(
     "void now_ext_cursor_configure_continuity_tracking(", EXT_CURSOR)
-tracking_conflict = body(
-    "static void record_continuity_tracking_conflict(", EXT_CURSOR)
 tracking_remember = body(
     "void now_ext_cursor_remember_continuity_tracking_point(", EXT_CURSOR)
 tracking_end = body(
@@ -130,24 +133,12 @@ if "now_continuity_service_ready(shared)" not in arm:
 if arm.index("gEpoch = (NowCU32)epoch") < arm.index(
         "now_continuity_service_invoke(shared)"):
     failures.append("arm publishes UDP authority before resident acceptance")
-for field in ("adb_observer_state", "adb_observer_address",
-              "adb_observer_handler_id", "adb_observer_device_count",
-              "adb_observer_install_result", "adb_observer_installs",
-              "adb_observer_callbacks", "adb_trace_write_seq"):
-    if field not in arm:
-        failures.append(
-            f"arm log no longer persists ADB observer boundary field {field}")
-for field in ("adb_observer_state", "adb_observer_callbacks",
-              "adb_observer_reentries", "adb_trace_write_seq"):
-    if field not in disarm:
-        failures.append(
-            f"disarm log no longer persists ADB observer boundary field {field}")
 for field in ("tracking_options", "tracking_pin_writes",
               "tracking_getmouse_answers", "at_h", "at_v",
               "native_input_h", "native_input_v", "native_owned_h",
               "native_owned_v", "tracking_settle_calls",
-              "tracking_settle_moved", "tracking_settle_redraws",
-              "tracking_settle_reasserts", "button_edge_deferrals",
+              "tracking_settle_redraws", "tracking_settle_reasserts",
+              "button_edge_deferrals",
               "button_edge_overflows"):
     if field not in disarm:
         failures.append(
@@ -164,7 +155,51 @@ for field in ("before_request_mismatches", "press_reversions",
         failures.append(
             f"disarm log no longer persists Cursor Device diagnostic {field}")
 if "now_log_flush();" not in arm or "now_log_flush();" not in disarm:
-    failures.append("ADB observer boundary can be lost before a wedge reboot")
+    failures.append("arm/disarm diagnostics can be lost before a wedge reboot")
+
+# RETIRED 2026-08-14: the passive ADB observer, V10 Cursor Device cadence
+# recorder, and resident tracking-conflict recorder answered closed probes.
+# Their accretive shared-table fields remain reserved, but no producer,
+# reader, drain, teardown printer, or status row may make them look live.
+for field in ("adb_observer_state", "adb_observer_callbacks",
+              "adb_trace_write_seq", "tracking_conflict_current_run",
+              "tracking_conflict_last_ticks", "tracking_press_return_count"):
+    if field not in PEEK_TABLE:
+        failures.append(f"retired contract field was removed or renamed: {field}")
+for token in ("now_ext_continuity_trace_tracking_conflict",
+              "record_continuity_tracking_conflict(",
+              "cell->tracking_conflict_", "cell->tracking_press_return_",
+              "cell->tracking_settle_moved"):
+    if token in EXT_CURSOR or token in EXT_CONTINUITY:
+        failures.append(f"retired resident conflict instrumentation remains: {token}")
+for token in ("gLastADBTraceSeq", "log_adb_entry(", "drain_adb_trace(",
+              "NowPeekADBTraceEntry"):
+    if token in SERVICE:
+        failures.append(f"retired passive ADB drain remains: {token}")
+for token in ("adb_observer_", "adb_injection_", "adb_trace_write_seq"):
+    if token in arm or token in disarm:
+        failures.append(f"retired ADB teardown reporting remains: {token}")
+for token in ("tracking conflict", "tracking_conflict_",
+              "tracking_press_return_", "tracking_settle_moved"):
+    if token in disarm:
+        failures.append(f"retired conflict teardown reporting remains: {token}")
+for token in ("kNowContinuityMoveIntervalCapacity",
+              "NowContinuityMoveInterval", "interval_samples",
+              "motion_gap_samples", "motion_gap_hist"):
+    if token in CURSOR or token in CURSOR_HEADER:
+        failures.append(f"retired V10 Cursor Device recorder remains: {token}")
+for token in ("CDM intervals", "CDM motion", "CDM interval n=",
+              "interval_index"):
+    if token in disarm:
+        failures.append(f"retired V10 teardown printing remains: {token}")
+for token in ("adb_observer_", "adb_injection_", "adb_trace_write_seq",
+              "NowPeekADBTraceEntry", "ADB observer", "ADB injection",
+              "ADB last "):
+    if token in INPUT_COMMANDS:
+        failures.append(f"retired ADB status row remains: {token}")
+if "kNowPeekRestADBObserverInstalled" in MIRROR_LAYOUT \
+        or "ADB observer linked" in MIRROR_LAYOUT:
+    failures.append("the retired passive ADB hook still appears in Mirror status")
 if "if (!prepare_ack(shared))" not in try_ack:
     failures.append("UDP ACK send no longer requires a stable resident snapshot")
 if "HideCursor" in SOURCE or "ShowCursor" in SOURCE:
@@ -246,9 +281,9 @@ if tracking_remember.count("gNowCursorTrackingSourceSeq++") != 2:
     failures.append("the held tracking source lost its bounded publication sequence")
 if "LMGetMouseLocation()" not in tracking_settle:
     failures.append("tracking settlement no longer observes ADB displacement")
-for field in ("tracking_settle_calls", "tracking_settle_moved",
-              "tracking_settle_redraws", "tracking_settle_reasserts"):
-    if field not in tracking_settle and field not in tracking_conflict:
+for field in ("tracking_settle_calls", "tracking_settle_redraws",
+              "tracking_settle_reasserts"):
+    if field not in tracking_settle:
         failures.append(
             f"tracking settlement no longer publishes diagnostic {field}")
 if tracking_settle.count("LMSetMouseLocation(pt)") != 2:

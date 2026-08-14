@@ -915,6 +915,19 @@
         "ext/src/now_ext_cursor_tracking.S"
       ],
       "reason": "Resident consolidation removes rejected Continuity experiments; cross-build and native guards pass, with emulator validation and shared landing bake still to follow."
+    },
+    {
+      "at": "2026-08-14T03:54:40-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "ed88e81c4fe345de8fca6b281d4120ab88986797",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_trace.h",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "No Metal access overnight; resident instrumentation retirement is built and emulator verification follows, shared bake and Metal verification are due before landing."
     }
   ]
 }

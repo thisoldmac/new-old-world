@@ -37,7 +37,6 @@ static CallUPPProc gCallUPP;
 static NowPeekU32 gServiceProc;
 static int gResolverState;             /* 0 unknown, 1 ready, -1 unavailable */
 static NowPeekU32 gLastTraceSeq;
-static NowPeekU32 gLastADBTraceSeq;
 static int gInvoking;
 
 enum { kNowContinuityServiceApplyRounds = 4 };
@@ -238,20 +237,6 @@ static void drain_trace(const NowPeekContinuityCell *cell)
                         (unsigned long)entry->ticks, (long)entry->arg0,
                         (long)entry->arg1);
             } else if (entry->event
-                        == kNowPeekContinuityTraceTrackingConflict) {
-                short live_h = (short)(((NowPeekU32)entry->arg0 >> 16)
-                                       & 0xFFFFu);
-                short live_v = (short)((NowPeekU32)entry->arg0 & 0xFFFFu);
-                short source_h = (short)(((NowPeekU32)entry->arg1 >> 16)
-                                         & 0xFFFFu);
-                short source_v = (short)((NowPeekU32)entry->arg1 & 0xFFFFu);
-                now_log_memory(kLogInfo, "mirror",
-                    "tracking conflict seq=%lu ticks=%lu live=%ld,%ld source=%ld,%ld",
-                    (unsigned long)entry->seq,
-                    (unsigned long)entry->ticks,
-                    (long)live_h, (long)live_v,
-                    (long)source_h, (long)source_v);
-            } else if (entry->event
                         == kNowPeekContinuityTraceKeyboardResult) {
                 NowPeekU32 packed = (NowPeekU32)entry->arg1;
                 now_log_memory(
@@ -305,83 +290,6 @@ static void drain_trace(const NowPeekContinuityCell *cell)
             seq = 1;
     }
     gLastTraceSeq = newest;
-}
-
-static void log_adb_entry(const NowPeekADBTraceEntry *entry)
-{
-    now_log_memory(kLogInfo, "adb",
-        "seq=%lu ep=%lu cmd=%08lx n=%lu mouse=%ld,%ld>%ld,%ld raw=%ld,%ld>%ld,%ld",
-        (unsigned long)entry->seq, (unsigned long)entry->epoch,
-        (unsigned long)entry->command, (unsigned long)entry->data_length,
-        (long)entry->before_mouse_h, (long)entry->before_mouse_v,
-        (long)entry->after_mouse_h, (long)entry->after_mouse_v,
-        (long)entry->before_raw_h, (long)entry->before_raw_v,
-        (long)entry->after_raw_h, (long)entry->after_raw_v);
-
-    /* A wedge can erase the in-memory ring at reboot. Persist the first
-       observed packet and one bounded checkpoint per second at 60 callbacks;
-       this runs in PPC task time after the resident returns, never in the ADB
-       callback. Disk logging remains under the Logs module's user switch. */
-    if (entry->seq == 1u || (entry->seq % 60u) == 0) {
-        now_log(kLogInfo, "adb",
-            "checkpoint seq=%lu ep=%lu mouse=%ld,%ld>%ld,%ld temp=%ld,%ld>%ld,%ld",
-            (unsigned long)entry->seq, (unsigned long)entry->epoch,
-            (long)entry->before_mouse_h, (long)entry->before_mouse_v,
-            (long)entry->after_mouse_h, (long)entry->after_mouse_v,
-            (long)entry->before_temp_h, (long)entry->before_temp_v,
-            (long)entry->after_temp_h, (long)entry->after_temp_v);
-        now_log_flush();
-    }
-}
-
-static void drain_adb_trace(const NowPeekContinuityCell *cell)
-{
-    NowPeekU32 newest = cell->adb_trace_write_seq;
-    NowPeekU32 available;
-    NowPeekU32 first;
-    NowPeekU32 seq;
-    NowPeekU32 remaining;
-
-    if (newest == 0 || newest == gLastADBTraceSeq)
-        return;
-    if (gLastADBTraceSeq == 0) {
-        available = newest < (NowPeekU32)kNowPeekADBTraceCapacity
-            ? newest : (NowPeekU32)kNowPeekADBTraceCapacity;
-    } else {
-        available = newest - gLastADBTraceSeq;
-        if (newest < gLastADBTraceSeq)
-            available--;
-    }
-    if (available > (NowPeekU32)kNowPeekADBTraceCapacity) {
-        available = (NowPeekU32)kNowPeekADBTraceCapacity;
-        now_log(kLogWarn, "adb", "observer trace overrun old=%lu new=%lu",
-                (unsigned long)gLastADBTraceSeq, (unsigned long)newest);
-    }
-    if (available == 0) {
-        gLastADBTraceSeq = newest;
-        return;
-    }
-    first = newest;
-    for (remaining = 1; remaining < available; ++remaining) {
-        first--;
-        if (first == 0)
-            first = 0xFFFFFFFFUL;
-    }
-    seq = first;
-    for (remaining = available; remaining != 0; --remaining) {
-        const NowPeekADBTraceEntry *entry =
-            &cell->adb_trace[(seq - 1u) % kNowPeekADBTraceCapacity];
-        if (entry->seq != seq) {
-            now_log(kLogWarn, "adb", "observer trace torn wanted=%lu got=%lu",
-                    (unsigned long)seq, (unsigned long)entry->seq);
-        } else {
-            log_adb_entry(entry);
-        }
-        seq++;
-        if (seq == 0)
-            seq = 1;
-    }
-    gLastADBTraceSeq = newest;
 }
 
 /* V11 deep click probe drain. Uploadable evidence, so now_log and never
@@ -503,7 +411,6 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
             return 0;
         }
         drain_trace(cell);
-        drain_adb_trace(cell);
         drain_click_probe(cell);
         status_seq = cell->status_seq;
         if ((status_seq & 1u) != 0)
@@ -599,7 +506,6 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
             return 0;
         }
         drain_trace(cell);
-        drain_adb_trace(cell);
         drain_click_probe(cell);
     }
     gInvoking = 0;

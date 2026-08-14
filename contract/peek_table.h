@@ -927,9 +927,8 @@ enum {
        changes an ADB packet. This is diagnostic scaffolding for determining
        which cursor authority owns the PowerBook drag snap-back. */
     kNowPeekContinuityFormatV6 = 6,
-    /* V7 gives one opt-in experiment meaning to tracking_options bit 3:
-       substitute tiny relative ADB packets with a bounded delta toward the
-       latest host point. The default remains the V6 passive observer. */
+    /* V7 appended fields for a retired ADB substitution experiment. Its bit
+       and tail remain reserved so later formats never reinterpret them. */
     kNowPeekContinuityFormatV7 = 7,
     /* V8 appends a bounded keyboard queue. The PPC application resolves the
        foreground process and publishes keys; the resident drains them only
@@ -940,10 +939,9 @@ enum {
        deferral/tracking telemetry. It preserves an intervening mouse-up when
        the lossy lane has already advanced to the next double-click down. */
     kNowPeekContinuityFormatV9 = 9,
-    /* V10 makes the three unresolved input symptoms measurable without
-       changing their default behaviour. It appends non-overwriting tracking
-       conflict latches, an opt-in synthetic-device settle probe, and a
-       bounded button timing chain in the guest's TickCount domain. */
+    /* V10 appended tracking-conflict latches, synthetic-device settlement,
+       and a bounded button timing chain. The conflict latches are dormant;
+       settlement and button timing remain live. */
     kNowPeekContinuityFormatV10 = 10,
     /* V11 appends the deep click probe: a rolling, logging-only record of
        every mouse event at the jGNE boundary with the click-relevant
@@ -1353,15 +1351,13 @@ typedef struct {
     NowPeekU32 button_timer_ticks;
     NowPeekU32 button_forced_releases;
     NowPeekU32 button_release_reason;
-    /* V5 experimental tracking tail. Written before control_seq commits, then
-       read as immutable for the epoch. The two counters distinguish which
-       intervention actually ran on metal. */
+    /* V5 tracking tail. The option word remains live; the pin/GetMouse
+       counters are dormant tombstones for retired mechanisms. */
     NowPeekU32 tracking_options;
     NowPeekU32 tracking_pin_writes;
     NowPeekU32 tracking_getmouse_answers;
-    /* V6 passive ADB observer tail. Installation happens only from the PPC
-       application's synchronous resident service. The callback itself owns
-       only these preallocated counters and ring entries. */
+    /* V6 passive ADB observer tail, retained as dormant tombstones after the
+       observer was retired. No producer or reader may reinterpret them. */
     NowPeekU32 adb_observer_state;
     NowPeekI32 adb_observer_address;
     NowPeekI32 adb_observer_handler_id;
@@ -1373,8 +1369,7 @@ typedef struct {
     NowPeekU32 adb_observer_epoch;
     NowPeekU32 adb_trace_write_seq;
     NowPeekADBTraceEntry adb_trace[kNowPeekADBTraceCapacity];
-    /* V7 active ADB substitution diagnostics. The experiment accepts only
-       tiny carrier packets; larger physical deltas remain native. */
+    /* V7 ADB substitution diagnostics, retained as dormant tombstones. */
     NowPeekU32 adb_injection_packets;
     NowPeekU32 adb_injection_carriers;
     NowPeekU32 adb_injection_physical;
@@ -1412,8 +1407,7 @@ typedef struct {
     NowPeekU32 tracking_settle_moved;
     NowPeekU32 tracking_settle_redraws;
     NowPeekU32 tracking_settle_reasserts;
-    /* V10 durable conflict latches. Unlike the eight-entry general trace,
-       these survive a long nested tracking loop without being overwritten. */
+    /* V10 tracking-conflict latches, retained as dormant tombstones. */
     NowPeekU32 tracking_conflict_current_run;
     NowPeekU32 tracking_conflict_max_run;
     NowPeekU32 tracking_conflict_first_ticks;

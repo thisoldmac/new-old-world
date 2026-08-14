@@ -137,7 +137,6 @@ static volatile short gNowCursorTrackingSourceH = 0;
 static volatile short gNowCursorTrackingSourceV = 0;
 static Point gNowCursorTrackingPressPoint;
 static Boolean gNowCursorTrackingPressValid = false;
-static NowPeekU32 gNowCursorTrackingConflictCount = 0;
 static volatile unsigned char gNowCursorTrackingDeviceActive = 0;
 static NowPeekU32 gNowCursorTrackingDeviceEpoch = 0;
 static NowPeekU32 gNowCursorTrackingDeviceSearchEpoch = 0;
@@ -427,7 +426,6 @@ void now_ext_cursor_remember_continuity_tracking_point(NowPeekI32 h,
     if (beginning) {
         gNowCursorTrackingPressPoint = pt;
         gNowCursorTrackingPressValid = true;
-        gNowCursorTrackingConflictCount = 0;
     }
     gNowCursorTrackingSourceSeq++;
     gNowCursorTrackingSourceH = pt.h;
@@ -683,55 +681,6 @@ NowPeekU32 now_ext_cursor_idle_settled_seq(void)
     return gNowCursorIdleSettledSeq;
 }
 
-static void record_continuity_tracking_conflict(
-    NowPeekContinuityCell *cell, Point live, Point held)
-{
-    NowPeekU32 ticks = (NowPeekU32)LMGetTicks();
-    Boolean at_press = gNowCursorTrackingPressValid
-        && live.h == gNowCursorTrackingPressPoint.h
-        && live.v == gNowCursorTrackingPressPoint.v;
-
-    cell->tracking_settle_moved++;
-    gNowCursorTrackingConflictCount++;
-    cell->tracking_conflict_current_run++;
-    if (cell->tracking_conflict_current_run
-            > cell->tracking_conflict_max_run)
-        cell->tracking_conflict_max_run =
-            cell->tracking_conflict_current_run;
-    if (cell->tracking_conflict_first_ticks == 0) {
-        cell->tracking_conflict_first_ticks = ticks;
-        cell->tracking_conflict_first_live_h = (NowPeekI32)live.h;
-        cell->tracking_conflict_first_live_v = (NowPeekI32)live.v;
-        cell->tracking_conflict_first_held_h = (NowPeekI32)held.h;
-        cell->tracking_conflict_first_held_v = (NowPeekI32)held.v;
-    }
-    cell->tracking_conflict_last_ticks = ticks;
-    cell->tracking_conflict_last_live_h = (NowPeekI32)live.h;
-    cell->tracking_conflict_last_live_v = (NowPeekI32)live.v;
-    cell->tracking_conflict_last_held_h = (NowPeekI32)held.h;
-    cell->tracking_conflict_last_held_v = (NowPeekI32)held.v;
-    if (at_press) {
-        cell->tracking_press_return_count++;
-        if (cell->tracking_press_return_first_ticks == 0) {
-            cell->tracking_press_return_first_ticks = ticks;
-            cell->tracking_press_return_first_live_h = (NowPeekI32)live.h;
-            cell->tracking_press_return_first_live_v = (NowPeekI32)live.v;
-            cell->tracking_press_return_first_held_h = (NowPeekI32)held.h;
-            cell->tracking_press_return_first_held_v = (NowPeekI32)held.v;
-        }
-    }
-    /* Preserve a bounded progression when NOW cannot drain the general trace
-       during a nested loop. The durable fields above never overwrite. */
-    if (gNowCursorTrackingConflictCount <= 4u
-            || (gNowCursorTrackingConflictCount
-                & (gNowCursorTrackingConflictCount - 1u)) == 0
-            || at_press) {
-        now_ext_continuity_trace_tracking_conflict(
-            (NowPeekI32)live.h, (NowPeekI32)live.v,
-            (NowPeekI32)held.h, (NowPeekI32)held.v);
-    }
-}
-
 /* Settle only the picture. This is entered from Toolbox hooks in
    the tracked application's task-time context. Clearing first makes nested
    GetMouse/StillDown/Button calls harmless; a timer interrupt that publishes
@@ -762,11 +711,6 @@ void now_ext_cursor_settle_continuity_tracking(void)
     }
     live = LMGetMouseLocation();
     moved = live.h != pt.h || live.v != pt.v;
-    if (moved && cell != NULL) {
-        record_continuity_tracking_conflict(cell, live, pt);
-    } else if (cell != NULL) {
-        cell->tracking_conflict_current_run = 0;
-    }
     /* The PowerBook's ADB path can republish its stationary physical point
        between host ticks. Reassert our held point on every tracking call.
        The baseline mode then lets the real Toolbox trap answer normally;

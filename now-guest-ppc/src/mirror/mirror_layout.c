@@ -228,10 +228,6 @@ void now_mirror_rest_text(const MirrorFacts *facts, char *out, long cap)
         return;
     }
     bits = facts->rest_state;
-    if ((bits & kNowPeekRestADBObserverInstalled) != 0) {
-        n += snprintf(out + n, (size_t)(cap - n),
-                      "ADB observer linked (restart to clear)");
-    }
     if ((bits & kNowPeekRestCursorTrackingPatched) != 0) {
         n += snprintf(out + n, (size_t)(cap - n),
                       "%sCursor tracking patched (restart to clear)",

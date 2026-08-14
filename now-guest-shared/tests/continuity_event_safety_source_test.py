@@ -222,7 +222,7 @@ check("flags.insert(.primaryDown)" in HOST
 # and a starved target turned that into piled-up drags (2026-08-13 185037).
 # Correct ordering is the v4 previous/current pair plus the resident's
 # two-slot interrupt release, not host-side pacing.
-check("releasePending = true\n        /*" in host_buttons
+check("releasePending" not in HOST
       and "sendPrimaryRelease()\n        return true" in host_buttons,
       "the host again gates the release on the press acknowledgement")
 check("bufferedButtonCycle" not in HOST
@@ -521,7 +521,8 @@ check("click_probe_overwritten +=" in probe_drain
 check("deepClickLog" in WIRE
       and "kNowPeekContinuityTrackingDeepClickLog" in WIRE,
       "the wire no longer maps deepClickLog onto tracking bit 9")
-check("deepClickLog: deepClickLog" in HOST,
+check(".init(id: .deepClickLog" in HOST
+      and "armOptions[option.id] = self[keyPath: option.keyPath]" in HOST,
       "the host arm no longer forwards the deep click probe flag")
 
 # MBTicks coherence. Native downs satisfy when == MBTicks exactly (26/26,
