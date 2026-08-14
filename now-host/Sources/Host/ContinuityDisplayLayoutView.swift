@@ -65,6 +65,15 @@ struct ContinuityDisplayLayoutView: View {
                                 selected: layout.scaleMode == mode))
                     }
                 }
+                Divider().frame(height: 24)
+                Toggle("Screen previews", isOn: Binding(
+                    get: { previews.enabled },
+                    set: { previews.setEnabled($0) }))
+                    .toggleStyle(.switch)
+                    .help("Show live stills of each screen in the "
+                          + "arrangement. The host side needs Screen "
+                          + "Recording permission to capture its own "
+                          + "displays.")
                 Spacer()
             }
 
@@ -151,6 +160,14 @@ private struct ContinuityArrangementCanvas: View {
            of the arrangement changed, or the guest arrived. Not a timer. */
         .onChange(of: layout.hostDisplays) { hosts in
             Task { await previews.refresh(hosts: hosts) }
+        }
+        /* The toggle is the third moment: previews are off by default, so
+           flipping it on is the first time there is anything to capture.
+           `refresh` is already the hard gate when it is off, so this only
+           needs to fire the pass back up when it turns on. */
+        .onChange(of: previews.enabled) { enabled in
+            guard enabled else { return }
+            Task { await previews.refresh(hosts: layout.hostDisplays) }
         }
     }
 

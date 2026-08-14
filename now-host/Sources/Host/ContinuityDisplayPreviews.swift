@@ -202,20 +202,31 @@ final class ContinuityDisplayPreviewStore: ObservableObject {
     /// nil when there is nothing to explain - either every preview arrived,
     /// or nobody has asked for one yet.
     @Published private(set) var note: ContinuityPreviewNote?
+    /// Off by default. Screen Recording is a standing grant a person did not
+    /// necessarily mean to give this app just by opening the arranger, so
+    /// previews stay opt-in: nothing below reaches ScreenCaptureKit, TCC, or
+    /// the guest capture lane until this is true.
+    @Published private(set) var enabled: Bool
 
     /// The tiles are small; this is the widest a stored still ever needs to
     /// be. Full-resolution captures are downscaled before they are kept.
     static let maxPreviewPixelWidth: CGFloat = 480
 
+    private static let enabledKey = "mirror.continuity.displayPreviews"
+
     private let hostSource: ContinuityHostScreenCapturing?
     private let guestSource: ContinuityGuestScreenCapturing?
+    private let defaults: UserDefaults?
     private var refreshing = false
 
     init(hostSource: ContinuityHostScreenCapturing?
             = ContinuityScreenCaptureKitSource(),
-         guestSource: ContinuityGuestScreenCapturing? = nil) {
+         guestSource: ContinuityGuestScreenCapturing? = nil,
+         defaults: UserDefaults? = ProductIdentity.defaults) {
         self.hostSource = hostSource
         self.guestSource = guestSource
+        self.defaults = defaults
+        self.enabled = defaults?.bool(forKey: Self.enabledKey) ?? false
     }
 
     /// A store that captures nothing, for the offscreen render gates: those
@@ -223,12 +234,29 @@ final class ContinuityDisplayPreviewStore: ObservableObject {
     /// capture does is ask TCC for Screen Recording. A test suite must not
     /// be able to raise that prompt.
     static var capturingNothing: ContinuityDisplayPreviewStore {
-        ContinuityDisplayPreviewStore(hostSource: nil, guestSource: nil)
+        ContinuityDisplayPreviewStore(hostSource: nil, guestSource: nil,
+                                      defaults: nil)
+    }
+
+    /// The toggle's write path. Turning previews off clears whatever was
+    /// held - a stale still of a display that has since changed is worse
+    /// than the flat fill previews replaced. Turning on does not itself
+    /// capture; the arranger's own refresh triggers on this becoming true,
+    /// the same way it triggers on the arrangement changing shape.
+    func setEnabled(_ isEnabled: Bool) {
+        guard isEnabled != enabled else { return }
+        enabled = isEnabled
+        defaults?.set(isEnabled, forKey: Self.enabledKey)
+        if !isEnabled { clear() }
     }
 
     /// Called when the arranger appears and when the display configuration
     /// changes - the two moments a still can go stale. Never on a timer.
+    /// Disabled is the hard gate: nothing past this line touches a host
+    /// source, a guest source, or TCC while previews are off, independent
+    /// of what the caller passes.
     func refresh(hosts: [HostDisplayDescriptor]) async {
+        guard enabled else { return }
         guard !refreshing else { return }
         refreshing = true
         defer { refreshing = false }

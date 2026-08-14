@@ -16,7 +16,9 @@ final class ContinuityDisplayPreviewTests: XCTestCase {
 
     func testEachHostDisplayGetsItsOwnStill() async {
         let hosts = FakeHostCapture()
-        let store = ContinuityDisplayPreviewStore(hostSource: hosts)
+        let store = ContinuityDisplayPreviewStore(hostSource: hosts,
+                                                   defaults: nil)
+        store.setEnabled(true)
 
         await store.refresh(hosts: [studio, builtIn])
 
@@ -36,7 +38,9 @@ final class ContinuityDisplayPreviewTests: XCTestCase {
     func testDeniedScreenRecordingFallsBackToFlatFillsWithANamedNote() async {
         let hosts = FakeHostCapture(
             failure: .screenRecordingDenied)
-        let store = ContinuityDisplayPreviewStore(hostSource: hosts)
+        let store = ContinuityDisplayPreviewStore(hostSource: hosts,
+                                                   defaults: nil)
+        store.setEnabled(true)
 
         await store.refresh(hosts: [studio, builtIn])
 
@@ -51,7 +55,9 @@ final class ContinuityDisplayPreviewTests: XCTestCase {
 
     func testAnOrdinaryCaptureFailureIsNamedButNotBlamedOnPermission() async {
         let hosts = FakeHostCapture(failure: .captureFailed)
-        let store = ContinuityDisplayPreviewStore(hostSource: hosts)
+        let store = ContinuityDisplayPreviewStore(hostSource: hosts,
+                                                   defaults: nil)
+        store.setEnabled(true)
 
         await store.refresh(hosts: [studio])
 
@@ -62,7 +68,9 @@ final class ContinuityDisplayPreviewTests: XCTestCase {
 
     func testNoGuestConnectedLeavesTheFlatGuestTileAndNoNote() async {
         let store = ContinuityDisplayPreviewStore(
-            hostSource: FakeHostCapture(), guestSource: FakeGuestCapture(image: nil))
+            hostSource: FakeHostCapture(), guestSource: FakeGuestCapture(image: nil),
+            defaults: nil)
+        store.setEnabled(true)
 
         await store.refresh(hosts: [studio])
 
@@ -73,12 +81,78 @@ final class ContinuityDisplayPreviewTests: XCTestCase {
     func testConnectedGuestContributesItsOwnStill() async {
         let guest = FakeGuestCapture(image: Self.image(width: 640, height: 480))
         let store = ContinuityDisplayPreviewStore(
-            hostSource: FakeHostCapture(), guestSource: guest)
+            hostSource: FakeHostCapture(), guestSource: guest, defaults: nil)
+        store.setEnabled(true)
 
         await store.refresh(hosts: [studio])
 
         XCTAssertNotNil(store.guestPreview)
         XCTAssertEqual(guest.calls, 1)
+    }
+
+    // MARK: - The toggle
+
+    /// The default-off gate. This is the mutation-watched test: the guard in
+    /// `refresh` is the only thing standing between opening the arranger and
+    /// ScreenCaptureKit asking TCC for Screen Recording.
+    func testPreviewsAreOffByDefaultAndRequestNothing() async {
+        let hosts = FakeHostCapture()
+        let guest = FakeGuestCapture(image: Self.image(width: 640, height: 480))
+        let store = ContinuityDisplayPreviewStore(
+            hostSource: hosts, guestSource: guest, defaults: nil)
+
+        XCTAssertFalse(store.enabled)
+        await store.refresh(hosts: [studio, builtIn])
+
+        XCTAssertTrue(hosts.requested.isEmpty)
+        XCTAssertEqual(guest.calls, 0)
+        XCTAssertTrue(store.hostPreviews.isEmpty)
+        XCTAssertNil(store.guestPreview)
+        XCTAssertNil(store.note)
+    }
+
+    func testEnablingThenRefreshingRequestsStills() async {
+        let hosts = FakeHostCapture()
+        let store = ContinuityDisplayPreviewStore(hostSource: hosts,
+                                                   defaults: nil)
+
+        store.setEnabled(true)
+        await store.refresh(hosts: [studio, builtIn])
+
+        XCTAssertEqual(hosts.requested, [41, 42])
+        XCTAssertEqual(Set(store.hostPreviews.keys), [41, 42])
+    }
+
+    func testDisablingClearsHeldImages() async {
+        let hosts = FakeHostCapture()
+        let store = ContinuityDisplayPreviewStore(hostSource: hosts,
+                                                   defaults: nil)
+        store.setEnabled(true)
+        await store.refresh(hosts: [studio])
+        XCTAssertFalse(store.hostPreviews.isEmpty)
+
+        store.setEnabled(false)
+
+        XCTAssertTrue(store.hostPreviews.isEmpty)
+        XCTAssertNil(store.guestPreview)
+        XCTAssertNil(store.note)
+
+        // And it stays off: a refresh call after disabling requests nothing.
+        await store.refresh(hosts: [studio])
+        XCTAssertEqual(hosts.requested, [41], "no second request after being disabled")
+    }
+
+    func testPreferenceIsPersistedPerDefaultsSuite() {
+        let suite = "ContinuityDisplayPreviewTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        ContinuityDisplayPreviewStore(hostSource: FakeHostCapture(),
+                                       defaults: defaults).setEnabled(true)
+
+        let restored = ContinuityDisplayPreviewStore(
+            hostSource: FakeHostCapture(), defaults: defaults)
+        XCTAssertTrue(restored.enabled)
     }
 
     func testDownscaleShrinksToTheRequestedWidthAndKeepsAspect() {
