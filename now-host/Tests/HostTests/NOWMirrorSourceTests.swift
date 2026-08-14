@@ -254,6 +254,186 @@ final class NOWMirrorSourceTests: XCTestCase {
                        "all toggles coalesce into one follow-up scene")
     }
 
+    // MARK: - What each surface arms on the Macintosh
+
+    /// **A surface that renders nothing must not arm the planes that feed a
+    /// render.**
+    ///
+    /// Measured on metal 2026-08-13: a Continuity session held `arm_request`
+    /// oscillating between 0x1f and 0x17 for its whole length — the content
+    /// plane armed by one cycle and released by the next — repaired its
+    /// content hook every two seconds and refused draws with `wrong-a5`
+    /// throughout, while the pointer it exists to carry went unserved for the
+    /// first half-minute. Nothing on the host was reading any of it:
+    /// `MirrorPaneView` says in as many words that the render is off in this
+    /// mode.
+    ///
+    /// So the assertion is about the WIRE, not the mode flag: the scene
+    /// request stops asking for semantics and interaction, and the content
+    /// plane is released rather than re-joined.
+    func testContinuityArmsOnlyTheStructuralPlane() throws {
+        let key = GuestKey.synthetic("continuity-arming")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+        defer { source.stop() }
+
+        source.start()
+        XCTAssertEqual(harness.sceneRequests.count, 1)
+        XCTAssertTrue(harness.sceneRequests[0].1,
+                      "Mirror mode still asks for the semantic tree")
+        XCTAssertTrue(harness.sceneRequests[0].2,
+                      "Mirror mode still asks for the act plane")
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        XCTAssertEqual(harness.joinedScenes.count, 1,
+                       "Mirror mode still joins the content plane")
+        harness.completeJoin(0)
+
+        source.surfaceMode = .continuity
+
+        XCTAssertEqual(harness.sceneRequests.count, 2,
+                       "entering Continuity must re-arm now, not whenever "
+                       + "something else happens to poll")
+        XCTAssertFalse(harness.sceneRequests[1].1,
+                       "Continuity reads no semantic tree")
+        XCTAssertFalse(harness.sceneRequests[1].2,
+                       "Continuity drives the pointer over UDP, not the "
+                       + "act plane")
+        harness.completeScene(1, with: .success(try fixtureDelivery(for: key)))
+        XCTAssertEqual(harness.joinedScenes.count, 1,
+                       "the content plane must not be re-armed for a surface "
+                       + "that renders nothing")
+        XCTAssertEqual(harness.contentReleaseCompletions.count, 1,
+                       "and the claim it already holds must be released")
+    }
+
+    /// The other half, and the one that keeps this a gate rather than a
+    /// regression: Mirror's armed set is unchanged, and returning to it
+    /// re-arms everything Continuity dropped.
+    func testReturningToMirrorRearmsEveryPolicyPlane() throws {
+        let key = GuestKey.synthetic("continuity-return")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+        defer { source.stop() }
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        harness.completeJoin(0)
+        source.surfaceMode = .continuity
+        harness.completeScene(1, with: .success(try fixtureDelivery(for: key)))
+
+        source.surfaceMode = .mirror
+
+        XCTAssertEqual(harness.sceneRequests.count, 3)
+        XCTAssertTrue(harness.sceneRequests[2].1)
+        XCTAssertTrue(harness.sceneRequests[2].2)
+        harness.completeScene(2, with: .success(try fixtureDelivery(for: key)))
+        XCTAssertEqual(harness.joinedScenes.count, 2,
+                       "the content plane comes back with the render")
+    }
+
+    /// **The armed set is an INTERSECTION, and both directions matter.**
+    ///
+    /// A person's plane policy is the ceiling: a mode may narrow what is
+    /// asked for and may never grant a plane policy has refused. So this
+    /// runs a policy of structure-plus-content through both modes — Mirror
+    /// must still not ask for the two planes policy withheld, and
+    /// Continuity must still not arm the one it allowed.
+    func testTheArmedSetIsAnIntersectionAndNeverAReplacement() throws {
+        let key = GuestKey.synthetic("armed-intersection")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        let planes = PlanePolicyBox([.structure, .content])
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            planePolicy: { _ in planes.value },
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+        defer { source.stop() }
+
+        source.start()
+        XCTAssertEqual(harness.sceneRequests.count, 1)
+        XCTAssertFalse(harness.sceneRequests[0].1,
+                       "Mirror may not widen the walk past policy")
+        XCTAssertFalse(harness.sceneRequests[0].2,
+                       "Mirror may not arm the act plane past policy")
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        XCTAssertEqual(harness.joinedScenes.count, 1,
+                       "content is allowed here, and Mirror reads it")
+        harness.completeJoin(0)
+
+        source.surfaceMode = .continuity
+        harness.completeScene(1, with: .success(try fixtureDelivery(for: key)))
+
+        XCTAssertEqual(harness.joinedScenes.count, 1,
+                       "an allowed plane is still not an armed one: nothing "
+                       + "in Continuity reads the content plane")
+    }
+
+    /// **The P5 tail is ENDED, not merely left unrenewed.**
+    ///
+    /// Its guest-side lease is 36 000 ticks. A surface that stops reading
+    /// transitions and says nothing leaves the Macintosh sampling them for
+    /// ten more minutes — which is most of a Continuity session, and exactly
+    /// the kind of cost that is invisible from the host because nothing here
+    /// is waiting on it.
+    func testContinuityEndsTheTransitionTailItNoLongerReads() throws {
+        let key = GuestKey.synthetic("continuity-transitions")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        var transitionOps: [String] = []
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io,
+            transitionInvalidation: true,
+            sendCommand: { verb, args, completion in
+                guard verb == "transitions" else { return }
+                if case .text(let op)? = args?["op"] {
+                    transitionOps.append(op)
+                }
+                /* Answered, because the scheduler slot is released by this
+                   completion: a fake that never replies holds the repair
+                   lane and the next cycle never goes out. */
+                completion(.init(id: 1, ok: true, output: [:], error: nil))
+            })
+        defer { source.stop() }
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        harness.completeJoin(0)
+        XCTAssertEqual(transitionOps, ["start"])
+
+        source.surfaceMode = .continuity
+        harness.completeScene(1, with: .success(try fixtureDelivery(for: key)))
+
+        XCTAssertEqual(transitionOps, ["start", "stop"],
+                       "Continuity must hand the tail back")
+
+        source.surfaceMode = .mirror
+        harness.completeScene(2, with: .success(try fixtureDelivery(for: key)))
+
+        XCTAssertEqual(transitionOps, ["start", "stop", "start"],
+                       "and the return must re-arm it — the release also "
+                       + "forgets which process it was armed for, or this "
+                       + "reads as already-armed forever")
+    }
+
     /// **THE CADENCE INVARIANT: a slow Finder may not slow the scene.**
     ///
     /// The anchor plane's owner lease is 600 ticks — ten seconds — and the
