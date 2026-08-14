@@ -86,6 +86,28 @@ static NowPeekContinuityCell *continuity_cell(NowPeekTable *table)
     return &table->continuity;
 }
 
+/* Two drivers move the one synthetic Cursor Device: this resident's
+   idle-settle spike (option 0x40), which runs on every jGNE pass in whatever
+   process is pumping, and the PPC application's pump, which applies whatever
+   request this cell exposes. The spike can have DRAWN a sequence the starved
+   application has not reached, so exposing that request asks the application
+   to re-apply a point the device is already past - a stale backward move plus
+   duplicate manager work. Make them exclusive by sequence: a sequence the
+   spike has settled is never published as a request. With the option bit
+   clear the spike settles nothing and this returns 0, so the exposure path is
+   unchanged - the bit is tested here rather than relying on the settled
+   sequence being zero, because a wire sequence past the serial-arithmetic
+   half-space would otherwise read as "already drawn". */
+static int idle_settle_already_drew(const NowPeekContinuityCell *cell,
+                                    NowPeekU32 position_seq)
+{
+    if (!(cell->tracking_options
+            & (NowPeekU32)kNowPeekContinuityTrackingSettleIdleCursor))
+        return 0;
+    return !now_continuity_sequence_newer(position_seq,
+                                          now_ext_cursor_idle_settled_seq());
+}
+
 static void status_begin(NowPeekContinuityCell *cell)
 {
     cell->status_seq++;
@@ -770,7 +792,8 @@ void now_ext_continuity_service(void)
             cell->last_arrival_ticks = arrival;
             cell->state = (NowPeekU32)kNowPeekContinuityStateActive;
             if (now_continuity_sequence_newer(
-                    position_seq, cell->applied_position_seq)) {
+                    position_seq, cell->applied_position_seq)
+                    && !idle_settle_already_drew(cell, position_seq)) {
                 if (!(cell->tracking_options
                         & (NowPeekU32)kNowPeekContinuityTrackingVirtualADB)) {
                     cell->request_h = h;

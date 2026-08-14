@@ -253,7 +253,7 @@ check("now_continuity_cursor_ensure_released(\"inactive\")" in invoke_head
 # the host selected it, never during a held gesture (the hooks own those
 # frames), and only when the application is provably behind the wire.
 idle_settle = body(CURSOR, "static void settle_continuity_idle_cursor(",
-                   "static void record_continuity_tracking_conflict(")
+                   "NowPeekU32 now_ext_cursor_idle_settled_seq(")
 check("settle_continuity_idle_cursor();" in tracking_gne,
       "the jGNE pass no longer runs the idle settle spike")
 check("!gNowCursorSettleIdleCursor || gNowCursorTrackingSourceActive"
@@ -270,6 +270,53 @@ check("remember_owned_device_point(want);" in idle_settle
       and idle_settle.index("remember_owned_device_point(want);")
           < idle_settle.index("settle_continuity_tracking_device(cell, want);"),
       "the idle settle no longer owns its point before the manager move")
+# One Cursor Device, two drivers: the spike settles from whatever process
+# pumps, and the application's pump applies whatever request the cell
+# exposes. They are made exclusive BY SEQUENCE - a sequence the spike has
+# settled is never published as a request, or the application re-applies a
+# point the device is already past (a backward move plus duplicate manager
+# work). The option bit is tested at the service, so the exposure path with
+# the bit clear is unchanged whatever the wire sequence has reached.
+check("NowPeekU32 now_ext_cursor_idle_settled_seq(void)" in CURSOR
+      and "return gNowCursorIdleSettledSeq;" in CURSOR,
+      "the settled sequence is no longer readable by the service")
+exposure = body(RESIDENT, "static int idle_settle_already_drew(",
+                "static void status_begin(")
+check("kNowPeekContinuityTrackingSettleIdleCursor" in exposure,
+      "the single-driver exclusion no longer proves the spike is even armed")
+check("now_ext_cursor_idle_settled_seq()" in exposure
+      and "!now_continuity_sequence_newer(" in exposure,
+      "the exclusion no longer compares against the spike's settled sequence")
+check("&& !idle_settle_already_drew(cell, position_seq)" in service,
+      "the service again exposes a request the idle spike already drew")
+# A settle the manager ACCEPTED is this resident answering the wire, so it
+# owns the acknowledgement currency too - otherwise the host's acks describe
+# a point no driver reports reaching. Advance only; a settle may run ahead of
+# an older applied sequence but must never walk one back.
+check("cell->tracking_device_moves != moves_before" in idle_settle
+      and "cell->applied_position_seq = position_seq;" in idle_settle,
+      "a successful idle settle no longer advances the acknowledged sequence")
+check("now_continuity_sequence_newer(position_seq,\n"
+      "                                                 "
+      "cell->applied_position_seq)" in idle_settle,
+      "the idle settle can now walk the acknowledged sequence backwards")
+
+# The Process Manager's front process is the one a click is dispatched
+# against; the menu bar and switcher are layer state and have shown Finder
+# front through failing double clicks. One FILE-logged line per accepted
+# press - now_log_memory never reaches an uploaded log.
+front = body(PPC, "static void log_front_process_at_down(",
+             "static void record_button_timing(")
+check("GetFrontProcess(&psn)" in front
+      and "GetProcessInformation(&psn, &info)" in front,
+      "the front-process evidence no longer asks the Process Manager")
+check("now_log(kLogInfo" in front and "now_log_memory" not in front,
+      "the front-process line went to memory, where uploads never see it")
+check("if (length > 31)" in front,
+      "the foreign process name is copied without a bound")
+check("if (event_down != 0 && err == noErr)\n"
+      "                log_front_process_at_down(event_generation);" in PPC,
+      "the front process is no longer captured at an accepted manager down")
 
 # when-compression may only run on our own events: option-gated, active
 # epoch only (every mouse event during an active epoch is synthetic -
