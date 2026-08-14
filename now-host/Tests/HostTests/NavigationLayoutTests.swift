@@ -129,20 +129,23 @@ final class NavigationLayoutTests: XCTestCase {
         assertTotalPartition(repaired, registry: .standard)
     }
 
+    /* This test used to MANUFACTURE a continuity module and add it to the
+       standard registry, anticipating the Mirror/Continuity split. The
+       module is real now and lives in the standard registry, so the
+       anticipation half is gone; what stays pinned is the adoption rule it
+       was written for - a stored layout from before the split, where the
+       screen shelf never heard of continuity, adopts it into that shelf on
+       sanitise rather than dropping or duplicating it. */
     func testARegistryContinuityModuleIsAdoptedByTheScreenShelf() {
-        let continuity = ModuleDescriptor(id: "continuity", title: "Continuity",
-            symbol: "display.2", summary: "Continue on another Mac")
-        let registry = ModuleRegistry(modules:
-            ModuleRegistry.standard.modules + [continuity])
         var stored = NavigationLayout.standard(for: .standard)
         stored.upper.removeAll { $0.id == NavigationShelfID.screen.rawValue }
         stored.upper.insert(.module("screen"), at: 0)
 
-        let repaired = stored.sanitised(for: registry)
+        let repaired = stored.sanitised(for: .standard)
 
         XCTAssertEqual(repaired.shelf(id: .screen)?.moduleIDs.first, "screen")
         XCTAssertTrue(repaired.shelf(id: .screen)?.moduleIDs.contains("continuity") == true)
-        assertTotalPartition(repaired, registry: registry)
+        assertTotalPartition(repaired, registry: .standard)
     }
 
     func testAnUnknownNewRegistryModuleIsAdoptedExactlyOnce() {
