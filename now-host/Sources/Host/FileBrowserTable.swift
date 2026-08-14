@@ -333,7 +333,9 @@ struct FileBrowserTable: NSViewRepresentable {
         scroll.documentView = table
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
-        scroll.drawsBackground = false
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .controlBackgroundColor
+        table.backgroundColor = .controlBackgroundColor
         context.coordinator.table = table
         return scroll
     }

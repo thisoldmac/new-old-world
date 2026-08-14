@@ -95,12 +95,17 @@ state, and publishes only when the generation set is coherent and current.
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
 <<<<<<< HEAD
-sources-sha1: fed351bfe92af7384de877e756310f50db118373
+<<<<<<< HEAD
+sources-sha1: 1ae4d7c356293b6d32cb0f70ebc103b790344084
 derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
 =======
-sources-sha1: fed351bfe92af7384de877e756310f50db118373
+sources-sha1: 1ae4d7c356293b6d32cb0f70ebc103b790344084
 derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
+=======
+sources-sha1: 1ae4d7c356293b6d32cb0f70ebc103b790344084
+derive contract-summary sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0
+>>>>>>> 95841394 (fix: honor native depth and Files appearance)
     scripts/docs-source-group contract
 rederived: pending
 rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, contract-summary 6->6
@@ -221,6 +226,12 @@ rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:41-0400 d9ed70d2 unchanged
 =======
 rederived: 2026-08-14T14:40:04-0400 8875fe9e sources
+<<<<<<< HEAD
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, contract-summary 6->0, sources, contract-summary 6->0
+=======
+rederived: 2026-08-14T15:56:43-0400 835e6acf sources
+>>>>>>> 95841394 (fix: honor native depth and Files appearance)
+rederived: 2026-08-14T18:20:41-0400 23dc0759 sources, sources, sources
+rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
 -->

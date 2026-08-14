@@ -161,6 +161,12 @@ rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
 =======
 rederived: 2026-08-14T14:40:04-0400 8875fe9e unchanged
+<<<<<<< HEAD
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 rederived: 2026-08-14T18:19:51-0400 60bb3427 unchanged
+=======
+rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
+>>>>>>> 95841394 (fix: honor native depth and Files appearance)
+rederived: 2026-08-14T18:20:42-0400 23dc0759 unchanged
+rederived: 2026-08-14T18:22:08-0400 23dc0759 unchanged
 -->

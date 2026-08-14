@@ -163,23 +163,26 @@ or in the freshly assembled bundle yet.
   tab bar remains the route to the complete pages.
 - **Screenshot native depth — implemented:** `0` is now the contract's native
   depth request, the host defaults Screen and process captures to it, PPC
-  resolves it from the main display PixMap, and the 8-bit 68K guest accepts it
-  as its native capture.
-- **Screen cursor — implemented; open menus remain broken:** every PPC stream
-  frame now reports the global cursor hot spot and the host composites the
-  system arrow after the retained frame, so a delta never burns an old cursor
-  into the canvas. Independently opened menu-bar menus are still absent while
-  `MenuSelect` owns its nested Toolbox loop. That loop exposes no pump callback;
-  forcing capture through a timer would be unverified reentrant Toolbox work,
-  so this remains an architectural issue rather than a hidden workaround.
+  resolves it from the main display PixMap, guest-initiated streaming now asks
+  for that sentinel instead of the saved 8-bit preference, and the 8-bit 68K
+  guest accepts it as its native capture.
+- **Screen cursor and open menus — still open:** streaming currently carries
+  only guest framebuffer pixels. The attempted host-side cursor overlay did
+  not reproduce the guest cursor faithfully and has been removed. Independently
+  opened menu-bar menus are also absent while `MenuSelect` owns its nested
+  Toolbox loop. That loop exposes no pump callback; forcing capture through a
+  timer would be unverified reentrant Toolbox work, so both remain explicit
+  architectural issues rather than hidden workarounds.
 - **Mirror status — implemented:** experimental/debug badges derive from the
   module tier and appear anywhere descriptors are presented, with no Mirror ID
   special case.
 - **Files — Host sidebar — implemented:** the collapsed rail is one continuous
-  AppKit handle with a delayed centered transient label; mouse exit hides it
-  without moving the split. Symbols use dynamic system tint, and NSBrowser
-  selection is restored by stable row identity after content reloads so a click
-  no longer collapses its own child column.
+  AppKit handle with a centered chevron, pointing-hand cursor, restrained hover
+  response, and delayed centered transient label; mouse exit hides it without
+  moving the split. Symbols re-resolve their semantic tint when appearance
+  changes, every browser mode uses the same non-vibrant control background,
+  and NSBrowser selection is restored by stable row identity after content
+  reloads so a click no longer collapses its own child column.
 - **iCloud ownership and access — implemented:** the host page no longer owns a
   Photos download-size preference. The guest's Size popup sends the explicit
   request; the host page owns service enablement/status and native macOS

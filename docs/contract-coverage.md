@@ -1362,12 +1362,17 @@ moved; the hash is the receipt, not the point.
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
 <<<<<<< HEAD
-sources-sha1: 167d7f6f3034fbdeb5c96fa3af4fa62e72d359cf
+<<<<<<< HEAD
+sources-sha1: b66489eb221464baa083d73512c9cf3ce4336cf1
 derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
 =======
-sources-sha1: 167d7f6f3034fbdeb5c96fa3af4fa62e72d359cf
+sources-sha1: b66489eb221464baa083d73512c9cf3ce4336cf1
 derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
+=======
+sources-sha1: b66489eb221464baa083d73512c9cf3ce4336cf1
+derive ppc-inbound-types sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 lines=0 published
+>>>>>>> 95841394 (fix: honor native depth and Files appearance)
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
@@ -1538,6 +1543,12 @@ rederived: 2026-08-14T18:14:38-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:41-0400 d9ed70d2 unchanged
 =======
 rederived: 2026-08-14T14:40:03-0400 8875fe9e sources
+<<<<<<< HEAD
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, ppc-inbound-types 54->0, sources, ppc-inbound-types 54->0
+=======
+rederived: 2026-08-14T15:56:43-0400 835e6acf sources
+>>>>>>> 95841394 (fix: honor native depth and Files appearance)
+rederived: 2026-08-14T18:20:41-0400 23dc0759 sources, sources, sources
+rederived: 2026-08-14T18:22:06-0400 23dc0759 unchanged
 -->

@@ -142,6 +142,7 @@ struct FilesColumnBrowser: NSViewRepresentable {
         browser.minColumnWidth = 176
         browser.setDefaultColumnWidth(232)
         browser.rowHeight = 24
+        browser.backgroundColor = .controlBackgroundColor
         browser.columnsAutosaveName = autosaveName
         browser.setDraggingSourceOperationMask(localDragOperation,
                                                forLocal: true)

@@ -528,6 +528,73 @@ final class FilesBrowserPreferencesTests: XCTestCase {
             "the integrated rail must lock its native divider while collapsed")
     }
 
+    func testCollapsedHostRailUsesCenteredInteractiveHandle() throws {
+        let source = try GateSource.hostSwift(
+            "now-host/Sources/Host/FilesNativeSplitViews.swift")
+        XCTAssertTrue(source.contains("systemSymbolName: \"chevron.left\""))
+        XCTAssertTrue(source.contains("iconView.centerYAnchor"),
+            "the reopen affordance belongs at the rail center")
+        XCTAssertTrue(source.contains("cursor: .pointingHand"),
+            "the whole collapsed rail is an interactive reopen target")
+        XCTAssertTrue(source.contains("static let hoverScale"))
+        XCTAssertTrue(source.contains(
+            "accessibilityDisplayShouldReduceMotion"))
+        XCTAssertFalse(source.contains(
+            "iconView.topAnchor.constraint(equalTo: topAnchor"))
+    }
+
+    func testNativeBrowserModesShareANonVibrantSurface() throws {
+        let icons = try GateSource.hostSwift(
+            "now-host/Sources/Host/FilesNativeBrowser.swift")
+        let tree = try GateSource.hostSwift(
+            "now-host/Sources/Host/FilesTreeBrowser.swift")
+        let list = try GateSource.hostSwift(
+            "now-host/Sources/Host/FileBrowserTable.swift")
+        let columns = try GateSource.hostSwift(
+            "now-host/Sources/Host/FilesColumnBrowser.swift")
+        XCTAssertTrue(icons.contains(
+            "collection.backgroundColors = [.controlBackgroundColor]"))
+        XCTAssertTrue(tree.contains("outline.style = .plain"),
+            "the content tree must not opt into sidebar vibrancy")
+        XCTAssertTrue(tree.contains(
+            "outline.backgroundColor = .controlBackgroundColor"))
+        XCTAssertTrue(list.contains(
+            "table.backgroundColor = .controlBackgroundColor"))
+        XCTAssertTrue(columns.contains(
+            "browser.backgroundColor = .controlBackgroundColor"))
+    }
+
+    func testSidebarSymbolsReResolveAcrossAppearanceChanges() throws {
+        let source = try GateSource.hostSwift(
+            "now-host/Sources/Host/FilesNativeSidebarRow.swift")
+        XCTAssertTrue(source.contains("image?.isTemplate = true"))
+        XCTAssertTrue(source.contains("viewDidChangeEffectiveAppearance"))
+        XCTAssertTrue(source.contains(
+            "performAsCurrentDrawingAppearance"))
+        XCTAssertTrue(source.contains("usingColorSpace(.deviceRGB)"))
+    }
+
+    @MainActor
+    func testSidebarSymbolTintActuallyChangesWithEffectiveAppearance() throws {
+        let button = FilesSidebarRowButton()
+        button.appearance = NSAppearance(named: .aqua)
+        button.configure(
+            title: "Desktop", symbolName: "folder", compact: true,
+            isActive: false, isEnabled: true, toolTip: "Desktop",
+            activate: {}, validateDrop: { _ in [] }, acceptDrop: { _ in false })
+        let light = try XCTUnwrap(button.contentTintColor)
+            .usingColorSpace(.deviceRGB)
+
+        button.appearance = NSAppearance(named: .darkAqua)
+        button.viewDidChangeEffectiveAppearance()
+        let dark = try XCTUnwrap(button.contentTintColor)
+            .usingColorSpace(.deviceRGB)
+
+        XCTAssertTrue(button.image?.isTemplate == true)
+        XCTAssertNotEqual(light, dark,
+            "semantic sidebar tint must be re-resolved, not cached as white")
+    }
+
     func testGuestAndHostUseTheSameNativeFileBrowser() throws {
         let views = try GateSource.hostSwift(
             "now-host/Sources/Host/FilesWorkspaceViews.swift")

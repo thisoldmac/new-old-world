@@ -4137,17 +4137,6 @@ components:
         encodeMs:
           type: integer
           description: Guest-side encode time, for tuning.
-        cursorX:
-          type: integer
-          description: >
-            Stream frames only: current global cursor hot-spot x in guest
-            screen coordinates. Paired with cursorY; omission means the
-            guest cannot report a cursor for this frame.
-        cursorY:
-          type: integer
-          description: >
-            Stream frames only: current global cursor hot-spot y in guest
-            screen coordinates. Paired with cursorX.
         id:
           type: integer
           description: The capture.request id, or a guest-chosen id for

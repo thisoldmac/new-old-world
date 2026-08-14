@@ -353,6 +353,7 @@ run_py now-guest-ppc continuity_nested_pump_source_test.py
 # conn_service alone is what guarantees no Apple Event is ever sent from
 # inside a nested Toolbox loop.
 run_py now-guest-ppc continuity_selection_gates_source_test.py
+run_py now-guest-ppc stream_native_depth_source_test.py
 # The acquisition sweep's rationing. Its Toolbox half (GetNextProcess,
 # WakeUpProcess, the yield) is not covered here and does not pretend to be.
 run_c now-guest-ppc anchor_acquire_test.c \

@@ -41,6 +41,7 @@ struct FilesRightSidebarToggle: View {
 final class FilesRightSidebarRailView: NSVisualEffectView,
     NSSpringLoadingDestination {
     static let hoverDelay: TimeInterval = 0.45
+    static let hoverScale: CGFloat = 1.015
 
     var onExpand: () -> Void = {}
     private let iconView = NSImageView()
@@ -59,7 +60,7 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
                 NSPasteboard.PasteboardType($0)
             })
         iconView.translatesAutoresizingMaskIntoConstraints = false
-        iconView.image = NSImage(systemSymbolName: "sidebar.trailing",
+        iconView.image = NSImage(systemSymbolName: "chevron.left",
                                  accessibilityDescription: "Show This Mac")
         iconView.symbolConfiguration = NSImage.SymbolConfiguration(
             pointSize: 16, weight: .regular)
@@ -71,8 +72,8 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
         addSubview(iconView)
         addSubview(grip)
         NSLayoutConstraint.activate([
-            iconView.topAnchor.constraint(equalTo: topAnchor, constant: 14),
             iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 20),
             iconView.heightAnchor.constraint(equalToConstant: 20),
             grip.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -103,6 +104,7 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
     }
 
     override func mouseEntered(with event: NSEvent) {
+        setHovered(true)
         hoverWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.showDisclosure()
@@ -113,8 +115,14 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
     }
 
     override func mouseExited(with event: NSEvent) {
+        setHovered(false)
         hoverWorkItem?.cancel()
         hideDisclosure()
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -180,6 +188,22 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
         disclosurePopover = nil
     }
 
+    private func setHovered(_ hovered: Bool) {
+        let background = hovered
+            ? NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
+            : nil
+        let scale = hovered &&
+            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? Self.hoverScale : 1
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.14)
+        CATransaction.setAnimationTimingFunction(
+            CAMediaTimingFunction(name: .easeOut))
+        layer?.backgroundColor = background
+        layer?.transform = CATransform3DMakeScale(scale, scale, 1)
+        CATransaction.commit()
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo)
         -> NSDragOperation { .generic }
 
@@ -219,7 +243,7 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
     }
 
     private func clearSpringHighlight() {
-        layer?.backgroundColor = nil
+        setHovered(false)
     }
 }
 

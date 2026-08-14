@@ -44,6 +44,7 @@ final class FilesSidebarRowButton: NSButton, NSSpringLoadingDestination {
     }
     private var acceptDropHandler: (NSDraggingInfo) -> Bool = { _ in false }
     private var pointerInside = false
+    private var active = false
     private var springHighlight: NSSpringLoadingHighlight = .none
     private var tracking: NSTrackingArea?
 
@@ -73,10 +74,11 @@ final class FilesSidebarRowButton: NSButton, NSSpringLoadingDestination {
         self.title = compact ? "" : title
         image = NSImage(systemSymbolName: symbolName,
                         accessibilityDescription: title)
+        image?.isTemplate = true
         imagePosition = compact ? .imageOnly : .imageLeading
         alignment = compact ? .center : .left
-        contentTintColor = isActive ? .controlAccentColor
-                                    : .secondaryLabelColor
+        active = isActive
+        refreshTint()
         self.isEnabled = isEnabled
         self.toolTip = toolTip
         setAccessibilityLabel(title)
@@ -87,6 +89,20 @@ final class FilesSidebarRowButton: NSButton, NSSpringLoadingDestination {
         acceptDropHandler = acceptDrop
         state = isActive ? .on : .off
         needsDisplay = true
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshTint()
+    }
+
+    private func refreshTint() {
+        let semanticColor: NSColor = active ? .controlAccentColor
+                                            : .secondaryLabelColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            contentTintColor = semanticColor.usingColorSpace(.deviceRGB)
+                ?? semanticColor
+        }
     }
 
     @objc private func activateRow(_ sender: Any?) { activateHandler() }

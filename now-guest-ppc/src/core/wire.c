@@ -1651,21 +1651,16 @@ static long begin_frame_fields(const ShotMeta *meta, char *out, long cap)
 {
     long pos = 0;
     short i;
-    Point cursor;
 
     if (meta->kind == kFrameStandalone) {
         out[0] = '\0';
         return 0;
     }
-    GetGlobalMouse(&cursor);
     if (meta->kind == kFrameKey) {
-        return snprintf(out, (size_t)cap,
-                        ",\"frame\":\"key\",\"cursorX\":%d,\"cursorY\":%d",
-                        (int)cursor.h, (int)cursor.v);
+        return snprintf(out, (size_t)cap, ",\"frame\":\"key\"");
     }
     pos = snprintf(out, (size_t)cap,
-                   ",\"frame\":\"delta\",\"cursorX\":%d,\"cursorY\":%d,"
-                   "\"rects\":[", (int)cursor.h, (int)cursor.v);
+                   ",\"frame\":\"delta\",\"rects\":[");
     for (i = 0; i < meta->n_rects; ++i) {
         short scale = meta->row_scale > 1 ? meta->row_scale : 1;
         long canvas_row = (long)meta->rects[i].row * scale
@@ -6402,7 +6397,6 @@ static void stream_stop(const char *reply)
 
 int now_wire_stream_request(char *err, long cap)
 {
-    NowPrefs prefs;
     char json[96];
 
     if (g.phase != kConnConnected) {
@@ -6417,10 +6411,11 @@ int now_wire_stream_request(char *err, long cap)
         snprintf(err, (size_t)cap, "A transfer is already in flight");
         return -1;
     }
-    now_prefs_load(&prefs);
+    /* Zero is the contract's Native sentinel. The host sends it back in
+       stream.start, where stream_start resolves the live display depth. */
     snprintf(json, sizeof json,
              "{\"type\":\"stream.request\",\"depth\":%d}",
-             (int)prefs.shot_depth);
+             0);
     if (!send_control(json)) {
         snprintf(err, (size_t)cap, "Connection lost");
         return -1;
@@ -6692,21 +6687,18 @@ static void stream_send_empty_frame(void)
 {
     char json[256];
     unsigned short xfer = next_xfer();
-    Point cursor;
-
-    GetGlobalMouse(&cursor);
 
     snprintf(json, sizeof json,
              "{\"type\":\"capture.begin\",\"id\":%ld,\"transfer\":%u,"
              "\"width\":%d,\"height\":%d,\"depth\":%d,"
              "\"rowBytes\":%d,\"bytes\":0,\"paletteBytes\":0,"
              "\"encoding\":\"raw\",\"captureMs\":%ld,"
-             "\"frame\":\"empty\",\"cursorX\":%d,\"cursorY\":%d}",
+             "\"frame\":\"empty\"}",
              g_stream.id, xfer, (int)g_stream.ready_meta.width,
              (int)g_stream.ready_meta.height,
              (int)g_stream.ready_meta.depth,
              (int)g_stream.ready_meta.row_bytes,
-             g_stream.ready_meta.capture_ms, (int)cursor.h, (int)cursor.v);
+             g_stream.ready_meta.capture_ms);
     send_control(json);
     snprintf(json, sizeof json,
              "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"

@@ -75,7 +75,11 @@ Mutate the exact condition the guard claims to detect, prove the mutation built,
 
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
-sources-sha1: c1fec625252d8a85a3f22dec5615e1bb6bbcb201
+<<<<<<< HEAD
+sources-sha1: c0aec1320217c95450b4acffa34c66a75f01e4dc
+=======
+sources-sha1: c0aec1320217c95450b4acffa34c66a75f01e4dc
+>>>>>>> 95841394 (fix: honor native depth and Files appearance)
 derive test-stages sha256=f78dc22859b46a2e58f5cfceec0ceaf149bf5b1e89be24a1705af22181842aa5 lines=8
     scripts/docs-source-group build
 rederived: pending
@@ -205,6 +209,12 @@ rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
 =======
 rederived: 2026-08-14T14:40:04-0400 8875fe9e unchanged
+<<<<<<< HEAD
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 rederived: 2026-08-14T18:19:50-0400 60bb3427 unchanged
+=======
+rederived: 2026-08-14T15:56:43-0400 835e6acf sources
+>>>>>>> 95841394 (fix: honor native depth and Files appearance)
+rederived: 2026-08-14T18:20:41-0400 23dc0759 sources, sources
+rederived: 2026-08-14T18:22:07-0400 23dc0759 sources, sources
 -->

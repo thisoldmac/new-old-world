@@ -79,7 +79,10 @@ struct FilesTreeBrowser: NSViewRepresentable {
         outline.addTableColumn(column)
         outline.outlineTableColumn = column
         outline.headerView = nil
-        outline.style = .sourceList
+        // This is file content, not navigation furniture. Source-list style
+        // adds sidebar vibrancy and made Tree the only glass browser mode.
+        outline.style = .plain
+        outline.backgroundColor = .controlBackgroundColor
         outline.rowHeight = 24
         outline.allowsMultipleSelection = false
         outline.dataSource = context.coordinator
@@ -96,7 +99,8 @@ struct FilesTreeBrowser: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.documentView = outline
         scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .controlBackgroundColor
         return scroll
     }
 

@@ -86,10 +86,14 @@ and [MCP coverage](../../../mcp-coverage.md).
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
 <<<<<<< HEAD
-sources-sha1: 1d58ff0c61b96d35e213bdffae3f2a5c49452fac
+<<<<<<< HEAD
+sources-sha1: f504270fe66661b0056c1d9c4cb19c24e24e0169
 =======
-sources-sha1: 1d58ff0c61b96d35e213bdffae3f2a5c49452fac
+sources-sha1: f504270fe66661b0056c1d9c4cb19c24e24e0169
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
+=======
+sources-sha1: f504270fe66661b0056c1d9c4cb19c24e24e0169
+>>>>>>> 95841394 (fix: honor native depth and Files appearance)
 derive mcp-catalog sha256=dadedb438a578e94422eb5eec7337288e94e19899e6592ebaaf6d86c080258dc lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -203,6 +207,12 @@ rederived: 2026-08-14T18:14:39-0400 db6a7c6a sources
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 sources
 =======
 rederived: 2026-08-14T14:40:04-0400 8875fe9e sources
+<<<<<<< HEAD
 >>>>>>> 835e6acf (feat: polish guest workflows and navigation)
 rederived: 2026-08-14T18:19:51-0400 60bb3427 sources, sources
+=======
+rederived: 2026-08-14T15:56:44-0400 835e6acf sources
+>>>>>>> 95841394 (fix: honor native depth and Files appearance)
+rederived: 2026-08-14T18:20:42-0400 23dc0759 sources, sources, sources
+rederived: 2026-08-14T18:22:07-0400 23dc0759 sources, sources, sources
 -->

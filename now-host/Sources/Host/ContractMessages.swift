@@ -1521,9 +1521,6 @@ struct CaptureBegin: Codable, Equatable, Sendable {
     var rects: [[Int]]?
     var captureMs: Int?
     var encodeMs: Int?
-    /// Stream-only global cursor hot spot in guest screen coordinates.
-    var cursorX: Int? = nil
-    var cursorY: Int? = nil
 }
 
 struct CaptureEnd: Codable, Equatable, Sendable {

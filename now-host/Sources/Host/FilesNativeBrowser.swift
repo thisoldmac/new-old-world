@@ -123,7 +123,9 @@ private struct FilesIconCollectionView: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.documentView = collection
         scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .controlBackgroundColor
+        collection.backgroundColors = [.controlBackgroundColor]
         context.coordinator.collection = collection
         context.coordinator.reload(with: adapter.rows)
         return scroll
