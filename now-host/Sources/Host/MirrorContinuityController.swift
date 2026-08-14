@@ -525,6 +525,31 @@ final class MirrorContinuityController: ObservableObject,
         return true
     }
 
+    /// Sends the held pointer's position NOW, in a packet carrying no button
+    /// change, so whatever the caller sends next is a separate wire fact.
+    ///
+    /// The cross-edge file handoff is the caller this exists for. It returns
+    /// the guest pointer to the press origin and then releases; if both rode
+    /// one packet the guest could apply the release first and complete the
+    /// Finder's move at the shared edge — cosmetic on the desktop, a real
+    /// relocation out of a Finder window (metal, 2026-08-14).
+    @discardableResult
+    func settleHeldPosition(to point: MirrorKit.Point) -> Bool {
+        guard phase == .active, buttonCycleActive else { return false }
+        primaryDragged(to: point)
+        guard pressAcknowledged else {
+            /* The press point is deliberately stable until the guest
+               confirms its down; `primaryDragged` has parked the origin in
+               the deferred slot and the release below carries it. */
+            return true
+        }
+        advancePositionIfNeeded()
+        sendState(inside: true, keepalive: false)
+        audit(.info, "held position settled before release: "
+            + "\(point.x),\(point.y)")
+        return true
+    }
+
     @discardableResult
     func primaryUp(at point: MirrorKit.Point) -> Bool {
         guard phase == .active else { return false }

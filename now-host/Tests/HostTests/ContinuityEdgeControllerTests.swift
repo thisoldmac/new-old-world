@@ -710,6 +710,129 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertEqual(environment.fileDrags.first?.event.eventNumber, 4242)
     }
 
+    /// **A held button belongs to nobody, so this app keeps holding it.**
+    ///
+    /// Metal, 2026-08-14: a host window touching the shared edge got DRAGGED
+    /// when the pointer came back with the button down. The consuming tap
+    /// swallowed the physical mouse-down, so no application owns that press;
+    /// the moment the tap dies, whatever is under the returning pointer
+    /// inherits the gesture. Custody keeps the tap alive until the physical
+    /// release.
+    func testAHeldReturnKeepsConsumingUntilTheButtonIsReleased() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            audit: { audits.append(($0, $1)) })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+        environment.emitCaptured(.init(kind: .primaryDown,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: .zero, buttonsDown: true))
+        environment.emitCaptured(.init(kind: .moved,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: CGPoint(x: -100, y: 0),
+                                       buttonsDown: true))
+
+        XCTAssertEqual(controller.state, .ready)
+        XCTAssertEqual(environment.captureStops, 0,
+                       "the tap died with the button still down; the next "
+                        + "window under the pointer inherits the press")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("came back with the button held")
+        })
+
+        /* Held motion while custody holds must reach nothing — including
+           the guest, which would otherwise be re-entered. */
+        environment.emitCaptured(.init(kind: .moved,
+                                       location: CGPoint(x: 1200, y: 450),
+                                       delta: CGPoint(x: -40, y: 0),
+                                       buttonsDown: true))
+        XCTAssertEqual(controller.state, .ready)
+
+        environment.emitCaptured(.init(kind: .primaryUp,
+                                       location: CGPoint(x: 1200, y: 450),
+                                       delta: .zero, buttonsDown: false))
+        XCTAssertEqual(environment.captureStops, 1,
+                       "the mouse must come back the instant it is released")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("held-button custody ended")
+                && $0.1.contains("swallowed=1")
+        })
+    }
+
+    /// The ordinary return is unchanged: no button, no custody, the tap
+    /// goes down where it always did.
+    func testAnOrdinaryReturnStillGivesTheMouseBackImmediately() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            audit: { audits.append(($0, $1)) })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+        environment.emitCaptured(.init(kind: .moved,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: CGPoint(x: -100, y: 0),
+                                       buttonsDown: false))
+
+        XCTAssertEqual(controller.state, .ready)
+        XCTAssertEqual(environment.captureStops, 1)
+        XCTAssertFalse(audits.contains {
+            $0.1.contains("came back with the button held")
+        }, "custody is for held returns only")
+    }
+
+    /// The escape chord is the other way out, and the keyboard tap cannot
+    /// see the mouse: a chord pressed mid-drag ends ownership with the
+    /// button still down, which is the same loose gesture.
+    func testTheEscapeChordWithAHeldButtonAlsoTakesCustody() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let keyboard = KeyboardEnvironment()
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            keyboardEnvironment: keyboard,
+            audit: { audits.append(($0, $1)) })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+        environment.emitCaptured(.init(kind: .primaryDown,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: .zero, buttonsDown: true))
+
+        _ = keyboard.emit(.init(
+            action: .down, code: ContinuityEscapeShortcut
+                .controlOptionEscape.code, character: 0,
+            modifiers: ContinuityEscapeShortcut
+                .controlOptionEscape.modifiers))
+
+        XCTAssertEqual(controller.state, .ready)
+        XCTAssertEqual(environment.captureStops, 0,
+                       "the chord let go of a press nobody owns")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("came back with the button held")
+                && $0.1.contains("escape shortcut")
+        })
+    }
+
     /// A real host mouse event, which the CGEvent tap can never supply.
     private static func mouseEvent(eventNumber: Int = 7) -> NSEvent {
         // swiftlint:disable:next force_unwrapping
@@ -735,6 +858,7 @@ private extension ContinuityEdgeControllerTests {
         var downPoints: [MirrorKit.Point] = []
         var menuBarDowns: [Bool] = []
         var draggedPoints: [MirrorKit.Point] = []
+        var settledPoints: [MirrorKit.Point] = []
         var upPoints: [MirrorKit.Point] = []
         var keys: [HostKeySample] = []
 
@@ -750,6 +874,10 @@ private extension ContinuityEdgeControllerTests {
         }
         func primaryDragged(to point: MirrorKit.Point) -> Bool {
             draggedPoints.append(point)
+            return true
+        }
+        func settleHeldPosition(to point: MirrorKit.Point) -> Bool {
+            settledPoints.append(point)
             return true
         }
         func primaryUp(at point: MirrorKit.Point) -> Bool {

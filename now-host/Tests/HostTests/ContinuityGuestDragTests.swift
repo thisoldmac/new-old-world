@@ -162,7 +162,7 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertEqual(rig.environment.fileDrags.count, 1,
                        "the held file must reach AppKit")
         let release = try XCTUnwrap(
-            rig.ledger.steps.firstIndex(of: .guestPrimaryUp),
+            rig.ledger.steps.firstIndex(of: .guestPrimaryUp(Rig.pressOrigin)),
             "the guest press was never released")
         let session = try XCTUnwrap(
             rig.ledger.steps.firstIndex(of: .hostDragBegan))
@@ -172,6 +172,47 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertTrue(rig.recorder.lines.contains {
             $0.1.contains("guest press released before the cross")
         })
+    }
+
+    /// **The release lands where the press began, and lands there FIRST.**
+    ///
+    /// Metal, 2026-08-14: the guest dropped its icon at the screen edge.
+    /// The Finder completes a move to wherever the pointer is when the
+    /// button comes up, so releasing at the cross point is a real file
+    /// relocation when the drag started inside a Finder window — the
+    /// desktop case merely looked untidy and hid it.
+    ///
+    /// Three facts, and the order is one of them: the position packet goes
+    /// out on its own, before the release, and both name the press origin
+    /// rather than the point where the pointer left the guest.
+    func testTheGuestPointerIsReturnedToThePressOriginBeforeTheRelease()
+        throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let settle = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(
+                of: .guestReturnedToPressOrigin(Rig.pressOrigin)),
+            "the guest pointer was never returned to the press origin; the "
+                + "Finder completes its move wherever the release lands")
+        let release = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(of: .guestPrimaryUp(Rig.pressOrigin)),
+            "the release did not name the press origin")
+        let session = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(of: .hostDragBegan))
+        XCTAssertLessThan(settle, release,
+                          "the origin must be on the wire before the button "
+                            + "comes up, not beside it")
+        XCTAssertLessThan(release, session)
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("returned to the press origin")
+                && $0.1.contains("origin=\(Rig.pressOrigin.x)")
+        }, "the log must carry both points, or a wrong one reads as right")
     }
 
     /// The tap has no NSEvent by construction, and the physical button is
@@ -194,8 +235,92 @@ final class ContinuityGuestDragTests: XCTestCase {
         rig.deliverRealDragEvent(eventNumber: 9182)
         XCTAssertEqual(rig.environment.fileDrags.first?.event.eventNumber,
                        9182)
+        XCTAssertEqual(rig.environment.catchChanges, [true],
+                       "the surface stays wide for the length of the session: "
+                        + "narrowing it here moves the drag source's own "
+                        + "window out from under a live drag")
+
+        rig.endHostDragSession(operation: .copy)
         XCTAssertEqual(rig.environment.catchChanges, [true, false],
                        "the wide surface belongs to one handoff only")
+    }
+
+    /// **The strip must not catch the drag it just started.**
+    ///
+    /// Metal, 2026-08-14: the drag image appeared with a `.copy` badge and
+    /// then went nowhere. That badge is this app's own answer — the widened
+    /// catch surface is a registered destination for exactly the types the
+    /// new session carries, so the first thing the session crossed was a
+    /// destination of ours, which armed a host→guest pass and offered to
+    /// copy the file straight back to the machine it was leaving.
+    func testTheEdgeRefusesTheDragThisAppItselfStarted() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+
+        XCTAssertFalse(callbacks.entered(CGPoint(x: 1439, y: 450)),
+                       "the strip answered .copy to our own session and armed "
+                        + "a pass back to the guest")
+        XCTAssertFalse(callbacks.dropped(.init(name: .drag)),
+                       "our own file must not land back on the guest")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("taking one FROM the guest")
+        }, "the refusal must be named; silence here is the original symptom")
+    }
+
+    /// Nothing of ours reacts to the pointer once AppKit owns the gesture,
+    /// and the end of the session is a fact in the log — the metal round had
+    /// no line at all for a drag that started and then stalled.
+    func testEverythingStandsDownWhileTheHostDragSessionIsLive() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("stands down until the session ends")
+        })
+
+        /* Motion back toward the guest during the drag would otherwise
+           re-enter and start steering the guest under the live session. The
+           sample says the button is up because that is the shape that would
+           re-enter: with the gate gone this is a fresh outward crossing. */
+        rig.environment.emit(.init(kind: .moved,
+                                   location: CGPoint(x: 1439, y: 450),
+                                   delta: CGPoint(x: 30, y: 0),
+                                   buttonsDown: false))
+        XCTAssertEqual(rig.controller.state, .ready,
+                       "a live drag session must not be able to re-enter the "
+                        + "guest under itself")
+
+        rig.endHostDragSession(operation: [])
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn && $0.1.contains("nothing accepted the file")
+                && $0.1.contains("standDownSamples=1")
+        }, "a drop that went nowhere and a promise that failed must not read "
+            + "as the same silence")
+    }
+
+    /// The seed's provenance, because a global monitor hands over events
+    /// belonging to OTHER applications and that is the first thing to rule
+    /// out when a session starts and then does nothing.
+    func testTheSeedEventProvenanceIsRecorded() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("host drag seed event")
+                && $0.1.contains("ourWindow=no")
+        }, "the log must say whose window the gesture came from")
     }
 
     func testReleasingBeforeARealEventAbandonsTheDragOutLoud() {
@@ -383,7 +508,11 @@ final class ContinuityGuestDragTests: XCTestCase {
 /// express one.
 private enum CrossStep: Equatable {
     case guestPrimaryDown
-    case guestPrimaryUp
+    /// The position packet that puts the guest pointer back where the press
+    /// began. It carries its point because WHERE it went is the defect: a
+    /// step that merely happened would pass while releasing at the edge.
+    case guestReturnedToPressOrigin(MirrorKit.Point)
+    case guestPrimaryUp(MirrorKit.Point)
     case guestPointerLeft
     case hostDragBegan
 }
@@ -476,10 +605,23 @@ private final class Rig {
         controller.transportPhaseChanged(.active)
     }
 
+    /// Where `press()` lands on the guest: the entry point of `enterGuest`,
+    /// which the host frame and the guest scale in this rig make 1:1.
+    static let pressOrigin = MirrorKit.Point(x: 24, y: 450)
+
     func press() {
         environment.emitCaptured(.init(kind: .primaryDown,
                                        location: CGPoint(x: 1439, y: 450),
                                        delta: .zero, buttonsDown: true))
+    }
+
+    /// Held motion away from the press before the cross, so the origin and
+    /// the crossing point are two different places.
+    func dragAcrossTheGuest() {
+        environment.emitCaptured(.init(kind: .moved,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: CGPoint(x: 40, y: 20),
+                                       buttonsDown: true))
     }
 
     /// The crossing itself, through the consuming tap — which has no NSEvent.
@@ -488,6 +630,12 @@ private final class Rig {
                                        location: CGPoint(x: 1439, y: 450),
                                        delta: CGPoint(x: -100, y: 0),
                                        buttonsDown: true))
+    }
+
+    /// macOS finishing with the session this app started.
+    func endHostDragSession(operation: NSDragOperation) {
+        environment.fileCallbacks?.dragEnded(operation,
+                                             CGPoint(x: 900, y: 400))
     }
 
     /// The first physical `mouseDragged` after the tap died.
@@ -523,9 +671,12 @@ private final class Rig {
             _ = point
             return true
         }
+        func settleHeldPosition(to point: MirrorKit.Point) -> Bool {
+            ledger.steps.append(.guestReturnedToPressOrigin(point))
+            return true
+        }
         func primaryUp(at point: MirrorKit.Point) -> Bool {
-            _ = point
-            ledger.steps.append(.guestPrimaryUp)
+            ledger.steps.append(.guestPrimaryUp(point))
             return true
         }
         func keyboardEvent(_ sample: HostKeySample) -> Bool {

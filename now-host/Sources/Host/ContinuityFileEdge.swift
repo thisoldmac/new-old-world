@@ -10,10 +10,22 @@ final class ContinuityFileEdge: NSObject {
         var entered: (CGPoint) -> Bool
         var exited: () -> Void
         var dropped: (NSPasteboard) -> Bool
+        /// The guest→host session this app itself started has ended, wherever
+        /// macOS took it. Nothing else reports that: the promise delegate
+        /// speaks only when a destination ACCEPTED the drag, so without this
+        /// a drop that went nowhere and a drag still in flight are the same
+        /// silence — which is exactly the symptom the first metal round
+        /// could not name.
+        var dragEnded: (NSDragOperation, CGPoint) -> Void = { _, _ in }
     }
 
     private final class EdgePanel: NSPanel {
-        override var canBecomeKey: Bool { false }
+        /// False for the whole of ordinary life: a two-point strip that could
+        /// take key would steal focus from whatever it sits on top of. True
+        /// for one handoff, so the returning gesture has a window of ours
+        /// that AppKit can address.
+        var handoffKeyCapable = false
+        override var canBecomeKey: Bool { handoffKeyCapable }
         override var canBecomeMain: Bool { false }
     }
 
@@ -33,30 +45,48 @@ final class ContinuityFileEdge: NSObject {
         @available(*, unavailable)
         required init?(coder: NSCoder) { nil }
 
+        /// **This view must never catch its own session.**
+        ///
+        /// The guest→host handoff widens this same strip and then starts a
+        /// drag on top of it, so the first thing the new session crosses is
+        /// a destination registered for exactly the types it carries. Left
+        /// alone it answers `.copy` — the badge the human saw — arms a
+        /// host→guest pass in the controller, and offers to copy the file
+        /// straight back to the machine it is leaving. A drop then lands
+        /// here rather than in the Finder.
+        ///
+        /// Identity, not a flag: the session's own source is the only thing
+        /// that distinguishes it, and it is available on every callback.
+        private func isOwnSession(_ sender: any NSDraggingInfo) -> Bool {
+            (sender.draggingSource as AnyObject?) === self
+        }
+
         override func draggingEntered(_ sender: any NSDraggingInfo)
             -> NSDragOperation {
-            callbacks.entered(screenPoint(sender)) ? .copy : []
+            guard !isOwnSession(sender) else { return [] }
+            return callbacks.entered(screenPoint(sender)) ? .copy : []
         }
 
         override func draggingUpdated(_ sender: any NSDraggingInfo)
             -> NSDragOperation {
-            callbacks.entered(screenPoint(sender)) ? .copy : []
+            guard !isOwnSession(sender) else { return [] }
+            return callbacks.entered(screenPoint(sender)) ? .copy : []
         }
 
         override func draggingExited(_ sender: (any NSDraggingInfo)?) {
-            _ = sender
+            guard let sender, !isOwnSession(sender) else { return }
             callbacks.exited()
         }
 
         override func prepareForDragOperation(_ sender: any NSDraggingInfo)
             -> Bool {
-            _ = sender
-            return true
+            !isOwnSession(sender)
         }
 
         override func performDragOperation(_ sender: any NSDraggingInfo)
             -> Bool {
-            callbacks.dropped(sender.draggingPasteboard)
+            guard !isOwnSession(sender) else { return false }
+            return callbacks.dropped(sender.draggingPasteboard)
         }
 
         func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
@@ -100,6 +130,17 @@ final class ContinuityFileEdge: NSObject {
             _ = session
             _ = context
             return .copy
+        }
+
+        /// The only end-of-session fact this app can observe. It fires
+        /// whether the drag was dropped, refused or cancelled, which is what
+        /// separates "nobody took it" from "somebody took it and the promise
+        /// failed" — two outcomes that were previously the same silence.
+        func draggingSession(_ session: NSDraggingSession,
+                             endedAt screenPoint: NSPoint,
+                             operation: NSDragOperation) {
+            _ = session
+            callbacks.dragEnded(operation, screenPoint)
         }
 
         func ignoreModifierKeys(for session: NSDraggingSession) -> Bool {
@@ -154,7 +195,14 @@ final class ContinuityFileEdge: NSObject {
         self.catching = catching
         panel.setFrame(Self.frame(for: edge, catching: catching),
                        display: false)
+        /* Key for the handoff instant only. The gesture arrives with the
+           button already held and no application holding the press, so the
+           window AppKit is asked to start a drag from should be a window
+           this app can actually address. It is given back the moment the
+           surface narrows. */
+        panel.handoffKeyCapable = catching
         panel.orderFrontRegardless()
+        if catching { panel.makeKeyAndOrderFront(nil) }
     }
 
     func update(callbacks: Callbacks) {
