@@ -399,6 +399,17 @@ static void drain_click_probe(NowPeekContinuityCell *cell)
     NowPeekU32 fresh;
     NowPeekU32 n;
 
+    /* The cell can reset underneath an armed drain, and the unsigned
+       subtraction below then reads the reset as four billion fresh entries:
+       2026-08-14 printed ~23 all-zero rows at n=4294967273 before anyone
+       could tell that from a real overrun. Re-baseline out loud instead. */
+    if (total < gLastClickProbeCount) {
+        now_log(kLogWarn, "mirror", "click probe reset total=%lu last=%lu",
+                (unsigned long)total, (unsigned long)gLastClickProbeCount);
+        gLastClickProbeCount = total;
+        if (total == 0)
+            return;
+    }
     if (total == gLastClickProbeCount)
         return;
     fresh = total - gLastClickProbeCount;
@@ -525,36 +536,56 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
         if (event_generation != 0
                 && (event_generation != cell->event_result_generation
                     || event_down != cell->event_result_down)) {
-            NowPeekU32 manager_begin = (NowPeekU32)TickCount();
+            NowPeekU32 manager_begin;
             NowPeekU32 manager_end;
 
-            err = now_continuity_cursor_button(
-                (unsigned long)cell->epoch,
-                (unsigned long)event_generation, event_down != 0);
-            manager_end = (NowPeekU32)TickCount();
-            record_button_timing(cell, event_generation, event_down,
-                                 manager_begin, manager_end,
-                                 (NowPeekI32)err);
-            if (event_down != 0 && err == noErr)
-                log_front_process_at_down(event_generation);
-            /* The resident's interrupt-time release flips MBState before
-               this manager call runs, so CursorDeviceButtonUp sees no
-               transition and posts nothing: across every logged run, no
-               synthetic mouseUp event has ever entered the queue
-               (event=0 on all up rows). A target that pairs a down
-               against the last mouseUp EVENT can therefore never see a
-               double click, whatever the recognition window. Complete
-               the stream here, in ordinary task time. The queue element
-               takes its point from the mouse global, which the resident's
-               tracking completion has already settled to the release
-               point. PostEvent is CarbonLib 1.0+; the jGNE observer will
-               now record these ups, which is also the proof they landed. */
-            if (event_down == 0 && err == noErr)
-                (void)PostEvent(mouseUp, 0);
-            cell->event_result_down = event_down;
-            cell->event_result_err = (NowPeekI32)err;
-            cell->event_result_generation = event_generation;
-            published_result = 1;
+            /* The manager call runs BETWEEN resident invokes, where status_seq
+               is even, so the resident's mid-invoke guard cannot see it at all.
+               This flag is what the interrupt-press delivery checks before it
+               cancels an exposed request - without it, a delivery can retract
+               an edge this side has already read and is a few instructions
+               from serving. Set it first, then re-read the request: whichever
+               of the two wins the race, both sides now know it happened. */
+            cell->button_manager_busy = 1;
+            if (cell->event_request_generation != event_generation
+                    || cell->event_request_down != event_down) {
+                /* The delivery got there first. Serving the snapshot now would
+                   drive the manager for an edge nobody is waiting on, so leave
+                   this round unpublished and read the new request on the next
+                   resident invoke. */
+                cell->button_manager_busy = 0;
+            } else {
+                manager_begin = (NowPeekU32)TickCount();
+                err = now_continuity_cursor_button(
+                    (unsigned long)cell->epoch,
+                    (unsigned long)event_generation, event_down != 0);
+                manager_end = (NowPeekU32)TickCount();
+                record_button_timing(cell, event_generation, event_down,
+                                     manager_begin, manager_end,
+                                     (NowPeekI32)err);
+                if (event_down != 0 && err == noErr)
+                    log_front_process_at_down(event_generation);
+                /* The resident's interrupt-time release flips MBState before
+                   this manager call runs, so CursorDeviceButtonUp sees no
+                   transition and posts nothing: across every logged run, no
+                   synthetic mouseUp event has ever entered the queue
+                   (event=0 on all up rows). A target that pairs a down
+                   against the last mouseUp EVENT can therefore never see a
+                   double click, whatever the recognition window. Complete
+                   the stream here, in ordinary task time. The queue element
+                   takes its point from the mouse global, which the resident's
+                   tracking completion has already settled to the release
+                   point. PostEvent is CarbonLib 1.0+; the jGNE observer will
+                   now record these ups, which is also the proof they landed. */
+                if (event_down == 0 && err == noErr)
+                    (void)PostEvent(mouseUp, 0);
+                cell->event_result_down = event_down;
+                cell->event_result_err = (NowPeekI32)err;
+                cell->event_result_generation = event_generation;
+                /* Published; the delivery is free to cancel from here. */
+                cell->button_manager_busy = 0;
+                published_result = 1;
+            }
         }
         if (!published_result)
             break;
