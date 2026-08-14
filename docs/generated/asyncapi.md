@@ -51,8 +51,8 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `hostServesChat` | `receive` | `control` | `chatCatalog`, `chatDelta`, `chatStatus`, `chatResult` |
 | `guestAsksHostSurface` | `send` | `control` | `hostShow` |
 | `hostServesHostSurface` | `receive` | `control` | `hostShown` |
-| `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm`, `continuityKey` |
-| `guestReportsContinuity` | `receive` | `control` | `continuityReport`, `continuityKeyReport` |
+| `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm`, `continuityKey`, `continuityGrab` |
+| `guestReportsContinuity` | `receive` | `control` | `continuityReport`, `continuityKeyReport`, `continuitySelection` |
 | `peerAnnouncesMirrorInvalidation` | `send` | `control` | `mirrorInvalidate` |
 | `peerReceivesMirrorInvalidation` | `receive` | `control` | `mirrorInvalidate` |
 
@@ -124,6 +124,8 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `continuityDisarm` | `continuity.disarm` | `ContinuityDisarm` |
 | `continuityKey` | `continuity.key` | `ContinuityKey` |
 | `continuityKeyReport` | `continuity.keyReport` | `ContinuityKeyReport` |
+| `continuitySelection` | `continuity.selection` | `ContinuitySelection` |
+| `continuityGrab` | `continuity.grab` | `ContinuityGrab` |
 | `cloudServices` | `cloud.services` | `CloudServices` |
 | `cloudReport` | `cloud.report` | `CloudReport` |
 | `cloudList` | `cloud.list` | `CloudList` |
