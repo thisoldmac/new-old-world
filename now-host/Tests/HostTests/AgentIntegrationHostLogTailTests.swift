@@ -180,9 +180,24 @@ final class AgentIntegrationHostLogTailTests: XCTestCase {
     /// `true` bridges to an NSNumber that casts to 1, so a flag would be
     /// answered with one line of log. It is refused before the integer is
     /// read.
-    func testABooleanCountIsRefusedBeforeItBecomesOne() async {
+    ///
+    /// **Through JSONSerialization, deliberately.** A Swift `Bool` in an
+    /// `[String: Any]` does not cast to `Int` at all, so a test that wrote
+    /// one would pass with the guard deleted — it would be asserting Swift's
+    /// bridging rules rather than this row's. What the MCP face actually
+    /// hands a projection is a parsed JSON graph, whose `true` is an
+    /// NSNumber, and that IS `as? Int`. (Watched: with the guard removed and
+    /// a literal `true`, this test passed.)
+    func testABooleanCountIsRefusedBeforeItBecomesOne() async throws {
+        let raw = try JSONSerialization.jsonObject(
+            with: Data(#"{"lines": true}"#.utf8))
+        XCTAssertNotNil(
+            (raw as? [String: Any])?["lines"] as? Int,
+            "If a JSON true stops casting to Int, this test no longer "
+                + "exercises the guard it names.")
+
         guard case .invalidArguments = await HostLogTailProjection.invoke(
-            .init(raw: ["lines": true]), through: NoHostStub()) else {
+            .init(raw: raw), through: NoHostStub()) else {
             return XCTFail("A boolean count was read as one line.")
         }
     }
