@@ -321,6 +321,7 @@ channels:
       continuityKeyReport: { $ref: "#/components/messages/continuityKeyReport" }
       continuitySelection: { $ref: "#/components/messages/continuitySelection" }
       continuityGrab: { $ref: "#/components/messages/continuityGrab" }
+      continuityOffer: { $ref: "#/components/messages/continuityOffer" }
       cloudServices: { $ref: "#/components/messages/cloudServices" }
       cloudReport: { $ref: "#/components/messages/cloudReport" }
       cloudList: { $ref: "#/components/messages/cloudList" }
@@ -1302,6 +1303,7 @@ operations:
       - $ref: "#/channels/control/messages/continuityDisarm"
       - $ref: "#/channels/control/messages/continuityKey"
       - $ref: "#/channels/control/messages/continuityGrab"
+      - $ref: "#/channels/control/messages/continuityOffer"
     description: >
       Reliable session ownership for the optional Continuity input plane.
       The host arms before sending UDP state and disarms on disable,
@@ -1309,6 +1311,35 @@ operations:
       older or unsupported receiver refuses by continuity.report rather than
       treating UDP arrival as authority. This is user-only Mirror input, not
       an MCP verb, automation capability, or generic coordinate click API.
+
+      THE CROSSING RUNS BOTH WAYS, and the second way reuses this family
+      rather than growing a sibling. continuity.selection is the guest
+      saying what a person picked up over there; continuity.offer is the
+      HOST saying what a person picked up over here — the same stub, sent
+      by the other side, so a guest can draw an honest drag before a byte
+      moves. continuity.grab is then the request either side sends for the
+      item the other one named, and whoever RECEIVES a grab serves its own
+      item: the file-family symmetry rule, applied to the one lane that
+      reaches outside a share.
+
+      WHERE THE TWO DIRECTIONS DIFFER, said plainly because a reader is
+      entitled to know rather than to infer:
+
+        - The selection stub carries an HFS identity triple (volumeRef,
+          dirID, name) and the offer stub carries NO source identity at
+          all. That is not an omission. The guest needs the triple to
+          re-find its own item at grab time; the host resolves an offer
+          from its own generation table, and a host path on the wire would
+          be the arbitrary-read the no-path rule already refuses in the
+          other direction. Both directions therefore name a GENERATION and
+          nothing else, which is the property that matters.
+        - The grant window is the guest's, the offer lifetime is the
+          host's, and they are separate clocks named separately
+          (`grant-expired`, `offer-expired`). A refusal must say whose
+          clock ran out; one shared word would make a host's own
+          bookkeeping look like a Macintosh that fell behind.
+        - The console face inverts too, and deliberately — see the
+          DECLARED ASYMMETRY below.
   guestReportsContinuity:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -1326,15 +1357,31 @@ operations:
       guest sends one whenever the Finder selection it can see changes,
       and never outside a live epoch.
 
-      DECLARED ASYMMETRY. Neither continuity.selection nor continuity.grab
-      has a console verb, for the same reason continuity.arm and
-      continuity.key do not: the capability is a pointer plane the person
-      at the guest drives with their own hand and eyes. There is nothing a
-      typed word at the Macintosh could add to "the thing you have
-      selected", and a `grab` a person could type would be exactly the
-      general read outside the share that the gesture boundary below
-      exists to refuse. NOW-68K serves neither; it has no Continuity
-      plane at all.
+      DECLARED ASYMMETRY. Neither continuity.selection nor a GUEST-SERVED
+      continuity.grab has a console verb, for the same reason
+      continuity.arm and continuity.key do not: the capability is a
+      pointer plane the person at the guest drives with their own hand and
+      eyes. There is nothing a typed word at the Macintosh could add to
+      "the thing you have selected", and a `grab` a person could type
+      would be exactly the general read outside the share that the gesture
+      boundary below exists to refuse. NOW-68K serves neither; it has no
+      Continuity plane at all.
+
+      THE INVERTED GRAB IS THE OPPOSITE CASE, and it gets a console verb
+      (`offer`) precisely because the argument above does not survive the
+      flip. Typing `grab` at the Macintosh would have asked the host to
+      pick a file; typing `offer` asks for the ONE item a person over
+      there already published by their own gesture, which is the same
+      bounded set the wire may reach and no wider. So the direction that
+      refuses a console face and the direction that requires one are the
+      same rule read from two ends, not an exception — and refusing a
+      console face here would leave the capability half a feature
+      (docs/command-parity.md), reachable by a host that automates it and
+      not by the person standing at the machine it lands on.
+
+      The guest states whether it can take an offer at all in
+      continuity.report's `acceptsOffer`; a host that has not seen that
+      field must not publish one.
   peerAnnouncesMirrorInvalidation:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -1557,6 +1604,9 @@ components:
     continuityGrab:
       name: continuity.grab
       payload: { $ref: "#/components/schemas/ContinuityGrab" }
+    continuityOffer:
+      name: continuity.offer
+      payload: { $ref: "#/components/schemas/ContinuityOffer" }
     cloudServices:
       name: cloud.services
       payload: { $ref: "#/components/schemas/CloudServices" }
