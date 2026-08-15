@@ -654,9 +654,11 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         let driver = Driver()
         let environment = Environment()
         environment.captureAvailable = false
+        let accessibility = AccessibilityFake()
         var audits: [(HostLog.LogLevel, String)] = []
         let controller = ContinuityEdgeController(
             layout: layout, driver: driver, environment: environment,
+            accessibility: accessibility,
             audit: { audits.append(($0, $1)) })
         controller.start()
         environment.emit(.init(kind: .moved,
@@ -680,6 +682,121 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         controller.stop()
         XCTAssertEqual(environment.associationChanges, [false, true],
                        "the cursor is handed back even when the tap failed")
+    }
+
+    /// macOS reads Accessibility trust at process start for this API: a
+    /// tap that still fails to create while the process IS trusted cannot
+    /// be fixed by retrying in place, and the honest thing to say is that
+    /// the app needs a relaunch — not to repeat the permission message,
+    /// which would send the person straight back to a Settings pane that
+    /// already lists this app as trusted.
+    func testTrustedButStillFailingTapNamesRelaunchNotPermission() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        environment.captureAvailable = false
+        let accessibility = AccessibilityFake()
+        accessibility.trusted = true
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            accessibility: accessibility,
+            audit: { audits.append(($0, $1)) })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        XCTAssertTrue(controller.status.contains("relaunch"),
+                      "trusted-but-failing must say relaunch, not permission")
+        XCTAssertFalse(controller.status.contains("Accessibility permission"))
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("relaunch") && $0.1.contains("trusted")
+        })
+    }
+
+    /// The person should not have to toggle Continuity off and on after
+    /// granting Accessibility in System Settings: coming back to the app
+    /// (`applicationDidBecomeActive`) retries the tap on its own, without
+    /// waiting for the next edge crossing to call `startConsumingTap` again.
+    func testActivationRetriesCaptureOnceTrustIsGranted() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        environment.captureAvailable = false
+        let accessibility = AccessibilityFake()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            accessibility: accessibility)
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+        XCTAssertEqual(environment.captureAttempts, 1,
+                       "the first attempt failed and used up its try")
+        XCTAssertEqual(environment.captureStarts, 0)
+
+        // Not trusted yet: coming back to the app must not retry early.
+        controller.retryInputCaptureAfterBecomingActive()
+        XCTAssertEqual(environment.captureAttempts, 1)
+
+        // The person grants permission in System Settings and macOS
+        // activates this app again.
+        accessibility.trusted = true
+        environment.captureAvailable = true
+        controller.retryInputCaptureAfterBecomingActive()
+
+        XCTAssertEqual(environment.captureAttempts, 2,
+                       "granted trust must retry without a new edge crossing")
+        XCTAssertEqual(environment.captureStarts, 1,
+                       "the retry must be the one that actually succeeded")
+        XCTAssertFalse(controller.status.contains("Accessibility permission"),
+                       "a successful retry must clear the degraded status")
+
+        environment.emitCaptured(.init(kind: .primaryDown,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: .zero, buttonsDown: true))
+        XCTAssertEqual(driver.downPoints, [MirrorKit.Point(x: 24, y: 450)],
+                       "the recovered tap must actually be driving the guest")
+    }
+
+    /// A retry that is itself trusted-but-still-failing must not be
+    /// attempted again on every subsequent activation: the reason it failed
+    /// is not one another retry can fix, and looping it would just repeat
+    /// the same failed tap creation forever.
+    func testActivationDoesNotLoopRetriesAfterATrustedFailure() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        environment.captureAvailable = false
+        let accessibility = AccessibilityFake()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            accessibility: accessibility)
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+        XCTAssertEqual(environment.captureAttempts, 1)
+
+        // Trusted now, but the tap creation itself keeps failing (the
+        // relaunch case) — the retry consumes its one attempt and fails.
+        accessibility.trusted = true
+        controller.retryInputCaptureAfterBecomingActive()
+        XCTAssertEqual(environment.captureAttempts, 2)
+        XCTAssertTrue(controller.status.contains("relaunch"))
+
+        // A further activation must not keep hammering the tap.
+        controller.retryInputCaptureAfterBecomingActive()
+        controller.retryInputCaptureAfterBecomingActive()
+        XCTAssertEqual(environment.captureAttempts, 2,
+                       "a trusted-but-failing retry must not loop")
     }
 
     func testDisabledInputTapIsReportedAndOwnershipSurvivesIt() {
@@ -1041,6 +1158,10 @@ private extension ContinuityEdgeControllerTests {
         var catchChanges: [Bool] = []
         var captureStarts = 0
         var captureStops = 0
+        /// Every call in, whether or not it succeeded — `captureStarts`
+        /// only counts the ones that did, so a test proving a RETRY was
+        /// attempted (and refused again) needs this instead.
+        var captureAttempts = 0
         var captureHandler: ContinuityPointerEnvironment.SampleHandler?
         var captureTapDisabled: (@MainActor (String) -> Void)?
         /// Set false to stand in for a Mac without Accessibility permission.
@@ -1065,6 +1186,7 @@ private extension ContinuityEdgeControllerTests {
             handler: @escaping ContinuityPointerEnvironment.SampleHandler,
             tapDisabled: @escaping @MainActor (String) -> Void
         ) -> AnyObject? {
+            captureAttempts += 1
             guard captureAvailable else { return nil }
             captureStarts += 1
             captureHandler = handler
@@ -1153,5 +1275,17 @@ private extension ContinuityEdgeControllerTests {
             handler?(sample)
             return true
         }
+    }
+
+    /// Fakes the two AX calls without ever touching the real system prompt:
+    /// a test that called the genuine `AXIsProcessTrustedWithOptions` would
+    /// either need real Accessibility trust granted to the test runner or
+    /// would pop a real system dialog during `swift test`.
+    final class AccessibilityFake: AccessibilityAuthorization, @unchecked Sendable {
+        var trusted = false
+        var promptCount = 0
+
+        func isProcessTrusted() -> Bool { trusted }
+        func promptForTrust() { promptCount += 1 }
     }
 }

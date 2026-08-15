@@ -1111,4 +1111,61 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertFalse(reopened.isEnabled,
                        "opening a new Mirror session must not seize input")
     }
+
+    /// Item 1 of the Continuity Accessibility fix: the system dialog is
+    /// asked for only when the feature that needs it is actually turned
+    /// on, and only once per launch — a second `beginEdgeMode` (a manual
+    /// toggle off and on) must not re-show a dialog macOS already answered
+    /// by listing the app in the Accessibility pane.
+    func testBeginEdgeModePromptsForAccessibilityOncePerLaunch() {
+        let accessibility = AccessibilityFake()
+        let controller = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility)
+
+        controller.beginEdgeMode()
+        XCTAssertEqual(accessibility.promptCount, 1)
+
+        controller.endEdgeMode(reason: "test toggle off")
+        controller.beginEdgeMode()
+        XCTAssertEqual(accessibility.promptCount, 1,
+                       "the same launch must not prompt a second time")
+    }
+
+    /// A process already trusted for Accessibility needs no dialog at all —
+    /// prompting an already-granted person would be noise, not a request.
+    func testBeginEdgeModeDoesNotPromptWhenAlreadyTrusted() {
+        let accessibility = AccessibilityFake()
+        accessibility.trusted = true
+        let controller = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility)
+
+        controller.beginEdgeMode()
+
+        XCTAssertEqual(accessibility.promptCount, 0)
+    }
+
+    /// The other half of "only when the feature is turned on": constructing
+    /// the controller — which happens once at app launch, in
+    /// `HostAppState` — must not itself ask for Accessibility. Only
+    /// `beginEdgeMode` may.
+    func testConstructingTheControllerNeverPrompts() {
+        let accessibility = AccessibilityFake()
+        _ = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility)
+
+        XCTAssertEqual(accessibility.promptCount, 0)
+    }
+
+    /// Fakes the two AX calls `beginEdgeMode` depends on, without ever
+    /// touching the real system prompt.
+    final class AccessibilityFake: AccessibilityAuthorization, @unchecked Sendable {
+        var trusted = false
+        var promptCount = 0
+
+        func isProcessTrusted() -> Bool { trusted }
+        func promptForTrust() { promptCount += 1 }
+    }
 }
