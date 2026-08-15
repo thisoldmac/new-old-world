@@ -255,6 +255,114 @@ should stay `waited=0..4`, and releases that used to `expire` at 4 should
 now either `settle` under 30 or, if still failing, expire at a much rarer
 and more informative point.
 
+**UPDATE, 17:19 metal round the same day (`fix/continuity-snapback-settle`):
+the retuned deadline was live, worked as designed, and the snap-back still
+failed — because the barrier was holding each release against a point that
+was never on the wire.** Three edges, one build (`d177e751c04c`):
+
+    17:19:04  button edge gen=56 down=0 applied=501,440 exposed=501,440 via=global waited=1 deadline=30 settled
+    17:19:06  ? button edge gen=58 down=0 applied=501,446 exposed=504,451 via=record waited=30 deadline=30 expired
+    17:19:52  ? button edge gen=60 down=0 applied=487,319 exposed=499,308 via=record waited=30 deadline=30 expired
+
+The exposed point converged to within a few pixels of the applied point and
+sat there for the full half-second, which reads exactly like an equality
+test against a value that cannot round-trip. **It is not.** Cross-referencing
+the host log settles it: at `17:19:05` the host logged `held position settled
+before release: 504,451`, and `504,451` is the EXPOSED column of the failing
+edge, to the pixel. The pointer was already exactly where it belonged. The
+`applied` column — 501,446 — was this side's own last Cursor Device move,
+an early drag point three pixels from the press origin.
+
+**So it was never rounding and never latency: the barrier's target was the
+wrong point.** `now_continuity_cursor_await_exposure` took its target from
+`gDiagnostics.requested`, the application's last CDM move. During a target's
+own drag loop the application is starved and the RESIDENT drives the pointer
+through low memory instead — it says so in its own comment, and defers the
+Cursor Device reconcile to "once the release unwinds it". That reconcile is
+`continuity_service.c`'s position apply, gated on the epoch being ACTIVE —
+and a cross-edge handoff **ends the epoch in the same breath as the release
+it settles** (`finish_locked` sets `state=Exited` and zeroes
+`request_position_seq`). The gate declines exactly when the reconcile was
+promised, so the settled point never reaches the Cursor Device, and the
+record — which is UPSTREAM of low memory — keeps a stale point it is
+entitled to re-assert.
+
+Two changes, both guest-side, no contract and no host edit:
+
+- The edge reconciles the point it rides with **before** it is served, when
+  this side is not already there and the epoch did not end in the human's
+  own hand (`now_continuity_settle_before_edge`). It publishes no
+  `apply_result` — the resident commits only the exact request it published.
+- The barrier holds against **that** point, passed explicitly, and a caller
+  that does not hold it says so: the new `unheld` verdict, which is applied
+  immediately rather than spun on, because a point nothing is moving toward
+  is unaskable and unaskable has always meant apply.
+
+**No exposure tolerance was added, and the deltas are the argument against
+one.** The exposed point equalled the host's settled origin exactly, so a
+few pixels of slack would have hidden a stale point rather than measured a
+lagging one; it could not have covered the same round's 12,-11 miss without
+swallowing the 60px genuine miss the barrier exists to catch; and the
+17:19:04 line proves exact equality is reachable whenever the applied point
+is the real one.
+
+**Ceiling: builds, and native tests pass. Not emulator-reproduced, not
+metal-verified.** The trigger needs an attended cross-edge drag out of a
+Finder window with a real host pointer, which no emulator round here has
+driven; the earlier QEMU calibration measured `waited≤1` precisely because
+those were ordinary in-guest edges where the application applied the point
+itself in the same round, which is the case this bug never touches.
+
+**The lines the next metal round should read.** A working snap-back is now
+a PAIR of lines per cross-edge release, the settle first:
+
+    mirror button edge settle gen=58 at=504,451 from=501,446 state=3 reason=4 err=0
+    mirror button edge gen=58 down=0 applied=504,451 exposed=504,451 via=global waited=0 deadline=30 exposed
+
+`applied` must now equal the host's `held position settled before release`
+value in the same second. A `settle` line whose `at=` disagrees with that
+host value means the wrong point is on the wire and the guest is innocent.
+An `unheld` verdict means the reconcile was suppressed or refused — read
+`reason=` on the settle line (2 is the human's own hand, which is correct
+behaviour, not a defect). A surviving `expired` after a settle line whose
+`at=` was right would be the first genuine evidence of propagation lag at
+this bound.
+
+## OPEN, DIAGNOSED BY MECHANISM ONLY, NOT FIXED: cross-edge drags leave drag-feedback ghosts on the guest desktop (2026-08-15 17:21, attended screenshot)
+
+After the 17:19–17:21 cross-edge rounds the guest desktop kept small
+icon-fragment smudges in a horizontal line around y≈418, plus a stray
+caret-like mark, surviving minutes until something forced a redraw. They sit
+on the desktop proper, not in a window, and did not exist before that day's
+cross-edge testing.
+
+**Mechanism, stated as a hypothesis and not as a finding.** The Finder's
+drag feedback is XOR imagery, erased by drawing it again at the SAME place.
+Two writers move the pointer during one of these drags — the resident's
+interrupt-time `LMSetMouseLocation` and the application's Cursor Device
+moves — and neither is synchronised with the Finder's draw/undraw pair. A
+teleport that lands between the two halves of that pair leaves the
+difference on screen. The origin-return settle is a teleport by
+construction, from the crossing point back to the press origin, which is why
+the fragments sit along the swept path.
+
+**Separable from the settle fix above, deliberately not folded into it.**
+The settle fix changes WHICH point the release is dispatched at; it does not
+give the Finder a chance to erase what it drew somewhere else. Two options
+when someone takes this, and they are not equivalent:
+
+- a bounded desktop invalidate after the release, through the plane we
+  already own — cheap, honest, and cosmetic-only: it repairs the damage
+  rather than avoiding it;
+- ordering that lets the Finder erase its own feedback — settle, give the
+  target one drag-loop pass at the settled point, then release. That avoids
+  the damage but spends real time inside a held drag and needs a bound of
+  its own, which is the same class of decision the exposure deadline was.
+
+Nothing here is measured: no round has yet correlated a ghost with a
+specific edge, and "did not exist before today" is a memory, not an
+instrument.
+
 ## REPRODUCED IN THE EMULATOR AND FIXED, NOT METAL-VERIFIED: a retained UDP endpoint goes permanently deaf, and every status still says "armed" (2026-08-15, `fix/continuity-udp-endpoint-wedge`)
 
 The host application was restarted at 12:15 on 2026-08-15 while the guest
