@@ -18,16 +18,19 @@
      - NO EPOCH, NO POLL. Continuity is the consent; without it this is
        a background process asking the Finder what a person is looking
        at, which is not a thing NOW does.
-     - NOT DURING A HELD BUTTON, WITH ONE PROBE'S EXCEPTION. The Finder
-       answers Apple Events from its event loop and a drag puts it
-       inside the Drag Manager's nested one instead, so a poll
-       mid-gesture waits out the whole gesture. That is precisely the
-       starvation the selection stub exists to avoid, arriving by the
-       back door. The exception is the press probe — one bounded ask per
-       press, a few ticks after the down — because the gate is
-       otherwise a guarantee that the one selection a drag creates is
-       the one selection that can never be published. See the press
-       probe block in continuity_selection.c.
+     - NOT DURING A HELD BUTTON, AND NOTHING ELSE RUNS THEN EITHER.
+       The Finder answers Apple Events from its event loop and a drag
+       puts it inside the Drag Manager's nested one instead, so a poll
+       mid-gesture waits out the whole gesture. Measured on the
+       emulator 2026-08-15, the gate is not even the binding
+       constraint: through 21 seconds of held drag this application got
+       no task time at all — no poll, no wire service, not one log line
+       — and every line of the gesture landed in the second the button
+       came up. So the selection a single-gesture select-and-drag
+       creates CANNOT be published before the release, by any probe;
+       what protects the person is that the grab is confirmed against
+       the Finder afterwards. docs/open-issues.md carries the
+       measurement and what would close the gap.
      - NOT MORE OFTEN THAN THE CADENCE. An AESend to another process is
        a context switch each way; at the pump's rate it would be
        thousands a minute for an answer that changes when a human
@@ -59,12 +62,6 @@ int now_continuity_selection_poll(unsigned long live_epoch);
 
 /* What the last change published. Never NULL. */
 const NowContinuityStubTable *now_continuity_selection_table(void);
-
-/* The press probe's two moments, called from the button applies in
-   continuity_service.c because that is where this side learns what the
-   person's hand did. */
-void now_continuity_selection_note_press(void);
-void now_continuity_selection_note_release(void);
 
 /* Resolve a grab to a file. Returns a kNowGrab* verdict; `out` is filled
    only on kNowGrabOK. The identity triple is turned back into an FSSpec

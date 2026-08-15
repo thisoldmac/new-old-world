@@ -145,43 +145,20 @@ if button > asked:
         "the selection poll asks the Finder before checking the button."
     )
 
-# ...WITH EXACTLY ONE PROBE'S EXCEPTION, AND IT MUST BE BOUNDED AND ONE-SHOT.
-#
-# The gate above is also what made the wrong-file transfer possible: the
-# press that selects the thing it drags is the same button-down that closes
-# it, so that selection can never be published. The exception is one Apple
-# Event per press. Two properties keep it from being the starvation the gate
-# exists to prevent, and neither is checkable by a host cc:
-#
-#   - it is TAKEN, not tested. press_probe_take clears the flags whatever
-#     the Finder says, so a Finder that never answers costs one bounded
-#     wait per press rather than one per service pass.
-#   - it waits on its OWN timeout. The ordinary poll's two seconds inside a
-#     live drag is the gate's own failure mode wearing the exception's hat.
-if "press_probe_take" not in poll:
+# ...AND NOTHING MAY BE EXCEPTED FROM IT. One probe per press was written
+# for exactly the case the gate breaks — the press that selects the file it
+# drags — armed at the down edge, bounded, one-shot. The emulator refused it
+# on 2026-08-15: not one probe ran in 21 seconds of held drag, because this
+# application receives no task time at all while the Finder holds its Drag
+# Manager loop. A gate cannot have an exception in code that does not run.
+if "press_probe" in poll:
     raise SystemExit(
-        "the selection poll's held-button exception is gone, so the one "
-        "selection a single-gesture select-and-drag creates is the one "
-        "selection that can never be published - metal 2026-08-15 17:19, "
-        "where the host bound the generation before it."
-    )
-
-probe_take = function_body(
-    POLL_C, "static int press_probe_take(void)", "continuity_selection.c"
-)
-if "g_press_probe_armed = 0" not in probe_take:
-    raise SystemExit(
-        "press_probe_take no longer consumes the probe, so a Finder that "
-        "does not answer is asked again every service pass for the length "
-        "of a drag. That is the starvation the button gate exists to "
-        "prevent, arriving one door further in."
-    )
-
-if "kNowSelectionPressProbeTimeout" not in poll:
-    raise SystemExit(
-        "the press probe no longer bounds its own wait. It runs with the "
-        "Finder inside the Drag Manager's nested loop - the ordinary "
-        "poll's timeout there is the gate's failure mode with permission."
+        "the selection poll has a held-button exception again. It cannot "
+        "work: nothing of ours runs mid-gesture (emulator, 2026-08-15, 21 "
+        "seconds held, no probe, every log line landing in the second the "
+        "button came up), so this is an Apple Event scheduled for a moment "
+        "this process does not exist in. What protects the person is the "
+        "grab confirmation below."
     )
 
 # --- 3. and it is bounded ------------------------------------------------

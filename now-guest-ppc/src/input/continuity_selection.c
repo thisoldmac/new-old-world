@@ -17,38 +17,6 @@ static unsigned long g_table_epoch;
 static unsigned long g_next_poll;
 static int g_poll_seeded;
 
-/* --- the one poll allowed inside a gesture --------------------------------
-
-   The button gate below is right about the ordinary case and wrong about
-   exactly one: the press that SELECTS the thing it then drags. That click
-   is the same button-down that closes the gate, so its own selection can
-   never be published, and the host binds whatever the previous gesture
-   left cached — which on 2026-08-15 at 17:19 transferred `hello.txt` while
-   a person watched `main.c` leave.
-
-   So one probe is allowed per press, and the three fields below are what
-   keep "one" honest across a gesture that can last a minute.
-
-   AT THE DOWN, A COUPLE OF TICKS LATER. The delay is for the Finder: the
-   click that selects has to have been PROCESSED before there is anything
-   new to read, and the manager call only posts it. The first version
-   waited instead for a position applied under a held button — a drag, so
-   that a plain click paid nothing — and the emulator refuted that outright
-   (2026-08-15, epoch 3: 21 seconds of held motion, not one probe). A held
-   gesture's positions are settled by the resident's own tracking, so the
-   task-time apply that arming hung off does not run during a drag at all.
-
-   WHETHER THE FINDER ANSWERS FROM INSIDE ITS DRAG LOOP IS NOT ASSUMED
-   HERE. The probe logs its own outcome — err and all — which is how that
-   question gets an answer rather than an argument. It is the improvement;
-   the guarantee, which needs no answer from a busy Finder, is
-   confirm_serve_against_finder. */
-#define kNowSelectionPressProbeTimeout 20L   /* ticks; ~1/3 second */
-#define kNowSelectionPressProbeDelay 3UL     /* ticks after the down */
-static int g_press_probe_armed;
-static int g_press_probe_due;
-static unsigned long g_press_probe_at;
-
 const NowContinuityStubTable *now_continuity_selection_table(void)
 {
     return &g_table;
@@ -315,43 +283,8 @@ static void release_grant_for_new_epoch(unsigned long live_epoch)
     now_continuity_grant_release(&g_hold);
 }
 
-void now_continuity_selection_note_press(void)
-{
-    g_press_probe_armed = 1;
-    /* DUE FROM THE DOWN ITSELF, not from the first drag. The first version
-       waited for a position applied under a held button, and on the
-       emulator (2026-08-15, epoch 3, 21 seconds of held motion) it never
-       came: a held gesture's positions are settled by the resident's own
-       tracking, so the task-time position apply this hung off does not run
-       during a drag at all. Waiting for a drag therefore meant waiting for
-       something that cannot arrive. */
-    g_press_probe_due = 1;
-    g_press_probe_at = (unsigned long)TickCount()
-        + kNowSelectionPressProbeDelay;
-}
 
-void now_continuity_selection_note_release(void)
-{
-    g_press_probe_armed = 0;
-    g_press_probe_due = 0;
-}
 
-/* Consumed whatever it returns. A probe that fired and learned nothing has
-   still spent its one turn: the alternative is an Apple Event per service
-   pass for the length of a drag, which is the starvation the button gate
-   exists to prevent, arriving one door further in. */
-static int press_probe_take(void)
-{
-    if (!g_press_probe_armed || !g_press_probe_due) {
-        return 0;
-    }
-    if ((long)((unsigned long)TickCount() - g_press_probe_at) < 0) {
-        return 0;
-    }
-    g_press_probe_armed = 0;
-    g_press_probe_due = 0;
-    return 1;
-}
 
 int now_continuity_selection_poll(unsigned long live_epoch)
 {
@@ -360,8 +293,6 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     NowContinuityStubItem item;
     OSErr err;
     unsigned long now;
-    long timeout = (long)kNowSelectionPollTimeoutTicks;
-    int probe = 0;
 
     /* Settling here rather than at the disarm handler is what makes the
        gate true however the epoch ended, including the ways nobody calls a
@@ -378,37 +309,26 @@ int now_continuity_selection_poll(unsigned long live_epoch)
            button comes up should poll immediately, because that is the
            moment the selection is most likely to have just changed.
 
-           The one exception is the press probe, and it is an exception to
-           the CADENCE too — the whole point is to ask once, now, about a
-           selection this gesture created and nothing else will publish. */
-        if (!press_probe_take()) {
-            return 0;
-        }
-        probe = 1;
-        timeout = kNowSelectionPressProbeTimeout;
+           AND THERE IS NO EXCEPTION TO PUT HERE, which cost an emulator
+           round to learn. A press that selects the file it drags cannot
+           publish its own selection — see the header — and the obvious
+           remedy, one probe per press, was written, armed at the down edge
+           and measured: not one probe ran in 21 seconds of held drag,
+           because THIS APPLICATION GETS NO TASK TIME AT ALL while the
+           Finder holds its Drag Manager loop. Nothing of ours runs, so
+           there is no gate to make an exception in. The whole gesture's
+           worth of log lines lands in the second the button comes up. */
+        return 0;
     }
-    if (!probe) {
-        now = (unsigned long)TickCount();
-        if (g_poll_seeded && now < g_next_poll) {
-            return 0;
-        }
-        g_poll_seeded = 1;
-        g_next_poll = now + kNowSelectionPollTicks;
+    now = (unsigned long)TickCount();
+    if (g_poll_seeded && now < g_next_poll) {
+        return 0;
     }
+    g_poll_seeded = 1;
+    g_next_poll = now + kNowSelectionPollTicks;
 
-    err = ask_finder_for_selection(&spec, &found, timeout);
-    if (probe) {
-        /* Logged whatever happened, including the boring answer. Whether a
-           Finder inside its own drag loop answers an Apple Event at all is
-           the ordering fact this whole defect turns on, and it is not
-           something either half can be reasoned into: an `err=-1712`
-           (errAETimeout) line here says the probe cannot fix the
-           single-gesture bind and the grab confirmation is carrying it
-           alone, which is a different piece of news from silence. */
-        now_log(kLogInfo, "mirror",
-                "selection press probe epoch=%lu err=%d found=%d",
-                live_epoch, (int)err, found ? 1 : 0);
-    }
+    err = ask_finder_for_selection(&spec, &found,
+                                   (long)kNowSelectionPollTimeoutTicks);
     if (err != noErr) {
         /* NOT SILENT, and not reported to the host either. A Finder that
            did not answer says nothing about what is selected, so the
@@ -476,8 +396,8 @@ static int confirm_serve_against_finder(const NowContinuityStubItem *serve)
         return verdict;
     }
     now_log(kLogWarn, "mirror",
-            "grab refused: the Mac's selection is not what this grab names "
-            "— serving=%.31s selected=%.31s err=%d",
+            "grab refused: the Mac's selection is not what this grab "
+            "names - serving=%.31s selected=%.31s err=%d",
             serve->name,
             (read_ok && found) ? observed.name : "<unreadable>",
             (int)err);
