@@ -299,6 +299,7 @@ final class CommandParityTests: XCTestCase {
     /// console face, not merely that an unknown verb can reach the fallback.
     private static let reachedByFallback: [String: String] = [
         "putstat": "no arguments; renders as rows through console_reply.c",
+        "mirrorlog": "closed on/off/status grammar is the raw line's first word",
         "mouseloc": "no arguments; renders as rows through console_reply.c",
         "desktop": "no arguments; renders as rows through console_reply.c",
         "development-build": "closed status, cancel or start grammar is the raw line",

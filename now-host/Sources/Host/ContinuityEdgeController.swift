@@ -44,6 +44,22 @@ protocol ContinuityPointerEnvironment: AnyObject {
 
     func start(_ handler: @escaping SampleHandler) -> AnyObject
     func stop(_ token: AnyObject)
+    /// Posts a synthetic primary button transition into the SESSION event
+    /// stream, at `screenPoint` (AppKit global coordinates).
+    ///
+    /// It exists because the consuming tap leaves the session state wrong:
+    /// a swallowed `leftMouseDown` never updates it, so for the whole
+    /// captured gesture the window server believes no button is held. Our
+    /// own readers ask the HID level instead — but an `NSDraggingSession`
+    /// cannot be taught that. It is driven by session-level
+    /// `leftMouseDragged`/`leftMouseUp`, so a session begun under a state
+    /// that says "up" either completes instantly wherever the cursor
+    /// stands or tracks nothing and never sees the release (metal,
+    /// 2026-08-15 04:18–04:20: five instant `operation=1` endings and one
+    /// three-second session pinned at the seed point, every one "ended
+    /// with the button still held").
+    func postSyntheticPrimaryButton(down: Bool,
+                                    at screenPoint: CGPoint) -> Bool
     func hideCursor(on displayID: UInt32)
     func showCursor(on displayID: UInt32)
     func moveCursor(on displayID: UInt32, to point: CGPoint)
@@ -234,7 +250,23 @@ final class ContinuityEdgeController: ObservableObject {
         let item: HostFileDragItem
         let returnPoint: CGPoint
         var waitedForRealEvent = false
+        var suspectEchoes = 0
     }
+
+    /// The hardware's own answer to "is the primary button physically
+    /// held", read at the HID level. Injectable because no test has a
+    /// mouse behind it.
+    ///
+    /// It exists because every OTHER source of that fact is downstream of
+    /// this app's own consuming tap: a swallowed `leftMouseDown` never
+    /// reaches the session's event state, so `NSEvent.pressedMouseButtons`
+    /// and `CGEventSource.buttonState(.combinedSessionState)` both report
+    /// the button UP for the whole captured gesture — this app poisons the
+    /// very field it then reads. Only `.hidSystemState` sits beneath the
+    /// tap (metal, 2026-08-15 02:48: four crossings abandoned in the same
+    /// second as the cross, each on the first post-teardown sample).
+    var physicalPrimaryButtonHeld: () -> Bool =
+        AppKitContinuityPointerEnvironment.primaryButtonIsHeld
 
     init(layout: ContinuityDisplayLayout,
          driver: ContinuityEdgeDriving,
@@ -711,6 +743,29 @@ final class ContinuityEdgeController: ObservableObject {
         state = .ready
         pendingReturnDrag = PendingReturnDrag(item: item,
                                               returnPoint: returnPoint)
+        /* Re-arm the SESSION's button state before AppKit is asked to own
+           the gesture, and only now — the tap is down, so nothing of ours
+           can swallow it, and the catch surface is wide and key, so our own
+           window receives it. The tap swallowed the physical
+           `leftMouseDown`, which leaves the window server believing no
+           button is held: it synthesizes `mouseMoved` instead of
+           `leftMouseDragged`, treats the physical release as a no-op, and a
+           drag session begun under that state completes instantly wherever
+           the cursor stands or tracks nothing at all (metal, 2026-08-15
+           04:18–04:20, both shapes in one log). Our own readers ask the HID
+           level; an NSDraggingSession cannot be taught to. */
+        if environment.postSyntheticPrimaryButton(down: true,
+                                                  at: returnPoint) {
+            audit(.info, "session button state re-armed: synthetic primary "
+                + "down posted at \(Int(returnPoint.x)),"
+                + "\(Int(returnPoint.y)) — the tap swallowed the physical "
+                + "one, and the drag session AppKit is about to own is "
+                + "driven by session state, not the HID's")
+        } else {
+            audit(.error, "could not re-arm the session button state; the "
+                + "host drag session will complete instantly or track "
+                + "nothing")
+        }
         if let sourceEvent {
             /* The observe-only monitor path already has one. Nothing waits. */
             startReturnDrag(with: sourceEvent)
@@ -727,11 +782,43 @@ final class ContinuityEdgeController: ObservableObject {
                                   sourceEvent: NSEvent?) -> Bool {
         guard var waiting = pendingReturnDrag else { return false }
         if !sample.buttonsDown || sample.kind == .primaryUp {
+            /* The sample's word against the hardware's. A `primaryUp` is
+               believed outright — taken as the release goes by, the HID
+               read can still say held, and honouring it would keep a press
+               alive past its own end. A mere "buttons up" on a motion
+               sample is not: the field is derived from event state this
+               app's own tap has been starving all pass, and believing the
+               first post-teardown echo abandoned four metal handoffs in
+               the same second as their crossings (2026-08-15 02:48). */
+            let physicallyHeld = physicalPrimaryButtonHeld()
+            let eventName = sourceEvent
+                .map { "type \($0.type.rawValue)" } ?? "none"
+            if physicallyHeld, sample.kind != .primaryUp {
+                waiting.suspectEchoes += 1
+                if waiting.suspectEchoes == 1 {
+                    /* Once, with everything the decision read — the round
+                       this rule comes from was undiagnosable because the
+                       abandon line named its conclusion and not its
+                       evidence. */
+                    audit(.warn, "a sample claims the button is up while it "
+                        + "is physically held; treating it as an echo of "
+                        + "this app's own tap, not a release: "
+                        + "kind=\(sample.kind), "
+                        + "sampleButtonsDown=\(sample.buttonsDown ? 1 : 0), "
+                        + "sourceEvent=\(eventName), hidPrimaryHeld=1")
+                }
+                pendingReturnDrag = waiting
+                return true
+            }
             pendingReturnDrag = nil
             setFileEdgeCatching(false)
             audit(.warn, "the guest file drag was abandoned: the button was "
                 + "released before this Mac saw a real mouse event to start "
-                + "the drag from")
+                + "the drag from — kind=\(sample.kind), "
+                + "sampleButtonsDown=\(sample.buttonsDown ? 1 : 0), "
+                + "sourceEvent=\(eventName), "
+                + "hidPrimaryHeld=\(physicallyHeld ? 1 : 0), "
+                + "suspectEchoesBefore=\(waiting.suspectEchoes)")
             status = "The file drag ended before this Mac could take it over"
             return true
         }

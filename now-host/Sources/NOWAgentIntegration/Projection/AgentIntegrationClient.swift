@@ -82,12 +82,13 @@ public protocol AgentIntegrationClient: Sendable {
         -> AgentIntegrationGuestRowReportResult
     func development(_ request: AgentIntegrationDevelopmentRequest) async
         -> AgentIntegrationGuestRowReportResult
-    /// The end of the guest's own log for this launch. `lines` is a count,
-    /// never a file: the verb names nothing on the disk and this side must
-    /// not invent a way for it to — see `GuestLogTailProjection`. Absent
-    /// means the verb's own default.
-    func tailGuestLog(lines: Int?) async
-        -> AgentIntegrationGuestRowReportResult
+    /// Lines of the guest's own log for this launch, paged off the ring
+    /// by the host side. `lines` is a count, never a file: the verb names
+    /// nothing on the disk and this side must not invent a way for it to —
+    /// see `GuestLogTailProjection`. Absent means the verb's own default;
+    /// `area` narrows to one subsystem tag as the guest wrote it.
+    func tailGuestLog(lines: Int?, area: String?) async
+        -> AgentIntegrationGuestLogRetrievalResult
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult
     func guestFilesCapabilities() async
@@ -374,8 +375,8 @@ extension AgentIntegrationClient {
     /// this file. "No host" and not an empty tail: a client with nothing to
     /// ask has not read a quiet log, and an empty answer would be a claim
     /// about a machine nobody reached.
-    public func tailGuestLog(lines: Int?) async
-        -> AgentIntegrationGuestRowReportResult {
+    public func tailGuestLog(lines: Int?, area: String?) async
+        -> AgentIntegrationGuestLogRetrievalResult {
         .hostUnavailable
     }
 

@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "continuity_cdm_transition.h"
+#include "mirror_debug.h"
 #include "nowlog.h"
 
 enum {
@@ -128,18 +129,26 @@ long now_continuity_cursor_button(unsigned long epoch,
         gDiagnostics.press_valid = 1;
     }
     gButtonCount++;
-    now_log_memory(kLogInfo, "mirror",
-                   "CDM PPC button begin epoch=%lu n=%lu generation=%lu down=%d",
-                   epoch, gButtonCount, generation, down ? 1 : 0);
+    /* The begin/return pair is a per-press trace: in-memory only (the
+       source test below this file guards that) and now ALSO debug tier,
+       because even memory lines churn the same 2000-line ring `tail`
+       reads. The error branch stays unconditional. */
+    if (now_mirror_debug_on()) {
+        now_log_memory(kLogInfo, "mirror",
+                       "CDM PPC button begin epoch=%lu n=%lu generation=%lu down=%d",
+                       epoch, gButtonCount, generation, down ? 1 : 0);
+    }
     err = down ? now_cdm_button_down(gDevice)
                : now_cdm_button_up(gDevice);
     if (err == noErr)
         gLedgerDown = down ? 1 : 0;
     if (err == noErr) {
-        now_log_memory(kLogInfo, "mirror",
-                       "CDM PPC button return epoch=%lu n=%lu generation=%lu down=%d err=%d",
-                       epoch, gButtonCount, generation, down ? 1 : 0,
-                       (int)err);
+        if (now_mirror_debug_on()) {
+            now_log_memory(kLogInfo, "mirror",
+                           "CDM PPC button return epoch=%lu n=%lu generation=%lu down=%d err=%d",
+                           epoch, gButtonCount, generation, down ? 1 : 0,
+                           (int)err);
+        }
     } else {
         now_log(kLogError, "mirror",
                 "CDM PPC button return epoch=%lu n=%lu generation=%lu down=%d err=%d",
@@ -188,7 +197,9 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
             gDiagnostics.press_reversions++;
         }
     }
-    durable = checkpoint(gMoveCount);
+    /* Checkpoint-sampled AND debug-gated: the sampling bounds the rate,
+       the gate keeps even the samples out of the ring by default. */
+    durable = checkpoint(gMoveCount) && now_mirror_debug_on();
     if (durable) {
         now_log_memory(kLogInfo, "mirror",
                        "CDM PPC move begin epoch=%lu n=%lu seq=%lu at=%ld,%ld",

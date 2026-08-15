@@ -104,10 +104,10 @@ struct HostAgentIntegrationClient: AgentIntegrationClient {
         return await adapter.development(request)
     }
 
-    func tailGuestLog(lines: Int?) async
-        -> AgentIntegrationGuestRowReportResult {
+    func tailGuestLog(lines: Int?, area: String?) async
+        -> AgentIntegrationGuestLogRetrievalResult {
         if let refusal = await refusal() { return .unavailable(refusal) }
-        return await adapter.tailGuestLog(lines: lines)
+        return await adapter.tailGuestLog(lines: lines, area: area)
     }
 
     func catalogSearch() async -> AgentIntegrationGuestRowReportResult {

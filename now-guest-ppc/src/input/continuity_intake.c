@@ -14,6 +14,7 @@
 #include "continuity_cursor.h"
 #include "continuity_service.h"
 #include "arm_target.h"
+#include "mirror_debug.h"
 #include "nowlog.h"
 #include "now_continuity_keyboard_logic.h"
 #include "now_continuity_wire.h"
@@ -491,104 +492,112 @@ int now_continuity_disarm(long id, unsigned long epoch)
     gAckRetrying = false;
     (void)now_continuity_service_invoke(shared);
     now_log(kLogInfo, "mirror", "disarm epoch=%lu reset requested", epoch);
-    now_log(kLogInfo, "mirror",
-            "tracking epoch=%lu options=0x%lx pin=%lu getmouse=%lu "
-            "settle=%lu redraw=%lu reassert=%lu",
-            epoch, (unsigned long)shared->tracking_options,
-            (unsigned long)shared->tracking_pin_writes,
-            (unsigned long)shared->tracking_getmouse_answers,
-            (unsigned long)shared->tracking_settle_calls,
-            (unsigned long)shared->tracking_settle_redraws,
-            (unsigned long)shared->tracking_settle_reasserts);
-    now_log(kLogInfo, "mirror",
-            "button edges epoch=%lu deferred=%lu overflow=%lu previous=%lu/%lu",
-            epoch, (unsigned long)shared->button_edge_deferrals,
-            (unsigned long)shared->button_edge_overflows,
-            (unsigned long)shared->previous_button_generation,
-            (unsigned long)shared->previous_button_flags);
-    now_log(kLogInfo, "mirror",
-            "tracking points epoch=%lu at=%ld,%ld native=%ld,%ld "
-            "owned=%ld,%ld",
-            epoch, (long)shared->at_h, (long)shared->at_v,
-            (long)shared->native_input_h, (long)shared->native_input_v,
-            (long)shared->native_owned_h, (long)shared->native_owned_v);
-    now_log(kLogInfo, "mirror",
-            "tracking device epoch=%lu attempts=%lu found=%lu moves=%lu "
-            "fail=%lu reentry=%lu err=%ld",
-            epoch, (unsigned long)shared->tracking_device_attempts,
-            (unsigned long)shared->tracking_device_found,
-            (unsigned long)shared->tracking_device_moves,
-            (unsigned long)shared->tracking_device_failures,
-            (unsigned long)shared->tracking_device_reentries,
-            (long)shared->tracking_device_last_error);
-    now_log(kLogInfo, "mirror",
-            "tracking device points before=%ld,%ld after=%ld,%ld held=%ld,%ld",
-            (long)shared->tracking_device_last_before_h,
-            (long)shared->tracking_device_last_before_v,
-            (long)shared->tracking_device_last_after_h,
-            (long)shared->tracking_device_last_after_v,
-            (long)shared->tracking_device_last_held_h,
-            (long)shared->tracking_device_last_held_v);
-    timing_count = (unsigned long)shared->event_timing_count;
-    if (timing_count > (unsigned long)kNowPeekContinuityEventTimingCapacity)
-        timing_count = (unsigned long)kNowPeekContinuityEventTimingCapacity;
-    now_log(kLogInfo, "mirror",
-            "button timing epoch=%lu double=%lu count=%lu overwritten=%lu",
-            epoch, (unsigned long)shared->double_time_ticks, timing_count,
-            (unsigned long)shared->event_timing_dropped);
-    for (timing_index = 0; timing_index < timing_count; timing_index++) {
-        /* The ring keeps the LAST capacity edges; walk chronologically
-           from the oldest surviving slot. */
-        unsigned long slot =
-            ((unsigned long)shared->event_timing_count
-             + (unsigned long)kNowPeekContinuityEventTimingCapacity
-             - timing_count + timing_index)
-            % (unsigned long)kNowPeekContinuityEventTimingCapacity;
-        const NowPeekContinuityEventTiming *timing =
-            &shared->event_timing[slot];
+    /* The counter dump below is the MIRROR PLANE's account of the epoch —
+       ~25 lines per disarm, which at 18 epochs in a session was 97% of
+       the ring and the reason mirror_debug.h exists. It answers "did the
+       plane track/settle/time correctly", never "what did the product
+       do", so it is debug tier: the flag is tested before anything is
+       formatted, and a disarm with the gate off costs one load here. */
+    if (now_mirror_debug_on()) {
+        now_log(kLogInfo, "mirror",
+                "tracking epoch=%lu options=0x%lx pin=%lu getmouse=%lu "
+                "settle=%lu redraw=%lu reassert=%lu",
+                epoch, (unsigned long)shared->tracking_options,
+                (unsigned long)shared->tracking_pin_writes,
+                (unsigned long)shared->tracking_getmouse_answers,
+                (unsigned long)shared->tracking_settle_calls,
+                (unsigned long)shared->tracking_settle_redraws,
+                (unsigned long)shared->tracking_settle_reasserts);
+        now_log(kLogInfo, "mirror",
+                "button edges epoch=%lu deferred=%lu overflow=%lu previous=%lu/%lu",
+                epoch, (unsigned long)shared->button_edge_deferrals,
+                (unsigned long)shared->button_edge_overflows,
+                (unsigned long)shared->previous_button_generation,
+                (unsigned long)shared->previous_button_flags);
+        now_log(kLogInfo, "mirror",
+                "tracking points epoch=%lu at=%ld,%ld native=%ld,%ld "
+                "owned=%ld,%ld",
+                epoch, (long)shared->at_h, (long)shared->at_v,
+                (long)shared->native_input_h, (long)shared->native_input_v,
+                (long)shared->native_owned_h, (long)shared->native_owned_v);
+        now_log(kLogInfo, "mirror",
+                "tracking device epoch=%lu attempts=%lu found=%lu moves=%lu "
+                "fail=%lu reentry=%lu err=%ld",
+                epoch, (unsigned long)shared->tracking_device_attempts,
+                (unsigned long)shared->tracking_device_found,
+                (unsigned long)shared->tracking_device_moves,
+                (unsigned long)shared->tracking_device_failures,
+                (unsigned long)shared->tracking_device_reentries,
+                (long)shared->tracking_device_last_error);
+        now_log(kLogInfo, "mirror",
+                "tracking device points before=%ld,%ld after=%ld,%ld held=%ld,%ld",
+                (long)shared->tracking_device_last_before_h,
+                (long)shared->tracking_device_last_before_v,
+                (long)shared->tracking_device_last_after_h,
+                (long)shared->tracking_device_last_after_v,
+                (long)shared->tracking_device_last_held_h,
+                (long)shared->tracking_device_last_held_v);
+        timing_count = (unsigned long)shared->event_timing_count;
+        if (timing_count > (unsigned long)kNowPeekContinuityEventTimingCapacity)
+            timing_count = (unsigned long)kNowPeekContinuityEventTimingCapacity;
+        now_log(kLogInfo, "mirror",
+                "button timing epoch=%lu double=%lu count=%lu overwritten=%lu",
+                epoch, (unsigned long)shared->double_time_ticks, timing_count,
+                (unsigned long)shared->event_timing_dropped);
+        for (timing_index = 0; timing_index < timing_count; timing_index++) {
+            /* The ring keeps the LAST capacity edges; walk chronologically
+               from the oldest surviving slot. */
+            unsigned long slot =
+                ((unsigned long)shared->event_timing_count
+                 + (unsigned long)kNowPeekContinuityEventTimingCapacity
+                 - timing_count + timing_index)
+                % (unsigned long)kNowPeekContinuityEventTimingCapacity;
+            const NowPeekContinuityEventTiming *timing =
+                &shared->event_timing[slot];
 
+            now_log(kLogInfo, "mirror",
+                    "button timing n=%lu gen=%lu down=%lu req=%ld,%ld "
+                    "arrive=%lu expose=%lu",
+                    timing_index + 1u, (unsigned long)timing->generation,
+                    (unsigned long)timing->down,
+                    (long)timing->request_h, (long)timing->request_v,
+                    (unsigned long)timing->arrival_ticks,
+                    (unsigned long)timing->exposure_ticks);
+            now_log(kLogInfo, "mirror",
+                    "button timing n=%lu manager=%lu>%lu err=%ld "
+                    "event=%lu observed=%lu at=%ld,%ld stable=%lu",
+                    timing_index + 1u,
+                    (unsigned long)timing->manager_begin_ticks,
+                    (unsigned long)timing->manager_end_ticks,
+                    (long)timing->manager_error,
+                    (unsigned long)timing->event_when,
+                    (unsigned long)timing->event_observed_ticks,
+                    (long)timing->event_h, (long)timing->event_v,
+                    (unsigned long)timing->write_seq);
+        }
+        memset(&cursor, 0, sizeof cursor);
+        now_continuity_cursor_diagnostics(&cursor);
         now_log(kLogInfo, "mirror",
-                "button timing n=%lu gen=%lu down=%lu req=%ld,%ld "
-                "arrive=%lu expose=%lu",
-                timing_index + 1u, (unsigned long)timing->generation,
-                (unsigned long)timing->down,
-                (long)timing->request_h, (long)timing->request_v,
-                (unsigned long)timing->arrival_ticks,
-                (unsigned long)timing->exposure_ticks);
+                "CDM record epoch=%lu samples=%lu before-diff=%lu "
+                "press-return=%lu after-diff=%lu",
+                epoch, cursor.samples, cursor.before_request_mismatches,
+                cursor.press_reversions, cursor.after_request_mismatches);
         now_log(kLogInfo, "mirror",
-                "button timing n=%lu manager=%lu>%lu err=%ld "
-                "event=%lu observed=%lu at=%ld,%ld stable=%lu",
-                timing_index + 1u,
-                (unsigned long)timing->manager_begin_ticks,
-                (unsigned long)timing->manager_end_ticks,
-                (long)timing->manager_error,
-                (unsigned long)timing->event_when,
-                (unsigned long)timing->event_observed_ticks,
-                (long)timing->event_h, (long)timing->event_v,
-                (unsigned long)timing->write_seq);
+                "CDM settle epoch=%lu immediate-lag=%lu caught-up=%lu "
+                "persisted=%lu pending=%lu",
+                epoch, cursor.after_request_mismatches,
+                cursor.after_lag_caught_up, cursor.after_lag_persisted,
+                cursor.after_lag_pending);
+        now_log(kLogInfo, "mirror",
+                "CDM points epoch=%lu press=%ld,%ld request=%ld,%ld valid=%d/%d",
+                epoch, cursor.press_h, cursor.press_v,
+                cursor.requested_h, cursor.requested_v,
+                cursor.press_valid, cursor.requested_valid);
+        now_log(kLogInfo, "mirror",
+                "CDM observed epoch=%lu before=%ld,%ld after=%ld,%ld valid=%d",
+                epoch, cursor.before_h, cursor.before_v,
+                cursor.after_h, cursor.after_v, cursor.device_point_valid);
     }
-    memset(&cursor, 0, sizeof cursor);
-    now_continuity_cursor_diagnostics(&cursor);
-    now_log(kLogInfo, "mirror",
-            "CDM record epoch=%lu samples=%lu before-diff=%lu "
-            "press-return=%lu after-diff=%lu",
-            epoch, cursor.samples, cursor.before_request_mismatches,
-            cursor.press_reversions, cursor.after_request_mismatches);
-    now_log(kLogInfo, "mirror",
-            "CDM settle epoch=%lu immediate-lag=%lu caught-up=%lu "
-            "persisted=%lu pending=%lu",
-            epoch, cursor.after_request_mismatches,
-            cursor.after_lag_caught_up, cursor.after_lag_persisted,
-            cursor.after_lag_pending);
-    now_log(kLogInfo, "mirror",
-            "CDM points epoch=%lu press=%ld,%ld request=%ld,%ld valid=%d/%d",
-            epoch, cursor.press_h, cursor.press_v,
-            cursor.requested_h, cursor.requested_v,
-            cursor.press_valid, cursor.requested_valid);
-    now_log(kLogInfo, "mirror",
-            "CDM observed epoch=%lu before=%ld,%ld after=%ld,%ld valid=%d",
-            epoch, cursor.before_h, cursor.before_v,
-            cursor.after_h, cursor.after_v, cursor.device_point_valid);
     now_log_flush();
     /* The endpoint is transport, not authority. Keep the asynchronous OT
        endpoint bound for this TCP session and reject every packet while the
@@ -887,58 +896,77 @@ int now_continuity_take_report(NowContinuityReport *out)
                     != (NowPeekU32)kNowPeekContinuityExitGuestInput)
             ObscureCursor();
     }
-    now_log(out->state == kNowPeekContinuityStateRefused
-                ? kLogWarn : kLogInfo,
-            "mirror",
-            "report state=%s reason=%s packets=%lu local=%lu resets=%lu event=%lu/%lu fail=%lu",
-            now_continuity_state_name(out->state),
-            now_continuity_reason_name(out->exit_reason) != NULL
-                ? now_continuity_reason_name(out->exit_reason) : "none",
-            (unsigned long)out->accepted_packets,
-            (unsigned long)shared->local_takeovers,
-            (unsigned long)shared->forced_resets,
-            (unsigned long)shared->event_down_posts,
-            (unsigned long)shared->event_up_posts,
-            (unsigned long)shared->event_post_failures);
-    now_log(kLogInfo, "mirror",
-            "native samples=%lu changes=%lu trigger=%lu at=%ld,%ld",
-            (unsigned long)shared->native_input_samples,
-            (unsigned long)shared->native_input_changes,
-            (unsigned long)shared->native_input_trigger,
-            (long)shared->native_input_h, (long)shared->native_input_v);
-    now_log(kLogInfo, "mirror",
-            "native owned=%ld,%ld buttons=%lu debt-cancels=%lu",
-            (long)shared->native_owned_h, (long)shared->native_owned_v,
-            (unsigned long)shared->native_buttons,
-            (unsigned long)shared->cursor_debt_cancels);
-    now_log(kLogInfo, "mirror", "resident service calls=%lu applies=%lu",
-            (unsigned long)shared->service_calls,
-            (unsigned long)shared->tasktime_cursor_applies);
-    now_log(shared->key_failures == 0 && shared->key_dropped == 0
-                ? kLogInfo : kLogWarn,
-            "mirror",
-            "keyboard queued=%lu applied=%lu failed=%lu dropped=%lu "
-            "flushes=%lu last=%ld",
-            (unsigned long)shared->key_enqueued,
-            (unsigned long)shared->key_applied,
-            (unsigned long)shared->key_failures,
-            (unsigned long)shared->key_dropped,
-            (unsigned long)shared->key_flushes,
-            (long)shared->key_last_error);
-    now_log(kLogInfo, "mirror",
-            "button generation=%lu down=%lu timer=%lu forced=%lu pending-up=%lu",
-            (unsigned long)shared->applied_button_generation,
-            (unsigned long)shared->button_down,
-            (unsigned long)shared->button_timer_ticks,
-            (unsigned long)shared->button_forced_releases,
-            (unsigned long)shared->pending_mouseup);
-    now_log(gAckErrors == 0 ? kLogInfo : kLogWarn, "mirror",
-            "UDP ack sent=%lu flow=%lu retry=%lu err=%lu go=%lu pending=%u",
-            (unsigned long)gAckSends, (unsigned long)gAckFlowStops,
-            (unsigned long)gAckRetries, (unsigned long)gAckErrors,
-            (unsigned long)gAckGoData, (unsigned)gAckPending);
-    now_log(kLogInfo, "mirror", "UDP requested=%u bound=%u",
-            (unsigned)gRequestedPort, (unsigned)gBoundPort);
+    /* The report's counter block is debug tier — mirror_debug.h says
+       why — but a report that CARRIES BAD NEWS is the product's story
+       and must not need the gate: a refusal, a keyboard failure or a
+       dropped key, and an ACK path erroring each write their one line
+       whatever the flag says, at the warn level they already chose. */
+    if (now_mirror_debug_on()
+            || out->state == (NowPeekU32)kNowPeekContinuityStateRefused) {
+        now_log(out->state == kNowPeekContinuityStateRefused
+                    ? kLogWarn : kLogInfo,
+                "mirror",
+                "report state=%s reason=%s packets=%lu local=%lu resets=%lu event=%lu/%lu fail=%lu",
+                now_continuity_state_name(out->state),
+                now_continuity_reason_name(out->exit_reason) != NULL
+                    ? now_continuity_reason_name(out->exit_reason) : "none",
+                (unsigned long)out->accepted_packets,
+                (unsigned long)shared->local_takeovers,
+                (unsigned long)shared->forced_resets,
+                (unsigned long)shared->event_down_posts,
+                (unsigned long)shared->event_up_posts,
+                (unsigned long)shared->event_post_failures);
+    }
+    if (now_mirror_debug_on()) {
+        now_log(kLogInfo, "mirror",
+                "native samples=%lu changes=%lu trigger=%lu at=%ld,%ld",
+                (unsigned long)shared->native_input_samples,
+                (unsigned long)shared->native_input_changes,
+                (unsigned long)shared->native_input_trigger,
+                (long)shared->native_input_h, (long)shared->native_input_v);
+        now_log(kLogInfo, "mirror",
+                "native owned=%ld,%ld buttons=%lu debt-cancels=%lu",
+                (long)shared->native_owned_h, (long)shared->native_owned_v,
+                (unsigned long)shared->native_buttons,
+                (unsigned long)shared->cursor_debt_cancels);
+        now_log(kLogInfo, "mirror", "resident service calls=%lu applies=%lu",
+                (unsigned long)shared->service_calls,
+                (unsigned long)shared->tasktime_cursor_applies);
+    }
+    if (now_mirror_debug_on()
+            || shared->key_failures != 0 || shared->key_dropped != 0) {
+        now_log(shared->key_failures == 0 && shared->key_dropped == 0
+                    ? kLogInfo : kLogWarn,
+                "mirror",
+                "keyboard queued=%lu applied=%lu failed=%lu dropped=%lu "
+                "flushes=%lu last=%ld",
+                (unsigned long)shared->key_enqueued,
+                (unsigned long)shared->key_applied,
+                (unsigned long)shared->key_failures,
+                (unsigned long)shared->key_dropped,
+                (unsigned long)shared->key_flushes,
+                (long)shared->key_last_error);
+    }
+    if (now_mirror_debug_on()) {
+        now_log(kLogInfo, "mirror",
+                "button generation=%lu down=%lu timer=%lu forced=%lu pending-up=%lu",
+                (unsigned long)shared->applied_button_generation,
+                (unsigned long)shared->button_down,
+                (unsigned long)shared->button_timer_ticks,
+                (unsigned long)shared->button_forced_releases,
+                (unsigned long)shared->pending_mouseup);
+    }
+    if (now_mirror_debug_on() || gAckErrors != 0) {
+        now_log(gAckErrors == 0 ? kLogInfo : kLogWarn, "mirror",
+                "UDP ack sent=%lu flow=%lu retry=%lu err=%lu go=%lu pending=%u",
+                (unsigned long)gAckSends, (unsigned long)gAckFlowStops,
+                (unsigned long)gAckRetries, (unsigned long)gAckErrors,
+                (unsigned long)gAckGoData, (unsigned)gAckPending);
+    }
+    if (now_mirror_debug_on()) {
+        now_log(kLogInfo, "mirror", "UDP requested=%u bound=%u",
+                (unsigned)gRequestedPort, (unsigned)gBoundPort);
+    }
     return 1;
 }
 

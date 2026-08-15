@@ -327,6 +327,40 @@ an already-sprung row a second time; drop the activation gate and a dwell
 over an insertion opens the shelf.
 
 ## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
+## SHIPPED: the guest's log ring is retrievable over the wire, and what that leaves unverified (2026-08-15, `feat/guest-log-retrieval`)
+
+Diagnosing a guest defect used to mean saving the Logs page to a file on
+the PowerBook, FTPing it off, and pasting it to an agent — five times in
+one night on 2026-08-14. Now `tail` pages its 2000-line ring
+(`area` exact-tag filter applied guest-side, `before` sequence cursor,
+still 40 lines per 4 KB answer), the selection is one implementation
+under both guest faces (`logquery.c`), and `now_guest_log_tail` walks
+the cursors so an agent asks for 200 lines in one call —
+`{"lines": 200}`, optionally `{"area": "files"}` — and gets whole lines
+in the host log's shape (`shown`, `matching`, `ringCapacity`, `pages`).
+Local protocol v13.
+
+Verified: native tests (grammar, exact-match padding, once-and-only-once
+paging, cursor-over-roll) and host tests mutation-checked; end-to-end on
+an OS 9.1 emulator clone — 186 of 186 ring lines over 19 pages, a
+150-line `proc` filter over 14, content and ordering checked against the
+traffic that generated them (rig: the run's `provenance.md`).
+
+Still unverified:
+
+- **Nothing here is metal-verified.** The walk's cost on a real
+  PowerBook link — a full-ring retrieval is tens of `tail` round trips,
+  and metal RTTs are larger than the emulator's — and the behaviour of a
+  deep walk while a transfer holds the lane have not been watched on
+  hardware. The walk was not timed on the emulator either; nobody
+  should quote a duration for it yet.
+- The guest's own console face of the new grammar (`tail 40 files
+  before N` typed at the machine) is proven by the shared parser's
+  native test, not by a hand on the real keyboard.
+- A guest older than this build answers one page with no cursor; the
+  host serves it as a complete single-page answer. Exercised in tests,
+  never against an actually-old binary.
+
 ## FIXED, AND EVERY GATE WAS GREEN FOR ITS WHOLE LIFE: the MCP agent surface published schemas no conforming client would accept (2026-08-15, `fix/mcp-outputschema-root-type`)
 
 29 of the 46 tools rendered an `outputSchema` whose only root key was
@@ -485,6 +519,110 @@ the host side is right, and whether thirty seconds is generous or tight
 remain UNMEASURED. The metal script is in the round's report; the line
 that would prove it is `grant held past epoch=N` BEFORE `grab granted`,
 where round 4 had them in the other order.
+
+## THE SAME CAUSE, THIRD LAYER: AppKit's drag session is also a session-state reader, and it cannot be taught the HID (2026-08-15 04:17 round, `fix/continuity-unbound-cross-release`)
+
+The 04:17 round (658d77e9, signed, Accessibility granted,
+`~/Library/Logs/now-logs/2026-08-15 041754.log`) confirmed the HID fix —
+the abandon is gone, sessions start — and produced the next layer, in
+two shapes from one cause:
+
+- **Five sessions ended instantly** with `operation=1` wherever the
+  cursor stood, every one "ended with the button still held", ending
+  100+ px from the edge within the same second they began. Two of them
+  fired real grabs (a drop landed on whatever sat under the pointer near
+  the edge — host-side clutter, not guest damage).
+- **One session ran three seconds pinned at its seed point** (x=1→2
+  while y moved 36) and ended `operation=nobody`.
+
+**Cursor dissociation is exonerated by the log itself**: the instant
+sessions' end points moved 100+ px in under a second, which a
+dissociated cursor cannot do, and no "could not re-attach" line exists.
+
+The cause is the tap-poisoning defect one layer further. The consuming
+tap swallows the physical `leftMouseDown`; the window server's session
+state therefore believes no button is held for the entire handoff. The
+02:48 fix taught **our** readers to ask the HID level — but an
+`NSDraggingSession` is a session-state reader that cannot be taught: it
+is driven by session-level `leftMouseDragged`/`leftMouseUp`. Under a
+state that says "up", the server synthesizes `mouseMoved` instead of
+`leftMouseDragged` (nothing for the session to track: the pinned shape),
+treats the physical release as a no-op transition (no session ends on
+it: "ended with the button still held", six for six), and a session
+begun under that state can complete immediately at the cursor's position
+(the five instant `operation=1` endings).
+
+Fixed by correcting the session's belief rather than working around it:
+after the tap is down and the catch surface is wide and key, and before
+any session can begin, `returnGuestFileToHost` posts a synthetic primary
+down into the session stream at the return point (audited: `session
+button state re-armed`). From there session state matches the HID —
+motion arrives as `leftMouseDragged`, the session tracks, and the
+physical release is a real `leftMouseUp` ending it at the drop point.
+No balancing synthetic up is needed: once the states agree, the release
+itself keeps them agreeing. The unbound path posts nothing (no session
+to drive), and a failed post is an error naming the consequence.
+
+**What is proven.** Host suites green; four mutations, each built and
+run, watched failing against the guard that names them: the re-arm
+removed (the exact 04:17 shipped behavior), the re-arm posted after the
+session starts, the failed post degrading quietly, and the unbound path
+posting one too. **Metal-verified: no.** The line the next round should
+look for is `session button state re-armed: synthetic primary down
+posted at X,Y` between `host file drag started` and a session end that
+happens at the human's release — a completed drop, `operation` naming
+the acceptor, and no "ended with the button still held". If the drag
+still misbehaves, the absent or present `leftMouseDragged` tracking and
+that one line split the remaining hypotheses.
+
+## PARTIALLY CONFIRMED ON METAL, THEN FIXED ONE LAYER DEEPER: the tap poisons every session-level button read (2026-08-15 02:48 round, `fix/continuity-unbound-cross-release`)
+
+The 02:48 metal round (merged build 7b7c3b82, Accessibility granted,
+`~/Library/Logs/now-logs/2026-08-15 024813.log`) split this branch's two
+fixes:
+
+- **The unbound safety fix is METAL-CONFIRMED** — 02:49:42 shows `held
+  press released without a file handoff … boundFile=none` then the
+  origin-return pair, and no Finder dialog. The origin-return also ran
+  on every bound attempt.
+- **The warp-as-release fix did not clear the drag abandonment.** All
+  four bound attempts abandoned in the SAME SECOND as their crossing,
+  button held throughout.
+
+**The mechanism is one layer deeper than the constructor, and it is
+this app's own tap.** The consuming tap swallows the physical
+`leftMouseDown` — its job — and a swallowed down never reaches the
+session's event state. So for the whole captured gesture,
+`NSEvent.pressedMouseButtons` reads 0 and
+`CGEventSource.buttonState(.combinedSessionState)` — which the previous
+fix asked — reads up. Three metal facts fall out of that one cause: the
+window server synthesizes plain `mouseMoved` instead of
+`leftMouseDragged` while it believes the button is up, so "the first
+real mouseDragged after the tap dies" structurally never arrives; the
+first post-teardown monitor sample carries `buttonsDown=false`, so the
+abandon fires in the same second as the cross; and pre-Accessibility
+runs never saw any of it, because with no tap nothing was swallowed.
+Only `.hidSystemState` sits beneath our own session tap.
+
+Fixed three ways: `primaryButtonIsHeld` reads `.hidSystemState`; the
+NSEvent monitor constructor derives `buttonsDown` type-first with a
+hardware read for plain `mouseMoved`; and the abandon decision requires
+corroboration — a motion sample claiming released while the HID says
+held is treated as an echo of our own tap and audited once with
+everything the decision read, while a real `primaryUp` still abandons
+outright. The abandon line itself now carries `kind`,
+`sampleButtonsDown`, `sourceEvent` type and `hidPrimaryHeld`, so the
+next metal round is decisive whichever way it goes.
+
+**What is proven.** Host suites green; six mutations (corroboration
+removed — the exact shipped behavior, watched failing with the metal
+signature; suspect echo silent; `primaryUp` vetoed by a lagging HID
+read; monitor `mouseMoved` back to session-state-only; monitor
+`leftMouseUp` asking the hardware; monitor dragged asking instead of
+knowing), each confirmed built and run. **Metal-verified: no.** The one
+line no test can reach is the `.hidSystemState` default itself — a unit
+test machine has no held button — which is exactly what the provenance
+on the abandon line exists to prove or refute on the next round.
 
 ## FIXED, UNVERIFIED ON METAL — the permission that made things worse: the event tap read a cursor warp as a button release (2026-08-15, `fix/continuity-unbound-cross-release`)
 

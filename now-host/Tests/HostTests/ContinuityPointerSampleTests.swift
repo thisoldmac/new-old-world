@@ -59,6 +59,49 @@ final class ContinuityPointerSampleTests: XCTestCase {
         XCTAssertTrue(both.buttonsDown)
     }
 
+    // MARK: - The NSEvent monitors, one layer deeper
+
+    /// The monitor half of the same defect. `pressedMouseButtons` reads the
+    /// session's event state, which this app's own consuming tap starves —
+    /// a swallowed `leftMouseDown` never reaches it — so every monitor
+    /// sample of a captured gesture reads button-up, and the window server
+    /// keeps synthesizing plain `mouseMoved` rather than `leftMouseDragged`
+    /// for the same reason. On metal (2026-08-15 02:48) that abandoned four
+    /// bound handoffs on the first post-teardown sample, in the same second
+    /// as their crossings.
+    func testAMonitorMouseMovedWhileHeldIsNotReadAsARelease() throws {
+        let sample = AppKitContinuityPointerEnvironment.sample(
+            try monitorEvent(.mouseMoved), primaryHeld: { true })
+        XCTAssertTrue(sample.buttonsDown,
+                      "the session state cannot see past this app's own "
+                        + "tap; only the HID read can")
+        XCTAssertEqual(sample.kind, .moved)
+    }
+
+    func testAMonitorMouseUpIsAReleaseWhateverTheHardwareReads() throws {
+        let sample = AppKitContinuityPointerEnvironment.sample(
+            try monitorEvent(.leftMouseUp), primaryHeld: { true })
+        XCTAssertEqual(sample.kind, .primaryUp)
+        XCTAssertFalse(sample.buttonsDown)
+    }
+
+    func testAMonitorDraggedEventNeedsNoSecondOpinionEither() throws {
+        let sample = AppKitContinuityPointerEnvironment.sample(
+            try monitorEvent(.leftMouseDragged), primaryHeld: { false })
+        XCTAssertTrue(sample.buttonsDown)
+        let down = AppKitContinuityPointerEnvironment.sample(
+            try monitorEvent(.leftMouseDown), primaryHeld: { false })
+        XCTAssertTrue(down.buttonsDown)
+        XCTAssertEqual(down.kind, .primaryDown)
+    }
+
+    private func monitorEvent(_ type: NSEvent.EventType) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: type, location: CGPoint(x: 10, y: 20), modifierFlags: [],
+            timestamp: 12, windowNumber: 0, context: nil, eventNumber: 7,
+            clickCount: 1, pressure: 1))
+    }
+
     private func tapSample(_ type: CGEventType, held: Bool)
         -> HostPointerSample? {
         guard let event = CGEvent(

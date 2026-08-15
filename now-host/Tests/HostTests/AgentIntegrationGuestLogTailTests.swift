@@ -2,50 +2,87 @@ import XCTest
 @testable import Host
 import NOWAgentIntegration
 
-/// The two groups a real `tail` answers, in the guest's own shapes.
-private func tailOutput(
-    lines: [(String, String)] = [
-        ("21:04:11", "wire   connected to 10.0.1.7"),
-        ("21:04:19", "get    Notes.txt, 4096 bytes"),
-    ],
-    shown: String = "2 of 2"
-) -> [String: [[String]]] {
-    [
-        "tail": lines.map { [$0.0, $0.1] },
-        "log": [
-            ["file", "Macintosh HD:Lab:now-logs:2026-07-30 210411.log"],
-            ["shown", shown],
-        ],
-    ]
+/// A scripted guest ring for the paging tests: `count` lines, oldest first,
+/// each tagged with an area, answered the way `run_tail` answers — pages of
+/// at most 40, newest-first walk, a `log` group with matching/held/next.
+/// The shapes are lifted from `now-guest-ppc/src/commands/commands.c`; the
+/// guest's REAL emission is proved against the real decoder by the
+/// conformance fixture and the emulator run, not here — this fake exists so
+/// the HOST's walk can be watched against a ring with known contents.
+@MainActor
+private final class FakeRing {
+    struct Line {
+        let seq: UInt32
+        let area: String
+        let text: String
+    }
+
+    let lines: [Line]
+    let ringCapacity = 2000
+    var pageLimit = 40
+
+    init(count: Int, area: (Int) -> String = { _ in "wire" }) {
+        lines = (1...count).map {
+            Line(seq: UInt32($0), area: area($0), text: "line \($0)")
+        }
+    }
+
+    /// One page, as the guest would answer it.
+    func reply(to request: CommandRequest) -> CommandResult {
+        var want = 20
+        if case .number(let n)? = request.args?["lines"] { want = n }
+        want = max(1, min(want, pageLimit))
+        var before: UInt32?
+        if case .number(let b)? = request.args?["before"] { before = UInt32(b) }
+        var area: String?
+        if case .text(let a)? = request.args?["area"] { area = a }
+
+        let matching = lines.filter { area == nil || $0.area == area }
+        let eligible = matching.filter {
+            before == nil || $0.seq < before!
+        }
+        let page = Array(eligible.suffix(want))
+        let older = eligible.count - page.count
+        var log: [[String]] = [
+            ["file", "Macintosh HD:Lab:now-logs:2026-08-15 010203.log"],
+            ["shown", "\(page.count) of \(matching.count)"],
+            ["matching", "\(matching.count)"],
+            ["held", "\(lines.count) of \(ringCapacity)"],
+        ]
+        if let area { log.append(["area", area]) }
+        if older > 0, let oldest = page.first {
+            log.append(["next", "\(oldest.seq)"])
+        }
+        return .init(
+            id: request.id, ok: true,
+            output: [
+                "tail": page.map { ["01:02:\(String(format: "%02d", $0.seq % 60))",
+                                    "\($0.area.padding(toLength: 6, withPad: " ", startingAt: 0)) \($0.text)"] },
+                "log": log,
+            ],
+            error: nil)
+    }
 }
 
 /// The session the fake pairing reports, spelled once outside the class so
 /// a default argument can reach it.
 private let logTailSession = "5b6d9a44-0000-4000-8000-000000000000"
 
-/// The log-tail capability's own coverage, aimed at the four things that are
-/// genuinely its own.
+/// The log-retrieval capability's own coverage.
 ///
-/// **It names no file, and cannot be made to.** This is the first row that
-/// returns text the machine wrote, so the tests that matter most are the ones
-/// that fail if a path argument ever appears.
+/// **It names no file, and cannot be made to.** This row returns text the
+/// machine wrote, so the tests that matter most are the ones that fail if a
+/// path argument ever appears.
 ///
-/// **The count reaches the guest by the one route that works.** A typed
-/// argument is a quoted string on this wire and the guest reads this one with
-/// `strtol`, so `"40"` is 0 and clamps to a single line — an answer that is
-/// wrong and silent. The test below asserts the line form, and it fails if
-/// somebody "tidies" the count back into `args`.
+/// **The walk is the host's job and every bound reports itself.** Pages
+/// follow the guest's own `next` cursor; a cursor that fails to descend
+/// stops the walk; the byte budget trims OLDEST lines and says so in
+/// `shown`.
 ///
-/// **The bound is the guest's own and stays visible.** The `log` group's
-/// `shown` row crosses untouched, and `note` stays empty because the type
-/// reserves it for a guest sentence rather than a host one.
-///
-/// **A control character is escaped, not dropped and not passed through.**
-///
-/// Nothing here constructs the message it then parses: a fake guest answers
-/// the `tail` command the way a real one does (the shapes are lifted from
-/// `now-guest-ppc/src/commands/commands.c :: run_tail`), and every assertion
-/// is about what the host did with it.
+/// **The two sides state their limits once each and a test holds them
+/// equal**: `testTheGuestHeadersAndTheHostPolicyStateTheSameLimits` reads
+/// the guest's own headers, which is this project's adaptation of "state a
+/// limit once" to a limit two toolchains must both compile.
 @MainActor
 final class AgentIntegrationGuestLogTailTests: XCTestCase {
     private final class Box<Value> {
@@ -53,24 +90,20 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
         init(_ value: Value) { self.value = value }
     }
 
-    /// Answers the `tail` command, recording the request it was asked with.
-    /// `reply` nil means the guest never answers, which is the case the
-    /// timeout exists for.
+    /// Answers the `tail` command from a scripted ring, recording every
+    /// request. `reply` nil means the guest never answers, which is the
+    /// case the timeout exists for.
     private func installResponder(
         on guest: FakeGuest,
-        seen: Box<CommandRequest?> = Box(nil),
-        count: Box<Int> = Box(0),
-        reply: ((Int) -> CommandResult)? = { id in
-            .init(id: id, ok: true, output: tailOutput(), error: nil)
-        }
+        requests: Box<[CommandRequest]> = Box([]),
+        reply: ((CommandRequest) -> CommandResult)?
     ) {
         guest.onMessage = { message in
             switch message {
             case .commandRequest(let request) where request.name == "tail":
-                count.value += 1
-                seen.value = request
+                requests.value.append(request)
                 guard let reply else { return }
-                try? guest.send(.commandResult(reply(request.id)))
+                try? guest.send(.commandResult(reply(request)))
             default:
                 break
             }
@@ -93,69 +126,275 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
             audit: audit)
     }
 
-    // MARK: - The count, and the route it has to take
+    // MARK: - What crosses the wire, and in what form
 
-    /// **The one that catches the silent shortfall.** The caller's count goes
-    /// on the LINE and not into `args`.
-    ///
-    /// `CommandRequest.args` is `[String: String]`, so a typed `lines` reaches
-    /// the guest as `"40"`; it reads the value with `now_json_find_int`, which
-    /// is `strtol` on the byte after the colon, and `strtol("\"40\"")` is 0 —
-    /// which `run_tail` clamps to 1. A caller asking for forty lines would get
-    /// one, with `ok:true` and nothing anywhere saying so. The line form is
-    /// what the contract declares for this verb (`x-line`).
-    func testTheCountTravelsOnTheLineBecauseATypedArgWouldReadAsZero()
-        async throws {
+    /// **The one that catches the silent shortfall, inverted since v13.**
+    /// The count crosses as a typed NUMBER — `CommandArg.number` encodes a
+    /// bare JSON integer, which the guest's `now_json_find_int` reads
+    /// exactly. What must never come back is the QUOTED form: a `"40"` is
+    /// 0 to the guest's strtol and clamps to one line, ok:true, nothing
+    /// anywhere saying so.
+    func testTheCountCrossesAsABareNumberNeverAQuotedString() async throws {
         let (listener, guest) = try await connectedListener()
         defer {
             guest.connection.cancel()
             listener.stop()
         }
-        let seen = Box<CommandRequest?>(nil)
-        installResponder(on: guest, seen: seen)
+        let ring = FakeRing(count: 10)
+        let requests = Box<[CommandRequest]>([])
+        installResponder(on: guest, requests: requests) { ring.reply(to: $0) }
 
-        _ = await adapter(listener).tail(lines: 40)
+        _ = await adapter(listener).tail(lines: 10, area: nil)
 
-        XCTAssertEqual(
-            seen.value?.line, "40",
-            "The count must reach the guest on the line. As a typed arg it "
-                + "arrives quoted, parses as 0 and clamps to ONE line — a "
-                + "wrong answer with no error anywhere.")
-        XCTAssertNil(
-            seen.value?.args?["lines"],
+        let request = try XCTUnwrap(requests.value.first)
+        XCTAssertEqual(request.args?["lines"], .number(10))
+        XCTAssertNil(request.line, "The line form is for humans.")
+        let json = String(
+            decoding: try JSONEncoder().encode(request), as: UTF8.self)
+        XCTAssertTrue(
+            json.contains("\"lines\":10"),
             "A quoted \"lines\" is worse than no lines at all: the guest "
-                + "finds the key, parses 0, and never reaches its own "
-                + "default of 20.")
+                + "finds the key, parses 0, clamps to ONE line and answers "
+                + "ok — the silent shortfall this test pins. Got: \(json)")
     }
 
     /// No count means no field, so the default of 20 stays the guest's
-    /// number. A copy of it on this side is the limit-in-three-places defect
-    /// the project preamble names.
+    /// number. A copy of it on this side is the limit-in-three-places
+    /// defect the project preamble names.
     func testNoCountSendsNoFieldSoTheDefaultStaysTheGuests() async throws {
         let (listener, guest) = try await connectedListener()
         defer {
             guest.connection.cancel()
             listener.stop()
         }
-        let seen = Box<CommandRequest?>(nil)
-        installResponder(on: guest, seen: seen)
+        let ring = FakeRing(count: 5)
+        let requests = Box<[CommandRequest]>([])
+        installResponder(on: guest, requests: requests) { ring.reply(to: $0) }
 
-        _ = await adapter(listener).tail(lines: nil)
+        let result = await adapter(listener).tail(lines: nil, area: nil)
 
-        XCTAssertNotNil(seen.value, "the verb should still be asked")
-        XCTAssertNil(seen.value?.line)
-        XCTAssertNil(seen.value?.args)
-        let request = try XCTUnwrap(seen.value)
-        let json = String(
-            decoding: try JSONEncoder().encode(request), as: UTF8.self)
-        XCTAssertFalse(
-            json.contains("20"),
-            "20 is the GUEST's default. This side sending it would be the "
-                + "same limit written in two places, which is how they "
-                + "drift apart.")
+        let request = try XCTUnwrap(requests.value.first)
+        XCTAssertNil(request.args?["lines"])
+        XCTAssertNil(request.line)
+        guard case .completed(let retrieval) = result else {
+            return XCTFail("an answered tail completes: \(result)")
+        }
+        XCTAssertEqual(retrieval.requested, 20,
+                       "The DEFAULT is applied to the report, not sent.")
+        XCTAssertEqual(retrieval.lines.count, 5)
     }
 
-    /// A count the verb cannot serve is refused here, and **nothing reaches
+    /// The area rides beside the count and reaches the guest, where the
+    /// filtering happens — before the wire, which is the whole point of
+    /// having it.
+    func testTheAreaFilterReachesTheGuestAndOnlyMatchingLinesReturn()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        let ring = FakeRing(count: 30) { $0 % 3 == 0 ? "files" : "wire" }
+        let requests = Box<[CommandRequest]>([])
+        installResponder(on: guest, requests: requests) { ring.reply(to: $0) }
+
+        let result = await adapter(listener).tail(lines: 10, area: "files")
+
+        XCTAssertEqual(requests.value.first?.args?["area"], .text("files"))
+        guard case .completed(let retrieval) = result else {
+            return XCTFail("an answered tail completes: \(result)")
+        }
+        XCTAssertEqual(retrieval.area, "files")
+        XCTAssertEqual(retrieval.matching, 10)
+        XCTAssertTrue(retrieval.lines.allSatisfy { $0.contains("files") })
+    }
+
+    // MARK: - The walk
+
+    /// **The retrieval this arc exists for.** 200 lines off a 300-line
+    /// ring: five pages of 40, each older than the last, reassembled
+    /// OLDEST-first with no line served twice and none skipped — the
+    /// once-and-only-once property the guest's native test proves for one
+    /// page, held across the whole walk.
+    func testHundredsOfLinesArePagedAndReassembledInOrder() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        let ring = FakeRing(count: 300)
+        let requests = Box<[CommandRequest]>([])
+        installResponder(on: guest, requests: requests) { ring.reply(to: $0) }
+
+        let result = await adapter(listener).tail(lines: 200, area: nil)
+
+        guard case .completed(let retrieval) = result else {
+            return XCTFail("an answered walk completes: \(result)")
+        }
+        XCTAssertEqual(retrieval.lines.count, 200)
+        XCTAssertEqual(retrieval.pages, 5)
+        XCTAssertEqual(requests.value.count, 5)
+        /* Oldest-first across page boundaries: lines 101...300. */
+        XCTAssertTrue(retrieval.lines.first?.hasSuffix("line 101") == true,
+                      "\(retrieval.lines.first ?? "nil")")
+        XCTAssertTrue(retrieval.lines.last?.hasSuffix("line 300") == true)
+        XCTAssertEqual(retrieval.matching, 300)
+        XCTAssertEqual(retrieval.shown, "200 of 300",
+                       "Serving everything asked for earns no suffix; "
+                           + "matching says how much more exists.")
+        XCTAssertEqual(retrieval.ringCapacity, 2000)
+        /* The cursors the walk sent must strictly descend, first absent. */
+        let befores = requests.value.map { request -> Int? in
+            if case .number(let b)? = request.args?["before"] { return b }
+            return nil
+        }
+        XCTAssertNil(befores.first ?? nil)
+        let sent = befores.compactMap { $0 }
+        XCTAssertEqual(sent, [261, 221, 181, 141])
+    }
+
+    /// A ring smaller than the ask ends the walk at the guest's own "no
+    /// next row", and the answer says what there was — no suffix, because
+    /// nothing that exists was withheld.
+    func testAShortLogEndsTheWalkAndReportsItself() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        let ring = FakeRing(count: 12)
+        let requests = Box<[CommandRequest]>([])
+        installResponder(on: guest, requests: requests) { ring.reply(to: $0) }
+
+        let result = await adapter(listener).tail(lines: 200, area: nil)
+
+        guard case .completed(let retrieval) = result else {
+            return XCTFail("a short log is still an answer: \(result)")
+        }
+        XCTAssertEqual(retrieval.lines.count, 12)
+        XCTAssertEqual(retrieval.shown, "12 of 12")
+        XCTAssertEqual(retrieval.pages, 1)
+        XCTAssertEqual(
+            retrieval.guestFile,
+            "Macintosh HD:Lab:now-logs:2026-08-15 010203.log")
+    }
+
+    /// A guest whose cursor does not descend is walking this side in a
+    /// circle; the walk stops and reports what it has rather than looping.
+    func testACursorThatFailsToDescendStopsTheWalk() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        let requests = Box<[CommandRequest]>([])
+        installResponder(on: guest, requests: requests) { request in
+            .init(id: request.id, ok: true,
+                  output: [
+                      "tail": [["01:02:03", "wire   the same page"]],
+                      "log": [["matching", "500"], ["next", "400"]],
+                  ],
+                  error: nil)
+        }
+
+        let result = await adapter(listener).tail(lines: 200, area: nil)
+
+        guard case .completed(let retrieval) = result else {
+            return XCTFail("a stopped walk still answers: \(result)")
+        }
+        XCTAssertEqual(
+            requests.value.count, 2,
+            "The second page repeated the cursor; a third ask would be "
+                + "the start of the loop this guard exists to end.")
+        XCTAssertEqual(retrieval.lines.count, 2)
+        XCTAssertTrue(retrieval.shown.contains("(older ones did not fit)"))
+    }
+
+    /// A guest from before v13 answers one page with no matching/next rows.
+    /// That is a complete single-page answer, not an error: matching falls
+    /// back to what arrived.
+    func testAPreV13GuestAnswersOnePageCompletely() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        installResponder(on: guest, reply: { request in
+            .init(id: request.id, ok: true,
+                  output: [
+                      "tail": [["21:04:11", "wire   connected"],
+                               ["21:04:19", "get    Notes.txt"]],
+                      "log": [["file", "now-logs:x.log"],
+                              ["shown", "2 of 2"]],
+                  ],
+                  error: nil)
+        })
+
+        let result = await adapter(listener).tail(lines: 200, area: nil)
+
+        guard case .completed(let retrieval) = result else {
+            return XCTFail("an old guest's page is an answer: \(result)")
+        }
+        XCTAssertEqual(retrieval.lines,
+                       ["21:04:11 wire   connected",
+                        "21:04:19 get    Notes.txt"])
+        XCTAssertEqual(retrieval.matching, 2)
+        XCTAssertEqual(retrieval.pages, 1)
+        XCTAssertEqual(
+            retrieval.ringCapacity,
+            AgentIntegrationGuestLogPolicy.ringCapacity,
+            "No held row means the policy's constant, which the guest-header "
+                + "test keeps honest.")
+    }
+
+    /// The byte budget binds before the count on a log of long lines; the
+    /// OLDEST go, and shown says so.
+    func testTheByteBudgetTrimsOldestAndSaysSo() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        let wide = String(repeating: "x", count: 400)
+        installResponder(on: guest, reply: { request in
+            var before = UInt32.max
+            if case .number(let b)? = request.args?["before"] {
+                before = UInt32(b)
+            }
+            let newest = min(before - 1, 1000)
+            let seqs = (max(1, newest - 39)...newest)
+            return .init(
+                id: request.id, ok: true,
+                output: [
+                    "tail": seqs.map { ["01:02:03", "wire   \($0) \(wide)"] },
+                    "log": [["matching", "1000"],
+                            ["held", "1000 of 2000"],
+                            ["next", "\(seqs.lowerBound)"]],
+                ],
+                error: nil)
+        })
+
+        let result = await adapter(listener).tail(lines: 500, area: nil)
+
+        guard case .completed(let retrieval) = result else {
+            return XCTFail("a budgeted answer still completes: \(result)")
+        }
+        XCTAssertLessThan(retrieval.lines.count, 500)
+        XCTAssertTrue(retrieval.shown.hasSuffix("(older ones did not fit)"),
+                      retrieval.shown)
+        let bytes = retrieval.lines.reduce(0) {
+            $0 + $1.utf8.count
+                + AgentIntegrationGuestLogPolicy.perLineEnvelopeBytes
+        }
+        XCTAssertLessThanOrEqual(
+            bytes, AgentIntegrationGuestLogPolicy.maximumTotalBytes)
+        /* Newest survive: the last line is sequence 1000. */
+        XCTAssertTrue(retrieval.lines.last?.contains("1000") == true)
+    }
+
+    // MARK: - Refusals, silence, and a changed machine
+
+    /// A count the ring cannot hold is refused here, and **nothing reaches
     /// the machine** — the third reading of a bound the projection and the
     /// local codec have already applied.
     func testAnOutOfRangeCountIsRefusedWithoutAskingTheMachine()
@@ -165,104 +404,48 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
             guest.connection.cancel()
             listener.stop()
         }
-        let asks = Box(0)
-        installResponder(on: guest, count: asks)
+        let requests = Box<[CommandRequest]>([])
+        installResponder(on: guest, requests: requests) {
+            FakeRing(count: 1).reply(to: $0)
+        }
 
         let result = await adapter(listener).tail(
-            lines: AgentIntegrationGuestLogPolicy.maximumLineCount + 1)
+            lines: AgentIntegrationGuestLogPolicy.maximumLineCount + 1,
+            area: nil)
 
         guard case .refused(let failure) = result else {
-            return XCTFail("41 lines is not something the verb can serve: "
+            return XCTFail("2001 lines is not something the ring holds: "
                                + "\(result)")
         }
         XCTAssertEqual(failure.code, "now-log-tail-lines-invalid")
-        XCTAssertEqual(
-            asks.value, 0,
-            "A request that could only be refused must not cost a round "
-                + "trip to a 68030.")
+        XCTAssertTrue(requests.value.isEmpty,
+                      "A request that could only be refused must not cost "
+                          + "a round trip to a 68030.")
     }
 
-    // MARK: - The answer
-
-    /// The guest's lines cross as the guest wrote them, oldest first, with
-    /// its own account of the answer's edges beside them and no host claim
-    /// added.
-    func testACompletedTailCarriesTheGuestsLinesAndItsOwnBound()
-        async throws {
+    /// An area wider than the guest's tag field could never match a line;
+    /// refusing it beats answering with an empty tail that reads as a
+    /// silent subsystem.
+    func testAnOverwideAreaIsRefusedWithoutAskingTheMachine() async throws {
         let (listener, guest) = try await connectedListener()
         defer {
             guest.connection.cancel()
             listener.stop()
         }
-        installResponder(on: guest, reply: { id in
-            .init(id: id, ok: true,
-                  output: tailOutput(
-                      shown: "12 of 20 (older ones did not fit)"),
-                  error: nil)
-        })
-
-        let result = await adapter(listener).tail(lines: 20)
-
-        guard case .completed(let report) = result else {
-            return XCTFail("an answered tail is a completed tail: \(result)")
+        let requests = Box<[CommandRequest]>([])
+        installResponder(on: guest, requests: requests) {
+            FakeRing(count: 1).reply(to: $0)
         }
-        XCTAssertEqual(report.verb, "tail")
-        /* Sorted for determinism, since `output` is a dictionary and the
-           wire's group order is already gone. */
-        XCTAssertEqual(report.groups.map(\.name), ["log", "tail"])
-        let lines = try XCTUnwrap(report.groups.last)
-        XCTAssertEqual(lines.rows.map(\.label), ["21:04:11", "21:04:19"])
-        XCTAssertEqual(lines.rows.last?.value, "get    Notes.txt, 4096 bytes")
-        let meta = try XCTUnwrap(report.groups.first)
-        XCTAssertEqual(
-            meta.rows.first { $0.label == "shown" }?.value,
-            "12 of 20 (older ones did not fit)",
-            "The guest's own statement of its bound IS how the bound stays "
-                + "visible. Dropping this row would make a truncated answer "
-                + "indistinguishable from a quiet machine.")
-        XCTAssertNil(
-            report.note,
-            "The note is the GUEST's sentence about its own answer. `tail` "
-                + "states its bound as the shown row instead, and a host "
-                + "lifting one row into that field would be deciding which "
-                + "of the guest's rows mattered.")
-    }
 
-    /// Row order inside the `tail` group is chronological and is preserved.
-    /// It is the one transformation that would change what the answer says.
-    func testTheLinesAreNotReorderedByTheHost() {
-        let stamps = (0..<12).map {
-            (String(format: "21:%02d:00", $0), "app    line \($0)")
+        let result = await adapter(listener).tail(
+            lines: nil, area: "continuity")
+
+        guard case .refused(let failure) = result else {
+            return XCTFail("a 10-character tag can never match a 6-wide "
+                               + "field: \(result)")
         }
-        let report = AgentIntegrationGuestLogTail.report(
-            from: .init(id: 1, ok: true,
-                        output: tailOutput(lines: stamps),
-                        error: nil),
-            observedAt: Date(timeIntervalSince1970: 0))
-
-        let group = report.groups.first { $0.name == "tail" }
-        XCTAssertEqual(group?.rows.map(\.label), stamps.map(\.0))
-    }
-
-    /// A control character inside a line is written `\xNN`: still there,
-    /// still readable, and unable to corrupt whatever renders the row.
-    func testAControlCharacterInALineIsEscapedRatherThanDroppedOrRaw() {
-        let report = AgentIntegrationGuestLogTail.report(
-            from: .init(
-                id: 1, ok: true,
-                output: ["tail": [["21:04:11", "files  a\u{0D}b\u{07}"]]],
-                error: nil),
-            observedAt: Date(timeIntervalSince1970: 0))
-
-        let value = report.groups.first?.rows.first?.value
-        XCTAssertEqual(value, "files  a\\x0Db\\x07")
-        XCTAssertFalse(
-            value?.unicodeScalars.contains { $0.value < 0x20 } ?? true,
-            "A raw control byte corrupts the row it lands in.")
-        XCTAssertTrue(
-            value?.contains("a") == true && value?.contains("b") == true,
-            "Nothing around the escape may be lost — silently mangling "
-                + "bytes is the failure this escape exists to avoid.")
+        XCTAssertEqual(failure.code, "now-log-tail-area-invalid")
+        XCTAssertTrue(requests.value.isEmpty)
     }
 
     /// A guest refusal stays a refusal and its own sentence crosses.
@@ -272,13 +455,13 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
             guest.connection.cancel()
             listener.stop()
         }
-        installResponder(on: guest, reply: { id in
-            .init(id: id, ok: false, output: nil,
+        installResponder(on: guest, reply: { request in
+            .init(id: request.id, ok: false, output: nil,
                   error: .init(code: "tail-refused",
                                message: "this Mac keeps no log this launch"))
         })
 
-        let result = await adapter(listener).tail(lines: nil)
+        let result = await adapter(listener).tail(lines: nil, area: nil)
 
         guard case .refused(let failure) = result else {
             return XCTFail("a refusal is not a completed tail: \(result)")
@@ -296,7 +479,8 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
         }
         installResponder(on: guest, reply: nil)
 
-        let result = await adapter(listener, timeout: 0.2).tail(lines: nil)
+        let result = await adapter(listener, timeout: 0.2)
+            .tail(lines: nil, area: nil)
 
         guard case .refused(let failure) = result else {
             return XCTFail("silence is not an answer: \(result)")
@@ -304,8 +488,9 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
         XCTAssertEqual(failure.code, "now-log-tail-outcome-unknown")
     }
 
-    /// The machine that was asked is no longer on the other end, so what came
-    /// back is a different Mac's log or nothing — unavailable, not refused.
+    /// The machine that was asked is no longer on the other end, so what
+    /// came back is a different Mac's log or nothing — unavailable, not
+    /// refused.
     func testAGuestThatChangedMidReadIsUnavailableRatherThanRefused()
         async throws {
         let (listener, guest) = try await connectedListener()
@@ -313,20 +498,40 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
             guest.connection.cancel()
             listener.stop()
         }
-        installResponder(on: guest)
+        installResponder(on: guest, reply: {
+            FakeRing(count: 3).reply(to: $0)
+        })
         let sessions = [UUID(uuidString: logTailSession), UUID()]
         let nth = Box(0)
 
         let result = await adapter(listener, session: {
             defer { nth.value += 1 }
             return sessions[min(nth.value, sessions.count - 1)]
-        }).tail(lines: nil)
+        }).tail(lines: nil, area: nil)
 
         guard case .unavailable(let failure) = result else {
             return XCTFail("a changed pairing cannot be reported as an "
                                + "answer: \(result)")
         }
         XCTAssertEqual(failure.code, "now-log-tail-outcome-unknown")
+    }
+
+    // MARK: - What a line may carry
+
+    /// A control character inside a line is written `\xNN`: still there,
+    /// still readable, and unable to corrupt whatever renders the answer.
+    func testAControlCharacterInALineIsEscapedRatherThanDroppedOrRaw() {
+        let page = AgentIntegrationGuestLogTail.Page(
+            from: .init(
+                id: 1, ok: true,
+                output: ["tail": [["21:04:11", "files  a\u{0D}b\u{07}"]]],
+                error: nil))
+
+        XCTAssertEqual(page.lines, ["21:04:11 files  a\\x0Db\\x07"])
+        XCTAssertFalse(
+            page.lines.first?.unicodeScalars
+                .contains { $0.value < 0x20 } ?? true,
+            "A raw control byte corrupts whatever renders the answer.")
     }
 
     // MARK: - The line the person at the machine reads
@@ -340,16 +545,18 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
             guest.connection.cancel()
             listener.stop()
         }
-        installResponder(on: guest)
+        let ring = FakeRing(count: 60)
+        installResponder(on: guest, reply: { ring.reply(to: $0) })
         let written = Box<[String]>([])
 
         _ = await adapter(listener, audit: { _, message in
             written.value.append(message)
-        }).tail(lines: nil)
+        }).tail(lines: 60, area: nil)
 
         let line = try XCTUnwrap(written.value.first)
-        XCTAssertTrue(line.contains("2 log lines"), line)
-        for quoted in ["Notes.txt", "10.0.1.7", "now-logs"] {
+        XCTAssertTrue(line.contains("60 log lines"), line)
+        XCTAssertTrue(line.contains("2 pages"), line)
+        for quoted in ["line 1", "now-logs"] {
             XCTAssertFalse(
                 line.contains(quoted),
                 "The audit line quotes \"\(quoted)\" out of the log it just "
@@ -360,28 +567,29 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
 
     // MARK: - The projection: what a caller may send
 
-    /// **The scope test.** The input schema offers a count and nothing that
-    /// could name a file, and this row must never grow one: it returns bytes,
-    /// which is the property `file.list` and `reveal` do not have, and the
-    /// guest verb has no target to point at.
-    func testTheInputSchemaOffersACountAndNothingThatNamesAFile() throws {
+    /// **The scope test.** The input schema offers a count and an area and
+    /// nothing that could name a file, and this row must never grow one: it
+    /// returns bytes, which is the property `file.list` and `reveal` do not
+    /// have, and the guest verb has no target to point at. The `before`
+    /// cursor is deliberately absent too — paging is the host's job, and a
+    /// cursor a caller could pass is a page they could skip.
+    func testTheInputSchemaOffersCountAndAreaAndNothingThatNamesAFile()
+        throws {
         let descriptor = GuestLogTailProjection.mcpDescriptor
         let input = try XCTUnwrap(
             descriptor["inputSchema"] as? [String: Any])
         let properties = try XCTUnwrap(
             input["properties"] as? [String: Any])
 
-        XCTAssertEqual(Set(properties.keys), ["lines"])
+        XCTAssertEqual(Set(properties.keys), ["lines", "area"])
         XCTAssertEqual(input["additionalProperties"] as? Bool, false)
         XCTAssertNil(
             input["required"],
             "Every member is optional: a bare call is a complete request.")
-        for named in ["path", "target", "file", "name"] {
+        for named in ["path", "target", "file", "name", "before"] {
             XCTAssertNil(
                 properties[named],
-                "\"\(named)\" would make this an arbitrary-file read. The "
-                    + "verb takes a count; a named bounded read is "
-                    + "now_guest_files_download, under guestRoot.")
+                "\"\(named)\" does not belong on this row's input.")
         }
         let lines = try XCTUnwrap(properties["lines"] as? [String: Any])
         XCTAssertEqual(lines["type"] as? String, "integer")
@@ -389,6 +597,10 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
         XCTAssertEqual(
             lines["maximum"] as? Int,
             AgentIntegrationGuestLogPolicy.maximumLineCount)
+        let area = try XCTUnwrap(properties["area"] as? [String: Any])
+        XCTAssertEqual(
+            area["maxLength"] as? Int,
+            AgentIntegrationGuestLogPolicy.areaTagScalars)
     }
 
     /// The three outcomes a caller has to be able to tell apart, including
@@ -419,7 +631,11 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
             ("a boolean", ["lines": true]),
             ("a quoted number", ["lines": "40"]),
             ("a fraction", ["lines": 2.5]),
+            ("an overwide area", ["area": "continuity"]),
+            ("an empty area", ["area": ""]),
+            ("a numeric area", ["area": 6]),
             ("an unknown key", ["lines": 20, "path": "Macintosh HD:"]),
+            ("a cursor, which is the host's job", ["before": 100]),
             ("not an object at all", 40),
         ]
         for (what, arguments) in refusals {
@@ -435,15 +651,17 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
             "Nothing refused here may reach a machine.")
     }
 
-    /// A bare call and a bounded count both reach the host, and the answer
+    /// A bare call and a bounded ask both reach the host, and the answer
     /// survives rendering — the projection renders and does not re-decide.
-    func testAValidCountReachesTheHostAndAnAbsentOneIsComplete()
+    func testAValidAskReachesTheHostAndAnAbsentOneIsComplete()
         async throws {
         let host = LogTailStubHost()
 
-        for (label, arguments) in [("absent", nil as Any?),
-                                   ("empty", [:] as Any?),
-                                   ("bounded", ["lines": 40] as Any?)] {
+        for (label, arguments) in [
+            ("absent", nil as Any?),
+            ("empty", [:] as Any?),
+            ("bounded", ["lines": 200, "area": "wire"] as Any?),
+        ] {
             let outcome = await GuestLogTailProjection.invoke(
                 .init(raw: arguments), through: host)
             guard case .value(let value) = outcome else {
@@ -460,7 +678,8 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
                 "This row answers in JSON; only capture attaches anything.")
         }
         let asked = await host.asked
-        XCTAssertEqual(asked, [nil, nil, 40])
+        XCTAssertEqual(asked.map(\.lines), [nil, nil, 200])
+        XCTAssertEqual(asked.map(\.area), [nil, nil, "wire"])
     }
 
     /// The row requires the command and nothing else — in particular not
@@ -486,14 +705,56 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
                 + "test knows.")
     }
 
+    // MARK: - The limits, stated once per side and held equal
+
+    /// **"State a limit once" across two toolchains.** The guest states its
+    /// ring, page and tag-field sizes in its own headers; this side restates
+    /// them in `AgentIntegrationGuestLogPolicy` so a bad ask is refused
+    /// before it costs a round trip. Two statements, one test holding them
+    /// equal — the same pattern as the control-frame cap, adapted to a limit
+    /// a Swift module cannot #include.
+    func testTheGuestHeadersAndTheHostPolicyStateTheSameLimits() throws {
+        let root = URL(fileURLWithPath: #filePath) // …/Tests/HostTests/x
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let nowlog = try String(
+            contentsOf: root.appendingPathComponent(
+                "now-guest-ppc/src/core/nowlog.h"),
+            encoding: .utf8)
+        let logquery = try String(
+            contentsOf: root.appendingPathComponent(
+                "now-guest-ppc/src/core/logquery.h"),
+            encoding: .utf8)
+
+        XCTAssertTrue(
+            nowlog.contains(
+                "kLogKept = \(AgentIntegrationGuestLogPolicy.ringCapacity)"),
+            "The guest's ring (nowlog.h kLogKept) and this side's "
+                + "ringCapacity have drifted apart.")
+        XCTAssertTrue(
+            logquery.contains(
+                "kLogQueryPageMax = "
+                    + "\(AgentIntegrationGuestLogPolicy.pageLineCount)"),
+            "The guest's page (logquery.h kLogQueryPageMax) and this side's "
+                + "pageLineCount have drifted apart.")
+        XCTAssertTrue(
+            logquery.contains(
+                "kLogQueryAreaMax = "
+                    + "\(AgentIntegrationGuestLogPolicy.areaTagScalars)"),
+            "The guest's tag field (logquery.h kLogQueryAreaMax) and this "
+                + "side's areaTagScalars have drifted apart.")
+    }
+
     // MARK: - PowerPC only, in typed form and by derivation
 
     /// **The whole of "PPC only".** A guest whose command table names `tail`
     /// can be asked; one whose table does not reports the row `unavailable`
     /// — a complete typed answer with a reason, never a weaker version of
-    /// the tool — and nothing in the row or the ledger asks which guest is on
-    /// the wire to get there. The 68K guest's table has no `tail`, so that is
-    /// the mechanism the fork rides on.
+    /// the tool — and nothing in the row or the ledger asks which guest is
+    /// on the wire to get there. The 68K guest's table has no `tail`, so
+    /// that is the mechanism the fork rides on.
     func testTheRowIsAvailableExactlyWhenTheGuestsHelpNamesTail()
         async throws {
         for (commands, expected) in [
@@ -548,66 +809,31 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
             }
         }
     }
-
-    /// The rendering is bounded, and a guest answering something larger or
-    /// stranger than the contract's two groups is carried rather than
-    /// trusted.
-    func testTheRenderingIsBoundedAndDoesNotInvent() throws {
-        let bounds = AgentIntegrationGuestLogTailBounds.self
-        let many = (0..<(bounds.maximumRowsPerGroup + 6)).map {
-            ["21:00:00", "app    line \($0)"]
-        }
-        let report = AgentIntegrationGuestLogTail.report(
-            from: .init(id: 1, ok: true,
-                        output: ["tail": many, "log": [["only-one-cell"]]],
-                        error: nil),
-            observedAt: Date(timeIntervalSince1970: 0))
-
-        XCTAssertEqual(report.groups.map(\.name), ["log", "tail"])
-        XCTAssertEqual(report.groups.last?.rows.count,
-                       bounds.maximumRowsPerGroup)
-        let lone = try XCTUnwrap(report.groups.first?.rows.first)
-        XCTAssertEqual(lone.label, "only-one-cell")
-        XCTAssertEqual(
-            lone.value, "",
-            "A one-cell row has no value, and repeating the label as one "
-                + "would be this side inventing an answer.")
-    }
-
-    /// The host's own bounds are sized from the guest's buffers, so they are
-    /// a backstop and cannot trim a legitimate answer before the guest's own
-    /// frame budget does.
-    func testTheHostBoundsCannotBiteBeforeTheGuestsDo() {
-        let bounds = AgentIntegrationGuestLogTailBounds.self
-        XCTAssertGreaterThanOrEqual(
-            bounds.maximumRowsPerGroup,
-            AgentIntegrationGuestLogPolicy.maximumLineCount,
-            "A row bound below the verb's own maximum would drop lines the "
-                + "guest said it was sending, and the shown row would then "
-                + "disagree with the answer beside it.")
-        XCTAssertGreaterThanOrEqual(
-            bounds.maximumValueScalars, 255,
-            "The log group's file row carries an HFS path.")
-    }
 }
 
-/// Answers one tail and records the counts it was asked for. Everything else
-/// answers "no host", which is what the protocol's defaults are for.
+/// Answers one retrieval and records the asks. Everything else answers "no
+/// host", which is what the protocol's defaults are for.
 private actor LogTailStubHost: AgentIntegrationClient {
-    private(set) var asked: [Int?] = []
+    struct Ask: Equatable {
+        let lines: Int?
+        let area: String?
+    }
 
-    func tailGuestLog(lines: Int?) async
-        -> AgentIntegrationGuestRowReportResult {
-        asked.append(lines)
+    private(set) var asked: [Ask] = []
+
+    func tailGuestLog(lines: Int?, area: String?) async
+        -> AgentIntegrationGuestLogRetrievalResult {
+        asked.append(.init(lines: lines, area: area))
         return .completed(.init(
-            verb: "tail",
-            groups: [
-                .init(name: "log",
-                      rows: [.init(label: "shown", value: "2 of 2")]),
-                .init(name: "tail",
-                      rows: [.init(label: "21:04:11",
-                                   value: "wire   connected to 10.0.1.7")]),
-            ],
+            lines: ["21:04:11 wire   connected to 10.0.1.7"],
+            requested: lines ?? AgentIntegrationGuestLogPolicy
+                .defaultLineCount,
+            matching: 1,
+            shown: "1 of 1",
+            area: area,
+            ringCapacity: AgentIntegrationGuestLogPolicy.ringCapacity,
+            guestFile: nil,
+            pages: 1,
             observedAt: Date(timeIntervalSince1970: 1_800_000_000)))
     }
 

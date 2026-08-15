@@ -98,6 +98,7 @@ add_application(now-guest-ppc
     src/cloud/cloud_contacts_card.c
     src/cloud/cloud_contacts_view.c
     src/mirror/mirror_anchor.c
+    src/mirror/mirror_debug.c
     src/mirror/mirror_layout.c
     src/mirror/mirror_log.c
     src/mirror/mirror_consent.c
@@ -151,6 +152,7 @@ add_application(now-guest-ppc
     src/core/peer_name.c
     src/core/wirestat_cmd.c
     src/core/nowlog.c
+    src/core/logquery.c
     ../now-guest-shared/src/log_retention.c
     ../now-guest-shared/src/log_retention_classic.c
     src/core/wire.c

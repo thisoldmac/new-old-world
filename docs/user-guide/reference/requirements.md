@@ -38,21 +38,22 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
-sources-sha1: 626f386fa59dac709b7ab4a1e7fcf49728bab0e8
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -217,4 +218,9 @@ rederived: 2026-08-15T03:19:47-0400 098e7ecf sources, sources, sources, sources,
 rederived: 2026-08-15T05:39:27-0400 829013ee sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 rederived: 2026-08-15T05:30:51-0400 a327ba45 unchanged
 rederived: 2026-08-15T06:15:20-0400 3c7d14e4 unchanged
+rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 sources
+rederived: 2026-08-15T03:17:34-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T04:01:11-0400 b18a891c sources
+rederived: 2026-08-15T06:18:34-0400 9232bd77 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->

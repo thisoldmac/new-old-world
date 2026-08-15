@@ -288,6 +288,74 @@ final class ContinuityGuestDragTests: XCTestCase {
         }, "the log must carry both points, or a wrong one reads as right")
     }
 
+    /// **The session's button state is re-armed before AppKit owns the
+    /// gesture.**
+    ///
+    /// Metal, 2026-08-15 04:18–04:20: the abandon was gone and the sessions
+    /// still failed, in two shapes from one cause. The consuming tap
+    /// swallowed the physical `leftMouseDown`, so the window server believed
+    /// no button was held for the whole handoff — and an `NSDraggingSession`
+    /// is driven by session-level events, not the HID state our own readers
+    /// were taught to ask. Five sessions completed instantly wherever the
+    /// cursor stood (`operation=1`, "ended with the button still held") and
+    /// one tracked nothing for three seconds, pinned at its seed point,
+    /// ending `operation=nobody`. The synthetic down corrects the session's
+    /// belief while the tap is already down (nothing of ours can swallow it)
+    /// and the catch surface is wide and key (our own window receives it).
+    func testTheSessionButtonStateIsRearmedBeforeTheDragSessionBegins()
+        throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let rearm = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(of: .sessionButtonRearmed),
+            "the session state was never corrected; AppKit will drive the "
+                + "drag from a state that believes the button is up")
+        let session = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(of: .hostDragBegan))
+        XCTAssertLessThan(rearm, session,
+                          "posted after the session starts, the down arrives "
+                            + "into a gesture AppKit already ended")
+        let post = try XCTUnwrap(rig.environment.syntheticButtonPosts.first)
+        XCTAssertTrue(post.down)
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("session button state re-armed")
+        })
+    }
+
+    /// A failed post is an ERROR naming the consequence, not a silence —
+    /// the 04:17 log took three rounds to diagnose because every layer of
+    /// this defect degraded quietly.
+    func testAFailedSessionRearmIsNamedOutLoud() {
+        let rig = Rig()
+        rig.environment.syntheticPostsSucceed = false
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .error
+                && $0.1.contains("could not re-arm the session button state")
+        })
+    }
+
+    /// The unbound path needs no session truth — there is no AppKit session
+    /// to drive — and a synthetic down posted there would be this app
+    /// pressing a button on the host with nothing to receive it.
+    func testAnUnboundHeldCrossPostsNoSyntheticButton() {
+        let rig = Rig()
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+
+        XCTAssertTrue(rig.environment.syntheticButtonPosts.isEmpty)
+    }
+
     /// The tap has no NSEvent by construction, and the physical button is
     /// still held — so the crossing WAITS rather than synthesizing one.
     func testTheDragWaitsForARealEventInsteadOfInventingOne() {
@@ -485,6 +553,7 @@ final class ContinuityGuestDragTests: XCTestCase {
         rig.enterGuest()
         rig.press()
         rig.crossBackHolding()
+        rig.controller.physicalPrimaryButtonHeld = { false }
         rig.environment.emit(.init(kind: .primaryUp,
                                    location: CGPoint(x: 1300, y: 450),
                                    delta: .zero, buttonsDown: false))
@@ -494,6 +563,74 @@ final class ContinuityGuestDragTests: XCTestCase {
             $0.1.contains("abandoned") && $0.1.contains("released before")
         })
         XCTAssertEqual(rig.environment.catchChanges, [true, false])
+    }
+
+    /// **A sample claiming "released" while the hardware says held is an
+    /// echo, not a release.**
+    ///
+    /// Metal, 2026-08-15 02:48: four bound crossings in a row abandoned in
+    /// the SAME SECOND as the cross — `the button was released before this
+    /// Mac saw a real mouse event` while Michelle was still holding the
+    /// button. The waiting path read `buttonsDown` off the first
+    /// monitor-delivered sample after the tap came down, and that field is
+    /// derived from the window server's event state — which this app's own
+    /// consuming tap has been poisoning all pass long, because a swallowed
+    /// `leftMouseDown` never updates it. Only the HID level sits beneath
+    /// our own tap.
+    func testAMovedSampleClaimingReleaseWhileTheButtonIsHeldDoesNotAbandon()
+        throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.controller.physicalPrimaryButtonHeld = { true }
+        /* The first monitor echo after teardown: a warp-synthesized
+           mouseMoved, buttonsDown read from the poisoned session state. */
+        rig.environment.emit(.init(kind: .moved,
+                                   location: CGPoint(x: 1300, y: 450),
+                                   delta: CGPoint(x: -8, y: 0),
+                                   buttonsDown: false))
+
+        XCTAssertEqual(rig.environment.catchChanges, [true],
+                       "the handoff was abandoned on an echo while the "
+                        + "human was still holding the button")
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("abandoned")
+        })
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("claims the button is up")
+                && $0.1.contains("physically held")
+        }, "the suspect echo must be audited with what was read, or the "
+            + "next metal round is undiagnosable again")
+
+        /* The real release, corroborated by the hardware, still ends it. */
+        rig.controller.physicalPrimaryButtonHeld = { false }
+        rig.environment.emit(.init(kind: .moved,
+                                   location: CGPoint(x: 1300, y: 450),
+                                   delta: .zero, buttonsDown: false))
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("abandoned")
+        })
+    }
+
+    /// A real `primaryUp` outranks the hardware read: taken as the release
+    /// goes by, the HID state can still say held, and honouring it would
+    /// keep a press alive past its own end.
+    func testARealPrimaryUpAbandonsEvenIfTheHardwareReadLags() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.controller.physicalPrimaryButtonHeld = { true }
+        rig.environment.emit(.init(kind: .primaryUp,
+                                   location: CGPoint(x: 1300, y: 450),
+                                   delta: .zero, buttonsDown: false))
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("abandoned") && $0.1.contains("released before")
+        })
     }
 
     // MARK: - The gesture's consent outlives the epoch
@@ -734,6 +871,10 @@ private enum CrossStep: Equatable {
     case guestReturnedToPressOrigin(MirrorKit.Point)
     case guestPrimaryUp(MirrorKit.Point)
     case guestPointerLeft
+    /// The synthetic session-state primary down, posted so the window
+    /// server stops believing the button this app's own tap swallowed is
+    /// up. Its position relative to `hostDragBegan` is the defect.
+    case sessionButtonRearmed
     case hostDragBegan
 }
 
@@ -925,8 +1066,20 @@ private final class Rig {
         var fileDrags: [(item: HostFileDragItem, point: CGPoint,
                          event: NSEvent)] = []
         var catchChanges: [Bool] = []
+        /// Synthetic session-state button posts, in order, with where.
+        var syntheticButtonPosts: [(down: Bool, point: CGPoint)] = []
+        var syntheticPostsSucceed = true
 
         init(ledger: Ledger) { self.ledger = ledger }
+
+        func postSyntheticPrimaryButton(down: Bool,
+                                        at screenPoint: CGPoint) -> Bool {
+            syntheticButtonPosts.append((down, screenPoint))
+            if syntheticPostsSucceed {
+                ledger.steps.append(.sessionButtonRearmed)
+            }
+            return syntheticPostsSucceed
+        }
 
         func start(_ handler: @escaping ContinuityPointerEnvironment
                     .SampleHandler) -> AnyObject {

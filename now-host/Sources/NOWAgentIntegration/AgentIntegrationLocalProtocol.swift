@@ -40,7 +40,16 @@ public enum AgentIntegrationLocalProtocol {
     /// asked about another.
     ///
     /// Version 6 added the read-only session capability report.
-    public static let version = 12
+    ///
+    /// Version 13 turned `guest_log_tail` from one 40-line page into a
+    /// paged retrieval of the guest's whole 2000-line ring, with an area
+    /// filter: `logLineCount`'s bound became the ring's size, `logArea`
+    /// arrived, and the result became
+    /// `AgentIntegrationGuestLogRetrieval` — whole lines with declared
+    /// edges, the host log's shape — rather than the row report. A v12
+    /// companion would read the new result as a malformed row report, so
+    /// the version moves.
+    public static let version = 13
     public static let maximumMessageBytes = 64 * 1024
 }
 
@@ -295,8 +304,12 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// The name a `trash` reported, which is the only key a `restore`
     /// takes. `guestFilePath` carries where it is going back to.
     public var guestFileTrashName: String? = nil
-    /// How many log lines, newest last.
+    /// How many GUEST log lines, newest last, and which area tag to keep.
+    /// The count's bound is the guest ring's size, not one page: the host
+    /// side pages the guest's `tail` verb itself, so the socket asks for
+    /// the answer and never for a page.
     public var logLineCount: Int? = nil
+    public var logArea: String? = nil
     /// How many lines of the HOST's own log, and which area tag to keep.
     /// Their own fields rather than `logLineCount` reused: the two logs have
     /// different bounds (40 there, the ring's own size here), and one field
@@ -767,13 +780,16 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         projected(.transferCancel, requestID: requestID)
     }
 
-    /// #9 — the last lines of the guest's log for this launch.
+    /// #9 — lines of the guest's log for this launch, paged off the ring
+    /// by the host side however many `tail` round trips that takes.
     public static func guestLogTail(
         lines: Int? = nil,
+        area: String? = nil,
         requestID: UUID = UUID()
     ) -> Self {
         var request = projected(.guestLogTail, requestID: requestID)
         request.logLineCount = lines
+        request.logArea = area
         return request
     }
 
@@ -1021,12 +1037,16 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case bringToFront(AgentIntegrationFrontResult)
     case guestFileMutation(AgentIntegrationGuestFileMutationResult)
     case transferCancel(AgentIntegrationTransferCancelResult)
-    /* Four capabilities, one payload type: their verbs' declared output is
-       the same `x-rowArray` shape, so this side does not invent four. The
-       CASES stay distinct — a caller must be able to tell a log tail from a
-       Gestalt read, and the response's exactly-one-of guard counts them
-       separately. */
-    case guestLogTail(AgentIntegrationGuestRowReportResult)
+    /* Three capabilities, one payload type: their verbs' declared output is
+       the same `x-rowArray` shape, so this side does not invent three. The
+       CASES stay distinct — a caller must be able to tell a catalog search
+       from a Gestalt read, and the response's exactly-one-of guard counts
+       them separately. */
+    /// The guest's log, reassembled from however many `tail` pages the
+    /// ring took. Its own payload type since v13, for the reason the host
+    /// log has one: whole lines with the answer's declared edges, not the
+    /// row report the guest's single-page verbs share.
+    case guestLogTail(AgentIntegrationGuestLogRetrievalResult)
     /// This Mac's own log. Its own payload type rather than the row report
     /// the four above share: those carry a guest's words in the contract's
     /// `x-rowArray` shape, and this carries whole host log lines with the
@@ -1124,7 +1144,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public var transferCancelResult:
         AgentIntegrationTransferCancelResult? = nil
     public var guestLogTailResult:
-        AgentIntegrationGuestRowReportResult? = nil
+        AgentIntegrationGuestLogRetrievalResult? = nil
     public var hostLogTailResult:
         AgentIntegrationHostLogTailResult? = nil
     public var machineFactsResult:
@@ -1478,7 +1498,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
 
     public init(
         requestID: UUID,
-        guestLogTailResult: AgentIntegrationGuestRowReportResult
+        guestLogTailResult: AgentIntegrationGuestLogRetrievalResult
     ) {
         self.init(empty: requestID)
         self.guestLogTailResult = guestLogTailResult
@@ -1756,7 +1776,7 @@ public enum AgentIntegrationLocalCodec {
             "censusProbe", "censusCursor", "softwareDomain",
             "softwareCursor", "guestFileMutation",
             "guestFileDestinationPath", "guestFileTrashName",
-            "logLineCount", "hostLogLineCount", "hostLogArea",
+            "logLineCount", "logArea", "hostLogLineCount", "hostLogArea",
             "revealTarget", "diagnosticProbe",
             "mirrorReadRequest",
             "mirrorDriveRequest",
@@ -2181,16 +2201,25 @@ public enum AgentIntegrationLocalCodec {
                 "version", "requestID", "operation",
             ]
             if let lines = request.logLineCount {
-                /* The verb's own bound, refused here rather than a round
+                /* The ring's own bound, refused here rather than a round
                    trip to a 68030 to be refused there. */
                 guard AgentIntegrationGuestLogPolicy.isValidLineCount(lines)
                 else {
                     throw AgentIntegrationLocalTransportError.invalidMessage(
-                        "The guest serves at most "
+                        "The guest ring holds at most "
                             + "\(AgentIntegrationGuestLogPolicy.maximumLineCount)"
                             + " log lines")
                 }
                 tailKeys.insert("logLineCount")
+            }
+            if let area = request.logArea {
+                guard AgentIntegrationGuestLogPolicy.isValidArea(area) else {
+                    throw AgentIntegrationLocalTransportError.invalidMessage(
+                        "A guest log area is a tag of 1 to "
+                            + "\(AgentIntegrationGuestLogPolicy.areaTagScalars)"
+                            + " characters, as the log writes it")
+                }
+                tailKeys.insert("logArea")
             }
             expectedKeys = tailKeys
         case .hostLogTail:

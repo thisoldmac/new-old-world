@@ -94,13 +94,15 @@ state, and publishes only when the generation set is coherent and current.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
-sources-sha1: 4517239978a94c8faa6354c65b2041e059e7ee49
-sources-sha1: 4517239978a94c8faa6354c65b2041e059e7ee49
-sources-sha1: 4517239978a94c8faa6354c65b2041e059e7ee49
-sources-sha1: 4517239978a94c8faa6354c65b2041e059e7ee49
-sources-sha1: 4517239978a94c8faa6354c65b2041e059e7ee49
-sources-sha1: 4517239978a94c8faa6354c65b2041e059e7ee49
-derive contract-summary sha256=8f6f7fd03ea8af70207e29b42fafeee48c4c5b823cc760563374216d5eb10b18 lines=6
+sources-sha1: aa933a4fe63ae594dc58e2875278e5947345c0cf
+sources-sha1: aa933a4fe63ae594dc58e2875278e5947345c0cf
+sources-sha1: aa933a4fe63ae594dc58e2875278e5947345c0cf
+sources-sha1: aa933a4fe63ae594dc58e2875278e5947345c0cf
+sources-sha1: aa933a4fe63ae594dc58e2875278e5947345c0cf
+sources-sha1: aa933a4fe63ae594dc58e2875278e5947345c0cf
+derive contract-summary sha256=b14b3b24b3fc573434f6c89e4aaf656656f5a18c7938103788b8963198def4c0 lines=6
+sources-sha1: aa933a4fe63ae594dc58e2875278e5947345c0cf
+derive contract-summary sha256=b14b3b24b3fc573434f6c89e4aaf656656f5a18c7938103788b8963198def4c0 lines=6
     scripts/docs-source-group contract
 rederived: pending
 rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, contract-summary 6->6
@@ -264,4 +266,9 @@ rederived: 2026-08-15T03:19:43-0400 098e7ecf sources, sources, sources, sources,
 rederived: 2026-08-15T05:39:22-0400 829013ee sources, sources, sources, sources, sources, sources
 rederived: 2026-08-15T05:30:47-0400 a327ba45 unchanged
 rederived: 2026-08-15T06:15:14-0400 3c7d14e4 unchanged
+rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 sources, contract-summary 6->6
+rederived: 2026-08-15T03:17:33-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T04:01:11-0400 b18a891c sources
+rederived: 2026-08-15T06:18:27-0400 9232bd77 sources, sources, sources, sources, sources, sources, contract-summary 6->6, sources, contract-summary 6->6
 -->

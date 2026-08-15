@@ -318,6 +318,10 @@ run_c now-guest-ppc conn_fields_test.c       ""  src/connection/conn_fields.c
 run_c now-guest-ppc diag_layout_test.c       ""  src/diagnostics/diag_layout.c
 run_c now-guest-ppc mcp_layout_test.c        ""  src/mcp/mcp_layout.c
 run_c now-guest-ppc json_native_test.c       ""  src/core/json.c
+# `tail`'s shared selection: the grammar both faces parse, the exact area
+# match, and the sequence cursor that pages a LIVE ring without skipping
+# or repeating a line. The harness stands in for nowlog.c's ring.
+run_c now-guest-ppc logquery_native_test.c   ""  src/core/logquery.c
 run_c now-guest-ppc product_feature_policy_test.c "" \
       src/core/product_features.generated.c src/core/product_feature_policy.c
 run_c now-guest-ppc sha256_test.c            ""  src/update/sha256.c
@@ -349,6 +353,11 @@ run_c now-guest-ppc peer_name_test.c         ""  src/core/peer_name.c
 # every number in this arc was taken under, so a misparse does not fail -
 # it measures a condition nobody chose.
 run_c now-guest-ppc wirestat_cmd_test.c      ""  src/core/wirestat_cmd.c
+# The mirror debug gate: default OFF and a closed on/off grammar. Both
+# failure directions are quiet - a misparse floods every later log with
+# a condition nobody chose, a wrong default makes the gate a no-op.
+run_c now-guest-ppc mirror_debug_test.c      ""  src/mirror/mirror_debug.c
+run_py now-guest-ppc mirror_debug_gate_source_test.py
 run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"
 run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c

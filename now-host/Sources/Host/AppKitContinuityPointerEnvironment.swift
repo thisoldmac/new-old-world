@@ -61,6 +61,26 @@ final class AppKitContinuityPointerEnvironment:
         monitors.global = nil
     }
 
+    func postSyntheticPrimaryButton(down: Bool,
+                                    at screenPoint: CGPoint) -> Bool {
+        /* AppKit global (bottom-left origin) to CG global (top-left of the
+           primary display) — the same flip the tap's samples undo. */
+        let flipHeight = NSScreen.screens.first?.frame.maxY ?? 0
+        let point = CGPoint(x: screenPoint.x,
+                            y: flipHeight - screenPoint.y)
+        guard let event = CGEvent(
+            mouseEventSource: nil,
+            mouseType: down ? .leftMouseDown : .leftMouseUp,
+            mouseCursorPosition: point, mouseButton: .left) else {
+            return false
+        }
+        /* The session tap, not the HID one: the point is to correct the
+           SESSION's belief about the button, which this app's own consuming
+           tap starved. The HID level already carries the truth. */
+        event.post(tap: .cgSessionEventTap)
+        return true
+    }
+
     func hideCursor(on displayID: UInt32) {
         CGDisplayHideCursor(CGDirectDisplayID(displayID))
     }
@@ -187,11 +207,22 @@ final class AppKitContinuityPointerEnvironment:
         }
     }
 
-    /// Whether the session's primary button is physically held. Read only
-    /// where the event type cannot answer, and injectable so the rule below
-    /// is testable without a mouse.
+    /// Whether the primary button is physically held. Read only where the
+    /// event type cannot answer, and injectable so the rule below is
+    /// testable without a mouse.
+    ///
+    /// **`.hidSystemState`, not `.combinedSessionState`, and the difference
+    /// is this app's own tap.** The consuming tap swallows the physical
+    /// `leftMouseDown` — that is its job — so the session's event state
+    /// never learns the button went down: `.combinedSessionState` and
+    /// `NSEvent.pressedMouseButtons` both read UP for the whole captured
+    /// gesture. The first version of this function asked the session and
+    /// so reported this app's own swallowing back to it as a release
+    /// (metal, 2026-08-15 02:48 — four crossings abandoned in the same
+    /// second, with the button held throughout). Only the HID level sits
+    /// beneath the tap.
     nonisolated static func primaryButtonIsHeld() -> Bool {
-        CGEventSource.buttonState(.combinedSessionState, button: .left)
+        CGEventSource.buttonState(.hidSystemState, button: .left)
     }
 
     nonisolated static func sample(
@@ -296,16 +327,36 @@ final class AppKitContinuityPointerEnvironment:
         handler(Self.sample(event), event)
     }
 
-    nonisolated private static func sample(_ event: NSEvent)
-        -> HostPointerSample {
+    nonisolated static func sample(
+        _ event: NSEvent,
+        primaryHeld: () -> Bool = AppKitContinuityPointerEnvironment
+            .primaryButtonIsHeld
+    ) -> HostPointerSample {
         let kind: HostPointerSample.Kind
+        let buttonsDown: Bool
         switch event.type {
         case .leftMouseDown:
             kind = .primaryDown
+            buttonsDown = true
         case .leftMouseUp:
             kind = .primaryUp
+            buttonsDown = false
+        case .leftMouseDragged:
+            kind = .moved
+            buttonsDown = true
         default:
             kind = .moved
+            /* `pressedMouseButtons` alone is not enough here, for the same
+               reason as the tap's `.mouseMoved` case above and one layer
+               deeper: it reads the session's event state, which this app's
+               own consuming tap starves — a swallowed `leftMouseDown`
+               never reaches it, so a captured gesture reads button-up on
+               every monitor sample. The window server also keeps
+               synthesizing plain `mouseMoved` instead of `leftMouseDragged`
+               for exactly that reason, which is why this case is the one a
+               held post-teardown pointer actually arrives through
+               (metal, 2026-08-15 02:48). */
+            buttonsDown = NSEvent.pressedMouseButtons != 0 || primaryHeld()
         }
         /* NSEvent's mouse delta is device-oriented: positive Y means down.
            The display arrangement is AppKit-oriented, so invert it once at
@@ -314,7 +365,7 @@ final class AppKitContinuityPointerEnvironment:
         return HostPointerSample(
             kind: kind, location: NSEvent.mouseLocation,
             delta: CGPoint(x: event.deltaX, y: -event.deltaY),
-            buttonsDown: NSEvent.pressedMouseButtons != 0,
+            buttonsDown: buttonsDown,
             eventUptime: ProcessInfo.processInfo.systemUptime)
     }
 }

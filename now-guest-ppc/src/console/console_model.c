@@ -24,6 +24,7 @@
 #include "commands.h"
 #include "fileshare.h"
 #include "json.h"
+#include "logquery.h"
 #include "nowlog.h"
 #include "prefs.h"
 #include "screenshot.h"
@@ -1097,31 +1098,43 @@ static void console_model_dispatch(const char *input)
         return;
     }
     if (strcmp(name, "tail") == 0) {
-        char lines[2600];
-        long count = target[0] != '\0' ? strtol(target, NULL, 10) : 20;
-        const char *p;
-        int got;
+        /* One grammar and one selection, shared with the wire face
+           (logquery.c) — this branch only renders. "tail [lines] [area]
+           [before N]" pages the whole 2000-line ring from a keyboard,
+           which used to take the Logs page. */
+        LogQuery q;
+        LogPage page;
+        int ti;
 
-        if (count < 1) { count = 1; }
-        if (count > 40) { count = 40; }
-        got = now_log_tail((int)count, lines, sizeof lines);
+        now_logquery_defaults(&q);
+        now_logquery_parse_line(target, &q);
+        now_logquery_select(&q, &page);
+
         snprintf(line, sizeof line, "  %s", now_log_path());
         console_model_append(line);
-        if (got == 0) {
-            console_model_append("  (nothing logged yet)");
+        if (page.matching == 0) {
+            console_model_append(q.area[0] != '\0'
+                                     ? "  (no lines in that area)"
+                                     : "  (nothing logged yet)");
             return;
         }
-        for (p = lines; *p != '\0'; ) {
-            const char *nl = strchr(p, '\n');
-            long len = nl != NULL ? (long)(nl - p) : (long)strlen(p);
-
-            if (len > (long)sizeof line - 3) {
-                len = (long)sizeof line - 3;
-            }
-            memcpy(line, p, (size_t)len);
-            line[len] = '\0';
+        if (page.returned == 0) {
+            console_model_append("  (nothing older than that cursor)");
+            return;
+        }
+        for (ti = 0; ti < page.returned; ++ti) {
+            snprintf(line, sizeof line, "  %.117s",
+                     now_log_line(page.idx[ti]));
             console_model_append(line);
-            p = nl != NULL ? nl + 1 : p + strlen(p);
+        }
+        if (page.older > 0) {
+            /* The next page, spelled as the command that fetches it. */
+            snprintf(line, sizeof line,
+                     "  ... %ld older match; tail %ld %.6s%sbefore %lu",
+                     page.older, q.lines, q.area,
+                     q.area[0] != '\0' ? " " : "",
+                     page.seq[0]);
+            console_model_append(line);
         }
         return;
     }

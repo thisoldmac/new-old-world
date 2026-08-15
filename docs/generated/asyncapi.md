@@ -180,7 +180,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 | `putstat` | — | `putstat` | Where the last file the guest RECEIVED spent its time: bytes, chunk and write counts, and the milliseconds inside FSWrite against the whole receive path. |
 | `desktop` | — | `desktop`, `source`, `hasPattern`, `hasPicture`, `patternBytes`, `patternCarried`, `note` | What the guest's desktop is actually drawn from, asked of the running machine rather than read out of a resource. |
 | `wirestat` | `action`, `value` | `wirestat` | How long the guest takes to NOTICE a request, as two distributions it alone can take: the interval between its own wire service passes, and the delay from Open Transport announcing that data arrived to its event loop reading it. |
-| `tail` | `lines` | `tail` | The last lines of the guest's log for this launch. |
+| `tail` | `lines`, `area`, `before` | `tail`, `log` | Lines of the guest's log for this launch, read from the in-memory ring — 2000 lines (the guest's kLogKept, restated here so both sides read one number), live even when disk logging is off. |
 | `vprobe` | — | `vprobe` | Measure the guest's VRAM read cost by access method: raw framebuffer reads at 8/16/32/64-bit widths against the CopyBits baseline, reread caching, partial-read linearity, and pixel fidelity. |
 | `screenshot` | `depth`, `save` | `screenshot` | Capture the guest's screen. |
 | `shotdiag` | — | `shotdiag` | Stage a capture down the guest's real wire path and report where it read from: the framebuffer base as the guest resolved it, StripAddress of that base, whether the machine is in 32-bit addressing at the moment of the walk, and the first sixteen bytes of row 0 as the walk sees them beside the same row as CopyBits copies it. |
@@ -219,6 +219,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 | `axsnap` | — | `axsnap` | The cheap one: who is front, whether the reference layer can see it, and how many references are live. |
 | `cycle` | — | `cycle` | Brings each application on the guest forward in turn, with the anchor plane armed, so that it executes its own event loop once and the resident captures its anchor — then restores the application that was frontmost. |
 | `mirror` | — | `mirror` | The guest's read-only lifecycle view of the ONE optional NOW Extension and its data planes. |
+| `mirrorlog` | `action` | `mirrorlog` | The `mirror` log area's DEBUG TIER, on one session-scoped switch that is OFF each launch. |
 
 ## Change discipline
 

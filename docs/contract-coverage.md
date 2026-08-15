@@ -236,7 +236,12 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **55 verbs.** The six
+The registry is `x-commands` in the contract: **58 verbs.** `mirrorlog`
+joined on 2026-08-15 with the mirror debug-log gate. (Re-deriving for
+that row found this sentence already two behind at 55 while the block at
+the foot said 57 — the fourth time a hand-copied count here has drifted
+behind its own derivation. The numbers in this paragraph are the awk's
+output on 2026-08-15, nothing else.) The six
 Development verbs landed on 2026-08-09 and the update verb landed on
 2026-08-10; both are grouped at the foot of the table. Sixteen earlier
 verbs landed on 2026-07-31; the
@@ -309,6 +314,7 @@ number here has been found wrong by re-deriving it.
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
 | `transitions` | what changed between two event passes, from the transition plane's ring | ✅ | ❌ |
 | `mirror` | one NOW Extension: lifecycle/build and P1-P4 support, format, request, active, freshness, generation, degradation and refusal | ✅ | ❌ |
+| `mirrorlog` | the `mirror` log area's debug tier — session-scoped, off each launch; lifecycle and warn/error lines log regardless | ✅ | ❌ — no mirror plane, nothing to gate |
 | `development` | configured Projects root, selected MPW toolchain and active jobs | ✅ | ❌ — typed unavailable |
 | `development-project` | measure and page one active guest project's source manifest | ✅ | ❌ — typed unavailable |
 | `development-stage` | prepare, inspect, verify, discard or promote an inactive candidate | ✅ | ❌ — typed unavailable |
@@ -1000,12 +1006,12 @@ without anyone noticing, and how `key` and `net` sat here twice. Run
 these from the repository root:
 
 ```sh
-# the registry — 54
+# the registry — 58 (re-run 2026-08-15)
 awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
      f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
     contract/asyncapi.yaml | sort -u
 
-# what the PowerPC guest serves — 51
+# what the PowerPC guest serves — 55 (re-run 2026-08-15)
 grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
     now-guest-ppc/src/commands/commands.c \
   | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
@@ -1363,21 +1369,22 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: daaf719760c1e72060f8864d8dccdbf56a2aab1f
-sources-sha1: daaf719760c1e72060f8864d8dccdbf56a2aab1f
-sources-sha1: daaf719760c1e72060f8864d8dccdbf56a2aab1f
-sources-sha1: daaf719760c1e72060f8864d8dccdbf56a2aab1f
+sources-sha1: 49bf8fce30f8d15f77cbbcfde11fa3e0498fa108
+sources-sha1: 49bf8fce30f8d15f77cbbcfde11fa3e0498fa108
+sources-sha1: 49bf8fce30f8d15f77cbbcfde11fa3e0498fa108
+sources-sha1: 49bf8fce30f8d15f77cbbcfde11fa3e0498fa108
+sources-sha1: 49bf8fce30f8d15f77cbbcfde11fa3e0498fa108
 derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=7a074d9ca51db9c20f63c79ddbbfae7e25eeedfb067611149646dcabfdfd49ec lines=57 published
+derive x-commands-registry sha256=936c1bfca0c82db7b495e429023cc67cea89c3ea40334ae04887f2ba2479f8c6 lines=58 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
          f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=c4f77ee69b62d3bab01479180d6d3b6e677d499a064151579472859454fd61ce lines=54 published
+derive ppc-verbs sha256=ead47d1af0629e7f214a2950f171cd4c47f063393e9f281374e09ae2a74bd337 lines=55 published
     grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
         now-guest-ppc/src/commands/commands.c \
       | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
@@ -1582,4 +1589,9 @@ rederived: 2026-08-15T03:19:42-0400 098e7ecf sources, sources, sources, sources
 rederived: 2026-08-15T05:39:21-0400 829013ee sources, sources, sources, sources
 rederived: 2026-08-15T05:30:46-0400 a327ba45 unchanged
 rederived: 2026-08-15T06:15:14-0400 3c7d14e4 unchanged
+rederived: 2026-08-15T03:16:29-0400 2c7ff2a1 sources, x-commands-registry 57->58, ppc-verbs 54->55
+rederived: 2026-08-15T03:17:32-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T03:18:49-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T04:01:10-0400 b18a891c sources
+rederived: 2026-08-15T06:18:27-0400 9232bd77 sources, sources, sources, sources, sources
 -->

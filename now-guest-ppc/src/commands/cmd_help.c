@@ -98,6 +98,10 @@ static const char *const d_tail[] = {
     "  folder beside this application, so what happened",
     "  survives a crash that takes everything else. The",
     "  same command works from Other Mac's console.",
+    "  An area narrows to one subsystem's tag (\"files\",",
+    "  \"wire\"); \"before N\" continues an answer at the",
+    "  cursor its last line offered, back through all",
+    "  2000 held lines.",
     NULL
 };
 
@@ -472,6 +476,21 @@ static const char *const d_axtree[] = {
     "  otherwise would be a second, quieter minter.",
     NULL
 };
+static const char *const d_mirrorlog[] = {
+    "  The mirror log area's DEBUG TIER, on a session switch that is off",
+    "  each launch. Off, the ring keeps the product's story: arm/disarm,",
+    "  epoch begin, selection and grant lines, and every warning and",
+    "  error. On, the per-epoch counter dumps and per-event traces",
+    "  return - the plane's own diagnostics, ~25 lines per disarm.",
+    "",
+    "  Not saved on purpose: a diagnostic that survives a relaunch is a",
+    "  configuration nobody chose, and this one can bury every later",
+    "  log. The toggle logs its own transitions, so the log names who",
+    "  turned it on. Bare or unrecognised reports without changing",
+    "  anything.",
+    NULL
+};
+
 static const char *const d_mirror[] = {
     "  What this Mac can prove about the one NOW Extension: lifecycle,",
     "  exact resident build, and P1-P4 support, request, active, format,",
@@ -659,8 +678,9 @@ const NowCommandDoc kNowCommandDocs[] = {
       "ls [path]", d_ls },
     { "put", 0, "send a file to Other Mac",
       "put <full path>", d_put },
-    { "tail", 1, "the last lines of this launch's log",
-      "tail [lines]   (default 20, most 40)", d_tail },
+    { "tail", 1, "lines of this launch's log, pageable",
+      "tail [lines] [area] [before N]   (default 20, most 40 a page)",
+      d_tail },
     { "net", 1, "this Mac's link, address and network hardware",
       "net", d_net },
     { "putstat", 1, "where the last file received spent its time",
@@ -754,6 +774,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "axsnap", d_axsnap },
     { "mirror", 1, "NOW Extension lifecycle and P1-P4 plane facts",
       "mirror", d_mirror },
+    { "mirrorlog", 1, "mirror debug diagnostics in the log, on or off",
+      "mirrorlog [on|off]", d_mirrorlog },
     { "cycle", 1, "bring each application forward once so the Mirror can "
       "see it", "cycle", d_cycle },
     { "help", 1, "list commands (\"help <cmd>\" for one)",
