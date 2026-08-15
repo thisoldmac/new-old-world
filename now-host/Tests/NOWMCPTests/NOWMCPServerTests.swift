@@ -180,6 +180,134 @@ final class NOWMCPServerTests: XCTestCase {
         }
     }
 
+    /// Every published tool schema is a JSON Schema a conforming MCP client
+    /// will accept — which starts with `type: "object"` at the root.
+    ///
+    /// This gate exists because its absence cost the entire agent surface.
+    /// 29 of 46 rows rendered an `outputSchema` whose only root key was
+    /// `oneOf`, declaring no type; the MCP specification restricts both
+    /// schemas to `type: "object"` at the root ("Currently restricted to
+    /// type: object at the root level"), so a conforming client rejected
+    /// `tools/list` **as a whole** and got zero tools, not 17. Nothing here
+    /// noticed for as long as it shipped: every gate in this tree was green,
+    /// the host's MCP page read "Running" throughout, and the hand-rolled
+    /// curl client used to check the transport does no schema validation.
+    /// A transport that is reachable is not a payload that is valid, and
+    /// until this test nothing in this repository asserted the difference.
+    ///
+    /// Two properties are the point rather than the assertion count:
+    ///
+    /// - **It reads the rendered payload, not the descriptors.** The root
+    ///   type is injected by `NOWMCPServer.tools`, so checking
+    ///   `mcpDescriptor` directly would check the wrong artifact — it is
+    ///   what goes over the wire that a client validates.
+    /// - **Its tool list is the catalog's**, arrived at through `tools/list`
+    ///   rather than restated here. A fixture would test one half twice, and
+    ///   the row it forgot would be exactly the row nobody checked — which
+    ///   is the shape of the defect this replaces. A capability added
+    ///   tomorrow is covered without anyone editing this file.
+    func testEveryRenderedToolSchemaSatisfiesTheMCPRootTypeRequirement()
+        async throws {
+        let server = try await Self.initializedServer(
+            client: StubAgentIntegrationClient())
+        let response = try Self.object(await server.handle(
+            try Self.request(id: 2, method: "tools/list", params: [:])))
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let tools = try XCTUnwrap(result["tools"] as? [[String: Any]])
+
+        /* Derived, not restated: if this is ever zero or short, the loop
+           below would pass by having checked nothing. */
+        XCTAssertEqual(tools.count,
+                       HostProjectionCatalog.projections.count)
+        XCTAssertFalse(tools.isEmpty)
+
+        for tool in tools {
+            let name = (tool["name"] as? String) ?? "<unnamed>"
+
+            /* `inputSchema` is required of every tool; `outputSchema` is
+               optional, and a row that omits it omits it deliberately. Both
+               are held to the same root type when present. */
+            let input = try XCTUnwrap(
+                tool["inputSchema"] as? [String: Any],
+                "\(name) publishes no inputSchema. The MCP specification "
+                    + "requires one on every tool.")
+            XCTAssertEqual(
+                input["type"] as? String, "object",
+                "\(name).inputSchema declares root type "
+                    + "\(input["type"].map { "\($0)" } ?? "none") — the MCP "
+                    + "specification restricts it to \"object\", and a "
+                    + "conforming client rejects the whole tools/list "
+                    + "rather than this one row.")
+
+            if let output = tool["outputSchema"] as? [String: Any] {
+                XCTAssertEqual(
+                    output["type"] as? String, "object",
+                    "\(name).outputSchema declares root type "
+                        + "\(output["type"].map { "\($0)" } ?? "none") — the "
+                        + "MCP specification restricts it to \"object\" at "
+                        + "the root, and a conforming client rejects the "
+                        + "whole tools/list rather than this one row. A row "
+                        + "rendering a discriminated outcome states its "
+                        + "union in `oneOf` and lets NOWMCPServer.tools "
+                        + "supply the root type.")
+
+                /* A root that says `object` while its branches are not is
+                   the same defect wearing the fix: the union would then be
+                   unsatisfiable and no result could validate against it.
+                   Cheap to check, and it is what makes the injected root
+                   type TRUE rather than merely present. */
+                for (index, branch) in
+                    ((output["oneOf"] as? [[String: Any]]) ?? []).enumerated() {
+                    XCTAssertEqual(
+                        branch["type"] as? String, "object",
+                        "\(name).outputSchema.oneOf[\(index)] is not "
+                            + "object-shaped, so the root's declared "
+                            + "\"object\" type cannot be satisfied by it.")
+                }
+            } else {
+                XCTAssertNil(
+                    tool["outputSchema"],
+                    "\(name) publishes an outputSchema that is not a JSON "
+                        + "object, which no client can validate against.")
+            }
+
+            /* Whatever it declares, it has to survive serialization: a
+               schema holding a non-JSON leaf never reaches a client at all,
+               and that failure looks like a transport fault. */
+            XCTAssertTrue(
+                JSONSerialization.isValidJSONObject(tool),
+                "\(name) does not serialize as JSON.")
+        }
+    }
+
+    /// The injected root type is a uniform fact supplied, never a wrong
+    /// answer repaired.
+    ///
+    /// `NOWMCPServer.tools` fills in `type: "object"` only where a row left
+    /// the root type unstated. A row that states a root type that is not
+    /// `object` is saying something false about its own result — an
+    /// `outputSchema` of `type: "array"` cannot describe `structuredContent`
+    /// — and injection must not paper over it. This asserts the descriptors
+    /// themselves, which is the one thing the gate above deliberately does
+    /// not read.
+    func testNoProjectionDeclaresANonObjectSchemaRoot() {
+        for projection in HostProjectionCatalog.projections {
+            let descriptor = projection.mcpDescriptor
+            let name = projection.capability.rawValue
+            for key in ["inputSchema", "outputSchema"] {
+                guard let schema = descriptor[key] as? [String: Any],
+                      let declared = schema["type"] else { continue }
+                XCTAssertEqual(
+                    declared as? String, "object",
+                    "\(name).\(key) declares root type \(declared). The MCP "
+                        + "specification restricts it to \"object\"; leaving "
+                        + "it unstated is fine and gets it injected, but "
+                        + "stating another type is a claim about this row's "
+                        + "own result that cannot be true.")
+            }
+        }
+    }
+
     func testListsOnlyApprovedBoundedTools() async throws {
         let server = try await Self.initializedServer(
             client: StubAgentIntegrationClient())
