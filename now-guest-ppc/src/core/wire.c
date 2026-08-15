@@ -18,6 +18,7 @@
 #include "console_model.h"   /* the exec plane runs the Console's dispatch */
 #include "continuity_intake.h"
 #include "continuity_selection.h"
+#include "continuity_offer_intake.h"
 #include "json.h"
 #include "loopstat.h"
 #include "mirror_policy.h"
@@ -528,6 +529,10 @@ static void link_drop_transfers(void)
        generation grantable across a reconnect would let the next session
        collect a drag the previous one set up. */
     now_continuity_selection_forget();
+    /* Same rule, inverted: what the host was holding out is consent given
+       over ONE connection too, and a stale offer must not answer for a
+       session that ended. */
+    now_continuity_offer_forget();
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -3770,6 +3775,11 @@ static void service_host_show(void)
 
 enum { kGetTimeoutTicks = 60 * 30 };
 
+/* Forward reference: defined below with finish_put, which checks the
+   same field for the other direction. */
+static unsigned long json_find_u32(const char *json, const char *key,
+                                   Boolean *found);
+
 static struct {
     Boolean pending;                  /* asked; no bytes yet */
     Boolean receiving;                /* file.begin seen; writing */
@@ -3920,6 +3930,63 @@ int now_wire_get_host(const char *path, const char *name, char *err, long cap)
     return 0;
 }
 
+/* Ask for the item the host published via continuity.offer — the
+   inverted grab, guest-initiated. This is the ONE place the guest reads
+   outside the Files share on the host's word (see the schema's own
+   argument for why that is safe); everything past the send is the
+   ordinary pull g_get already is, so a grabbed offer resumes no
+   differently, cancels the same way and gets the same crc check at
+   get_end.
+
+   Names no path — only the offer's own epoch and generation, which is
+   the whole of what a continuity.grab may ask for in this direction. */
+int now_wire_get_offer(char *err, long cap)
+{
+    const NowContinuityOfferTable *offer = now_continuity_offer_table();
+    unsigned long ask_epoch, ask_generation;
+    char json[160];
+
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Not connected");
+        return -1;
+    }
+    if (g_get.pending || g_get.receiving || wire_busy()) {
+        snprintf(err, (size_t)cap, "A transfer is already in flight");
+        return -1;
+    }
+    if (!now_continuity_offer_grab_ready(offer, now_continuity_live_epoch(),
+                                         &ask_epoch, &ask_generation)) {
+        snprintf(err, (size_t)cap, "Nothing is being held out right now");
+        return -1;
+    }
+    if (offer->item.is_folder) {
+        /* Refused HERE, locally and silently on the wire — the same
+           shape as a Finder declining a drop, and the same reason
+           kNowGrabFolderNotYet refuses one in the other direction: the
+           file lane serves one file, and an empty folder is a lie
+           shaped like a transfer. */
+        snprintf(err, (size_t)cap,
+                 "That is a folder; this Mac cannot take one yet");
+        return -1;
+    }
+    ++g.offer_seq;
+    g_get.id = g.offer_seq;
+    g_get.expected = 0;
+    snprintf(g_get.name, sizeof g_get.name, "%.31s", offer->item.name);
+    snprintf(json, sizeof json,
+             "{\"type\":\"continuity.grab\",\"version\":%u,\"id\":%ld,"
+             "\"epoch\":%lu,\"generation\":%lu}",
+             (unsigned)NOW_CONTINUITY_VERSION, g_get.id, ask_epoch,
+             ask_generation);
+    if (!send_control(json)) {
+        snprintf(err, (size_t)cap, "Connection lost");
+        return -1;
+    }
+    g_get.pending = true;
+    g_get.deadline = TickCount() + kGetTimeoutTicks;
+    return 0;
+}
+
 /* The answer: bytes are coming. Opening the file here rather than at
    the end means a big file never has to be held in memory - the same
    rule an inbound push already follows. */
@@ -4031,6 +4098,8 @@ static void get_begin(const char *reply)
 static void get_end(const char *reply)
 {
     char line[128];
+    unsigned long want_crc;
+    Boolean has_crc;
 
     if (!g_get.receiving || now_json_find_int(reply, "id", -1) != g_get.id) {
         return;
@@ -4040,6 +4109,21 @@ static void get_end(const char *reply)
                 g_get.id, g_get.rx.received, g_get.expected);
         get_cleanup(false);
         get_note("The other Mac stopped sending");
+        return;
+    }
+    /* The same seam check finish_put makes for the other direction. An
+       absent crc32 is "unchecked" and the pull completes anyway; a
+       mismatch discards the bytes rather than keeping a corrupt file
+       under the real name — the one thing worse than no file here is
+       one that looks like it arrived. */
+    want_crc = json_find_u32(reply, "crc32", &has_crc);
+    if (has_crc && want_crc != g_get.rx.crc) {
+        now_log(kLogError, "get",
+                "#%ld checksum failed: wanted %08lX, got %08lX, %ld bytes "
+                "discarded", g_get.id, want_crc, g_get.rx.crc,
+                g_get.rx.received);
+        get_cleanup(false);
+        get_note("The checksum did not match - nothing was kept");
         return;
     }
     if (now_files_receive_finish(&g_get.rx) != kFilesOK) {
@@ -7408,6 +7492,14 @@ static int handle_frame(const char *reply)
         serve_continuity_grab(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "continuity.offer")) {
+        /* THE INVERTED HALF: what the host is carrying toward this Mac.
+           No answer is owed - see the schema's own "AN OFFER IS NOT
+           ANSWERED" - so this just folds it into the table the `offer`
+           command and now_wire_get_offer both read. */
+        now_continuity_offer_intake(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "capture.request")) {
         serve_capture(reply);
         return 1;
@@ -7601,12 +7693,27 @@ static int handle_frame(const char *reply)
             g_update.pending = false;
         } else if (g_get.pending && refused_id == g_get.id) {
             char reason[96];
+            char code[32];
+            char line[144];
 
             get_cleanup(false);
+            code[0] = '\0';
+            now_json_find_string(reply, "code", code, sizeof code);
             if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
                 strcpy(reason, "the other Mac refused");
             }
-            get_note(reason);
+            /* THE CODE, NAMED, not just the prose. bad-epoch,
+               stale-selection, no-selection and offer-expired are the
+               continuity.grab family's refusals, and a person reading
+               "the other Mac refused" cannot tell an offer that closed
+               from a plain file.get failure - the whole point of a
+               named vocabulary is that it survives being read back. */
+            if (code[0] != '\0') {
+                snprintf(line, sizeof line, "%.90s (%.30s)", reason, code);
+                get_note(line);
+            } else {
+                get_note(reason);
+            }
         } else if (!browse_refused(reply)) {
             send_refused(reply);
         }

@@ -223,6 +223,15 @@ void conn_set_get_note(ConnGetNote fn);
 int now_wire_get_host(const char *path, const char *name,
                       char *err, long cap);
 
+/* The inverted crossing: ask for the item the host published via
+   continuity.offer, rather than a path this Mac names. Reuses the same
+   pull machinery above whole - same one-transfer-wide gate, same
+   progress, cancel and crc check - so a person watching the Files pane
+   cannot tell the two apart once bytes start moving. 0 once
+   continuity.grab is on the wire; -1 with a reason in err, including
+   "nothing is being held out right now" when no offer is live. */
+int now_wire_get_offer(char *err, long cap);
+
 /* Where a PULL (file.get, the entry point above) actually lands.
    use=false (the default) means the downloads folder — byte-identical
    to every pull before this existed; use=true redirects it to the

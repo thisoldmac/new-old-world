@@ -17,6 +17,8 @@
 #include <string.h>
 
 #include "machine_names.h"
+#include "continuity_intake.h"       /* now_continuity_live_epoch */
+#include "continuity_offer_intake.h"
 #include "capture.h"
 #include "census.h"
 #include "rom_dump.h"
@@ -934,6 +936,105 @@ static void run_mirrorlog(const char *request_json, long id,
              id, now_mirror_debug_on() ? "on" : "off");
 }
 
+/* The console face of the inverted crossing (contract's x-commands
+   `offer`, declared 2026-08-15 ahead of any guest). A bare call REPORTS
+   what continuity.offer last published, honestly distinguishing "no
+   live epoch" from "no offer under it" from "closed with its epoch" —
+   see now_continuity_offer_report_kind. "--take" sends the
+   continuity.grab and reports only that it was ASKED, the same shape
+   `put`'s console reply already uses for a transfer this call cannot
+   wait out: the answer streams down the ordinary file lane and its
+   outcome shows up in the Files pane, putstat or tail, not in this
+   reply.
+
+   ONE IMPLEMENTATION BEHIND BOTH FACES, like every command here: this
+   is the only place either the wire's command.request or the console's
+   fallback (console_model.c, which sends no explicit dispatch line of
+   its own for a verb whose grammar is exactly the raw rest-of-line —
+   see CommandParityTests' reachedByFallback) reaches this capability. */
+static void run_offer(const char *request_json, long id, char *out, long cap)
+{
+    const NowContinuityOfferTable *offer = now_continuity_offer_table();
+    unsigned long live = now_continuity_live_epoch();
+    char action[16];
+    char esc_name[80];
+
+    action[0] = '\0';
+    now_cmd_arg_rest(request_json, "action", action, sizeof action);
+
+    if (strcmp(action, "--take") == 0) {
+        char err[96];
+        char esc_err[192];
+
+        if (now_wire_get_offer(err, sizeof err) != 0) {
+            now_json_escape(err, esc_err, sizeof esc_err);
+            snprintf(out, (size_t)cap,
+                     "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                     "\"error\":{\"code\":\"refused\",\"message\":\"%s\"}}",
+                     id, esc_err);
+            return;
+        }
+        now_json_escape(offer->item.name, esc_name, sizeof esc_name);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Asked for\",\"%s\"],"
+                 "[\"Status\",\"requested; see putstat or tail for "
+                 "progress\"]]}}",
+                 id, esc_name);
+        return;
+    }
+
+    switch (now_continuity_offer_report_kind(offer, live)) {
+    case kNowOfferReportNoEpoch:
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Offer\","
+                 "\"no live Continuity epoch\"]]}}", id);
+        return;
+    case kNowOfferReportClosed:
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Offer\","
+                 "\"the last one closed with its epoch\"]]}}", id);
+        return;
+    case kNowOfferReportPresent:
+        break;
+    default:
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Offer\","
+                 "\"nothing published yet\"]]}}", id);
+        return;
+    }
+
+    {
+        char type_word[8], creator_word[8];
+        char esc_type[16], esc_creator[16];
+
+        now_json_escape(offer->item.name, esc_name, sizeof esc_name);
+        type_word[0] = '\0';
+        creator_word[0] = '\0';
+        if (offer->item.have_file_type) {
+            memcpy(type_word, &offer->item.file_type, 4);
+            type_word[4] = '\0';
+        }
+        if (offer->item.have_creator) {
+            memcpy(creator_word, &offer->item.creator, 4);
+            creator_word[4] = '\0';
+        }
+        now_json_escape(type_word, esc_type, sizeof esc_type);
+        now_json_escape(creator_word, esc_creator, sizeof esc_creator);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Name\",\"%s\"],"
+                 "[\"Kind\",\"%s\"],[\"Type\",\"%s\"],[\"Creator\",\"%s\"],"
+                 "[\"Size\",\"%ld bytes\"],[\"Generation\",\"%lu\"]]}}",
+                 id, esc_name, offer->item.is_folder ? "folder" : "file",
+                 esc_type, esc_creator, offer->item.data_size,
+                 offer->generation);
+    }
+}
+
 static void run_net(long id, char *out, long cap)
 {
     NetFacts facts;
@@ -1787,6 +1888,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "mirrorlog") == 0) {
         run_mirrorlog(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "offer") == 0) {
+        run_offer(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "cycle") == 0) {

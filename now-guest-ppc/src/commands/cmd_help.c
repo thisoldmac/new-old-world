@@ -619,6 +619,15 @@ static const char *const d_mkdir[] = {
     NULL
 };
 
+static const char *const d_offer[] = {
+    "  The file the person at the Mac is holding out over the shared",
+    "  edge - a bare call reports it (name, kind, type/creator, size),",
+    "  --take asks for it, the same way a Files pull works. No name",
+    "  and no path: this verb reaches nothing the host has not",
+    "  published by a person's own gesture.",
+    NULL
+};
+
 static const char *const d_chat[] = {
     "  Talks to a model through the other Mac's harness.",
     "  The conversation lives over there, one turn at a",
@@ -761,6 +770,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "mirror", d_mirror },
     { "mirrorlog", 1, "mirror debug diagnostics in the log, on or off",
       "mirrorlog [on|off]", d_mirrorlog },
+    { "offer", 1, "the file held out over the shared edge, or take it",
+      "offer [--take]", d_offer },
     { "cycle", 1, "bring each application forward once so the Mirror can "
       "see it", "cycle", d_cycle },
     { "help", 1, "list commands (\"help <cmd>\" for one)",
