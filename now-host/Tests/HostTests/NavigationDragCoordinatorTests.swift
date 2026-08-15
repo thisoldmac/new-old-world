@@ -170,6 +170,62 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(preview.target, .shelf(.network, beforeModuleID: nil))
     }
 
+    /// Hovering an insertion band must not reflow the stack either.
+    ///
+    /// Wave 1 suppressed the eager preview for `.insert` only. Every
+    /// insertion band on every row resolves a `.zone` target, and every
+    /// `.zone` target is a `.move` — so the mechanism the `.insert` guard
+    /// exists to prevent stayed fully live through the top and bottom bands
+    /// of every row and through the whole canvas fallback. The insertion
+    /// line already says where the row lands; moving the rows as well takes
+    /// the destination out from under a pointer that has not moved, which is
+    /// a real `draggingExited` and restarts AppKit's spring-load dwell.
+    func testHoveringAnInsertionBandDoesNotReflowTheStack() throws {
+        let baseline = NavigationLayout.standard(for: .standard)
+
+        let preview = try XCTUnwrap(NavigationDragPreview(
+            dragged: .shelf(.network),
+            target: .zone(.upper, index: 1),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
+
+        XCTAssertEqual(preview.layout, baseline,
+                       "an insertion line says where it lands; "
+                         + "it does not move rows")
+        XCTAssertEqual(preview.target, .zone(.upper, index: 1))
+    }
+
+    /// The rows' targets and the commands' indices must name the same rows.
+    ///
+    /// `HostRootView` renders `dragPreview?.layout ?? sidebar.layout`, so
+    /// every `beforeTarget: .zone(zone, index: index)` a row builds is an
+    /// index into the PREVIEW — while `canDrop`, `previewDrop` and
+    /// `performDrop` all resolve against `sidebar.layout`, the baseline. Any
+    /// preview that reorders a stack makes those two index spaces differ,
+    /// and the resolved target then feeds the next preview. Freezing the
+    /// presentation at the baseline for the whole drag makes them one space
+    /// by construction, which is why the `.move` guard is not cosmetic.
+    func testFooterRowTargetsAndCommandsShareOneIndexSpace() throws {
+        let baseline = NavigationLayout.standard(for: .standard)
+        let preview = try XCTUnwrap(NavigationDragPreview(
+            dragged: .module("chat"),
+            target: .zone(.lower, index: 0),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
+
+        let previewIndex = try XCTUnwrap(preview.layout.lower.firstIndex {
+            $0.id == NavigationShelfID.network.rawValue
+        })
+        let baselineIndex = try XCTUnwrap(baseline.lower.firstIndex {
+            $0.id == NavigationShelfID.network.rawValue
+        })
+
+        XCTAssertEqual(previewIndex, baselineIndex,
+                       "a target the pointer aimed at in the preview must "
+                         + "mean the same row in the layout the command is "
+                         + "applied to")
+    }
+
     func testCombiningModulesWaitsForDropInsteadOfCollapsingTheDragTarget() throws {
         let baseline = NavigationLayout.standard(for: .standard)
 
