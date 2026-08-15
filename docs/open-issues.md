@@ -7,6 +7,80 @@ search:
 
 # Open issues
 
+## OPEN, INSTRUMENTED, NOT DIAGNOSED — AND THE PREMISE WAS WRONG: every drag session in the 15:27 build ends before the human lets go (2026-08-15 15:38 round, `fix/continuity-fast-cross-session`)
+
+The round was opened as a **fast-versus-patient** flake: two crossings done
+quickly toward the edge dropped the file 150–200 px short, both showing
+`standDownSamples=1` where a healthy attended run had shown 160.
+
+**Reading the whole log refutes that framing, and the refutation is the
+finding.** In `~/Library/Logs/now-logs/2026-08-15 152712.log` — one build,
+eleven minutes, eight guest→host drag sessions — **all eight** end with
+`the drag session ended with the button still held`, **all eight** report
+`standDownSamples` of 0 or 1, and the physical release follows the session
+end by one to four seconds every time. There is no fast/slow split in that
+build at all. The `standDownSamples=160` comparison came from the *previous*
+build (`2026-08-15 134015.log`), so the discriminator was a **build**
+difference read as a **speed** difference.
+
+Two corrections follow, and the second is the expensive one:
+
+- **`standDownSamples` is not a measure of the session.** It counts what
+  THIS APP saw through its own NSEvent monitors while standing down. Once
+  the seed became an event delivered to our own window, the drag runs in
+  AppKit's nested tracking loop and those monitors go quiet — so the count
+  collapsed for a reason that has nothing to do with what ended anything. A
+  count taken from a blind observer cannot distinguish silence from absence:
+  the same rule as the armed-plane check, in the vocabulary of a tally.
+- **`suppressedWarps` does not separate the two, either.** The two crossings
+  reported as flaky had 369 and 141; healthy sessions in the same build had
+  190, 155 and 89, and the previous build's healthy ones ran to 242 and 327.
+
+**One correlation survives, across the build boundary.** Every session in
+the 15:27 build was seeded from `type=1, windowNumber=3089, ourWindow=yes`
+— a `leftMouseDown` on our own catch panel, which is the exact shape of the
+**synthetic primary down this app posts itself** to re-arm the session's
+button state. Before the transparent-surface fix that down fell through to
+the Finder, so the seed came from a foreign real event and the sessions
+lasted to the release; since the fix it lands on our panel, returns through
+the local monitor, and is the first held event the return path sees. That is
+8/8 against 6/7 across two builds — suggestive, confounded, and not a
+mechanism.
+
+**What was built here is the instrument, not the fix.** The end-of-session
+line described the symptom in the vocabulary of the code that noticed it;
+it now names the ender or says it cannot:
+
+- A **listen-only, tail-append session tap** lives for the length of one
+  drag session and tallies the stream the session itself sees — the stream
+  this app is blind to while it stands down. It accumulates inside the tap
+  callback with **no main-actor hop**, because a hop is exactly what a
+  nested drag loop swallows.
+- The report forks on the one question that separates the hypotheses: a
+  session-level `leftMouseUp` within 250 ms of the end is named, **with the
+  PID and source-state id that say whether this app posted it**; no release
+  at all is stated as `NO session-level leftMouseUp was seen at all`; and a
+  witness that failed to install says so rather than presenting an empty
+  tally as a quiet stream.
+- The seed line gained the same provenance pair, so the correlation above
+  becomes a fact or stops being one in a single round.
+
+**A third failure mode is present in the log and is a different defect.**
+Seven crossings carried `boundFile=none`; five of them follow a
+`selection cleared: … nothing is selected on the Mac` published one to five
+seconds earlier. The press binds `guestSelectionItem()` at mouse-down
+against a cache the guest updates *in response to that same mouse-down*, so
+a press-and-drag done in one motion binds nothing while a click, a pause and
+then a drag binds correctly. **That** one really is fast-versus-patient, and
+it lives at the binding layer, not in the drag session.
+
+Ceiling: **Tested**. Twelve mutations, each watched failing against the
+guard that names it, every one confirmed built and run. Nothing here was
+measured on metal, and no behaviour was changed — the next round is
+Michelle's, and the lines it must read are the two new ones:
+`host drag session end witness: …` and `host drag seed event: …
+postedByThisApp=…`.
+
 ## THE TRANSFER WORKED AND THE PRESENTATION DID NOT: this app posted a mouse-down into the Finder, and its own seed came back from it (2026-08-15 13:43 round, `fix/continuity-drag-image-frontness`)
 
 The first successful guest→host file drag on metal: the grab completed and

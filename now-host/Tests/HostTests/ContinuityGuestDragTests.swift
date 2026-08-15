@@ -584,6 +584,117 @@ final class ContinuityGuestDragTests: XCTestCase {
             + "as the same silence")
     }
 
+    /// `standDownSamples` counts what THIS APP saw, and on metal it read 0
+    /// or 1 for every session in the 2026-08-15 15:27 build — over two to
+    /// four seconds of hand motion. A count taken from a blind observer
+    /// cannot say what ended a session, so the session's own stream is
+    /// witnessed beside it.
+    func testTheEndOfSessionLineNamesWhatEndedIt() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+        XCTAssertEqual(rig.environment.dragWitnessStarts, 1,
+                       "the witness must be armed with the session, not "
+                        + "after it")
+
+        var witness = ContinuityDragWitness(installed: true)
+        witness.record(Self.witnessed(type: 6, at: rig.now() - 0.5))
+        witness.record(Self.witnessed(type: 2, at: rig.now(), pid: 77))
+        rig.environment.dragWitness = witness
+        rig.controller.hostProcessIdentifier = { 77 }
+        rig.endHostDragSession(operation: [])
+
+        XCTAssertEqual(rig.environment.dragWitnessStops, 1,
+                       "a witness left running outlives the session it "
+                        + "describes")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("host drag session end witness")
+                && $0.1.contains("ended by a session leftMouseUp")
+                && $0.1.contains("(this app)")
+        }, rig.recorder.lines.map(\.1).joined(separator: "\n"))
+    }
+
+    /// The shape the 2026-08-15 rounds actually produced — a session that
+    /// ended while the button was still physically held — must not be
+    /// reported at the same level as an ordinary release.
+    func testASessionEndingUnderAHeldButtonIsAnError() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        var witness = ContinuityDragWitness(installed: true)
+        witness.record(Self.witnessed(type: 6, at: rig.now() - 0.2))
+        rig.environment.dragWitness = witness
+        /* Set only now: the same reader decides whether a held handback is
+           an echo, and this test is about the END of the session. */
+        rig.controller.physicalPrimaryButtonHeld = { true }
+        rig.controller.sessionPrimaryButtonHeld = { false }
+        rig.endHostDragSession(operation: [])
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .error && $0.1.contains("host drag session end witness")
+                && $0.1.contains(
+                    "NO session-level leftMouseUp was seen at all")
+        }, rig.recorder.lines.map(\.1).joined(separator: "\n"))
+    }
+
+    /// Said before the session as well as after it. A witness that could not
+    /// arm is a fact about the next four seconds, and learning it only
+    /// afterwards is learning it too late to move the mouse differently.
+    func testARefusedWitnessIsAnnouncedBeforeTheSessionAndNotOnlyAfter() {
+        let rig = Rig()
+        rig.environment.dragWitnessAvailable = false
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn && $0.1.contains("no drag-session witness")
+        }, "the refusal has to be on the record while the drag is still in "
+            + "flight")
+        rig.endHostDragSession(operation: [])
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("host drag session end witness")
+                && $0.1.contains("no witness was installed")
+        }, rig.recorder.lines.map(\.1).joined(separator: "\n"))
+    }
+
+    /// Beside whose WINDOW the seed arrived at, whose PROCESS put it in the
+    /// stream. Without it the log cannot distinguish a real host event from
+    /// this app's own synthetic re-arm, which is the candidate the current
+    /// build hands to `beginDraggingSession` every single time.
+    func testTheSeedEventSaysWhetherThisAppPostedIt() {
+        let rig = Rig()
+        rig.controller.hostProcessIdentifier = { 90210 }
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("host drag seed event")
+                && $0.1.contains("postedByThisApp=no")
+        }, rig.recorder.lines.map(\.1).joined(separator: "\n"))
+    }
+
+    private static func witnessed(type: UInt32, at uptime: TimeInterval,
+                                  pid: Int64 = 0)
+        -> ContinuityWitnessedEvent {
+        ContinuityWitnessedEvent(
+            type: type, location: CGPoint(x: 1520, y: 379), sourcePID: pid,
+            sourceStateID: pid == 0 ? 1 : 0, uptime: uptime,
+            hidPrimaryHeld: true, sessionPrimaryHeld: false)
+    }
+
     /// The seed's provenance, because a global monitor hands over events
     /// belonging to OTHER applications and that is the first thing to rule
     /// out when a session starts and then does nothing.
@@ -1199,6 +1310,11 @@ private final class Rig {
                                        buttonsDown: true))
     }
 
+    /// The same clock the controller reads, so a test can place a witnessed
+    /// event where the report will attribute it — or far enough back that it
+    /// must not.
+    func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+
     /// macOS finishing with the session this app started.
     func endHostDragSession(operation: NSDragOperation) {
         environment.fileCallbacks?.dragEnded(operation,
@@ -1295,6 +1411,27 @@ private final class Rig {
             return Token()
         }
         func stop(_ token: AnyObject) { _ = token }
+        /// The witness lane. Available by default, so ordinary tests
+        /// describe a Mac where the listen-only tap was granted; a test for
+        /// the refusal sets `dragWitnessAvailable = false`.
+        var dragWitnessAvailable = true
+        var dragWitness = ContinuityDragWitness(installed: true)
+        var dragWitnessStarts = 0
+        var dragWitnessStops = 0
+
+        func startDragWitness() -> AnyObject? {
+            guard dragWitnessAvailable else { return nil }
+            dragWitnessStarts += 1
+            return Token()
+        }
+        func readDragWitness(_ token: AnyObject) -> ContinuityDragWitness {
+            _ = token
+            return dragWitness
+        }
+        func stopDragWitness(_ token: AnyObject) {
+            _ = token
+            dragWitnessStops += 1
+        }
         func hideCursor(on displayID: UInt32) { _ = displayID }
         func showCursor(on displayID: UInt32) { _ = displayID }
         func moveCursor(on displayID: UInt32, to point: CGPoint) {

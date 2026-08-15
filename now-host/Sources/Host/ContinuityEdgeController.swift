@@ -78,6 +78,26 @@ protocol ContinuityPointerEnvironment: AnyObject {
         tapDisabled: @escaping @MainActor (String) -> Void
     ) -> AnyObject?
     func stopInputCapture(_ token: AnyObject)
+    /// Starts a LISTEN-ONLY witness over the session event stream, for the
+    /// length of one drag session this app started. Returns nil when the
+    /// platform refused, which the report then says out loud rather than
+    /// presenting an empty tally as a quiet stream.
+    ///
+    /// It watches the stream the SESSION sees, because that is the stream an
+    /// `NSDraggingSession` is driven by and the one this app is blind to
+    /// while it stands down: on metal, every session in the 2026-08-15 15:27
+    /// build reported `standDownSamples` of 0 or 1 over two to four seconds
+    /// of hand motion, so the monitors this app already had could not have
+    /// seen a release if one arrived. It never swallows — the gesture belongs
+    /// to AppKit for the duration and a consuming tap here would be competing
+    /// with the drag it exists to explain.
+    func startDragWitness() -> AnyObject?
+    /// The tally so far. Read synchronously rather than delivered through a
+    /// callback: a main-actor hop is exactly what goes missing inside a
+    /// nested drag-tracking loop, which is the blindness this instrument is
+    /// for.
+    func readDragWitness(_ token: AnyObject) -> ContinuityDragWitness
+    func stopDragWitness(_ token: AnyObject)
     func showFileEdge(_ edge: ContinuitySharedEdge,
                       callbacks: ContinuityFileEdge.Callbacks) -> AnyObject
     func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
@@ -219,6 +239,11 @@ final class ContinuityEdgeController: ObservableObject {
     /// competing with the drag it just handed over.
     private var hostDragSessionLive = false
     private var standDownSamples: UInt32 = 0
+    /// The listen-only witness over the live drag session, and where and when
+    /// it was seeded. See `ContinuityDragWitnessReport`.
+    private var dragWitness: AnyObject?
+    private var dragSeededAt: TimeInterval = 0
+    private var dragSeedPoint: CGPoint = .zero
     private var announcedOwnDragRefusal = false
     private var heldGesture: HeldGestureCustody?
     /// The last button state any sample reported. The escape chord arrives
@@ -289,6 +314,23 @@ final class ContinuityEdgeController: ObservableObject {
     /// second as the cross, each on the first post-teardown sample).
     var physicalPrimaryButtonHeld: () -> Bool =
         AppKitContinuityPointerEnvironment.primaryButtonIsHeld
+
+    /// What the SESSION believes about the primary button — the state an
+    /// `NSDraggingSession` is actually driven by, and the one this app's own
+    /// tap starves. Read only for the end-of-session report, where the pair
+    /// of answers is the point: HID held and session up is this app having
+    /// poisoned the field again; both held is a session that ended for some
+    /// other reason entirely.
+    var sessionPrimaryButtonHeld: () -> Bool = {
+        CGEventSource.buttonState(.combinedSessionState, button: .left)
+    }
+
+    /// This process's own id, so the report can say whether a release the
+    /// session saw was one this app posted. Injectable for the same reason
+    /// as the two above: no test has a mouse or a window server.
+    var hostProcessIdentifier: () -> Int64 = {
+        Int64(ProcessInfo.processInfo.processIdentifier)
+    }
 
     init(layout: ContinuityDisplayLayout,
          driver: ContinuityEdgeDriving,
@@ -374,6 +416,10 @@ final class ContinuityEdgeController: ObservableObject {
     func stop(reason: String = "Continuity Mode disabled") {
         if state == .arming || state == .active { driver?.pointerLeft() }
         endHeldCustody(reason: "Continuity stopped")
+        if let dragWitness {
+            environment.stopDragWitness(dragWitness)
+            self.dragWitness = nil
+        }
         hostDragSessionLive = false
         announcedOwnDragRefusal = false
         endOwnership(nextState: .disabled, status: reason)
@@ -928,10 +974,26 @@ final class ContinuityEdgeController: ObservableObject {
            window this gesture came from is the first thing to know when a
            session starts and then does nothing — and the first metal round
            had no line saying which it was. */
+        /* `postedByThisApp` is the field the 2026-08-15 15:27 log needed and
+           did not have. Since the catch surface started winning the hit test,
+           the synthetic primary down this app posts to re-arm the session no
+           longer falls through to the Finder: it is delivered to our own
+           panel and comes straight back through the LOCAL monitor as a
+           `leftMouseDown` on our window — the first held event this path
+           sees, and so the seed. Every session in that build was seeded that
+           way (8 of 8, `type=1, ourWindow=yes`) and every one ended before
+           the physical release; the build before it seeded from foreign real
+           events and its sessions lasted to the release. Whether that is
+           cause or coincidence is one metal round away, and only if the line
+           says which kind of event it was. */
+        let seedPID = sourceEvent.cgEvent?
+            .getIntegerValueField(.eventSourceUnixProcessID) ?? -1
         audit(.info, "host drag seed event: type=\(sourceEvent.type.rawValue)"
             + ", windowNumber=\(sourceEvent.windowNumber), "
             + "ourWindow=\(sourceEvent.window == nil ? "no" : "yes"), "
-            + "clickCount=\(sourceEvent.clickCount)")
+            + "clickCount=\(sourceEvent.clickCount), "
+            + ContinuityDragWitnessReport.seedProvenance(
+                sourcePID: seedPID, ownPID: hostProcessIdentifier()))
         if let seed = environment.beginFileDrag(waiting.item, at: point,
                                                 sourceEvent: sourceEvent) {
             /* The line the round-2 audit did not have. The trigger event is
@@ -966,6 +1028,7 @@ final class ContinuityEdgeController: ObservableObject {
             heldGesture = nil
             hostDragSessionLive = true
             standDownSamples = 0
+            beginDragWitness(seededAt: point)
             audit(.info, "host file drag started from a real mouse event at "
                 + "\(Int(point.x)),\(Int(point.y)); this app stands down "
                 + "until the session ends")
@@ -988,6 +1051,11 @@ final class ContinuityEdgeController: ObservableObject {
         guard hostDragSessionLive else { return }
         hostDragSessionLive = false
         announcedOwnDragRefusal = false
+        /* Read BEFORE the surface narrows. The catch-surface question this
+           report asks is "was the drag source's own window still under the
+           seed point when the session ended", and narrowing it first would
+           make this app the answer. */
+        let report = endDragWitness()
         setFileEdgeCatching(false)
         let took = operation.isEmpty ? "nobody" : "\(operation.rawValue)"
         audit(operation.isEmpty ? .warn : .info,
@@ -999,6 +1067,13 @@ final class ContinuityEdgeController: ObservableObject {
                         + "asked for"
                     : " — the promise lane owns the outcome from here"))
         standDownSamples = 0
+        if let report {
+            /* A separate line, deliberately. The one above says what became
+               of the FILE; this one says what became of the SESSION, and the
+               2026-08-15 rounds could not be diagnosed because those two
+               questions shared a sentence that answered only the first. */
+            audit(report.isSuspect ? .error : .info, report.summary)
+        }
         if operation.isEmpty {
             status = "Nothing on this Mac took the guest file"
         }
@@ -1007,6 +1082,46 @@ final class ContinuityEdgeController: ObservableObject {
         if hostButtonsDown { beginHeldCustody(reason: "the drag session ended "
             + "with the button still held") }
         refreshReadyStatus()
+    }
+
+    private func beginDragWitness(seededAt point: CGPoint) {
+        dragSeededAt = uptime()
+        dragSeedPoint = point
+        dragWitness = environment.startDragWitness()
+        if dragWitness == nil {
+            /* Said at the START as well as in the report. A witness that
+               could not arm is a fact about the next four seconds, and
+               learning it only afterwards is learning it too late to move
+               the mouse differently. */
+            audit(.warn, "no drag-session witness: the listen-only tap was "
+                + "refused, so if this session ends early nothing will be "
+                + "able to say what ended it")
+        }
+    }
+
+    /// Closes the witness and turns it into the sentence. Nil when no session
+    /// was ever seeded with one.
+    private func endDragWitness() -> ContinuityDragWitnessReport? {
+        guard let token = dragWitness else {
+            return ContinuityDragWitnessReport(
+                witness: ContinuityDragWitness(installed: false),
+                seededAt: dragSeededAt, endedAt: uptime(),
+                hidHeldAtEnd: physicalPrimaryButtonHeld(),
+                sessionHeldAtEnd: sessionPrimaryButtonHeld(),
+                catchSurface: nil, ownPID: hostProcessIdentifier())
+        }
+        dragWitness = nil
+        let witness = environment.readDragWitness(token)
+        environment.stopDragWitness(token)
+        return ContinuityDragWitnessReport(
+            witness: witness,
+            seededAt: dragSeededAt, endedAt: uptime(),
+            hidHeldAtEnd: physicalPrimaryButtonHeld(),
+            sessionHeldAtEnd: sessionPrimaryButtonHeld(),
+            catchSurface: fileEdge.map {
+                environment.catchSurfaceHitTest($0, at: dragSeedPoint)
+            },
+            ownPID: hostProcessIdentifier())
     }
 
     private func setFileEdgeCatching(_ catching: Bool) {
@@ -1328,6 +1443,7 @@ final class ContinuityEdgeController: ObservableObject {
         MainActor.assumeIsolated {
             if let monitor { environment.stop(monitor) }
             if let inputCapture { environment.stopInputCapture(inputCapture) }
+            if let dragWitness { environment.stopDragWitness(dragWitness) }
             if let keyboardMonitor { keyboardEnvironment.stop(keyboardMonitor) }
             if let fileEdge { environment.hideFileEdge(fileEdge) }
             if let id = cursorHiddenOn { environment.showCursor(on: id) }
