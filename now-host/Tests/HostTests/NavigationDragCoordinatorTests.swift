@@ -114,7 +114,16 @@ final class NavigationDragCoordinatorTests: XCTestCase {
                        ["projects", "chat"])
     }
 
-    func testPreviewReflowsTopLevelItemsWithoutMutatingTheBaseline() throws {
+    /// A top-level move previews the baseline and still refuses a target the
+    /// layout cannot accept.
+    ///
+    /// This test used to assert the opposite — that the preview reflowed the
+    /// upper stack — which is the behaviour
+    /// `testHoveringAnInsertionBandDoesNotReflowTheStack` removed. What
+    /// survives from it is the half worth keeping: previewing never mutates
+    /// the baseline, and a preview is nil exactly when the drop would be.
+    func testPreviewOfATopLevelMoveShowsTheBaselineAndValidatesTheTarget()
+        throws {
         let baseline = NavigationLayout.standard(for: .standard)
 
         let preview = try XCTUnwrap(NavigationDragPreview(
@@ -123,10 +132,16 @@ final class NavigationDragCoordinatorTests: XCTestCase {
             baseline: baseline,
             makeShelfID: { self.shelfUUID }))
 
-        XCTAssertEqual(preview.layout.upper.first?.id,
-                       NavigationShelfID.screen.rawValue)
+        XCTAssertEqual(preview.layout, baseline)
         XCTAssertEqual(baseline.upper.first?.id,
                        NavigationShelfID.machine.rawValue)
+
+        XCTAssertNil(NavigationDragPreview(
+            dragged: .shelf(.machine),
+            target: .zone(.drawer, index: 0),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }),
+                     "a move the layout refuses must not preview either")
     }
 
     func testPreviewReflowsShelfTabsBeforeDrop() throws {

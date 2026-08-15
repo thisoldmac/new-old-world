@@ -231,10 +231,26 @@ struct NavigationDragPreview: Equatable, Sendable {
             previewLayout = baseline.topLevelLocation(of: dragged) == nil
                 ? changed : baseline
         case .move:
-            guard let changed = try? baseline.applying(command) else {
+            // A move is still validated — a target the layout cannot accept
+            // must not preview at all — but it is not SHOWN. The insertion
+            // line already says where the row lands, and applying the move
+            // live is the same defect the `.insert` guard above refuses:
+            // every row between the removal point and the insertion point
+            // shifts, the row the pointer is resting on included. That is a
+            // real `draggingExited`, and AppKit restarts the spring-load
+            // dwell from zero each time — so the shelf a drag is aimed at
+            // can never be dwelled on. Finder shows a line and leaves its
+            // sidebar alone for the same reason.
+            //
+            // Freezing the presentation at the baseline also collapses two
+            // index spaces into one: the rows build their drop targets from
+            // the layout the sidebar RENDERS, while every command resolves
+            // against the baseline. See
+            // `testFooterRowTargetsAndCommandsShareOneIndexSpace`.
+            guard (try? baseline.applying(command)) != nil else {
                 return nil
             }
-            previewLayout = changed
+            previewLayout = baseline
         }
 
         self.dragged = dragged
