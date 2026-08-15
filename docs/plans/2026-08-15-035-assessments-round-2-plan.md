@@ -109,9 +109,10 @@ must actually land on the guest before its fixes can show.
   swallowed by the no-op guard. "Connections stays in the footer" is
   NOT design — two green tests assert the opposite. Fix wave: F2
   (.move previews baseline; insertion line says where it lands), F1
-  (footer drop geometry appends), refuse-before-hero drops up front
-  (cursor says no — option 1; option 2 "hero becomes movable" is
-  Michelle's product call, deferred), + the six tests T1–T6.
+  (footer drop geometry appends), and — per Michelle's morning call —
+  heroes are MOVABLE (option 2 superseded the overnight option-1
+  refuse-up-front guard, which is deleted), + the tests T1–T6 with T4
+  rewritten to assert the reorder persists.
 - **C3 CLOSED — stale binary.** Emulator with this tree's guest:
   Storage "4.0 GB, 3.2 GB free", Processor "PowerPC G3 (750) @ 900 MHz",
   console/identity/overview agree. Install bundle 3bccd505's guest.

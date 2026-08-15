@@ -66,6 +66,21 @@ against G-7's master consent).
   through census_size_mib (code-consistent with the live-proven
   overview path, itself unobserved).
 
+Morning addendum — heroes: CLOSED as option 2 (Michelle: "let the user
+decide"). `hero` is `moduleIDs.first` everywhere but the machine shelf
+(whose Overview hero is a page, not a module — pinned by its own test);
+fixedModuleHeroID, enforceSpecialHeroes and both drag guards (including
+the overnight refuse-up-front) are deleted. A drop in front of a first
+pill is accepted, previewed live, and survives the save; Settings on a
+user shelf stays put now. No migration, no version bump: every layout
+the old build wrote was already canonical under the old rule, so the new
+rule reads the same arrangement from the same bytes (a store test pins
+that loading does not rewrite them). Four pinning tests inverted into
+user-order-wins coverage; mutation-watched by reintroducing a minimal
+enforceSpecialHeroes and watching the rewritten T4 name the reorder.
+Unwatched: the feel of a pill sliding out from under the bar, and the
+untested path where an empty non-machine shelf renders `unavailable`.
+
 C3 closed earlier as stale-binary (install the current guest). S3
 (multi-root projects) intentionally waits on Michelle's prefs-shape
 call. Ideas N1–N6 are issues #29–#34.
