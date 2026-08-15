@@ -269,12 +269,18 @@ final class CommandRegistryTests: XCTestCase {
     /// be unimplemented by either, and the subtraction would hide whichever
     /// was wrong.
     ///
-    /// With `servedByNoGuestYet` empty (2026-07-31) the loop below runs zero
-    /// times and only the disjointness assertion does any work. That is the
-    /// gate having done its job rather than the gate being pointless: it is
-    /// what failed when the guest started answering `winact`, `textget` and
-    /// `textset`, and it is what will fail again for the next name added
-    /// here and left behind.
+    /// The loop below ran zero times from 2026-07-31, when the act plane
+    /// landed and the map emptied, until 2026-08-15, when `offer` was
+    /// declared with the host→guest crossing. An empty map is the state to
+    /// expect and a running loop is the map earning its keep: this is the
+    /// gate that failed when the guest started answering `winact`,
+    /// `textget` and `textset`, and it is what fails again for the next
+    /// name added here and left behind.
+    ///
+    /// Both mutations were watched on 2026-08-15, against the `offer`
+    /// entry: emptying the map fails `testTheThreeHalvesAgreeOnTheCommandSet`
+    /// naming `offer` as declared-but-unanswered, and deleting `offer` from
+    /// the contract's `x-commands` fails the assertion below by name.
     func testTheUnservedDeclarationsAreStillUnserved() throws {
         let declared = try declared()
         let ppc = try answered()
