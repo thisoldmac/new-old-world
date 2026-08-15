@@ -201,8 +201,8 @@ struct NavigationLayout: Codable, Equatable, Sendable {
     func shelf(id: NavigationShelfID) -> NavigationShelf? {
         NavigationZone.allCases
             .flatMap { items(in: $0) }
-            .compactMap {
-                guard case .shelf(let shelf) = $0, shelf.id == id else {
+            .compactMap { item -> NavigationShelf? in
+                guard case .shelf(let shelf) = item, shelf.id == id else {
                     return nil
                 }
                 return shelf
