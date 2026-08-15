@@ -24,10 +24,16 @@
 
 enum {
     kRetryMenuID = 133,
-    kGlanceRowCount = 5,
+    /* "Other Mac", "Connected", "Last traffic", "Wire", "This Mac", then
+       "Round trip" - the guest already times its own ping/pong
+       (wire.c :: g.last_rtt_ms); this is the sixth row rather than a
+       second card, and the one row with a button beside it. */
+    kGlanceRowCount = 6,
+    kRttRow = kGlanceRowCount - 1,
     kMargin = 12,
     kFieldHeight = 16,
     kButtonHeight = 20,
+    kTestButtonWidth = 56,
     /* Stack the two groups when the body is narrower than this. */
     kStackBelow = 560
 };
@@ -40,6 +46,7 @@ typedef struct {
     Rect retry_popup;
     Rect auto_box;
     Rect glance_group;
+    Rect test_btn;         /* beside the Round trip row */
     Rect update_group;
     Rect app_update_line;
     Rect ext_update_line;
@@ -60,6 +67,7 @@ static ControlRef g_edit;
 static ControlRef g_retry;
 static ControlRef g_auto;
 static ControlRef g_group_glance;
+static ControlRef g_test;
 static ControlRef g_group_update;
 static ControlRef g_update_app;
 static ControlRef g_update_ext;
@@ -84,7 +92,8 @@ static NowConnActionTitle g_action_title;
 static char g_update_lines[3][128];
 
 static const char *k_glance_labels[kGlanceRowCount] = {
-    "Other Mac", "Connected", "Last traffic", "Wire", "This Mac"
+    "Other Mac", "Connected", "Last traffic", "Wire", "This Mac",
+    "Round trip"
 };
 
 static char g_this_mac[64];           /* computed once; it cannot change */
@@ -142,11 +151,17 @@ static void compute_rects(const Rect *body, ConnRects *r)
 
     if (stacked) {
         SetRect(&r->glance_group, left, (short)(r->other_group.bottom + 8),
-                right, (short)(r->other_group.bottom + 132));
+                right, (short)(r->other_group.bottom + 152));
     } else {
         SetRect(&r->glance_group, (short)(r->other_group.right + 12), top,
-                right, (short)(top + 178));
+                right, (short)(top + 198));
     }
+    SetRect(&r->test_btn,
+            (short)(r->glance_group.right - 8 - kTestButtonWidth),
+            (short)(r->glance_group.top + 12 + kRttRow * 18 - 1),
+            (short)(r->glance_group.right - 8),
+            (short)(r->glance_group.top + 12 + kRttRow * 18 - 1
+                    + kButtonHeight));
 
     SetRect(&r->update_group, left,
             (short)(r->glance_group.bottom + 8), right,
@@ -327,6 +342,20 @@ static void build_values(const ConnSnapshot *snap,
 
     snprintf(vals[4], 64, "%.60s", g_this_mac);
 
+    /* The guest's own ping/pong timing (wire.c), read rather than
+       measured here - a second reader of the same clock, never a second
+       one. -1 before any pong has come back, the same absence the wire
+       itself uses. */
+    {
+        long rtt = conn_last_rtt_ms();
+
+        if (rtt >= 0) {
+            snprintf(vals[5], 64, "%ld ms", rtt);
+        } else {
+            strcpy(vals[5], "Not measured yet");
+        }
+    }
+
     /* Failure detail outranks pleasantries when there is one. */
     if (snap->phase != kConnConnected && snap->last_fail[0] != '\0') {
         snprintf(fail_line, (size_t)fail_cap, "%.24s:%u - %.80s",
@@ -341,9 +370,17 @@ static void build_values(const ConnSnapshot *snap,
 
 static void glance_value_rect(int row, Rect *out)
 {
+    /* The Round trip row shares its band with the Test button, so its
+       value column stops short of it - the same reason the address/port
+       lines on this page stop short of Edit. */
+    short right = (short)(g_r.glance_group.right - 8);
+
+    if (row == kRttRow) {
+        right = (short)(right - kTestButtonWidth - 8);
+    }
     SetRect(out, (short)(g_r.glance_group.left + 96),
             (short)(g_r.glance_group.top + 12 + row * 18),
-            (short)(g_r.glance_group.right - 8),
+            right,
             (short)(g_r.glance_group.top + 12 + (row + 1) * 18));
 }
 
@@ -423,6 +460,7 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
     }
     g_revert = make_button(&g_r.revert_btn, "Revert");
     g_save = make_button(&g_r.save_btn, "Save");
+    g_test = make_button(&g_r.test_btn, "Test");
     g_update_app = make_button(&g_r.app_update_btn, "Install App");
     g_update_ext = make_button(&g_r.ext_update_btn, "Install Extension");
 
@@ -430,7 +468,7 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
         || g_retry == NULL || g_auto == NULL
         || g_group_update == NULL || g_update_app == NULL
         || g_update_ext == NULL || g_action == NULL || g_revert == NULL
-        || g_save == NULL) {
+        || g_save == NULL || g_test == NULL) {
         return memFullErr;
     }
     {
@@ -457,6 +495,7 @@ static void conn_dispose(void)
     g_action = NULL;
     g_revert = NULL;
     g_save = NULL;
+    g_test = NULL;
 }
 
 static void show_control(ControlRef control, Boolean visible)
@@ -485,6 +524,7 @@ static void conn_show(Boolean visible)
     show_control(g_action, visible);
     show_control(g_revert, visible);
     show_control(g_save, visible);
+    show_control(g_test, visible);
     if (visible) {
         /* Idle was mute while this page was away; catch the title up
            before the human sees it rather than a tick later. */
@@ -519,6 +559,7 @@ static void conn_layout(const Rect *body)
     move_control(g_action, &g_r.action_btn);
     move_control(g_revert, &g_r.revert_btn);
     move_control(g_save, &g_r.save_btn);
+    move_control(g_test, &g_r.test_btn);
 }
 
 static void conn_draw(void)
@@ -694,6 +735,17 @@ static Boolean conn_click(const EventRecord *event, Point local)
         }
         return true;
     }
+    if (control == g_test) {
+        if (TrackControl(control, local, now_pump_action()) != 0) {
+            /* No set_status here, deliberately: that placard is the last
+               ACTION's result and would otherwise freeze on "Pinging..."
+               forever, hiding the live RTT the wire keeps stamping into
+               it on every connected tick (conn_status). The Round trip
+               row is where this press's answer shows up. */
+            conn_ping_now();
+        }
+        return true;
+    }
     if (control == g_update_app || control == g_update_ext) {
         if (TrackControl(control, local, now_pump_action()) != 0) {
             install_update(control == g_update_app
@@ -723,7 +775,7 @@ static Boolean conn_key(const EventRecord *event)
 
 static void conn_activate(Boolean active)
 {
-    ControlRef controls[11];
+    ControlRef controls[12];
     int i;
 
     controls[0] = g_group_other;
@@ -737,7 +789,8 @@ static void conn_activate(Boolean active)
     controls[8] = g_group_update;
     controls[9] = g_update_app;
     controls[10] = g_update_ext;
-    for (i = 0; i < 11; ++i) {
+    controls[11] = g_test;
+    for (i = 0; i < 12; ++i) {
         if (controls[i] == NULL) {
             continue;
         }
@@ -780,6 +833,9 @@ static void conn_idle(void)
     }
 
     sync_action_title();
+    /* Nothing to ping without a live session - see conn_ping_now(). */
+    HiliteControl(g_test, snap.phase == kConnConnected
+                              ? kControlNoPart : kControlInactivePart);
     for (i = 0; i < kNowUpdateComponentCount; ++i) {
         char version[24], build[65], line[160];
         Rect dirty = i == 0 ? g_r.app_update_line : g_r.ext_update_line;

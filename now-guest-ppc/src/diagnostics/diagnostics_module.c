@@ -4,6 +4,7 @@
 
 #include "diag_layout.h"
 #include "fileshare.h"
+#include "loopstat.h"
 #include "pump.h"
 #include "vprobe.h"
 #include "wire.h"
@@ -397,6 +398,58 @@ static void run_vprobe(void)
     state_changed();
 }
 
+/* Translate one LoopStat into the plain DiagLoopStat rows are built from -
+   the same reduction the wire's own wirestat_hist makes (n/mean/min/max
+   plus the median), computed by calling the SAME loopstat.c functions
+   the wire's JSON rendering calls rather than re-deriving the bucket
+   math here. */
+static void fill_loop_stat(const LoopStat *s, DiagLoopStat *out)
+{
+    int med = loopstat_median_bucket(s);
+
+    out->n = s->n;
+    out->mean_us = loopstat_mean_us(s);
+    out->min_us = s->n > 0 ? s->min_us : 0UL;
+    out->max_us = s->max_us;
+    out->median_bucket = med;
+    if (med < 0) {
+        out->median_lo_us = 0;
+        out->median_hi_us = 0;
+        out->median_count = 0;
+        return;
+    }
+    out->median_lo_us = med > 0 ? (long)loopstat_edge_us(med - 1) : 0;
+    out->median_hi_us = (long)loopstat_edge_us(med);
+    out->median_count = s->buckets[med];
+}
+
+static void read_wirestat(void)
+{
+    ConnWakeStats st;
+    DiagWireStat plain;
+    DiagCard *card = &g_cards[kDiagWireStat];
+
+    /* conn_wake_stats/conn_idle_sleep are the exact accessors
+       commands.c :: run_wirestat reads - this card is a second reader of
+       the same counters, never a second source of them. No conn_set_*
+       call anywhere in this file: the card has no control for wake or
+       idle sleep, only for reading what they are now. */
+    conn_wake_stats(&st);
+    plain.sleep_now_ticks = st.sleep_ticks;
+    plain.idle_sleep_ticks = conn_idle_sleep();
+    plain.wake_on = st.wake_enabled;
+    plain.notifier_live = st.notifier_live;
+    plain.data_events = st.data_events;
+    plain.wake_calls = st.wake_calls;
+    fill_loop_stat(&st.pass, &plain.pass);
+    fill_loop_stat(&st.wake, &plain.wake);
+
+    card->row_count = (short)diag_wirestat_rows(&plain, card->rows,
+                                                kDiagMaxRows);
+    card->state = kDiagRows;
+    state_changed();
+}
+
 static void read_putstat(void)
 {
     FileReceiveStats st;
@@ -552,6 +605,8 @@ static Boolean diagnostics_click(const EventRecord *event, Point local)
                 run_vprobe();
             } else if (i == kDiagPutStat) {
                 read_putstat();
+            } else if (i == kDiagWireStat) {
+                read_wirestat();
             }
             update_button_title(i);
         }

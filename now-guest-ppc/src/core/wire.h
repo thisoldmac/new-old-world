@@ -148,6 +148,14 @@ void conn_wake_stats(ConnWakeStats *out);
 /* Round-trip time of the last ping/pong in ms, or -1 if none yet. */
 long conn_last_rtt_ms(void);
 
+/* Send a ping immediately rather than waiting out kPingIntervalTicks -
+   the Connection page's Test button, and the same send the scheduled
+   heartbeat uses. A no-op without a connected session. The RTT it
+   produces lands wherever conn_last_rtt_ms/conn_status already read it;
+   this call only moves WHEN the next ping goes, not where its answer is
+   reported. */
+void conn_ping_now(void);
+
 /* --- guest-initiated screenshot push ----------------------------------- */
 
 /* Tells the host this machine's agent-access answer changed (agent.access),
