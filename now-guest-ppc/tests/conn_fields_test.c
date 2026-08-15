@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "conn_fields.h"
 
@@ -57,6 +58,53 @@ int main(void)
     /* ...and an old free-form value keeps an explicit cadence. */
     check(now_conn_retry_item_for_secs(4) == 3, "4 s rounds to 5 s");
     check(now_conn_retry_item_for_secs(300) == 4, "300 s pins to 10 s");
+
+    /* The action button's words. */
+    check(strcmp(now_conn_action_title(0), "Connect") == 0,
+          "disconnected reads Connect");
+    check(strcmp(now_conn_action_title(1), "Disconnect") == 0,
+          "connected reads Disconnect");
+
+    /* A page created while the wire is already up. The button is born
+       reading "Connect" only if nothing consulted the wire; whichever
+       way, the cache must be seeded from the TITLE, so the first sync
+       corrects any button whose words do not match the wire. This is
+       the G8 bug: seeded from the wire, the page agreed with itself and
+       lied to the human forever. */
+    {
+        NowConnActionTitle st;
+
+        now_conn_action_title_init(&st, "Connect");
+        check(now_conn_action_title_next(&st, 1) != NULL,
+              "page created connected but reading Connect restamps");
+        check(strcmp(st.shown, "Disconnect") == 0,
+              "and the cache follows the restamp");
+        check(now_conn_action_title_next(&st, 1) == NULL,
+              "a settled title is not restamped every tick");
+    }
+
+    /* And the same page created correctly is left alone. */
+    {
+        NowConnActionTitle st;
+
+        now_conn_action_title_init(&st,
+                                   now_conn_action_title(1));
+        check(now_conn_action_title_next(&st, 1) == NULL,
+              "a title born right needs no restamp");
+        check(now_conn_action_title_next(&st, 0) != NULL,
+              "dropping the connection restamps");
+        check(strcmp(st.shown, "Connect") == 0, "back to Connect");
+    }
+
+    /* An untouched cache (a page whose controls never got made) still
+       has to stamp rather than assume. */
+    {
+        NowConnActionTitle st;
+
+        now_conn_action_title_init(&st, NULL);
+        check(now_conn_action_title_next(&st, 0) != NULL,
+              "unknown title always restamps");
+    }
 
     if (g_failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", g_failures);
