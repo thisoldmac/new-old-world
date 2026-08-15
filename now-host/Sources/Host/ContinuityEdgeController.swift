@@ -142,13 +142,17 @@ final class ContinuityEdgeController: ObservableObject {
     @Published private(set) var state: State = .disabled
     @Published private(set) var status = "off"
 
-    /// Why the consuming tap most recently failed to start, kept only long
-    /// enough to answer one question: is a later retry worth attempting.
+    /// Why the consuming tap most recently failed to start. It answers two
+    /// questions, not one. Is a later retry worth attempting —
     /// `missingPermission` is retried automatically the next time the app
-    /// becomes active and the process is now trusted; `relaunchNeeded`
+    /// becomes active and the process is now trusted, `relaunchNeeded`
     /// never is, because macOS did not accept the grant this launch and
-    /// asking again would just fail the same way.
-    private enum CaptureFailureReason: Equatable {
+    /// asking again would just fail the same way. And, since it is
+    /// published, whether the Continuity page should be showing the person
+    /// a way OUT of the state: the prompt is a one-shot macOS may already
+    /// have spent, so a status string is not an affordance and the page
+    /// needs to know when to offer the Settings deep link instead.
+    enum CaptureFailureReason: Equatable {
         case missingPermission
         case relaunchNeeded
     }
@@ -167,7 +171,7 @@ final class ContinuityEdgeController: ObservableObject {
     private var ownership: Ownership?
     private var cursorHiddenOn: UInt32?
     private var inputCapture: AnyObject?
-    private var captureFailureReason: CaptureFailureReason?
+    @Published private(set) var captureFailureReason: CaptureFailureReason?
     private var cursorDissociated = false
     private var keyboardMonitor: AnyObject?
     private var pendingCursorWarp: PendingCursorWarp?

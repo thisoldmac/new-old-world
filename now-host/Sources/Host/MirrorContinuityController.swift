@@ -140,10 +140,33 @@ final class MirrorContinuityController: ObservableObject,
            `beginEdgeMode` this launch (after a manual toggle off and on)
            does not re-show a dialog macOS already answered by putting the
            app in the Accessibility pane. */
-        if !hasPromptedForAccessibilityThisLaunch,
-           !accessibility.isProcessTrusted() {
+        /* Every branch below says so out loud. The 2026-08-14 metal round
+           could not tell "the prompt never fired" from "the prompt fired
+           and macOS suppressed it", because the change that added the
+           prompt logged nothing at all about the decision — 31 lines
+           naming the missing permission and not one naming what was done
+           about it. A decision this cheap to record must never be
+           unreadable again. */
+        if accessibility.isProcessTrusted() {
+            audit(.info, "Accessibility is already granted; host input "
+                + "capture needs no permission request")
+        } else if hasPromptedForAccessibilityThisLaunch {
+            audit(.info, "Accessibility is still missing, but this launch "
+                + "has already asked; not re-showing the system prompt. "
+                + "Use Open Accessibility Settings on the Continuity page")
+        } else {
             hasPromptedForAccessibilityThisLaunch = true
+            /* macOS shows this dialog only while TCC holds no decision
+               record for this bundle id. An app that has been granted and
+               reset even once never sees it again, and the call returns in
+               silence — so the audit says ASKED, never SHOWN, and the page
+               offers the Settings link regardless. */
+            audit(.info, "Accessibility is missing; asking macOS for it "
+                + "(the system dialog appears only if macOS holds no "
+                + "earlier decision for this app)")
             accessibility.promptForTrust()
+            audit(.info, "asked macOS for Accessibility; still trusted="
+                + "\(accessibility.isProcessTrusted())")
         }
         edgeModeActive = true
         maintainsOptInAfterGuestExit = true
@@ -167,6 +190,29 @@ final class MirrorContinuityController: ObservableObject,
     /// what they just granted.
     func applicationDidBecomeActive() {
         edge.retryInputCaptureAfterBecomingActive()
+    }
+
+    /// The affordance that always works. `promptForTrust` is a one-shot
+    /// macOS may already have spent — on this project's own Mac it has,
+    /// across eleven builds in a day — so the Continuity page carries an
+    /// explicit control that opens the Accessibility pane, and it is this.
+    /// Unlike the prompt it has no TCC state behind it and cannot be
+    /// silently declined.
+    func openAccessibilitySettings() {
+        audit(.info, "opening System Settings at the Accessibility pane at "
+            + "the person's request; trusted="
+            + "\(accessibility.isProcessTrusted())")
+        accessibility.openAccessibilitySettings()
+    }
+
+    /// Whether the Continuity page should be offering the way out. Reads
+    /// the edge controller's own account of why its consuming tap is
+    /// missing rather than re-deriving trust here: the tap failing is the
+    /// symptom that matters, and a process can be trusted while the tap
+    /// still refuses to create (the relaunch case), which wants different
+    /// words and not this control.
+    var needsAccessibilityPermission: Bool {
+        edge.captureFailureReason == .missingPermission
     }
 
     func setMirrorCursorActive(_ active: Bool) {
