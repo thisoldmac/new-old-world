@@ -48,15 +48,6 @@ enum NavigationShelfID: Hashable, Sendable {
             true
         }
     }
-
-    var fixedModuleHeroID: String? {
-        switch self {
-        case .screen: "screen"
-        case .files: "files"
-        case .network: "settings"
-        case .machine, .debug, .user: nil
-        }
-    }
 }
 
 extension NavigationShelfID: Codable {
@@ -102,14 +93,20 @@ struct NavigationShelf: Codable, Equatable, Sendable, Identifiable {
         self.moduleIDs = moduleIDs
     }
 
+    /// The tab a shelf opens on.
+    ///
+    /// Every shelf but the machine one answers with its FIRST tab, which is
+    /// the tab order the person arranged. Screen, Files and Connections used
+    /// to name a fixed module here and have it re-prepended on every save, so
+    /// a drop in front of it was accepted, animated and silently undone. The
+    /// machine shelf is different in kind rather than by policy: its hero is
+    /// an Overview page and not a module at all, so there is no module order
+    /// for it to be the first of.
     var hero: NavigationShelfHero? {
         switch id {
         case .machine: .overview
-        case .screen: .module("screen")
-        case .files: .module("files")
-        case .debug: moduleIDs.first.map(NavigationShelfHero.module)
-        case .network: .module("settings")
-        case .user: moduleIDs.first.map(NavigationShelfHero.module)
+        case .screen, .files, .debug, .network, .user:
+            moduleIDs.first.map(NavigationShelfHero.module)
         }
     }
 }
@@ -228,16 +225,6 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         }
     }
 
-    func isFixedModuleHero(_ moduleID: String) -> Bool {
-        NavigationZone.allCases
-            .flatMap { items(in: $0) }
-            .contains { item in
-                guard case .shelf(let shelf) = item else { return false }
-                return shelf.id.fixedModuleHeroID == moduleID
-                    && shelf.moduleIDs.contains(moduleID)
-            }
-    }
-
     @MainActor
     static func standard(for registry: ModuleRegistry) -> NavigationLayout {
         let known = Set(registry.modules.map(\.id))
@@ -339,7 +326,6 @@ struct NavigationLayout: Codable, Equatable, Sendable {
     /// Repairs stored state into a total partition of the live registry.
     @MainActor
     func sanitised(for registry: ModuleRegistry) -> NavigationLayout {
-        let known = Set(registry.modules.map(\.id))
         var seenModules = Set<String>()
         var seenShelves = Set<NavigationShelfID>()
         var output = NavigationLayout(upper: [], lower: [], drawer: [])
@@ -396,7 +382,6 @@ struct NavigationLayout: Codable, Equatable, Sendable {
             seenModules.insert(id)
         }
 
-        output.enforceSpecialHeroes(known: known)
         output.decomposeSmallUserShelves()
         output.version = Self.currentVersion
         return output
@@ -515,33 +500,6 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         NavigationZone.allCases.contains { zone in
             items(in: zone).contains(.module(moduleID))
         }
-    }
-
-    private mutating func enforceSpecialHeroes(known: Set<String>) {
-        for shelfID in [NavigationShelfID.screen, .files, .network] {
-            guard let heroID = shelfID.fixedModuleHeroID,
-                  known.contains(heroID) else { continue }
-            guard shelf(id: shelfID) != nil else { continue }
-            removeModule(heroID)
-            _ = prepend(heroID, toShelf: shelfID)
-        }
-    }
-
-    private mutating func prepend(_ moduleID: String,
-                                  toShelf id: NavigationShelfID) -> Bool {
-        for zone in NavigationZone.allCases {
-            var items = items(in: zone)
-            guard let index = items.firstIndex(where: {
-                guard case .shelf(let shelf) = $0 else { return false }
-                return shelf.id == id
-            }) else { continue }
-            guard case .shelf(var shelf) = items[index] else { continue }
-            shelf.moduleIDs.insert(moduleID, at: 0)
-            items[index] = .shelf(shelf)
-            setItems(items, in: zone)
-            return true
-        }
-        return false
     }
 
     private mutating func removeModule(_ moduleID: String) {

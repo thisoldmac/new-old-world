@@ -153,10 +153,6 @@ struct NavigationDragCoordinator {
         makeShelfID: () -> UUID = UUID.init
     ) -> NavigationLayoutCommand? {
         guard layout.contains(dragged) else { return nil }
-        if case .module(let moduleID) = dragged,
-           layout.isFixedModuleHero(moduleID) {
-            return nil
-        }
 
         switch target {
         case .zone(let zone, let index):
@@ -186,23 +182,10 @@ struct NavigationDragCoordinator {
                   beforeModuleID.map(shelf.moduleIDs.contains) ?? true else {
                 return nil
             }
-            // A drop in front of a shelf's fixed hero cannot survive being
-            // saved: `sanitised` runs `enforceSpecialHeroes`, which
-            // re-prepends the hero, and `SidebarPreferences.replaceLayout`
-            // then returns early because the canonical result equals what
-            // was already stored. The gesture was accepted, animated, and
-            // silently undone — which is what "you can't drop into the
-            // Connections tabs" looks like from a chair, Settings being both
-            // that shelf's hero and its leftmost pill. Refuse it here so the
-            // cursor says no instead.
-            //
-            // This is the honest half of the fix. Whether a shelf's hero
-            // should be movable at all is a product question and is
-            // deliberately not answered here.
-            if let beforeModuleID,
-               shelfID.fixedModuleHeroID == beforeModuleID {
-                return nil
-            }
+            // A drop in front of a shelf's first tab used to be refused here,
+            // because `sanitised` re-prepended a fixed hero and undid it on
+            // save. Heroes are now whatever the person put first, so the drop
+            // is simply valid and survives the round trip.
             return .insert(moduleID: moduleID, into: shelfID,
                            beforeModuleID: beforeModuleID)
         }
