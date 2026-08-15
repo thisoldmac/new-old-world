@@ -701,7 +701,7 @@ struct HostFilesSidebar: View {
         }
         .frame(width: compact ? 52 : 176)
         .animation(.easeInOut(duration: 0.18), value: compact)
-        .background(FilesSidebarVibrancyBackground())
+        .background(SidebarVibrancyBackground())
     }
 }
 

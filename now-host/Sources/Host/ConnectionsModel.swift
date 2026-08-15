@@ -359,12 +359,27 @@ final class ConnectionsModel: ObservableObject {
     /// since the bus does not say which purpose a byte belongs to.
     @Published private(set) var updateProgress: GuestListener.CaptureProgress?
 
+    /// Whether the machines roster is collapsed to its rail.
+    ///
+    /// Persisted exactly as far as Files persists its right sidebar: the
+    /// collapsed/expanded choice survives a launch, the divider position
+    /// does not. A person who put the roster away meant it; the pixel the
+    /// divider sat at is not a decision they made.
+    @Published var rosterCollapsed: Bool {
+        didSet { defaults.set(rosterCollapsed, forKey: Keys.rosterCollapsed) }
+    }
+
+    private enum Keys {
+        static let rosterCollapsed = "connections.rosterCollapsed"
+    }
+
     struct UpdateKey: Hashable {
         let guest: GuestKey
         let component: UpdateProvider.Component
     }
 
     private let listener: GuestListener
+    private let defaults: UserDefaults
     private let resolve: (String) -> AgentIntegrationUnavailable?
     private let select: (GuestKey) -> Bool
     private let disconnect: (GuestKey) -> Bool
@@ -384,7 +399,11 @@ final class ConnectionsModel: ObservableObject {
          resolve: @escaping (String) -> AgentIntegrationUnavailable?,
          select: ((GuestKey) -> Bool)? = nil,
          disconnect: ((GuestKey) -> Bool)? = nil,
-         forget: ((GuestRegistry.Record.Key) -> Bool)? = nil) {
+         forget: ((GuestRegistry.Record.Key) -> Bool)? = nil,
+         defaults: UserDefaults = ProductIdentity.defaults) {
+        self.defaults = defaults
+        self.rosterCollapsed = defaults.object(
+            forKey: Keys.rosterCollapsed) as? Bool ?? false
         self.listener = listener
         self.resolve = resolve
         self.select = select ?? { [listener] key in listener.selectGuest(key) }
@@ -426,12 +445,14 @@ final class ConnectionsModel: ObservableObject {
     /// adapter that actually serves them.
     convenience init(listener: GuestListener,
                      addressing: AgentIntegrationHostAdapter,
-                     select: ((GuestKey) -> Bool)? = nil) {
+                     select: ((GuestKey) -> Bool)? = nil,
+                     defaults: UserDefaults = ProductIdentity.defaults) {
         self.init(listener: listener,
                   resolve: { [addressing] selector in
                       addressing.addressingRefusal(selector)
                   },
-                  select: select)
+                  select: select,
+                  defaults: defaults)
     }
 
     /// Recomputes the page. Also the seam a test drives directly.

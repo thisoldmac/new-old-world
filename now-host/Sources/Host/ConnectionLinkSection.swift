@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// This Mac's side of the link: the port it offers, and the health of the
-/// session running over it.
+/// This Mac's side of the link: the port it offers, the boundary that port
+/// sits on, and the health of the session running over it.
 ///
 /// **A section, not a page.** This used to be the whole "Connection" pane,
 /// pinned in the footer beside a separate "Connections" pane that listed the
@@ -11,12 +11,16 @@ import SwiftUI
 /// why it was empty. They are one page now (`ConnectionsModuleView`), and
 /// this is the half about this side.
 ///
-/// The file keeps its name deliberately: `SessionHealthProjection` declares
-/// that the app UI reaches session health through `healthBlock(health)` in
-/// `SettingsModuleView.swift`, and `HostFaceParityTests` reads this source to
-/// check it. Renaming the file would break that declaration silently in one
-/// direction and loudly in the other; the declaration moves when somebody
-/// moves it on purpose, in the same commit.
+/// It lived in `SettingsModuleView.swift` until the page grew its roster
+/// sidebar: a file named for a module that no longer exists, holding two
+/// views belonging to a module whose own file sat beside it. The name that
+/// mattered was not the file's but the declaration's —
+/// `SessionHealthProjection` declares that the app UI reaches session health
+/// through `healthBlock(health)` in this file and `HostFaceParityTests`
+/// reads that source to check it, so the declaration moved in the same
+/// commit as the file. If this file is renamed again, that entry and
+/// `ConnectionsPaneTests`' source gates move with it or the parity claim
+/// silently describes a file nobody has.
 struct ConnectionLinkSection: View {
     @ObservedObject var settings: SettingsModel
     @ObservedObject var listener: GuestListener
@@ -62,6 +66,13 @@ struct ConnectionLinkSection: View {
                     .padding(.leading, 6)
             }
 
+            /* The boundary belongs to the port, not to the page. It floated
+               as its own row directly above this card, which read as a
+               property of the whole module while it is a property of this
+               one control — and put two things about the listener in two
+               containers a person had to join up themselves. */
+            trustedLANNotice
+
             HStack(spacing: 10) {
                 Button("Set Up a New Mac…", action: openOnboarding)
                 if let endpoint = onboarding.endpoint,
@@ -106,6 +117,18 @@ struct ConnectionLinkSection: View {
             OnboardingSheet(portal: onboarding,
                             wirePort: settings.listenPort)
         }
+    }
+
+    private var trustedLANNotice: some View {
+        Label {
+            Text("Trusted LAN only. Connections are plaintext and have no peer authentication; do not expose this port to the internet or an untrusted network.")
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "exclamationmark.shield")
+        }
+        .font(.callout)
+        .foregroundStyle(.orange)
+        .accessibilityElement(children: .combine)
     }
 
     private var isListening: Bool {
