@@ -471,7 +471,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
             url: URL(fileURLWithPath: "/"), name: "Macintosh HD",
             symbol: "externaldrive")
         let desktop = HostFileLocation(
-            url: URL(fileURLWithPath: "/Users/test/Desktop"),
+            url: URL(fileURLWithPath: "/Volumes/Scratch/Desktop"),
             name: "Desktop", symbol: "folder")
         let host = FilesCurrentFolderDisplay.host(
             breadcrumbs: [root, desktop], source: "Local")
