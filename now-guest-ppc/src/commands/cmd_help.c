@@ -56,7 +56,9 @@ static const char *const d_development_stage[] = {
     "bounded transfer lane outside the generic Files root.", NULL
 };
 static const char *const d_development_project[] = {
-    "Measures and pages one active project's source manifest.",
+    "catalog lists the active projects, eight to a page, as identity|name;",
+    "a project ID measures and pages that project's source manifest.",
+    "Staged candidates are not listed here - see development-stage.",
     "The chosen Projects root and HFS path remain private.", NULL
 };
 

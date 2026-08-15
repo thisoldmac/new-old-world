@@ -160,6 +160,15 @@ typedef struct {
     short workshop_open_at_quit;
 } PrefsRecordV27;
 
+/* Format 28: which project this Mac is working on. An identity, not a
+   path - the Projects root is already persisted above, and a project is
+   found by walking it, so a stale id costs a lookup that fails rather
+   than a folder reference that outlives the folder. */
+typedef struct {
+    PrefsRecordV27 v27;               /* format = 28 */
+    char active_project_id[kNowProjectIDCap];
+} PrefsRecordV28;
+
 /* Format 16 reuses the V15 layout, bumping only the number to mark that
    Networking joined as nav id 9 (Logs and Connection shifted down
    again). It adds no persisted field, like formats 10, 11 and 14 before
@@ -285,7 +294,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV27);
+    long count = sizeof(PrefsRecordV28);
+    PrefsRecordV28 v28;
     PrefsRecordV27 v27;
     PrefsRecordV26 v26;
     PrefsRecordV25 v25;
@@ -309,9 +319,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v27, 0, sizeof v27);
-    err = FSRead(ref, &count, &v27);
+    memset(&v28, 0, sizeof v28);
+    err = FSRead(ref, &count, &v28);
     FSClose(ref);
+    v27 = v28.v27;
     v26 = v27.v26;
     v25 = v26.v25;
     v24 = v25.v24;
@@ -566,6 +577,11 @@ void now_prefs_load(NowPrefs *prefs)
         if (record.format >= 27 && count >= (long)sizeof(PrefsRecordV27)) {
             prefs->workshop_open_at_quit = v27.workshop_open_at_quit != 0;
         }
+        if (record.format >= 28 && count >= (long)sizeof(PrefsRecordV28)) {
+            v28.active_project_id[sizeof v28.active_project_id - 1] = '\0';
+            strncpy(prefs->active_project_id, v28.active_project_id,
+                    sizeof prefs->active_project_id - 1);
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -578,7 +594,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV27);
+    long count = sizeof(PrefsRecordV28);
+    PrefsRecordV28 v28;
     PrefsRecordV27 v27;
     PrefsRecordV26 v26;
     PrefsRecordV25 v25;
@@ -596,7 +613,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 27;               /* Workshop open/closed at quit */
+    record.format = 28;               /* the chosen active project */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -687,7 +704,11 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     memset(&v27, 0, sizeof v27);
     v27.v26 = v26;
     v27.workshop_open_at_quit = prefs->workshop_open_at_quit ? 1 : 0;
-    err = FSWrite(ref, &count, &v27);
+    memset(&v28, 0, sizeof v28);
+    v28.v27 = v27;
+    strncpy(v28.active_project_id, prefs->active_project_id,
+            sizeof v28.active_project_id - 1);
+    err = FSWrite(ref, &count, &v28);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }

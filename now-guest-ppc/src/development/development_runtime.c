@@ -7,8 +7,10 @@
 
 #include "development_build.h"
 #include "development_candidate.h"
+#include "development_history.h"
 #include "development_open.h"
 #include "development_project.h"
+#include "development_projects.h"
 #include "development_sha256.h"
 #include "development_toolchain_mac.h"
 #include "fileshare.h"
@@ -59,6 +61,42 @@ typedef struct DevRuntime {
 } DevRuntime;
 
 static DevRuntime g_runtime;
+
+/* Outside DevRuntime deliberately: a build START memsets the whole runtime
+   and dev_build_service_begin memsets the service, so a ring living in
+   either would remember exactly one job - the one that has not finished
+   yet. Session-scoped, so a relaunch starts empty. */
+static DevJobHistory g_history;
+
+/* Called wherever a job can settle, and often: the idle pass runs many
+   times a second and cancellation settles a job from three places. The
+   ring refuses a second push of the id already at its head, so "call it
+   whenever the state might have changed" is the whole protocol. */
+static void record_settled_job(void)
+{
+    DevJobSummary summary;
+    if (g_runtime.service.job.id[0] == '\0') return;
+    memset(&summary, 0, sizeof summary);
+    snprintf(summary.id, sizeof summary.id, "%.39s",
+             g_runtime.service.job.id);
+    snprintf(summary.project_id, sizeof summary.project_id, "%.32s",
+             g_runtime.candidate_id[0] ? g_runtime.candidate_id
+                                       : g_runtime.project.id);
+    snprintf(summary.project_name, sizeof summary.project_name, "%.64s",
+             g_runtime.project.name[0] ? g_runtime.project.name
+                                       : "Untitled project");
+    summary.state = g_runtime.service.job.state;
+    summary.exit_code = g_runtime.service.job.exit_code;
+    summary.actions_completed = g_runtime.service.next_action;
+    summary.actions_total = g_runtime.service.plan.count;
+    summary.finished_ticks = TickCount();
+    dev_job_history_push(&g_history, &summary);
+}
+
+const DevJobHistory *now_development_runtime_history(void)
+{
+    return &g_history;
+}
 
 static int console_words(const char *request_json, char *first, long first_cap,
                          char *second, long second_cap)
@@ -153,22 +191,6 @@ static void build_reply(long id, char *out, long cap)
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 
-static OSErr folder_id(const FSSpec *spec, long *dir_id)
-{
-    CInfoPBRec pb;
-    Str255 name;
-    memset(&pb, 0, sizeof pb);
-    memcpy(name, spec->name, spec->name[0] + 1);
-    pb.dirInfo.ioNamePtr = name;
-    pb.dirInfo.ioVRefNum = spec->vRefNum;
-    pb.dirInfo.ioDrDirID = spec->parID;
-    pb.dirInfo.ioFDirIndex = 0;
-    if (PBGetCatInfoSync(&pb) != noErr
-        || (pb.dirInfo.ioFlAttrib & ioDirMask) == 0) return dirNFErr;
-    *dir_id = pb.dirInfo.ioDrDirID;
-    return noErr;
-}
-
 static OSErr read_data_fork(const FSSpec *spec, char **text)
 {
     short ref = -1;
@@ -221,41 +243,24 @@ static int read_project_folder(const FSSpec *folder, long dir_id,
     return ok;
 }
 
+/* The walk itself lives in development_projects.c - this file's job is
+   what a build needs on top of it: the PARSED manifest, and a reason a
+   person can read when it is not there. */
 static int find_project(const char *project_id, FSSpec *folder,
                         long *dir_id, DevProject *project, char *reason,
                         long reason_cap)
 {
-    NowPrefs prefs;
-    short index;
-    now_prefs_load(&prefs);
-    if (prefs.projects_vref == 0 || prefs.projects_dir == 0) {
+    switch (dev_projects_find(project_id, folder, dir_id)) {
+    case kDevProjectsRootUnavailable:
         snprintf(reason, (size_t)reason_cap,
                  "Choose a Projects folder in Development first.");
         return 0;
-    }
-    for (index = 1; index <= 256; ++index) {
-        CInfoPBRec pb;
-        Str255 name;
-        FSSpec candidate;
-        long candidate_dir;
-        memset(&pb, 0, sizeof pb);
-        name[0] = 0;
-        pb.dirInfo.ioNamePtr = name;
-        pb.dirInfo.ioVRefNum = prefs.projects_vref;
-        pb.dirInfo.ioDrDirID = prefs.projects_dir;
-        pb.dirInfo.ioFDirIndex = index;
-        if (PBGetCatInfoSync(&pb) != noErr) break;
-        if ((pb.dirInfo.ioFlAttrib & ioDirMask) == 0) continue;
-        candidate.vRefNum = prefs.projects_vref;
-        candidate.parID = prefs.projects_dir;
-        memcpy(candidate.name, name, name[0] + 1);
-        if (folder_id(&candidate, &candidate_dir) != noErr) continue;
-        if (read_project_folder(&candidate, candidate_dir, project_id,
-                                project, reason, reason_cap)) {
-            *folder = candidate;
-            *dir_id = candidate_dir;
-            return 1;
-        }
+    case kDevProjectsFound:
+        if (read_project_folder(folder, *dir_id, project_id, project,
+                                reason, reason_cap)) return 1;
+        return 0;
+    default:
+        break;
     }
     snprintf(reason, (size_t)reason_cap,
              "No Project.ckp under the chosen Projects folder has that ID.");
@@ -270,7 +275,7 @@ static OSErr ensure_folder(short vref, long parent, const char *name,
     CopyCStringToPascal(name, p);
     err = FSMakeFSSpec(vref, parent, p, spec);
     if (err == fnfErr) err = FSpDirCreate(spec, smSystemScript, dir_id);
-    else if (err == noErr) err = folder_id(spec, dir_id);
+    else if (err == noErr) err = dev_projects_folder_id(spec, dir_id);
     return err;
 }
 
@@ -544,7 +549,7 @@ static int inspect_product(void)
     return 1;
 }
 
-void now_development_runtime_idle(void)
+static void runtime_idle_step(void)
 {
     DevJobState before = g_runtime.service.job.state;
     ProcessSerialNumber ignored;
@@ -603,6 +608,15 @@ void now_development_runtime_idle(void)
     }
 }
 
+/* One place records a settled job, and it is the pass that runs whatever
+   else happened - so no return path inside the step above has to remember
+   to. */
+void now_development_runtime_idle(void)
+{
+    runtime_idle_step();
+    record_settled_job();
+}
+
 void now_development_build_command(const char *request_json, long id,
                                    char *out, long cap)
 {
@@ -631,6 +645,7 @@ void now_development_build_command(const char *request_json, long id,
         }
         g_runtime.transport_blocked = g_runtime.service.awaiting_action >= 0;
         strcpy(g_runtime.last_status, "Build cancelled; late output is quarantined.");
+        record_settled_job();
         build_reply(id, out, cap); return;
     }
     if (project_id[0] == '\0') {
@@ -1046,12 +1061,25 @@ void now_development_runtime_cancel(void)
 {
     if (dev_build_service_cancel(&g_runtime.service)) {
         g_runtime.transport_blocked = g_runtime.service.awaiting_action >= 0;
+        record_settled_job();
     }
 }
 
 int now_development_runtime_active(void)
 {
     return g_runtime.service.job.state == kDevJobRunning;
+}
+
+void now_development_runtime_product(char *out, long cap)
+{
+    /* The CACHED reference only. Whether it is still exact is a re-hash
+       of both forks, and the page asks this from idle - the run command
+       re-checks before it launches anything, which is where that cost
+       belongs. */
+    if (cap <= 0) return;
+    out[0] = '\0';
+    if (!g_runtime.product.ready) return;
+    snprintf(out, (size_t)cap, "%s", g_runtime.product.ref);
 }
 
 void now_development_runtime_status(char *out, long cap)

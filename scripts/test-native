@@ -746,6 +746,12 @@ run_c now-guest-ppc development_project_test.c "" \
       src/development/development_contract.c \
       src/development/development_build.c \
       src/development/development_project.c
+run_c now-guest-ppc development_projects_rows_test.c "" \
+      src/development/development_projects_rows.c \
+      src/core/json.c
+run_c now-guest-ppc development_history_test.c "" \
+      src/development/development_contract.c \
+      src/development/development_history.c
 run_c now-guest-ppc development_sha256_test.c "" \
       src/development/development_sha256.c
 run_c now-guest-ppc development_open_test.c "" \

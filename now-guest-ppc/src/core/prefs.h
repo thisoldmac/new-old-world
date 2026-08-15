@@ -8,6 +8,11 @@
    move every field after it. Eleven nav rows use it today. */
 enum { kNowSidebarOrderMax = 24 };
 
+/* A project identity is 32 lower-case hex characters; the cap is that
+   plus its terminator, stated here because the record's layout depends
+   on it and every later field sits after it. */
+enum { kNowProjectIDCap = 33 };
+
 typedef struct {
     char host[64];            /* dotted quad, C string */
     unsigned short port;
@@ -150,6 +155,15 @@ typedef struct {
        every existing machine already sees it open at launch, and a file
        that predates the field must not change that. */
     Boolean workshop_open_at_quit;
+
+    /* Which project this Mac is working on, as the opaque identity the
+       Projects walk mints - not a folder reference. A project that has
+       been renamed, moved within the root or deleted costs one failed
+       lookup, where a stored vRefNum/dirID would quietly point at
+       whatever occupies that directory next. Empty means none chosen,
+       which is what a file predating the field says and what a machine
+       with a fresh Projects root means. */
+    char active_project_id[kNowProjectIDCap];
 } NowPrefs;
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
@@ -167,7 +181,8 @@ typedef struct {
    browser profile and lens plus its module-id renumbering), and v25
    (shared guest-log retention count), v26 (pending Extension activation
    identity and the CarbonLib warning choice), and v27 (whether the
-   Workshop was open when the session last ended). */
+   Workshop was open when the session last ended), and v28 (the chosen
+   active project's opaque identity). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 
