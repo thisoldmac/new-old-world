@@ -69,3 +69,15 @@ must actually land on the guest before its fixes can show.
   fix/feat continuity branches; prefer cherry-pick/coordination over
   re-implementation where they've touched the same symptom. The two
   threads merge eventually.
+- 2026-08-15 (sibling status via screenshot): the split branch is live
+  again — their lanes land on refactor/mirror-continuity-split
+  (658d77e9: guest-log-retrieval, guest-mirror-log-gate; grab /
+  cross-release / AX / schema lanes still in flight). Queued here, in
+  order: (1) after the V-unit research completes (its emulator lanes
+  stage THIS checkout's build — no mid-run merges), merge split's
+  current head again to keep drift small; expect a REAL conflict in
+  guest mirror code — their log-gate was written against the four-gate
+  policy my G-7 replaced with one master consent, and the consent shape
+  is decided (G-7 stands), so their gate adapts at merge. (2) V6's N4
+  logs ticket must build on their log work (paged now_log_tail
+  retirement, host log-tail codec), not duplicate it.
