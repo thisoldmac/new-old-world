@@ -562,80 +562,111 @@ static void conn_layout(const Rect *body)
     move_control(g_test, &g_r.test_btn);
 }
 
-static void conn_draw(void)
+/* One run of hand-drawn text, drawn or described. A NULL writer draws at
+   the run's own baseline with its own truncation; a writer reports the
+   rect it occupies. Both faces of this page take one walk - the address,
+   the port and the glance rows are exactly the facts a host asks about,
+   and a second traversal free to disagree with the pixels about them is
+   the drift this whole change exists to close. `room <= 0` means the run
+   was never truncated. */
+static void emit_run(const WorkshopSceneWriter *writer, const Rect *where,
+                     short baseline, short room, TruncCode trunc,
+                     const char *line)
 {
     Str255 text;
-    int i;
 
-    if (g_owner == NULL || !g_visible) {
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, line, where,
+                           true);
         return;
     }
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    MoveTo(g_r.addr_line.left, (short)(g_r.addr_line.top + 12));
-    CopyCStringToPascal("Address:", text);
+    CopyCStringToPascal(line, text);
+    if (room > 0) {
+        TruncString(room, text, trunc);
+    }
+    MoveTo(where->left, baseline);
     DrawString(text);
-    CopyCStringToPascal(g_host[0] != '\0' ? g_host : "not set", text);
-    MoveTo((short)(g_r.addr_line.left + 58),
-           (short)(g_r.addr_line.top + 12));
-    TruncString((short)(g_r.addr_line.right - g_r.addr_line.left - 58),
-                text, truncEnd);
-    DrawString(text);
+}
 
-    MoveTo(g_r.port_line.left, (short)(g_r.port_line.top + 12));
-    CopyCStringToPascal("Port:", text);
-    DrawString(text);
+static void conn_content(const WorkshopSceneWriter *writer)
+{
+    Rect where;
+    int i;
+
+    where = g_r.addr_line;
+    where.right = (short)(where.left + 58);
+    emit_run(writer, &where, (short)(g_r.addr_line.top + 12), 0, truncEnd,
+             "Address:");
+    where = g_r.addr_line;
+    where.left = (short)(g_r.addr_line.left + 58);
+    emit_run(writer, &where, (short)(g_r.addr_line.top + 12),
+             (short)(g_r.addr_line.right - g_r.addr_line.left - 58),
+             truncEnd, g_host[0] != '\0' ? g_host : "not set");
+
+    where = g_r.port_line;
+    where.right = (short)(where.left + 58);
+    emit_run(writer, &where, (short)(g_r.port_line.top + 12), 0, truncEnd,
+             "Port:");
     {
         char port_text[16];
 
         snprintf(port_text, sizeof port_text, "%u", g_port_val);
-        CopyCStringToPascal(port_text, text);
+        where = g_r.port_line;
+        where.left = (short)(g_r.port_line.left + 58);
+        emit_run(writer, &where, (short)(g_r.port_line.top + 12), 0,
+                 truncEnd, port_text);
     }
-    MoveTo((short)(g_r.port_line.left + 58),
-           (short)(g_r.port_line.top + 12));
-    DrawString(text);
 
     for (i = 0; i < kGlanceRowCount; ++i) {
         Rect value;
 
         glance_value_rect(i, &value);
-        MoveTo((short)(g_r.glance_group.left + 12),
-               (short)(value.top + 12));
-        CopyCStringToPascal(k_glance_labels[i], text);
-        DrawString(text);
-        MoveTo(value.left, (short)(value.top + 12));
-        CopyCStringToPascal(g_vals[i], text);
-        TruncString((short)(value.right - value.left), text, truncEnd);
-        DrawString(text);
+        where = value;
+        where.left = (short)(g_r.glance_group.left + 12);
+        where.right = value.left;
+        emit_run(writer, &where, (short)(value.top + 12), 0, truncEnd,
+                 k_glance_labels[i]);
+        emit_run(writer, &value, (short)(value.top + 12),
+                 (short)(value.right - value.left), truncEnd, g_vals[i]);
     }
     if (g_fail_line[0] != '\0') {
         Rect fail;
 
         glance_fail_rect(&fail);
-        MoveTo(fail.left, (short)(fail.top + 12));
-        CopyCStringToPascal(g_fail_line, text);
-        TruncString((short)(fail.right - fail.left), text, truncMiddle);
-        DrawString(text);
+        emit_run(writer, &fail, (short)(fail.top + 12),
+                 (short)(fail.right - fail.left), truncMiddle, g_fail_line);
     }
-    MoveTo(g_r.app_update_line.left,
-           (short)(g_r.app_update_line.top + 12));
-    CopyCStringToPascal(g_update_lines[0], text);
-    TruncString((short)(g_r.app_update_line.right
-                       - g_r.app_update_line.left), text, truncMiddle);
-    DrawString(text);
-    MoveTo(g_r.ext_update_line.left,
-           (short)(g_r.ext_update_line.top + 12));
-    CopyCStringToPascal(g_update_lines[1], text);
-    TruncString((short)(g_r.ext_update_line.right
-                       - g_r.ext_update_line.left), text, truncMiddle);
-    DrawString(text);
+    emit_run(writer, &g_r.app_update_line,
+             (short)(g_r.app_update_line.top + 12),
+             (short)(g_r.app_update_line.right - g_r.app_update_line.left),
+             truncMiddle, g_update_lines[0]);
+    emit_run(writer, &g_r.ext_update_line,
+             (short)(g_r.ext_update_line.top + 12),
+             (short)(g_r.ext_update_line.right - g_r.ext_update_line.left),
+             truncMiddle, g_update_lines[1]);
     if (g_update_lines[2][0] != '\0') {
-        MoveTo((short)(g_r.update_group.left + 12),
-               (short)(g_r.update_group.bottom - 10));
-        CopyCStringToPascal(g_update_lines[2], text);
-        TruncString((short)(g_r.update_group.right
-                           - g_r.update_group.left - 24), text, truncMiddle);
-        DrawString(text);
+        SetRect(&where, (short)(g_r.update_group.left + 12),
+                (short)(g_r.update_group.bottom - 22),
+                (short)(g_r.update_group.right - 12),
+                (short)(g_r.update_group.bottom - 6));
+        emit_run(writer, &where, (short)(g_r.update_group.bottom - 10),
+                 (short)(g_r.update_group.right - g_r.update_group.left - 24),
+                 truncMiddle, g_update_lines[2]);
     }
+}
+
+static void conn_draw(void)
+{
+    if (g_owner == NULL || !g_visible) {
+        return;
+    }
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    conn_content(NULL);
+}
+
+static void conn_describe_scene(const WorkshopSceneWriter *writer)
+{
+    conn_content(writer);
 }
 
 static void install_update(NowUpdateComponent component)
@@ -920,7 +951,7 @@ static const WorkshopModuleOps k_ops = {
     conn_activate,
     conn_idle,
     conn_status_text,
-    NULL
+    conn_describe_scene
 };
 
 const WorkshopModuleOps *connection_module_ops(void)
