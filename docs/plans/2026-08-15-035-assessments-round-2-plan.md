@@ -56,3 +56,16 @@ must actually land on the guest before its fixes can show.
 ## Decisions log
 
 (Empty.)
+
+- 2026-08-15 (Michelle, heading to bed): priorities — fix jank/breakage
+  to get the PR open; the "new" section is mostly ideas: write thoughts,
+  open tracking tickets, do not implement (emulator support and
+  now-api/cli are arcs of their own). The sibling session in worktree
+  fable-continuity-accessibility-24b8bf is actively working cross-screen
+  drag + logging + adjacent pieces; its branch currently holds nothing
+  we lack (tip b464b284, clean tree — the new work is uncommitted).
+  RULE for this arc: before implementing V4 (files drag) or acting on
+  V6's logs brief, re-check that worktree's branch and any fresh
+  fix/feat continuity branches; prefer cherry-pick/coordination over
+  re-implementation where they've touched the same symptom. The two
+  threads merge eventually.
