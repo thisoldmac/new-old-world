@@ -16,11 +16,12 @@
    clicks from the thing it affects and explained by neither. What lands
    here is what has no other home: the shape of the rail itself.
 
-   The rearrange gesture is Option-drag on the rail, which is the Control
-   Strip's gesture and the only rearrange idiom this era has. A gesture
-   nobody can see is a gesture nobody finds, so this page states it in
-   words - that sentence IS the discoverability, and it is the reason
-   this page exists rather than the preference living on alone. */
+   The rearrange gesture is a plain drag on the rail. A gesture nobody
+   can see is a gesture nobody finds, so this page states it in words -
+   that sentence IS the discoverability, and it is the reason this page
+   exists rather than the preference living on alone. It used to say
+   Option-drag, and that modifier is gone; a stale sentence here teaches
+   a gesture that no longer works, which is worse than no sentence. */
 
 enum {
     kMargin = 16,
@@ -35,10 +36,9 @@ enum {
 
 typedef struct {
     Rect sidebar_box;         /* group box around the rail settings */
-    Rect compact_check;
-    Rect compact_note;        /* one line under the checkbox */
     Rect collapse_check;
-    Rect arrange_note;        /* the Option-drag sentence */
+    Rect collapse_note;       /* one line under the checkbox */
+    Rect arrange_note;        /* the drag-to-rearrange sentence */
     Rect reset_button;
 } PrefsRects;
 
@@ -48,7 +48,6 @@ static PrefsRects g_r;
 static Boolean g_visible;
 
 static ControlRef g_group;
-static ControlRef g_compact;
 static ControlRef g_collapse;
 static ControlRef g_reset;
 
@@ -64,24 +63,18 @@ static void compute_rects(const Rect *body, PrefsRects *out)
        measures differently cannot leave the last control outside the
        frame. */
     y = (short)(top + kGroupPad + 8);
-    out->compact_check.left = inner_left;
-    out->compact_check.top = y;
-    out->compact_check.right = (short)(inner_left + kCheckWidth);
-    out->compact_check.bottom = (short)(y + kCheckHeight);
-
-    y = (short)(out->compact_check.bottom + 2);
-    out->compact_note.left = (short)(inner_left + 18);
-    out->compact_note.top = y;
-    out->compact_note.right = (short)(right - kGroupPad);
-    out->compact_note.bottom = (short)(y + kLineHeight);
-
-    y = (short)(out->compact_note.bottom + 6);
     out->collapse_check.left = inner_left;
     out->collapse_check.top = y;
     out->collapse_check.right = (short)(inner_left + kCheckWidth);
     out->collapse_check.bottom = (short)(y + kCheckHeight);
 
-    y = (short)(out->collapse_check.bottom + 10);
+    y = (short)(out->collapse_check.bottom + 2);
+    out->collapse_note.left = (short)(inner_left + 18);
+    out->collapse_note.top = y;
+    out->collapse_note.right = (short)(right - kGroupPad);
+    out->collapse_note.bottom = (short)(y + kLineHeight);
+
+    y = (short)(out->collapse_note.bottom + 10);
     out->arrange_note.left = inner_left;
     out->arrange_note.top = y;
     out->arrange_note.right = (short)(right - kGroupPad);
@@ -122,10 +115,6 @@ static OSErr prefs_create(WindowRef owner, const Rect *body)
     CopyCStringToPascal("Sidebar", text);
     g_group = now_control_new(owner, &g_r.sidebar_box, text, false, 0, 0, 0,
                          kControlGroupBoxTextTitleProc, 0);
-    CopyCStringToPascal("Compact rows", text);
-    g_compact = now_control_new(owner, &g_r.compact_check, text, false,
-                           workshop_sidebar_compact() ? 1 : 0, 0, 1,
-                           checkBoxProc, 0);
     CopyCStringToPascal("Collapse to icons", text);
     g_collapse = now_control_new(owner, &g_r.collapse_check, text, false,
                             workshop_sidebar_collapsed() ? 1 : 0, 0, 1,
@@ -133,8 +122,7 @@ static OSErr prefs_create(WindowRef owner, const Rect *body)
     CopyCStringToPascal("Reset Order", text);
     g_reset = now_control_new(owner, &g_r.reset_button, text, false, 0, 0, 0,
                          pushButProc, 0);
-    if (g_group == NULL || g_compact == NULL || g_collapse == NULL
-        || g_reset == NULL) {
+    if (g_group == NULL || g_collapse == NULL || g_reset == NULL) {
         return memFullErr;
     }
     return noErr;
@@ -145,7 +133,6 @@ static void prefs_dispose(void)
     /* Controls die with the window; no UPP is constructed here. */
     g_owner = NULL;
     g_group = NULL;
-    g_compact = NULL;
     g_collapse = NULL;
     g_reset = NULL;
 }
@@ -154,17 +141,13 @@ static void prefs_show(Boolean visible)
 {
     g_visible = visible;
     show_control(g_group, visible);
-    show_control(g_compact, visible);
     show_control(g_collapse, visible);
     show_control(g_reset, visible);
     if (visible && g_collapse != NULL) {
+        /* The rail can be collapsed without this page - the header button
+           does it, and a saved setting is read at launch - so the box
+           states what IS rather than what it last set. */
         SetControlValue(g_collapse, workshop_sidebar_collapsed() ? 1 : 0);
-    }
-    if (visible && g_compact != NULL) {
-        /* The rail's density can change without this page: a saved
-           setting is read at launch, so the box states what IS rather
-           than what it last set. */
-        SetControlValue(g_compact, workshop_sidebar_compact() ? 1 : 0);
     }
 }
 
@@ -183,7 +166,6 @@ static void prefs_layout(const Rect *body)
     g_body = *body;
     compute_rects(body, &g_r);
     move_control(g_group, &g_r.sidebar_box);
-    move_control(g_compact, &g_r.compact_check);
     move_control(g_collapse, &g_r.collapse_check);
     move_control(g_reset, &g_r.reset_button);
 }
@@ -205,12 +187,12 @@ static void prefs_draw(void)
     }
     SetPortWindowPort(g_owner);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    draw_line(&g_r.compact_note,
-              "Rich rows carry a line of description; compact rows do not.");
+    draw_line(&g_r.collapse_note,
+              "Icons only. Rest the pointer on one to read its name.");
     /* Plain hyphen and plain quotes: a drawable string here is MacRoman,
        and a UTF-8 dash renders as mojibake through DrawString. */
     draw_line(&g_r.arrange_note,
-              "To rearrange the sidebar, hold Option and drag a row.");
+              "To rearrange the sidebar, drag a row up or down.");
 }
 
 static Boolean prefs_click(const EventRecord *event, Point local)
@@ -223,17 +205,6 @@ static Boolean prefs_click(const EventRecord *event, Point local)
     }
     if (FindControl(local, g_owner, &control) == 0 || control == NULL) {
         return false;
-    }
-    if (control == g_compact) {
-        if (TrackControl(control, local, now_pump_action()) != 0) {
-            Boolean want = (Boolean)(GetControlValue(g_compact) == 0);
-
-            SetControlValue(g_compact, want ? 1 : 0);
-            /* This relays out the whole window - every row in the rail
-               changes height - so nothing here invalidates by hand. */
-            workshop_sidebar_set_compact(want);
-        }
-        return true;
     }
     if (control == g_collapse) {
         if (TrackControl(control, local, now_pump_action()) != 0) {
@@ -257,14 +228,13 @@ static Boolean prefs_click(const EventRecord *event, Point local)
 
 static void prefs_activate(Boolean active)
 {
-    ControlRef controls[4];
+    ControlRef controls[3];
     int i;
 
     controls[0] = g_group;
-    controls[1] = g_compact;
-    controls[2] = g_collapse;
-    controls[3] = g_reset;
-    for (i = 0; i < 4; ++i) {
+    controls[1] = g_collapse;
+    controls[2] = g_reset;
+    for (i = 0; i < 3; ++i) {
         if (controls[i] == NULL) {
             continue;
         }
@@ -278,9 +248,9 @@ static void prefs_activate(Boolean active)
 
 static void prefs_status_line(char *out, long cap)
 {
-    const char *line = workshop_sidebar_compact()
-                           ? "Compact rows. Option-drag a row to rearrange."
-                           : "Rich rows. Option-drag a row to rearrange.";
+    const char *line = workshop_sidebar_collapsed()
+                           ? "Icons only. Drag a row to rearrange."
+                           : "Drag a row to rearrange the sidebar.";
 
     strncpy(out, line, (size_t)(cap - 1));
     out[cap - 1] = '\0';

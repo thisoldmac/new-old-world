@@ -6,26 +6,31 @@
 
 #include "prefs.h"
 #include "pump.h"
+#include "workshop_order.h"
 #include "workshop_registry.h"
 #include "wire.h"
 
-/* The rail is one framed white panel drawn by hand: icon, bold title,
-   quiet subtitle per row, the pinned utilities at the bottom behind a
-   divider with the status lamp. A Data Browser cannot pin a row or
-   draw two-line cells without custom-callback territory this CarbonLib
+/* The rail is one framed white panel drawn by hand: icon and bold title
+   per row, the pinned utilities at the bottom behind a divider with the
+   status lamp. A Data Browser cannot pin a row or draw a row's own
+   right-aligned mark without custom-callback territory this CarbonLib
    has not proved, and the Console's hand-drawn scrollback set the
    precedent for an owned view; system look comes from the theme fonts
    and the system highlight color, not from imitation chrome.
 
-   Three things the panel is NOT free to assume any more, all of them
-   the person's to decide:
+   Two things the panel is NOT free to assume, both of them the person's
+   to decide:
 
-     - the ORDER of the nav rows, which they rearrange by Option-dragging
-       a row (the Control Strip's gesture, and the only rearrange idiom
-       this era has);
-     - the DENSITY, rich (icon + title + subtitle) or compact (icon +
-       title), which the Preferences page switches;
+     - the ORDER of the nav rows, which they rearrange by dragging one.
+       Plainly: the Control Strip's Option modifier is gone, and a press
+       that never travels kDragSlop is still an ordinary selection;
      - how far the list is SCROLLED, when the rows outnumber the space.
+
+   Every row is ONE LINE. The rich two-line density was retired because
+   its other setting was the one that could not show the list: fourteen
+   compact rows fit at every window size this app allows, 640x480
+   included, and fourteen rich ones do not. The description a rich row
+   carried moved to the hover tag further down this file.
 
    So a rectangle in the layout is a SLOT, not a module, and the module a
    slot shows is g_order[scroll_top + slot]. The scroll bar is a real
@@ -37,18 +42,16 @@ enum {
     kIconInset = 8,           /* panel edge to icon */
     kIconSize = 16,
     kTextGap = 6,             /* icon to text */
-    kTitleBaseline = 13,      /* within a rich row */
-    kSubtitleBaseline = 25,
-    /* One line, optically centred in an 18-pixel row. Hard-coded like
-       the pair above, and for the same reason: the theme fonts here are
-       fixed and a metrics query would be a runtime answer to a question
-       the layout already settled. */
-    kCompactBaseline = 13,
+    /* The single line, optically centred in an 18-pixel row. Hard-coded:
+       the theme fonts here are fixed, and a metrics query would be a
+       runtime answer to a question the layout already settled. */
+    kRowBaseline = 13,
     kLampSize = 8,
 
-    /* How far the mouse must travel before an Option-press becomes a
-       drag. Without it, a hand that shifts one pixel while clicking
-       rearranges the rail by accident. */
+    /* How far the mouse must travel before a press on a row becomes a
+       drag rather than a selection. It is the whole of what separates the
+       two now that the gesture carries no modifier: without it, a hand
+       that shifts one pixel while clicking rearranges the rail. */
     kDragSlop = 3
 };
 
@@ -87,12 +90,11 @@ static Boolean g_active = true;
 /* The person's arrangement of the nav rows: module ids, in the order
    they appear. Seeded from prefs and sanitised, so it is always a
    permutation of 1..kWorkshopNavRows no matter what was on disk. */
-static WorkshopModuleID g_order[kWorkshopNavRows];
-static Boolean g_compact;
+static short g_order[kWorkshopNavRows];
 static Boolean g_collapsed;
 static short g_scroll_top;
 
-/* The hand-drawn help tag for a collapsed icon.
+/* The hand-drawn help tag for a rail row.
 
    Carbon's Help Manager on this toolchain offers only HELP TAGS
    (HMSetControlHelpContent / HMDisplayTag) - the classic HMShowBalloon
@@ -104,7 +106,13 @@ static short g_scroll_top;
 
    It is armed from idle, which must stay free: the work per pass is one
    GetMouse and two comparisons, and nothing is drawn unless the row
-   under the pointer actually changed. */
+   under the pointer actually changed.
+
+   It carries the whole of what a row can no longer show: the page's NAME
+   when the rail is collapsed to icons, and its DESCRIPTION when the rail
+   is expanded - the line the retired rich density used to draw under the
+   title. So the description did not disappear with the density, it moved
+   to where a person asks for it. */
 static WorkshopModuleID g_tag_module;   /* 0 = no tag showing */
 static Rect g_tag_rect;                 /* what to invalidate to take it back */
 static Point g_tag_mouse;               /* where the pointer was last seen */
@@ -130,53 +138,15 @@ static const WorkshopModuleDefinition *row_definition(
 
 /* ---- the person's order ------------------------------------------- */
 
+/* The arrangement itself, its default and its edits live in
+   workshop_order.c, which is free of Toolbox headers so a native test can
+   read the default table. What stays here is only the part that touches
+   prefs and the screen. */
+
 /* Where a nav module sits in the arrangement, or -1 if it is pinned. */
 static short nav_pos(WorkshopModuleID module)
 {
-    short i;
-
-    for (i = 0; i < kWorkshopNavRows; ++i) {
-        if (g_order[i] == module) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-static void order_defaults(void)
-{
-    short i;
-
-    for (i = 0; i < kWorkshopNavRows; ++i) {
-        g_order[i] = (WorkshopModuleID)(i + 1);
-    }
-}
-
-/* Whatever was on disk becomes a permutation: ids out of the nav range
-   and repeats are dropped, then anything missing is appended in enum
-   order. That is what makes a module added LATER simply arrive at the
-   foot of a saved arrangement instead of invalidating it - and what
-   makes a corrupt or truncated record cost nothing. */
-static void order_adopt(const short *saved)
-{
-    Boolean seen[kWorkshopNavRows + 1];
-    short n = 0;
-    short i;
-
-    memset(seen, 0, sizeof seen);
-    for (i = 0; i < kNowSidebarOrderMax && n < kWorkshopNavRows; ++i) {
-        short id = saved[i];
-
-        if (id >= 1 && id <= kWorkshopNavRows && !seen[id]) {
-            seen[id] = true;
-            g_order[n++] = (WorkshopModuleID)id;
-        }
-    }
-    for (i = 1; i <= kWorkshopNavRows; ++i) {
-        if (!seen[i]) {
-            g_order[n++] = (WorkshopModuleID)i;
-        }
-    }
+    return workshop_order_pos(g_order, (short)module);
 }
 
 static void order_persist(void)
@@ -187,42 +157,10 @@ static void order_persist(void)
     now_prefs_load(&prefs);
     memset(prefs.sidebar_order, 0, sizeof prefs.sidebar_order);
     for (i = 0; i < kWorkshopNavRows; ++i) {
-        prefs.sidebar_order[i] = (short)g_order[i];
+        prefs.sidebar_order[i] = g_order[i];
     }
-    prefs.sidebar_compact = g_compact;
     prefs.sidebar_collapsed = g_collapsed;
     now_prefs_save(&prefs);
-}
-
-/* Lift one row out and drop it back in at `to`, everything between
-   sliding up or down by one. `to` counts positions in the list BEFORE
-   the lift, which is what a drop point between two visible rows means. */
-static void order_move(short from, short to)
-{
-    WorkshopModuleID moved;
-    short i;
-
-    if (from < 0 || from >= kWorkshopNavRows || to < 0
-        || to > kWorkshopNavRows) {
-        return;
-    }
-    if (to > from) {
-        --to;                         /* the lift closed the gap */
-    }
-    if (to == from) {
-        return;
-    }
-    moved = g_order[from];
-    if (to < from) {
-        for (i = from; i > to; --i) {
-            g_order[i] = g_order[i - 1];
-        }
-    } else {
-        for (i = from; i < to; ++i) {
-            g_order[i] = g_order[i + 1];
-        }
-    }
-    g_order[to] = moved;
 }
 
 /* ---- slots, and which module is in one ----------------------------- */
@@ -262,7 +200,7 @@ static WorkshopModuleID module_at_slot(short slot)
         || pos >= kWorkshopNavRows) {
         return (WorkshopModuleID)0;
     }
-    return g_order[pos];
+    return (WorkshopModuleID)g_order[pos];
 }
 
 /* A module's rectangle, or NULL when it is a nav row scrolled out of
@@ -507,9 +445,9 @@ void workshop_sidebar_load_prefs(void)
     NowPrefs prefs;
 
     now_prefs_load(&prefs);
-    g_compact = prefs.sidebar_compact;
     g_collapsed = prefs.sidebar_collapsed;
-    order_adopt(prefs.sidebar_order);
+    workshop_order_adopt(prefs.sidebar_order, (short)kNowSidebarOrderMax,
+                         g_order);
     g_scroll_top = 0;
 }
 
@@ -518,9 +456,7 @@ void workshop_sidebar_rail_spec(WorkshopRailSpec *out)
     if (out == NULL) {
         return;
     }
-    /* An unseeded rail is the rich, expanded, unscrolled, enum-ordered
-       one - the shape this window had before any of it was a choice. */
-    out->compact = g_compact;
+    /* An unseeded rail is the expanded, unscrolled, default-ordered one. */
     out->collapsed = g_collapsed;
     out->scroll_top = g_scroll_top;
 }
@@ -544,7 +480,7 @@ Boolean workshop_sidebar_create(WindowRef owner, const WorkshopLayout *lay,
     g_shown_phase = (ConnPhase)-1;
     g_shown_detail[0] = '\0';
     if (g_order[0] == 0) {
-        order_defaults();             /* never seeded: the enum order */
+        workshop_order_defaults(g_order);   /* never seeded from prefs */
     }
     g_scroll_top = g_lay.nav_scroll_top;
 
@@ -597,28 +533,9 @@ void workshop_sidebar_layout(const WorkshopLayout *lay)
     sync_scrollbar();
 }
 
-Boolean workshop_sidebar_compact(void)
-{
-    return g_compact;
-}
-
-void workshop_sidebar_set_compact(Boolean compact)
-{
-    if (compact == g_compact) {
-        return;
-    }
-    g_compact = compact;
-    order_persist();
-    /* Every row moves, so this is the window's to redo - the rail cannot
-       recompute its own rectangles. */
-    if (g_on_relayout != NULL) {
-        g_on_relayout();
-    }
-}
-
 void workshop_sidebar_reset_order(void)
 {
-    order_defaults();
+    workshop_order_defaults(g_order);
     g_scroll_top = 0;
     order_persist();
     sync_scrollbar();
@@ -664,6 +581,23 @@ static void connection_lamp_color(RGBColor *out)
     }
 }
 
+/* What a non-core page is marked with in the rail, or NULL for the ones
+   that need no mark. Short because the rail is 128 pixels wide at the
+   narrow size and the mark is charged against the title beside it; the
+   full word lives in the module's own header, where there is room for
+   it. Core pages carry nothing: a mark on every row marks nothing. */
+static const char *tier_label(WorkshopModuleTier tier)
+{
+    switch (tier) {
+    case kWorkshopModuleTierExperimental:
+        return "exp";
+    case kWorkshopModuleTierDebug:
+        return "debug";
+    default:
+        return NULL;
+    }
+}
+
 static void draw_row_in(WorkshopModuleID module, const Rect *r)
 {
     const WorkshopModuleDefinition *definition = row_definition(module);
@@ -673,7 +607,6 @@ static void draw_row_in(WorkshopModuleID module, const Rect *r)
     RGBColor gray = { 0x5555, 0x5555, 0x5555 };
     short text_left;
     short text_width;
-    short title_base = g_compact ? kCompactBaseline : kTitleBaseline;
 
     if (definition == NULL) {
         return;
@@ -734,16 +667,37 @@ static void draw_row_in(WorkshopModuleID module, const Rect *r)
     text_left = (short)(icon_rect.right + kTextGap);
     text_width = (short)(r->right - text_left - 4);
 
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    /* Compact Connection is the one row whose single line is not its
-       title: the icon and the lamp already say which row it is, and what
-       a person needs from it at a glance is the STATE. Every other row
-       shows its name. */
-    if (!(g_compact && module == kWorkshopConnection)) {
-        MoveTo(text_left, (short)(r->top + title_base));
+    /* Connection is the one row whose single line is not its title: the
+       icon and the lamp already say which row it is, and what a person
+       needs from it at a glance is the STATE. Every other row shows its
+       name, and - if it is not a core page - what it is admitted as. */
+    if (module != kWorkshopConnection) {
+        const char *tier = tier_label(definition->tier);
+
+        if (tier != NULL) {
+            Str255 mark;
+            short mark_width;
+
+            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+            CopyCStringToPascal(tier, mark);
+            mark_width = StringWidth(mark);
+            if (module != g_selected) {
+                RGBForeColor(&gray);
+            }
+            MoveTo((short)(r->right - 4 - mark_width),
+                   (short)(r->top + kRowBaseline));
+            DrawString(mark);
+            RGBForeColor(&black);
+            /* The title gives up exactly what the mark took, so a long
+               name truncates rather than drawing through it. */
+            text_width = (short)(text_width - mark_width - kTextGap);
+        }
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+        MoveTo(text_left, (short)(r->top + kRowBaseline));
         CopyCStringToPascal(definition->title, text);
         TruncString(text_width, text, truncEnd);
         DrawString(text);
+        return;
     }
 
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
@@ -771,28 +725,12 @@ static void draw_row_in(WorkshopModuleID module, const Rect *r)
         if (module != g_selected) {
             RGBForeColor(&gray);
         }
-        MoveTo(text_left, (short)(r->top + (g_compact ? kCompactBaseline
-                                                      : kSubtitleBaseline)));
+        MoveTo(text_left, (short)(r->top + kRowBaseline));
         CopyCStringToPascal(detail, text);
         TruncString(text_width, text, truncMiddle);
         DrawString(text);
         RGBForeColor(&black);
-        return;
     }
-
-    /* Compact is the title alone: the subtitle is the line it gives up,
-       which is the whole point of the density. */
-    if (g_compact) {
-        return;
-    }
-    if (module != g_selected) {
-        RGBForeColor(&gray);
-    }
-    MoveTo(text_left, (short)(r->top + kSubtitleBaseline));
-    CopyCStringToPascal(definition->sidebar_subtitle, text);
-    TruncString(text_width, text, truncEnd);
-    DrawString(text);
-    RGBForeColor(&black);
 }
 
 static void draw_row(WorkshopModuleID module)
@@ -850,8 +788,21 @@ static void hide_tag(void)
     }
 }
 
+/* What the tag says about a row: its name when the icon is all that is
+   showing, otherwise the description the row has no second line for.
+   One function, so the rectangle measured and the string drawn cannot
+   drift apart - which is a real hazard here, the tag being erased by a
+   rectangle computed separately from what went into it. */
+static const char *tag_text(const WorkshopModuleDefinition *definition)
+{
+    if (g_collapsed) {
+        return definition->title;
+    }
+    return definition->sidebar_subtitle;
+}
+
 /* The classic help-tag look: pale yellow, one-pixel black frame, small
-   system font, sitting to the RIGHT of the icon it explains. */
+   system font, sitting to the RIGHT of the row it explains. */
 static void draw_tag(void)
 {
     const WorkshopModuleDefinition *definition;
@@ -869,7 +820,7 @@ static void draw_tag(void)
     }
     SetPortWindowPort(g_owner);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    CopyCStringToPascal(definition->title, text);
+    CopyCStringToPascal(tag_text(definition), text);
 
     GetBackColor(&saved_back);
     RGBBackColor(&cream);
@@ -897,7 +848,7 @@ static void tag_rect_for(WorkshopModuleID module, const Rect *row, Rect *out)
     {
         Str255 text;
 
-        CopyCStringToPascal(definition->title, text);
+        CopyCStringToPascal(tag_text(definition), text);
         w = (short)(StringWidth(text) + 10);
     }
     out->left = (short)(g_lay.sidebar.right + 4);
@@ -1050,16 +1001,27 @@ static void toggle_drop_line(short pos)
     PenNormal();
 }
 
-/* Option-drag, the Control Strip's gesture and the only rearrange idiom
-   this era has. A nested tracking loop, so it pumps the wire: a finger
-   resting on a row would otherwise stop the connection for as long as
-   the drag lasts, which is exactly the defect pump.h exists for.
+/* Drag to rearrange - plainly, with no modifier. It used to want Option,
+   the Control Strip's gesture; what tells a drag from a click now is the
+   same thing that told an Option-drag from an Option-click before it, the
+   kDragSlop threshold, so the mechanism is unchanged and only the
+   modifier is gone. Returns true when the row actually moved, which is
+   how the caller knows whether the press was a rearrange or a selection.
+
+   Selection is deliberately settled on RELEASE rather than on the press:
+   at the moment the button goes down the two gestures are identical, and
+   selecting first would switch the page - lazily creating it, in the
+   general case - underneath a hand that was starting to drag.
+
+   A nested tracking loop, so it pumps the wire: a finger resting on a row
+   would otherwise stop the connection for as long as the drag lasts,
+   which is exactly the defect pump.h exists for.
 
    The drag reaches only rows that are ON SCREEN - it does not scroll the
    list under itself. Rearranging past the edge of a scrolled rail means
    dropping, scrolling, and dragging again; that is a real limitation and
    it is in docs/open-issues.md rather than hidden here. */
-static void drag_row(short from_pos, Point start)
+static Boolean drag_row(short from_pos, Point start)
 {
     short slot = (short)(from_pos - g_scroll_top);
     short grab = (short)(start.v - g_lay.nav_rows[slot].top);
@@ -1111,17 +1073,22 @@ static void drag_row(short from_pos, Point start)
         toggle_drag_outline(shown_top);
     }
     if (!armed || shown_pos < 0) {
-        return;                       /* an Option-click that never moved */
+        return false;                 /* a press that never travelled */
     }
-    order_move(from_pos, shown_pos);
+    workshop_order_move(g_order, from_pos, shown_pos);
     order_persist();
     inval_nav_area();
+    return true;
 }
 
 Boolean workshop_sidebar_click(const EventRecord *event, Point local)
 {
     int i;
 
+    /* The record is still the window's to hand over, and the signature
+       stays; the rail stopped reading it when the rearrange gesture lost
+       its modifier. */
+    (void)event;
     if (g_owner == NULL) {
         return false;
     }
@@ -1156,9 +1123,11 @@ Boolean workshop_sidebar_click(const EventRecord *event, Point local)
             || !PtInRect(local, &g_lay.nav_rows[i])) {
             continue;
         }
-        if ((event->modifiers & optionKey) != 0) {
-            drag_row((short)(g_scroll_top + i), local);
-            return true;              /* a rearrange never also selects */
+        /* Every press on a nav row goes through the drag tracker; it
+           returns false for the ones that turned out to be clicks. A
+           rearrange never also selects. */
+        if (drag_row((short)(g_scroll_top + i), local)) {
+            return true;
         }
         if (module != g_selected && g_on_select != NULL) {
             g_on_select(module);
@@ -1166,8 +1135,8 @@ Boolean workshop_sidebar_click(const EventRecord *event, Point local)
         return true;
     }
 
-    /* The pinned group is not rearrangeable, so Option means nothing on
-       it and it is an ordinary click. */
+    /* The pinned group is not rearrangeable: a press on one of these is
+       always an ordinary click, and never enters the drag tracker. */
     {
         const WorkshopModuleID pinned[3] = {
             kWorkshopPreferences, kWorkshopLogs, kWorkshopConnection
@@ -1210,7 +1179,7 @@ static WorkshopModuleID module_at_visual(short index)
         return (WorkshopModuleID)0;
     }
     if (index < kWorkshopNavRows) {
-        return g_order[index];
+        return (WorkshopModuleID)g_order[index];
     }
     switch (index - kWorkshopNavRows) {
     case 0:
