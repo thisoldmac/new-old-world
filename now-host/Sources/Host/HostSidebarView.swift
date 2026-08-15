@@ -42,9 +42,6 @@ struct HostSidebarView: View {
         }
         .navigationTitle("Modules")
         .modifier(SidebarWidth(collapsed: sidebar.collapsed))
-        .contextMenu {
-            SidebarDisplayMenu(sidebar: sidebar, registry: registry)
-        }
         .onAppear {
             monitor.refresh()
             revealDrawerSelection()
@@ -57,26 +54,6 @@ struct HostSidebarView: View {
     private func revealDrawerSelection() {
         if selection.requiresDrawerPresentation(in: layout) {
             drawerPresented = true
-        }
-    }
-}
-
-private struct SidebarDisplayMenu: View {
-    @ObservedObject var sidebar: SidebarPreferences
-    let registry: ModuleRegistry
-
-    var body: some View {
-        Picker("Rows", selection: $sidebar.compact) {
-            Text("Full").tag(false)
-            Text("Compact").tag(true)
-        }
-        .pickerStyle(.inline)
-        Divider()
-        Button(sidebar.collapsed ? "Show Module Names" : "Collapse to Icons") {
-            sidebar.collapsed.toggle()
-        }
-        Button("Reset Layout") {
-            sidebar.replaceLayout(.standard(for: registry))
         }
     }
 }

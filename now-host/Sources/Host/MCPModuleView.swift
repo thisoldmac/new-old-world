@@ -46,6 +46,8 @@ struct MCPModuleView: View {
     @ObservedObject var companions: AgentCompanionModel
     @ObservedObject var listener: GuestListener
     @ObservedObject var settings: MCPTransportSettingsModel
+    /// Nil in a preview or a test with no Settings window to open.
+    var openSettings: (() -> Void)?
     /// Nil in a preview or a test that has no server to run. The buttons are
     /// then absent rather than dead — a control that does nothing is the
     /// thing every page in this app is written to avoid.
@@ -74,18 +76,25 @@ struct MCPModuleView: View {
     // MARK: header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("MCP")
-                .font(.headline)
-            Text("The server an agent connects to in order to drive "
-                    + "\(MachineNaming.thisMac) and the "
-                    + "\(MachineNaming.properNounPlural) paired with it, "
-                    + "and what has come in "
-                    + "through it. Everything here also reaches the log; "
-                    + "this is the same record, in front of you.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("MCP")
+                    .font(.headline)
+                Text("The server an agent connects to in order to drive "
+                        + "\(MachineNaming.thisMac) and the "
+                        + "\(MachineNaming.properNounPlural) paired with it, "
+                        + "and what has come in "
+                        + "through it. Everything here also reaches the log; "
+                        + "this is the same record, in front of you.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            if let openSettings {
+                Button("Settings…", action: openSettings)
+                    .controlSize(.small)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -412,6 +421,10 @@ struct MCPModuleView: View {
     /// in one click and its consequence — no agent can reach this Mac — is
     /// the safe direction. Starting after a failure is worth retrying too,
     /// since the usual cause is another copy of NOW that has since quit.
+    ///
+    /// Whether each transport starts automatically at launch is a Settings
+    /// tab now, not a switch on this card — it is checked once a launch and
+    /// never mid-session, unlike everything else here.
     private var transports: some View {
         VStack(spacing: 12) {
             transportCard(
@@ -420,7 +433,6 @@ struct MCPModuleView: View {
                     + "New Old World executable runs in a narrow stdio mode "
                     + "and reaches this app through its same-user socket.",
                 state: model.stdio,
-                startsAutomatically: $settings.stdioStartsAutomatically,
                 start: startStdio,
                 stop: stopStdio,
                 details: { endpoint in
@@ -435,7 +447,6 @@ struct MCPModuleView: View {
                     + "inside New Old World, binds only to loopback, and "
                     + "requires the private bearer token saved by this app.",
                 state: model.http,
-                startsAutomatically: $settings.httpStartsAutomatically,
                 start: startHTTP,
                 stop: stopHTTP,
                 details: { _ in
@@ -451,7 +462,6 @@ struct MCPModuleView: View {
         title: String,
         summary: String,
         state: MCPTransportState,
-        startsAutomatically: Binding<Bool>,
         start: (() -> Void)?,
         stop: (() -> Void)?,
         @ViewBuilder details: (String) -> Details,
@@ -478,10 +488,6 @@ struct MCPModuleView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Divider()
-                Toggle("Start automatically",
-                       isOn: startsAutomatically)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
                 configuration()
                 switch state {
                 case .open(let endpoint):

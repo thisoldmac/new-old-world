@@ -2,13 +2,14 @@ import SwiftUI
 
 struct WebModuleView: View {
     @ObservedObject var model: WebBridgeModel
+    /// Nil in a preview or a test with no Settings window to open.
+    var openSettings: (() -> Void)?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 relay
-                rendering
                 status
             }
             .padding(24)
@@ -18,13 +19,19 @@ struct WebModuleView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Modern web pages, translated for a classic browser")
-                .font(.title2.weight(.semibold))
-            Text("The browser connects to New Old World on \(MachineNaming.simpleReference). "
-                 + "Requests cross the existing NOW connection; this Mac "
-                 + "owns TLS, JavaScript, policy, and page translation.")
-                .foregroundStyle(.secondary)
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Modern web pages, translated for a classic browser")
+                    .font(.title2.weight(.semibold))
+                Text("The browser connects to New Old World on \(MachineNaming.simpleReference). "
+                     + "Requests cross the existing NOW connection; this Mac "
+                     + "owns TLS, JavaScript, policy, and page translation.")
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            if let openSettings {
+                Button("Settings…", action: openSettings)
+            }
         }
     }
 
@@ -39,38 +46,8 @@ struct WebModuleView: View {
                      + "rest of the app.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
-        }
-    }
-
-    private var rendering: some View {
-        GroupBox("Page Compatibility") {
-            VStack(alignment: .leading, spacing: 12) {
-                Picker("Browser", selection: $model.profile) {
-                    ForEach(WebBrowserProfile.allCases) {
-                        Text($0.title).tag($0)
-                    }
-                }
-                Picker("Default view", selection: $model.lens) {
-                    ForEach(WebRenderingLens.allCases) {
-                        Text($0.title).tag($0)
-                    }
-                }
-                Picker("Fetch engine", selection: $model.engine) {
-                    ForEach(WebFetchEngine.allCases) {
-                        Text($0.title).tag($0)
-                    }
-                }
-                Toggle("Use known-site handlers", isOn: $model.handlersEnabled)
-                TextField("AI model folder or planner executable (optional)",
-                          text: $model.aiPlannerExecutable)
-                Toggle("Allow private and local web destinations (unsafe)",
-                       isOn: $model.allowPrivateDestinations)
-                Text("A model folder uses the optional MLX adapter. Compatible "
-                     + "Page is always the fallback; AI may reorder original "
-                     + "blocks, but cannot write links or text.")
+                Text("Page compatibility, safety and start-automatically "
+                     + "are in Settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -91,7 +68,6 @@ struct WebModuleView: View {
                         .keyboardShortcut(.defaultAction)
                         .disabled(!model.canStart)
                 }
-                Toggle("Start automatically", isOn: $model.startsAutomatically)
                 switch model.lifecycle {
                 case .ready:
                     Text("Renderer ready. A connected guest relay can browse now.")

@@ -188,6 +188,14 @@ final class HostAppState: ObservableObject {
     /// The one subscription that re-focuses every constructed module runtime.
     private var focusWatch: HostEventSubscription?
 
+    /// Set once by the app delegate, after it constructs the Settings
+    /// window controller, the same way `configureMCPTransports` hands the
+    /// delegate-owned socket lifecycles to the MCP runtime. nil in a
+    /// preview or a test with no window to open — `HostModuleContext`'s
+    /// `showSettings` closure below is a no-op until this is set, which is
+    /// the same shape `selectModule`'s default no-op takes there.
+    var settingsPresenter: ((HostSettingsTab?) -> Void)?
+
     private lazy var moduleRuntimes = HostModuleRuntimeStore(
         registry: moduleRegistry,
         context: HostModuleContext(
@@ -215,6 +223,7 @@ final class HostAppState: ObservableObject {
             mirrorEngines: mirrorEngines,
             selectedModuleID: { [unowned self] in self.selectedModuleID },
             selectModule: { [unowned self] in self.selectedModuleID = $0 },
+            showSettings: { [unowned self] in self.settingsPresenter?($0) },
             selectGuest: { [unowned self] in self.selectGuest($0) },
             startListening: { [unowned self] in self.startListening() },
             stopListening: { [unowned self] in self.stopListening() },
