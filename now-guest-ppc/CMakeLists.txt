@@ -132,6 +132,7 @@ add_application(now-guest-ppc
     src/files/files_share_view.c
     src/files/files_pull.c
     src/workshop/confirm.c
+    src/workshop/about_box.c
     src/workshop/receive_progress.c
     src/core/ot_carbon.c
     src/core/json.c

@@ -29,8 +29,11 @@
 #include "workshop_window.h"
 #include "receive_progress.h"
 #include "update_install.h"
+#include "about_box.h"
 
 enum {
+    kAppleMenuID = 128,
+    kAppleAboutItem = 1,
     kFileMenuID = 129,
     kFileCloseItem = 1,
     kFileSharingItem = 3,
@@ -86,28 +89,28 @@ static const unsigned char k_view_menu_title[] = {
     4, 'V', 'i', 'e', 'w'
 };
 static const unsigned char k_view_screenshots_item[] = {
-    13, 'S', 'c', 'r', 'e', 'e', 'n', 's', 'h', 'o', 't', 's', '/', '1'
+    11, 'S', 'c', 'r', 'e', 'e', 'n', 's', 'h', 'o', 't', 's'
 };
 static const unsigned char k_view_files_item[] = {
-    7, 'F', 'i', 'l', 'e', 's', '/', '2'
+    5, 'F', 'i', 'l', 'e', 's'
 };
 static const unsigned char k_view_console_item[] = {
-    9, 'C', 'o', 'n', 's', 'o', 'l', 'e', '/', '3'
+    7, 'C', 'o', 'n', 's', 'o', 'l', 'e'
 };
 static const unsigned char k_view_processes_item[] = {
-    11, 'P', 'r', 'o', 'c', 'e', 's', 's', 'e', 's', '/', '4'
+    9, 'P', 'r', 'o', 'c', 'e', 's', 's', 'e', 's'
 };
 static const unsigned char k_view_hardware_item[] = {
-    10, 'H', 'a', 'r', 'd', 'w', 'a', 'r', 'e', '/', '5'
+    8, 'H', 'a', 'r', 'd', 'w', 'a', 'r', 'e'
 };
 static const unsigned char k_view_software_item[] = {
-    10, 'S', 'o', 'f', 't', 'w', 'a', 'r', 'e', '/', '6'
+    8, 'S', 'o', 'f', 't', 'w', 'a', 'r', 'e'
 };
 static const unsigned char k_view_mcp_item[] = {
-    5, 'M', 'C', 'P', '/', '7'
+    3, 'M', 'C', 'P'
 };
 static const unsigned char k_view_diagnostics_item[] = {
-    13, 'D', 'i', 'a', 'g', 'n', 'o', 's', 't', 'i', 'c', 's', '/', '8'
+    11, 'D', 'i', 'a', 'g', 'n', 'o', 's', 't', 'i', 'c', 's'
 };
 /* The item NUMBER is the module id (see the handler below), so every
    module needs an item and they must appear in enum order. Networking
@@ -115,21 +118,15 @@ static const unsigned char k_view_diagnostics_item[] = {
    and Cmd-0 "Connection" select Logs, and left Connection unreachable
    from this menu.
 
-   Cmd-0 goes to the tenth item because the digits run out at nine and 0
-   is where a person looks next, not the letter C (already Close). iCloud
-   and Mirror landed the same day; iCloud took the last digit, so the
-   final three carry no key — one invented from a letter would collide
-   with File's before it helped anyone, and each is one click away in
-   the rail. */
+   No item carries a Cmd-key any more (I4a): the numbers ran out at ten
+   pages and the rail is the navigation - a shortcut that stops working
+   past the tenth module is worse than no shortcut. */
 static const unsigned char k_view_networking_item[] = {
-    12, 'N', 'e', 't', 'w', 'o', 'r', 'k', 'i', 'n', 'g', '/', '9'
+    10, 'N', 'e', 't', 'w', 'o', 'r', 'k', 'i', 'n', 'g'
 };
 static const unsigned char k_view_icloud_item[] = {
-    8, 'i', 'C', 'l', 'o', 'u', 'd', '/', '0'
+    6, 'i', 'C', 'l', 'o', 'u', 'd'
 };
-/* Unkeyed: eleventh onward, and the digits are spent. The item number
-   must still BE the module ID — Networking landed without a menu item
-   and every entry below it selected its neighbour. */
 static const unsigned char k_view_chat_item[] = {
     4, 'C', 'h', 'a', 't'
 };
@@ -157,11 +154,24 @@ static const unsigned char k_workshop_menu_item[] = {
 
 static void create_menu_bar(void)
 {
+    /* GetMenu, not NewMenu: the Apple-glyph title character Rez encoded
+       from the `apple` keyword in app.r's MENU 128 has to come from the
+       resource - NewMenu takes an ordinary Pascal string and cannot
+       produce it. */
+    MenuRef apple_menu = GetMenu(kAppleMenuID);
     MenuRef file_menu = NewMenu(kFileMenuID, k_file_menu_title);
     MenuRef edit_menu = NewMenu(kEditMenuID, k_edit_menu_title);
     MenuRef view_menu = NewMenu(kViewMenuID, k_view_menu_title);
     MenuRef windows_menu = NewMenu(kWindowsMenuID, k_windows_menu_title);
 
+    if (apple_menu != NULL) {
+        /* The standard OS 9 idiom: whatever aliases live in the Apple
+           Menu Items folder appear below the separator app.r already
+           placed at item 2. Selecting one is handled in
+           handle_menu_choice via OpenDeskAcc. */
+        AppendResMenu(apple_menu, 'DRVR');
+        InsertMenu(apple_menu, 0);
+    }
     AppendMenu(file_menu, k_close_menu_item);
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_sharing_menu_item);
@@ -170,9 +180,10 @@ static void create_menu_bar(void)
     InsertMenu(file_menu, 0);
     AppendMenu(edit_menu, k_edit_preferences_item);
     InsertMenu(edit_menu, 0);
-    /* View selects a Workshop module (Cmd-1..9 then Cmd-0, the item number
-       IS the module ID, and the last two have no key); Windows reopens
-       the one window. Every module lives in the Workshop now. */
+    /* View selects a Workshop module (the item number IS the module ID);
+       no item carries a Cmd-key (I4a - the rail is the navigation).
+       Windows reopens the one window. Every module lives in the
+       Workshop now. */
     AppendMenu(view_menu, k_view_screenshots_item);
     AppendMenu(view_menu, k_view_files_item);
     AppendMenu(view_menu, k_view_console_item);
@@ -293,7 +304,19 @@ static void close_front_window(void)
 
 static void handle_menu_choice(long choice)
 {
-    if (HiWord(choice) == kFileMenuID) {
+    if (HiWord(choice) == kAppleMenuID) {
+        if (LoWord(choice) == kAppleAboutItem) {
+            now_about_box_show();
+        }
+        /* Everything past the separator is an Apple Menu Items folder
+           alias, enumerated by AppendResMenu('DRVR') so the menu looks
+           and populates like every other OS 9 application's. Opening one
+           is deliberately NOT wired: OpenDeskAcc is the classic call for
+           it and TARGET_API_MAC_CARBON does not declare it - CarbonLib
+           does not run 68K CODE-resource desk accessories. Selecting an
+           item here highlights and does nothing, which is honest: this
+           app cannot open it, so it does not pretend to. */
+    } else if (HiWord(choice) == kFileMenuID) {
         if (LoWord(choice) == kFileCloseItem) {
             close_front_window();
         } else if (LoWord(choice) == kFileSharingItem) {
